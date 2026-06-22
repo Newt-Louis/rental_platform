@@ -1,0 +1,38 @@
+# Development overrides — NOT auto-loaded.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./apps/backend/src:/app/src:ro
+      - ./apps/backend/prisma:/app/prisma
+      - uploads_data:/app/uploads
+    environment:
+      NODE_ENV: development
+    command: npm run start:dev
+
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./apps/frontend/src:/app/src:ro
+      - ./apps/frontend/public:/app/public:ro
+    environment:
+      VITE_API_URL: http://localhost:3000/api
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "5173:5173"
+    # Dev: only expose Vite port (no 8080/nginx)
+    expose: []

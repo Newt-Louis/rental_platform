@@ -1,0 +1,513 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { categoriesApi, spacesApi } from '@/api';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
+import { useForm } from 'react-hook-form';
+import {
+  Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tags, DollarSign,
+  Building2, RefreshCw, AlertTriangle,
+} from 'lucide-react';
+import type { Category, CategoryMallPricing, Mall, Floor, Zone } from '@/types';
+
+function formatCurrency(value: number | undefined | null) {
+  if (!value) return '—';
+  return new Intl.NumberFormat('vi-VN').format(value);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CATEGORY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CategoryFormDialog({ open, category, onClose }: {
+  open: boolean; category?: Category; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { register, handleSubmit, reset } = useForm();
+  const { data: categoriesData } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list() });
+  const categories: Category[] = categoriesData ?? [];
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => category
+      ? categoriesApi.update(category.id, data)
+      : categoriesApi.create(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['categories'] });
+      toast({ title: category ? 'Đã cập nhật ngành hàng' : 'Đã tạo ngành hàng' });
+      reset();
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{category ? 'Chỉnh sửa Ngành hàng' : 'Tạo Ngành hàng mới'}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Mã ngành hàng *</Label>
+              <Input {...register('code', { required: true })} defaultValue={category?.code} placeholder="FNB" className="mt-1 uppercase" />
+            </div>
+            <div>
+              <Label>Tên hiển thị *</Label>
+              <Input {...register('name', { required: true })} defaultValue={category?.name} placeholder="F&B" className="mt-1" />
+            </div>
+            <div className="col-span-2">
+              <Label>Mô tả</Label>
+              <Input {...register('description')} defaultValue={category?.description ?? ''} placeholder="Food & Beverage" className="mt-1" />
+            </div>
+            <div>
+              <Label>Ngành hàng cha</Label>
+              <select {...register('parentId')} defaultValue={category?.parentId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                <option value="">— Không có —</option>
+                {categories.filter(c => c.id !== category?.id && !c.parentId).map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Thứ tự sắp xếp</Label>
+              <Input {...register('sortOrder')} type="number" defaultValue={category?.sortOrder ?? 0} className="mt-1" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? <RefreshCw size={14} className="animate-spin mr-1" /> : null}
+              {category ? 'Lưu' : 'Tạo'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CategoryRow({ category, level = 0, onEdit, onDelete }: {
+  category: Category; level?: number; onEdit: () => void; onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = category.children && category.children.length > 0;
+
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-gray-50 group ${level > 0 ? 'ml-6' : ''}`}
+      >
+        {hasChildren ? (
+          <button onClick={() => setExpanded(!expanded)} className="p-0.5">
+            {expanded ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+          </button>
+        ) : (
+          <div className="w-5" />
+        )}
+        <Tags size={14} className={level === 0 ? 'text-gray-500' : 'text-gray-400'} />
+        <span className="font-medium text-gray-800 flex-1">{category.name}</span>
+        <span className="text-xs text-gray-400 font-mono">{category.code}</span>
+        <Badge className={category.isActive ? 'bg-green-100 text-green-700 border-0 text-xs' : 'bg-gray-100 text-gray-500 border-0 text-xs'}>
+          {category.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+        {category._count?.units !== undefined && (
+          <span className="text-xs text-gray-400">{category._count.units} lô</span>
+        )}
+        <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onEdit}>
+            <Pencil size={12} className="text-gray-400" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onDelete}>
+            <Trash2 size={12} className="text-red-400" />
+          </Button>
+        </div>
+      </div>
+      {expanded && hasChildren && (
+        <div>
+          {category.children!.map(child => (
+            <CategoryRow key={child.id} category={child} level={level + 1} onEdit={onEdit} onDelete={onDelete} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CATEGORY PRICING MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PricingFormDialog({ open, pricing, mallId, onClose }: {
+  open: boolean; pricing?: CategoryMallPricing; mallId: string; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { register, handleSubmit, reset, watch } = useForm();
+
+  const { data: categoriesData } = useQuery({ queryKey: ['categories-options'], queryFn: () => categoriesApi.getOptions() });
+  const categories: Category[] = categoriesData ?? [];
+
+  const { data: floorsData } = useQuery({
+    queryKey: ['floors', mallId],
+    queryFn: () => spacesApi.listFloors(mallId),
+    enabled: !!mallId,
+  });
+  const floors: Floor[] = floorsData?.data ?? floorsData ?? [];
+
+  const { data: zonesData } = useQuery({
+    queryKey: ['zones', mallId],
+    queryFn: () => spacesApi.listZones({ mallId }),
+    enabled: !!mallId,
+  });
+  const zones: Zone[] = zonesData?.data ?? zonesData ?? [];
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => {
+      const payload = {
+        ...data,
+        mallId,
+        minRentPerSqm: Number(data.minRentPerSqm),
+        maxRentPerSqm: Number(data.maxRentPerSqm),
+        suggestedRent: data.suggestedRent ? Number(data.suggestedRent) : undefined,
+        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : 0,
+        floorId: data.floorId || undefined,
+        zoneId: data.zoneId || undefined,
+      };
+      return pricing
+        ? categoriesApi.updatePricing(pricing.id, payload)
+        : categoriesApi.createPricing(payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['category-pricing'] });
+      toast({ title: pricing ? 'Đã cập nhật giá' : 'Đã tạo giá mới' });
+      reset();
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{pricing ? 'Chỉnh sửa Giá' : 'Tạo Giá mới'}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <Label>Ngành hàng *</Label>
+              <select {...register('categoryId', { required: true })} defaultValue={pricing?.categoryId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
+                <option value="">— Chọn ngành hàng —</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Tầng (tùy chọn)</Label>
+              <select {...register('floorId')} defaultValue={pricing?.floorId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                <option value="">— Tất cả tầng —</option>
+                {floors.map(f => (
+                  <option key={f.id} value={f.id}>{f.name} ({f.level})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Khu vực (tùy chọn)</Label>
+              <select {...register('zoneId')} defaultValue={pricing?.zoneId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                <option value="">— Tất cả zone —</option>
+                {zones.map(z => (
+                  <option key={z.id} value={z.id}>{z.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Giá sàn (VND/m²) *</Label>
+              <Input {...register('minRentPerSqm', { required: true })} type="number" defaultValue={pricing?.minRentPerSqm} placeholder="400000" className="mt-1" />
+            </div>
+            <div>
+              <Label>Giá trần (VND/m²) *</Label>
+              <Input {...register('maxRentPerSqm', { required: true })} type="number" defaultValue={pricing?.maxRentPerSqm} placeholder="800000" className="mt-1" />
+            </div>
+            <div>
+              <Label>Giá đề xuất (VND/m²)</Label>
+              <Input {...register('suggestedRent')} type="number" defaultValue={pricing?.suggestedRent ?? ''} placeholder="550000" className="mt-1" />
+            </div>
+            <div>
+              <Label>CAM (VND/m²)</Label>
+              <Input {...register('camPerSqm')} type="number" defaultValue={pricing?.camPerSqm ?? 0} placeholder="80000" className="mt-1" />
+            </div>
+            <div className="col-span-2">
+              <Label>Ghi chú</Label>
+              <Input {...register('notes')} defaultValue={pricing?.notes ?? ''} placeholder="Ghi chú..." className="mt-1" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? <RefreshCw size={14} className="animate-spin mr-1" /> : null}
+              {pricing ? 'Lưu' : 'Tạo'}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN CATEGORIES TAB
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function CategoriesTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [view, setView] = useState<'categories' | 'pricing'>('categories');
+  const [showCreate, setShowCreate] = useState(false);
+  const [editCategory, setEditCategory] = useState<Category | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Category | null>(null);
+
+  // Pricing state
+  const [selectedMallId, setSelectedMallId] = useState('');
+  const [showCreatePricing, setShowCreatePricing] = useState(false);
+  const [editPricing, setEditPricing] = useState<CategoryMallPricing | null>(null);
+  const [confirmDeletePricing, setConfirmDeletePricing] = useState<CategoryMallPricing | null>(null);
+
+  // Queries
+  const { data: categoriesData, isLoading: loadingCategories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => categoriesApi.getTree(),
+  });
+  const categories: Category[] = categoriesData ?? [];
+
+  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
+  const malls: Mall[] = mallsData?.data ?? mallsData ?? [];
+
+  // Auto-select first mall
+  if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
+
+  const { data: pricingData, isLoading: loadingPricing } = useQuery({
+    queryKey: ['category-pricing', selectedMallId],
+    queryFn: () => categoriesApi.listPricing({ mallId: selectedMallId }),
+    enabled: !!selectedMallId && view === 'pricing',
+  });
+  const pricings: CategoryMallPricing[] = pricingData ?? [];
+
+  // Mutations
+  const deleteCategoryMutation = useMutation({
+    mutationFn: () => categoriesApi.delete(confirmDelete!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['categories'] });
+      toast({ title: 'Đã vô hiệu hóa ngành hàng' });
+      setConfirmDelete(null);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  const deletePricingMutation = useMutation({
+    mutationFn: () => categoriesApi.deletePricing(confirmDeletePricing!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['category-pricing'] });
+      toast({ title: 'Đã vô hiệu hóa giá' });
+      setConfirmDeletePricing(null);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  return (
+    <div>
+      {/* View toggle */}
+      <div className="flex items-center gap-3 mb-5">
+        <div className="flex bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setView('categories')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'categories' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          >
+            <Tags size={14} className="inline mr-1.5" />
+            Ngành hàng
+          </button>
+          <button
+            onClick={() => setView('pricing')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'pricing' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          >
+            <DollarSign size={14} className="inline mr-1.5" />
+            Giá theo Mall
+          </button>
+        </div>
+        <div className="flex-1" />
+        {view === 'categories' ? (
+          <Button onClick={() => setShowCreate(true)} className="gap-2">
+            <Plus size={15} /> Thêm ngành hàng
+          </Button>
+        ) : (
+          <>
+            <select
+              value={selectedMallId}
+              onChange={(e) => setSelectedMallId(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm bg-white"
+            >
+              {malls.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <Button onClick={() => setShowCreatePricing(true)} className="gap-2" disabled={!selectedMallId}>
+              <Plus size={15} /> Thêm giá
+            </Button>
+          </>
+        )}
+      </div>
+
+      {/* Categories View */}
+      {view === 'categories' && (
+        <>
+          {loadingCategories ? (
+            <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+          ) : (
+            <div className="bg-white rounded-xl border p-2">
+              {categories.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Tags size={36} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">Chưa có ngành hàng nào</p>
+                </div>
+              ) : (
+                categories.map(cat => (
+                  <CategoryRow
+                    key={cat.id}
+                    category={cat}
+                    onEdit={() => setEditCategory(cat)}
+                    onDelete={() => setConfirmDelete(cat)}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Pricing View */}
+      {view === 'pricing' && (
+        <>
+          {loadingPricing ? (
+            <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+          ) : (
+            <div className="bg-white rounded-xl border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Ngành hàng</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Tầng</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Zone</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Giá sàn</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Giá trần</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Đề xuất</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">CAM</th>
+                    <th className="px-4 py-3 w-20" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pricings.map((p) => (
+                    <tr key={p.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="font-medium">{p.category?.name}</span>
+                        <span className="text-xs text-gray-400 ml-1">({p.category?.code})</span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{p.floor?.name ?? 'Tất cả'}</td>
+                      <td className="px-4 py-3 text-gray-500">{p.zone?.name ?? 'Tất cả'}</td>
+                      <td className="px-4 py-3 text-right font-mono">{formatCurrency(p.minRentPerSqm)}</td>
+                      <td className="px-4 py-3 text-right font-mono">{formatCurrency(p.maxRentPerSqm)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-500">{formatCurrency(p.suggestedRent)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-gray-500">{formatCurrency(p.camPerSqm)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1 justify-end">
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditPricing(p)}>
+                            <Pencil size={12} className="text-gray-400" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setConfirmDeletePricing(p)}>
+                            <Trash2 size={12} className="text-red-400" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {pricings.length === 0 && (
+                <div className="text-center py-12 text-gray-400">
+                  <DollarSign size={36} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">Chưa có giá nào cho mall này</p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Dialogs */}
+      <CategoryFormDialog
+        open={showCreate || !!editCategory}
+        category={editCategory ?? undefined}
+        onClose={() => { setShowCreate(false); setEditCategory(null); }}
+      />
+
+      {selectedMallId && (
+        <PricingFormDialog
+          open={showCreatePricing || !!editPricing}
+          pricing={editPricing ?? undefined}
+          mallId={selectedMallId}
+          onClose={() => { setShowCreatePricing(false); setEditPricing(null); }}
+        />
+      )}
+
+      {/* Confirm Delete Category */}
+      <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-red-500" />
+              Vô hiệu hóa ngành hàng
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Bạn có chắc muốn vô hiệu hóa ngành hàng "{confirmDelete?.name}"?
+          </p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Hủy</Button>
+            <Button variant="destructive" onClick={() => deleteCategoryMutation.mutate()} disabled={deleteCategoryMutation.isPending}>
+              {deleteCategoryMutation.isPending ? <RefreshCw size={14} className="animate-spin mr-1" /> : null}
+              Xác nhận
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Delete Pricing */}
+      <Dialog open={!!confirmDeletePricing} onOpenChange={() => setConfirmDeletePricing(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-red-500" />
+              Vô hiệu hóa giá
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Bạn có chắc muốn vô hiệu hóa giá của ngành hàng "{confirmDeletePricing?.category?.name}"?
+          </p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setConfirmDeletePricing(null)}>Hủy</Button>
+            <Button variant="destructive" onClick={() => deletePricingMutation.mutate()} disabled={deletePricingMutation.isPending}>
+              {deletePricingMutation.isPending ? <RefreshCw size={14} className="animate-spin mr-1" /> : null}
+              Xác nhận
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

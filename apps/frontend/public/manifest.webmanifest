@@ -1,0 +1,19 @@
+{
+  "name": "THISO Tenant Portal",
+  "short_name": "THISO Tenant",
+  "description": "Cổng thông tin khách thuê THISO Mall",
+  "start_url": "/tenant-portal",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "vi",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
