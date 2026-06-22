@@ -1135,42 +1135,77 @@ function SalesPipelineTab({
                   </div>
 
                   {/* Financial summary */}
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                    <div>
-                      <span className="text-gray-400">Diện tích: </span>
-                      <span className="font-medium">{pr.area?.toLocaleString()} m²</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Thời hạn: </span>
-                      <span className="font-medium">{pr.term} tháng</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Giá thuê/m²: </span>
-                      <span className="font-medium">{fmtVND(pr.rentPerSqm)} ₫</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Thuê/tháng: </span>
-                      <span className="font-semibold text-gray-800">{fmtVND(pr.monthlyRent)} ₫</span>
-                    </div>
-                    {pr.discount > 0 && (
-                      <div>
-                        <span className="text-gray-400">Chiết khấu: </span>
-                        <span className="text-red-600 font-medium">{pr.discount}%</span>
+                  {(() => {
+                    const totalMonthly = (pr.monthlyRent ?? 0)
+                      + (pr.monthlyCAM ?? 0)
+                      + ((pr.area ?? 0) * (pr.serviceFeeSqm ?? 0))
+                      + ((pr.area ?? 0) * (pr.businessSupportFeeSqm ?? 0));
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          <div>
+                            <span className="text-gray-400">Diện tích: </span>
+                            <span className="font-medium">{pr.area?.toLocaleString()} m²</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Thời hạn: </span>
+                            <span className="font-medium">{pr.term} tháng</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Giá thuê/m²: </span>
+                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} ₫</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Tiền thuê/tháng: </span>
+                            <span className="font-medium">{fmtVND(pr.monthlyRent)} ₫</span>
+                          </div>
+                          {(pr.monthlyCAM ?? 0) > 0 && (
+                            <div>
+                              <span className="text-gray-400">Phí DVPT/tháng: </span>
+                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} ₫</span>
+                            </div>
+                          )}
+                          {(pr.serviceFeeSqm ?? 0) > 0 && (
+                            <div>
+                              <span className="text-gray-400">Phí DV/tháng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} ₫</span>
+                            </div>
+                          )}
+                          {(pr.businessSupportFeeSqm ?? 0) > 0 && (
+                            <div>
+                              <span className="text-gray-400">Phí HT KD/tháng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} ₫</span>
+                            </div>
+                          )}
+                          {pr.discount > 0 && (
+                            <div>
+                              <span className="text-gray-400">Chiết khấu: </span>
+                              <span className="text-red-600 font-medium">{pr.discount}%</span>
+                            </div>
+                          )}
+                          {pr.rentFree > 0 && (
+                            <div>
+                              <span className="text-gray-400">Rent-free: </span>
+                              <span className="font-medium">{pr.rentFree} tháng</span>
+                            </div>
+                          )}
+                        </div>
+                        {/* Total monthly highlight */}
+                        <div className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 mt-1">
+                          <span className="text-gray-500">Tổng phải trả/tháng:</span>
+                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} ₫</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-400">Tổng giá trị HĐ:</span>
+                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} ₫</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 text-gray-400">
+                          <span>Bắt đầu: {fmtDate(pr.startDate)}</span>
+                          <span>Kết thúc: {fmtDate(pr.endDate)}</span>
+                        </div>
                       </div>
-                    )}
-                    {pr.rentFree > 0 && (
-                      <div>
-                        <span className="text-gray-400">Rent-free: </span>
-                        <span className="font-medium">{pr.rentFree} tháng</span>
-                      </div>
-                    )}
-                    <div className="col-span-2">
-                      <span className="text-gray-400">Tổng HĐ: </span>
-                      <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} ₫</span>
-                    </div>
-                    <div><span className="text-gray-400">Bắt đầu: </span><span>{fmtDate(pr.startDate)}</span></div>
-                    <div><span className="text-gray-400">Kết thúc: </span><span>{fmtDate(pr.endDate)}</span></div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Approval steps */}
                   {steps.length > 0 && (
@@ -1295,7 +1330,7 @@ function UnitDetailSheet({
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
-  const { data: detail } = useQuery({
+  const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['unit-detail', unit?.id],
     queryFn: () => spacesApi.getUnit(unit!.id),
     enabled: !!unit?.id,
@@ -1397,7 +1432,14 @@ function UnitDetailSheet({
           )}
 
           {/* Sales Pipeline tab */}
-          {activeTab === 'sales' && (
+          {activeTab === 'sales' && detailLoading && (
+            <div className="space-y-3 pt-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+              ))}
+            </div>
+          )}
+          {activeTab === 'sales' && !detailLoading && (
             <SalesPipelineTab
               unit={d}
               onCreateBooking={() => setBookingOpen(true)}
@@ -2360,7 +2402,9 @@ export default function SpacesPage() {
               onClick={() => setStatusFilter(statusFilter === key ? '' : key)}
             >
               <CardContent className="pt-4 pb-3 text-center">
-                <div className="text-2xl font-bold text-gray-900">{occ[key.toLowerCase()] ?? 0}</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {occ[key === 'UNDER_FITOUT' ? 'underFitout' : key.toLowerCase()] ?? 0}
+                </div>
                 <div className={`text-xs mt-1.5 font-medium px-2 py-0.5 rounded-full ${cfg.color}`}>
                   {cfg.label}
                 </div>
