@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.build.yml
+# Mục đích: BUILD image trên máy DEV rồi PUSH lên registry.thisoretail.store
+# (File này KHÔNG dùng để chạy container — chỉ build & push)
+#
+# Cách dùng (Nếu viết tag phiên bản trực tiếp trong đây):
+#   docker login registry.thisoretail.store
+#   docker compose -f docker-compose.build.yml build
+#   docker compose -f docker-compose.build.yml push
+#
+# Build/push 1 tag cụ thể thay vì latest:
+#
+# Build/push 1 tag cụ thể (Linux/macOS):
+#   IMAGE_TAG=v1.0.0 docker compose -f docker-compose.build.yml build
+#   IMAGE_TAG=v1.0.0 docker compose -f docker-compose.build.yml push
+#
+# Build/push 1 tag cụ thể (Windows CMD):
+#   set IMAGE_TAG=uat-v1.1.0 && docker compose -f docker-compose.build.yml build
+#   set IMAGE_TAG=uat-v1.1.0 && docker compose -f docker-compose.build.yml push
+#
+# Build/push 1 tag cụ thể (Windows PowerShell):
+#   $env:IMAGE_TAG="uat-v1.1.0"; docker compose -f docker-compose.build.yml build
+#   $env:IMAGE_TAG="uat-v1.1.0"; docker compose -f docker-compose.build.yml push
+#
+# Hoặc dùng file .env.build (chạy được trên mọi OS):
+#   Tạo file .env.build với nội dung: IMAGE_TAG=uat-v1.1.0
+#   docker compose --env-file .env.build -f docker-compose.build.yml build
+#   docker compose --env-file .env.build -f docker-compose.build.yml push
+#
+# Lưu ý frontend: image được build với VITE_API_URL/VITE_SOCKET_URL = rỗng
+# => frontend dùng đường dẫn tương đối (/api, /socket.io) và nginx con của
+# chính nó proxy sang backend:4000. Đây là cấu hình đúng cho 1 domain duy nhất.
+# Khi nào tách backend ra subdomain riêng thì rebuild với build args bên dưới.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: leasing-platform-build
+
+services:
+  backend:
+    image: registry.thisoretail.store/leasing-platform/backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    pull_policy: build
+
+  frontend:
+    image: registry.thisoretail.store/leasing-platform/frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      # Vite sẽ nhận các tham số này lúc build.
+      # Theo mặc định (khi triển khai chung 1 domain), Nginx tự proxy requests nên biến này có thể để rỗng.
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-}
+    pull_policy: build
