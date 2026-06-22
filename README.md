@@ -266,3 +266,5 @@ NODE_ENV=development
 ## License
 
 Internal use only — THISO Group © 2026
+
+kai update
