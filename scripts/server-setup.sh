@@ -55,14 +55,17 @@ ufw --force enable
 echo "✓ Firewall configured"
 
 # ─── Create app directory ───────────────────────────────────────────────────
-mkdir -p /opt/leasing-platform
-chown deploy:deploy /opt/leasing-platform
+mkdir -p /home/leasing-platform
+chown deploy:deploy /home/leasing-platform
+
+# Install certbot for SSL
+apt-get install -y certbot python3-certbot-nginx nginx
 
 echo ""
 echo "================================================"
 echo " Setup complete!"
 echo " Next step: login as deploy user and run:"
 echo "   sudo -u deploy bash"
-echo "   cd /opt"
-echo "   bash /opt/leasing-platform/scripts/deploy.sh first-run"
+echo "   cd /home"
+echo "   bash /home/leasing-platform/scripts/deploy.sh first-run"
 echo "================================================"

@@ -5,7 +5,7 @@
 # =============================================================================
 set -euo pipefail
 
-APP_DIR="/opt/leasing-platform"
+APP_DIR="/home/leasing-platform"
 REPO_URL="https://github.com/hungnguyen9xx/Leasing.git"
 BRANCH="main"
 ACTION="${1:-update}"
