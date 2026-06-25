@@ -329,6 +329,80 @@ function CreateEditUnitDialog({
   );
 }
 
+// ─── Create / Edit Floor Dialog ───────────────────────────────────────────────
+
+function CreateEditFloorDialog({
+  open, floor, mallId, onClose,
+}: {
+  open: boolean; floor?: any; mallId: string; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const isEdit = !!floor;
+  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+    defaultValues: { name: '', level: '', sortOrder: '0' },
+  });
+
+  useEffect(() => {
+    if (open) {
+      reset(floor
+        ? { name: floor.name ?? '', level: floor.level ?? '', sortOrder: String(floor.sortOrder ?? 0) }
+        : { name: '', level: '', sortOrder: '0' });
+    }
+  }, [open, floor]);
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => {
+      const payload = { name: data.name, level: data.level, sortOrder: Number(data.sortOrder) || 0 };
+      return isEdit ? spacesApi.updateFloor(floor.id, payload) : spacesApi.createFloor({ ...payload, mallId });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['floors'] });
+      toast({ title: isEdit ? 'Đã cập nhật tầng' : 'Đã tạo tầng mới' });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? `Sửa tầng: ${floor.name}` : 'Thêm tầng mới'}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Tên tầng *</label>
+            <Input
+              {...register('name', { required: true })}
+              placeholder="Ground Floor"
+              className={errors.name ? 'border-red-400' : ''}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Mã tầng (level) *</label>
+            <Input
+              {...register('level', { required: true })}
+              placeholder="GF"
+              className={errors.level ? 'border-red-400' : ''}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Thứ tự hiển thị</label>
+            <Input {...register('sortOrder')} type="number" placeholder="0" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo tầng'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Unit Detail Sheet ────────────────────────────────────────────────────────
 
 // ─── Create Booking Dialog ────────────────────────────────────────────────────
@@ -2218,6 +2292,11 @@ export default function SpacesPage() {
   const [editingUnit, setEditingUnit] = useState<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [deletingUnit, setDeletingUnit] = useState<any>(null);
+
+  // Floor management
+  const [floorDialogOpen, setFloorDialogOpen] = useState(false);
+  const [editingFloor, setEditingFloor] = useState<any>(null);
+  const [deletingFloor, setDeletingFloor] = useState<any>(null);
   
   // Bulk selection
   const [selectionMode, setSelectionMode] = useState(false);
@@ -2277,6 +2356,17 @@ export default function SpacesPage() {
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       toast({ title: 'Đã xóa mặt bằng' });
       setDeletingUnit(null);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
+  });
+
+  const deleteFloorMutation = useMutation({
+    mutationFn: (id: string) => spacesApi.deleteFloor(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ['floors'] });
+      toast({ title: 'Đã xóa tầng' });
+      setDeletingFloor(null);
+      setFloorFilter((prev) => (prev === id ? '' : prev));
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
   });
@@ -2437,7 +2527,7 @@ export default function SpacesPage() {
       )}
 
       {/* Floor tabs */}
-      {floors.length > 0 && (
+      {(floors.length > 0 || (isAdmin && selectedMallId)) && (
         <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
           <Layers size={14} className="text-gray-400 shrink-0" />
           <button
@@ -2448,22 +2538,50 @@ export default function SpacesPage() {
             Tất cả tầng
           </button>
           {floors.map((f: any) => (
-            <button
-              key={f.id}
-              onClick={() => setFloorFilter(floorFilter === f.id ? '' : f.id)}
-              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-                ${floorFilter === f.id
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-            >
-              {f.name}
-              {f._count?.units > 0 && (
-                <span className={`ml-1.5 ${floorFilter === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
-                  {f._count.units}
-                </span>
+            <div key={f.id} className="group relative shrink-0">
+              <button
+                onClick={() => setFloorFilter(floorFilter === f.id ? '' : f.id)}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
+                  ${floorFilter === f.id
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}
+                  ${isAdmin ? 'pr-8' : ''}`}
+              >
+                {f.name}
+                {f._count?.units > 0 && (
+                  <span className={`ml-1.5 ${floorFilter === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
+                    {f._count.units}
+                  </span>
+                )}
+              </button>
+              {isAdmin && (
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingFloor(f); setFloorDialogOpen(true); }}
+                    className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
+                    title="Sửa tầng"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeletingFloor(f); }}
+                    className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
+                    title="Xóa tầng"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
               )}
-            </button>
+            </div>
           ))}
+          {isAdmin && selectedMallId && (
+            <button
+              onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
+              className="shrink-0 text-xs px-2.5 py-1.5 rounded-full font-medium border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 hover:border-gray-400 flex items-center gap-1 whitespace-nowrap"
+            >
+              <Plus size={12} /> Thêm tầng
+            </button>
+          )}
         </div>
       )}
 
@@ -2652,6 +2770,11 @@ export default function SpacesPage() {
           onUnitClick={setSelectedUnit}
           selectedUnitId={selectedUnit?.id}
           slotSummaries={slotSummaries}
+          allFloors={floors}
+          isAdmin={isAdmin}
+          onCreateFloor={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
+          onEditFloor={(f: any) => { setEditingFloor(f); setFloorDialogOpen(true); }}
+          onDeleteFloor={(f: any) => setDeletingFloor(f)}
         />
       ) : view === 'map' ? (
         <div className="space-y-3">
@@ -2793,6 +2916,24 @@ export default function SpacesPage() {
         onConfirm={() => deleteMutation.mutate(deletingUnit.id)}
         onCancel={() => setDeletingUnit(null)}
         loading={deleteMutation.isPending}
+      />
+
+      {/* Create/Edit floor dialog */}
+      <CreateEditFloorDialog
+        open={floorDialogOpen}
+        floor={editingFloor}
+        mallId={selectedMallId ?? ''}
+        onClose={() => { setFloorDialogOpen(false); setEditingFloor(null); }}
+      />
+
+      {/* Delete floor confirm */}
+      <ConfirmDialog
+        open={!!deletingFloor}
+        title={`Xóa tầng ${deletingFloor?.name}?`}
+        description={`Thao tác này sẽ ẩn tầng "${deletingFloor?.name}" khỏi hệ thống. Các mặt bằng thuộc tầng này sẽ không bị xóa.`}
+        onConfirm={() => deleteFloorMutation.mutate(deletingFloor.id)}
+        onCancel={() => setDeletingFloor(null)}
+        loading={deleteFloorMutation.isPending}
       />
     </div>
   );

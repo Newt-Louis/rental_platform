@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
+import { Pencil, Trash2, Plus } from 'lucide-react';
 
 interface FloorMeta {
+  id?: string;
   level: string;
   name: string;
   sortOrder: number;
@@ -25,10 +27,21 @@ interface FloorPlanProps {
   onUnitClick: (unit: Unit) => void;
   selectedUnitId?: string;
   slotSummaries?: Record<string, UnitSlotSummary>;
+  allFloors?: FloorMeta[];
+  isAdmin?: boolean;
+  onCreateFloor?: () => void;
+  onEditFloor?: (floor: FloorMeta) => void;
+  onDeleteFloor?: (floor: FloorMeta) => void;
 }
 
-export function FloorPlan({ units, onUnitClick, selectedUnitId, slotSummaries = {} }: FloorPlanProps) {
+export function FloorPlan({
+  units, onUnitClick, selectedUnitId, slotSummaries = {},
+  allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor,
+}: FloorPlanProps) {
   const floors = useMemo<FloorMeta[]>(() => {
+    if (allFloors && allFloors.length > 0) {
+      return [...allFloors].sort((a, b) => a.sortOrder - b.sortOrder);
+    }
     const seen = new Map<string, FloorMeta>();
     units.forEach(u => {
       if (u.floor && !seen.has(u.floor.level)) {
@@ -40,7 +53,7 @@ export function FloorPlan({ units, onUnitClick, selectedUnitId, slotSummaries = 
       }
     });
     return Array.from(seen.values()).sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [units]);
+  }, [units, allFloors]);
 
   const [activeFloor, setActiveFloor] = useState<string>(() => floors[0]?.level ?? 'GF');
 
@@ -78,25 +91,57 @@ export function FloorPlan({ units, onUnitClick, selectedUnitId, slotSummaries = 
   return (
     <div className="space-y-4">
       {/* Floor tabs */}
-      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
         {floors.map(f => {
           const count = units.filter(u => u.floor?.level === f.level).length;
           return (
-            <button
-              key={f.level}
-              onClick={() => setActiveFloor(f.level)}
-              className={cn(
-                'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-                activeFloor === f.level
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800',
+            <div key={f.level} className="group relative">
+              <button
+                onClick={() => setActiveFloor(f.level)}
+                className={cn(
+                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                  isAdmin && (onEditFloor || onDeleteFloor) ? 'pr-8' : '',
+                  activeFloor === f.level
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800',
+                )}
+              >
+                {f.level}
+                <span className="ml-1 text-xs opacity-50">({count})</span>
+              </button>
+              {isAdmin && f.id && (onEditFloor || onDeleteFloor) && (
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
+                  {onEditFloor && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onEditFloor(f); }}
+                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
+                      title="Sửa tầng"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                  {onDeleteFloor && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDeleteFloor(f); }}
+                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
+                      title="Xóa tầng"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
+                </div>
               )}
-            >
-              {f.level}
-              <span className="ml-1 text-xs opacity-50">({count})</span>
-            </button>
+            </div>
           );
         })}
+        {isAdmin && onCreateFloor && (
+          <button
+            onClick={onCreateFloor}
+            className="px-3 py-1.5 text-xs font-medium rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-white hover:border-gray-400 flex items-center gap-1"
+          >
+            <Plus size={12} /> Thêm tầng
+          </button>
+        )}
       </div>
 
       {/* Stats row */}

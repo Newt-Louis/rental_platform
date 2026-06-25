@@ -757,6 +757,13 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
   const [showEditFloor, setShowEditFloor] = useState(false);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
   const { register, handleSubmit, reset } = useForm();
+  const editFloorForm = useForm();
+
+  useEffect(() => {
+    if (showEditFloor) {
+      editFloorForm.reset({ name: floor.name, level: floor.level, sortOrder: floor.sortOrder });
+    }
+  }, [showEditFloor, floor.id]);
 
   const floorZones = zones.filter((z) => z.floor?.id === floor.id);
 
@@ -777,8 +784,9 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
   });
 
   const updateFloorMutation = useMutation({
-    mutationFn: (d: any) => spacesApi.updateFloor(floor.id, d),
+    mutationFn: (d: any) => spacesApi.updateFloor(floor.id, { ...d, sortOrder: Number(d.sortOrder) || 0 }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['floors', mallId] }); toast({ title: 'Đã cập nhật tầng' }); setShowEditFloor(false); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật tầng', variant: 'destructive' }),
   });
 
   const deleteFloorMutation = useMutation({
@@ -847,10 +855,10 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
         <Dialog open onOpenChange={() => setShowEditFloor(false)}>
           <DialogContent className="max-w-sm">
             <DialogHeader><DialogTitle>Chỉnh sửa tầng</DialogTitle></DialogHeader>
-            <form onSubmit={handleSubmit((d) => updateFloorMutation.mutate(d))} className="space-y-3">
-              <div><Label>Tên tầng</Label><Input {...register('name')} defaultValue={floor.name} className="mt-1" /></div>
-              <div><Label>Ký hiệu tầng</Label><Input {...register('level')} defaultValue={floor.level} placeholder="GF / L1 / B1" className="mt-1" /></div>
-              <div><Label>Thứ tự sắp xếp</Label><Input {...register('sortOrder')} type="number" defaultValue={floor.sortOrder} className="mt-1" /></div>
+            <form onSubmit={editFloorForm.handleSubmit((d) => updateFloorMutation.mutate(d))} className="space-y-3">
+              <div><Label>Tên tầng</Label><Input {...editFloorForm.register('name')} className="mt-1" /></div>
+              <div><Label>Ký hiệu tầng</Label><Input {...editFloorForm.register('level')} placeholder="GF / L1 / B1" className="mt-1" /></div>
+              <div><Label>Thứ tự sắp xếp</Label><Input {...editFloorForm.register('sortOrder')} type="number" className="mt-1" /></div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setShowEditFloor(false)}>Hủy</Button>
                 <Button type="submit" disabled={updateFloorMutation.isPending}>Lưu</Button>

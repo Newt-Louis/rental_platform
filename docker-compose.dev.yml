@@ -5,6 +5,9 @@ services:
   postgres:
     ports:
       - "5432:5432"
+    volumes:
+      - ./docker/postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
 
   redis:
     ports:
