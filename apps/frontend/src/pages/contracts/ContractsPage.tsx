@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { contractsApi } from '@/api';
+import { contractsApi, terminationApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
@@ -14,7 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
-  CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle,
+  CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut,
 } from 'lucide-react';
 import type { Contract } from '@/types';
 
@@ -27,6 +28,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   ACTIVE:            { label: 'Hiệu lực',        color: 'bg-green-100 text-green-700' },
   EXPIRING:          { label: 'Sắp hết hạn',    color: 'bg-orange-100 text-orange-700' },
   EXPIRED:           { label: 'Hết hạn',         color: 'bg-red-100 text-red-700' },
+  TERMINATING:       { label: 'Đang chấm dứt',   color: 'bg-orange-100 text-orange-700' },
   TERMINATED:        { label: 'Đã chấm dứt',    color: 'bg-gray-200 text-gray-600' },
 };
 
@@ -77,7 +79,10 @@ function SignFileDialog({ contractId, file, open, onClose }: {
         </DialogHeader>
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            Hệ thống sẽ tạo mã hash SHA-256 từ tài liệu + thông tin người ký + thời gian, tạo mã QR xác thực độc lập.
+            Hệ thống sẽ tạo mã hash SHA-256 từ tài liệu + thông tin người ký + thời gian, tạo mã xác thực độc lập.
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+            <strong>Lưu ý:</strong> đây là xác thực toàn vẹn nội bộ (hash), không phải chữ ký số có giá trị pháp lý theo Nghị định 130/2018. Dùng cho biên bản/phụ lục nội bộ; hợp đồng cần giá trị pháp lý cao nên ký qua nhà cung cấp chữ ký số hợp pháp.
           </div>
           <div>
             <label className="text-sm font-medium mb-1 block">Tên người ký *</label>
@@ -290,8 +295,10 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-gray-800 truncate">{f.fileName}</span>
                     {f.signedAt && (
-                      <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
-                        <ShieldCheck size={10} /> Đã ký
+                      <span
+                        title="Xác thực toàn vẹn nội bộ (hash) — không phải chữ ký số có giá trị pháp lý"
+                        className="flex items-center gap-1 text-xs bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
+                        <ShieldCheck size={10} /> Đã ký (nội bộ)
                       </span>
                     )}
                   </div>
@@ -409,7 +416,53 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     enabled: !!contractId,
   });
 
+  const { data: termination } = useQuery({
+    queryKey: ['contract-termination', contractId],
+    queryFn: () => terminationApi.get(contractId!),
+    enabled: !!contractId,
+  });
+
+  const [termForm, setTermForm] = useState({ reason: '', effectiveDate: '', noticePeriodDays: '60', depositRefund: '', penaltyAmount: '' });
+
   const detail: any = c?.data ?? c;
+  const term: any = termination?.data ?? termination;
+
+  const invalidateTermination = () => {
+    qc.invalidateQueries({ queryKey: ['contract-termination', contractId] });
+    qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
+    qc.invalidateQueries({ queryKey: ['contracts'] });
+  };
+
+  const initiateTerminationMutation = useMutation({
+    mutationFn: () => terminationApi.initiate(contractId!, {
+      initiatedBy: 'THISO',
+      reason: termForm.reason,
+      effectiveDate: termForm.effectiveDate,
+      noticePeriodDays: +termForm.noticePeriodDays || 60,
+      depositRefund: termForm.depositRefund ? +termForm.depositRefund : undefined,
+      penaltyAmount: termForm.penaltyAmount ? +termForm.penaltyAmount : undefined,
+    }),
+    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã khởi tạo quy trình chấm dứt hợp đồng' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  const updateChecklistMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => terminationApi.update(contractId!, data),
+    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã cập nhật' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  const completeTerminationMutation = useMutation({
+    mutationFn: () => terminationApi.complete(contractId!),
+    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã hoàn tất chấm dứt hợp đồng — mặt bằng chuyển về trống' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  const cancelTerminationMutation = useMutation({
+    mutationFn: () => terminationApi.cancel(contractId!),
+    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã hủy quy trình chấm dứt' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
 
   const renderMutation = useMutation({
     mutationFn: () => contractsApi.renderTemplate(contractId!, templateId),
@@ -456,6 +509,12 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <TabsTrigger value="events">Timeline</TabsTrigger>
               <TabsTrigger value="amendments">Phụ lục</TabsTrigger>
               <TabsTrigger value="template">Template</TabsTrigger>
+              <TabsTrigger value="termination" className="gap-1.5">
+                <LogOut size={13} /> Chấm dứt
+                {term && term.status !== 'CANCELLED' && (
+                  <span className="bg-orange-100 text-orange-700 text-xs px-1.5 rounded-full">•</span>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             {/* ── Tab: Chi tiết ── */}
@@ -587,6 +646,104 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <Button size="sm" disabled={!templateId} onClick={() => renderMutation.mutate()}>
                 Render hợp đồng
               </Button>
+            </TabsContent>
+
+            {/* ── Tab: Chấm dứt hợp đồng ── */}
+            <TabsContent value="termination" className="space-y-4">
+              {!term || term.status === 'CANCELLED' ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.</p>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Lý do chấm dứt *</label>
+                    <Textarea rows={2} value={termForm.reason} onChange={(e) => setTermForm((f) => ({ ...f, reason: e.target.value }))} placeholder="VD: Khách thuê ngừng kinh doanh, vi phạm hợp đồng..." />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Ngày hiệu lực *</label>
+                      <Input type="date" value={termForm.effectiveDate} onChange={(e) => setTermForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Số ngày báo trước</label>
+                      <Input type="number" value={termForm.noticePeriodDays} onChange={(e) => setTermForm((f) => ({ ...f, noticePeriodDays: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Hoàn cọc (nếu có)</label>
+                      <Input type="number" value={termForm.depositRefund} onChange={(e) => setTermForm((f) => ({ ...f, depositRefund: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Phạt vi phạm (nếu có)</label>
+                      <Input type="number" value={termForm.penaltyAmount} onChange={(e) => setTermForm((f) => ({ ...f, penaltyAmount: e.target.value }))} />
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full gap-2 bg-red-600 hover:bg-red-700 text-white"
+                    disabled={!termForm.reason || !termForm.effectiveDate || initiateTerminationMutation.isPending}
+                    onClick={() => initiateTerminationMutation.mutate()}
+                  >
+                    <LogOut size={14} /> Khởi tạo chấm dứt hợp đồng
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={`border-0 ${term.status === 'COMPLETED' ? 'bg-gray-200 text-gray-600' : 'bg-orange-100 text-orange-700'}`}>
+                      {term.status === 'INITIATED' ? 'Đã khởi tạo' : term.status === 'IN_PROGRESS' ? 'Đang xử lý' : term.status === 'COMPLETED' ? 'Đã hoàn tất' : term.status}
+                    </Badge>
+                    <span className="text-xs text-gray-500">Hiệu lực từ {fmtDate(term.effectiveDate)}</span>
+                  </div>
+                  <SheetSection label="THÔNG TIN CHẤM DỨT">
+                    <SheetRow label="Lý do" value={term.reason} icon={AlertTriangle} />
+                    <SheetRow label="Khởi tạo bởi" value={term.initiatedBy === 'THISO' ? 'THISO (BQL)' : 'Khách thuê'} icon={User} />
+                    <SheetRow label="Báo trước" value={`${term.noticePeriodDays} ngày`} icon={Clock} />
+                    {term.depositRefund != null && <SheetRow label="Hoàn cọc" value={term.depositRefund.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                    {term.penaltyAmount != null && <SheetRow label="Phạt vi phạm" value={term.penaltyAmount.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                  </SheetSection>
+
+                  {term.status !== 'COMPLETED' && (
+                    <>
+                      <div>
+                        <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 uppercase">Checklist bàn giao</div>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={term.accessCardReturn} onChange={(e) => updateChecklistMutation.mutate({ accessCardReturn: e.target.checked })} />
+                            Đã thu hồi thẻ ra vào
+                          </label>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={term.signageRemoved} onChange={(e) => updateChecklistMutation.mutate({ signageRemoved: e.target.checked })} />
+                            Đã tháo dỡ biển hiệu
+                          </label>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" checked={term.keysReturned} onChange={(e) => updateChecklistMutation.mutate({ keysReturned: e.target.checked })} />
+                            Đã bàn giao chìa khóa
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 gap-2 bg-red-600 hover:bg-red-700 text-white"
+                          disabled={!term.accessCardReturn || !term.signageRemoved || !term.keysReturned || completeTerminationMutation.isPending}
+                          onClick={() => completeTerminationMutation.mutate()}
+                        >
+                          <CheckCircle2 size={14} /> Hoàn tất chấm dứt
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="text-gray-500"
+                          disabled={cancelTerminationMutation.isPending}
+                          onClick={() => cancelTerminationMutation.mutate()}
+                        >
+                          Hủy quy trình
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  {term.status === 'COMPLETED' && (
+                    <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+                      <CheckCircle2 size={16} /> Hoàn tất ngày {fmtDate(term.completedAt)} — mặt bằng đã chuyển về trống
+                    </div>
+                  )}
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>

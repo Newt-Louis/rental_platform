@@ -108,12 +108,14 @@ export class CrmController {
   // ── Follow-ups ───────────────────────────────────────────────────────────────
 
   @Get('follow-ups')
-  @ApiOperation({ summary: 'List follow-ups for current user' })
+  @ApiOperation({ summary: 'List follow-ups — for current user by default, or all on a lead when leadId is given' })
+  @ApiQuery({ name: 'leadId', required: false })
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'isDone', required: false })
   @ApiQuery({ name: 'daysAhead', required: false })
   listFollowUps(@Query() query: any, @CurrentUser() user: any) {
-    return this.crmService.listFollowUps({ ...query, assignedToId: query.assignedToId ?? user.id });
+    const assignedToId = query.assignedToId ?? (query.leadId ? undefined : user.id);
+    return this.crmService.listFollowUps({ ...query, assignedToId });
   }
 
   @Post('follow-ups')

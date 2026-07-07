@@ -1,20 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { FitoutStatus, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
-
-const STAGE_ORDER: FitoutStatus[] = [
-  'CONTRACT_SIGNED',
-  'SUBMIT_DESIGN',
-  'DESIGN_REVIEW',
-  'FIRE_SAFETY_REVIEW',
-  'CONSTRUCTION_PERMIT',
-  'FITOUT_IN_PROGRESS',
-  'INSPECTION',
-  'APPROVED_TO_OPEN',
-  'OPENED',
-];
+import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class FitoutSlaService {
@@ -23,6 +12,7 @@ export class FitoutSlaService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private emailService: EmailService,
   ) {}
 
   async listPolicies() {
@@ -33,7 +23,7 @@ export class FitoutSlaService {
   }
 
   async upsertPolicy(data: {
-    stage: FitoutStatus;
+    stage: string;
     targetDays: number;
     warningDays: number;
     escalateToRole?: Role;
@@ -45,7 +35,7 @@ export class FitoutSlaService {
     });
   }
 
-  async recordMilestone(projectId: string, stage: FitoutStatus) {
+  async recordMilestone(projectId: string, stage: string) {
     const policy = await this.prisma.fitoutSlaPolicy.findUnique({
       where: { stage },
     });
@@ -73,7 +63,7 @@ export class FitoutSlaService {
     });
   }
 
-  async completeMilestone(projectId: string, stage: FitoutStatus) {
+  async completeMilestone(projectId: string, stage: string) {
     const milestone = await this.prisma.fitoutMilestone.findUnique({
       where: { projectId_stage: { projectId, stage } },
     });
@@ -101,6 +91,7 @@ export class FitoutSlaService {
         project: {
           include: {
             tenant: true,
+            unit: { select: { code: true } },
             operationManager: true,
           },
         },
@@ -116,16 +107,36 @@ export class FitoutSlaService {
       const policy = await this.prisma.fitoutSlaPolicy.findUnique({
         where: { stage: milestone.stage },
       });
+      const stageConfig = await this.prisma.fitoutStageConfig.findUnique({
+        where: { code: milestone.stage },
+      });
+      const stageName = stageConfig?.name ?? milestone.stage;
+      const targetDateStr = milestone.targetDate?.toLocaleDateString('vi-VN') ?? '—';
 
-      if (milestone.project.operationManagerId) {
+      if (milestone.project.operationManagerId && milestone.project.operationManager) {
         await this.notifications.create({
           userId: milestone.project.operationManagerId,
           title: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
-          body: `Stage ${milestone.stage} is overdue. Target was ${milestone.targetDate?.toLocaleDateString('vi-VN')}`,
+          body: `Stage ${stageName} is overdue. Target was ${targetDateStr}`,
           type: 'FITOUT_SLA_BREACH',
           entityType: 'FITOUT',
           entityId: milestone.projectId,
         });
+
+        if (milestone.project.operationManager.email) {
+          await this.emailService.sendMail({
+            to: milestone.project.operationManager.email,
+            subject: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
+            html: this.emailService.fitoutSlaHtml({
+              managerName: milestone.project.operationManager.fullName,
+              tenantName: milestone.project.tenant.brandName,
+              unitCode: milestone.project.unit.code,
+              stageName,
+              targetDate: targetDateStr,
+              isEscalation: false,
+            }),
+          });
+        }
       }
 
       if (policy?.escalateToRole) {
@@ -136,11 +147,26 @@ export class FitoutSlaService {
           await this.notifications.create({
             userId: mgr.id,
             title: `🚨 Fitout escalation — ${milestone.project.tenant.brandName}`,
-            body: `Stage ${milestone.stage} escalated. Project has exceeded SLA.`,
+            body: `Stage ${stageName} escalated. Project has exceeded SLA.`,
             type: 'FITOUT_ESCALATION',
             entityType: 'FITOUT',
             entityId: milestone.projectId,
           });
+
+          if (mgr.email) {
+            await this.emailService.sendMail({
+              to: mgr.email,
+              subject: `🚨 Fitout escalation — ${milestone.project.tenant.brandName}`,
+              html: this.emailService.fitoutSlaHtml({
+                managerName: mgr.fullName,
+                tenantName: milestone.project.tenant.brandName,
+                unitCode: milestone.project.unit.code,
+                stageName,
+                targetDate: targetDateStr,
+                isEscalation: true,
+              }),
+            });
+          }
         }
       }
     }
@@ -156,8 +182,15 @@ export class FitoutSlaService {
   }
 
   async getFitoutProgress() {
+    const stages = await this.prisma.fitoutStageConfig.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' },
+    });
+    const stageCodes = stages.map((s) => s.code);
+    const lastStageCode = stageCodes[stageCodes.length - 1];
+
     const projects = await this.prisma.fitoutProject.findMany({
-      where: { status: { not: 'OPENED' } },
+      where: { status: { not: lastStageCode } },
       include: {
         tenant: { select: { brandName: true } },
         unit: { select: { code: true } },
@@ -166,8 +199,10 @@ export class FitoutSlaService {
     });
 
     return projects.map((p) => {
-      const currentIdx = STAGE_ORDER.indexOf(p.status);
-      const progress = Math.round((currentIdx / (STAGE_ORDER.length - 1)) * 100);
+      const currentIdx = stageCodes.indexOf(p.status);
+      const progress = stageCodes.length > 1 && currentIdx >= 0
+        ? Math.round((currentIdx / (stageCodes.length - 1)) * 100)
+        : 0;
       const overdueMilestones = p.milestones.filter((m) => m.isOverdue);
 
       return {

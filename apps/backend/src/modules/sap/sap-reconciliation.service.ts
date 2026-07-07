@@ -37,6 +37,7 @@ export class SapReconciliationService {
 
     let matched = 0;
     let mismatched = 0;
+    let needsReview = 0;
 
     for (const log of logs) {
       const idempotencyKey =
@@ -57,8 +58,14 @@ export class SapReconciliationService {
       let status = 'PENDING';
       try {
         const response = log.response ? JSON.parse(log.response) : null;
-        sapAmount = response?.amount ?? response?.data?.amount ?? ourAmount;
-        status = sapAmount !== null && Math.abs(sapAmount - ourAmount) < 1 ? 'MATCHED' : 'MISMATCH';
+        sapAmount = response?.amount ?? response?.data?.amount ?? null;
+        if (sapAmount === null) {
+          // SAP không trả về amount — không thể tự động khớp, phải đưa vào diện cần soát thủ công thay vì
+          // ngầm định coi là khớp với số của chính mình.
+          status = 'NEEDS_REVIEW';
+        } else {
+          status = Math.abs(sapAmount - ourAmount) < 1 ? 'MATCHED' : 'MISMATCH';
+        }
       } catch {
         status = ourAmount > 0 ? 'MISMATCH' : 'PENDING';
       }
@@ -78,9 +85,10 @@ export class SapReconciliationService {
 
       if (status === 'MATCHED') matched++;
       else if (status === 'MISMATCH') mismatched++;
+      else if (status === 'NEEDS_REVIEW') needsReview++;
     }
 
-    return { matched, mismatched, processed: matched + mismatched };
+    return { matched, mismatched, needsReview, processed: matched + mismatched + needsReview };
   }
 
   ensureIdempotencyKey(entityType: string, entityId: string, action: string) {

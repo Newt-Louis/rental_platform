@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fitoutApi, usersApi } from '@/api';
+import { fitoutApi, fitoutSubmittalApi, fitoutIssueApi, approvalsApi, usersApi } from '@/api';
+import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,44 +14,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { MallMapViewer } from '@/components/MallMapViewer';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar,
-  ClipboardList, ArrowRight, FileText, AlertTriangle, Clock, Upload,
-  Plus, Trash2, ShieldAlert,
+  ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
+  Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3,
 } from 'lucide-react';
 
-const STATUS_STEPS = [
-  { key: 'CONTRACT_SIGNED',     label: 'Ký HĐ',       step: 1 },
-  { key: 'SUBMIT_DESIGN',       label: 'Nộp TK',       step: 2 },
-  { key: 'DESIGN_REVIEW',       label: 'Duyệt TK',     step: 3 },
-  { key: 'FIRE_SAFETY_REVIEW',  label: 'PCCC',          step: 4 },
-  { key: 'CONSTRUCTION_PERMIT', label: 'Giấy phép',     step: 5 },
-  { key: 'FITOUT_IN_PROGRESS',  label: 'Thi công',      step: 6 },
-  { key: 'INSPECTION',          label: 'Kiểm tra',      step: 7 },
-  { key: 'APPROVED_TO_OPEN',    label: 'Chấp thuận',    step: 8 },
-  { key: 'OPENED',              label: 'Khai trương',   step: 9 },
-];
-
-const STATUS_COLOR: Record<string, string> = {
-  CONTRACT_SIGNED:     'bg-gray-100 text-gray-700',
-  SUBMIT_DESIGN:       'bg-blue-100 text-gray-700',
-  DESIGN_REVIEW:       'bg-gray-100 text-gray-700',
-  FIRE_SAFETY_REVIEW:  'bg-red-100 text-red-700',
-  CONSTRUCTION_PERMIT: 'bg-yellow-100 text-yellow-700',
-  FITOUT_IN_PROGRESS:  'bg-orange-100 text-orange-700',
-  INSPECTION:          'bg-purple-100 text-purple-700',
-  APPROVED_TO_OPEN:    'bg-teal-100 text-teal-700',
-  OPENED:              'bg-green-100 text-green-700',
-};
-
-function getProgress(status: string) {
-  const s = STATUS_STEPS.find((x) => x.key === status);
-  return s ? ((s.step - 1) / (STATUS_STEPS.length - 1)) * 100 : 0;
+interface StageConfig {
+  code: string;
+  name: string;
+  order: number;
+  colorHex: string;
 }
 
-function getNextStep(status: string) {
-  const idx = STATUS_STEPS.findIndex((x) => x.key === status);
-  return idx >= 0 && idx < STATUS_STEPS.length - 1 ? STATUS_STEPS[idx + 1] : null;
+const ROLES_ALLOWED_TO_OVERRIDE_GATE = ['ADMIN', 'MALL_DIRECTOR'];
+
+function useStageConfigs() {
+  const { data = [] } = useQuery({
+    queryKey: ['fitout-stage-configs'],
+    queryFn: () => fitoutApi.listStageConfigs(),
+    staleTime: 5 * 60 * 1000,
+  });
+  return data as StageConfig[];
+}
+
+function getProgress(stages: StageConfig[], status: string) {
+  const idx = stages.findIndex((x) => x.code === status);
+  return idx >= 0 && stages.length > 1 ? (idx / (stages.length - 1)) * 100 : 0;
+}
+
+function getNextStep(stages: StageConfig[], status: string) {
+  const idx = stages.findIndex((x) => x.code === status);
+  return idx >= 0 && idx < stages.length - 1 ? stages[idx + 1] : null;
+}
+
+function stageBadgeStyle(colorHex?: string) {
+  const hex = colorHex ?? '#6b7280';
+  return { backgroundColor: `${hex}22`, color: hex };
 }
 
 function fmtDate(d?: string | null) {
@@ -60,9 +62,14 @@ function fmtDate(d?: string | null) {
 function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const stages = useStageConfigs();
   const [newCkTitle, setNewCkTitle] = useState('');
   const [gateWarning, setGateWarning] = useState<{ missing: { documentType: string; description?: string }[] } | null>(null);
   const [pendingAdvanceStatus, setPendingAdvanceStatus] = useState<string | null>(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const canOverrideGate = !!user?.role && ROLES_ALLOWED_TO_OVERRIDE_GATE.includes(user.role);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['fitout-detail', projectId],
@@ -76,9 +83,27 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     enabled: !!projectId,
   });
 
-  const { data: documents = [] } = useQuery({
-    queryKey: ['fitout-documents', projectId],
-    queryFn: () => fitoutApi.listDocuments(projectId!),
+  const { data: submittals = [] } = useQuery({
+    queryKey: ['fitout-submittals', projectId],
+    queryFn: () => fitoutSubmittalApi.list(projectId!),
+    enabled: !!projectId,
+  });
+
+  const { data: formTypes = [] } = useQuery({
+    queryKey: ['fitout-form-types'],
+    queryFn: () => fitoutApi.listFormTypes(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: issues = [] } = useQuery({
+    queryKey: ['fitout-issues', projectId],
+    queryFn: () => fitoutIssueApi.list(projectId!),
+    enabled: !!projectId,
+  });
+
+  const { data: dmap } = useQuery({
+    queryKey: ['fitout-dmap', projectId],
+    queryFn: () => fitoutIssueApi.getDMap(projectId!),
     enabled: !!projectId,
   });
 
@@ -136,12 +161,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   });
 
   const advanceMutation = useMutation({
-    mutationFn: (status: string) => fitoutApi.advanceStatus(projectId!, status),
+    mutationFn: ({ status, override, overrideReason: reason }: { status: string; override?: boolean; overrideReason?: string }) =>
+      fitoutApi.advanceStatus(projectId!, status, { override, overrideReason: reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fitouts'] });
       qc.invalidateQueries({ queryKey: ['fitout-detail', projectId] });
+      qc.invalidateQueries({ queryKey: ['fitout-milestones', projectId] });
       setGateWarning(null);
       setPendingAdvanceStatus(null);
+      setOverrideReason('');
       toast({ title: 'Đã cập nhật trạng thái' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
@@ -156,9 +184,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
         return;
       }
     } catch {
-      // nếu không có gate config → cho phép advance
+      toast({ title: 'Không thể kiểm tra điều kiện chuyển giai đoạn — vui lòng thử lại', variant: 'destructive' });
+      return;
     }
-    advanceMutation.mutate(status);
+    advanceMutation.mutate({ status });
   };
 
   const checkMutation = useMutation({
@@ -194,18 +223,70 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onError: () => toast({ title: 'Lỗi phân công', variant: 'destructive' }),
   });
 
-  const reviewDocMutation = useMutation({
-    mutationFn: ({ docId, decision, note }: { docId: string; decision: 'APPROVED' | 'REJECTED'; note?: string }) =>
-      fitoutApi.reviewDocument(projectId!, docId, decision, note),
+  const [newSubmittal, setNewSubmittal] = useState({ formTypeId: '', title: '' });
+
+  const invalidateSubmittals = () => {
+    qc.invalidateQueries({ queryKey: ['fitout-submittals', projectId] });
+    qc.invalidateQueries({ queryKey: ['fitout-detail', projectId] });
+  };
+
+  const createSubmittalMutation = useMutation({
+    mutationFn: () => fitoutSubmittalApi.create({ projectId: projectId!, formTypeId: newSubmittal.formTypeId, title: newSubmittal.title }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['fitout-documents', projectId] });
-      toast({ title: 'Đã cập nhật trạng thái tài liệu' });
+      invalidateSubmittals();
+      setNewSubmittal({ formTypeId: '', title: '' });
+      toast({ title: 'Đã nộp đệ trình' });
     },
-    onError: () => toast({ title: 'Lỗi cập nhật tài liệu', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi nộp đệ trình', variant: 'destructive' }),
+  });
+
+  const approveStepMutation = useMutation({
+    mutationFn: (stepId: string) => approvalsApi.approve(stepId),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã duyệt' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi duyệt', variant: 'destructive' }),
+  });
+
+  const rejectStepMutation = useMutation({
+    mutationFn: ({ stepId, comment }: { stepId: string; comment?: string }) => approvalsApi.reject(stepId, comment),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã từ chối' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi từ chối', variant: 'destructive' }),
+  });
+
+  const resubmitMutation = useMutation({
+    mutationFn: (id: string) => fitoutSubmittalApi.resubmit(id, {}),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã nộp lại' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi nộp lại', variant: 'destructive' }),
+  });
+
+  const publishSubmittalMutation = useMutation({
+    mutationFn: (id: string) => fitoutSubmittalApi.publish(id),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã publish' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi publish', variant: 'destructive' }),
+  });
+
+  const [newIssue, setNewIssue] = useState({ title: '', category: 'DEFECT', severity: 'MEDIUM' });
+
+  const invalidateIssues = () => qc.invalidateQueries({ queryKey: ['fitout-issues', projectId] });
+
+  const createIssueMutation = useMutation({
+    mutationFn: () => fitoutIssueApi.create({ projectId, unitId: p?.unit?.id, ...newIssue }),
+    onSuccess: () => {
+      invalidateIssues();
+      setNewIssue({ title: '', category: 'DEFECT', severity: 'MEDIUM' });
+      toast({ title: 'Đã tạo vấn đề' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo vấn đề', variant: 'destructive' }),
+  });
+
+  const transitionIssueMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => fitoutIssueApi.transition(id, status),
+    onSuccess: () => { invalidateIssues(); toast({ title: 'Đã cập nhật vấn đề' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
   });
 
   const p: any = project;
-  const nextStep = p ? getNextStep(p.status) : null;
+  const nextStep = p ? getNextStep(stages, p.status) : null;
+  const currentStage = p ? stages.find((s) => s.code === p.status) : undefined;
   const ckList: any[] = checklists as any[];
   const doneCount = ckList.filter((c) => c.isCompleted).length;
   const totalCount = ckList.length;
@@ -215,7 +296,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       open={!!projectId}
       onClose={onClose}
       title={p ? `${p.tenant?.brandName} — ${p.unit?.code}` : 'Đang tải...'}
-      subtitle={p ? STATUS_STEPS.find((s) => s.key === p.status)?.label : undefined}
+      subtitle={currentStage?.name}
     >
       {isLoading ? (
         <div className="px-6 pt-4 space-y-3">
@@ -227,27 +308,27 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           {/* Progress bar */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <Badge className={`${STATUS_COLOR[p.status]} border-0`}>
-                {STATUS_STEPS.find((s) => s.key === p.status)?.label}
+              <Badge className="border-0" style={stageBadgeStyle(currentStage?.colorHex)}>
+                {currentStage?.name ?? p.status}
               </Badge>
-              <span className="text-xs text-gray-500">{Math.round(getProgress(p.status))}% hoàn thành</span>
+              <span className="text-xs text-gray-500">{Math.round(getProgress(stages, p.status))}% hoàn thành</span>
             </div>
-            <Progress value={getProgress(p.status)} className="h-2.5" />
+            <Progress value={getProgress(stages, p.status)} className="h-2.5" />
           </div>
 
           {/* Mini pipeline */}
           <div className="flex items-center gap-0.5 overflow-x-auto pb-1">
-            {STATUS_STEPS.map((s) => {
-              const curStep = STATUS_STEPS.find((x) => x.key === p.status)?.step ?? 0;
-              const isActive = s.key === p.status;
-              const isDone = s.step < curStep;
+            {stages.map((s) => {
+              const curOrder = currentStage?.order ?? 0;
+              const isActive = s.code === p.status;
+              const isDone = s.order < curOrder;
               return (
                 <span
-                  key={s.key}
+                  key={s.code}
                   className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap
                     ${isDone ? 'bg-green-100 text-green-700' : isActive ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'}`}
                 >
-                  {s.label}
+                  {s.name}
                 </span>
               );
             })}
@@ -295,7 +376,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 
           {/* Gate Warning Dialog */}
           {gateWarning && (
-            <Dialog open={!!gateWarning} onOpenChange={() => { setGateWarning(null); setPendingAdvanceStatus(null); }}>
+            <Dialog open={!!gateWarning} onOpenChange={() => { setGateWarning(null); setPendingAdvanceStatus(null); setOverrideReason(''); }}>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 text-amber-600">
@@ -315,18 +396,28 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                       </div>
                     ))}
                   </div>
+                  {canOverrideGate && (
+                    <Input
+                      placeholder="Lý do bỏ qua (bắt buộc)..."
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      className="text-sm"
+                    />
+                  )}
                   <div className="flex gap-2 pt-2">
-                    <Button variant="outline" className="flex-1" onClick={() => { setGateWarning(null); setPendingAdvanceStatus(null); }}>
+                    <Button variant="outline" className="flex-1" onClick={() => { setGateWarning(null); setPendingAdvanceStatus(null); setOverrideReason(''); }}>
                       Quay lại upload tài liệu
                     </Button>
-                    <Button
-                      variant="destructive"
-                      className="flex-1 text-xs"
-                      onClick={() => { if (pendingAdvanceStatus) advanceMutation.mutate(pendingAdvanceStatus); }}
-                      disabled={advanceMutation.isPending}
-                    >
-                      Bỏ qua & Tiếp tục
-                    </Button>
+                    {canOverrideGate && (
+                      <Button
+                        variant="destructive"
+                        className="flex-1 text-xs"
+                        onClick={() => { if (pendingAdvanceStatus) advanceMutation.mutate({ status: pendingAdvanceStatus, override: true, overrideReason }); }}
+                        disabled={advanceMutation.isPending || !overrideReason.trim()}
+                      >
+                        Bỏ qua & Tiếp tục
+                      </Button>
+                    )}
                   </div>
                 </div>
               </DialogContent>
@@ -337,11 +428,11 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           {nextStep ? (
             <Button
               className="w-full gap-2"
-              onClick={() => handleAdvance(nextStep.key)}
+              onClick={() => handleAdvance(nextStep.code)}
               disabled={advanceMutation.isPending}
             >
               <ArrowRight size={16} />
-              Chuyển sang: <strong className="ml-1">{nextStep.label}</strong>
+              Chuyển sang: <strong className="ml-1">{nextStep.name}</strong>
             </Button>
           ) : (
             <div className="flex items-center justify-center gap-2 py-2 text-green-600 font-medium text-sm bg-green-50 rounded-lg">
@@ -350,144 +441,324 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
             </div>
           )}
 
-          {/* Checklist */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold tracking-wider text-gray-400">
-                CHECKLIST {totalCount > 0 && `(${doneCount}/${totalCount})`}
-              </div>
-              {totalCount > 0 && (
-                <span className="text-xs text-gray-400">{Math.round((doneCount / totalCount) * 100)}%</span>
-              )}
-            </div>
-            {totalCount > 0 && (
-              <Progress value={(doneCount / totalCount) * 100} className="h-1.5 mb-3" />
-            )}
-
-            {/* Add new checklist item */}
-            <div className="flex gap-2 mb-3">
-              <Input
-                placeholder="Thêm checklist item..."
-                value={newCkTitle}
-                onChange={(e) => setNewCkTitle(e.target.value)}
-                className="text-sm h-8"
-                onKeyDown={(e) => { if (e.key === 'Enter' && newCkTitle.trim()) createCkMutation.mutate(newCkTitle.trim()); }}
-              />
-              <Button
-                size="sm"
-                className="h-8 px-2 shrink-0"
-                onClick={() => { if (newCkTitle.trim()) createCkMutation.mutate(newCkTitle.trim()); }}
-                disabled={!newCkTitle.trim() || createCkMutation.isPending}
-              >
-                <Plus size={14} />
-              </Button>
-            </div>
-
-            {ckLoading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}
-              </div>
-            ) : ckList.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                Chưa có checklist items — thêm bên trên
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {ckList.map((item: any) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border transition-all group
-                      ${item.isCompleted
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-gray-50 border-gray-100 hover:bg-gray-50 hover:border-gray-200'}`}
-                  >
-                    <button
-                      className="mt-0.5 shrink-0"
-                      onClick={() => checkMutation.mutate({ checklistId: item.id, isCompleted: !item.isCompleted })}
-                      disabled={checkMutation.isPending}
-                    >
-                      {item.isCompleted
-                        ? <CheckCircle2 size={18} className="text-green-500" />
-                        : <Circle size={18} className="text-gray-300" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium leading-snug
-                        ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                        {item.title}
-                      </p>
-                      {item.description && (
-                        <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
-                      )}
-                      {item.isCompleted && item.completedAt && (
-                        <p className="text-xs text-green-500 mt-0.5">Hoàn thành: {fmtDate(item.completedAt)}</p>
-                      )}
-                    </div>
-                    <button
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
-                      onClick={(e) => { e.stopPropagation(); deleteCkMutation.mutate(item.id); }}
-                      disabled={deleteCkMutation.isPending}
-                    >
-                      <Trash2 size={13} className="text-red-400" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Links to dedicated Daily Report / Gantt pages */}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1 text-xs gap-1"
+              onClick={() => navigate(`/fitout/${projectId}/daily-report`)}>
+              <ClipboardList size={13} /> Nhật ký công trường
+            </Button>
+            <Button variant="outline" size="sm" className="flex-1 text-xs gap-1"
+              onClick={() => navigate(`/fitout/${projectId}/gantt`)}>
+              <Clock size={13} /> Tiến độ Gantt
+            </Button>
           </div>
 
-          {/* Tabs for Documents & Milestones */}
+          {/* Tabs for Checklist, Documents & Milestones */}
           <Tabs defaultValue="checklist" className="mt-4">
-            <TabsList className="w-full grid grid-cols-4">
+            <TabsList className="w-full grid grid-cols-5">
               <TabsTrigger value="checklist" className="text-xs">Checklist</TabsTrigger>
-              <TabsTrigger value="documents" className="text-xs">Tài liệu</TabsTrigger>
+              <TabsTrigger value="documents" className="text-xs">Submittals</TabsTrigger>
+              <TabsTrigger value="issues" className="text-xs">Vấn đề</TabsTrigger>
               <TabsTrigger value="milestones" className="text-xs">SLA</TabsTrigger>
               <TabsTrigger value="contractors" className="text-xs">Nhà thầu</TabsTrigger>
             </TabsList>
 
             <TabsContent value="checklist" className="mt-3">
-              {/* Checklist content already exists above - but we move it into the tab */}
-            </TabsContent>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold tracking-wider text-gray-400">
+                  CHECKLIST {totalCount > 0 && `(${doneCount}/${totalCount})`}
+                </div>
+                {totalCount > 0 && (
+                  <span className="text-xs text-gray-400">{Math.round((doneCount / totalCount) * 100)}%</span>
+                )}
+              </div>
+              {totalCount > 0 && (
+                <Progress value={(doneCount / totalCount) * 100} className="h-1.5 mb-3" />
+              )}
 
-            <TabsContent value="documents" className="mt-3">
-              <div className="space-y-2">
-                {(documents as any[]).length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                    Chưa có tài liệu nào được upload
-                  </p>
-                ) : (
-                  (documents as any[]).map((doc: any) => (
-                    <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <FileText size={16} className="text-gray-500" />
-                        <div>
-                          <p className="text-sm font-medium">{doc.fileName}</p>
-                          <p className="text-xs text-gray-400">{doc.documentType}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className={
-                          doc.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                          doc.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                          doc.status === 'SUBMITTED' ? 'bg-blue-100 text-gray-700' :
-                          'bg-gray-100 text-gray-700'
-                        }>
-                          {doc.status}
-                        </Badge>
-                        {doc.status === 'SUBMITTED' && (
-                          <>
-                            <Button size="sm" variant="outline" className="h-7 text-xs"
-                              onClick={() => reviewDocMutation.mutate({ docId: doc.id, decision: 'APPROVED' })}>
-                              Duyệt
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-7 text-xs text-red-500"
-                              onClick={() => reviewDocMutation.mutate({ docId: doc.id, decision: 'REJECTED' })}>
-                              Từ chối
-                            </Button>
-                          </>
+              {/* Add new checklist item */}
+              <div className="flex gap-2 mb-3">
+                <Input
+                  placeholder="Thêm checklist item..."
+                  value={newCkTitle}
+                  onChange={(e) => setNewCkTitle(e.target.value)}
+                  className="text-sm h-8"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && newCkTitle.trim()) createCkMutation.mutate(newCkTitle.trim()); }}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 px-2 shrink-0"
+                  onClick={() => { if (newCkTitle.trim()) createCkMutation.mutate(newCkTitle.trim()); }}
+                  disabled={!newCkTitle.trim() || createCkMutation.isPending}
+                >
+                  <Plus size={14} />
+                </Button>
+              </div>
+
+              {ckLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}
+                </div>
+              ) : ckList.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
+                  Chưa có checklist items — thêm bên trên
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {ckList.map((item: any) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg border transition-all group
+                        ${item.isCompleted
+                          ? 'bg-green-50 border-green-200'
+                          : 'bg-gray-50 border-gray-100 hover:bg-gray-50 hover:border-gray-200'}`}
+                    >
+                      <button
+                        className="mt-0.5 shrink-0"
+                        onClick={() => checkMutation.mutate({ checklistId: item.id, isCompleted: !item.isCompleted })}
+                        disabled={checkMutation.isPending}
+                      >
+                        {item.isCompleted
+                          ? <CheckCircle2 size={18} className="text-green-500" />
+                          : <Circle size={18} className="text-gray-300" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium leading-snug
+                          ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                          {item.title}
+                        </p>
+                        {item.description && (
+                          <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
+                        )}
+                        {item.isCompleted && item.completedAt && (
+                          <p className="text-xs text-green-500 mt-0.5">Hoàn thành: {fmtDate(item.completedAt)}</p>
                         )}
                       </div>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-50"
+                        onClick={(e) => { e.stopPropagation(); deleteCkMutation.mutate(item.id); }}
+                        disabled={deleteCkMutation.isPending}
+                      >
+                        <Trash2 size={13} className="text-red-400" />
+                      </button>
                     </div>
-                  ))
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="documents" className="mt-3 space-y-4">
+              {/* New submittal form */}
+              <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">Nộp đệ trình mới</p>
+                <select
+                  className="text-xs h-8 border border-input rounded-md px-2 bg-white w-full"
+                  value={newSubmittal.formTypeId}
+                  onChange={(e) => setNewSubmittal((f) => ({ ...f, formTypeId: e.target.value }))}
+                >
+                  <option value="">Chọn loại hồ sơ (Form)</option>
+                  {(formTypes as any[]).map((ft: any) => (
+                    <option key={ft.id} value={ft.id}>{ft.name} — {ft.approvalLevels} cấp duyệt</option>
+                  ))}
+                </select>
+                <Input
+                  className="text-xs h-8"
+                  placeholder="Tiêu đề đệ trình"
+                  value={newSubmittal.title}
+                  onChange={(e) => setNewSubmittal((f) => ({ ...f, title: e.target.value }))}
+                />
+                <Button
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  disabled={!newSubmittal.formTypeId || !newSubmittal.title.trim() || createSubmittalMutation.isPending}
+                  onClick={() => createSubmittalMutation.mutate()}
+                >
+                  <Send size={12} /> Nộp
+                </Button>
+              </div>
+
+              {/* Submittal list */}
+              <div className="space-y-2">
+                {(submittals as any[]).length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
+                    Chưa có đệ trình nào
+                  </p>
+                ) : (
+                  (submittals as any[]).map((sub: any) => {
+                    const pendingStep = sub.workflow?.steps?.find((s: any) => s.status === 'PENDING');
+                    const canAct = pendingStep && user?.role === pendingStep.approverRole;
+                    const statusStyle: Record<string, string> = {
+                      SUBMITTED: 'bg-blue-100 text-gray-700',
+                      IN_PROGRESS: 'bg-yellow-100 text-yellow-700',
+                      APPROVED: 'bg-green-100 text-green-700',
+                      REJECTED: 'bg-red-100 text-red-700',
+                      PUBLISHED: 'bg-teal-100 text-teal-700',
+                      OBSOLETED: 'bg-gray-100 text-gray-400',
+                    };
+                    return (
+                      <div
+                        key={sub.id}
+                        className={`p-3 rounded-lg border space-y-2 bg-gray-50 border-gray-100 ${sub.status === 'OBSOLETED' ? 'opacity-50' : ''}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {sub.title} <span className="text-xs text-gray-400">rev{sub.revisionNo}</span>
+                            </p>
+                            <p className="text-xs text-gray-400">{sub.formType?.name}</p>
+                          </div>
+                          <Badge className={`border-0 text-xs shrink-0 ${statusStyle[sub.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                            {sub.status}
+                          </Badge>
+                        </div>
+
+                        {sub.workflow?.steps?.length > 0 && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {sub.workflow.steps.map((s: any) => (
+                              <span
+                                key={s.id}
+                                className={`text-xs px-1.5 py-0.5 rounded font-medium
+                                  ${s.status === 'APPROVED' ? 'bg-green-100 text-green-700' : s.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}
+                              >
+                                {s.stepOrder}. {s.approverRole}{s.approver ? ` (${s.approver.fullName})` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2">
+                          {canAct && (
+                            <>
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => approveStepMutation.mutate(pendingStep.id)}>
+                                Duyệt
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs text-red-500"
+                                onClick={() => {
+                                  const reason = window.prompt('Lý do từ chối:');
+                                  if (reason !== null) rejectStepMutation.mutate({ stepId: pendingStep.id, comment: reason });
+                                }}>
+                                Từ chối
+                              </Button>
+                            </>
+                          )}
+                          {sub.status === 'REJECTED' && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                              onClick={() => resubmitMutation.mutate(sub.id)}>
+                              <RotateCcw size={12} /> Nộp lại
+                            </Button>
+                          )}
+                          {sub.status === 'APPROVED' && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                              onClick={() => publishSubmittalMutation.mutate(sub.id)}>
+                              <Rocket size={12} /> Publish
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="issues" className="mt-3 space-y-4">
+              {dmap?.floor?.floorPlanUrl ? (
+                <div>
+                  <p className="text-xs font-semibold tracking-wider text-gray-400 mb-2">D-MAP — GHIM VỊ TRÍ VẤN ĐỀ</p>
+                  <MallMapViewer
+                    floors={[dmap.floor]}
+                    initialFloorId={dmap.floor.id}
+                    issuePins={(dmap.pins ?? []).map((pin: any) => ({ unitId: dmap.unit.id, severity: pin.severity }))}
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-3 text-center">
+                  Tầng này chưa có sơ đồ mặt bằng số — vào Mặt bằng → Bản đồ số để thiết lập.
+                </p>
+              )}
+
+              <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">Tạo vấn đề mới</p>
+                <Input
+                  className="text-xs h-8"
+                  placeholder="Mô tả vấn đề..."
+                  value={newIssue.title}
+                  onChange={(e) => setNewIssue((f) => ({ ...f, title: e.target.value }))}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="text-xs h-8 border border-input rounded-md px-2 bg-white"
+                    value={newIssue.category}
+                    onChange={(e) => setNewIssue((f) => ({ ...f, category: e.target.value }))}>
+                    <option value="DEFECT">Khiếm khuyết (Defect)</option>
+                    <option value="NCR">NCR</option>
+                    <option value="SAFETY">An toàn</option>
+                    <option value="GENERAL">Chung</option>
+                  </select>
+                  <select className="text-xs h-8 border border-input rounded-md px-2 bg-white"
+                    value={newIssue.severity}
+                    onChange={(e) => setNewIssue((f) => ({ ...f, severity: e.target.value }))}>
+                    <option value="LOW">Thấp</option>
+                    <option value="MEDIUM">Trung bình</option>
+                    <option value="HIGH">Cao</option>
+                    <option value="CRITICAL">Nghiêm trọng</option>
+                  </select>
+                </div>
+                <Button size="sm" className="h-7 text-xs gap-1"
+                  disabled={!newIssue.title.trim() || createIssueMutation.isPending}
+                  onClick={() => createIssueMutation.mutate()}>
+                  <Plus size={12} /> Tạo vấn đề
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {(issues as any[]).length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">Chưa có vấn đề nào</p>
+                ) : (
+                  (issues as any[]).map((iss: any) => {
+                    const severityColor: Record<string, string> = {
+                      LOW: 'bg-gray-100 text-gray-600', MEDIUM: 'bg-blue-100 text-gray-700',
+                      HIGH: 'bg-orange-100 text-orange-700', CRITICAL: 'bg-red-100 text-red-700',
+                    };
+                    const statusColor: Record<string, string> = {
+                      OPENED: 'bg-gray-100 text-gray-700', IN_PROGRESS: 'bg-yellow-100 text-yellow-700',
+                      DONE: 'bg-blue-100 text-gray-700', CLOSED: 'bg-green-100 text-green-700',
+                      REOPENED: 'bg-purple-100 text-purple-700', CANCELLED: 'bg-gray-100 text-gray-400',
+                    };
+                    const nextOptions: Record<string, string[]> = {
+                      OPENED: ['IN_PROGRESS', 'CANCELLED'],
+                      IN_PROGRESS: ['DONE', 'CANCELLED'],
+                      DONE: ['CLOSED', 'REOPENED'],
+                      CLOSED: ['REOPENED'],
+                      REOPENED: ['IN_PROGRESS', 'DONE', 'CANCELLED'],
+                      CANCELLED: [],
+                    };
+                    return (
+                      <div key={iss.id} className="p-3 rounded-lg border bg-gray-50 border-gray-100 space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{iss.title}</p>
+                            <p className="text-xs text-gray-400">
+                              {iss.unit?.code}{iss.assignee ? ` · Giao: ${iss.assignee.fullName}` : ''}
+                              {iss.isOverdue && <span className="text-red-500 font-medium"> · Quá hạn</span>}
+                            </p>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <Badge className={`border-0 text-xs ${severityColor[iss.severity] ?? ''}`}>{iss.severity}</Badge>
+                            <Badge className={`border-0 text-xs ${statusColor[iss.status] ?? ''}`}>{iss.status}</Badge>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {(nextOptions[iss.status] ?? []).map((next) => (
+                            <Button key={next} size="sm" variant="outline" className="h-6 text-xs px-2"
+                              onClick={() => transitionIssueMutation.mutate({ id: iss.id, status: next })}>
+                              → {next}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </TabsContent>
@@ -508,7 +779,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                          m.completedAt ? <CheckCircle2 size={16} className="text-green-500" /> :
                          <Clock size={16} className="text-gray-400" />}
                         <div>
-                          <p className="text-sm font-medium">{STATUS_STEPS.find(s => s.key === m.stage)?.label ?? m.stage}</p>
+                          <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? m.stage}</p>
                           <p className="text-xs text-gray-400">SLA: {m.slaDays ?? '—'} ngày</p>
                         </div>
                       </div>
@@ -640,6 +911,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 export default function FitoutPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
+  const stages = useStageConfigs();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const canManageConfig = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
 
   const { data, isLoading } = useQuery({
     queryKey: ['fitouts'],
@@ -656,9 +931,19 @@ export default function FitoutPage() {
           <h1 className="text-2xl font-bold text-gray-900">Fitout Management</h1>
           <p className="text-sm text-gray-500 mt-1">Theo dõi tiến độ thi công nội thất</p>
         </div>
-        <Badge className="bg-orange-100 text-orange-700 border-0 text-sm px-3 py-1">
-          {allProjects.length} dự án
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
+            <BarChart3 size={14} /> Dashboard
+          </Button>
+          {canManageConfig && (
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/settings')}>
+              <Settings size={14} /> Cấu hình
+            </Button>
+          )}
+          <Badge className="bg-orange-100 text-orange-700 border-0 text-sm px-3 py-1">
+            {allProjects.length} dự án
+          </Badge>
+        </div>
       </div>
 
       {/* Filter chips */}
@@ -670,17 +955,18 @@ export default function FitoutPage() {
         >
           Tất cả ({allProjects.length})
         </button>
-        {STATUS_STEPS.map((s) => {
-          const count = allProjects.filter((p: any) => p.status === s.key).length;
-          const active = filterStatus === s.key;
+        {stages.map((s) => {
+          const count = allProjects.filter((p: any) => p.status === s.code).length;
+          const active = filterStatus === s.code;
           return (
             <button
-              key={s.key}
-              onClick={() => setFilterStatus(active ? '' : s.key)}
+              key={s.code}
+              onClick={() => setFilterStatus(active ? '' : s.code)}
+              style={stageBadgeStyle(s.colorHex)}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-                ${STATUS_COLOR[s.key]} ${active ? 'ring-2 ring-offset-1 ring-blue-400' : 'border-transparent'}`}
+                ${active ? 'ring-2 ring-offset-1 ring-blue-400' : 'border-transparent'}`}
             >
-              {s.label}{count > 0 && ` (${count})`}
+              {s.name}{count > 0 && ` (${count})`}
             </button>
           );
         })}
@@ -700,9 +986,9 @@ export default function FitoutPage() {
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
           {projects.map((p: any) => {
-            const step = STATUS_STEPS.find((s) => s.key === p.status);
-            const progress = getProgress(p.status);
-            const nextS = getNextStep(p.status);
+            const step = stages.find((s) => s.code === p.status);
+            const progress = getProgress(stages, p.status);
+            const nextS = getNextStep(stages, p.status);
 
             return (
               <Card
@@ -718,8 +1004,8 @@ export default function FitoutPage() {
                         {p.unit?.code} — {p.unit?.floor?.name}
                       </p>
                     </div>
-                    <Badge className={`${STATUS_COLOR[p.status]} border-0 text-xs shrink-0`}>
-                      {step?.label}
+                    <Badge className="border-0 text-xs shrink-0" style={stageBadgeStyle(step?.colorHex)}>
+                      {step?.name ?? p.status}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -743,7 +1029,7 @@ export default function FitoutPage() {
                       {nextS && (
                         <span className="flex items-center gap-1 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
                           <ChevronRight size={11} />
-                          {nextS.label}
+                          {nextS.name}
                         </span>
                       )}
                     </div>

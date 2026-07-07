@@ -5,6 +5,7 @@ import {
 import { Response } from 'express';
 import { Observable, from } from 'rxjs';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { AiService } from './ai.service';
 import { FloorPlanService } from './floor-plan.service';
@@ -25,12 +26,16 @@ export class AiController {
 
   @Post('chat')
   @ApiOperation({ summary: 'Chat with AI assistant (non-streaming)' })
+  // Mỗi lần chat đều gọi Claude API thật (có phí) sau khi truy vấn context từ DB — giới hạn chặt hơn
+  // mức mặc định toàn hệ thống để tránh spam/script lạm dụng chi phí LLM.
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   chat(@Body() body: { message: string; history?: { role: string; content: string }[] }) {
     return this.aiService.chat(body.message, body.history ?? []);
   }
 
   @Post('chat/stream')
   @ApiOperation({ summary: 'Chat with AI assistant (SSE streaming)' })
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   async chatStream(
     @Body() body: { message: string; history?: { role: string; content: string }[] },
     @Res() res: Response,
@@ -63,6 +68,8 @@ export class AiController {
 
   @Post('floor-plan/analyze')
   @ApiOperation({ summary: 'Upload floor plan PDF/image and start AI analysis' })
+  // Phân tích ảnh bằng vision model — tốn kém hơn chat nhiều lần, giới hạn nghiêm ngặt hơn.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {

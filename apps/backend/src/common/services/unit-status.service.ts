@@ -12,6 +12,9 @@ const ALLOWED_TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
   [UnitStatus.OCCUPIED]: [UnitStatus.VACANT, UnitStatus.UNDER_FITOUT],
 };
 
+/** Trạng thái mặt bằng đã cam kết cho một khách thuê chính thức — không nên nhận thêm booking mới chồng lên. */
+const COMMITTED_STATUSES: UnitStatus[] = [UnitStatus.OCCUPIED, UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT];
+
 export interface UnitTransitionOptions {
   force?: boolean;
   userId?: string;
@@ -28,6 +31,10 @@ export class UnitStatusService {
   canTransition(from: UnitStatus, to: UnitStatus): boolean {
     if (from === to) return true;
     return ALLOWED_TRANSITIONS[from]?.includes(to) ?? false;
+  }
+
+  isCommittedToTenant(status: UnitStatus): boolean {
+    return COMMITTED_STATUSES.includes(status);
   }
 
   async transition(unitId: string, toStatus: UnitStatus, options: UnitTransitionOptions = {}) {

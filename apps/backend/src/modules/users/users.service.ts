@@ -93,17 +93,18 @@ export class UsersService {
         department: true,
         isActive: true,
         updatedAt: true,
+        tenantId: true,
       },
     });
   }
 
-  async create(dto: { email: string; password: string; fullName: string; role?: string; phone?: string; department?: string }) {
+  async create(dto: { email: string; password: string; fullName: string; role?: string; phone?: string; department?: string; tenantId?: string }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already registered');
     const hashed = await bcrypt.hash(dto.password, 10);
     return this.prisma.user.create({
       data: { ...dto, password: hashed, role: (dto.role as any) ?? 'LEASING_EXECUTIVE' },
-      select: { id: true, email: true, fullName: true, role: true, isActive: true },
+      select: { id: true, email: true, fullName: true, role: true, isActive: true, tenantId: true },
     });
   }
 

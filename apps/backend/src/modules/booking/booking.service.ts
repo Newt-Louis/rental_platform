@@ -32,6 +32,15 @@ export class BookingService {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
     if (!unit || !unit.isActive) throw new NotFoundException('Unit không tồn tại');
 
+    // Mặt bằng đã có khách thuê chính thức — chặn sớm trước khi ghi dữ liệu, tránh trường hợp
+    // booking được tạo thành công nhưng bước chuyển trạng thái unit phía sau thất bại do
+    // OCCUPIED/CONTRACTED/UNDER_FITOUT không nằm trong ALLOWED_TRANSITIONS → BOOKING.
+    if (this.unitStatus.isCommittedToTenant(unit.status)) {
+      throw new BadRequestException(
+        `Không thể tạo booking: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,
+      );
+    }
+
     if (dto.leadId) {
       const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId } });
       if (!lead) throw new NotFoundException('Lead không tồn tại');
@@ -540,6 +549,19 @@ export class BookingService {
       throw new BadRequestException('Giá đề xuất đã bị từ chối. Vui lòng điều chỉnh giá trước khi chuyển thành Proposal.');
     }
 
+    // Trước đây tenantId luôn bị bỏ trống khi convert — nếu booking đến từ Customer (không phải Lead),
+    // Proposal tạo ra không gắn được với Tenant/Customer nào, dễ trở thành bản ghi mồ côi. Tenant có
+    // thể đã được gán sẵn cho Lead hoặc Customer từ trước (cột tenantId trên cả 2 model) — resolve ra
+    // đây, giống cách ProposalsService.create() đang tự suy ra tenantId từ leadId.
+    let resolvedTenantId: string | undefined;
+    if (booking.leadId) {
+      const lead = await this.prisma.lead.findUnique({ where: { id: booking.leadId }, select: { tenantId: true } });
+      resolvedTenantId = lead?.tenantId ?? undefined;
+    } else if (booking.customerId) {
+      const customer = await this.prisma.customer.findUnique({ where: { id: booking.customerId }, select: { tenantId: true } });
+      resolvedTenantId = customer?.tenantId ?? undefined;
+    }
+
     const year = new Date().getFullYear();
     const count = await this.prisma.proposal.count({
       where: { proposalNumber: { startsWith: `PROP-${year}-` } },
@@ -566,7 +588,7 @@ export class BookingService {
           bookingId: id,
           unitId: booking.unitId,
           leadId: booking.leadId ?? undefined,
-          tenantId: undefined,
+          tenantId: resolvedTenantId,
           area,
           term: dto.term,
           startDate,

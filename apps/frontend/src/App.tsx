@@ -12,6 +12,10 @@ import ProposalsPage from '@/pages/proposals/ProposalsPage';
 import ApprovalsPage from '@/pages/approvals/ApprovalsPage';
 import ContractsPage from '@/pages/contracts/ContractsPage';
 import FitoutPage from '@/pages/fitout/FitoutPage';
+import FitoutSettingsPage from '@/pages/fitout/FitoutSettingsPage';
+import FitoutDailyReportPage from '@/pages/fitout/FitoutDailyReportPage';
+import FitoutGanttPage from '@/pages/fitout/FitoutGanttPage';
+import FitoutDashboardPage from '@/pages/fitout/FitoutDashboardPage';
 import TicketsPage from '@/pages/tickets/TicketsPage';
 import SalesPage from '@/pages/sales/SalesPage';
 import BillingPage from '@/pages/billing/BillingPage';
@@ -24,6 +28,7 @@ import TenantPortalPage from '@/pages/tenant-portal/TenantPortalPage';
 import AnnouncementsPage from '@/pages/announcements/AnnouncementsPage';
 import CrossMallDashboard from '@/pages/cross-mall/CrossMallDashboard';
 import TenantsPage from '@/pages/tenants/TenantsPage';
+import AuditLogPage from '@/pages/audit-log/AuditLogPage';
 import DealPipelinePage from '@/pages/deals/DealPipelinePage';
 import BookingsPage from '@/pages/bookings/BookingsPage';
 import { Navigate } from 'react-router-dom';
@@ -72,6 +77,10 @@ export default function App() {
           <Route path="approvals" element={<RoleRoute><ApprovalsPage /></RoleRoute>} />
           <Route path="contracts" element={<RoleRoute><ContractsPage /></RoleRoute>} />
           <Route path="fitout" element={<RoleRoute><FitoutPage /></RoleRoute>} />
+          <Route path="fitout/settings" element={<RoleRoute><FitoutSettingsPage /></RoleRoute>} />
+          <Route path="fitout/:projectId/daily-report" element={<RoleRoute><FitoutDailyReportPage /></RoleRoute>} />
+          <Route path="fitout/:projectId/gantt" element={<RoleRoute><FitoutGanttPage /></RoleRoute>} />
+          <Route path="fitout/dashboard" element={<RoleRoute><FitoutDashboardPage /></RoleRoute>} />
           <Route path="tickets" element={<RoleRoute><TicketsPage /></RoleRoute>} />
           <Route path="sales" element={<RoleRoute><SalesPage /></RoleRoute>} />
           <Route path="billing" element={<RoleRoute><BillingPage /></RoleRoute>} />
@@ -83,6 +92,7 @@ export default function App() {
           <Route path="tenant-portal" element={<RoleRoute><TenantPortalPage /></RoleRoute>} />
           <Route path="announcements" element={<RoleRoute><AnnouncementsPage /></RoleRoute>} />
           <Route path="cross-mall" element={<RoleRoute><CrossMallDashboard /></RoleRoute>} />
+          <Route path="audit-log" element={<RoleRoute><AuditLogPage /></RoleRoute>} />
         </Route>
       </Routes>
       </AppHydrator>

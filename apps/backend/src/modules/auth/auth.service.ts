@@ -52,6 +52,7 @@ export class AuthService {
         department: user.department,
         phone: user.phone,
         avatar: user.avatar,
+        tenantId: user.tenantId,
       },
     };
   }
@@ -107,6 +108,7 @@ export class AuthService {
         department: true,
         isActive: true,
         createdAt: true,
+        tenantId: true,
       },
     });
 

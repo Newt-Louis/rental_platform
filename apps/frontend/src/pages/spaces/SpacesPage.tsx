@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi } from '@/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +25,7 @@ import {
   User, Mail, Phone, FileText, Plus, Pencil, Trash2, AlertTriangle, Layers,
   BookmarkPlus, Clock, ChevronUp, ChevronDown, X, Users, ArrowRight,
   Image, Upload, Star, LayoutList, BarChart3, Filter, CheckSquare, Square,
-  Columns, RefreshCw, TrendingUp, AlertCircle, SlidersHorizontal, CheckCircle,
+  Columns, RefreshCw, TrendingUp, AlertCircle, SlidersHorizontal, CheckCircle, Lock,
 } from 'lucide-react';
 import type { Unit, UnitMedia, UnitSlotSummary } from '@/types';
 
@@ -432,6 +432,24 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
 
   const sourceType = watch('sourceType');
   const proposedRent = watch('proposedRentPerSqm');
+  const priceAutofilledRef = useRef(false);
+
+  // Mỗi lần mở dialog: reset form, tự điền diện tích đề xuất = full diện tích NLA của mặt bằng
+  // (mặc định đề xuất thuê trọn mặt bằng — người dùng vẫn có thể sửa nếu chỉ thuê một phần).
+  useEffect(() => {
+    if (open) {
+      priceAutofilledRef.current = false;
+      reset({
+        sourceType: 'lead',
+        leadId: '', customerId: '',
+        requestedArea: unit?.areaNLA ? String(unit.areaNLA) : '',
+        requestedTerm: '36', expectedRent: '',
+        proposedRentPerSqm: '', proposedCamPerSqm: '',
+        holdDays: '30', notes: '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, unit?.id]);
 
   const { data: leadsData } = useQuery({
     queryKey: ['leads-all'],
@@ -470,6 +488,22 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
   });
 
   const categoryPricing = pricingData?.pricing;
+
+  // Khi tra được giá ngành hàng (master data) lần đầu trong phiên mở dialog này: tự điền giá đề xuất
+  // theo suggestedRent/camPerSqm đã đăng ký — không ghi đè nếu người dùng đã tự sửa sau đó.
+  useEffect(() => {
+    if (open && !priceAutofilledRef.current && categoryPricing) {
+      if (categoryPricing.suggestedRent) {
+        setValue('expectedRent', String(categoryPricing.suggestedRent));
+        setValue('proposedRentPerSqm', String(categoryPricing.suggestedRent));
+      }
+      if (categoryPricing.camPerSqm) {
+        setValue('proposedCamPerSqm', String(categoryPricing.camPerSqm));
+      }
+      priceAutofilledRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, categoryPricing]);
 
   const leads: any[] = leadsData?.data ?? [];
   const customers: any[] = customersData?.data ?? [];
@@ -577,6 +611,9 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích (m²)</label>
               <Input {...register('requestedArea')} type="number" placeholder="120" />
+              {unit?.areaNLA != null && (
+                <p className="text-xs text-gray-400 mt-1">Gợi ý: trọn diện tích NLA ({unit.areaNLA.toLocaleString('vi-VN')} m²) — có thể sửa nếu thuê một phần</p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Thời hạn (tháng)</label>
@@ -626,10 +663,16 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Giá sale đề xuất (₫/m²)</label>
               <Input {...register('proposedRentPerSqm')} type="number" placeholder="550000" />
+              {categoryPricing?.suggestedRent != null && (
+                <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.suggestedRent.toLocaleString('vi-VN')} ₫</p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất (₫/m²)</label>
               <Input {...register('proposedCamPerSqm')} type="number" placeholder="80000" />
+              {categoryPricing?.camPerSqm != null && (
+                <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.camPerSqm.toLocaleString('vi-VN')} ₫</p>
+              )}
             </div>
           </div>
 
@@ -1069,6 +1112,9 @@ function SalesPipelineTab({
   const activeBookings = bookings.filter((b) => ['ACTIVE','PENDING'].includes(b.status));
   const historyBookings = bookings.filter((b) => !['ACTIVE','PENDING'].includes(b.status));
 
+  // Mặt bằng đã có khách thuê chính thức — không cho tạo booking mới chồng lên (khớp chặn ở backend)
+  const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
+
   const fmtVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
   const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
@@ -1076,8 +1122,16 @@ function SalesPipelineTab({
   return (
     <div className="space-y-5">
 
+      {/* Cảnh báo khi mặt bằng đã có khách thuê chính thức — không thể tạo booking mới */}
+      {isCommitted && (
+        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex items-start gap-2 text-xs text-gray-500">
+          <Lock size={13} className="mt-0.5 shrink-0" />
+          <span>Mặt bằng đang ở trạng thái "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" — đã có khách thuê chính thức nên không thể tạo booking mới cho khách khác.</span>
+        </div>
+      )}
+
       {/* CTA khi trống */}
-      {bookings.length === 0 && proposals.length === 0 && (
+      {bookings.length === 0 && proposals.length === 0 && !isCommitted && (
         <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 text-center space-y-2">
           <p className="text-sm text-amber-700 font-medium">Mặt bằng chưa có khách — tạo booking để bắt đầu</p>
           <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2" onClick={onCreateBooking}>
@@ -1093,9 +1147,11 @@ function SalesPipelineTab({
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
               <Users size={11} /> HÀNG ĐỢI BOOKING ({activeBookings.length})
             </span>
-            <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={onCreateBooking}>
-              <Plus size={10} /> Thêm
-            </Button>
+            {!isCommitted && (
+              <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={onCreateBooking}>
+                <Plus size={10} /> Thêm
+              </Button>
+            )}
           </div>
           <div className="space-y-2">
             {activeBookings.map((b: any) => {
@@ -1432,7 +1488,7 @@ function UnitDetailSheet({
   });
 
   const statusMutation = useMutation({
-    mutationFn: (status: string) => spacesApi.updateUnit(detail?.id ?? unit!.id, { status }),
+    mutationFn: (status: string) => spacesApi.updateUnitWithHistory(detail?.id ?? unit!.id, { status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
@@ -1500,6 +1556,7 @@ function UnitDetailSheet({
           {activeTab === 'slots' && (
             <FloorPlanEditor
               unitId={d.id}
+              unitStatus={d.status}
               floorPlanUrl={d.media?.find((m: any) => m.type === 'FLOOR_PLAN')?.fileUrl}
               unitArea={d.areaNLA}
             />
@@ -1677,8 +1734,11 @@ function UnitDetailSheet({
               <Trash2 size={14} /> Xóa
             </Button>
           </div>
+          </>)}
 
-          {/* Booking Dialog */}
+          {/* Booking Dialog — đặt ngoài khối activeTab === 'info' vì "Tạo Booking" ở tab Bán hàng
+              (SalesPipelineTab) cũng mở dialog này; trước đây bị lồng trong info nên bấm từ tab
+              khác không thấy popup cho tới khi quay lại tab Thông tin. */}
           <CreateBookingDialog
             unitId={d.id}
             unitCode={d.code}
@@ -1692,7 +1752,6 @@ function UnitDetailSheet({
             booking={convertBooking}
             onClose={() => setConvertBooking(null)}
           />
-          </>)}
         </div>
       )}
     </Sheet>
@@ -1845,7 +1904,7 @@ function BulkRentDialog({ open, count, onClose, onConfirm, loading }: {
   open: boolean;
   count: number;
   onClose: () => void;
-  onConfirm: (rent: number, cam: number) => void;
+  onConfirm: (rent: number | undefined, cam: number | undefined) => void;
   loading: boolean;
 }) {
   const [rent, setRent] = useState('');
@@ -1879,7 +1938,7 @@ function BulkRentDialog({ open, count, onClose, onConfirm, loading }: {
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Hủy</Button>
           <Button
-            onClick={() => onConfirm(rent ? Number(rent) : 0, cam ? Number(cam) : 0)}
+            onClick={() => onConfirm(rent ? Number(rent) : undefined, cam ? Number(cam) : undefined)}
             disabled={(!rent && !cam) || loading}
           >
             {loading ? 'Đang cập nhật...' : 'Xác nhận'}
@@ -2268,13 +2327,15 @@ export default function SpacesPage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'LEASING_MANAGER' || user?.role === 'MALL_DIRECTOR';
 
   // View & filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [floorFilter, setFloorFilter] = useState('');
+  // Khởi tạo từ query param ?floorId= khi điều hướng tới từ Admin > Cấu trúc không gian
+  const [floorFilter, setFloorFilter] = useState(() => searchParams.get('floorId') ?? '');
   const [view, setView] = useState<ViewMode>('grid');
   const [mapEditorMode, setMapEditorMode] = useState(false);
   const [mapEditorFloorId, setMapEditorFloorId] = useState<string | null>(null);
@@ -2306,9 +2367,19 @@ export default function SpacesPage() {
   // Compare
   const [compareOpen, setCompareOpen] = useState(false);
 
-  // Reset floor filter when mall changes
-  useEffect(() => { setFloorFilter(''); }, [selectedMallId]);
-  
+  // Reset floor filter when mall changes (bỏ qua lần chạy đầu để không xoá mất ?floorId= từ URL khi mới vào trang)
+  const isFirstMallRender = useRef(true);
+  useEffect(() => {
+    if (isFirstMallRender.current) { isFirstMallRender.current = false; return; }
+    setFloorFilter('');
+  }, [selectedMallId]);
+
+  // Sau khi đã áp dụng ?floorId= từ URL, dọn query param để không giữ lại khi người dùng tự đổi bộ lọc
+  useEffect(() => {
+    if (searchParams.get('floorId')) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Clear selection when exiting selection mode
   useEffect(() => { if (!selectionMode) setSelectedIds(new Set()); }, [selectionMode]);
 

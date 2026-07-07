@@ -1,12 +1,43 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StorageService } from '../../storage/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
-import { TicketStatus, TicketPriority } from '@prisma/client';
+import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
+
+const ENTITY_TYPE = 'TICKET';
+
+const VALID_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
+  NEW: [TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS],
+  ASSIGNED: [TicketStatus.IN_PROGRESS],
+  IN_PROGRESS: [TicketStatus.WAITING_TENANT, TicketStatus.RESOLVED],
+  WAITING_TENANT: [TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED],
+  RESOLVED: [TicketStatus.CLOSED, TicketStatus.IN_PROGRESS],
+  CLOSED: [TicketStatus.IN_PROGRESS],
+};
+
+/** Các transition mà role TENANT tự thực hiện được (phải là chủ sở hữu ticket). */
+const TENANT_ALLOWED_TRANSITIONS: Partial<Record<TicketStatus, TicketStatus[]>> = {
+  RESOLVED: [TicketStatus.CLOSED, TicketStatus.IN_PROGRESS],
+  WAITING_TENANT: [TicketStatus.CLOSED],
+};
+
+interface CurrentUser {
+  id: string;
+  role: string;
+  tenantId?: string | null;
+}
 
 @Injectable()
 export class TicketsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+    private notifications: NotificationsService,
+    private emailService: EmailService,
+  ) {}
 
   async findAll(query: {
     status?: TicketStatus;
@@ -16,15 +47,22 @@ export class TicketsService {
     search?: string;
     page?: number;
     limit?: number;
-  }) {
+  }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, search, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = { isActive: true };
     if (filters.status) where.status = filters.status;
     if (filters.priority) where.priority = filters.priority;
-    if (filters.tenantId) where.tenantId = filters.tenantId;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+
+    if (currentUser?.role === 'TENANT') {
+      // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    } else if (filters.tenantId) {
+      where.tenantId = filters.tenantId;
+    }
+
     if (search) {
       where.OR = [
         { subject: { contains: search, mode: 'insensitive' } },
@@ -50,24 +88,35 @@ export class TicketsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUser?: CurrentUser) {
     const ticket = await this.prisma.ticket.findUnique({
       where: { id },
       include: {
         tenant: true,
         unit: { include: { floor: true } },
+        createdBy: { select: { id: true, fullName: true } },
         assignedTo: { select: { id: true, fullName: true, email: true } },
         comments: {
+          include: { user: { select: { id: true, fullName: true } } },
           orderBy: { createdAt: 'asc' },
         },
       },
     });
 
     if (!ticket) throw new NotFoundException('Ticket not found');
+
+    if (currentUser?.role === 'TENANT') {
+      if (ticket.tenantId !== currentUser.tenantId) {
+        throw new ForbiddenException('Bạn không có quyền xem yêu cầu này');
+      }
+      // Ẩn ghi chú nội bộ khỏi tenant.
+      ticket.comments = ticket.comments.filter((c) => !c.isInternal);
+    }
+
     return ticket;
   }
 
-  async create(dto: CreateTicketDto) {
+  async create(dto: CreateTicketDto, currentUser: CurrentUser) {
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
     const ticketNumber = `TKT-${year}-${rand}`;
@@ -86,10 +135,18 @@ export class TicketsService {
       slaDueAt.setHours(slaDueAt.getHours() + slaPolicy.resolutionHours);
     }
 
-    return this.prisma.ticket.create({
+    const isTenantCaller = currentUser.role === 'TENANT';
+    const source = isTenantCaller ? TicketSource.TENANT_REQUEST : TicketSource.STAFF_INSPECTION;
+    const tenantId = isTenantCaller ? (currentUser.tenantId ?? dto.tenantId) : dto.tenantId;
+
+    if (isTenantCaller && !currentUser.tenantId) {
+      throw new BadRequestException('Tài khoản của bạn chưa được liên kết với khách thuê nào — liên hệ quản trị viên.');
+    }
+
+    const ticket = await this.prisma.ticket.create({
       data: {
         ticketNumber,
-        tenantId: dto.tenantId,
+        tenantId,
         unitId: dto.unitId,
         type: dto.type,
         priority,
@@ -97,24 +154,69 @@ export class TicketsService {
         description: dto.description,
         sla,
         slaDueAt,
+        createdById: currentUser.id,
+        source,
       },
       include: {
-        tenant: { select: { id: true, brandName: true } },
+        tenant: { select: { id: true, brandName: true, contactEmail: true } },
         unit: { select: { id: true, code: true } },
       },
     });
+
+    if (source === TicketSource.STAFF_INSPECTION) {
+      await this.notifyTenantOfInspection(ticket);
+    }
+
+    return ticket;
   }
 
-  async update(id: string, data: Partial<CreateTicketDto & { status: TicketStatus }>) {
+  private async notifyTenantOfInspection(ticket: { id: string; ticketNumber: string; subject: string; tenantId: string; tenant: { brandName: string; contactEmail: string | null }; unit: { code: string } }) {
+    const tenantUsers = await this.prisma.user.findMany({
+      where: { tenantId: ticket.tenantId, isActive: true },
+      select: { id: true, email: true, fullName: true },
+    });
+
+    for (const u of tenantUsers) {
+      await this.notifications.create({
+        userId: u.id,
+        title: `Phiếu kiểm tra mới — ${ticket.subject}`,
+        body: `Nhân viên vận hành vừa ghi nhận một phiếu kiểm tra cho ${ticket.unit.code}. Vui lòng xem chi tiết và phản hồi.`,
+        type: 'TICKET_INSPECTION_CREATED',
+        entityType: ENTITY_TYPE,
+        entityId: ticket.id,
+      });
+    }
+
+    if (ticket.tenant.contactEmail) {
+      await this.emailService.sendMail({
+        to: ticket.tenant.contactEmail,
+        subject: `[THISO] Phiếu kiểm tra mới — ${ticket.ticketNumber}`,
+        html: this.emailService.ticketInspectionHtml({
+          tenantName: ticket.tenant.brandName,
+          ticketNumber: ticket.ticketNumber,
+          subject: ticket.subject,
+          unitCode: ticket.unit.code,
+        }),
+      });
+    }
+  }
+
+  /** Cập nhật thông tin cơ bản (không cho đổi status qua đây — dùng transition()). */
+  async update(id: string, data: Partial<CreateTicketDto>, currentUser: CurrentUser) {
+    if (currentUser.role === 'TENANT') {
+      throw new ForbiddenException('Khách thuê không có quyền chỉnh sửa yêu cầu — dùng bình luận hoặc chuyển trạng thái');
+    }
     await this.findOne(id);
-    const updateData: any = { ...data };
-    if (data.status === TicketStatus.RESOLVED) updateData.resolvedAt = new Date();
-    if (data.status === TicketStatus.CLOSED) updateData.closedAt = new Date();
-
-    return this.prisma.ticket.update({ where: { id }, data: updateData });
+    const { ...safeData } = data as any;
+    delete safeData.status;
+    delete safeData.tenantId;
+    return this.prisma.ticket.update({ where: { id }, data: safeData });
   }
 
-  async assign(id: string, assignedToId: string) {
+  async assign(id: string, assignedToId: string, currentUser: CurrentUser) {
+    if (currentUser.role === 'TENANT') {
+      throw new ForbiddenException('Khách thuê không có quyền phân công xử lý');
+    }
     await this.findOne(id);
     return this.prisma.ticket.update({
       where: { id },
@@ -122,10 +224,68 @@ export class TicketsService {
     });
   }
 
-  async addComment(id: string, userId: string, content: string, isInternal = false) {
-    await this.findOne(id);
+  async transition(id: string, newStatus: TicketStatus, currentUser: CurrentUser) {
+    const ticket = await this.findOne(id);
+    const isTenant = currentUser.role === 'TENANT';
+
+    if (isTenant && ticket.tenantId !== currentUser.tenantId) {
+      throw new ForbiddenException('Bạn không có quyền thao tác trên yêu cầu này');
+    }
+
+    const allowed = isTenant
+      ? (TENANT_ALLOWED_TRANSITIONS[ticket.status] ?? [])
+      : (VALID_TRANSITIONS[ticket.status] ?? []);
+
+    if (!allowed.includes(newStatus)) {
+      throw new BadRequestException(`Không thể chuyển từ ${ticket.status} sang ${newStatus}`);
+    }
+
+    const data: any = { status: newStatus };
+    if (newStatus === TicketStatus.RESOLVED) data.resolvedAt = new Date();
+    if (newStatus === TicketStatus.CLOSED) data.closedAt = new Date();
+    if (newStatus === TicketStatus.IN_PROGRESS) { data.resolvedAt = null; data.closedAt = null; }
+
+    return this.prisma.ticket.update({ where: { id }, data });
+  }
+
+  async addComment(id: string, userId: string, content: string, isInternal = false, currentUser?: CurrentUser) {
+    const ticket = await this.findOne(id);
+    if (currentUser?.role === 'TENANT') {
+      if (ticket.tenantId !== currentUser.tenantId) {
+        throw new ForbiddenException('Bạn không có quyền bình luận trên yêu cầu này');
+      }
+      isInternal = false; // tenant không tạo được ghi chú nội bộ
+    }
     return this.prisma.ticketComment.create({
       data: { ticketId: id, userId, content, isInternal },
+      include: { user: { select: { id: true, fullName: true } } },
+    });
+  }
+
+  // ── Photos (UnifiedDocument) ────────────────────────────────────────────
+  async listPhotos(ticketId: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser); // 403 nếu tenant khác cố xem
+    return this.prisma.unifiedDocument.findMany({
+      where: { entityType: ENTITY_TYPE, entityId: ticketId, isActive: true },
+      orderBy: { uploadedAt: 'desc' },
+    });
+  }
+
+  async uploadPhoto(ticketId: string, file: Express.Multer.File, uploadedById: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser); // 403 nếu tenant khác cố tải lên
+    const saved = await this.storageService.saveFile(file, `tickets/${ticketId}`);
+    return this.prisma.unifiedDocument.create({
+      data: {
+        entityType: ENTITY_TYPE,
+        entityId: ticketId,
+        category: 'ORIGINAL',
+        documentType: 'INSPECTION_PHOTO',
+        fileName: saved.fileName,
+        filePath: saved.filePath,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        uploadedById,
+      },
     });
   }
 

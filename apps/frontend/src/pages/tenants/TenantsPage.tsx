@@ -64,7 +64,7 @@ function daysUntil(d?: string | null) {
 const EMPTY_FORM = {
   brandName: '', companyName: '', taxCode: '', contactName: '',
   contactEmail: '', contactPhone: '', address: '', category: '',
-  isPortalUser: false, portalEmail: '',
+  isPortalUser: false,
 };
 
 function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: () => void; tenant?: any }) {
@@ -80,7 +80,6 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
     address: tenant.address ?? '',
     category: tenant.category ?? '',
     isPortalUser: tenant.isPortalUser ?? false,
-    portalEmail: tenant.portalEmail ?? '',
   } : { ...EMPTY_FORM });
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
@@ -148,14 +147,12 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
           <div className="border-t pt-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
               <input type="checkbox" checked={form.isPortalUser} onChange={(e) => set('isPortalUser', e.target.checked)} />
-              Cấp quyền truy cập Tenant Portal
+              Khách thuê có quyền truy cập Tenant Portal
             </label>
             {form.isPortalUser && (
-              <div className="mt-2">
-                <label className="text-xs text-gray-500 mb-1 block">Email đăng nhập portal</label>
-                <Input type="email" value={form.portalEmail}
-                  onChange={(e) => set('portalEmail', e.target.value)} placeholder="tenant@example.com" />
-              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Để cấp đăng nhập thật, vào <strong>Quản trị → Tài khoản</strong>, tạo tài khoản vai trò "Khách thuê" và liên kết với khách thuê này.
+              </p>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-1">
@@ -482,22 +479,12 @@ function TenantDetailPanel({ tenantId, onEdit, onClose }: {
                   </div>
                 </div>
                 {t?.isPortalUser ? (
-                  <div className="space-y-2 border-t pt-3">
-                    {t?.portalEmail && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Mail size={13} className="text-gray-400" />
-                        <span className="text-gray-700">{t.portalEmail}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 text-sm">
-                      <Shield size={13} className="text-gray-400" />
-                      <span className="text-gray-500">Mật khẩu mặc định: </span>
-                      <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">Tenant123!</code>
-                    </div>
-                  </div>
+                  <p className="text-xs text-gray-500 border-t pt-3">
+                    Để cấp đăng nhập, vào <strong>Quản trị → Tài khoản</strong>, tạo tài khoản vai trò "Khách thuê" và liên kết với khách thuê này.
+                  </p>
                 ) : (
                   <p className="text-xs text-gray-400 border-t pt-3">
-                    Bật quyền Portal trong phần Chỉnh sửa để cấp tài khoản đăng nhập cho khách thuê.
+                    Bật quyền Portal trong phần Chỉnh sửa, sau đó tạo tài khoản đăng nhập trong Quản trị → Tài khoản.
                   </p>
                 )}
               </div>

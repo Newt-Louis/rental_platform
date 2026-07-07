@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { FitoutDocumentStatus, FitoutDocumentType, FitoutStatus } from '@prisma/client';
+import { FitoutDocumentStatus } from '@prisma/client';
 
 @Injectable()
 export class FitoutDocumentsService {
@@ -15,7 +15,7 @@ export class FitoutDocumentsService {
 
   async uploadDocument(data: {
     projectId: string;
-    documentType: FitoutDocumentType;
+    documentType: string;
     fileName: string;
     filePath: string;
     fileSizeKb?: number;
@@ -62,24 +62,37 @@ export class FitoutDocumentsService {
     });
   }
 
-  async checkGateRequirements(projectId: string, targetStatus: FitoutStatus) {
+  /**
+   * Nguồn dữ liệu kiểm tra gate là trạng thái Submittal (APPROVED/PUBLISHED) theo FitoutFormType,
+   * không còn dựa vào FitoutDocument đơn giản nữa (từ khi có module Submittal đa cấp duyệt).
+   */
+  async checkGateRequirements(projectId: string, targetStatus: string) {
     const gates = await this.prisma.fitoutDocumentGate.findMany({
       where: { stage: targetStatus, isRequired: true, isActive: true },
     });
 
     if (!gates.length) return { canAdvance: true, missing: [] };
 
-    const docs = await this.prisma.fitoutDocument.findMany({
+    const formTypes = await this.prisma.fitoutFormType.findMany({
+      where: { code: { in: gates.map((g) => g.documentType) } },
+    });
+    const formTypeByCode = new Map(formTypes.map((f) => [f.code, f]));
+
+    const approvedSubmittals = await this.prisma.fitoutSubmittal.findMany({
       where: {
         projectId,
-        documentType: { in: gates.map((g) => g.documentType) },
-        status: FitoutDocumentStatus.APPROVED,
+        formTypeId: { in: formTypes.map((f) => f.id) },
+        status: { in: ['APPROVED', 'PUBLISHED'] },
       },
+      select: { formTypeId: true },
     });
+    const approvedFormTypeIds = new Set(approvedSubmittals.map((s) => s.formTypeId));
 
-    const approvedTypes = new Set(docs.map((d) => d.documentType));
     const missing = gates
-      .filter((g) => !approvedTypes.has(g.documentType))
+      .filter((g) => {
+        const formType = formTypeByCode.get(g.documentType);
+        return !formType || !approvedFormTypeIds.has(formType.id);
+      })
       .map((g) => ({ documentType: g.documentType, description: g.description }));
 
     return {
@@ -96,8 +109,8 @@ export class FitoutDocumentsService {
   }
 
   async upsertGate(data: {
-    stage: FitoutStatus;
-    documentType: FitoutDocumentType;
+    stage: string;
+    documentType: string;
     isRequired?: boolean;
     description?: string;
     order?: number;

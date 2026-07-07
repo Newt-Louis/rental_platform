@@ -32,4 +32,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ description: 'Tenant record liên kết — chỉ có ý nghĩa khi role=TENANT' })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
 }

@@ -7,13 +7,20 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Pencil, Trash2, Plus, MousePointer, ZoomIn, AlertTriangle, Grid3x3, BookmarkPlus } from 'lucide-react';
+import { Pencil, Trash2, Plus, MousePointer, ZoomIn, AlertTriangle, Grid3x3, BookmarkPlus, Lock, Check, X } from 'lucide-react';
 import type { UnitSlot, SlotBooking } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 
 // ── Slot colors by status ───────────────────────────────────────────────────
 
 type SlotColorInfo = { fill: string; stroke: string; label: string; status: 'vacant' | 'pending' | 'confirmed' };
+
+// Mặt bằng đã gắn với khách thuê chính thức — không cho tạo booking ô nhỏ mới (khớp với chặn ở backend)
+const UNBOOKABLE_STATUSES: Record<string, string> = {
+  OCCUPIED: 'Đang thuê',
+  CONTRACTED: 'Hợp đồng',
+  UNDER_FITOUT: 'Đang thi công',
+};
 
 function getSlotColor(slot: UnitSlot, bookings: SlotBooking[]): SlotColorInfo {
   const active = bookings.filter(
@@ -114,14 +121,17 @@ function AreaSummaryBar({
 // ── Slot Detail Panel ─────────────────────────────────────────────────────────
 
 function SlotInfoPanel({
-  slot, bookings, onEdit, onDelete, onBook,
+  slot, bookings, bookable, unbookableReason, onEdit, onDelete, onBook,
 }: {
   slot: UnitSlot;
   bookings: SlotBooking[];
+  bookable: boolean;
+  unbookableReason?: string;
   onEdit: () => void;
   onDelete: () => void;
   onBook: () => void;
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const slotBookings = bookings.filter(
     (b) => b.slotId === slot.id && ['PENDING', 'CONFIRMED'].includes(b.status),
   );
@@ -129,7 +139,7 @@ function SlotInfoPanel({
   const isFullyBooked = color.status === 'confirmed';
 
   return (
-    <div className="bg-white rounded-xl border shadow-lg p-4 w-72 text-sm">
+    <div className="bg-white rounded-xl border shadow-lg p-4 w-full text-sm">
       <div className="flex items-center justify-between mb-3">
         <div>
           <div className="font-semibold text-gray-900">{slot.name}</div>
@@ -142,6 +152,13 @@ function SlotInfoPanel({
           {color.label}
         </Badge>
       </div>
+
+      {!bookable && (
+        <div className="mb-3 flex items-start gap-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-2">
+          <Lock size={12} className="mt-0.5 shrink-0" />
+          <span>{unbookableReason}</span>
+        </div>
+      )}
 
       <div className="space-y-1 text-xs text-gray-600 mb-3">
         <div className="flex justify-between">
@@ -196,28 +213,45 @@ function SlotInfoPanel({
         </div>
       )}
 
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          className="flex-1 gap-1"
-          onClick={onBook}
-          disabled={isFullyBooked}
-          title={isFullyBooked ? 'Slot đã được xác nhận booking' : ''}
-        >
-          <Plus size={12} /> Book
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1 px-2" onClick={onEdit}>
-          <Pencil size={12} />
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1 px-2 text-red-500 hover:bg-red-50"
-          onClick={onDelete}
-        >
-          <Trash2 size={12} />
-        </Button>
-      </div>
+      {confirmingDelete ? (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-2">
+          <span className="flex-1 text-xs text-red-700">Xoá ô "{slot.name}"?</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2 gap-1 text-red-600 border-red-300 hover:bg-red-100"
+            onClick={() => { onDelete(); setConfirmingDelete(false); }}
+          >
+            <Check size={12} /> Xoá
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setConfirmingDelete(false)}>
+            <X size={12} />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            className="flex-1 gap-1"
+            onClick={onBook}
+            disabled={isFullyBooked || !bookable}
+            title={isFullyBooked ? 'Slot đã được xác nhận booking' : !bookable ? unbookableReason : ''}
+          >
+            <Plus size={12} /> Book
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1 px-2" onClick={onEdit}>
+            <Pencil size={12} />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 px-2 text-red-500 hover:bg-red-50"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 size={12} />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1008,16 +1042,23 @@ interface DrawState {
 
 export function FloorPlanEditor({
   unitId,
+  unitStatus,
   floorPlanUrl,
   unitArea,
 }: {
   unitId: string;
+  unitStatus?: string;
   floorPlanUrl?: string;
   unitArea?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const bookable = !unitStatus || !UNBOOKABLE_STATUSES[unitStatus];
+  const unbookableReason = unitStatus && UNBOOKABLE_STATUSES[unitStatus]
+    ? `Mặt bằng đang ở trạng thái "${UNBOOKABLE_STATUSES[unitStatus]}" — đã có khách thuê chính thức nên không thể tạo booking ô nhỏ mới.`
+    : undefined;
 
   const [mode, setMode] = useState<'select' | 'draw'>('select');
   const [drawing, setDrawing] = useState<DrawState | null>(null);
@@ -1142,6 +1183,14 @@ export function FloorPlanEditor({
 
   return (
     <div className="space-y-3">
+      {/* Cảnh báo mặt bằng đã có khách thuê chính thức — vẫn cho xem/sửa layout, chỉ chặn tạo booking mới */}
+      {!bookable && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800">
+          <Lock size={13} className="mt-0.5 shrink-0" />
+          <span>{unbookableReason}</span>
+        </div>
+      )}
+
       {/* Area summary bar */}
       {unitArea != null && unitArea > 0 && (
         <AreaSummaryBar
@@ -1194,7 +1243,8 @@ export function FloorPlanEditor({
               setBookSlot(null);
               setShowBookDialog(true);
             }}
-            disabled={(slots as UnitSlot[]).length === 0}
+            disabled={(slots as UnitSlot[]).length === 0 || !bookable}
+            title={!bookable ? unbookableReason : undefined}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white text-gray-600 border-gray-200 hover:border-gray-300 disabled:opacity-40 transition-colors"
           >
             <BookmarkPlus size={12} /> Book Slot
@@ -1307,6 +1357,8 @@ export function FloorPlanEditor({
         <SlotInfoPanel
           slot={selectedSlot}
           bookings={allBookings as SlotBooking[]}
+          bookable={bookable}
+          unbookableReason={unbookableReason}
           onEdit={() => {
             setEditSlot(selectedSlot);
             setSelectedSlot(null);

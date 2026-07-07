@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, SlotBookingType } from './dto/slots.dto';
 
 @Injectable()
 export class SlotsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private unitStatus: UnitStatusService,
+  ) {}
 
   // ── Slot CRUD ─────────────────────────────────────────────────────────────
 
@@ -181,6 +185,13 @@ export class SlotsService {
 
   async createBooking(slotId: string, dto: CreateSlotBookingDto, userId?: string) {
     const slot = await this.findSlot(slotId);
+    const unit = await this.prisma.unit.findUnique({ where: { id: slot.unitId }, select: { status: true } });
+    if (unit && this.unitStatus.isCommittedToTenant(unit.status)) {
+      throw new BadRequestException(
+        `Không thể tạo booking ô nhỏ: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,
+      );
+    }
+
     const start = new Date(dto.startDatetime);
     const end = new Date(dto.endDatetime);
 

@@ -20,19 +20,20 @@ export class SalesController {
   @ApiQuery({ name: 'period', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any) {
-    return this.salesService.findAll(query);
+  findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.salesService.findAll(query, user);
   }
 
   @Get('summary')
   @ApiOperation({ summary: 'Get sales summary for a period' })
   @ApiQuery({ name: 'period', required: true })
-  getSummary(@Query('period') period: string) {
-    return this.salesService.getSummary(period);
+  getSummary(@Query('period') period: string, @CurrentUser() user: any) {
+    return this.salesService.getSummary(period, user);
   }
 
   @Get('top-tenants')
-  @ApiOperation({ summary: 'Get top tenants by sales for a period' })
+  @ApiOperation({ summary: 'Get top tenants by sales for a period (nội bộ — lộ tên/doanh thu tenant khác)' })
+  @Roles(...MODULE_ROLES.salesStaff)
   @ApiQuery({ name: 'period', required: true })
   @ApiQuery({ name: 'limit', required: false })
   getTopTenants(@Query('period') period: string, @Query('limit') limit?: number) {
@@ -42,11 +43,12 @@ export class SalesController {
   @Post()
   @ApiOperation({ summary: 'Record sales turnover (upsert by period)' })
   create(@Body() dto: any, @CurrentUser() user: any) {
-    return this.salesService.create(dto, user.id);
+    return this.salesService.create(dto, user.id, user);
   }
 
   @Get('deadline')
-  @ApiOperation({ summary: 'Get submission deadline status for a period' })
+  @ApiOperation({ summary: 'Get submission deadline status for a period (nội bộ — lộ tên tenant khác)' })
+  @Roles(...MODULE_ROLES.salesStaff)
   @ApiQuery({ name: 'period', required: true })
   getDeadlineStatus(@Query('period') period: string) {
     return this.salesService.getDeadlineStatus(period);
@@ -54,18 +56,21 @@ export class SalesController {
 
   @Get(':id/audit')
   @ApiOperation({ summary: 'Get audit trail for a sales record' })
+  @Roles(...MODULE_ROLES.salesStaff)
   getAuditTrail(@Param('id') id: string) {
     return this.salesService.getAuditTrail(id);
   }
 
   @Post(':id/approve')
   @ApiOperation({ summary: 'Approve a sales record' })
+  @Roles(...MODULE_ROLES.salesStaff)
   approveSales(@Param('id') id: string, @CurrentUser() user: any) {
     return this.salesService.approveSales(id, user.id);
   }
 
   @Post(':id/dispute')
   @ApiOperation({ summary: 'Dispute a sales record' })
+  @Roles(...MODULE_ROLES.salesStaff)
   disputeSales(@Param('id') id: string, @Body('reason') reason: string, @CurrentUser() user: any) {
     return this.salesService.disputeSales(id, reason, user.id);
   }

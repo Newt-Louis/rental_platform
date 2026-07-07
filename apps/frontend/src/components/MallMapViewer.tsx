@@ -210,14 +210,24 @@ function StatsBar({ units }: { units: Unit[] }) {
 
 // ─── Main MallMapViewer ───────────────────────────────────────────────────────
 
+interface IssuePin {
+  unitId: string;
+  severity: string;
+}
+
+const PIN_SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+const PIN_SEVERITY_COLOR: Record<string, string> = { CRITICAL: '#dc2626', HIGH: '#f97316', MEDIUM: '#3b82f6', LOW: '#6b7280' };
+
 interface MallMapViewerProps {
   floors: Floor[];
   initialFloorId?: string;
   onUnitClick?: (unit: Unit) => void;
   onBookUnit?: (unit: Unit) => void;
+  /** Ghim vị trí vấn đề/khiếm khuyết fitout (D-Map) — tuỳ chọn, không có thì không đổi hành vi hiện tại. */
+  issuePins?: IssuePin[];
 }
 
-export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit }: MallMapViewerProps) {
+export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit, issuePins }: MallMapViewerProps) {
   const sortedFloors = [...floors].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
   const [activeFloorId, setActiveFloorId] = useState<string>(initialFloorId ?? sortedFloors[0]?.id ?? '');
@@ -413,6 +423,33 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit 
                   {u.tenant.brandName.length > 12 ? u.tenant.brandName.slice(0, 10) + '…' : u.tenant.brandName}
                 </div>
               )}
+            </div>
+          );
+        })}
+
+        {/* Fitout issue pins (D-Map) — badge at unit centroid, count + highest severity color */}
+        {issuePins && issuePins.length > 0 && filteredUnits.map((u) => {
+          const pinsForUnit = issuePins.filter((p) => p.unitId === u.id);
+          if (pinsForUnit.length === 0) return null;
+          const poly = getUnitPolygon(u);
+          if (!poly) return null;
+          const [cx, cy] = centroid(poly);
+          const topSeverity = pinsForUnit.reduce(
+            (top, p) => (PIN_SEVERITY_RANK[p.severity] ?? 0) > (PIN_SEVERITY_RANK[top] ?? 0) ? p.severity : top,
+            pinsForUnit[0].severity,
+          );
+          return (
+            <div key={`pin-${u.id}`} style={{
+              position: 'absolute', left: `${cx}%`, top: `${cy}%`,
+              transform: 'translate(-50%, -150%)', pointerEvents: 'none', zIndex: 20,
+            }}>
+              <div style={{
+                background: PIN_SEVERITY_COLOR[topSeverity] ?? '#6b7280', color: 'white', borderRadius: 9999,
+                width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 700, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+              }}>
+                {pinsForUnit.length}
+              </div>
             </div>
           );
         })}

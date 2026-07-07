@@ -32,7 +32,7 @@ export class PenaltyInterestService {
     let created = 0;
 
     for (const invoice of invoices) {
-      const paid = invoice.payments.reduce((s, p) => s + p.amount, 0);
+      const paid = invoice.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
       const outstanding = invoice.totalAmount - paid;
       if (outstanding <= 0) continue;
 

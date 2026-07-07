@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
 import { TicketSlaService } from './ticket-sla.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -29,8 +30,8 @@ export class TicketsController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any) {
-    return this.ticketsService.findAll(query);
+  findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.ticketsService.findAll(query, user);
   }
 
   @Get('stats')
@@ -39,28 +40,43 @@ export class TicketsController {
     return this.ticketsService.getStats();
   }
 
+  // Route đơn segment ('maintenance') PHẢI khai báo trước ':id' — nếu không Nest/Express sẽ khớp
+  // ':id' trước (coi 'maintenance' là một ticket id) và route thật bên dưới không bao giờ được gọi tới.
+  @Get('maintenance')
+  @ApiOperation({ summary: 'List maintenance schedules' })
+  @ApiQuery({ name: 'mallId', required: false })
+  listMaintenance(@Query() query: any) {
+    return this.ticketsService.listMaintenance(query);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get ticket details' })
-  findOne(@Param('id') id: string) {
-    return this.ticketsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.ticketsService.findOne(id, user);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create ticket' })
-  create(@Body() dto: CreateTicketDto) {
-    return this.ticketsService.create(dto);
+  @ApiOperation({ summary: 'Create ticket (staff tạo phiếu kiểm tra, hoặc tenant tự gửi yêu cầu)' })
+  create(@Body() dto: CreateTicketDto, @CurrentUser() user: any) {
+    return this.ticketsService.create(dto, user);
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update ticket' })
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.ticketsService.update(id, data);
+  @ApiOperation({ summary: 'Update ticket fields (không đổi status — dùng PATCH :id/status)' })
+  update(@Param('id') id: string, @Body() data: any, @CurrentUser() user: any) {
+    return this.ticketsService.update(id, data, user);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Transition ticket status theo state machine' })
+  transition(@Param('id') id: string, @Body('status') status: TicketStatus, @CurrentUser() user: any) {
+    return this.ticketsService.transition(id, status, user);
   }
 
   @Put(':id/assign')
   @ApiOperation({ summary: 'Assign ticket to user' })
-  assign(@Param('id') id: string, @Body('userId') userId: string) {
-    return this.ticketsService.assign(id, userId);
+  assign(@Param('id') id: string, @Body('userId') userId: string, @CurrentUser() user: any) {
+    return this.ticketsService.assign(id, userId, user);
   }
 
   @Post(':id/comments')
@@ -71,7 +87,22 @@ export class TicketsController {
     @Body('isInternal') isInternal: boolean,
     @CurrentUser() user: any,
   ) {
-    return this.ticketsService.addComment(id, user.id, text, isInternal);
+    return this.ticketsService.addComment(id, user.id, text, isInternal, user);
+  }
+
+  @Get(':id/photos')
+  @ApiOperation({ summary: 'List inspection photos of a ticket' })
+  listPhotos(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.ticketsService.listPhotos(id, user);
+  }
+
+  @Post(':id/photos')
+  @ApiOperation({ summary: 'Upload an inspection photo to a ticket' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser() user: any) {
+    return this.ticketsService.uploadPhoto(id, file, user.id, user);
   }
 
   @Get('sla/policies')
@@ -123,13 +154,6 @@ export class TicketsController {
   }
 
   // ── Maintenance ──────────────────────────────────────────────────────────────
-
-  @Get('maintenance')
-  @ApiOperation({ summary: 'List maintenance schedules' })
-  @ApiQuery({ name: 'mallId', required: false })
-  listMaintenance(@Query() query: any) {
-    return this.ticketsService.listMaintenance(query);
-  }
 
   @Post('maintenance')
   @ApiOperation({ summary: 'Create maintenance schedule' })

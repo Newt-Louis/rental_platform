@@ -1,9 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';
-import { ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus } from '@prisma/client';
+import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
+import type {
+  ApprovalWorkflowCompletedEvent,
+  ApprovalWorkflowStepAdvancedEvent,
+  ApprovalWorkflowRejectedEvent,
+} from '../approvals/approvals.service';
 import {
   buildProposalSnapshot,
   compareProposalSnapshots,
@@ -14,6 +20,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { CategoriesService } from '../categories/categories.service';
 
 @Injectable()
 export class ProposalsService {
@@ -26,6 +33,7 @@ export class ProposalsService {
     private billingSchedule: BillingScheduleService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private categoriesService: CategoriesService,
   ) {}
 
   private generateProposalNumber() {
@@ -175,6 +183,14 @@ export class ProposalsService {
         depositAmount: financials.depositAmount,
         totalContractValue: financials.totalContractValue,
         notes: dto.notes,
+        businessModel: dto.businessModel,
+        serviceFeeSqm: dto.serviceFeeSqm ?? 0,
+        businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
+        rentCurrency: dto.rentCurrency ?? 'VND',
+        fitoutDays: dto.fitoutDays ?? 90,
+        handoverDate: dto.handoverDate ? new Date(dto.handoverDate) : undefined,
+        openingDate: dto.openingDate ? new Date(dto.openingDate) : undefined,
+        specialConditions: dto.specialConditions,
         createdById: userId,
       },
       include: {
@@ -244,11 +260,27 @@ export class ProposalsService {
       );
     }
 
+    // Tính % lệch giá so với bảng giá ngành hàng (master data) NGAY TẠI THỜI ĐIỂM submit — trước đây
+    // luồng này không truyền priceDeviationPct nên các rule PRICE_DEVIATION_PCT (Director/CEO price
+    // review) không bao giờ khớp được, dù booking gốc đã bị flag lệch giá lớn.
+    let priceDeviationPct = 0;
+    if (proposal.unit?.categoryId) {
+      const validation = await this.categoriesService.validateProposedPrice({
+        mallId: proposal.unit.mallId,
+        categoryId: proposal.unit.categoryId,
+        floorId: proposal.unit.floorId ?? undefined,
+        zoneId: proposal.unit.zoneId ?? undefined,
+        proposedRentPerSqm: proposal.rentPerSqm,
+      });
+      priceDeviationPct = validation.deviationPercent;
+    }
+
     const steps = buildApprovalStepsFromRules(rules, {
       discountPct: proposal.discount ?? 0,
       rentFreeDays: proposal.rentFree ?? 0,
       industryTag: proposal.unit?.category ?? proposal.tenant?.category ?? null,
       hasArDebt,
+      priceDeviationPct,
     });
 
     if (!steps.length) {
@@ -353,6 +385,49 @@ export class ProposalsService {
   /**
    * Auto post-approval: draft contract + billing schedule when tenant is assigned.
    */
+  @OnEvent('approval.workflow.completed')
+  async onApprovalWorkflowCompleted(payload: ApprovalWorkflowCompletedEvent) {
+    if (payload.entityType !== 'PROPOSAL') return;
+    const proposalId = payload.entityId;
+
+    await this.prisma.proposal.update({
+      where: { id: proposalId },
+      data: { status: ProposalStatus.APPROVED },
+    });
+
+    await this.handleProposalFullyApproved(proposalId, payload.decidedByUserId);
+
+    const proposal = await this.prisma.proposal.findUnique({
+      where: { id: proposalId },
+      select: { proposalNumber: true, createdById: true },
+    });
+    if (proposal?.createdById) {
+      await this.notifications.create({
+        userId: proposal.createdById,
+        title: `Proposal ${proposal.proposalNumber} đã được phê duyệt`,
+        body: 'Deal đã hoàn tất quy trình phê duyệt.',
+        type: 'PROPOSAL_APPROVED',
+        entityType: 'PROPOSAL',
+        entityId: proposalId,
+      });
+    }
+  }
+
+  @OnEvent('approval.workflow.step-advanced')
+  async onApprovalWorkflowStepAdvanced(payload: ApprovalWorkflowStepAdvancedEvent) {
+    if (payload.entityType !== 'PROPOSAL') return;
+    await this.notifyPendingApprovers(payload.workflowId, payload.nextStepOrder);
+  }
+
+  @OnEvent('approval.workflow.rejected')
+  async onApprovalWorkflowRejected(payload: ApprovalWorkflowRejectedEvent) {
+    if (payload.entityType !== 'PROPOSAL') return;
+    await this.prisma.proposal.update({
+      where: { id: payload.entityId },
+      data: { status: ProposalStatus.REJECTED },
+    });
+  }
+
   async handleProposalFullyApproved(proposalId: string, userId?: string) {
     const proposal = await this.findOne(proposalId);
     if (proposal.status !== ProposalStatus.APPROVED) {
@@ -409,10 +484,10 @@ export class ProposalsService {
     options?: { userId?: string; markConverted?: boolean },
   ) {
     const proposal = await this.findOne(id);
-    if (
-      proposal.status !== ProposalStatus.APPROVED &&
-      proposal.status !== ProposalStatus.SUBMITTED
-    ) {
+    // Chỉ chấp nhận APPROVED — trước đây còn chấp nhận cả SUBMITTED (trạng thái ngay sau khi nộp,
+    // trước khi có bước duyệt nào), là kẽ hở lý thuyết cho phép tạo hợp đồng khi chưa qua phê duyệt
+    // nào nếu có endpoint/tác vụ khác gọi thẳng hàm này trong tương lai.
+    if (proposal.status !== ProposalStatus.APPROVED) {
       throw new BadRequestException('Proposal must be approved before creating contract');
     }
     if (!proposal.tenantId) {
@@ -421,6 +496,23 @@ export class ProposalsService {
 
     const existing = await this.prisma.contract.findFirst({ where: { proposalId: id } });
     if (existing) return existing;
+
+    // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal khác nhau
+    // cho cùng unit đều được duyệt và cùng cố tạo hợp đồng (sẽ ghi đè tenantId/lease dates âm thầm
+    // ở bước transition CONTRACTED→CONTRACTED bên dưới nếu không chặn ở đây).
+    const existingUnitContract = await this.prisma.contract.findFirst({
+      where: {
+        unitId: proposal.unitId,
+        isActive: true,
+        deletedAt: null,
+        status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+      },
+    });
+    if (existingUnitContract) {
+      throw new BadRequestException(
+        `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
+      );
+    }
 
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
@@ -450,6 +542,17 @@ export class ProposalsService {
       tenantId: proposal.tenantId,
       leaseStartDate: proposal.startDate,
       leaseEndDate: proposal.endDate ?? undefined,
+    });
+
+    // Mặt bằng đã có hợp đồng chính thức — mọi booking khác còn xếp hàng (queue) cho unit này
+    // không còn ý nghĩa, huỷ để tránh tồn đọng booking "ma" trỏ vào unit đã ký hợp đồng.
+    await this.prisma.unitBooking.updateMany({
+      where: {
+        unitId: proposal.unitId,
+        isActive: true,
+        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+      },
+      data: { status: BookingStatus.CANCELLED },
     });
 
     if (options?.markConverted !== false) {
@@ -497,6 +600,26 @@ export class ProposalsService {
       const lead = await this.prisma.lead.findUnique({ where: { id: proposal.leadId }, select: { status: true } });
       if (lead?.status === 'PROPOSAL') {
         await this.prisma.lead.update({ where: { id: proposal.leadId }, data: { status: 'NEGOTIATION' as any } });
+      }
+    }
+
+    // Mặt bằng không nên kẹt mãi ở BOOKING/NEGOTIATING sau khi proposal bị từ chối — trả về VACANT
+    // nếu không còn booking nào khác đang giữ chỗ cho unit này (nếu còn, giữ nguyên trạng thái để
+    // booking đó tiếp tục quy trình của nó).
+    const unit = await this.prisma.unit.findUnique({ where: { id: proposal.unitId }, select: { status: true } });
+    if (unit && (unit.status === UnitStatus.BOOKING || unit.status === UnitStatus.NEGOTIATING)) {
+      const otherActiveBooking = await this.prisma.unitBooking.findFirst({
+        where: {
+          unitId: proposal.unitId,
+          isActive: true,
+          status: { in: ['ACTIVE', 'PENDING'] },
+        },
+      });
+      if (!otherActiveBooking) {
+        await this.unitStatus.transition(proposal.unitId, UnitStatus.VACANT, {
+          userId,
+          reason: `Proposal ${proposal.proposalNumber} bị từ chối — không còn booking nào giữ mặt bằng`,
+        });
       }
     }
 

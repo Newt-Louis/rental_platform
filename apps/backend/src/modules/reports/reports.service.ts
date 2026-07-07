@@ -1,10 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractStatus } from '@prisma/client';
+import { BillingService } from '../billing/billing.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class ReportsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billingService: BillingService,
+    private auditLogService: AuditLogService,
+  ) {}
 
   async occupancyReport(mallId?: string) {
     const where: any = { isActive: true };
@@ -122,6 +128,88 @@ export class ReportsService {
     }));
   }
 
+  /**
+   * Doanh thu & Công nợ chi tiết — thay cho "P&L" vì hệ thống không có bảng chi phí/OPEX nào,
+   * không thể tính lãi/lỗ thật mà không bịa số liệu. Đây là nửa doanh thu của P&L: phát hành vs
+   * đã thu (loại trừ bút toán đã đảo) vs còn phải thu, theo loại hoá đơn và theo tháng.
+   */
+  async revenueReceivablesReport(params: { year?: number }) {
+    const year = params.year ?? new Date().getFullYear();
+
+    const invoices = await this.prisma.invoice.findMany({
+      where: { isActive: true, period: { startsWith: `${year}-` } },
+      select: {
+        period: true,
+        type: true,
+        totalAmount: true,
+        status: true,
+        payments: { select: { amount: true, reversedAt: true } },
+      },
+    });
+
+    const collected = (inv: (typeof invoices)[number]) =>
+      inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
+
+    const totalBilled = invoices.reduce((s, i) => s + i.totalAmount, 0);
+    const totalCollected = invoices.reduce((s, i) => s + collected(i), 0);
+    const totalOutstanding = totalBilled - totalCollected;
+    const collectionRate = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 1000) / 10 : 0;
+
+    const byType: Record<string, { billed: number; collected: number }> = {};
+    for (const inv of invoices) {
+      if (!byType[inv.type]) byType[inv.type] = { billed: 0, collected: 0 };
+      byType[inv.type].billed += inv.totalAmount;
+      byType[inv.type].collected += collected(inv);
+    }
+
+    const byPeriod: Record<string, { billed: number; collected: number }> = {};
+    for (const inv of invoices) {
+      if (!byPeriod[inv.period]) byPeriod[inv.period] = { billed: 0, collected: 0 };
+      byPeriod[inv.period].billed += inv.totalAmount;
+      byPeriod[inv.period].collected += collected(inv);
+    }
+
+    return {
+      year,
+      totalBilled,
+      totalCollected,
+      totalOutstanding,
+      collectionRate,
+      byType: Object.entries(byType).map(([type, v]) => ({ type, ...v })),
+      byPeriod: Object.entries(byPeriod).sort(([a], [b]) => a.localeCompare(b)).map(([period, v]) => ({ period, ...v })),
+    };
+  }
+
+  /** Công nợ theo tuổi nợ — dùng lại đúng logic đối soát của Billing, không viết lại. */
+  async arAgingReport() {
+    return this.billingService.getArAging();
+  }
+
+  /** Báo cáo tuân thủ tổng hợp từ Nhật ký hệ thống — ai sửa gì, tỷ lệ lỗi, theo loại đối tượng. */
+  async complianceReport(params: { dateFrom?: string }) {
+    const dateFrom = params.dateFrom ?? new Date(Date.now() - 30 * 86400000).toISOString();
+    const [stats, entityTypes] = await Promise.all([
+      this.auditLogService.getStats(dateFrom),
+      this.auditLogService.listEntityTypes(),
+    ]);
+
+    const recentErrors = await this.auditLogService.findAll({
+      status: 'ERROR',
+      dateFrom,
+      limit: 20,
+    });
+
+    return {
+      dateFrom,
+      totalActions: stats.total,
+      errorCount: stats.errorCount,
+      errorRate: stats.total > 0 ? Math.round((stats.errorCount / stats.total) * 1000) / 10 : 0,
+      byAction: stats.byAction,
+      entityTypesTracked: entityTypes.length,
+      recentErrors: recentErrors.data,
+    };
+  }
+
   async exportCsv(type: string, from?: string, to?: string): Promise<string> {
     const fromDate = from ? new Date(from) : new Date(Date.now() - 90 * 86400000);
     const toDate = to ? new Date(to) : new Date();
@@ -199,6 +287,6 @@ export class ReportsService {
       return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
     }
 
-    return 'Loại báo cáo không được hỗ trợ';
+    throw new BadRequestException(`Loại báo cáo '${type}' không được hỗ trợ (chỉ hỗ trợ: revenue, occupancy, expiry)`);
   }
 }

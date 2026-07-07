@@ -127,6 +127,7 @@ export class SpacesController {
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'status', required: false, enum: UnitStatus })
   @ApiQuery({ name: 'category', required: false })
+  @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -224,8 +225,8 @@ export class SpacesController {
 
   @Patch('units/:id/status')
   @ApiOperation({ summary: 'Update unit status' })
-  updateUnitStatus(@Param('id') id: string, @Body('status') status: UnitStatus) {
-    return this.spacesService.updateUnitStatus(id, status);
+  updateUnitStatus(@Param('id') id: string, @Body('status') status: UnitStatus, @CurrentUser() user: any) {
+    return this.spacesService.updateUnitStatus(id, status, user?.id);
   }
 
   @Delete('units/:id')
@@ -380,7 +381,7 @@ export class SpacesController {
   }
 
   @Post('floors/:id/floor-plan')
-  @ApiOperation({ summary: 'Upload floor plan image for a floor (JPG/PNG/WebP/PDF)' })
+  @ApiOperation({ summary: 'Upload floor plan image for a floor (JPG/PNG/WebP)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   uploadFloorPlan(

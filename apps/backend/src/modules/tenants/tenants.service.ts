@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
-import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TenantsService {
@@ -85,18 +84,7 @@ export class TenantsService {
       if (existing) throw new ConflictException('Tax code already exists');
     }
 
-    let portalPassword: string | undefined;
-    if (dto.isPortalUser && dto.portalEmail) {
-      const defaultPassword = 'Tenant123!';
-      portalPassword = await bcrypt.hash(defaultPassword, 10);
-    }
-
-    return this.prisma.tenant.create({
-      data: {
-        ...dto,
-        portalPassword,
-      },
-    });
+    return this.prisma.tenant.create({ data: dto });
   }
 
   async update(id: string, dto: Partial<CreateTenantDto>) {

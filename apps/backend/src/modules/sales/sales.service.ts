@@ -1,16 +1,27 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+
+interface CurrentUser {
+  id: string;
+  role: string;
+  tenantId?: string | null;
+}
 
 @Injectable()
 export class SalesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: { tenantId?: string; period?: string; page?: number; limit?: number }) {
+  async findAll(query: { tenantId?: string; period?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, tenantId, period } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = {};
-    if (tenantId) where.tenantId = tenantId;
+    if (currentUser?.role === 'TENANT') {
+      // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    } else if (tenantId) {
+      where.tenantId = tenantId;
+    }
     if (period) where.period = period;
 
     const [data, total] = await Promise.all([
@@ -30,7 +41,12 @@ export class SalesService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async create(dto: { tenantId: string; unitId: string; date: string; period: string; grossSales: number; netSales: number; transactions?: number; notes?: string }, userId: string) {
+  async create(dto: { tenantId: string; unitId: string; date: string; period: string; grossSales: number; netSales: number; transactions?: number; notes?: string }, userId: string, currentUser?: CurrentUser) {
+    if (currentUser?.role === 'TENANT') {
+      if (!currentUser.tenantId) throw new ForbiddenException('Tài khoản của bạn chưa được liên kết với khách thuê nào');
+      dto = { ...dto, tenantId: currentUser.tenantId };
+    }
+
     const existing = await this.prisma.salesTurnover.findUnique({
       where: { tenantId_unitId_period: { tenantId: dto.tenantId, unitId: dto.unitId, period: dto.period } },
     });
@@ -44,6 +60,8 @@ export class SalesService {
           transactions: dto.transactions ?? 0,
           notes: dto.notes,
           recordedById: userId,
+          // Số liệu thay đổi — duyệt cũ không còn áp dụng, phải soát lại từ đầu.
+          status: 'PENDING',
         },
       });
     }
@@ -63,9 +81,14 @@ export class SalesService {
     });
   }
 
-  async getSummary(period: string) {
+  async getSummary(period: string, currentUser?: CurrentUser) {
+    const where: any = { period };
+    if (currentUser?.role === 'TENANT') {
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    }
+
     const data = await this.prisma.salesTurnover.findMany({
-      where: { period },
+      where,
       include: {
         tenant: { select: { id: true, brandName: true } },
         unit: { select: { id: true, code: true, areaNLA: true } },
@@ -91,11 +114,13 @@ export class SalesService {
     });
 
     return data.map((r, i) => ({
+      id: r.id,
       rank: i + 1,
       tenant: r.tenant,
       unit: r.unit,
       grossSales: r.grossSales,
       netSales: r.netSales,
+      status: r.status,
       salesPerSqm: r.unit.areaNLA > 0 ? r.netSales / r.unit.areaNLA : 0,
     }));
   }
@@ -123,6 +148,8 @@ export class SalesService {
     const sales = await this.prisma.salesTurnover.findUnique({ where: { id: salesId } });
     if (!sales) throw new NotFoundException('SalesTurnover not found');
 
+    await this.prisma.salesTurnover.update({ where: { id: salesId }, data: { status: 'APPROVED' } });
+
     await this.prisma.salesAuditTrail.create({
       data: { salesId, action: 'APPROVED', oldValue: null, newValue: sales.grossSales, performedById: userId },
     });
@@ -133,6 +160,8 @@ export class SalesService {
   async disputeSales(salesId: string, reason: string, userId: string) {
     const sales = await this.prisma.salesTurnover.findUnique({ where: { id: salesId } });
     if (!sales) throw new NotFoundException('SalesTurnover not found');
+
+    await this.prisma.salesTurnover.update({ where: { id: salesId }, data: { status: 'DISPUTED' } });
 
     await this.prisma.salesAuditTrail.create({
       data: { salesId, action: 'DISPUTED', oldValue: null, newValue: sales.grossSales, reason, performedById: userId },

@@ -7,6 +7,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { CategoriesService } from '../categories/categories.service';
 import { ProposalStatus } from '@prisma/client';
 import { Role } from '@prisma/client';
 
@@ -37,6 +38,7 @@ describe('ProposalsService integration (mocked DB)', () => {
         { provide: BillingScheduleService, useValue: { buildScheduleForContract: jest.fn() } },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
+        { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
       ],
     }).compile();
     service = module.get(ProposalsService);

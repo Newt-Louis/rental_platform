@@ -27,7 +27,7 @@ export class CollectionKpiService {
 
     for (const inv of invoices) {
       totalBilled += inv.totalAmount;
-      const collected = inv.payments.reduce((s, p) => s + p.amount, 0);
+      const collected = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
       totalCollected += collected;
 
       if ([InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE].includes(inv.status as any)) {
@@ -80,7 +80,7 @@ export class CollectionKpiService {
       let current = 0;
       let overdue = 0;
       for (const inv of invoices) {
-        const collected = inv.payments.reduce((s, p) => s + p.amount, 0);
+        const collected = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
         const balance = inv.totalAmount - collected;
         if (balance <= 0) continue;
         if (inv.status === InvoiceStatus.OVERDUE || new Date(inv.dueDate) < end) {

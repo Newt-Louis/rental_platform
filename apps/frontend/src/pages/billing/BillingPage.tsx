@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api';
+import { useAuthStore } from '@/store/auth.store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScheduleTab, DunningTab, CollectionKpiTab } from './BillingExtraTabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,7 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Search, Download, Receipt, ChevronRight, Plus, Trash2, Send,
   CheckCircle2, Banknote, FileText, Zap, Droplets, Settings, Package,
-  AlertTriangle, Clock, X, Edit2, ChevronDown, ArrowRight,
+  AlertTriangle, Clock, X, Edit2, ChevronDown, ArrowRight, Ban, Undo2,
 } from 'lucide-react';
 import api from '@/lib/axios';
 import type { Invoice, ArAgingRow } from '@/types';
@@ -199,6 +200,8 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
 function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  const isStaff = user?.role !== 'TENANT';
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [editLineId, setEditLineId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ description: '', qty: '', unitPrice: '' });
@@ -263,17 +266,50 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
+  const voidMutation = useMutation({
+    mutationFn: (reason: string) => billingApi.voidInvoice(invoiceId!, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      toast({ title: 'Đã hủy hóa đơn' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi hủy hóa đơn', variant: 'destructive' }),
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) => billingApi.reversePayment(paymentId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      toast({ title: 'Đã đảo bút toán thanh toán' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi đảo bút toán', variant: 'destructive' }),
+  });
+
+  const handleVoid = () => {
+    const reason = window.prompt('Lý do hủy hóa đơn này?');
+    if (reason && reason.trim()) voidMutation.mutate(reason.trim());
+  };
+
+  const handleReversePayment = (paymentId: string) => {
+    const reason = window.prompt('Lý do đảo bút toán thanh toán này?');
+    if (reason && reason.trim()) reverseMutation.mutate({ paymentId, reason: reason.trim() });
+  };
+
   if (!invoiceId) return null;
 
   const isDraft = inv?.status === 'DRAFT';
+  const isCancelled = inv?.status === 'CANCELLED';
   const canPay = ['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'].includes(inv?.status ?? '');
   const statusCfg = STATUS_MAP[inv?.status ?? ''] ?? STATUS_MAP.DRAFT;
   const lines = inv?.lines ?? [];
   const fixedLines = lines.filter((l: any) => ['RENT', 'CAM', 'DEPOSIT'].includes(l.type?.toUpperCase()));
   const variableLines = lines.filter((l: any) => !['RENT', 'CAM', 'DEPOSIT'].includes(l.type?.toUpperCase()));
   const payments = inv?.payments ?? [];
-  const totalPaid = payments.reduce((s: number, p: any) => s + p.amount, 0);
+  const activePayments = payments.filter((p: any) => !p.reversedAt);
+  const totalPaid = activePayments.reduce((s: number, p: any) => s + p.amount, 0);
   const balance = (inv?.totalAmount ?? 0) - totalPaid;
+  const canVoid = !isCancelled && activePayments.length === 0;
 
   const startEdit = (line: any) => {
     setEditLineId(line.id);
@@ -570,15 +606,30 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                 <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">Lịch sử thanh toán</div>
                 <div className="space-y-2">
                   {payments.map((p: any) => (
-                    <div key={p.id} className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2.5">
+                    <div key={p.id} className={`flex items-center justify-between border rounded-lg px-3 py-2.5 ${
+                      p.reversedAt ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-green-50 border-green-100'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 size={14} className="text-green-600" />
+                        <CheckCircle2 size={14} className={p.reversedAt ? 'text-gray-400' : 'text-green-600'} />
                         <div>
-                          <div className="text-sm font-medium text-green-800">{fmtMoney(p.amount)}</div>
-                          <div className="text-xs text-green-600">{p.method} · {fmtDate(p.paidAt)}</div>
+                          <div className={`text-sm font-medium ${p.reversedAt ? 'text-gray-500 line-through' : 'text-green-800'}`}>{fmtMoney(p.amount)}</div>
+                          <div className={`text-xs ${p.reversedAt ? 'text-gray-400' : 'text-green-600'}`}>{p.method} · {fmtDate(p.paidAt)}</div>
+                          {p.reversedAt && <div className="text-xs text-red-500 mt-0.5">Đã đảo: {p.reversalReason}</div>}
                         </div>
                       </div>
-                      {p.reference && <span className="text-xs text-gray-400 font-mono">{p.reference}</span>}
+                      <div className="flex items-center gap-2">
+                        {p.reference && <span className="text-xs text-gray-400 font-mono">{p.reference}</span>}
+                        {isStaff && !p.reversedAt && (
+                          <Button
+                            size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
+                            title="Đảo bút toán"
+                            onClick={() => handleReversePayment(p.id)}
+                            disabled={reverseMutation.isPending}
+                          >
+                            <Undo2 size={13} />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -613,6 +664,18 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
           <div className="flex items-center justify-center gap-2 py-2 text-green-600 font-medium">
             <CheckCircle2 size={16} /> Hóa đơn đã thanh toán đầy đủ
           </div>
+        )}
+        {isCancelled && inv?.voidReason && (
+          <div className="text-xs text-gray-500 bg-gray-100 rounded-lg px-3 py-2">
+            Đã hủy — lý do: {inv.voidReason}
+          </div>
+        )}
+        {isStaff && canVoid && (
+          <Button variant="outline" className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
+            onClick={handleVoid}
+            disabled={voidMutation.isPending}>
+            <Ban size={14} /> Hủy hóa đơn
+          </Button>
         )}
       </div>
 

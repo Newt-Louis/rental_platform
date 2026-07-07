@@ -62,7 +62,8 @@ export function FloorPlan({
   const zoneGroups = useMemo(() => {
     const map = new Map<string, Unit[]>();
     floorUnits.forEach(u => {
-      const key = u.zone?.name ?? 'Khu ?';
+      // Chuỗi rỗng = chưa gán zone — nhóm riêng nhưng không hiển thị nhãn "Khu ?" giả
+      const key = u.zone?.name ?? '';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(u);
     });
@@ -243,10 +244,12 @@ function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries =
 
   return (
     <div className="flex items-stretch gap-2">
-      {/* Zone label */}
-      <div className="w-28 shrink-0 flex items-center justify-center bg-slate-700 text-white text-xs font-bold rounded-lg px-2 py-3 text-center leading-tight">
-        {zoneName}
-      </div>
+      {/* Zone label — ẩn hoàn toàn nếu unit chưa được gán zone */}
+      {zoneName && (
+        <div className="w-28 shrink-0 flex items-center justify-center bg-slate-700 text-white text-xs font-bold rounded-lg px-2 py-3 text-center leading-tight">
+          {zoneName}
+        </div>
+      )}
 
       {/* Units row */}
       <div className="flex-1 flex flex-wrap gap-2 min-h-[76px] items-start content-start">

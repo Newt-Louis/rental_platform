@@ -6,9 +6,16 @@ import * as fs from 'fs';
 
 @Injectable()
 export class UnitMediaService {
-  private readonly uploadDir = process.env.UPLOAD_DIR ?? 'uploads/unit-media';
+  // Root thư mục uploads (được main.ts serve tĩnh tại '/uploads') — file phải nằm trong đây để truy cập được qua URL.
+  private readonly uploadRoot = (process.env.UPLOAD_DIR ?? 'uploads').replace(/[\\/]unit-media$/, '');
 
   constructor(private prisma: PrismaService) {}
+
+  private resolvePhysicalPath(fileUrl: string): string {
+    return fileUrl.startsWith('/uploads/')
+      ? path.join(this.uploadRoot, fileUrl.slice('/uploads/'.length))
+      : fileUrl; // dữ liệu cũ: fileUrl từng được lưu trực tiếp là đường dẫn vật lý
+  }
 
   async getUnitMedia(unitId: string, type?: UnitMediaType) {
     await this.requireUnit(unitId);
@@ -33,7 +40,7 @@ export class UnitMediaService {
     this.validateFileType(file, type);
 
     // Lưu file vào thư mục uploads
-    const dir = path.join(this.uploadDir, unitId);
+    const dir = path.join(this.uploadRoot, 'unit-media', unitId);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
     const ext = path.extname(file.originalname);
@@ -60,7 +67,7 @@ export class UnitMediaService {
       data: {
         unitId,
         type,
-        fileUrl: filePath.replace(/\\/g, '/'),
+        fileUrl: `/uploads/unit-media/${unitId}/${filename}`,
         fileName: file.originalname,
         fileSize: file.size,
         mimeType: file.mimetype,
@@ -105,8 +112,9 @@ export class UnitMediaService {
     if (!media) throw new NotFoundException('Media không tồn tại');
 
     // Xóa file thực tế
-    if (fs.existsSync(media.fileUrl)) {
-      fs.unlinkSync(media.fileUrl);
+    const physicalPath = this.resolvePhysicalPath(media.fileUrl);
+    if (fs.existsSync(physicalPath)) {
+      fs.unlinkSync(physicalPath);
     }
 
     await this.prisma.unitMedia.delete({ where: { id: mediaId } });

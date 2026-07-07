@@ -2,7 +2,11 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Role } from '@prisma/client';
 
-const BYPASS_ROLES: Role[] = [Role.ADMIN, Role.CEO];
+// UserMallAccess mô hình hoá "nhân viên này phụ trách mall nào" — không áp dụng cho TENANT
+// (khách thuê không có khái niệm phụ trách mall). Cách ly dữ liệu của TENANT được thực hiện bằng
+// kiểm tra tenantId ở tầng service (findOne/findAll mỗi module), chặt hơn và đúng bản chất hơn
+// so với UserMallAccess — nên TENANT bypass guard này thay vì bị chặn vì thiếu UserMallAccess.
+const BYPASS_ROLES: Role[] = [Role.ADMIN, Role.CEO, Role.TENANT];
 
 @Injectable()
 export class MallAccessService {

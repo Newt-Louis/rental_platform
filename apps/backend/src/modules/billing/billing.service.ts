@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InvoiceStatus, PaymentMethod } from '@prisma/client';
 import * as crypto from 'crypto';
+
+interface CurrentUser {
+  id: string;
+  role: string;
+  tenantId?: string | null;
+}
 
 @Injectable()
 export class BillingService {
@@ -14,14 +20,21 @@ export class BillingService {
     search?: string;
     page?: number;
     limit?: number;
-  }) {
+  }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, search, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = { isActive: true };
     if (filters.status) where.status = filters.status;
-    if (filters.tenantId) where.tenantId = filters.tenantId;
     if (filters.period) where.period = filters.period;
+
+    if (currentUser?.role === 'TENANT') {
+      // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    } else if (filters.tenantId) {
+      where.tenantId = filters.tenantId;
+    }
+
     if (search) {
       where.OR = [
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
@@ -47,7 +60,7 @@ export class BillingService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async findOneInvoice(id: string) {
+  async findOneInvoice(id: string, currentUser?: CurrentUser) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
@@ -59,6 +72,11 @@ export class BillingService {
     });
 
     if (!invoice) throw new NotFoundException('Invoice not found');
+
+    if (currentUser?.role === 'TENANT' && invoice.tenantId !== currentUser.tenantId) {
+      throw new ForbiddenException('Bạn không có quyền xem hóa đơn này');
+    }
+
     return invoice;
   }
 
@@ -207,7 +225,8 @@ export class BillingService {
 
   async getInvoiceSummary(invoiceId: string) {
     const invoice = await this.findOneInvoice(invoiceId);
-    const totalPaid = invoice.payments.reduce((s, p) => s + p.amount, 0);
+    // Bút toán đã đảo không còn tính vào số đã thanh toán.
+    const totalPaid = invoice.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
     return {
       ...invoice,
       totalPaid,
@@ -221,8 +240,11 @@ export class BillingService {
     reference?: string;
     paidAt?: string;
     notes?: string;
-  }) {
-    const invoice = await this.findOneInvoice(invoiceId);
+  }, currentUser?: CurrentUser) {
+    const invoice = await this.findOneInvoice(invoiceId, currentUser);
+    if (invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Hóa đơn đã bị hủy — không thể ghi nhận thanh toán');
+    }
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -236,22 +258,75 @@ export class BillingService {
       },
     });
 
-    const allPayments = await this.prisma.payment.findMany({ where: { invoiceId } });
-    const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
+    await this.recomputeInvoiceStatusFromPayments(invoiceId);
+
+    return payment;
+  }
+
+  /** Tính lại trạng thái hóa đơn dựa trên tổng các bút toán CÒN HIỆU LỰC (chưa bị đảo). */
+  private async recomputeInvoiceStatusFromPayments(invoiceId: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice || invoice.status === InvoiceStatus.CANCELLED) return;
+
+    const activePayments = await this.prisma.payment.findMany({ where: { invoiceId, reversedAt: null } });
+    const totalPaid = activePayments.reduce((s, p) => s + p.amount, 0);
 
     let newStatus: InvoiceStatus;
-    if (totalPaid >= invoice.totalAmount) {
+    if (totalPaid >= invoice.totalAmount && totalPaid > 0) {
       newStatus = InvoiceStatus.PAID;
-    } else {
+    } else if (totalPaid > 0) {
       newStatus = InvoiceStatus.PARTIALLY_PAID;
+    } else {
+      newStatus = invoice.issuedAt ? InvoiceStatus.ISSUED : InvoiceStatus.DRAFT;
     }
 
     await this.prisma.invoice.update({
       where: { id: invoiceId },
-      data: { status: newStatus, paidAt: newStatus === InvoiceStatus.PAID ? new Date() : undefined },
+      data: { status: newStatus, paidAt: newStatus === InvoiceStatus.PAID ? new Date() : null },
+    });
+  }
+
+  // ── Void / Reversal (Phase 1 — kiểm soát tài chính) ─────────────────────────
+
+  async voidInvoice(invoiceId: string, reason: string, userId: string) {
+    const invoice = await this.findOneInvoice(invoiceId);
+    if (invoice.status === InvoiceStatus.CANCELLED) {
+      throw new BadRequestException('Hóa đơn này đã bị hủy trước đó');
+    }
+
+    const activePayments = invoice.payments.filter((p) => !p.reversedAt);
+    if (activePayments.length > 0) {
+      throw new BadRequestException('Hóa đơn còn bút toán thanh toán hiệu lực — phải đảo các bút toán trước khi hủy hóa đơn');
+    }
+    if (!reason?.trim()) {
+      throw new BadRequestException('Phải nêu lý do hủy hóa đơn');
+    }
+
+    return this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: InvoiceStatus.CANCELLED,
+        voidedAt: new Date(),
+        voidedById: userId,
+        voidReason: reason.trim(),
+      },
+    });
+  }
+
+  async reversePayment(paymentId: string, reason: string, userId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.reversedAt) throw new BadRequestException('Bút toán này đã được đảo trước đó');
+    if (!reason?.trim()) throw new BadRequestException('Phải nêu lý do đảo bút toán');
+
+    const reversed = await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: { reversedAt: new Date(), reversedById: userId, reversalReason: reason.trim() },
     });
 
-    return payment;
+    await this.recomputeInvoiceStatusFromPayments(payment.invoiceId);
+
+    return reversed;
   }
 
   async calculateRevenueShare(period: string, mallId?: string) {
@@ -348,7 +423,7 @@ export class BillingService {
       include: {
         tenant: { select: { brandName: true, companyName: true } },
         contract: { select: { contractNumber: true } },
-        payments: { select: { amount: true } },
+        payments: { select: { amount: true, reversedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 5000,
@@ -356,7 +431,7 @@ export class BillingService {
 
     const header = ['Số HĐ', 'Khách thuê', 'Công ty', 'Số HĐ thuê', 'Kỳ', 'Loại', 'Tạm tính', 'VAT', 'Tổng tiền', 'Đã thanh toán', 'Còn lại', 'Hạn TT', 'Trạng thái', 'Ngày tạo'];
     const rows = invoices.map((inv) => {
-      const paid = inv.payments.reduce((s, p) => s + p.amount, 0);
+      const paid = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
       const remaining = inv.totalAmount - paid;
       return [
         inv.invoiceNumber,
@@ -395,7 +470,8 @@ export class BillingService {
     const byTenant: Record<string, any> = {};
 
     for (const inv of overdue) {
-      const paid = inv.payments.reduce((s, p) => s + p.amount, 0);
+      // Bút toán đã đảo không còn tính vào số đã thanh toán — nếu không, công nợ sẽ bị báo thấp hơn thực tế.
+      const paid = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
       const outstanding = inv.totalAmount - paid;
       if (outstanding <= 0) continue;
 

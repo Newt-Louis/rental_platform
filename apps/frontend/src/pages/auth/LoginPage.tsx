@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '@/store/auth.store';
-import { authApi } from '@/api';
+import { authApi, brandingApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,13 @@ export default function LoginPage() {
   const { login } = useAuthStore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+
+  const { data: branding } = useQuery({
+    queryKey: ['branding-settings'],
+    queryFn: brandingApi.getSettings,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>();
 
@@ -41,16 +49,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div
+      className="min-h-screen bg-gray-900 flex items-center justify-center p-4 relative bg-cover bg-center"
+      style={branding?.backgroundUrl ? { backgroundImage: `url(${branding.backgroundUrl})` } : undefined}
+    >
+      {/* Lớp phủ tối để chữ/form luôn đọc rõ trên mọi ảnh nền */}
+      {branding?.backgroundUrl && <div className="absolute inset-0 bg-black/60" />}
+
+      <div className="w-full max-w-md relative">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="bg-gray-700 p-3 rounded-xl">
-            <Building2 size={28} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-widest">THISO</h1>
-            <p className="text-gray-400 text-sm">Leasing Platform</p>
-          </div>
+          {branding?.logoUrl ? (
+            <img src={branding.logoUrl} alt="Logo" className="h-14 max-w-[200px] object-contain" />
+          ) : (
+            <>
+              <div className="bg-gray-700 p-3 rounded-xl">
+                <Building2 size={28} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white tracking-widest">THISO</h1>
+                <p className="text-gray-400 text-sm">Leasing Platform</p>
+              </div>
+            </>
+          )}
         </div>
 
         <Card className="shadow-2xl border-0">

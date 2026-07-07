@@ -1,12 +1,19 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { salesApi } from '@/api';
+import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History } from 'lucide-react';
+import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle } from 'lucide-react';
+
+const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
+  PENDING: { label: 'Chờ duyệt', color: 'bg-gray-100 text-gray-600' },
+  APPROVED: { label: 'Đã duyệt', color: 'bg-green-100 text-green-700' },
+  DISPUTED: { label: 'Tranh chấp', color: 'bg-red-100 text-red-700' },
+};
 
 function getPeriod(offset = 0) {
   const d = new Date();
@@ -58,6 +65,10 @@ export default function SalesPage() {
   const [auditSalesId, setAuditSalesId] = useState<string | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  // Xếp hạng theo tenant + tình trạng tuân thủ nộp báo cáo lộ tên/doanh thu của các khách thuê khác —
+  // chỉ dành cho nhân viên, không hiển thị cho khách thuê xem trang Doanh thu của chính mình.
+  const isStaff = user?.role !== 'TENANT';
 
   const periods = [getPeriod(-2), getPeriod(-1), getPeriod(0)];
 
@@ -69,17 +80,39 @@ export default function SalesPage() {
   const { data: topTenants, isLoading: loadingTop } = useQuery({
     queryKey: ['sales-top', period],
     queryFn: () => salesApi.topTenants(period),
+    enabled: isStaff,
   });
 
   const { data: deadlineData } = useQuery({
     queryKey: ['sales-deadline', period],
     queryFn: () => salesApi.getDeadlineStatus(period),
+    enabled: isStaff,
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => salesApi.approveSales(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['sales-summary'] }); toast({ title: 'Đã duyệt' }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales-top'] });
+      qc.invalidateQueries({ queryKey: ['sales-summary'] });
+      toast({ title: 'Đã duyệt doanh thu' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi duyệt doanh thu', variant: 'destructive' }),
   });
+
+  const disputeMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => salesApi.disputeSales(id, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales-top'] });
+      qc.invalidateQueries({ queryKey: ['sales-summary'] });
+      toast({ title: 'Đã đánh dấu tranh chấp' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
+  });
+
+  const handleDispute = (id: string) => {
+    const reason = window.prompt('Lý do tranh chấp số liệu doanh thu này?');
+    if (reason && reason.trim()) disputeMutation.mutate({ id, reason: reason.trim() });
+  };
 
   const s = summary?.data ?? summary;
   const tops = topTenants?.data ?? topTenants ?? [];
@@ -145,8 +178,8 @@ export default function SalesPage() {
 
       {auditSalesId && <AuditTrailDialog salesId={auditSalesId} open={!!auditSalesId} onClose={() => setAuditSalesId(null)} />}
 
-      {/* Deadline compliance panel */}
-      {deadline && (
+      {/* Deadline compliance panel — chỉ dành cho nhân viên, lộ tên khách thuê khác chưa nộp */}
+      {isStaff && deadline && (
         <Card className="mb-6">
           <CardContent className="pt-4">
             <div className="flex items-center justify-between mb-3">
@@ -186,7 +219,8 @@ export default function SalesPage() {
         </Card>
       )}
 
-      {/* Top tenants */}
+      {/* Top tenants — chỉ dành cho nhân viên, lộ tên/doanh thu của các khách thuê khác */}
+      {isStaff && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -203,8 +237,9 @@ export default function SalesPage() {
             <div className="space-y-2">
               {tops.map((t: any, i: number) => {
                 const pct = s?.totalGross > 0 ? (t.grossSales / s.totalGross) * 100 : 0;
+                const statusInfo = SALES_STATUS_MAP[t.status] ?? SALES_STATUS_MAP.PENDING;
                 return (
-                  <div key={i} className="flex items-center gap-3">
+                  <div key={t.id ?? i} className="flex items-center gap-3">
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                       i === 0 ? 'bg-yellow-400 text-white' :
                       i === 1 ? 'bg-gray-300 text-gray-700' :
@@ -225,6 +260,33 @@ export default function SalesPage() {
                         <span>{pct.toFixed(1)}% thị phần</span>
                       </div>
                     </div>
+                    <Badge className={`${statusInfo.color} border-0 text-xs shrink-0`}>{statusInfo.label}</Badge>
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600 hover:bg-green-50"
+                        title="Duyệt"
+                        disabled={t.status === 'APPROVED' || !t.id || approveMutation.isPending}
+                        onClick={() => t.id && approveMutation.mutate(t.id)}
+                      >
+                        <CheckCircle2 size={15} />
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                        title="Từ chối / tranh chấp"
+                        disabled={t.status === 'DISPUTED' || !t.id || disputeMutation.isPending}
+                        onClick={() => t.id && handleDispute(t.id)}
+                      >
+                        <XCircle size={15} />
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400 hover:bg-gray-50"
+                        title="Lịch sử duyệt"
+                        disabled={!t.id}
+                        onClick={() => t.id && setAuditSalesId(t.id)}
+                      >
+                        <History size={15} />
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -232,6 +294,7 @@ export default function SalesPage() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

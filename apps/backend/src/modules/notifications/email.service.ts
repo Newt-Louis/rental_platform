@@ -193,6 +193,39 @@ export class EmailService {
 </div></body></html>`;
   }
 
+  fitoutSlaHtml(data: {
+    managerName: string;
+    tenantName: string;
+    unitCode: string;
+    stageName: string;
+    targetDate: string;
+    isEscalation: boolean;
+  }): string {
+    const color = data.isEscalation ? '#dc2626' : '#ea580c';
+    return `
+<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
+  .header { background: ${color}; color: white; padding: 24px 32px; }
+  .content { padding: 32px; font-size: 14px; color: #374151; }
+  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1 style="margin:0">${data.isEscalation ? '🚨 Fitout Escalation' : '⚠️ Fitout SLA Breach'}</h1></div>
+  <div class="content">
+    <p>Kính gửi <strong>${data.managerName}</strong>,</p>
+    <p>Dự án fitout của <strong>${data.tenantName}</strong> (lô <strong>${data.unitCode}</strong>) đã trễ SLA:</p>
+    <ul>
+      <li><strong>Giai đoạn:</strong> ${data.stageName}</li>
+      <li><strong>Hạn mục tiêu:</strong> ${data.targetDate}</li>
+    </ul>
+    <p>Vui lòng đăng nhập hệ thống để xử lý.</p>
+  </div>
+  <div class="footer">THISO Leasing Platform</div>
+</div></body></html>`;
+  }
+
   ticketSlaHtml(data: {
     managerName: string;
     ticketNumber: string;
@@ -220,6 +253,37 @@ export class EmailService {
       <li><strong>Mức escalation:</strong> L${data.level}</li>
     </ul>
     <p>Vui lòng đăng nhập hệ thống để xử lý ticket.</p>
+  </div>
+  <div class="footer">THISO Leasing Platform</div>
+</div></body></html>`;
+  }
+
+  ticketInspectionHtml(data: {
+    tenantName: string;
+    ticketNumber: string;
+    subject: string;
+    unitCode: string;
+  }): string {
+    return `
+<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
+  .header { background: #2563eb; color: white; padding: 24px 32px; }
+  .content { padding: 32px; font-size: 14px; color: #374151; }
+  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1 style="margin:0">📋 Phiếu kiểm tra hiện trường mới</h1></div>
+  <div class="content">
+    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
+    <p>Nhân viên vận hành vừa ghi nhận một phiếu kiểm tra hiện trường tại mặt bằng của quý khách:</p>
+    <ul>
+      <li><strong>Mã phiếu:</strong> ${data.ticketNumber}</li>
+      <li><strong>Tiêu đề:</strong> ${data.subject}</li>
+      <li><strong>Mặt bằng:</strong> ${data.unitCode}</li>
+    </ul>
+    <p>Vui lòng đăng nhập Tenant Portal để xem chi tiết, hình ảnh và phản hồi.</p>
   </div>
   <div class="footer">THISO Leasing Platform</div>
 </div></body></html>`;

@@ -308,8 +308,9 @@ export class CrmService {
     return { total, byStatus, wonThisMonth, lostThisMonth };
   }
 
-  async listFollowUps(query: { assignedToId?: string; isDone?: string; daysAhead?: number }) {
+  async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number }) {
     const where: any = {};
+    if (query.leadId) where.leadId = query.leadId;
     if (query.assignedToId) where.assignedToId = query.assignedToId;
     if (query.isDone !== undefined) where.isDone = query.isDone === 'true';
     if (query.daysAhead) {
@@ -820,8 +821,10 @@ export class CrmService {
       case 'LEAD':
         return 'Liên hệ khách / tạo booking';
       case 'BOOKING':
-        if (booking?.status === 'PENDING') return 'Chờ duyệt booking';
-        if (booking?.status === 'APPROVED') return 'Chuyển sang đề xuất thuê';
+        // BookingStatus thực tế chỉ có PENDING (đang xếp hàng)/ACTIVE (đang giữ chỗ) ở giai đoạn này —
+        // 'APPROVED' không tồn tại trong enum nên nhánh đó trước đây không bao giờ khớp được.
+        if (booking?.status === 'PENDING') return 'Đang xếp hàng, chờ đến lượt';
+        if (booking?.status === 'ACTIVE') return 'Chuyển sang đề xuất thuê';
         return 'Theo dõi booking';
       case 'PROPOSAL':
         if (proposal?.status === 'DRAFT') return 'Hoàn thiện và submit đề xuất';

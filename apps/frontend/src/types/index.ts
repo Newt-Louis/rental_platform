@@ -8,7 +8,8 @@ export type LeadSource = 'BROKER' | 'WEBSITE' | 'REFERRAL' | 'WALK_IN' | 'EXISTI
 export type ContractStatus = 'DRAFT' | 'PENDING_LEGAL' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TERMINATED';
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type TicketStatus = 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_TENANT' | 'RESOLVED' | 'CLOSED';
-export type FitoutStatus = 'CONTRACT_SIGNED' | 'SUBMIT_DESIGN' | 'DESIGN_REVIEW' | 'FIRE_SAFETY_REVIEW' | 'CONSTRUCTION_PERMIT' | 'FITOUT_IN_PROGRESS' | 'INSPECTION' | 'APPROVED_TO_OPEN' | 'OPENED';
+// Stage code — FK to FitoutStageConfig.code, configurable via admin UI (not a fixed union).
+export type FitoutStatus = string;
 export type PriceApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface User {
@@ -20,6 +21,7 @@ export interface User {
   department?: string;
   avatar?: string;
   isActive: boolean;
+  tenantId?: string | null;
 }
 
 export interface AuthState {

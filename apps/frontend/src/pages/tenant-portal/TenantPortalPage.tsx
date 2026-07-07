@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { contractsApi, billingApi, ticketsApi, tenantsApi, spacesApi, fitoutApi } from '@/api';
+import { contractsApi, billingApi, ticketsApi, spacesApi, fitoutApi } from '@/api';
+import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
-  ArrowRight, User, AlertCircle,
+  ArrowRight, User, AlertCircle, ImagePlus, RotateCcw,
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -58,26 +59,6 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
   PARTIAL: { label: 'TT 1 phần', color: 'bg-yellow-100 text-yellow-700' },
 };
 
-const FITOUT_STATUS_STEPS = [
-  { key: 'CONTRACT_SIGNED',     label: 'Ký HĐ',       step: 1 },
-  { key: 'SUBMIT_DESIGN',       label: 'Nộp TK',       step: 2 },
-  { key: 'DESIGN_REVIEW',       label: 'Duyệt TK',     step: 3 },
-  { key: 'FIRE_SAFETY_REVIEW',  label: 'PCCC',          step: 4 },
-  { key: 'CONSTRUCTION_PERMIT', label: 'Giấy phép',     step: 5 },
-  { key: 'FITOUT_IN_PROGRESS',  label: 'Thi công',      step: 6 },
-  { key: 'INSPECTION',          label: 'Kiểm tra',      step: 7 },
-  { key: 'APPROVED_TO_OPEN',    label: 'Chấp thuận',    step: 8 },
-  { key: 'OPENED',              label: 'Khai trương',   step: 9 },
-];
-
-const FITOUT_COLOR: Record<string, string> = {
-  CONTRACT_SIGNED: 'bg-gray-100 text-gray-700', SUBMIT_DESIGN: 'bg-blue-100 text-gray-700',
-  DESIGN_REVIEW: 'bg-gray-100 text-gray-700', FIRE_SAFETY_REVIEW: 'bg-red-100 text-red-700',
-  CONSTRUCTION_PERMIT: 'bg-yellow-100 text-yellow-700', FITOUT_IN_PROGRESS: 'bg-orange-100 text-orange-700',
-  INSPECTION: 'bg-purple-100 text-purple-700', APPROVED_TO_OPEN: 'bg-teal-100 text-teal-700',
-  OPENED: 'bg-green-100 text-green-700',
-};
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
@@ -93,9 +74,21 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function getFitoutProgress(status: string) {
-  const s = FITOUT_STATUS_STEPS.find((x) => x.key === status);
-  return s ? ((s.step - 1) / (FITOUT_STATUS_STEPS.length - 1)) * 100 : 0;
+interface FitoutStageConfig {
+  code: string;
+  name: string;
+  order: number;
+  colorHex: string;
+}
+
+function getFitoutProgress(stages: FitoutStageConfig[], status: string) {
+  const idx = stages.findIndex((x) => x.code === status);
+  return idx >= 0 && stages.length > 1 ? (idx / (stages.length - 1)) * 100 : 0;
+}
+
+function fitoutBadgeStyle(colorHex?: string) {
+  const hex = colorHex ?? '#6b7280';
+  return { backgroundColor: `${hex}22`, color: hex };
 }
 
 // ─── Create Ticket Dialog ────────────────────────────────────────────────────
@@ -103,27 +96,21 @@ function getFitoutProgress(status: string) {
 function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm({
-    defaultValues: { tenantId: '', unitId: '', type: '', priority: 'MEDIUM', subject: '', description: '' },
+  const { user } = useAuthStore();
+  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
+    defaultValues: { unitId: '', type: '', priority: 'MEDIUM', subject: '', description: '' },
   });
-  const selectedTenantId = watch('tenantId');
 
-  const { data: tenantsData } = useQuery({
-    queryKey: ['tenants-all'],
-    queryFn: () => tenantsApi.listTenants({ limit: 200 }),
-    enabled: open,
-  });
   const { data: unitsData } = useQuery({
-    queryKey: ['units-occupied'],
-    queryFn: () => spacesApi.listUnits({ status: 'OCCUPIED', limit: 500 }),
-    enabled: open,
+    queryKey: ['units-my-tenant', user?.tenantId],
+    queryFn: () => spacesApi.listUnits({ tenantId: user!.tenantId, limit: 500 }),
+    enabled: open && !!user?.tenantId,
   });
 
-  const tenants: any[] = tenantsData?.data ?? [];
-  const allUnits: any[] = unitsData?.data ?? [];
+  const myUnits: any[] = unitsData?.data ?? [];
 
   const mutation = useMutation({
-    mutationFn: (data: any) => ticketsApi.createTicket(data),
+    mutationFn: (data: any) => ticketsApi.createTicket({ ...data, tenantId: user!.tenantId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['portal-tickets'] });
       toast({ title: 'Yêu cầu đã được tạo' });
@@ -139,35 +126,21 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
         <DialogHeader>
           <DialogTitle>Tạo yêu cầu mới</DialogTitle>
         </DialogHeader>
+        {!user?.tenantId ? (
+          <p className="text-sm text-red-500 bg-red-50 rounded-lg p-3">
+            Tài khoản của bạn chưa được liên kết với khách thuê nào. Vui lòng liên hệ quản trị viên.
+          </p>
+        ) : (
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
-          {/* Tenant */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Khách thuê *</label>
-            <Select onValueChange={(v) => { setValue('tenantId', v); setValue('unitId', ''); }}>
-              <SelectTrigger className={errors.tenantId ? 'border-red-400' : ''}>
-                <SelectValue placeholder="Chọn khách thuê..." />
-              </SelectTrigger>
-              <SelectContent>
-                {tenants.map((t: any) => (
-                  <SelectItem key={t.id} value={t.id}>{t.brandName} — {t.companyName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input type="hidden" {...register('tenantId', { required: true })} />
-          </div>
-
           {/* Unit */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng *</label>
-            <Select
-              onValueChange={(v) => setValue('unitId', v)}
-              disabled={!selectedTenantId}
-            >
+            <Select onValueChange={(v) => setValue('unitId', v)}>
               <SelectTrigger className={errors.unitId ? 'border-red-400' : ''}>
-                <SelectValue placeholder={selectedTenantId ? 'Chọn mặt bằng...' : 'Chọn khách thuê trước'} />
+                <SelectValue placeholder="Chọn mặt bằng..." />
               </SelectTrigger>
               <SelectContent>
-                {allUnits.map((u: any) => (
+                {myUnits.map((u: any) => (
                   <SelectItem key={u.id} value={u.id}>
                     {u.code} — {u.floor?.name}
                   </SelectItem>
@@ -235,6 +208,7 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
             </Button>
           </DialogFooter>
         </form>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -253,6 +227,13 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
     enabled: !!ticketId,
   });
 
+  const { data: photosData } = useQuery({
+    queryKey: ['portal-ticket-photos', ticketId],
+    queryFn: () => ticketsApi.listPhotos(ticketId!),
+    enabled: !!ticketId,
+  });
+  const photos: any[] = photosData ?? [];
+
   const t: any = ticket?.data ?? ticket;
   const comments: any[] = t?.comments ?? [];
   const statusInfo = t ? TICKET_STATUS[t.status] : null;
@@ -267,6 +248,25 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
       toast({ title: 'Đã thêm bình luận' });
     },
     onError: () => toast({ title: 'Lỗi thêm bình luận', variant: 'destructive' }),
+  });
+
+  const transitionMutation = useMutation({
+    mutationFn: (status: string) => ticketsApi.transitionStatus(ticketId!, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portal-ticket-detail', ticketId] });
+      qc.invalidateQueries({ queryKey: ['portal-tickets'] });
+      toast({ title: 'Đã cập nhật trạng thái yêu cầu' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
+  });
+
+  const uploadPhotoMutation = useMutation({
+    mutationFn: (file: File) => ticketsApi.uploadPhoto(ticketId!, file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portal-ticket-photos', ticketId] });
+      toast({ title: 'Đã tải ảnh lên' });
+    },
+    onError: () => toast({ title: 'Lỗi tải ảnh lên', variant: 'destructive' }),
   });
 
   return (
@@ -310,6 +310,62 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
             </div>
           )}
 
+          {/* Actions theo trạng thái */}
+          {(t.status === 'RESOLVED' || t.status === 'WAITING_TENANT') && (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 gap-2 bg-green-600 hover:bg-green-700"
+                onClick={() => transitionMutation.mutate('CLOSED')}
+                disabled={transitionMutation.isPending}
+              >
+                <CheckCircle2 size={14} /> Đóng yêu cầu
+              </Button>
+              {t.status === 'RESOLVED' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 gap-2"
+                  onClick={() => transitionMutation.mutate('IN_PROGRESS')}
+                  disabled={transitionMutation.isPending}
+                >
+                  <RotateCcw size={14} /> Yêu cầu xử lý tiếp
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Photos */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold tracking-wider text-gray-400">
+                HÌNH ẢNH ({photos.length})
+              </div>
+              <label className="text-xs text-blue-600 hover:underline cursor-pointer flex items-center gap-1">
+                <ImagePlus size={13} /> Thêm ảnh
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadPhotoMutation.mutate(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+            {photos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {photos.map((p: any) => (
+                  <a key={p.id} href={`/uploads/${p.filePath}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <img src={`/uploads/${p.filePath}`} alt={p.fileName} className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Comments */}
           <div>
             <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">
@@ -325,11 +381,11 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
                   <div key={c.id} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-medium text-gray-700">
-                        {c.author?.fullName ?? 'Unknown'}
+                        {c.user?.fullName ?? 'Unknown'}
                       </span>
                       <span className="text-xs text-gray-400">{fmtDate(c.createdAt)}</span>
                     </div>
-                    <p className="text-sm text-gray-600 leading-relaxed">{c.text}</p>
+                    <p className="text-sm text-gray-600 leading-relaxed">{c.content}</p>
                   </div>
                 ))}
               </div>
@@ -457,6 +513,12 @@ export default function TenantPortalPage() {
   const { data: fitoutsData } = useQuery({
     queryKey: ['portal-fitouts'],
     queryFn: () => fitoutApi.listFitouts({ limit: 50 }),
+  });
+
+  const { data: fitoutStages = [] } = useQuery({
+    queryKey: ['fitout-stage-configs'],
+    queryFn: () => fitoutApi.listStageConfigs(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const contracts: any[] = contractsData?.data ?? [];
@@ -761,9 +823,9 @@ export default function TenantPortalPage() {
           ) : (
             <div className="space-y-4">
               {fitouts.map((f: any) => {
-                const step = FITOUT_STATUS_STEPS.find((s) => s.key === f.status);
-                const progress = getFitoutProgress(f.status);
-                const curStepNum = step?.step ?? 0;
+                const step = fitoutStages.find((s: FitoutStageConfig) => s.code === f.status);
+                const progress = getFitoutProgress(fitoutStages, f.status);
+                const curOrder = step?.order ?? 0;
 
                 return (
                   <Card key={f.id} className="border">
@@ -773,8 +835,8 @@ export default function TenantPortalPage() {
                           <CardTitle className="text-base">{f.tenant?.brandName}</CardTitle>
                           <p className="text-sm text-gray-500 mt-0.5">{f.unit?.code} — {f.unit?.floor?.name}</p>
                         </div>
-                        <Badge className={`${FITOUT_COLOR[f.status] ?? 'bg-gray-100 text-gray-700'} border-0 text-xs`}>
-                          {step?.label ?? f.status}
+                        <Badge className="border-0 text-xs" style={fitoutBadgeStyle(step?.colorHex)}>
+                          {step?.name ?? f.status}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -782,7 +844,7 @@ export default function TenantPortalPage() {
                       {/* Progress */}
                       <div className="mb-3">
                         <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                          <span>Tiến độ: Bước {curStepNum}/{FITOUT_STATUS_STEPS.length}</span>
+                          <span>Tiến độ: Bước {curOrder}/{fitoutStages.length}</span>
                           <span className="font-medium">{Math.round(progress)}%</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -795,16 +857,16 @@ export default function TenantPortalPage() {
 
                       {/* Step timeline */}
                       <div className="flex items-center gap-0.5 overflow-x-auto pb-1 mb-3">
-                        {FITOUT_STATUS_STEPS.map((s) => {
-                          const isDone = s.step < curStepNum;
-                          const isActive = s.key === f.status;
+                        {fitoutStages.map((s: FitoutStageConfig) => {
+                          const isDone = s.order < curOrder;
+                          const isActive = s.code === f.status;
                           return (
                             <span
-                              key={s.key}
+                              key={s.code}
                               className={`shrink-0 text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap
                                 ${isDone ? 'bg-green-100 text-green-700' : isActive ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'}`}
                             >
-                              {s.label}
+                              {s.name}
                             </span>
                           );
                         })}

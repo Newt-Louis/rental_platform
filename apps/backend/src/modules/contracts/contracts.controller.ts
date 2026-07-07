@@ -13,7 +13,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AmendmentType, ContractStatus } from '@prisma/client';
+import { AmendmentType, ContractStatus, Role } from '@prisma/client';
 
 @ApiTags('Contracts')
 @ApiBearerAuth('JWT-auth')
@@ -49,13 +49,14 @@ export class ContractsController {
 
   @Get()
   @ApiOperation({ summary: 'List contracts' })
+  @Roles(...MODULE_ROLES.contracts, Role.TENANT)
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any) {
-    return this.contractsService.findAll(query);
+  findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.contractsService.findAll(query, user);
   }
 
   @Get('expiring')
@@ -107,8 +108,9 @@ export class ContractsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get contract details' })
-  findOne(@Param('id') id: string) {
-    return this.contractsService.findOne(id);
+  @Roles(...MODULE_ROLES.contracts, Role.TENANT)
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.contractsService.findOne(id, user);
   }
 
   @Post()

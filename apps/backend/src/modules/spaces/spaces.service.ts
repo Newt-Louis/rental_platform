@@ -71,6 +71,12 @@ export class SpacesService {
   }
 
   async deleteMall(id: string) {
+    const activeUnits = await this.prisma.unit.count({ where: { mallId: id, isActive: true } });
+    if (activeUnits > 0) {
+      throw new BadRequestException(
+        `Không thể xoá mall vì còn ${activeUnits} mặt bằng đang hoạt động.`,
+      );
+    }
     await this.prisma.mall.update({ where: { id }, data: { isActive: false } });
     return { message: 'Mall deactivated' };
   }
@@ -84,7 +90,7 @@ export class SpacesService {
       where,
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        _count: { select: { units: true, zones: true } },
+        _count: { select: { units: { where: { isActive: true } }, zones: { where: { isActive: true } } } },
       },
       orderBy: [{ mallId: 'asc' }, { sortOrder: 'asc' }],
     });
@@ -99,6 +105,12 @@ export class SpacesService {
   }
 
   async deleteFloor(id: string) {
+    const activeUnits = await this.prisma.unit.count({ where: { floorId: id, isActive: true } });
+    if (activeUnits > 0) {
+      throw new BadRequestException(
+        `Không thể xoá tầng vì còn ${activeUnits} mặt bằng đang hoạt động. Vui lòng chuyển hoặc xoá các mặt bằng này trước.`,
+      );
+    }
     await this.prisma.floor.update({ where: { id }, data: { isActive: false } });
     return { message: 'Floor deactivated' };
   }
@@ -113,7 +125,7 @@ export class SpacesService {
       where,
       include: {
         floor: { select: { id: true, name: true, level: true } },
-        _count: { select: { units: true } },
+        _count: { select: { units: { where: { isActive: true } } } },
       },
       orderBy: { name: 'asc' },
     });
@@ -128,6 +140,12 @@ export class SpacesService {
   }
 
   async deleteZone(id: string) {
+    const activeUnits = await this.prisma.unit.count({ where: { zoneId: id, isActive: true } });
+    if (activeUnits > 0) {
+      throw new BadRequestException(
+        `Không thể xoá khu vực vì còn ${activeUnits} mặt bằng đang hoạt động. Vui lòng chuyển hoặc xoá các mặt bằng này trước.`,
+      );
+    }
     await this.prisma.zone.update({ where: { id }, data: { isActive: false } });
     return { message: 'Zone deactivated' };
   }
@@ -139,7 +157,12 @@ export class SpacesService {
     mallId?: string;
     status?: UnitStatus;
     category?: string;
+    tenantId?: string;
     search?: string;
+    minArea?: number;
+    maxArea?: number;
+    minRent?: number;
+    maxRent?: number;
     page?: number;
     limit?: number;
   }) {
@@ -154,6 +177,18 @@ export class SpacesService {
     if (filters.mallId) where.mallId = filters.mallId;
     if (filters.status) where.status = filters.status;
     if (filters.category) where.category = filters.category;
+    if (filters.tenantId) where.tenantId = filters.tenantId;
+
+    if (filters.minArea !== undefined || filters.maxArea !== undefined) {
+      where.areaNLA = {};
+      if (filters.minArea !== undefined) where.areaNLA.gte = +filters.minArea;
+      if (filters.maxArea !== undefined) where.areaNLA.lte = +filters.maxArea;
+    }
+    if (filters.minRent !== undefined || filters.maxRent !== undefined) {
+      where.baseRentPerSqm = {};
+      if (filters.minRent !== undefined) where.baseRentPerSqm.gte = +filters.minRent;
+      if (filters.maxRent !== undefined) where.baseRentPerSqm.lte = +filters.maxRent;
+    }
 
     if (search) {
       where.OR = [
@@ -698,46 +733,54 @@ export class SpacesService {
       if (filters.maxRent !== undefined) where.baseRentPerSqm.lte = +filters.maxRent;
     }
 
+    // Các điều kiện OR bên dưới được gom vào where.AND thay vì gán trực tiếp where.OR,
+    // để tránh phần sau ghi đè mất phần trước (bug cũ: minLeaseTerm/vacantDays/search cùng dùng where.OR).
+    const andConditions: Prisma.UnitWhereInput[] = [];
+
     // Lease term preference
     if (filters.minLeaseTerm !== undefined) {
-      where.OR = [
-        { minLeaseTerm: null },
-        { minLeaseTerm: { lte: +filters.minLeaseTerm } },
-      ];
+      andConditions.push({
+        OR: [
+          { minLeaseTerm: null },
+          { minLeaseTerm: { lte: +filters.minLeaseTerm } },
+        ],
+      });
     }
 
-    // Expiring within X days
+    // Expiring within X days (chỉ áp status=OCCUPIED nếu người dùng chưa tự chọn status khác)
     if (filters.expiringWithin !== undefined) {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + +filters.expiringWithin);
-      where.status = UnitStatus.OCCUPIED;
+      if (!filters.status) where.status = UnitStatus.OCCUPIED;
       where.leaseEndDate = { gte: new Date(), lte: futureDate };
     }
 
-    // Vacant for X days
+    // Vacant for X days (chỉ áp status=VACANT nếu người dùng chưa tự chọn status khác)
     if (filters.vacantDays !== undefined) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - +filters.vacantDays);
-      where.status = UnitStatus.VACANT;
-      where.OR = [
-        { vacantSince: { lte: cutoff } },
-        { vacantSince: null, updatedAt: { lte: cutoff } },
-      ];
+      if (!filters.status) where.status = UnitStatus.VACANT;
+      andConditions.push({
+        OR: [
+          { vacantSince: { lte: cutoff } },
+          { vacantSince: null, updatedAt: { lte: cutoff } },
+        ],
+      });
     }
 
     // Search
     if (search) {
-      where.AND = [
-        {
-          OR: [
-            { code: { contains: search, mode: 'insensitive' } },
-            { name: { contains: search, mode: 'insensitive' } },
-            { category: { contains: search, mode: 'insensitive' } },
-            { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
-          ],
-        },
-      ];
+      andConditions.push({
+        OR: [
+          { code: { contains: search, mode: 'insensitive' } },
+          { name: { contains: search, mode: 'insensitive' } },
+          { category: { contains: search, mode: 'insensitive' } },
+          { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
     }
+
+    if (andConditions.length > 0) where.AND = andConditions;
 
     // Sorting
     const orderBy: Prisma.UnitOrderByWithRelationInput = {};
@@ -1070,6 +1113,12 @@ export class SpacesService {
       if (updates.camPerSqm !== undefined && updates.camPerSqm !== unit.camPerSqm) {
         changes.push({ field: 'camPerSqm', oldVal: unit.camPerSqm, newVal: updates.camPerSqm, type: UnitHistoryType.RENT_CHANGE });
       }
+      if (updates.category !== undefined && updates.category !== unit.category) {
+        changes.push({ field: 'category', oldVal: unit.category, newVal: updates.category, type: UnitHistoryType.INFO_UPDATE });
+      }
+      if (updates.condition !== undefined && updates.condition !== unit.condition) {
+        changes.push({ field: 'condition', oldVal: unit.condition, newVal: updates.condition, type: UnitHistoryType.CONDITION_CHANGE });
+      }
 
       for (const change of changes) {
         await this.recordUnitHistory(unit.id, change.type, change.field, change.oldVal, change.newVal, userId, 'Bulk update');
@@ -1087,9 +1136,17 @@ export class SpacesService {
   // DIGITAL MAP — Floor Plan Upload & Unit Positioning
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private readonly floorPlanDir = process.env.UPLOAD_DIR
-    ? path.join(process.env.UPLOAD_DIR, '..', 'floor-plans')
-    : 'uploads/floor-plans';
+  // Root thư mục uploads được main.ts serve tĩnh tại '/uploads' — mọi file phải nằm TRONG thư mục này,
+  // trước đây floorPlanDir dùng path.join(UPLOAD_DIR, '..', 'floor-plans') thoát RA NGOÀI root nên ảnh sơ đồ tầng
+  // không bao giờ truy cập được qua URL /uploads/... (không tìm thấy file khi serve tĩnh).
+  private readonly uploadRoot = (process.env.UPLOAD_DIR ?? 'uploads').replace(/[\\/]unit-media$/, '');
+  private readonly floorPlanDir = path.join(this.uploadRoot, 'floor-plans');
+
+  private resolvePhysicalPath(fileUrl: string): string {
+    return fileUrl.startsWith('/uploads/')
+      ? path.join(this.uploadRoot, fileUrl.slice('/uploads/'.length))
+      : fileUrl; // dữ liệu cũ: fileUrl từng được lưu trực tiếp là đường dẫn vật lý
+  }
 
   async getFloorMapData(floorId: string) {
     const floor = await this.prisma.floor.findUnique({
@@ -1125,8 +1182,9 @@ export class SpacesService {
     }
 
     // Delete old file if exists
-    if (floor.floorPlanUrl && fs.existsSync(floor.floorPlanUrl)) {
-      fs.unlinkSync(floor.floorPlanUrl);
+    if (floor.floorPlanUrl) {
+      const oldPath = this.resolvePhysicalPath(floor.floorPlanUrl);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
 
     const dir = path.join(this.floorPlanDir, floorId);
@@ -1167,7 +1225,7 @@ export class SpacesService {
     return this.prisma.floor.update({
       where: { id: floorId },
       data: {
-        floorPlanUrl: filePath.replace(/\\/g, '/'),
+        floorPlanUrl: `/uploads/floor-plans/${floorId}/${filename}`,
         ...(floorPlanRatio != null ? { floorPlanRatio } : {}),
       },
     });
@@ -1177,8 +1235,9 @@ export class SpacesService {
     const floor = await this.prisma.floor.findUnique({ where: { id: floorId } });
     if (!floor) throw new NotFoundException('Floor không tồn tại');
 
-    if (floor.floorPlanUrl && fs.existsSync(floor.floorPlanUrl)) {
-      fs.unlinkSync(floor.floorPlanUrl);
+    if (floor.floorPlanUrl) {
+      const oldPath = this.resolvePhysicalPath(floor.floorPlanUrl);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
     }
 
     return this.prisma.floor.update({
@@ -1194,7 +1253,7 @@ export class SpacesService {
     const floor = await this.prisma.floor.findUnique({ where: { id: floorId } });
     if (!floor) throw new NotFoundException('Floor không tồn tại');
 
-    await Promise.all(
+    await this.prisma.$transaction(
       positions.map((p) =>
         this.prisma.unit.update({
           where: { id: p.unitId },

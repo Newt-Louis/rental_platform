@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { crmApi, customersApi, usersApi, categoriesApi } from '@/api';
+import { crmApi, customersApi, usersApi, categoriesApi, followUpApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -481,6 +481,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     enabled: !!lead?.id,
   });
 
+  const { data: followUpsData } = useQuery({
+    queryKey: ['lead-followups', lead?.id],
+    queryFn: () => followUpApi.list({ leadId: lead!.id }),
+    enabled: !!lead?.id,
+  });
+  const [newFollowUp, setNewFollowUp] = useState({ dueDate: '', note: '' });
+
   const displayLead: any = fullLead ?? lead;
   const customer: any = fullLead?.customer ?? null;
   const stage = LEAD_STAGES.find((s) => s.key === displayLead?.status);
@@ -489,6 +496,29 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
   const proposals: any[] = fullLead?.proposals ?? [];
   const bookings: any[] = fullLead?.bookings ?? [];
   const activities: any[] = customer?.activities ?? [];
+  const followUps: any[] = followUpsData?.data ?? followUpsData ?? [];
+
+  const invalidateFollowUps = () => qc.invalidateQueries({ queryKey: ['lead-followups', lead?.id] });
+
+  const createFollowUpMutation = useMutation({
+    mutationFn: () => followUpApi.create({ leadId: lead!.id, dueDate: newFollowUp.dueDate, note: newFollowUp.note }),
+    onSuccess: () => {
+      invalidateFollowUps();
+      setNewFollowUp({ dueDate: '', note: '' });
+      toast({ title: 'Đã tạo nhắc hẹn theo dõi' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  const completeFollowUpMutation = useMutation({
+    mutationFn: (id: string) => followUpApi.complete(id),
+    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã hoàn thành nhắc hẹn' }); },
+  });
+
+  const deleteFollowUpMutation = useMutation({
+    mutationFn: (id: string) => followUpApi.delete(id),
+    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã xóa nhắc hẹn' }); },
+  });
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
@@ -776,7 +806,48 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
 
             {/* ── Tab: Hoạt động ─────────────────────────────── */}
             {activeTab === 'activities' && (
-              <div className="space-y-3">
+              <div className="space-y-5">
+                {/* ── Nhắc hẹn theo dõi ── */}
+                <div>
+                  <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 uppercase flex items-center gap-1.5">
+                    <Bell size={12} /> Nhắc hẹn theo dõi
+                  </div>
+                  <div className="space-y-2 mb-2">
+                    {followUps.filter((f: any) => !f.isDone).map((f: any) => (
+                      <div key={f.id} className="flex items-start justify-between gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-amber-800">{fmtDate(f.dueDate)}</div>
+                          {f.note && <div className="text-xs text-amber-700 truncate">{f.note}</div>}
+                          <div className="text-[11px] text-amber-500">{f.assignedTo?.fullName}</div>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
+                            title="Hoàn thành" onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            <CheckCircle size={13} />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
+                            title="Xóa" onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            <X size={13} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {followUps.filter((f: any) => !f.isDone).length === 0 && (
+                      <p className="text-xs text-gray-400">Chưa có nhắc hẹn nào đang chờ.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input type="date" className="h-8 text-xs" value={newFollowUp.dueDate}
+                      onChange={(e) => setNewFollowUp((f) => ({ ...f, dueDate: e.target.value }))} />
+                    <Input placeholder="Ghi chú..." className="h-8 text-xs flex-1" value={newFollowUp.note}
+                      onChange={(e) => setNewFollowUp((f) => ({ ...f, note: e.target.value }))} />
+                    <Button size="sm" className="h-8 shrink-0" disabled={!newFollowUp.dueDate || createFollowUpMutation.isPending}
+                      onClick={() => createFollowUpMutation.mutate()}>
+                      <Plus size={13} />
+                    </Button>
+                  </div>
+                </div>
+
                 {customer ? (
                   <>
                     <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>

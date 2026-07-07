@@ -205,6 +205,7 @@ enum ContractStatus {
   ACTIVE
   EXPIRING
   EXPIRED
+  TERMINATING
   TERMINATED
 }
 
@@ -229,18 +230,6 @@ enum AmendmentType {
   CAM_CHANGE
   RENEWAL
   OTHER
-}
-
-enum FitoutStatus {
-  CONTRACT_SIGNED
-  SUBMIT_DESIGN
-  DESIGN_REVIEW
-  FIRE_SAFETY_REVIEW
-  CONSTRUCTION_PERMIT
-  FITOUT_IN_PROGRESS
-  INSPECTION
-  APPROVED_TO_OPEN
-  OPENED
 }
 
 enum TicketType {
@@ -270,6 +259,12 @@ enum TicketStatus {
   WAITING_TENANT
   RESOLVED
   CLOSED
+}
+
+// Ai khởi tạo ticket — tenant tự gửi yêu cầu, hay nhân viên tạo phiếu kiểm tra hiện trường gửi cho tenant.
+enum TicketSource {
+  TENANT_REQUEST
+  STAFF_INSPECTION
 }
 
 enum InvoiceType {
@@ -319,6 +314,10 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Liên kết tài khoản đăng nhập (role=TENANT) với Tenant record tương ứng — chỉ có ý nghĩa với role TENANT.
+  tenantId      String?
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+
   assignedLeads        Lead[]             @relation("AssignedLeads")
   approvalSteps        ApprovalStep[]
   ticketsAssigned      Ticket[]           @relation("AssignedTickets")
@@ -335,7 +334,6 @@ model User {
   mallAccess           UserMallAccess[]
   followUpsAssigned    LeadFollowUp[]     @relation("FollowUpAssigned")
   uploadedDocuments    UnifiedDocument[]  @relation("DocumentUploadedBy")
-  downloadedDocuments  DocumentDownloadLog[] @relation("DocumentDownloadBy")
   salesAudits          SalesAuditTrail[]  @relation("SalesAuditBy")
   announcements        MallAnnouncement[] @relation("AnnouncementCreatedBy")
   createdBookings      UnitBooking[]      @relation("BookingCreatedBy")
@@ -346,6 +344,18 @@ model User {
   unitHistoryChanges   UnitHistory[]      @relation("UnitHistoryChangedBy")
   slotBookings         SlotBooking[]      @relation("SlotBookedBy")
   categoryPricings     CategoryMallPricing[] @relation("CategoryPricingCreatedBy")
+  submittedSubmittals  FitoutSubmittal[]  @relation("SubmittalSubmittedBy")
+  entityComments       EntityComment[]
+  entityDistributions  EntityDistribution[]
+  createdIssues        FitoutIssue[]      @relation("IssueCreatedBy")
+  assignedIssues       FitoutIssue[]      @relation("IssueAssignedTo")
+  createdDailyReports  FitoutDailyReportEntry[] @relation("DailyReportCreatedBy")
+  createdTickets       Ticket[]           @relation("TicketCreatedBy")
+  ticketComments       TicketComment[]
+  voidedInvoices       Invoice[]          @relation("InvoiceVoidedBy")
+  reversedPayments     Payment[]          @relation("PaymentReversedBy")
+
+  @@index([tenantId])
 }
 
 model Mall {
@@ -369,7 +379,6 @@ model Mall {
   mallPolicy           MallPolicy?
   userAccess           UserMallAccess[]
   announcements        MallAnnouncement[]
-  bankStatements       BankStatement[]
   maintenanceSchedules MaintenanceSchedule[]
   unifiedDocuments     UnifiedDocument[]
   categoryPricings     CategoryMallPricing[]
@@ -492,6 +501,7 @@ model Unit {
   media                UnitMedia[]
   history              UnitHistory[]
   slots                UnitSlot[]
+  fitoutIssues         FitoutIssue[]
 
   @@unique([mallId, code])
   @@index([mallId, status])
@@ -517,8 +527,6 @@ model Tenant {
   categoryRef    Category?    @relation(fields: [categoryId], references: [id])
   logo           String?
   isPortalUser   Boolean   @default(false)
-  portalEmail    String?   @unique
-  portalPassword String?
   isActive       Boolean   @default(true)
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -535,7 +543,7 @@ model Tenant {
   payments       Payment[]
   notifications  Notification[]
   customers      Customer[]
-  deposits       DepositAccount[]
+  portalUsers    User[]
 }
 
 model Lead {
@@ -573,7 +581,6 @@ model Lead {
 
   activities   LeadActivity[]
   proposals    Proposal[]
-  contacts     LeadContact[]
   followUps    LeadFollowUp[]
   bookings     UnitBooking[]
   slotBookings SlotBooking[]
@@ -644,7 +651,6 @@ model Proposal {
   versions             ProposalVersion[]
   dealScore            ProposalDealScore?
   scenarios            ProposalScenario[]
-  negotiations         ProposalNegotiationRound[]
 }
 
 model ProposalVersion {
@@ -672,6 +678,7 @@ model ApprovalWorkflow {
   updatedAt   DateTime       @updatedAt
 
   steps       ApprovalStep[]
+  fitoutSubmittal FitoutSubmittal?
 }
 
 model ApprovalStep {
@@ -748,7 +755,6 @@ model Contract {
   template          ContractTemplate? @relation(fields: [templateId], references: [id])
   renewalRiskScore  RenewalRiskScore?
   termination       ContractTermination?
-  depositAccount    DepositAccount?
 }
 
 enum BillingScheduleStatus {
@@ -803,7 +809,7 @@ model FitoutProject {
   tenant             Tenant       @relation(fields: [tenantId], references: [id])
   unitId             String
   unit               Unit         @relation(fields: [unitId], references: [id])
-  status             FitoutStatus @default(CONTRACT_SIGNED)
+  status             String       @default("CONTRACT_SIGNED") // FK to FitoutStageConfig.code
   handoverDate       DateTime?
   startDate          DateTime?
   expectedOpenDate   DateTime?
@@ -819,6 +825,181 @@ model FitoutProject {
   milestones         FitoutMilestone[]
   contractors        FitoutContractor[]
   workerLogs         WorkerAccessLog[]
+  submittals         FitoutSubmittal[]
+  issues             FitoutIssue[]
+  dailyReports       FitoutDailyReportEntry[]
+  tasks              FitoutTask[]
+}
+
+// Cấu hình pipeline giai đoạn fitout — thay cho enum FitoutStatus cứng.
+// code giữ nguyên các giá trị enum cũ để tương thích dữ liệu hiện có.
+model FitoutStageConfig {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  name               String
+  phaseGroup         String // Nhóm giai đoạn lớn theo flowchart, vd "GD1_KHOI_DAU"
+  roleColumn         String // OWNER | COORDINATOR | TENANT — cột chịu trách nhiệm chính theo flowchart
+  order              Int
+  meetingRequired    Boolean  @default(false)
+  triggersUnitStatus String? // UnitStatus cần chuyển khi vào stage này, vd "UNDER_FITOUT"
+  setsField          String? // Field trên FitoutProject cần set now(), vd "startDate" | "actualOpenDate"
+  colorHex           String   @default("#6b7280")
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([isActive, order])
+}
+
+// Danh mục loại Form/tài liệu fitout — thay cho enum FitoutDocumentType cứng (chỉ 9 loại, không đủ 16 Form của flowchart).
+model FitoutFormType {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  category         String   @default("OTHER")
+  defaultStageCode String?
+  approvalLevels   Int      @default(1)
+  approverRoles    Json? // mảng Role theo thứ tự cấp duyệt, vd ["OPERATION","MALL_DIRECTOR"] — độ dài phải khớp approvalLevels
+  order            Int      @default(0)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  submittals       FitoutSubmittal[]
+
+  @@index([isActive, order])
+}
+
+// Đệ trình (Submittal) — Form 1-16 theo flowchart, đa cấp duyệt (tái dùng ApprovalWorkflow/ApprovalStep).
+model FitoutSubmittal {
+  id                String            @id @default(cuid())
+  projectId         String
+  project           FitoutProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  formTypeId        String
+  formType          FitoutFormType    @relation(fields: [formTypeId], references: [id])
+  stageCode         String // stage tại thời điểm nộp (denormalized để gate-check tra cứu nhanh)
+  title             String
+  revisionNo        Int               @default(1)
+  parentSubmittalId String?
+  parent            FitoutSubmittal?  @relation("SubmittalRevision", fields: [parentSubmittalId], references: [id])
+  children          FitoutSubmittal[] @relation("SubmittalRevision")
+  status            String            @default("SUBMITTED") // SUBMITTED | IN_PROGRESS | APPROVED | REJECTED | PUBLISHED | OBSOLETED
+  workflowId        String?           @unique
+  workflow          ApprovalWorkflow? @relation(fields: [workflowId], references: [id])
+  submittedById     String
+  submittedBy       User              @relation("SubmittalSubmittedBy", fields: [submittedById], references: [id])
+  submittedAt       DateTime          @default(now())
+  dueDate           DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([projectId, formTypeId])
+  @@index([projectId, status])
+}
+
+// Vấn đề/Khiếm khuyết (Defect/NCR) — ghim vị trí trên D-Map, workflow Opened→InProgress→Done→Closed/Reopened.
+model FitoutIssue {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unitId        String
+  unit          Unit          @relation(fields: [unitId], references: [id])
+  floorId       String?
+  title         String
+  description   String?
+  category      String        @default("DEFECT") // DEFECT | NCR | SAFETY | GENERAL
+  severity      String        @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status        String        @default("OPENED") // OPENED | IN_PROGRESS | DONE | CLOSED | REOPENED | CANCELLED
+  isOverdue     Boolean       @default(false)
+  positionX     Float? // 0-100, toạ độ trong bounding-box của unit (ghim D-Map)
+  positionY     Float?
+  createdById   String
+  createdBy     User          @relation("IssueCreatedBy", fields: [createdById], references: [id])
+  assigneeId    String?
+  assignee      User?         @relation("IssueAssignedTo", fields: [assigneeId], references: [id])
+  dueDate       DateTime?
+  closedAt      DateTime?
+  reopenCount   Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([projectId, status])
+  @@index([unitId, status])
+}
+
+// Báo cáo ngày (nhật ký công trường điện tử) — nhiều entry/ngày/nhà thầu, gộp ở tầng đọc.
+model FitoutDailyReportEntry {
+  id             String        @id @default(cuid())
+  projectId      String
+  project        FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reportDate     DateTime // chỉ lấy phần ngày (00:00) để group theo ngày
+  contractorId   String?
+  contractor     FitoutContractor? @relation(fields: [contractorId], references: [id])
+  workforceCount Int           @default(0)
+  description    String
+  areaTag        String? // khu vực trong mặt bằng, vd "Tầng trệt - khu A"
+  createdById    String
+  createdBy      User          @relation("DailyReportCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime      @default(now())
+
+  @@index([projectId, reportDate])
+}
+
+// Tiến độ thi công (Gantt) — WBS cây con qua parentTaskId, planned/revised/actual.
+model FitoutTask {
+  id                   String        @id @default(cuid())
+  projectId            String
+  project              FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name                 String
+  parentTaskId         String?
+  parent               FitoutTask?   @relation("TaskWbs", fields: [parentTaskId], references: [id])
+  children             FitoutTask[]  @relation("TaskWbs")
+  plannedStart         DateTime
+  plannedEnd           DateTime
+  revisedStart         DateTime?
+  revisedEnd           DateTime?
+  actualStart          DateTime?
+  actualEnd            DateTime?
+  percentComplete      Int           @default(0)
+  isLate               Boolean       @default(false)
+  sortOrder            Int           @default(0)
+  assignedContractorId String?
+  assignedContractor   FitoutContractor? @relation(fields: [assignedContractorId], references: [id])
+  dependsOnTaskId       String?
+  dependsOn             FitoutTask?  @relation("TaskDependency", fields: [dependsOnTaskId], references: [id])
+  dependents            FitoutTask[] @relation("TaskDependency")
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([projectId, sortOrder])
+}
+
+// Comment/thread dùng chung cho Submittal, Issue (Phase 3), ... — polymorphic entityType/entityId.
+model EntityComment {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// Distribution list dùng chung cho Submittal, Issue (Phase 3), ... — polymorphic entityType/entityId.
+model EntityDistribution {
+  id         String    @id @default(cuid())
+  entityType String
+  entityId   String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  notifiedAt DateTime?
+  viewedAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([entityType, entityId, userId])
+  @@index([entityType, entityId])
 }
 
 model FitoutChecklist {
@@ -847,6 +1028,9 @@ model Ticket {
   slaDueAt     DateTime?
   subject      String
   description  String?
+  createdById  String?
+  createdBy    User?          @relation("TicketCreatedBy", fields: [createdById], references: [id])
+  source       TicketSource   @default(STAFF_INSPECTION)
   assignedToId String?
   assignedTo   User?          @relation("AssignedTickets", fields: [assignedToId], references: [id])
   status       TicketStatus   @default(NEW)
@@ -857,7 +1041,6 @@ model Ticket {
   updatedAt    DateTime       @updatedAt
 
   comments     TicketComment[]
-  files        TicketFile[]
   escalations  TicketEscalation[]
   rating       TicketRating?
 
@@ -869,36 +1052,36 @@ model TicketComment {
   ticketId   String
   ticket     Ticket   @relation(fields: [ticketId], references: [id])
   userId     String
+  user       User     @relation(fields: [userId], references: [id])
   content    String
   isInternal Boolean  @default(false)
   createdAt  DateTime @default(now())
 }
 
-model TicketFile {
-  id        String   @id @default(cuid())
-  ticketId  String
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
-  filePath  String
-  fileName  String
-  createdAt DateTime @default(now())
+// Trạng thái duyệt doanh thu — bền vững trên chính bản ghi, không chỉ nằm trong audit trail.
+enum SalesApprovalStatus {
+  PENDING
+  APPROVED
+  DISPUTED
 }
 
 model SalesTurnover {
-  id           String   @id @default(cuid())
+  id           String              @id @default(cuid())
   tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
   unitId       String
-  unit         Unit     @relation(fields: [unitId], references: [id])
+  unit         Unit                @relation(fields: [unitId], references: [id])
   date         DateTime
   period       String
   grossSales   Float
   netSales     Float
-  transactions Int      @default(0)
+  transactions Int                 @default(0)
+  status       SalesApprovalStatus @default(PENDING)
   recordedById String?
-  recordedBy   User?    @relation("RecordedBy", fields: [recordedById], references: [id])
+  recordedBy   User?               @relation("RecordedBy", fields: [recordedById], references: [id])
   notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
   @@unique([tenantId, unitId, period])
 
@@ -926,6 +1109,12 @@ model Invoice {
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+
+  // Huỷ hoá đơn có kiểm soát — không xoá bản ghi, chỉ đánh dấu CANCELLED + lưu vết ai/khi nào/vì sao.
+  voidedAt      DateTime?
+  voidedById    String?
+  voidedBy      User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+  voidReason    String?
 
   lines              InvoiceLine[]
   payments           Payment[]
@@ -989,7 +1178,11 @@ model Payment {
   notes     String?
   createdAt DateTime      @default(now())
 
-  reconciliation PaymentReconciliation?
+  // Đảo bút toán thanh toán ghi nhầm — không xoá bản ghi, chỉ đánh dấu đã đảo + lưu vết.
+  reversedAt     DateTime?
+  reversedById   String?
+  reversedBy     User?     @relation("PaymentReversedBy", fields: [reversedById], references: [id])
+  reversalReason String?
 }
 
 model SapIntegrationLog {
@@ -1250,18 +1443,6 @@ model FloorPlanAnalysis {
 // WAVE 4 - Operations & Fitout
 // ═══════════════════════════════════════════════════════════════════════════════
 
-enum FitoutDocumentType {
-  DESIGN_DRAWING
-  MEP_DRAWING
-  FIRE_SAFETY_CERT
-  PCCC_APPROVAL
-  CONSTRUCTION_PERMIT
-  INSURANCE_CERT
-  INSPECTION_REPORT
-  HANDOVER_FORM
-  OTHER
-}
-
 enum FitoutDocumentStatus {
   PENDING
   SUBMITTED
@@ -1273,12 +1454,12 @@ model FitoutDocument {
   id            String               @id @default(cuid())
   projectId     String
   project       FitoutProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  documentType  FitoutDocumentType
+  documentType  String // FK to FitoutFormType.code
   fileName      String
   filePath      String
   fileSizeKb    Int                  @default(0)
   status        FitoutDocumentStatus @default(PENDING)
-  requiredFor   FitoutStatus?
+  requiredFor   String? // FK to FitoutStageConfig.code
   uploadedById  String?
   reviewedById  String?
   reviewedAt    DateTime?
@@ -1290,34 +1471,34 @@ model FitoutDocument {
 }
 
 model FitoutDocumentGate {
-  id           String             @id @default(cuid())
-  stage        FitoutStatus
-  documentType FitoutDocumentType
-  isRequired   Boolean            @default(true)
+  id           String   @id @default(cuid())
+  stage        String // FK to FitoutStageConfig.code
+  documentType String // FK to FitoutFormType.code
+  isRequired   Boolean  @default(true)
   description  String?
-  order        Int                @default(0)
-  isActive     Boolean            @default(true)
-  createdAt    DateTime           @default(now())
+  order        Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   @@unique([stage, documentType])
 }
 
 model FitoutSlaPolicy {
-  id             String       @id @default(cuid())
-  stage          FitoutStatus @unique
+  id             String   @id @default(cuid())
+  stage          String   @unique // FK to FitoutStageConfig.code
   targetDays     Int
   warningDays    Int
   escalateToRole Role?
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model FitoutMilestone {
   id          String        @id @default(cuid())
   projectId   String
   project     FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  stage       FitoutStatus
+  stage       String // FK to FitoutStageConfig.code
   startedAt   DateTime
   completedAt DateTime?
   targetDate  DateTime?
@@ -1445,21 +1626,6 @@ model UserMallAccess {
   @@index([userId, isActive])
 }
 
-// Nhiều người liên hệ cho một Lead
-model LeadContact {
-  id        String  @id @default(cuid())
-  leadId    String
-  lead      Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  name      String
-  title     String?
-  email     String?
-  phone     String?
-  isPrimary Boolean @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([leadId])
-}
-
 // Reminder follow-up cho Lead/Customer
 model LeadFollowUp {
   id           String    @id @default(cuid())
@@ -1495,24 +1661,6 @@ model ProposalScenario {
   @@index([proposalId])
 }
 
-// Lịch sử vòng đàm phán giá
-model ProposalNegotiationRound {
-  id           String   @id @default(cuid())
-  proposalId   String
-  proposal     Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  roundNumber  Int
-  offeredBy    String   // 'THISO' | 'TENANT'
-  rentPerSqm   Float
-  discount     Float    @default(0)
-  rentFree     Int      @default(0)
-  camPerSqm    Float?
-  note         String?
-  createdById  String?
-  createdAt    DateTime @default(now())
-
-  @@index([proposalId, roundNumber])
-}
-
 // Quy trình chấm dứt hợp đồng
 model ContractTermination {
   id                String    @id @default(cuid())
@@ -1538,28 +1686,6 @@ model ContractTermination {
   updatedAt         DateTime  @updatedAt
 }
 
-// Quản lý tiền cọc theo hợp đồng
-model DepositAccount {
-  id             String    @id @default(cuid())
-  contractId     String    @unique
-  contract       Contract  @relation(fields: [contractId], references: [id])
-  tenantId       String
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
-  depositAmount  Float
-  receivedAmount Float     @default(0)
-  bankAccount    String?
-  receivedDate   DateTime?
-  refundDate     DateTime?
-  refundAmount   Float?
-  deductions     Json?     // [{ reason, amount }]
-  status         String    @default("PENDING") // PENDING | RECEIVED | PARTIAL | REFUNDED
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@index([tenantId, status])
-}
-
 // Nhà thầu thi công cho Fitout
 model FitoutContractor {
   id           String        @id @default(cuid())
@@ -1576,6 +1702,8 @@ model FitoutContractor {
   createdAt    DateTime      @default(now())
 
   workers      WorkerAccessLog[]
+  dailyReports FitoutDailyReportEntry[]
+  tasks        FitoutTask[]
 
   @@index([projectId, isActive])
 }
@@ -1632,44 +1760,6 @@ model TicketRating {
   @@index([rating])
 }
 
-// Import sao kê ngân hàng để đối chiếu thanh toán
-model BankStatement {
-  id              String   @id @default(cuid())
-  mallId          String
-  mall            Mall     @relation(fields: [mallId], references: [id])
-  bankAccount     String
-  bankName        String?
-  statementDate   DateTime
-  openingBalance  Float    @default(0)
-  closingBalance  Float    @default(0)
-  transactions    Json     // [{ date, ref, description, credit, debit, balance }]
-  importedById    String
-  importedAt      DateTime @default(now())
-  reconciledCount Int      @default(0)
-
-  reconciliations PaymentReconciliation[]
-
-  @@index([mallId, statementDate])
-}
-
-// Đối chiếu thanh toán với sao kê ngân hàng
-model PaymentReconciliation {
-  id              String        @id @default(cuid())
-  paymentId       String        @unique
-  payment         Payment       @relation(fields: [paymentId], references: [id])
-  bankStatementId String
-  bankStatement   BankStatement @relation(fields: [bankStatementId], references: [id])
-  bankRef         String
-  bankAmount      Float
-  variance        Float         @default(0)
-  status          String        @default("MATCHED") // MATCHED | PARTIAL | UNMATCHED
-  reconciledById  String?
-  reconciledAt    DateTime      @default(now())
-
-  @@index([status])
-  @@index([bankStatementId])
-}
-
 // Audit trail cho báo cáo doanh thu của tenant
 model SalesAuditTrail {
   id            String        @id @default(cuid())
@@ -1709,7 +1799,7 @@ model MallAnnouncement {
   @@index([mallId, isActive, publishedAt])
 }
 
-// Document hub tập trung — thay thế rải rác ContractFile, FitoutDocument, TicketFile
+// Document hub tập trung — thay thế rải rác ContractFile, FitoutDocument
 model UnifiedDocument {
   id            String    @id @default(cuid())
   mallId        String?
@@ -1735,26 +1825,9 @@ model UnifiedDocument {
   downloadCount Int       @default(0)
   isActive      Boolean   @default(true)
 
-  downloadLogs  DocumentDownloadLog[]
-
   @@index([entityType, entityId])
   @@index([mallId, documentType])
   @@index([uploadedAt])
-}
-
-// Audit log ai đã download tài liệu
-model DocumentDownloadLog {
-  id           String          @id @default(cuid())
-  documentId   String
-  document     UnifiedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User            @relation("DocumentDownloadBy", fields: [userId], references: [id])
-  downloadedAt DateTime        @default(now())
-  ipAddress    String?
-  purpose      String?
-
-  @@index([documentId])
-  @@index([userId, downloadedAt])
 }
 
 // Mapping entity trong hệ thống sang đối tượng tương ứng trong SAP
@@ -1996,4 +2069,15 @@ model SlotBooking {
 
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
+}
+
+// Cấu hình thương hiệu hiển thị ở màn hình đăng nhập (logo + ảnh nền) — bảng singleton,
+// luôn chỉ có 1 dòng, service tự tạo dòng đầu tiên nếu chưa có.
+model BrandingSettings {
+  id            String   @id @default(cuid())
+  logoUrl       String?
+  backgroundUrl String?
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
 }

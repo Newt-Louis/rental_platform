@@ -1,18 +1,42 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StepStatus, WorkflowStatus, ProposalStatus } from '@prisma/client';
+import { StepStatus, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
-import { ProposalsService } from '../proposals/proposals.service';
-import { NotificationsService } from '../notifications/notifications.service';
+
+/**
+ * Sinh khi 1 ApprovalWorkflow hoàn tất (tất cả step đã APPROVED).
+ * Consumer theo entityType (vd ProposalsService, FitoutSubmittalService) tự lắng nghe
+ * và quyết định hành động — ApprovalsService không biết gì về nghiệp vụ cụ thể.
+ */
+export interface ApprovalWorkflowCompletedEvent {
+  workflowId: string;
+  entityType: string;
+  entityId: string;
+  decidedByUserId: string;
+}
+
+export interface ApprovalWorkflowStepAdvancedEvent {
+  workflowId: string;
+  entityType: string;
+  entityId: string;
+  nextStepOrder: number;
+}
+
+export interface ApprovalWorkflowRejectedEvent {
+  workflowId: string;
+  entityType: string;
+  entityId: string;
+  decidedByUserId: string;
+  comment?: string;
+}
 
 @Injectable()
 export class ApprovalsService {
   constructor(
     private prisma: PrismaService,
-    @Inject(forwardRef(() => ProposalsService))
-    private proposalsService: ProposalsService,
-    private notifications: NotificationsService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async getPending(userId: string, userRole: string) {
@@ -94,6 +118,21 @@ export class ApprovalsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
+  /** Tạo 1 ApprovalWorkflow generic cho bất kỳ entityType nào (Proposal, FitoutSubmittal, ...). */
+  async createWorkflow(entityType: string, entityId: string, steps: { stepName: string; stepOrder: number; approverRole: string }[], extra: Record<string, unknown> = {}) {
+    if (!steps.length) throw new BadRequestException('At least one approval step is required');
+
+    return this.prisma.approvalWorkflow.create({
+      data: {
+        entityType,
+        entityId,
+        status: WorkflowStatus.IN_PROGRESS,
+        steps: { create: steps as any },
+        ...extra,
+      },
+    });
+  }
+
   async approve(stepId: string, userId: string, userRole: string, comment?: string) {
     const step = await this.prisma.approvalStep.findUnique({
       where: { id: stepId },
@@ -101,7 +140,6 @@ export class ApprovalsService {
         workflow: {
           include: {
             steps: { orderBy: { stepOrder: 'asc' } },
-            proposal: { select: { id: true, proposalNumber: true, createdById: true } },
           },
         },
       },
@@ -111,45 +149,46 @@ export class ApprovalsService {
     if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
     if (step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
 
+    const unapprovedEarlierStep = step.workflow.steps.find(
+      (s) => s.stepOrder < step.stepOrder && s.status !== StepStatus.APPROVED,
+    );
+    if (unapprovedEarlierStep) {
+      throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
+    }
+
     await this.prisma.approvalStep.update({
       where: { id: stepId },
       data: { status: StepStatus.APPROVED, approverId: userId, comment, decidedAt: new Date() },
     });
 
-    const allSteps = step.workflow.steps;
-    const nextStep = allSteps.find((s) => s.stepOrder === step.stepOrder + 1 && s.status === StepStatus.PENDING);
+    const allOtherStepsApproved = step.workflow.steps
+      .filter((s) => s.id !== step.id)
+      .every((s) => s.status === StepStatus.APPROVED);
 
-    if (!nextStep) {
+    if (allOtherStepsApproved) {
       await this.prisma.approvalWorkflow.update({
         where: { id: step.workflowId },
         data: { status: WorkflowStatus.APPROVED },
       });
 
-      if (step.workflow.proposalId) {
-        await this.prisma.proposal.update({
-          where: { id: step.workflow.proposalId },
-          data: { status: ProposalStatus.APPROVED },
-        });
-
-        await this.proposalsService.handleProposalFullyApproved(
-          step.workflow.proposalId,
-          userId,
-        );
-
-        const proposal = step.workflow.proposal;
-        if (proposal?.createdById) {
-          await this.notifications.create({
-            userId: proposal.createdById,
-            title: `Proposal ${proposal.proposalNumber} đã được phê duyệt`,
-            body: 'Deal đã hoàn tất quy trình phê duyệt.',
-            type: 'PROPOSAL_APPROVED',
-            entityType: 'PROPOSAL',
-            entityId: step.workflow.proposalId,
-          });
-        }
-      }
+      this.eventEmitter.emit('approval.workflow.completed', {
+        workflowId: step.workflowId,
+        entityType: step.workflow.entityType,
+        entityId: step.workflow.entityId,
+        decidedByUserId: userId,
+      } satisfies ApprovalWorkflowCompletedEvent);
     } else {
-      await this.proposalsService.notifyPendingApprovers(step.workflowId, nextStep.stepOrder);
+      const nextStep = step.workflow.steps.find(
+        (s) => s.stepOrder === step.stepOrder + 1 && s.status === StepStatus.PENDING,
+      );
+      if (nextStep) {
+        this.eventEmitter.emit('approval.workflow.step-advanced', {
+          workflowId: step.workflowId,
+          entityType: step.workflow.entityType,
+          entityId: step.workflow.entityId,
+          nextStepOrder: nextStep.stepOrder,
+        } satisfies ApprovalWorkflowStepAdvancedEvent);
+      }
     }
 
     return { message: 'Step approved successfully' };
@@ -175,12 +214,13 @@ export class ApprovalsService {
       data: { status: WorkflowStatus.REJECTED },
     });
 
-    if (step.workflow.proposalId) {
-      await this.prisma.proposal.update({
-        where: { id: step.workflow.proposalId },
-        data: { status: ProposalStatus.REJECTED },
-      });
-    }
+    this.eventEmitter.emit('approval.workflow.rejected', {
+      workflowId: step.workflowId,
+      entityType: step.workflow.entityType,
+      entityId: step.workflow.entityId,
+      decidedByUserId: userId,
+      comment,
+    } satisfies ApprovalWorkflowRejectedEvent);
 
     return { message: 'Step rejected' };
   }

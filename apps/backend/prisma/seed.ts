@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UnitStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, FitoutStatus, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, FitoutDocumentType, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
+import { PrismaClient, Role, UnitStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from './approval-policy-seed.util';
 
@@ -1043,13 +1043,13 @@ async function main() {
 
   console.log('Contracts created');
 
-  // Create FitoutProjects for active contracts
+  // Create FitoutProjects for active contracts (status = FitoutStageConfig.code, seeded in migration 20260702100000)
   const fitoutStatuses = [
-    FitoutStatus.OPENED, FitoutStatus.OPENED, FitoutStatus.OPENED, FitoutStatus.OPENED,
-    FitoutStatus.APPROVED_TO_OPEN, FitoutStatus.INSPECTION,
-    FitoutStatus.FITOUT_IN_PROGRESS, FitoutStatus.CONSTRUCTION_PERMIT,
-    FitoutStatus.DESIGN_REVIEW, FitoutStatus.SUBMIT_DESIGN,
-    FitoutStatus.CONTRACT_SIGNED, FitoutStatus.CONTRACT_SIGNED,
+    'OPENED', 'OPENED', 'OPENED', 'OPENED',
+    'APPROVED_TO_OPEN', 'INSPECTION',
+    'FITOUT_IN_PROGRESS', 'CONSTRUCTION_PERMIT',
+    'DESIGN_REVIEW', 'SUBMIT_DESIGN',
+    'CONTRACT_SIGNED', 'CONTRACT_SIGNED',
   ];
 
   for (let i = 0; i < Math.min(contracts.length, 12); i++) {
@@ -1391,16 +1391,16 @@ async function main() {
   // WAVE 4-5 SEED DATA
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Fitout Document Gates
+  // Fitout Document Gates (stage/documentType = FitoutStageConfig.code / FitoutFormType.code)
   const documentGates = [
-    { stage: FitoutStatus.SUBMIT_DESIGN, documentType: FitoutDocumentType.DESIGN_DRAWING, description: 'Layout design drawings', order: 1 },
-    { stage: FitoutStatus.SUBMIT_DESIGN, documentType: FitoutDocumentType.MEP_DRAWING, description: 'MEP (M&E) drawings', order: 2 },
-    { stage: FitoutStatus.FIRE_SAFETY_REVIEW, documentType: FitoutDocumentType.FIRE_SAFETY_CERT, description: 'Fire safety certificate', order: 1 },
-    { stage: FitoutStatus.FIRE_SAFETY_REVIEW, documentType: FitoutDocumentType.PCCC_APPROVAL, description: 'PCCC approval document', order: 2 },
-    { stage: FitoutStatus.CONSTRUCTION_PERMIT, documentType: FitoutDocumentType.CONSTRUCTION_PERMIT, description: 'Construction permit', order: 1 },
-    { stage: FitoutStatus.CONSTRUCTION_PERMIT, documentType: FitoutDocumentType.INSURANCE_CERT, description: 'Insurance certificate', order: 2 },
-    { stage: FitoutStatus.INSPECTION, documentType: FitoutDocumentType.INSPECTION_REPORT, description: 'Final inspection report', order: 1 },
-    { stage: FitoutStatus.APPROVED_TO_OPEN, documentType: FitoutDocumentType.HANDOVER_FORM, description: 'Handover acceptance form', order: 1 },
+    { stage: 'SUBMIT_DESIGN', documentType: 'DESIGN_DRAWING', description: 'Layout design drawings', order: 1 },
+    { stage: 'SUBMIT_DESIGN', documentType: 'MEP_DRAWING', description: 'MEP (M&E) drawings', order: 2 },
+    { stage: 'FIRE_SAFETY_REVIEW', documentType: 'FIRE_SAFETY_CERT', description: 'Fire safety certificate', order: 1 },
+    { stage: 'FIRE_SAFETY_REVIEW', documentType: 'PCCC_APPROVAL', description: 'PCCC approval document', order: 2 },
+    { stage: 'CONSTRUCTION_PERMIT', documentType: 'CONSTRUCTION_PERMIT', description: 'Construction permit', order: 1 },
+    { stage: 'CONSTRUCTION_PERMIT', documentType: 'INSURANCE_CERT', description: 'Insurance certificate', order: 2 },
+    { stage: 'INSPECTION', documentType: 'INSPECTION_REPORT', description: 'Final inspection report', order: 1 },
+    { stage: 'APPROVED_TO_OPEN', documentType: 'HANDOVER_FORM', description: 'Handover acceptance form', order: 1 },
   ];
 
   for (const gate of documentGates) {
@@ -1412,14 +1412,14 @@ async function main() {
 
   // Fitout SLA Policies
   const fitoutSlaPolicies = [
-    { stage: FitoutStatus.CONTRACT_SIGNED, targetDays: 7, warningDays: 5, escalateToRole: Role.LEASING_MANAGER },
-    { stage: FitoutStatus.SUBMIT_DESIGN, targetDays: 14, warningDays: 10, escalateToRole: Role.LEASING_MANAGER },
-    { stage: FitoutStatus.DESIGN_REVIEW, targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
-    { stage: FitoutStatus.FIRE_SAFETY_REVIEW, targetDays: 14, warningDays: 10, escalateToRole: Role.OPERATION },
-    { stage: FitoutStatus.CONSTRUCTION_PERMIT, targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
-    { stage: FitoutStatus.FITOUT_IN_PROGRESS, targetDays: 60, warningDays: 45, escalateToRole: Role.MALL_DIRECTOR },
-    { stage: FitoutStatus.INSPECTION, targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
-    { stage: FitoutStatus.APPROVED_TO_OPEN, targetDays: 3, warningDays: 2, escalateToRole: Role.MALL_DIRECTOR },
+    { stage: 'CONTRACT_SIGNED', targetDays: 7, warningDays: 5, escalateToRole: Role.LEASING_MANAGER },
+    { stage: 'SUBMIT_DESIGN', targetDays: 14, warningDays: 10, escalateToRole: Role.LEASING_MANAGER },
+    { stage: 'DESIGN_REVIEW', targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
+    { stage: 'FIRE_SAFETY_REVIEW', targetDays: 14, warningDays: 10, escalateToRole: Role.OPERATION },
+    { stage: 'CONSTRUCTION_PERMIT', targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
+    { stage: 'FITOUT_IN_PROGRESS', targetDays: 60, warningDays: 45, escalateToRole: Role.MALL_DIRECTOR },
+    { stage: 'INSPECTION', targetDays: 7, warningDays: 5, escalateToRole: Role.OPERATION },
+    { stage: 'APPROVED_TO_OPEN', targetDays: 3, warningDays: 2, escalateToRole: Role.MALL_DIRECTOR },
   ];
 
   for (const policy of fitoutSlaPolicies) {

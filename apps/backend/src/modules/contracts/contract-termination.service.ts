@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { UnitStatus } from '@prisma/client';
+import { UnitStatus, ContractStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 import { UnitStatusService } from '../../common/services/unit-status.service';
@@ -68,7 +68,7 @@ export class ContractTerminationService {
       include: { contract: { select: { id: true, contractNumber: true } } },
     });
 
-    await this.prisma.contract.update({ where: { id: contractId }, data: { status: 'TERMINATING' as any } });
+    await this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.TERMINATING } });
 
     return termination;
   }
@@ -113,7 +113,7 @@ export class ContractTerminationService {
         where: { contractId },
         data: { status: 'COMPLETED', completedAt: new Date() },
       }),
-      this.prisma.contract.update({ where: { id: contractId }, data: { status: 'TERMINATED' as any } }),
+      this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.TERMINATED } }),
     ]);
 
     if (contract) {
@@ -132,7 +132,7 @@ export class ContractTerminationService {
 
     await this.prisma.$transaction([
       this.prisma.contractTermination.update({ where: { contractId }, data: { status: 'CANCELLED' } }),
-      this.prisma.contract.update({ where: { id: contractId }, data: { status: 'ACTIVE' as any } }),
+      this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.ACTIVE } }),
     ]);
 
     return { message: 'Termination cancelled' };

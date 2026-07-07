@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { ContractStatus, UnitStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
+interface CurrentUser {
+  id: string;
+  role: string;
+  tenantId?: string | null;
+}
 
 @Injectable()
 export class ContractsService {
@@ -12,6 +19,7 @@ export class ContractsService {
     private prisma: PrismaService,
     private events: ContractEventsService,
     private unitStatus: UnitStatusService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async findAll(query: {
@@ -21,7 +29,7 @@ export class ContractsService {
     search?: string;
     page?: number;
     limit?: number;
-  }) {
+  }, currentUser?: CurrentUser) {
     const { search, ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
@@ -29,7 +37,12 @@ export class ContractsService {
 
     const where: any = { isActive: true, deletedAt: null };
     if (filters.status) where.status = filters.status;
-    if (filters.tenantId) where.tenantId = filters.tenantId;
+    if (currentUser?.role === 'TENANT') {
+      // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    } else if (filters.tenantId) {
+      where.tenantId = filters.tenantId;
+    }
     if (filters.unitId) where.unitId = filters.unitId;
     if (search) {
       where.OR = [
@@ -56,7 +69,7 @@ export class ContractsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUser?: CurrentUser) {
     const contract = await this.prisma.contract.findUnique({
       where: { id },
       include: {
@@ -82,10 +95,43 @@ export class ContractsService {
     });
 
     if (!contract) throw new NotFoundException('Contract not found');
+
+    if (currentUser?.role === 'TENANT' && contract.tenantId !== currentUser.tenantId) {
+      throw new ForbiddenException('Bạn không có quyền xem hợp đồng này');
+    }
+
     return contract;
   }
 
   async create(dto: CreateContractDto, userId?: string) {
+    const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
+    if (!unit) throw new NotFoundException('Unit không tồn tại');
+
+    // Chặn sớm trước khi ghi dữ liệu — tránh tạo Contract rồi mới phát hiện transition trạng thái
+    // unit không hợp lệ (cùng lớp bug đã sửa ở BookingService.create/SlotsService.createBooking).
+    if (!this.unitStatus.canTransition(unit.status, UnitStatus.CONTRACTED)) {
+      throw new BadRequestException(
+        `Không thể tạo hợp đồng: mặt bằng đang ở trạng thái ${unit.status}, không thể chuyển sang CONTRACTED.`,
+      );
+    }
+
+    // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực tại một thời điểm — tránh 2 hợp đồng
+    // sống song song trên cùng unit (dẫn đến ghi đè tenantId/lease dates âm thầm khi transition
+    // tới cùng trạng thái CONTRACTED lần thứ hai).
+    const existingActiveContract = await this.prisma.contract.findFirst({
+      where: {
+        unitId: dto.unitId,
+        isActive: true,
+        deletedAt: null,
+        status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+      },
+    });
+    if (existingActiveContract) {
+      throw new BadRequestException(
+        `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingActiveContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
+      );
+    }
+
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
     const contractNumber = `CTR-${year}-${rand}`;
@@ -155,6 +201,20 @@ export class ContractsService {
       afterValue: status,
       userId,
     });
+
+    if (status === ContractStatus.ACTIVE && before.status !== ContractStatus.ACTIVE) {
+      const withProposal = await this.prisma.contract.findUnique({
+        where: { id },
+        include: { proposal: { select: { fitoutDays: true, handoverDate: true, openingDate: true } } },
+      });
+      this.eventEmitter.emit('contract.activated', {
+        contractId: id,
+        tenantId: updated.tenantId,
+        unitId: updated.unitId,
+        handoverDate: withProposal?.proposal?.handoverDate ?? null,
+        openingDate: withProposal?.proposal?.openingDate ?? null,
+      });
+    }
 
     return updated;
   }

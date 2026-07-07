@@ -32,7 +32,8 @@ export type RouteModule =
   | 'admin'
   | 'announcements'
   | 'tenant-portal'
-  | 'cross-mall';
+  | 'cross-mall'
+  | 'audit-log';
 
 export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: ['ADMIN', 'CEO', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'],
@@ -41,10 +42,10 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   'deal-pipeline': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
   bookings: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
   proposals: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
-  approvals: ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL', 'CEO'],
-  contracts: ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL'],
+  approvals: ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL', 'CEO', 'OPERATION'],
+  contracts: ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL', 'TENANT'],
   tenants: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL'],
-  fitout: ['ADMIN', 'OPERATION', 'LEASING_MANAGER', 'MALL_DIRECTOR'],
+  fitout: ['ADMIN', 'OPERATION', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'TENANT'],
   tickets: ['ADMIN', 'OPERATION', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'TENANT'],
   sales: ['ADMIN', 'FINANCE', 'MALL_DIRECTOR', 'CEO', 'TENANT'],
   billing: ['ADMIN', 'FINANCE', 'MALL_DIRECTOR', 'TENANT'],
@@ -56,6 +57,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   announcements: ['ADMIN', 'MALL_DIRECTOR', 'OPERATION', 'LEASING_MANAGER', 'TENANT'],
   'tenant-portal': ['TENANT', 'ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'OPERATION'],
   'cross-mall': ['ADMIN', 'CEO'],
+  'audit-log': ['ADMIN', 'CEO'],
 };
 
 /** Map URL path segment → module key */
@@ -81,6 +83,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   announcements: 'announcements',
   'tenant-portal': 'tenant-portal',
   'cross-mall': 'cross-mall',
+  'audit-log': 'audit-log',
 };
 
 export function canAccessModule(role: string | undefined, module: RouteModule): boolean {
@@ -105,15 +108,25 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    // Chỉ giữ lại các bước hành động tuần tự thật của quy trình cho thuê 1 mặt bằng cụ thể
+    // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM (chăm sóc lead trước khi
+    // chọn mặt bằng) và Deal Pipeline (dashboard tổng hợp chỉ để xem, không thao tác) đã tách
+    // ra 2 nhóm riêng bên dưới để không gây nhầm lẫn đây là các bước phải làm tuần tự.
     label: 'Quy trình bán hàng',
     items: [
-      { label: 'CRM & Leads', path: '/crm', module: 'crm' as RouteModule },
-      { label: 'Deal Pipeline', path: '/deal-pipeline', module: 'deal-pipeline' as RouteModule },
       { label: 'Booking', path: '/bookings', module: 'bookings' as RouteModule },
       { label: 'Đề xuất', path: '/proposals', module: 'proposals' as RouteModule },
       { label: 'Phê duyệt', path: '/approvals', module: 'approvals' as RouteModule },
       { label: 'Hợp đồng', path: '/contracts', module: 'contracts' as RouteModule },
       { label: 'Khách thuê', path: '/tenants', module: 'tenants' as RouteModule },
+    ],
+  },
+  {
+    // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể — một giai đoạn
+    // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
+    label: 'Khách hàng tiềm năng (CRM)',
+    items: [
+      { label: 'CRM & Leads', path: '/crm', module: 'crm' as RouteModule },
     ],
   },
   {
@@ -134,6 +147,9 @@ export const NAV_GROUPS = [
   {
     label: 'Phân tích',
     items: [
+      // Deal Pipeline là dashboard tổng hợp Lead→Booking→Đề xuất→Duyệt→Hợp đồng chỉ để xem
+      // (không tạo/sửa/duyệt gì ở đây) — đúng bản chất là một báo cáo, không phải bước thao tác.
+      { label: 'Deal Pipeline', path: '/deal-pipeline', module: 'deal-pipeline' as RouteModule },
       { label: 'Báo cáo', path: '/reports', module: 'reports' as RouteModule },
       { label: 'Analytics', path: '/analytics', module: 'analytics' as RouteModule },
       { label: 'AI Assistant', path: '/ai', module: 'ai' as RouteModule },
@@ -145,6 +161,7 @@ export const NAV_GROUPS = [
     items: [
       { label: 'Thông báo Mall', path: '/announcements', module: 'announcements' as RouteModule },
       { label: 'Tenant Portal', path: '/tenant-portal', module: 'tenant-portal' as RouteModule },
+      { label: 'Nhật ký hệ thống', path: '/audit-log', module: 'audit-log' as RouteModule },
       { label: 'Quản trị', path: '/admin', module: 'admin' as RouteModule },
     ],
   },

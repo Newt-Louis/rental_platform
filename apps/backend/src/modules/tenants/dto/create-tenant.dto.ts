@@ -44,9 +44,4 @@ export class CreateTenantDto {
   @IsOptional()
   @IsBoolean()
   isPortalUser?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsEmail()
-  portalEmail?: string;
 }

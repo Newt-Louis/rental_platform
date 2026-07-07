@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi } from '@/api';
+import { useMallStore } from '@/store/mall.store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,11 +16,12 @@ import {
   Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
   KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, Globe,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
-  SquareStack, Info, GitBranch,
+  SquareStack, Info, GitBranch, ExternalLink,
 } from 'lucide-react';
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import type { User } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -35,22 +38,14 @@ const ROLE_MAP: Record<string, { label: string; color: string; desc: string }> =
   TENANT:            { label: 'Tenant Portal',     color: 'bg-gray-100 text-gray-700',   desc: 'Khách thuê xem thông tin hợp đồng và gửi yêu cầu' },
 };
 
-const PERMISSIONS: { module: string; label: string; roles: string[] }[] = [
-  { module: 'dashboard',  label: 'Dashboard',        roles: ['ADMIN','CEO','MALL_DIRECTOR','LEASING_MANAGER','LEASING_EXECUTIVE','FINANCE','LEGAL','OPERATION'] },
-  { module: 'spaces',     label: 'Sơ đồ Mặt bằng',  roles: ['ADMIN','MALL_DIRECTOR','LEASING_MANAGER','LEASING_EXECUTIVE','FINANCE','LEGAL','OPERATION'] },
-  { module: 'crm',        label: 'CRM / Leads',      roles: ['ADMIN','LEASING_MANAGER','LEASING_EXECUTIVE','MALL_DIRECTOR'] },
-  { module: 'proposals',  label: 'Proposals',        roles: ['ADMIN','LEASING_MANAGER','LEASING_EXECUTIVE','MALL_DIRECTOR','CEO'] },
-  { module: 'approvals',  label: 'Phê duyệt',        roles: ['ADMIN','LEASING_MANAGER','MALL_DIRECTOR','FINANCE','LEGAL','CEO'] },
-  { module: 'contracts',  label: 'Hợp đồng',         roles: ['ADMIN','LEASING_MANAGER','MALL_DIRECTOR','FINANCE','LEGAL'] },
-  { module: 'fitout',     label: 'Fitout',           roles: ['ADMIN','OPERATION','LEASING_MANAGER','MALL_DIRECTOR'] },
-  { module: 'tickets',    label: 'Tickets vận hành', roles: ['ADMIN','OPERATION','MALL_DIRECTOR','LEASING_MANAGER','TENANT'] },
-  { module: 'sales',      label: 'Doanh thu',        roles: ['ADMIN','FINANCE','MALL_DIRECTOR','CEO'] },
-  { module: 'billing',    label: 'Billing & AR',     roles: ['ADMIN','FINANCE','MALL_DIRECTOR'] },
-  { module: 'sap',        label: 'SAP Integration',  roles: ['ADMIN','FINANCE'] },
-  { module: 'reports',    label: 'Báo cáo',          roles: ['ADMIN','FINANCE','MALL_DIRECTOR','CEO','LEASING_MANAGER'] },
-  { module: 'ai',         label: 'AI Assistant',     roles: ['ADMIN','LEASING_MANAGER','MALL_DIRECTOR','CEO'] },
-  { module: 'admin',      label: 'Admin Panel',      roles: ['ADMIN'] },
-];
+// Lấy trực tiếp từ ROUTE_PERMISSIONS (nguồn chân lý dùng để gác cổng route thật) — không còn là
+// bản sao hardcode thứ 3 dễ lệch khỏi thực tế như trước. Nhãn hiển thị lấy từ NAV_GROUPS.
+const MODULE_LABELS: Record<string, string> = Object.fromEntries(
+  NAV_GROUPS.flatMap((g) => g.items.map((item) => [item.module, item.label])),
+);
+const PERMISSIONS: { module: string; label: string; roles: string[] }[] = Object.entries(ROUTE_PERMISSIONS).map(
+  ([module, roles]) => ({ module, label: MODULE_LABELS[module] ?? module, roles }),
+);
 
 const ROLE_KEYS = Object.keys(ROLE_MAP);
 
@@ -81,9 +76,17 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, watch } = useForm();
   const [showResetPwd, setShowResetPwd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const selectedRole = watch('role', user?.role);
+
+  const { data: tenantsData } = useQuery({
+    queryKey: ['tenants-lite'],
+    queryFn: () => tenantsApi.listTenants({ limit: 200 }),
+    enabled: selectedRole === 'TENANT',
+  });
+  const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => usersApi.updateUser(user!.id, data),
@@ -149,6 +152,15 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
                     {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
                   </select>
                 </div>
+                {selectedRole === 'TENANT' && (
+                  <div className="col-span-2">
+                    <Label className="text-xs">Khách thuê liên kết</Label>
+                    <select defaultValue={user.tenantId ?? ''} {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                      <option value="">— Chưa liên kết —</option>
+                      {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
               <Button type="submit" size="sm" className="w-full" disabled={updateMutation.isPending}>
                 {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
@@ -208,7 +220,15 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, watch } = useForm();
+  const selectedRole = watch('role', ROLE_KEYS[0]);
+
+  const { data: tenantsData } = useQuery({
+    queryKey: ['tenants-lite'],
+    queryFn: () => tenantsApi.listTenants({ limit: 200 }),
+    enabled: selectedRole === 'TENANT',
+  });
+  const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
 
   const mutation = useMutation({
     mutationFn: (data: any) => usersApi.createUser(data),
@@ -233,6 +253,15 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
             <div><Label>Điện thoại</Label><Input {...register('phone')} placeholder="0901234567" className="mt-1" /></div>
             <div><Label>Phòng ban</Label><Input {...register('department')} placeholder="Leasing" className="mt-1" /></div>
+            {selectedRole === 'TENANT' && (
+              <div className="col-span-2">
+                <Label>Khách thuê liên kết</Label>
+                <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                  <option value="">— Chưa liên kết —</option>
+                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
@@ -732,14 +761,27 @@ function MallsTab() {
 // ─── Tab 3: Space Structure ───────────────────────────────────────────────────
 
 function ZoneRow({ zone, onEdit, onDelete }: { zone: any; onEdit: () => void; onDelete: () => void }) {
+  const unitCount = zone._count?.units ?? 0;
   return (
     <div className="flex items-center gap-2 py-1.5 px-3 ml-6 rounded-lg hover:bg-gray-50 group">
       <SquareStack size={12} className="text-blue-400 shrink-0" />
       <span className="text-sm text-gray-700 flex-1">{zone.name}</span>
       {zone.code && <span className="text-xs text-gray-400 font-mono">{zone.code}</span>}
+      <span className={`text-xs px-1.5 py-0.5 rounded-full ${unitCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400'}`}>
+        {unitCount} mặt bằng
+      </span>
       <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
         <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onEdit}><Pencil size={11} className="text-gray-400" /></Button>
-        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onDelete}><Trash2 size={11} className="text-red-400" /></Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 w-6 p-0"
+          onClick={onDelete}
+          disabled={unitCount > 0}
+          title={unitCount > 0 ? `Không thể xoá: còn ${unitCount} mặt bằng đang hoạt động` : undefined}
+        >
+          <Trash2 size={11} className={unitCount > 0 ? 'text-gray-200' : 'text-red-400'} />
+        </Button>
       </div>
     </div>
   );
@@ -750,6 +792,9 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { setSelectedMall } = useMallStore();
+  const floorUnitCount = floor._count?.units ?? 0;
   const [expanded, setExpanded] = useState(true);
   const [showAddZone, setShowAddZone] = useState(false);
   const [editZone, setEditZone] = useState<any>(null);
@@ -803,16 +848,38 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
           <span className="text-xs font-bold px-2 py-0.5 bg-slate-700 text-white rounded">{floor.level}</span>
           <span className="text-sm font-medium text-gray-800">{floor.name}</span>
           <span className="text-xs text-gray-400">({floorZones.length} khu vực)</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded-full ${floorUnitCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400'}`}>
+            {floorUnitCount} mặt bằng
+          </span>
         </button>
         <div className="flex gap-1 shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 text-xs text-gray-500"
+            title="Xem và quản lý mặt bằng của tầng này trong Spaces"
+            onClick={() => {
+              setSelectedMall(mallId);
+              navigate(`/spaces?floorId=${floor.id}`);
+            }}
+          >
+            <ExternalLink size={11} /> Xem trong Spaces
+          </Button>
           <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => setShowAddZone(true)}>
             <Plus size={11} /> Zone
           </Button>
           <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setShowEditFloor(true)}>
             <Pencil size={11} className="text-gray-400" />
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setConfirmDeleteFloor(true)}>
-            <Trash2 size={11} className="text-red-400" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={() => setConfirmDeleteFloor(true)}
+            disabled={floorUnitCount > 0}
+            title={floorUnitCount > 0 ? `Không thể xoá: còn ${floorUnitCount} mặt bằng đang hoạt động` : undefined}
+          >
+            <Trash2 size={11} className={floorUnitCount > 0 ? 'text-gray-200' : 'text-red-400'} />
           </Button>
         </div>
       </div>
@@ -953,7 +1020,7 @@ function PermissionsTab() {
     <div>
       <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl text-sm text-gray-700">
         <Info size={14} className="shrink-0" />
-        Ma trận này hiển thị phân quyền mặc định theo vai trò. Phân quyền được cấu hình sẵn trong hệ thống.
+        Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code (<code className="text-xs bg-white px-1 rounded border">role-permissions.ts</code> và <code className="text-xs bg-white px-1 rounded border">lib/permissions.ts</code>) và triển khai lại.
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
@@ -1002,6 +1069,119 @@ function PermissionsTab() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Branding: logo + ảnh nền màn hình đăng nhập ──────────────────────────────
+
+function BrandingCard() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bgInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: branding } = useQuery({ queryKey: ['branding-settings'], queryFn: brandingApi.getSettings });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['branding-settings'] });
+
+  const uploadLogoMutation = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return brandingApi.uploadLogo(fd);
+    },
+    onSuccess: () => { invalidate(); toast({ title: 'Đã cập nhật logo' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi upload logo', variant: 'destructive' }),
+  });
+
+  const uploadBgMutation = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return brandingApi.uploadBackground(fd);
+    },
+    onSuccess: () => { invalidate(); toast({ title: 'Đã cập nhật ảnh nền' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi upload ảnh nền', variant: 'destructive' }),
+  });
+
+  const removeLogoMutation = useMutation({
+    mutationFn: brandingApi.removeLogo,
+    onSuccess: () => { invalidate(); toast({ title: 'Đã xoá logo' }); },
+  });
+
+  const removeBgMutation = useMutation({
+    mutationFn: brandingApi.removeBackground,
+    onSuccess: () => { invalidate(); toast({ title: 'Đã xoá ảnh nền' }); },
+  });
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <h3 className="font-semibold text-gray-900 text-sm mb-1">Thương hiệu</h3>
+      <p className="text-xs text-gray-500 mb-3">Logo và ảnh nền hiển thị ở màn hình đăng nhập</p>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="text-xs text-gray-500 mb-2">Logo công ty</div>
+          <div className="h-24 bg-gray-900 rounded-lg flex items-center justify-center mb-2 overflow-hidden">
+            {branding?.logoUrl ? (
+              <img src={branding.logoUrl} alt="Logo" className="max-h-20 max-w-full object-contain" />
+            ) : (
+              <span className="text-xs text-gray-500">Chưa có logo — dùng mặc định THISO</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => logoInputRef.current?.click()} disabled={uploadLogoMutation.isPending}>
+              Upload
+            </Button>
+            {branding?.logoUrl && (
+              <Button size="sm" variant="outline" className="text-red-600" onClick={() => removeLogoMutation.mutate()}>
+                Xoá
+              </Button>
+            )}
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadLogoMutation.mutate(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 mb-2">Ảnh nền màn hình đăng nhập</div>
+          <div
+            className="h-24 bg-gray-900 rounded-lg flex items-center justify-center mb-2 overflow-hidden bg-cover bg-center"
+            style={branding?.backgroundUrl ? { backgroundImage: `url(${branding.backgroundUrl})` } : undefined}
+          >
+            {!branding?.backgroundUrl && <span className="text-xs text-gray-500">Chưa có ảnh nền</span>}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => bgInputRef.current?.click()} disabled={uploadBgMutation.isPending}>
+              Upload
+            </Button>
+            {branding?.backgroundUrl && (
+              <Button size="sm" variant="outline" className="text-red-600" onClick={() => removeBgMutation.mutate()}>
+                Xoá
+              </Button>
+            )}
+          </div>
+          <input
+            ref={bgInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadBgMutation.mutate(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -1064,6 +1244,8 @@ function SystemTab() {
 
   return (
     <div className="space-y-5">
+      <BrandingCard />
+
       {/* Server health */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-3">

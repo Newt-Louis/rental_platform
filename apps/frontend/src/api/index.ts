@@ -7,6 +7,17 @@ export const authApi = {
   me: () => api.get('/auth/me').then((r) => r.data),
 };
 
+// Branding (logo + ảnh nền màn hình đăng nhập) — GET là public, còn lại cần ADMIN
+export const brandingApi = {
+  getSettings: () => api.get('/branding').then((r) => r.data),
+  uploadLogo: (formData: FormData) =>
+    api.post('/branding/logo', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  uploadBackground: (formData: FormData) =>
+    api.post('/branding/background', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+  removeLogo: () => api.delete('/branding/logo').then((r) => r.data),
+  removeBackground: () => api.delete('/branding/background').then((r) => r.data),
+};
+
 // Spaces
 export const spacesApi = {
   // Malls
@@ -32,6 +43,7 @@ export const spacesApi = {
   getUnit: (id: string) => api.get(`/spaces/units/${id}`).then((r) => r.data),
   createUnit: (data: Record<string, unknown>) => api.post('/spaces/units', data).then((r) => r.data),
   updateUnit: (id: string, data: Record<string, unknown>) => api.patch(`/spaces/units/${id}`, data).then((r) => r.data),
+  updateUnitWithHistory: (id: string, data: Record<string, unknown>) => api.patch(`/spaces/units/${id}/with-history`, data).then((r) => r.data),
   deleteUnit: (id: string) => api.delete(`/spaces/units/${id}`).then((r) => r.data),
   occupancySummary: (mallId?: string | null) =>
     api.get('/spaces/units/occupancy', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
@@ -324,8 +336,8 @@ export const fitoutApi = {
   listFitouts: (params?: Record<string, unknown>) =>
     api.get('/fitouts', { params }).then((r) => r.data),
   getFitout: (id: string) => api.get(`/fitouts/${id}`).then((r) => r.data),
-  advanceStatus: (id: string, status: string) =>
-    api.put(`/fitouts/${id}/status`, { status }).then((r) => r.data),
+  advanceStatus: (id: string, status: string, opts?: { override?: boolean; overrideReason?: string }) =>
+    api.put(`/fitouts/${id}/status`, { status, ...opts }).then((r) => r.data),
   getChecklists: (id: string) =>
     api.get(`/fitouts/${id}/checklists`).then((r) => r.data),
   createChecklist: (id: string, data: { title: string; description?: string }) =>
@@ -355,6 +367,14 @@ export const fitoutApi = {
   listSlaPolicies: () => api.get('/fitouts/sla/policies').then((r) => r.data),
   upsertSlaPolicy: (data: Record<string, unknown>) => api.post('/fitouts/sla/policies', data).then((r) => r.data),
   getProgress: () => api.get('/fitouts/progress').then((r) => r.data),
+  getDashboardOverview: () => api.get('/fitouts/dashboard/overview').then((r) => r.data),
+  getProjectDashboard: (id: string) => api.get(`/fitouts/${id}/dashboard`).then((r) => r.data),
+  listStageConfigs: () => api.get('/fitouts/stage-configs').then((r) => r.data),
+  upsertStageConfig: (data: Record<string, unknown>) => api.post('/fitouts/stage-configs', data).then((r) => r.data),
+  deactivateStageConfig: (code: string) => api.delete(`/fitouts/stage-configs/${code}`).then((r) => r.data),
+  listFormTypes: () => api.get('/fitouts/form-types').then((r) => r.data),
+  upsertFormType: (data: Record<string, unknown>) => api.post('/fitouts/form-types', data).then((r) => r.data),
+  deactivateFormType: (code: string) => api.delete(`/fitouts/form-types/${code}`).then((r) => r.data),
   listContractors: (projectId: string) => api.get(`/fitouts/${projectId}/contractors`).then((r) => r.data),
   createContractor: (projectId: string, data: Record<string, unknown>) => api.post(`/fitouts/${projectId}/contractors`, data).then((r) => r.data),
   updateContractor: (projectId: string, contractorId: string, data: Record<string, unknown>) => api.patch(`/fitouts/${projectId}/contractors/${contractorId}`, data).then((r) => r.data),
@@ -362,6 +382,76 @@ export const fitoutApi = {
   listWorkerLogs: (projectId: string) => api.get(`/fitouts/${projectId}/workers`).then((r) => r.data),
   logWorkerEntry: (projectId: string, data: Record<string, unknown>) => api.post(`/fitouts/${projectId}/workers`, data).then((r) => r.data),
   logWorkerExit: (projectId: string, logId: string) => api.patch(`/fitouts/${projectId}/workers/${logId}/exit`).then((r) => r.data),
+};
+
+// Fitout Submittals (Form 1-16, đa cấp duyệt)
+export const fitoutSubmittalApi = {
+  list: (projectId: string, params?: { formTypeId?: string; status?: string }) =>
+    api.get('/fitout-submittals', { params: { projectId, ...params } }).then((r) => r.data),
+  getOne: (id: string) => api.get(`/fitout-submittals/${id}`).then((r) => r.data),
+  create: (data: { projectId: string; formTypeId: string; title: string; dueDate?: string }) =>
+    api.post('/fitout-submittals', data).then((r) => r.data),
+  resubmit: (id: string, data: { title?: string; dueDate?: string }) =>
+    api.post(`/fitout-submittals/${id}/resubmit`, data).then((r) => r.data),
+  publish: (id: string) => api.post(`/fitout-submittals/${id}/publish`).then((r) => r.data),
+  listComments: (id: string) => api.get(`/fitout-submittals/${id}/comments`).then((r) => r.data),
+  addComment: (id: string, body: string) => api.post(`/fitout-submittals/${id}/comments`, { body }).then((r) => r.data),
+  listDistribution: (id: string) => api.get(`/fitout-submittals/${id}/distribution`).then((r) => r.data),
+  addDistribution: (id: string, userId: string) => api.post(`/fitout-submittals/${id}/distribution`, { userId }).then((r) => r.data),
+  listAttachments: (id: string) => api.get(`/fitout-submittals/${id}/attachments`).then((r) => r.data),
+  uploadAttachment: (id: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/fitout-submittals/${id}/attachments`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+};
+
+// Fitout Issues (Defect/NCR + D-Map)
+export const fitoutIssueApi = {
+  list: (projectId: string, params?: { status?: string; category?: string; assigneeId?: string }) =>
+    api.get('/fitout-issues', { params: { projectId, ...params } }).then((r) => r.data),
+  getOne: (id: string) => api.get(`/fitout-issues/${id}`).then((r) => r.data),
+  create: (data: Record<string, unknown>) => api.post('/fitout-issues', data).then((r) => r.data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/fitout-issues/${id}`, data).then((r) => r.data),
+  transition: (id: string, status: string) => api.patch(`/fitout-issues/${id}/status`, { status }).then((r) => r.data),
+  listComments: (id: string) => api.get(`/fitout-issues/${id}/comments`).then((r) => r.data),
+  addComment: (id: string, body: string) => api.post(`/fitout-issues/${id}/comments`, { body }).then((r) => r.data),
+  listPhotos: (id: string) => api.get(`/fitout-issues/${id}/photos`).then((r) => r.data),
+  uploadPhoto: (id: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/fitout-issues/${id}/photos`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+  getDMap: (projectId: string) => api.get(`/fitouts/${projectId}/dmap`).then((r) => r.data),
+};
+
+// Fitout Daily Reports (nhật ký công trường)
+export const fitoutDailyReportApi = {
+  list: (projectId: string, params?: { from?: string; to?: string }) =>
+    api.get('/fitout-daily-reports', { params: { projectId, ...params } }).then((r) => r.data),
+  getMerged: (projectId: string, date: string) =>
+    api.get('/fitout-daily-reports/merged', { params: { projectId, date } }).then((r) => r.data),
+  create: (data: Record<string, unknown>) => api.post('/fitout-daily-reports', data).then((r) => r.data),
+  listPhotos: (entryId: string) => api.get(`/fitout-daily-reports/${entryId}/photos`).then((r) => r.data),
+  uploadPhoto: (entryId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/fitout-daily-reports/${entryId}/photos`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+};
+
+// Fitout Gantt Tasks (Tiến độ)
+export const fitoutGanttApi = {
+  list: (projectId: string) => api.get('/fitout-tasks', { params: { projectId } }).then((r) => r.data),
+  create: (data: Record<string, unknown>) => api.post('/fitout-tasks', data).then((r) => r.data),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/fitout-tasks/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/fitout-tasks/${id}`).then((r) => r.data),
 };
 
 // Tickets
@@ -373,8 +463,8 @@ export const ticketsApi = {
   getTicket: (id: string) => api.get(`/tickets/${id}`).then((r) => r.data),
   updateTicket: (id: string, data: Record<string, unknown>) =>
     api.put(`/tickets/${id}`, data).then((r) => r.data),
-  addComment: (id: string, text: string) =>
-    api.post(`/tickets/${id}/comments`, { text }).then((r) => r.data),
+  addComment: (id: string, text: string, isInternal?: boolean) =>
+    api.post(`/tickets/${id}/comments`, { text, isInternal }).then((r) => r.data),
   assignTicket: (id: string, userId: string) =>
     api.put(`/tickets/${id}/assign`, { userId }).then((r) => r.data),
   getStats: () => api.get('/tickets/stats').then((r) => r.data),
@@ -382,6 +472,14 @@ export const ticketsApi = {
   upsertSlaPolicy: (data: Record<string, unknown>) => api.post('/tickets/sla/policies', data).then((r) => r.data),
   getSlaStats: () => api.get('/tickets/sla/stats').then((r) => r.data),
   getEscalations: (id: string) => api.get(`/tickets/${id}/escalations`).then((r) => r.data),
+  transitionStatus: (id: string, status: string) =>
+    api.patch(`/tickets/${id}/status`, { status }).then((r) => r.data),
+  listPhotos: (id: string) => api.get(`/tickets/${id}/photos`).then((r) => r.data),
+  uploadPhoto: (id: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/tickets/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+  },
 };
 
 // Sales
@@ -426,6 +524,10 @@ export const billingApi = {
     api.patch(`/billing/invoices/${id}/lines/${lineId}`, data).then((r) => r.data),
   removeInvoiceLine: (id: string, lineId: string) =>
     api.delete(`/billing/invoices/${id}/lines/${lineId}`).then((r) => r.data),
+  voidInvoice: (id: string, reason: string) =>
+    api.post(`/billing/invoices/${id}/void`, { reason }).then((r) => r.data),
+  reversePayment: (paymentId: string, reason: string) =>
+    api.post(`/billing/payments/${paymentId}/reverse`, { reason }).then((r) => r.data),
   generateDueInvoices: () => api.post('/billing/schedule/generate-due').then((r) => r.data),
   listDunningPolicies: () => api.get('/billing/dunning/policies').then((r) => r.data),
   runDunning: () => api.post('/billing/dunning/run').then((r) => r.data),
@@ -450,6 +552,11 @@ export const reportsApi = {
     api.get('/reports/tenant-sales', { params }).then((r) => r.data),
   contractExpiryReport: (params?: Record<string, unknown>) =>
     api.get('/reports/contract-expiry', { params }).then((r) => r.data),
+  revenueReceivablesReport: (params?: Record<string, unknown>) =>
+    api.get('/reports/revenue-receivables', { params }).then((r) => r.data),
+  arAgingReport: () => api.get('/reports/ar-aging').then((r) => r.data),
+  complianceReport: (params?: Record<string, unknown>) =>
+    api.get('/reports/compliance', { params }).then((r) => r.data),
 };
 
 // SAP
@@ -518,12 +625,6 @@ export const notificationsApi = {
   getUnreadCount: () => api.get('/notifications/unread-count').then((r) => r.data),
 };
 
-// Billing - Export
-export const billingExportApi = {
-  exportInvoicesCsv: (params?: Record<string, unknown>) =>
-    api.get('/billing/invoices/export', { params, responseType: 'blob' }).then((r) => r.data),
-};
-
 // Mall Announcements
 export const announcementsApi = {
   list: (mallId?: string) =>
@@ -544,29 +645,15 @@ export const terminationApi = {
     api.patch(`/contracts/${contractId}/termination`, data).then((r) => r.data),
   complete: (contractId: string) =>
     api.post(`/contracts/${contractId}/termination/complete`).then((r) => r.data),
-};
-
-// Bank Reconciliation
-export const reconciliationApi = {
-  listStatements: (mallId?: string) =>
-    api.get('/billing/bank-statements', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
-  importStatement: (mallId: string, file: File, bankAccount: string, statementDate: string) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('mallId', mallId);
-    form.append('bankAccount', bankAccount);
-    form.append('statementDate', statementDate);
-    return api.post('/billing/bank-statements/import', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
-  },
-  autoMatch: (statementId: string) =>
-    api.post(`/billing/bank-statements/${statementId}/auto-match`).then((r) => r.data),
+  cancel: (contractId: string) =>
+    api.post(`/contracts/${contractId}/termination/cancel`).then((r) => r.data),
 };
 
 // Follow-ups (CRM)
 export const followUpApi = {
   list: (params?: Record<string, unknown>) => api.get('/crm/follow-ups', { params }).then((r) => r.data),
   create: (data: Record<string, unknown>) => api.post('/crm/follow-ups', data).then((r) => r.data),
-  complete: (id: string) => api.patch(`/crm/follow-ups/${id}/complete`).then((r) => r.data),
+  complete: (id: string) => api.put(`/crm/follow-ups/${id}/complete`).then((r) => r.data),
   delete: (id: string) => api.delete(`/crm/follow-ups/${id}`).then((r) => r.data),
 };
 
@@ -576,8 +663,8 @@ export const maintenanceApi = {
     api.get('/tickets/maintenance', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
   create: (data: Record<string, unknown>) => api.post('/tickets/maintenance', data).then((r) => r.data),
   update: (id: string, data: Record<string, unknown>) =>
-    api.patch(`/tickets/maintenance/${id}`, data).then((r) => r.data),
-  delete: (id: string) => api.delete(`/tickets/maintenance/${id}`).then((r) => r.data),
+    api.put(`/tickets/maintenance/${id}`, data).then((r) => r.data),
+  execute: (id: string) => api.put(`/tickets/maintenance/${id}/execute`).then((r) => r.data),
 };
 
 // Proposal Scenarios
@@ -604,6 +691,13 @@ export const usersApi = {
   resetPassword: (id: string, newPassword: string) =>
     api.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data),
   deleteUser: (id: string) => api.delete(`/users/${id}`).then((r) => r.data),
+};
+
+// Audit Log (Nhật ký hệ thống — ai đã sửa gì, khi nào)
+export const auditLogApi = {
+  listLogs: (params?: Record<string, unknown>) => api.get('/audit-logs', { params }).then((r) => r.data),
+  listEntityTypes: () => api.get('/audit-logs/entity-types').then((r) => r.data),
+  getStats: (dateFrom?: string) => api.get('/audit-logs/stats', { params: { dateFrom } }).then((r) => r.data),
 };
 
 // Mall Access (UserMallAccess)

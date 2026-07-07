@@ -1,34 +1,50 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { FitoutStatus, UnitStatus } from '@prisma/client';
+import { UnitStatus } from '@prisma/client';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { FitoutStageConfigService } from './fitout-stage-config.service';
+import { FitoutDocumentsService } from './fitout-documents.service';
+import { FitoutSlaService } from './fitout-sla.service';
 
-const STATUS_ORDER = [
-  FitoutStatus.CONTRACT_SIGNED,
-  FitoutStatus.SUBMIT_DESIGN,
-  FitoutStatus.DESIGN_REVIEW,
-  FitoutStatus.FIRE_SAFETY_REVIEW,
-  FitoutStatus.CONSTRUCTION_PERMIT,
-  FitoutStatus.FITOUT_IN_PROGRESS,
-  FitoutStatus.INSPECTION,
-  FitoutStatus.APPROVED_TO_OPEN,
-  FitoutStatus.OPENED,
-];
+interface ContractActivatedEvent {
+  contractId: string;
+  tenantId: string;
+  unitId: string;
+  handoverDate: Date | null;
+  openingDate: Date | null;
+}
+
+interface CurrentUser {
+  id: string;
+  role: string;
+  tenantId?: string | null;
+}
 
 @Injectable()
 export class FitoutService {
+  private readonly logger = new Logger(FitoutService.name);
+
   constructor(
     private prisma: PrismaService,
     private unitStatus: UnitStatusService,
+    private stageConfig: FitoutStageConfigService,
+    private documentsService: FitoutDocumentsService,
+    private slaService: FitoutSlaService,
   ) {}
 
-  async findAll(query: { status?: FitoutStatus; tenantId?: string; page?: number; limit?: number }) {
+  async findAll(query: { status?: string; tenantId?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = {};
     if (filters.status) where.status = filters.status;
-    if (filters.tenantId) where.tenantId = filters.tenantId;
+    if (currentUser?.role === 'TENANT') {
+      // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
+      where.tenantId = currentUser.tenantId ?? '__none__';
+    } else if (filters.tenantId) {
+      where.tenantId = filters.tenantId;
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.fitoutProject.findMany({
@@ -49,7 +65,7 @@ export class FitoutService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, currentUser?: CurrentUser) {
     const project = await this.prisma.fitoutProject.findUnique({
       where: { id },
       include: {
@@ -62,34 +78,128 @@ export class FitoutService {
     });
 
     if (!project) throw new NotFoundException('Fitout project not found');
+
+    if (currentUser?.role === 'TENANT' && project.tenantId !== currentUser.tenantId) {
+      throw new ForbiddenException('Bạn không có quyền xem dự án fitout này');
+    }
+
     return project;
   }
 
-  async advanceStatus(id: string, newStatus: FitoutStatus) {
-    const project = await this.findOne(id);
-    const currentIdx = STATUS_ORDER.indexOf(project.status);
-    const newIdx = STATUS_ORDER.indexOf(newStatus);
+  /**
+   * Tự tạo FitoutProject khi hợp đồng chuyển ACTIVE — idempotent (bỏ qua nếu contract đã có project).
+   * Stage khởi tạo luôn là stage có order nhỏ nhất đang active (mặc định CONTRACT_SIGNED).
+   */
+  async createFromContract(contract: {
+    id: string;
+    tenantId: string;
+    unitId: string;
+    handoverDate?: Date | null;
+    fitoutDays?: number | null;
+    openingDate?: Date | null;
+  }) {
+    const existing = await this.prisma.fitoutProject.findUnique({ where: { contractId: contract.id } });
+    if (existing) return existing;
 
-    if (newIdx <= currentIdx) {
+    const stages = await this.stageConfig.getOrderedActive();
+    const firstStage = stages[0];
+    if (!firstStage) throw new BadRequestException('No active fitout stage configured');
+
+    const project = await this.prisma.fitoutProject.create({
+      data: {
+        contractId: contract.id,
+        tenantId: contract.tenantId,
+        unitId: contract.unitId,
+        status: firstStage.code,
+        handoverDate: contract.handoverDate ?? undefined,
+        expectedOpenDate: contract.openingDate ?? undefined,
+      },
+    });
+
+    await this.slaService.recordMilestone(project.id, firstStage.code);
+    return project;
+  }
+
+  @OnEvent('contract.activated')
+  async handleContractActivated(payload: ContractActivatedEvent) {
+    try {
+      await this.createFromContract({
+        id: payload.contractId,
+        tenantId: payload.tenantId,
+        unitId: payload.unitId,
+        handoverDate: payload.handoverDate,
+        openingDate: payload.openingDate,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to auto-create FitoutProject for contract ${payload.contractId}: ${err.message}`);
+    }
+  }
+
+  async advanceStatus(
+    id: string,
+    newStatus: string,
+    opts: { userId?: string; override?: boolean; overrideReason?: string } = {},
+  ) {
+    const project = await this.findOne(id);
+    const stages = await this.stageConfig.getOrderedActive();
+    const currentIdx = stages.findIndex((s) => s.code === project.status);
+    const newIdx = stages.findIndex((s) => s.code === newStatus);
+
+    if (newIdx === -1) throw new BadRequestException(`Unknown fitout stage "${newStatus}"`);
+    if (currentIdx !== -1 && newIdx <= currentIdx) {
       throw new BadRequestException('Can only advance to a later status');
     }
 
-    const updateData: any = { status: newStatus };
-    if (newStatus === FitoutStatus.FITOUT_IN_PROGRESS) {
-      if (!project.startDate) updateData.startDate = new Date();
-      await this.unitStatus.transition(project.unitId, UnitStatus.UNDER_FITOUT, {
-        reason: `Fit-out ${project.id} in progress`,
-      });
+    const gateResult = await this.documentsService.checkGateRequirements(id, newStatus);
+    if (!gateResult.canAdvance) {
+      if (!opts.override) {
+        throw new BadRequestException({
+          message: 'Gate requirements not met for target stage',
+          missing: gateResult.missing,
+        });
+      }
+      if (!opts.overrideReason?.trim()) {
+        throw new BadRequestException('overrideReason is required to bypass gate requirements');
+      }
     }
-    if (newStatus === FitoutStatus.OPENED) {
+
+    const targetStage = stages[newIdx];
+    const updateData: any = { status: newStatus };
+
+    if (targetStage.setsField === 'startDate' && !project.startDate) {
+      updateData.startDate = new Date();
+    }
+    if (targetStage.setsField === 'actualOpenDate') {
       updateData.actualOpenDate = new Date();
-      await this.unitStatus.transition(project.unitId, UnitStatus.OCCUPIED, {
-        reason: `Fit-out ${project.id} opened`,
-        tenantId: project.tenantId,
+    }
+    if (targetStage.triggersUnitStatus) {
+      await this.unitStatus.transition(project.unitId, targetStage.triggersUnitStatus as UnitStatus, {
+        reason: `Fit-out ${project.id} → ${newStatus}`,
+        ...(targetStage.triggersUnitStatus === 'OCCUPIED' ? { tenantId: project.tenantId } : {}),
       });
     }
 
-    return this.prisma.fitoutProject.update({ where: { id }, data: updateData });
+    const updated = await this.prisma.fitoutProject.update({ where: { id }, data: updateData });
+
+    if (currentIdx !== -1) {
+      await this.slaService.completeMilestone(id, project.status);
+    }
+    await this.slaService.recordMilestone(id, newStatus);
+
+    if (!gateResult.canAdvance && opts.override) {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: opts.userId,
+          action: 'FITOUT_GATE_OVERRIDE',
+          entityType: 'FITOUT',
+          entityId: id,
+          payload: JSON.stringify({ from: project.status, to: newStatus, missing: gateResult.missing, reason: opts.overrideReason }),
+          status: 'SUCCESS',
+        },
+      });
+    }
+
+    return updated;
   }
 
   async getChecklists(id: string) {

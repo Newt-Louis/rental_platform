@@ -5,6 +5,7 @@ import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { Role } from '@prisma/client';
 
 @ApiTags('Reports')
 @ApiBearerAuth('JWT-auth')
@@ -47,6 +48,32 @@ export class ReportsController {
   @ApiQuery({ name: 'period', required: true })
   tenantSales(@Query() params: any) {
     return this.reportsService.tenantSalesReport(params);
+  }
+
+  @Get('revenue-receivables')
+  @ApiOperation({ summary: 'Doanh thu & công nợ chi tiết theo năm (thay P&L — không có dữ liệu chi phí để tính lãi/lỗ thật)' })
+  @ApiQuery({ name: 'year', required: false })
+  revenueReceivables(@Query() params: any) {
+    return this.reportsService.revenueReceivablesReport(params);
+  }
+
+  @Get('ar-aging')
+  @ApiOperation({ summary: 'Công nợ theo tuổi nợ (dùng lại logic Billing)' })
+  // Cùng dữ liệu với /billing/ar-aging — giữ đúng mức hạn chế đó (không thêm LEASING_MANAGER
+  // qua đường Reports) thay vì kế thừa MODULE_ROLES.reports rộng hơn.
+  @Roles(...MODULE_ROLES.billingStaff, Role.CEO)
+  arAging() {
+    return this.reportsService.arAgingReport();
+  }
+
+  @Get('compliance')
+  @ApiOperation({ summary: 'Báo cáo tuân thủ tổng hợp từ Nhật ký hệ thống' })
+  // Trả về cả các dòng nhật ký lỗi thô — giữ đúng mức hạn chế ADMIN/CEO như màn Nhật ký hệ thống
+  // (Phase 1), KHÔNG dùng MODULE_ROLES.reports rộng hơn ở class-level.
+  @Roles(...MODULE_ROLES.auditLog)
+  @ApiQuery({ name: 'dateFrom', required: false })
+  compliance(@Query('dateFrom') dateFrom?: string) {
+    return this.reportsService.complianceReport({ dateFrom });
   }
 
   @Get('export/:type')
