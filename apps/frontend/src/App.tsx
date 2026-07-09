@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from '@/lib/theme';
 import { Toaster } from '@/components/ui/toaster';
 import { useAuthStore } from '@/store/auth.store';
 import Layout from '@/components/Layout';
@@ -31,6 +32,7 @@ import TenantsPage from '@/pages/tenants/TenantsPage';
 import AuditLogPage from '@/pages/audit-log/AuditLogPage';
 import DealPipelinePage from '@/pages/deals/DealPipelinePage';
 import BookingsPage from '@/pages/bookings/BookingsPage';
+import ProfilePage from '@/pages/profile/ProfilePage';
 import { Navigate } from 'react-router-dom';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -44,7 +46,7 @@ function AppHydrator({ children }: { children: React.ReactNode }) {
   useEffect(() => { hydrate(); }, []);
   if (!isHydrated) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
       </div>
     );
@@ -54,6 +56,7 @@ function AppHydrator({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <ThemeProvider>
     <BrowserRouter>
       <AppHydrator>
       <Routes>
@@ -93,10 +96,12 @@ export default function App() {
           <Route path="announcements" element={<RoleRoute><AnnouncementsPage /></RoleRoute>} />
           <Route path="cross-mall" element={<RoleRoute><CrossMallDashboard /></RoleRoute>} />
           <Route path="audit-log" element={<RoleRoute><AuditLogPage /></RoleRoute>} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Routes>
       </AppHydrator>
       <Toaster />
     </BrowserRouter>
+    </ThemeProvider>
   );
 }

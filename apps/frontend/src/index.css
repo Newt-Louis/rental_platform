@@ -10,8 +10,9 @@
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 100%;
+    /* primary = rgb(255,247,208), foreground = rgb(112,113,115) */
+    --primary: 50 100% 91%;
+    --primary-foreground: 220 1% 44%;
     --secondary: 0 0% 96%;
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96%;
@@ -22,8 +23,31 @@
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 90%;
     --input: 0 0% 90%;
-    --ring: 0 0% 9%;
+    --ring: 50 100% 91%;
     --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+    --card: 222 40% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 40% 12%;
+    --popover-foreground: 210 40% 98%;
+    /* dark mode primary: golden amber that contrasts on dark bg */
+    --primary: 44 85% 50%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 222 30% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 222 30% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 222 30% 18%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 222 30% 20%;
+    --input: 222 30% 20%;
+    --ring: 44 85% 50%;
   }
 }
 

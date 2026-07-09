@@ -268,3 +268,6 @@ NODE_ENV=development
 Internal use only — THISO Group © 2026
 
 kai update
+
+
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build

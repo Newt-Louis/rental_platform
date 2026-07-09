@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { crmApi, customersApi, usersApi, categoriesApi, followUpApi } from '@/api';
@@ -1110,6 +1110,8 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'kanban' | 'list' | 'analytics' | 'customers'>('kanban');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [listPage, setListPage] = useState(1);
+  const LIST_PAGE_SIZE = 20;
   const [activeDragLead, setActiveDragLead] = useState<Lead | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
@@ -1261,7 +1263,19 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     return result;
   }, [pipelineData, filters, search, currentUserId]);
 
-  const allLeads: Lead[] = useMemo(() => Object.values(filteredPipelineData).flatMap(v => v.leads), [filteredPipelineData]);
+  const allLeads: Lead[] = useMemo(
+    () => Object.values(filteredPipelineData).flatMap(v => v.leads),
+    [filteredPipelineData],
+  );
+
+  // Reset to page 1 whenever the filtered data changes
+  useEffect(() => { setListPage(1); }, [filteredPipelineData]);
+
+  const listTotalPages = Math.ceil(allLeads.length / LIST_PAGE_SIZE);
+  const pagedLeads = useMemo(
+    () => allLeads.slice((listPage - 1) * LIST_PAGE_SIZE, listPage * LIST_PAGE_SIZE),
+    [allLeads, listPage, LIST_PAGE_SIZE],
+  );
 
   const totalValue = allLeads.filter((l) => l.expectedRent && l.expectedArea)
     .reduce((s, l) => s + (l.expectedRent ?? 0) * (l.expectedArea ?? 0), 0);
@@ -1655,12 +1669,12 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
                     <p>Chưa có lead nào</p>
                   </td>
                 </tr>
-              ) : allLeads.map((lead: any) => {
+              ) : pagedLeads.map((lead: any) => {
                 const s = LEAD_STAGES.find((s) => s.key === lead.status);
                 return (
-                  <tr key={lead.id} className="border-b hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedLead(lead)}>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{lead.brandName}</div>
+                  <tr key={lead.id} className="border-b hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 cursor-pointer" onClick={() => setSelectedLead(lead)}>
+                      <div className="font-medium text-gray-900 hover:text-blue-600 hover:underline">{lead.brandName}</div>
                       {lead.company && <div className="text-xs text-gray-400">{lead.company}</div>}
                     </td>
                     <td className="px-4 py-3">
@@ -1682,6 +1696,49 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
               })}
             </tbody>
           </table>
+          {listTotalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
+              <span className="text-xs">
+                {(listPage - 1) * LIST_PAGE_SIZE + 1}–{Math.min(listPage * LIST_PAGE_SIZE, allLeads.length)} / {allLeads.length} leads
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setListPage(p => Math.max(1, p - 1))}
+                  disabled={listPage === 1}
+                  className="px-2.5 py-1 rounded text-xs border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ‹ Trước
+                </button>
+                {Array.from({ length: listTotalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === listTotalPages || Math.abs(p - listPage) <= 1)
+                  .reduce<(number | '...')[]>((acc, p, i, arr) => {
+                    if (i > 0 && typeof arr[i - 1] === 'number' && (p as number) - (arr[i - 1] as number) > 1) acc.push('...');
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    p === '...' ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-xs text-gray-400">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setListPage(p as number)}
+                        className={`px-2.5 py-1 rounded text-xs border ${listPage === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white hover:bg-gray-100'}`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  onClick={() => setListPage(p => Math.min(listTotalPages, p + 1))}
+                  disabled={listPage === listTotalPages}
+                  className="px-2.5 py-1 rounded text-xs border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Sau ›
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
