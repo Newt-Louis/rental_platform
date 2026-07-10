@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi, contractsApi } from '@/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
@@ -35,419 +34,18 @@ import {
 } from './spaces.constants';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
 import { useSpacesStore } from '@/store/spaces.store';
+import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
+import { CreateEditUnitDialog } from '@/components/spaces/dialogs/CreateEditUnitDialog';
+import { CreateEditFloorDialog } from '@/components/spaces/dialogs/CreateEditFloorDialog';
+import { CreateBookingDialog } from '@/components/spaces/dialogs/CreateBookingDialog';
+import { ConvertBookingDialog } from '@/components/spaces/dialogs/ConvertBookingDialog';
+import { MergeUnitsDialog } from '@/components/spaces/dialogs/MergeUnitsDialog';
+import { BulkStatusDialog, BulkCategoryDialog, BulkRentDialog } from '@/components/spaces/dialogs/BulkDialogs';
+import { UnitCard } from '@/components/spaces/UnitCard';
+import { SpacesAlerts } from '@/components/spaces/SpacesAlerts';
+import { AnalyticsView } from '@/components/spaces/AnalyticsView';
 
-// ─── Confirm Dialog ───────────────────────────────────────────────────────────
-
-function ConfirmDialog({
-  open, title, description, onConfirm, onCancel, loading,
-}: {
-  open: boolean; title: string; description: string;
-  onConfirm: () => void; onCancel: () => void; loading?: boolean;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 rounded-full bg-red-100">
-              <AlertTriangle size={18} className="text-red-600" />
-            </div>
-            <DialogTitle>{title}</DialogTitle>
-          </div>
-        </DialogHeader>
-        <p className="text-sm text-gray-500">{description}</p>
-        <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={onCancel} disabled={loading}>Hủy</Button>
-          <Button variant="destructive" onClick={onConfirm} disabled={loading}>
-            {loading ? 'Đang xóa...' : 'Xác nhận xóa'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Create / Edit Unit Dialog ────────────────────────────────────────────────
-
-function CreateEditUnitDialog({
-  open, unit, mallId, defaultFloorId, onClose,
-}: {
-  open: boolean;
-  unit?: any;
-  mallId: string;
-  defaultFloorId?: string;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const isEdit = !!unit;
-
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
-    defaultValues: {
-      code: '', name: '', category: '', floorId: defaultFloorId ?? '',
-      zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
-      spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
-      minFlexArea: '', maxFlexArea: '',
-    },
-  });
-
-  const selectedFloorId = watch('floorId');
-
-  useEffect(() => {
-    if (open) {
-      reset(unit ? {
-        code: unit.code ?? '',
-        name: unit.name ?? '',
-        category: unit.category ?? '',
-        floorId: unit.floorId ?? defaultFloorId ?? '',
-        zoneId: unit.zoneId ?? '',
-        areaGFA: unit.areaGFA?.toString() ?? '',
-        areaNLA: unit.areaNLA?.toString() ?? '',
-        baseRentPerSqm: unit.baseRentPerSqm?.toString() ?? '',
-        camPerSqm: unit.camPerSqm?.toString() ?? '',
-        status: unit.status ?? 'VACANT',
-        spaceType: (unit as any).spaceType ?? '',
-        leaseTermType: (unit as any).leaseTermType ?? '',
-        tier: (unit as any).tier ?? '',
-        isFlexibleArea: (unit as any).isFlexibleArea ?? false,
-        minFlexArea: (unit as any).minFlexArea?.toString() ?? '',
-        maxFlexArea: (unit as any).maxFlexArea?.toString() ?? '',
-      } : {
-        code: '', name: '', category: '', floorId: defaultFloorId ?? '',
-        zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
-        spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
-        minFlexArea: '', maxFlexArea: '',
-      });
-    }
-  }, [open, unit, defaultFloorId]);
-
-  const { data: floorsData } = useQuery({
-    queryKey: ['floors', mallId],
-    queryFn: () => spacesApi.listFloors(mallId),
-    enabled: open && !!mallId,
-  });
-  const { data: zonesData } = useQuery({
-    queryKey: ['zones', mallId],
-    queryFn: () => spacesApi.listZones({ mallId }),
-    enabled: open && !!mallId,
-  });
-
-  const floors: any[] = (floorsData?.data ?? floorsData ?? []).sort((a: any, b: any) => a.sortOrder - b.sortOrder);
-  const allZones: any[] = zonesData?.data ?? zonesData ?? [];
-  const zones = selectedFloorId ? allZones.filter((z: any) => z.floorId === selectedFloorId) : allZones;
-
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
-
-  const mutation = useMutation({
-    mutationFn: (data: any) => {
-      const payload = {
-        ...data,
-        mallId,
-        areaGFA: Number(data.areaGFA),
-        areaNLA: Number(data.areaNLA),
-        baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
-        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
-        floorId: data.floorId || undefined,
-        zoneId: data.zoneId || undefined,
-        name: data.name || undefined,
-        category: data.category || undefined,
-        spaceType: data.spaceType || undefined,
-        leaseTermType: data.leaseTermType || undefined,
-        tier: data.tier || undefined,
-        minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
-        maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
-        isFlexibleArea: !!data.isFlexibleArea,
-      };
-      return isEdit ? spacesApi.updateUnit(unit.id, payload) : spacesApi.createUnit(payload);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      qc.invalidateQueries({ queryKey: ['floor-map'] });
-      toast({ title: isEdit ? 'Đã cập nhật mặt bằng' : 'Đã tạo mặt bằng mới' });
-      onClose();
-    },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? `Sửa mặt bằng: ${unit.code}` : 'Thêm mặt bằng mới'}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
-
-          {/* Code + Name */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Mã mặt bằng *</label>
-              <Input
-                {...register('code', { required: true })}
-                placeholder="GF-A01"
-                className={errors.code ? 'border-red-400' : ''}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Tên (tuỳ chọn)</label>
-              <Input {...register('name')} placeholder="Unit A01..." />
-            </div>
-          </div>
-
-          {/* Floor + Zone */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Tầng</label>
-              <Select value={watch('floorId')} onValueChange={(v) => { setValue('floorId', v); setValue('zoneId', ''); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn tầng..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Không chọn —</SelectItem>
-                  {floors.map((f: any) => (
-                    <SelectItem key={f.id} value={f.id}>{f.name} ({f.level})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('floorId')} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Khu vực (Zone)</label>
-              <Select value={watch('zoneId')} onValueChange={(v) => setValue('zoneId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn zone..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Không chọn —</SelectItem>
-                  {zones.map((z: any) => (
-                    <SelectItem key={z.id} value={z.id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('zoneId')} />
-            </div>
-          </div>
-
-          {/* Category + Status */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Ngành hàng</label>
-              <Select value={watch('category')} onValueChange={(v) => setValue('category', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn ngành hàng..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Không chọn —</SelectItem>
-                  {categoryNames.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('category')} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Trạng thái</label>
-              <Select value={watch('status')} onValueChange={(v) => setValue('status', v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('status')} />
-            </div>
-          </div>
-
-          {/* Areas */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích GFA (m²) *</label>
-              <Input
-                {...register('areaGFA', { required: true })}
-                type="number" step="0.01" placeholder="120"
-                className={errors.areaGFA ? 'border-red-400' : ''}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích NLA (m²) *</label>
-              <Input
-                {...register('areaNLA', { required: true })}
-                type="number" step="0.01" placeholder="100"
-                className={errors.areaNLA ? 'border-red-400' : ''}
-              />
-            </div>
-          </div>
-
-          {/* Rents */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (₫/m²)</label>
-              <Input {...register('baseRentPerSqm')} type="number" placeholder="450000" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
-              <Input {...register('camPerSqm')} type="number" placeholder="80000" />
-            </div>
-          </div>
-
-          {/* GAP #4 + #6 + #3 — Loại sảnh / Tier / Hình thức thuê */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Loại sảnh</label>
-              <Select value={watch('spaceType')} onValueChange={(v) => setValue('spaceType', v)}>
-                <SelectTrigger><SelectValue placeholder="Chọn loại..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Tất cả —</SelectItem>
-                  {SPACE_TYPE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('spaceType')} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Tier</label>
-              <Select value={watch('tier')} onValueChange={(v) => setValue('tier', v)}>
-                <SelectTrigger><SelectValue placeholder="Chọn tier..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Không chọn —</SelectItem>
-                  {TIER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('tier')} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Hình thức thuê</label>
-              <Select value={watch('leaseTermType')} onValueChange={(v) => setValue('leaseTermType', v)}>
-                <SelectTrigger><SelectValue placeholder="Chọn..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">— Không chọn —</SelectItem>
-                  {LEASE_TERM_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('leaseTermType')} />
-            </div>
-          </div>
-
-          {/* GAP #5 — Sảnh linh động */}
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                {...register('isFlexibleArea')}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm font-medium text-gray-700">Sảnh linh động (cho thuê theo m² không cố định)</span>
-            </label>
-            {watch('isFlexibleArea') && (
-              <div className="grid grid-cols-2 gap-3 mt-2">
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Diện tích tối thiểu (m²)</label>
-                  <Input {...register('minFlexArea')} type="number" step="0.1" placeholder="50" />
-                </div>
-                <div>
-                  <label className="text-xs text-gray-600 mb-1 block">Diện tích tối đa (m²)</label>
-                  <Input {...register('maxFlexArea')} type="number" step="0.1" placeholder="200" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo mặt bằng'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Create / Edit Floor Dialog ───────────────────────────────────────────────
-
-function CreateEditFloorDialog({
-  open, floor, mallId, onClose,
-}: {
-  open: boolean; floor?: any; mallId: string; onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const isEdit = !!floor;
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
-    defaultValues: { name: '', level: '', sortOrder: '0' },
-  });
-
-  useEffect(() => {
-    if (open) {
-      reset(floor
-        ? { name: floor.name ?? '', level: floor.level ?? '', sortOrder: String(floor.sortOrder ?? 0) }
-        : { name: '', level: '', sortOrder: '0' });
-    }
-  }, [open, floor]);
-
-  const mutation = useMutation({
-    mutationFn: (data: any) => {
-      const payload = { name: data.name, level: data.level, sortOrder: Number(data.sortOrder) || 0 };
-      return isEdit ? spacesApi.updateFloor(floor.id, payload) : spacesApi.createFloor({ ...payload, mallId });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['floors'] });
-      toast({ title: isEdit ? 'Đã cập nhật tầng' : 'Đã tạo tầng mới' });
-      onClose();
-    },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? `Sửa tầng: ${floor.name}` : 'Thêm tầng mới'}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Tên tầng *</label>
-            <Input
-              {...register('name', { required: true })}
-              placeholder="Ground Floor"
-              className={errors.name ? 'border-red-400' : ''}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Mã tầng (level) *</label>
-            <Input
-              {...register('level', { required: true })}
-              placeholder="GF"
-              className={errors.level ? 'border-red-400' : ''}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Thứ tự hiển thị</label>
-            <Input {...register('sortOrder')} type="number" placeholder="0" />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo tầng'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Unit Detail Sheet ────────────────────────────────────────────────────────
-
-// ─── Create Booking Dialog ────────────────────────────────────────────────────
-
+// Local constant used by SalesPipelineTab (stays in this file)
 const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   ACTIVE:    { label: 'Đang giữ',  color: 'bg-amber-100 text-amber-700' },
   PENDING:   { label: 'Chờ',       color: 'bg-blue-100 text-gray-700' },
@@ -456,339 +54,15 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = 
   CONVERTED: { label: 'Đã convert',color: 'bg-green-100 text-green-700' },
 };
 
-function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
-  unitId: string; unitCode: string; unit?: Unit; open: boolean; onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
-    defaultValues: {
-      sourceType: 'lead',
-      leadId: '', customerId: '',
-      requestedArea: '', requestedTerm: '36', expectedRent: '',
-      proposedRentPerSqm: '', proposedCamPerSqm: '',
-      holdDays: '30', notes: '',
-    },
-  });
-
-  const sourceType = watch('sourceType');
-  const proposedRent = watch('proposedRentPerSqm');
-  const selectedCustomerId = watch('customerId');
-  const priceAutofilledRef = useRef(false);
-
-  // Mỗi lần mở dialog: reset form, tự điền diện tích đề xuất = full diện tích NLA của mặt bằng
-  // (mặc định đề xuất thuê trọn mặt bằng — người dùng vẫn có thể sửa nếu chỉ thuê một phần).
-  useEffect(() => {
-    if (open) {
-      priceAutofilledRef.current = false;
-      reset({
-        sourceType: 'lead',
-        leadId: '', customerId: '',
-        requestedArea: unit?.areaNLA ? String(unit.areaNLA) : '',
-        requestedTerm: '36', expectedRent: '',
-        proposedRentPerSqm: '', proposedCamPerSqm: '',
-        holdDays: '30', notes: '',
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, unit?.id]);
-
-  const { data: leadsData } = useQuery({
-    queryKey: ['leads-all'],
-    queryFn: () => crmApi.listLeads({ limit: 200, status: 'QUALIFIED' }),
-    enabled: open,
-  });
-  const { data: customersData } = useQuery({
-    queryKey: ['customers-all'],
-    queryFn: () => customersApi.listCustomers({ limit: 200 }),
-    enabled: open,
-  });
-
-  // Get category pricing for this unit
-  const { data: pricingData } = useQuery({
-    queryKey: ['category-pricing-lookup', unit?.mall?.id, unit?.categoryId, unit?.floor?.id, unit?.zone?.id],
-    queryFn: () => categoriesApi.lookupPricing({
-      mallId: unit!.mall!.id,
-      categoryId: unit!.categoryId!,
-      floorId: unit?.floor?.id,
-      zoneId: unit?.zone?.id,
-    }),
-    enabled: open && !!unit?.mall?.id && !!unit?.categoryId,
-  });
-
-  // Validate proposed price when it changes
-  const { data: priceValidation } = useQuery({
-    queryKey: ['price-validation', unit?.mall?.id, unit?.categoryId, proposedRent],
-    queryFn: () => categoriesApi.validatePrice({
-      mallId: unit!.mall!.id,
-      categoryId: unit!.categoryId!,
-      floorId: unit?.floor?.id,
-      zoneId: unit?.zone?.id,
-      proposedRentPerSqm: Number(proposedRent),
-    }),
-    enabled: open && !!unit?.mall?.id && !!unit?.categoryId && !!proposedRent && Number(proposedRent) > 0,
-  });
-
-  const categoryPricing = pricingData?.pricing;
-
-  // Khi tra được giá ngành hàng (master data) lần đầu trong phiên mở dialog này: tự điền giá đề xuất
-  // theo suggestedRent/camPerSqm đã đăng ký — không ghi đè nếu người dùng đã tự sửa sau đó.
-  useEffect(() => {
-    if (open && !priceAutofilledRef.current && categoryPricing) {
-      if (categoryPricing.suggestedRent) {
-        setValue('expectedRent', String(categoryPricing.suggestedRent));
-        setValue('proposedRentPerSqm', String(categoryPricing.suggestedRent));
-      }
-      if (categoryPricing.camPerSqm) {
-        setValue('proposedCamPerSqm', String(categoryPricing.camPerSqm));
-      }
-      priceAutofilledRef.current = true;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, categoryPricing]);
-
-  // GAP #14 — Khách hiện hữu: check if selected customer has active contracts
-  const { data: activeContractsData } = useQuery({
-    queryKey: ['customer-active-contracts', selectedCustomerId],
-    queryFn: () => contractsApi.listContracts({ customerId: selectedCustomerId, status: 'ACTIVE', limit: 1 }),
-    enabled: open && sourceType === 'customer' && !!selectedCustomerId,
-    staleTime: 30_000,
-  });
-  const isExistingTenant = (activeContractsData?.total ?? activeContractsData?.data?.length ?? 0) > 0;
-
-  const leads: any[] = leadsData?.data ?? [];
-  const customers: any[] = customersData?.data ?? [];
-
-  const mutation = useMutation({
-    mutationFn: (data: any) => bookingApi.create({
-      unitId,
-      leadId: data.sourceType === 'lead' && data.leadId ? data.leadId : undefined,
-      customerId: data.sourceType === 'customer' && data.customerId ? data.customerId : undefined,
-      requestedArea: data.requestedArea ? Number(data.requestedArea) : undefined,
-      requestedTerm: data.requestedTerm ? Number(data.requestedTerm) : undefined,
-      expectedRent: data.expectedRent ? Number(data.expectedRent) : undefined,
-      proposedRentPerSqm: data.proposedRentPerSqm ? Number(data.proposedRentPerSqm) : undefined,
-      proposedCamPerSqm: data.proposedCamPerSqm ? Number(data.proposedCamPerSqm) : undefined,
-      holdDays: Number(data.holdDays),
-      notes: data.notes || undefined,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã tạo booking thành công' });
-      reset();
-      onClose();
-    },
-    onError: (e: any) => toast({
-      title: e?.response?.data?.message ?? 'Lỗi tạo booking',
-      variant: 'destructive',
-    }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <BookmarkPlus size={18} className="text-amber-500" />
-            Tạo booking — {unitCode}
-          </DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pt-1">
-
-          {/* Nguồn khách */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Loại khách hàng</label>
-            <div className="flex gap-2">
-              {[{ v: 'lead', label: 'Lead (CRM)' }, { v: 'customer', label: 'Customer' }].map(({ v, label }) => (
-                <button
-                  key={v} type="button"
-                  className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
-                    sourceType === v
-                      ? 'border-amber-400 bg-amber-50 text-amber-700'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                  onClick={() => setValue('sourceType', v)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Chọn Lead */}
-          {sourceType === 'lead' && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Lead *</label>
-              <Select value={watch('leadId')} onValueChange={(v) => setValue('leadId', v)}>
-                <SelectTrigger className={errors.leadId ? 'border-red-400' : ''}>
-                  <SelectValue placeholder="Chọn lead..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {leads.map((l: any) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {l.brandName} — {l.contactName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('leadId')} />
-            </div>
-          )}
-
-          {/* Chọn Customer */}
-          {sourceType === 'customer' && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Customer *</label>
-              <Select value={watch('customerId')} onValueChange={(v) => setValue('customerId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn customer..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.customerCode} — {c.companyName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('customerId')} />
-              {/* GAP #14 — Khách hiện hữu badge */}
-              {isExistingTenant && (
-                <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-                  <BadgeCheck size={13} className="text-green-600 shrink-0" />
-                  <span className="font-medium">Khách hiện hữu</span>
-                  <span className="text-green-500">— đang có hợp đồng hiện hành</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Thông số yêu cầu */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích (m²)</label>
-              <Input {...register('requestedArea')} type="number" placeholder="120" />
-              {unit?.areaNLA != null && (
-                <p className="text-xs text-gray-400 mt-1">Gợi ý: trọn diện tích NLA ({unit.areaNLA.toLocaleString('vi-VN')} m²) — có thể sửa nếu thuê một phần</p>
-              )}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Thời hạn (tháng)</label>
-              <Input {...register('requestedTerm')} type="number" placeholder="36" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng (₫/m²)</label>
-              <Input {...register('expectedRent')} type="number" placeholder="650000" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giữ slot (ngày) *</label>
-              <Input {...register('holdDays', { required: true })} type="number" min={1} />
-            </div>
-          </div>
-
-          {/* Category Pricing Info */}
-          {categoryPricing && (
-            <div className="bg-gray-50 p-3 rounded-lg text-sm">
-              <div className="text-blue-800 font-medium mb-1 flex items-center gap-1">
-                <DollarSign size={14} />
-                Giá ngành hàng: {unit?.category ?? unit?.categoryRef?.name}
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">Sàn:</span>
-                  <span className="ml-1 font-medium">{categoryPricing.minRentPerSqm?.toLocaleString()} ₫</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Trần:</span>
-                  <span className="ml-1 font-medium">{categoryPricing.maxRentPerSqm?.toLocaleString()} ₫</span>
-                </div>
-                {categoryPricing.suggestedRent && (
-                  <div>
-                    <span className="text-gray-500">Đề xuất:</span>
-                    <span className="ml-1 font-medium">{categoryPricing.suggestedRent?.toLocaleString()} ₫</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Proposed Price */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá sale đề xuất (₫/m²)</label>
-              <Input {...register('proposedRentPerSqm')} type="number" placeholder="550000" />
-              {categoryPricing?.suggestedRent != null && (
-                <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.suggestedRent.toLocaleString('vi-VN')} ₫</p>
-              )}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất (₫/m²)</label>
-              <Input {...register('proposedCamPerSqm')} type="number" placeholder="80000" />
-              {categoryPricing?.camPerSqm != null && (
-                <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.camPerSqm.toLocaleString('vi-VN')} ₫</p>
-              )}
-            </div>
-          </div>
-
-          {/* Price Validation Warning */}
-          {priceValidation && !priceValidation.isValid && (
-            <div className={`p-3 rounded-lg text-sm ${
-              priceValidation.approvalLevel === 'CEO' ? 'bg-red-50 text-red-700 border border-red-200' :
-              priceValidation.approvalLevel === 'DIRECTOR' ? 'bg-orange-50 text-orange-700 border border-orange-200' :
-              'bg-yellow-50 text-yellow-700 border border-yellow-200'
-            }`}>
-              <div className="font-medium flex items-center gap-1">
-                <AlertTriangle size={14} />
-                Giá cần phê duyệt
-              </div>
-              <p className="mt-1">{priceValidation.message}</p>
-              <div className="mt-1 text-xs opacity-80">
-                Chênh lệch: {priceValidation.deviationPercent?.toFixed(1)}% so với giá sàn
-              </div>
-            </div>
-          )}
-
-          {priceValidation?.isValid && proposedRent && Number(proposedRent) > 0 && (
-            <div className="p-3 rounded-lg text-sm bg-green-50 text-green-700 border border-green-200">
-              <div className="flex items-center gap-1">
-                <CheckCircle size={14} />
-                <span className="font-medium">Giá đề xuất hợp lệ</span>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
-            <Textarea {...register('notes')} placeholder="Khách đã site visit, có tiềm năng cao..." rows={2} />
-          </div>
-
-          <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending} className="bg-amber-500 hover:bg-amber-600 text-white gap-2">
-              <BookmarkPlus size={15} />
-              {mutation.isPending ? 'Đang tạo...' : 'Tạo Booking'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Unit Media Tab ───────────────────────────────────────────────────────────
 
 const MEDIA_TYPE_LABELS: Record<string, string> = {
-  PHOTO: 'Ảnh',
+  PHOTO: 'áº¢nh',
   FLOOR_PLAN: 'Floor Plan',
   VIDEO: 'Video',
   RENDER_3D: '3D Render',
   BROCHURE: 'Brochure',
-  SITE_MAP: 'Sơ đồ',
+  SITE_MAP: 'SÆ¡ Ä‘á»“',
 };
 
 function UnitMediaTab({ unitId }: { unitId: string }) {
@@ -809,18 +83,18 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
-      toast({ title: 'Đã xóa media' });
+      toast({ title: 'ÄÃ£ xÃ³a media' });
     },
-    onError: () => toast({ title: 'Lỗi xóa media', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lá»—i xÃ³a media', variant: 'destructive' }),
   });
 
   const setCoverMutation = useMutation({
     mutationFn: (mediaId: string) => spacesApi.updateUnitMedia(unitId, mediaId, { isCover: true }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
-      toast({ title: 'Đã đặt ảnh bìa' });
+      toast({ title: 'ÄÃ£ Ä‘áº·t áº£nh bÃ¬a' });
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lá»—i', variant: 'destructive' }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -840,9 +114,9 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
       await spacesApi.uploadUnitMedia(unitId, fd);
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
-      toast({ title: 'Đã tải lên thành công' });
+      toast({ title: 'ÄÃ£ táº£i lÃªn thÃ nh cÃ´ng' });
     } catch {
-      toast({ title: 'Lỗi tải lên', variant: 'destructive' });
+      toast({ title: 'Lá»—i táº£i lÃªn', variant: 'destructive' });
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -863,13 +137,13 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {t === '' ? 'Tất cả' : MEDIA_TYPE_LABELS[t]}
+              {t === '' ? 'Táº¥t cáº£' : MEDIA_TYPE_LABELS[t]}
             </button>
           ))}
         </div>
         <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium cursor-pointer hover:bg-gray-800 transition-colors">
           <Upload size={12} />
-          {uploading ? 'Đang tải...' : 'Thêm'}
+          {uploading ? 'Äang táº£i...' : 'ThÃªm'}
           <input
             type="file"
             className="hidden"
@@ -889,7 +163,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
       ) : mediaList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
           <Image size={32} className="opacity-30" />
-          <p className="text-sm">Chưa có tài liệu nào</p>
+          <p className="text-sm">ChÆ°a cÃ³ tÃ i liá»‡u nÃ o</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
@@ -919,7 +193,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                 {!m.isCover && (m.type === 'PHOTO' || m.type === 'RENDER_3D') && (
                   <button
                     className="w-5 h-5 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500"
-                    title="Đặt làm ảnh bìa"
+                    title="Äáº·t lÃ m áº£nh bÃ¬a"
                     onClick={() => setCoverMutation.mutate(m.id)}
                   >
                     <Star size={10} />
@@ -927,7 +201,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                 )}
                 <button
                   className="w-5 h-5 rounded bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
-                  title="Xóa"
+                  title="XÃ³a"
                   onClick={() => deleteMutation.mutate(m.id)}
                 >
                   <X size={10} />
@@ -946,219 +220,15 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
   );
 }
 
-// ─── Convert Booking Dialog (from SpacesPage) ────────────────────────────────
-
-function ConvertBookingFromSpacesDialog({
-  booking, onClose,
-}: {
-  booking: any | null;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
-    defaultValues: {
-      area: booking?.requestedArea?.toString() ?? '',
-      term: booking?.requestedTerm?.toString() ?? '12',
-      startDate: new Date().toISOString().split('T')[0],
-      rentPerSqm: booking?.expectedRent?.toString() ?? '',
-      camPerSqm: '',
-      deposit: '3',
-      rentFree: '0',
-      escalationPercent: '5',
-      rentCurrency: 'VND',
-      businessModel: '',
-      serviceFeeSqm: '',
-      businessSupportFeeSqm: '',
-      fitoutDays: '90',
-      handoverDate: '',
-      openingDate: '',
-      specialConditions: '',
-    },
-  });
-
-  const mutation = useMutation({
-    mutationFn: (data: any) => bookingApi.convertToProposal(booking!.id, {
-      area: Number(data.area),
-      term: Number(data.term),
-      startDate: data.startDate,
-      rentPerSqm: Number(data.rentPerSqm),
-      camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
-      deposit: data.deposit ? Number(data.deposit) : undefined,
-      rentFree: Number(data.rentFree),
-      escalationPercent: Number(data.escalationPercent),
-      rentCurrency: data.rentCurrency || 'VND',
-      businessModel: data.businessModel || undefined,
-      serviceFeeSqm: data.serviceFeeSqm ? Number(data.serviceFeeSqm) : undefined,
-      businessSupportFeeSqm: data.businessSupportFeeSqm ? Number(data.businessSupportFeeSqm) : undefined,
-      fitoutDays: data.fitoutDays ? Number(data.fitoutDays) : undefined,
-      handoverDate: data.handoverDate || undefined,
-      openingDate: data.openingDate || undefined,
-      specialConditions: data.specialConditions || undefined,
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
-      toast({ title: 'Đã tạo đề xuất thành công' });
-      onClose();
-    },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
-  });
-
-  const area = Number(watch('area') || 0);
-  const rent = Number(watch('rentPerSqm') || 0);
-  const cam = Number(watch('camPerSqm') || 0);
-  const monthly = area * (rent + cam);
-
-  const currency = watch('rentCurrency');
-
-  return (
-    <Dialog open={!!booking} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Lập Tờ Trình Đề xuất từ Booking #{booking?.bookingNumber}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2 text-sm">
-
-          {/* ── Điều khoản cơ bản ── */}
-          <div className="font-medium text-xs text-gray-400 uppercase tracking-wider pt-1">Mặt bằng & Thời hạn</div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Diện tích (m²) *</label>
-              <Input {...register('area', { required: true })} type="number" placeholder="100" className={errors.area ? 'border-red-400' : ''} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Thời hạn (tháng) *</label>
-              <Input {...register('term', { required: true })} type="number" placeholder="36" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Ngày bắt đầu *</label>
-              <Input {...register('startDate', { required: true })} type="date" />
-            </div>
-          </div>
-
-          {/* ── Mô hình KD ── */}
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">Mô hình Kinh doanh</label>
-            <Select value={watch('businessModel')} onValueChange={(v) => setValue('businessModel', v)}>
-              <SelectTrigger className="h-9"><SelectValue placeholder="Chọn mô hình kinh doanh..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="SHOP">Gian hàng (SHOP)</SelectItem>
-                <SelectItem value="KIOSK">Kiosk</SelectItem>
-                <SelectItem value="POP_UP">Pop-up</SelectItem>
-                <SelectItem value="EVENT">Sự kiện (EVENT)</SelectItem>
-                <SelectItem value="CHAIN">Chuỗi (CHAIN)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* ── Giá thuê ── */}
-          <div className="font-medium text-xs text-gray-400 uppercase tracking-wider pt-1">Điều khoản Tài chính</div>
-          <div className="grid grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
-              <Select value={currency} onValueChange={(v) => setValue('rentCurrency', v)}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="VND">VND</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Giá thuê/m² ({currency}) *</label>
-              <Input {...register('rentPerSqm', { required: true })} type="number" step="0.01" placeholder="0" className={errors.rentPerSqm ? 'border-red-400' : ''} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Phí Dịch vụ/m²</label>
-              <Input {...register('serviceFeeSqm')} type="number" step="0.01" placeholder="0" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Phí HT KD/m²</label>
-              <Input {...register('businessSupportFeeSqm')} type="number" step="0.01" placeholder="0" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Đặt cọc (số tháng)</label>
-              <Input {...register('deposit')} type="number" placeholder="3" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Rent-free (tháng)</label>
-              <Input {...register('rentFree')} type="number" placeholder="0" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Tăng giá/năm (%)</label>
-              <Input {...register('escalationPercent')} type="number" placeholder="5" step="0.1" />
-            </div>
-          </div>
-
-          {/* ── Preview ── */}
-          {(() => {
-            const a = Number(watch('area') || 0);
-            const r = Number(watch('rentPerSqm') || 0);
-            const s = Number(watch('serviceFeeSqm') || 0);
-            const b = Number(watch('businessSupportFeeSqm') || 0);
-            const total = a * (r + s + b);
-            if (total <= 0) return null;
-            return (
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center">
-                <span className="text-xs text-blue-600">Ước tính tổng tiền/tháng</span>
-                <span className="font-bold text-blue-700">
-                  {currency === 'USD' ? `$${total.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD` : `${new Intl.NumberFormat('vi-VN').format(total)} ₫`}
-                </span>
-              </div>
-            );
-          })()}
-
-          {/* ── Ngày bàn giao & Fitout ── */}
-          <div className="font-medium text-xs text-gray-400 uppercase tracking-wider pt-1">Tiến độ & Bàn giao</div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Ngày Bàn giao dự kiến</label>
-              <Input {...register('handoverDate')} type="date" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">TG Hoàn thiện nội thất (ngày)</label>
-              <Input {...register('fitoutDays')} type="number" placeholder="90" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Ngày Khai trương dự kiến</label>
-              <Input {...register('openingDate')} type="date" />
-            </div>
-          </div>
-
-          {/* ── Điều kiện đặc biệt ── */}
-          <div>
-            <label className="text-xs font-medium text-gray-700 mb-1 block">Điều kiện đặc biệt (Mục 21)</label>
-            <textarea
-              {...register('specialConditions')}
-              className="w-full border rounded-md p-2 text-sm resize-none h-16"
-              placeholder="Các điều khoản đặc biệt đã thỏa thuận..."
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Đang tạo...' : 'Lập Tờ Trình Đề xuất'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Sales Pipeline Tab ───────────────────────────────────────────────────────
+// â”€â”€â”€ Sales Pipeline Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PROP_STATUS_CFG: Record<string, { label: string; color: string }> = {
   DRAFT:        { label: 'Draft',      color: 'bg-gray-100 text-gray-600' },
-  SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
-  UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-blue-700' },
-  APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
-  REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã ký HĐ', color: 'bg-purple-100 text-purple-700' },
+  SUBMITTED:    { label: 'Chá» duyá»‡t', color: 'bg-yellow-100 text-yellow-700' },
+  UNDER_REVIEW: { label: 'Äang xem',  color: 'bg-blue-100 text-blue-700' },
+  APPROVED:     { label: 'ÄÃ£ duyá»‡t',  color: 'bg-green-100 text-green-700' },
+  REJECTED:     { label: 'Tá»« chá»‘i',   color: 'bg-red-100 text-red-700' },
+  CONVERTED:    { label: 'ÄÃ£ kÃ½ HÄ', color: 'bg-purple-100 text-purple-700' },
 };
 
 function SalesPipelineTab({
@@ -1183,30 +253,30 @@ function SalesPipelineTab({
   const activeBookings = bookings.filter((b) => ['ACTIVE','PENDING'].includes(b.status));
   const historyBookings = bookings.filter((b) => !['ACTIVE','PENDING'].includes(b.status));
 
-  // Mặt bằng đã có khách thuê chính thức — không cho tạo booking mới chồng lên (khớp chặn ở backend)
+  // Máº·t báº±ng Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c â€” khÃ´ng cho táº¡o booking má»›i chá»“ng lÃªn (khá»›p cháº·n á»Ÿ backend)
   const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
 
   const fmtVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
   const fmtDate = (d?: string | null) =>
-    d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+    d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'â€”';
 
   return (
     <div className="space-y-5">
 
-      {/* Cảnh báo khi mặt bằng đã có khách thuê chính thức — không thể tạo booking mới */}
+      {/* Cáº£nh bÃ¡o khi máº·t báº±ng Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c â€” khÃ´ng thá»ƒ táº¡o booking má»›i */}
       {isCommitted && (
         <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex items-start gap-2 text-xs text-gray-500">
           <Lock size={13} className="mt-0.5 shrink-0" />
-          <span>Mặt bằng đang ở trạng thái "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" — đã có khách thuê chính thức nên không thể tạo booking mới cho khách khác.</span>
+          <span>Máº·t báº±ng Ä‘ang á»Ÿ tráº¡ng thÃ¡i "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" â€” Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c nÃªn khÃ´ng thá»ƒ táº¡o booking má»›i cho khÃ¡ch khÃ¡c.</span>
         </div>
       )}
 
-      {/* CTA khi trống */}
+      {/* CTA khi trá»‘ng */}
       {bookings.length === 0 && proposals.length === 0 && !isCommitted && (
         <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 text-center space-y-2">
-          <p className="text-sm text-amber-700 font-medium">Mặt bằng chưa có khách — tạo booking để bắt đầu</p>
+          <p className="text-sm text-amber-700 font-medium">Máº·t báº±ng chÆ°a cÃ³ khÃ¡ch â€” táº¡o booking Ä‘á»ƒ báº¯t Ä‘áº§u</p>
           <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2" onClick={onCreateBooking}>
-            <BookmarkPlus size={14} /> Tạo Booking
+            <BookmarkPlus size={14} /> Táº¡o Booking
           </Button>
         </div>
       )}
@@ -1216,18 +286,18 @@ function SalesPipelineTab({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
-              <Users size={11} /> HÀNG ĐỢI BOOKING ({activeBookings.length})
+              <Users size={11} /> HÃ€NG Äá»¢I BOOKING ({activeBookings.length})
             </span>
             {!isCommitted && (
               <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={onCreateBooking}>
-                <Plus size={10} /> Thêm
+                <Plus size={10} /> ThÃªm
               </Button>
             )}
           </div>
           <div className="space-y-2">
             {activeBookings.map((b: any) => {
               const bcfg = BOOKING_STATUS_CONFIG[b.status] ?? BOOKING_STATUS_CONFIG.PENDING;
-              const name = b.lead?.brandName ?? b.customer?.companyName ?? '—';
+              const name = b.lead?.brandName ?? b.customer?.companyName ?? 'â€”';
               const contact = b.lead?.contactName ?? b.customer?.brandName ?? '';
               const dl = b.expiresAt
                 ? Math.max(0, Math.ceil((new Date(b.expiresAt).getTime() - Date.now()) / 86400000))
@@ -1258,10 +328,10 @@ function SalesPipelineTab({
 
                   {/* Booking details */}
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-500">
-                    {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} m²</span>}
-                    {b.requestedTerm && <span>Hạn: {b.requestedTerm} th</span>}
-                    {b.expectedRent && <span>Kỳ vọng: {fmtVND(b.expectedRent)} ₫/m²</span>}
-                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtVND(b.proposedRentPerSqm)} ₫/m²</span>}
+                    {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} mÂ²</span>}
+                    {b.requestedTerm && <span>Háº¡n: {b.requestedTerm} th</span>}
+                    {b.expectedRent && <span>Ká»³ vá»ng: {fmtVND(b.expectedRent)} â‚«/mÂ²</span>}
+                    {b.proposedRentPerSqm && <span>Äá» xuáº¥t: {fmtVND(b.proposedRentPerSqm)} â‚«/mÂ²</span>}
                     {b.assignedTo && <span className="col-span-2">Sale: {b.assignedTo.fullName}</span>}
                   </div>
 
@@ -1274,7 +344,7 @@ function SalesPipelineTab({
                         {PROP_STATUS_CFG[b.proposal.status]?.label}
                       </Badge>
                       <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
-                        Xem →
+                        Xem â†’
                       </button>
                     </div>
                   )}
@@ -1284,13 +354,13 @@ function SalesPipelineTab({
                     {b.status === 'ACTIVE' && !b.proposal && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1 text-green-700 border-green-200 hover:bg-green-50"
                         onClick={() => onConvertBooking(b)}>
-                        <ArrowRight size={10} /> Lập đề xuất
+                        <ArrowRight size={10} /> Láº­p Ä‘á» xuáº¥t
                       </Button>
                     )}
                     {['ACTIVE','PENDING'].includes(b.status) && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1 text-red-600 border-red-200 hover:bg-red-50"
                         disabled={cancelLoading} onClick={() => onCancelBooking(b.id)}>
-                        <X size={10} /> Hủy
+                        <X size={10} /> Há»§y
                       </Button>
                     )}
                   </div>
@@ -1306,16 +376,16 @@ function SalesPipelineTab({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
-              <FileText size={11} /> ĐỀ XUẤT ({proposals.length})
+              <FileText size={11} /> Äá»€ XUáº¤T ({proposals.length})
             </span>
             <button className="text-xs text-gray-500 hover:underline" onClick={onNavigateProposals}>
-              Quản lý →
+              Quáº£n lÃ½ â†’
             </button>
           </div>
           <div className="space-y-3">
             {proposals.map((pr: any) => {
               const ps = PROP_STATUS_CFG[pr.status] ?? PROP_STATUS_CFG.DRAFT;
-              const clientName = pr.tenant?.brandName ?? pr.lead?.brandName ?? '—';
+              const clientName = pr.tenant?.brandName ?? pr.lead?.brandName ?? 'â€”';
               const steps: any[] = pr.approvalWorkflow?.steps ?? [];
 
               return (
@@ -1345,64 +415,64 @@ function SalesPipelineTab({
                       <div className="space-y-1 text-xs">
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                           <div>
-                            <span className="text-gray-400">Diện tích: </span>
-                            <span className="font-medium">{pr.area?.toLocaleString()} m²</span>
+                            <span className="text-gray-400">Diá»‡n tÃ­ch: </span>
+                            <span className="font-medium">{pr.area?.toLocaleString()} mÂ²</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Thời hạn: </span>
-                            <span className="font-medium">{pr.term} tháng</span>
+                            <span className="text-gray-400">Thá»i háº¡n: </span>
+                            <span className="font-medium">{pr.term} thÃ¡ng</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Giá thuê/m²: </span>
-                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} ₫</span>
+                            <span className="text-gray-400">GiÃ¡ thuÃª/mÂ²: </span>
+                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} â‚«</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Tiền thuê/tháng: </span>
-                            <span className="font-medium">{fmtVND(pr.monthlyRent)} ₫</span>
+                            <span className="text-gray-400">Tiá»n thuÃª/thÃ¡ng: </span>
+                            <span className="font-medium">{fmtVND(pr.monthlyRent)} â‚«</span>
                           </div>
                           {(pr.monthlyCAM ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">Phí DVPT/tháng: </span>
-                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} ₫</span>
+                              <span className="text-gray-400">PhÃ­ DVPT/thÃ¡ng: </span>
+                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} â‚«</span>
                             </div>
                           )}
                           {(pr.serviceFeeSqm ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">Phí DV/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} ₫</span>
+                              <span className="text-gray-400">PhÃ­ DV/thÃ¡ng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} â‚«</span>
                             </div>
                           )}
                           {(pr.businessSupportFeeSqm ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">Phí HT KD/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} ₫</span>
+                              <span className="text-gray-400">PhÃ­ HT KD/thÃ¡ng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} â‚«</span>
                             </div>
                           )}
                           {pr.discount > 0 && (
                             <div>
-                              <span className="text-gray-400">Chiết khấu: </span>
+                              <span className="text-gray-400">Chiáº¿t kháº¥u: </span>
                               <span className="text-red-600 font-medium">{pr.discount}%</span>
                             </div>
                           )}
                           {pr.rentFree > 0 && (
                             <div>
                               <span className="text-gray-400">Rent-free: </span>
-                              <span className="font-medium">{pr.rentFree} tháng</span>
+                              <span className="font-medium">{pr.rentFree} thÃ¡ng</span>
                             </div>
                           )}
                         </div>
                         {/* Total monthly highlight */}
                         <div className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 mt-1">
-                          <span className="text-gray-500">Tổng phải trả/tháng:</span>
-                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} ₫</span>
+                          <span className="text-gray-500">Tá»•ng pháº£i tráº£/thÃ¡ng:</span>
+                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} â‚«</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Tổng giá trị HĐ:</span>
-                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} ₫</span>
+                          <span className="text-gray-400">Tá»•ng giÃ¡ trá»‹ HÄ:</span>
+                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} â‚«</span>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 text-gray-400">
-                          <span>Bắt đầu: {fmtDate(pr.startDate)}</span>
-                          <span>Kết thúc: {fmtDate(pr.endDate)}</span>
+                          <span>Báº¯t Ä‘áº§u: {fmtDate(pr.startDate)}</span>
+                          <span>Káº¿t thÃºc: {fmtDate(pr.endDate)}</span>
                         </div>
                       </div>
                     );
@@ -1411,7 +481,7 @@ function SalesPipelineTab({
                   {/* Approval steps */}
                   {steps.length > 0 && (
                     <div className="border-t border-dashed border-gray-200 pt-2">
-                      <div className="text-xs text-gray-400 mb-1.5 font-medium">QUY TRÌNH PHÊ DUYỆT</div>
+                      <div className="text-xs text-gray-400 mb-1.5 font-medium">QUY TRÃŒNH PHÃŠ DUYá»†T</div>
                       <div className="space-y-1">
                         {steps.map((s: any) => (
                           <div key={s.id} className="flex items-center gap-2 text-xs">
@@ -1423,14 +493,14 @@ function SalesPipelineTab({
                               <div className="w-3 h-3 rounded-full border-2 border-gray-300 flex-shrink-0" />
                             )}
                             <span className={`flex-1 ${s.status === 'PENDING' ? 'text-gray-500' : 'text-gray-700'}`}>
-                              Bước {s.stepOrder}: {s.approver?.fullName ?? s.approverRole}
+                              BÆ°á»›c {s.stepOrder}: {s.approver?.fullName ?? s.approverRole}
                             </span>
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               s.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
                               s.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-500'
                             }`}>
-                              {s.status === 'APPROVED' ? 'Duyệt' : s.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
+                              {s.status === 'APPROVED' ? 'Duyá»‡t' : s.status === 'REJECTED' ? 'Tá»« chá»‘i' : 'Chá»'}
                             </span>
                           </div>
                         ))}
@@ -1452,18 +522,18 @@ function SalesPipelineTab({
                     {pr.status === 'DRAFT' && (
                       <Button size="sm" className="h-7 text-xs px-2 gap-1 bg-gray-900 hover:bg-gray-800 text-white"
                         disabled={submitLoading} onClick={() => onSubmitProposal(pr.id)}>
-                        <ArrowRight size={11} /> Gửi phê duyệt
+                        <ArrowRight size={11} /> Gá»­i phÃª duyá»‡t
                       </Button>
                     )}
                     {pr.status === 'APPROVED' && !pr.contract && (
                       <Button size="sm" className="h-7 text-xs px-2 gap-1 bg-green-600 hover:bg-green-700 text-white"
                         disabled={convertLoading} onClick={() => onConvertProposal(pr.id)}>
-                        <CheckCircle size={11} /> Ký Hợp đồng
+                        <CheckCircle size={11} /> KÃ½ Há»£p Ä‘á»“ng
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-gray-500"
                       onClick={onNavigateProposals}>
-                      Chi tiết →
+                      Chi tiáº¿t â†’
                     </Button>
                   </div>
                 </div>
@@ -1476,11 +546,11 @@ function SalesPipelineTab({
       {/* Booking history */}
       {historyBookings.length > 0 && (
         <div>
-          <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">LỊCH SỬ BOOKING</div>
+          <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">Lá»ŠCH Sá»¬ BOOKING</div>
           <div className="space-y-1">
             {historyBookings.map((b: any) => {
               const bcfg = BOOKING_STATUS_CONFIG[b.status] ?? BOOKING_STATUS_CONFIG.EXPIRED;
-              const name = b.lead?.brandName ?? b.customer?.companyName ?? '—';
+              const name = b.lead?.brandName ?? b.customer?.companyName ?? 'â€”';
               return (
                 <div key={b.id} className="flex items-center justify-between py-1.5 px-2 text-xs text-gray-500 border border-gray-100 rounded-lg bg-gray-50">
                   <span className="font-medium text-gray-700">{name}</span>
@@ -1495,7 +565,7 @@ function SalesPipelineTab({
   );
 }
 
-// ─── Unit Detail Sheet ────────────────────────────────────────────────────────
+// â”€â”€â”€ Unit Detail Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function UnitDetailSheet({
   unit, onClose, onEdit, onDelete,
@@ -1516,9 +586,9 @@ function UnitDetailSheet({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
-      toast({ title: 'Đã gửi phê duyệt' });
+      toast({ title: 'ÄÃ£ gá»­i phÃª duyá»‡t' });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i', variant: 'destructive' }),
   });
 
   const convertProposalMutation = useMutation({
@@ -1526,9 +596,9 @@ function UnitDetailSheet({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['units'] });
-      toast({ title: 'Đã chuyển thành hợp đồng' });
+      toast({ title: 'ÄÃ£ chuyá»ƒn thÃ nh há»£p Ä‘á»“ng' });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i', variant: 'destructive' }),
   });
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -1553,9 +623,9 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã hủy booking' });
+      toast({ title: 'ÄÃ£ há»§y booking' });
     },
-    onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lá»—i há»§y booking', variant: 'destructive' }),
   });
 
   const statusMutation = useMutation({
@@ -1564,9 +634,9 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã cập nhật trạng thái' });
+      toast({ title: 'ÄÃ£ cáº­p nháº­t tráº¡ng thÃ¡i' });
     },
-    onError: () => toast({ title: 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lá»—i cáº­p nháº­t tráº¡ng thÃ¡i', variant: 'destructive' }),
   });
 
   const splitMutation = useMutation({
@@ -1575,10 +645,10 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã tách sảnh thành công' });
+      toast({ title: 'ÄÃ£ tÃ¡ch sáº£nh thÃ nh cÃ´ng' });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tách sảnh', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i tÃ¡ch sáº£nh', variant: 'destructive' }),
   });
 
   const d: any = detail ?? unit;
@@ -1590,7 +660,7 @@ function UnitDetailSheet({
       open={!!unit}
       onClose={onClose}
       title={d?.code ?? ''}
-      subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' · ' + d.zone.name : ''}`}
+      subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' Â· ' + d.zone.name : ''}`}
       className="w-full sm:w-[720px]"
     >
       {d && (
@@ -1607,8 +677,8 @@ function UnitDetailSheet({
           {/* Tab switcher */}
           <div className="flex border-b border-gray-200 overflow-x-auto">
             {([
-              ['info', 'Thông tin', LayoutList],
-              ['sales', 'Bán hàng', TrendingUp],
+              ['info', 'ThÃ´ng tin', LayoutList],
+              ['sales', 'BÃ¡n hÃ ng', TrendingUp],
               ['media', 'Media', Image],
               ['slots', 'Booking Slot', BookmarkPlus],
             ] as const).map(([tab, label, Icon]) => {
@@ -1659,7 +729,7 @@ function UnitDetailSheet({
               unit={d}
               onCreateBooking={() => setBookingOpen(true)}
               onConvertBooking={(b) => setConvertBooking(b)}
-              onCancelBooking={(id) => cancelBookingMutation.mutate({ id, reason: 'Hủy từ UI' })}
+              onCancelBooking={(id) => cancelBookingMutation.mutate({ id, reason: 'Há»§y tá»« UI' })}
               onSubmitProposal={(id) => submitProposalMutation.mutate(id)}
               onConvertProposal={(id) => convertProposalMutation.mutate(id)}
               onNavigateProposals={() => { navigate('/proposals'); onClose(); }}
@@ -1676,12 +746,12 @@ function UnitDetailSheet({
           {slotSummary && slotSummary.totalSlots > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold tracking-wider text-gray-700">BOOKING SLOT (Ô NHỎ)</span>
+                <span className="text-xs font-semibold tracking-wider text-gray-700">BOOKING SLOT (Ã” NHá»Ž)</span>
                 <button
                   onClick={() => setActiveTab('slots')}
                   className="text-xs text-gray-700 hover:underline"
                 >
-                  Xem chi tiết →
+                  Xem chi tiáº¿t â†’
                 </button>
               </div>
               <SlotSummaryBadge summary={slotSummary} />
@@ -1690,7 +760,7 @@ function UnitDetailSheet({
 
           {/* Change status */}
           <div>
-            <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">ĐỔI TRẠNG THÁI</label>
+            <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">Äá»”I TRáº NG THÃI</label>
             <Select
               value={d.status}
               onValueChange={(v) => statusMutation.mutate(v)}
@@ -1708,43 +778,43 @@ function UnitDetailSheet({
           </div>
 
           {/* Space info */}
-          <SheetSection label="THÔNG TIN MẶT BẰNG" className="bg-gray-50">
-            <SheetRow label="Diện tích GFA"      value={`${d.areaGFA?.toLocaleString()} m²`}  icon={Building2} />
-            <SheetRow label="Diện tích NLA"      value={`${d.areaNLA?.toLocaleString()} m²`}  icon={Building2} />
-            <SheetRow label="Giá thuê cơ bản"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : '—'} icon={DollarSign} />
-            <SheetRow label="Phí CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : '—'} icon={DollarSign} />
+          <SheetSection label="THÃ”NG TIN Máº¶T Báº°NG" className="bg-gray-50">
+            <SheetRow label="Diá»‡n tÃ­ch GFA"      value={`${d.areaGFA?.toLocaleString()} mÂ²`}  icon={Building2} />
+            <SheetRow label="Diá»‡n tÃ­ch NLA"      value={`${d.areaNLA?.toLocaleString()} mÂ²`}  icon={Building2} />
+            <SheetRow label="GiÃ¡ thuÃª cÆ¡ báº£n"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : 'â€”'} icon={DollarSign} />
+            <SheetRow label="PhÃ­ CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : 'â€”'} icon={DollarSign} />
             {monthlyEst > 0 && (
               <SheetRow
-                label="Ước tính / tháng"
-                value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} ₫</span>}
+                label="Æ¯á»›c tÃ­nh / thÃ¡ng"
+                value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} â‚«</span>}
                 icon={DollarSign}
               />
             )}
             {d.spaceType && (
-              <SheetRow label="Loại sảnh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
+              <SheetRow label="Loáº¡i sáº£nh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
             )}
             {d.tier && (
               <SheetRow label="Tier" value={TIER_OPTIONS.find(o => o.value === d.tier)?.label ?? d.tier} icon={Star} />
             )}
             {d.leaseTermType && (
-              <SheetRow label="Hình thức thuê" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
+              <SheetRow label="HÃ¬nh thá»©c thuÃª" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
             )}
             {d.isFlexibleArea && (
               <SheetRow
-                label="Diện tích linh động"
-                value={`${d.minFlexArea?.toLocaleString() ?? '?'} – ${d.maxFlexArea?.toLocaleString() ?? '?'} m²`}
+                label="Diá»‡n tÃ­ch linh Ä‘á»™ng"
+                value={`${d.minFlexArea?.toLocaleString() ?? '?'} â€“ ${d.maxFlexArea?.toLocaleString() ?? '?'} mÂ²`}
                 icon={SlidersHorizontal}
               />
             )}
           </SheetSection>
 
-          {/* GAP #2 — Sảnh gộp info + Tách sảnh */}
+          {/* GAP #2 â€” Sáº£nh gá»™p info + TÃ¡ch sáº£nh */}
           {d.isCombined && (
-            <SheetSection label="THÔNG TIN SẢNH GỘP" className="bg-violet-50">
+            <SheetSection label="THÃ”NG TIN Sáº¢NH Gá»˜P" className="bg-violet-50">
               <div className="flex items-center justify-between px-3 py-2">
                 <div className="flex items-center gap-2 text-sm text-violet-700">
                   <GitMerge size={14} />
-                  <span>Sảnh này được gộp từ {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sảnh nguồn</span>
+                  <span>Sáº£nh nÃ y Ä‘Æ°á»£c gá»™p tá»« {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sáº£nh nguá»“n</span>
                 </div>
                 <Button
                   size="sm"
@@ -1754,38 +824,38 @@ function UnitDetailSheet({
                   onClick={() => splitMutation.mutate()}
                 >
                   <Scissors size={12} />
-                  {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
+                  {splitMutation.isPending ? 'Äang tÃ¡ch...' : 'TÃ¡ch sáº£nh'}
                 </Button>
               </div>
               {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
-                <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
+                <p className="text-xs text-violet-500 px-3 pb-2">KhÃ´ng thá»ƒ tÃ¡ch khi sáº£nh Ä‘ang Ä‘Æ°á»£c sá»­ dá»¥ng.</p>
               )}
             </SheetSection>
           )}
 
           {/* Tenant */}
           {d.tenant && (
-            <SheetSection label="KHÁCH THUÊ HIỆN TẠI" className="bg-green-50">
-              <SheetRow label="Thương hiệu"  value={d.tenant.brandName}    icon={User} />
-              <SheetRow label="Công ty"      value={d.tenant.companyName}  icon={Building2} />
-              <SheetRow label="Liên hệ"      value={d.tenant.contactName}  icon={User} />
+            <SheetSection label="KHÃCH THUÃŠ HIá»†N Táº I" className="bg-green-50">
+              <SheetRow label="ThÆ°Æ¡ng hiá»‡u"  value={d.tenant.brandName}    icon={User} />
+              <SheetRow label="CÃ´ng ty"      value={d.tenant.companyName}  icon={Building2} />
+              <SheetRow label="LiÃªn há»‡"      value={d.tenant.contactName}  icon={User} />
               <SheetRow label="Email"         value={d.tenant.contactEmail} icon={Mail} />
-              <SheetRow label="Điện thoại"   value={d.tenant.contactPhone} icon={Phone} />
+              <SheetRow label="Äiá»‡n thoáº¡i"   value={d.tenant.contactPhone} icon={Phone} />
             </SheetSection>
           )}
 
           {/* Lease dates */}
           {(d.leaseStartDate || d.leaseEndDate) && (
-            <SheetSection label="THỜI HẠN THUÊ" className="bg-gray-50">
-              <SheetRow label="Ngày bắt đầu"  value={fmtDate(d.leaseStartDate)} icon={Calendar} />
-              <SheetRow label="Ngày kết thúc" value={fmtDate(d.leaseEndDate)}   icon={Calendar} />
+            <SheetSection label="THá»œI Háº N THUÃŠ" className="bg-gray-50">
+              <SheetRow label="NgÃ y báº¯t Ä‘áº§u"  value={fmtDate(d.leaseStartDate)} icon={Calendar} />
+              <SheetRow label="NgÃ y káº¿t thÃºc" value={fmtDate(d.leaseEndDate)}   icon={Calendar} />
             </SheetSection>
           )}
 
           {/* Active contracts */}
           {Array.isArray(d.contracts) && d.contracts.length > 0 && (
             <div>
-              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">HỢP ĐỒNG HIỆN TẠI</div>
+              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">Há»¢P Äá»’NG HIá»†N Táº I</div>
               <div className="space-y-2">
                 {d.contracts.map((c: any) => (
                   <div key={c.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
@@ -1809,24 +879,24 @@ function UnitDetailSheet({
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
-                    <TrendingUp size={12} /> PIPELINE BÁN HÀNG
+                    <TrendingUp size={12} /> PIPELINE BÃN HÃ€NG
                   </span>
                   <button
                     className="text-xs text-amber-700 hover:underline font-medium"
                     onClick={() => setActiveTab('sales')}
                   >
-                    Xem chi tiết →
+                    Xem chi tiáº¿t â†’
                   </button>
                 </div>
                 <div className="flex gap-3 text-xs flex-wrap">
                   {activeBookings.length > 0 && (
                     <span className="flex items-center gap-1 text-amber-700">
-                      <Users size={11} /> {activeBookings.length} booking đang chờ
+                      <Users size={11} /> {activeBookings.length} booking Ä‘ang chá»
                     </span>
                   )}
                   {activeProposals.length > 0 && (
                     <span className="flex items-center gap-1 text-gray-700">
-                      <FileText size={11} /> {activeProposals.length} đề xuất
+                      <FileText size={11} /> {activeProposals.length} Ä‘á» xuáº¥t
                     </span>
                   )}
                 </div>
@@ -1841,7 +911,7 @@ function UnitDetailSheet({
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}
               >
-                <BookmarkPlus size={14} /> Tạo Booking
+                <BookmarkPlus size={14} /> Táº¡o Booking
               </Button>
             )}
             <Button
@@ -1849,21 +919,21 @@ function UnitDetailSheet({
               className="flex-1 gap-2"
               onClick={() => { onEdit(d); }}
             >
-              <Pencil size={14} /> Sửa
+              <Pencil size={14} /> Sá»­a
             </Button>
             <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
               onClick={() => { onDelete(d); }}
             >
-              <Trash2 size={14} /> Xóa
+              <Trash2 size={14} /> XÃ³a
             </Button>
           </div>
           </>)}
 
-          {/* Booking Dialog — đặt ngoài khối activeTab === 'info' vì "Tạo Booking" ở tab Bán hàng
-              (SalesPipelineTab) cũng mở dialog này; trước đây bị lồng trong info nên bấm từ tab
-              khác không thấy popup cho tới khi quay lại tab Thông tin. */}
+          {/* Booking Dialog â€” Ä‘áº·t ngoÃ i khá»‘i activeTab === 'info' vÃ¬ "Táº¡o Booking" á»Ÿ tab BÃ¡n hÃ ng
+              (SalesPipelineTab) cÅ©ng má»Ÿ dialog nÃ y; trÆ°á»›c Ä‘Ã¢y bá»‹ lá»“ng trong info nÃªn báº¥m tá»« tab
+              khÃ¡c khÃ´ng tháº¥y popup cho tá»›i khi quay láº¡i tab ThÃ´ng tin. */}
           <CreateBookingDialog
             unitId={d.id}
             unitCode={d.code}
@@ -1873,7 +943,7 @@ function UnitDetailSheet({
           />
 
           {/* Convert Booking → Proposal */}
-          <ConvertBookingFromSpacesDialog
+          <ConvertBookingDialog
             booking={convertBooking}
             onClose={() => setConvertBooking(null)}
           />
@@ -1883,365 +953,6 @@ function UnitDetailSheet({
   );
 }
 
-// ─── Unit Card ────────────────────────────────────────────────────────────────
-
-function UnitCard({ 
-  unit, 
-  onClick,
-  selectionMode,
-  isSelected,
-  onToggleSelect,
-  slotSummary,
-}: { 
-  unit: Unit; 
-  onClick: () => void;
-  selectionMode?: boolean;
-  isSelected?: boolean;
-  onToggleSelect?: () => void;
-  slotSummary?: UnitSlotSummary | null;
-}) {
-  const cfg = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.VACANT;
-  return (
-    <Card
-      className={`hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5 group ${
-        isSelected ? 'ring-2 ring-blue-500 bg-gray-50' : ''
-      }`}
-      onClick={selectionMode ? onToggleSelect : onClick}
-    >
-      <CardContent className="pt-4 pb-3">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-start gap-2">
-            {selectionMode && (
-              <div className="pt-0.5">
-                {isSelected ? (
-                  <CheckSquare size={16} className="text-gray-700" />
-                ) : (
-                  <Square size={16} className="text-gray-300" />
-                )}
-              </div>
-            )}
-            <div>
-              <div className="font-semibold text-sm">{unit.code}</div>
-              {unit.name && <div className="text-xs text-gray-400">{unit.name}</div>}
-            </div>
-          </div>
-          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.color}`}>{cfg.label}</span>
-        </div>
-        <div className="text-xs text-gray-500 space-y-0.5">
-          <div className="flex items-center gap-1">
-            <span>{unit.floor?.name ?? '—'} · {unit.zone?.name ?? '—'}</span>
-            {(unit as any).isCombined && (
-              <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px] font-medium">
-                <GitMerge size={9} /> Gộp
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span>{unit.areaNLA.toLocaleString()} m² NLA</span>
-            {unit.baseRentPerSqm > 0 && (
-              <span className="text-green-600">{unit.baseRentPerSqm.toLocaleString()} ₫/m²</span>
-            )}
-          </div>
-          {unit.category && <div className="text-gray-700">{unit.category}</div>}
-          <SlotSummaryBadge summary={slotSummary} compact />
-          {unit.tenant && <div className="font-medium text-gray-700 pt-1">{unit.tenant.brandName}</div>}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Merge Units Dialog (GAP #2) ─────────────────────────────────────────────
-
-function MergeUnitsDialog({
-  open,
-  units,
-  mallId,
-  onClose,
-}: {
-  open: boolean;
-  units: Unit[];
-  mallId: string;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const { register, handleSubmit, reset, formState: { errors } } = useForm({
-    defaultValues: { code: '', name: '' },
-  });
-
-  useEffect(() => {
-    if (open) reset({ code: '', name: '' });
-  }, [open]);
-
-  const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
-  const allVacant = units.every((u) => u.status === 'VACANT');
-
-  const mergeMutation = useMutation({
-    mutationFn: (data: any) => spacesApi.mergeUnits({
-      unitIds: units.map((u) => u.id),
-      code: data.code,
-      name: data.name || undefined,
-    }),
-    onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: `Đã gộp thành công → ${result.combinedUnit?.code ?? ''}` });
-      onClose();
-    },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi gộp sảnh', variant: 'destructive' }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitMerge size={18} className="text-violet-500" />
-            Gộp sảnh
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-1">
-          {/* Units to merge */}
-          <div>
-            <p className="text-xs font-semibold tracking-wider text-gray-400 mb-2">SẢNH ĐANG GỘP ({units.length})</p>
-            <div className="space-y-1">
-              {units.map((u) => (
-                <div key={u.id} className="flex items-center justify-between text-sm px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
-                  <span className="font-mono font-semibold">{u.code}</span>
-                  <span className="text-gray-500">{u.areaNLA?.toLocaleString()} m²</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center justify-between text-sm px-3 py-1.5 bg-violet-50 rounded-lg border border-violet-100 mt-1">
-              <span className="font-medium text-violet-700">Tổng diện tích NLA</span>
-              <span className="font-bold text-violet-700">{totalArea.toLocaleString()} m²</span>
-            </div>
-          </div>
-
-          {!allVacant && (
-            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              <AlertTriangle size={14} />
-              Tất cả các sảnh phải có trạng thái <strong>Trống</strong> để có thể gộp.
-            </div>
-          )}
-
-          {/* New unit code */}
-          <form id="merge-form" onSubmit={handleSubmit((d) => mergeMutation.mutate(d))} className="space-y-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Mã sảnh mới *</label>
-              <Input
-                {...register('code', { required: true })}
-                placeholder="GF-A01+A02"
-                className={errors.code ? 'border-red-400' : ''}
-              />
-              <p className="text-xs text-gray-400 mt-1">Sảnh gộp sẽ có mã mới này. Sảnh nguồn sẽ chuyển sang trạng thái "Đã gộp".</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Tên sảnh (tuỳ chọn)</label>
-              <Input {...register('name')} placeholder="Sảnh A01 + A02 gộp" />
-            </div>
-          </form>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button
-            form="merge-form"
-            type="submit"
-            disabled={mergeMutation.isPending || !allVacant}
-            className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
-          >
-            <GitMerge size={14} />
-            {mergeMutation.isPending ? 'Đang gộp...' : 'Xác nhận gộp'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Bulk Action Dialogs ──────────────────────────────────────────────────────
-
-function BulkStatusDialog({ open, count, onClose, onConfirm, loading }: {
-  open: boolean;
-  count: number;
-  onClose: () => void;
-  onConfirm: (status: string) => void;
-  loading: boolean;
-}) {
-  const [status, setStatus] = useState('');
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Đổi trạng thái {count} mặt bằng</DialogTitle>
-        </DialogHeader>
-        <div className="py-4">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger>
-              <SelectValue placeholder="Chọn trạng thái mới" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button onClick={() => onConfirm(status)} disabled={!status || loading}>
-            {loading ? 'Đang cập nhật...' : 'Xác nhận'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function BulkCategoryDialog({ open, count, onClose, onConfirm, loading }: {
-  open: boolean;
-  count: number;
-  onClose: () => void;
-  onConfirm: (category: string) => void;
-  loading: boolean;
-}) {
-  const [category, setCategory] = useState('');
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Đổi ngành hàng {count} mặt bằng</DialogTitle>
-        </DialogHeader>
-        <div className="py-4">
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger>
-              <SelectValue placeholder="Chọn ngành hàng mới" />
-            </SelectTrigger>
-            <SelectContent>
-              {categoryNames.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button onClick={() => onConfirm(category)} disabled={!category || loading}>
-            {loading ? 'Đang cập nhật...' : 'Xác nhận'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function BulkRentDialog({ open, count, onClose, onConfirm, loading }: {
-  open: boolean;
-  count: number;
-  onClose: () => void;
-  onConfirm: (rent: number | undefined, cam: number | undefined) => void;
-  loading: boolean;
-}) {
-  const [rent, setRent] = useState('');
-  const [cam, setCam] = useState('');
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Đổi giá thuê {count} mặt bằng</DialogTitle>
-        </DialogHeader>
-        <div className="py-4 space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (₫/m²)</label>
-            <Input
-              type="number"
-              placeholder="450000"
-              value={rent}
-              onChange={(e) => setRent(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
-            <Input
-              type="number"
-              placeholder="80000"
-              value={cam}
-              onChange={(e) => setCam(e.target.value)}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button
-            onClick={() => onConfirm(rent ? Number(rent) : undefined, cam ? Number(cam) : undefined)}
-            disabled={(!rent && !cam) || loading}
-          >
-            {loading ? 'Đang cập nhật...' : 'Xác nhận'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Alerts Component ─────────────────────────────────────────────────────────
-
-function SpacesAlerts({ mallId }: { mallId?: string | null }) {
-  const { data: staleData } = useQuery({
-    queryKey: ['stale-vacant', mallId],
-    queryFn: () => spacesApi.staleVacantUnits({ mallId: mallId ?? undefined, days: 60 }),
-    enabled: true,
-  });
-
-  const { data: expiringData } = useQuery({
-    queryKey: ['expiring-leases', mallId],
-    queryFn: () => spacesApi.expiringLeases({ mallId: mallId ?? undefined, days: 90 }),
-    enabled: true,
-  });
-
-  const staleCount = staleData?.total ?? 0;
-  const expiringCritical = expiringData?.summary?.critical ?? 0;
-  const expiringWarning = expiringData?.summary?.warning ?? 0;
-
-  if (staleCount === 0 && expiringCritical === 0 && expiringWarning === 0) return null;
-
-  return (
-    <div className="flex gap-3 mb-4 flex-wrap">
-      {staleCount > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm">
-          <AlertCircle size={16} className="text-red-500" />
-          <span className="text-red-700">
-            <strong>{staleCount}</strong> units trống &gt;60 ngày
-          </span>
-        </div>
-      )}
-      {expiringCritical > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-sm">
-          <Clock size={16} className="text-orange-500" />
-          <span className="text-orange-700">
-            <strong>{expiringCritical}</strong> lease hết hạn trong 30 ngày
-          </span>
-        </div>
-      )}
-      {expiringWarning > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
-          <Clock size={16} className="text-amber-500" />
-          <span className="text-amber-700">
-            <strong>{expiringWarning}</strong> lease hết hạn trong 60 ngày
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Compare Modal ────────────────────────────────────────────────────────────
 
 function CompareModal({ 
   unitIds, 
@@ -2267,27 +978,27 @@ function CompareModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Columns size={18} className="text-gray-500" />
-            So sánh {unitIds.length} mặt bằng
+            So sÃ¡nh {unitIds.length} máº·t báº±ng
           </DialogTitle>
         </DialogHeader>
         
         {isLoading ? (
-          <div className="py-10 text-center text-gray-400">Đang tải...</div>
+          <div className="py-10 text-center text-gray-400">Äang táº£i...</div>
         ) : units.length > 0 && (
           <div className="space-y-4">
             {/* Summary */}
             {summary && (
               <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Giá thuê TB</div>
-                  <div className="font-semibold">{Number(summary.avgRent).toLocaleString()} ₫/m²</div>
+                  <div className="text-xs text-gray-500">GiÃ¡ thuÃª TB</div>
+                  <div className="font-semibold">{Number(summary.avgRent).toLocaleString()} â‚«/mÂ²</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Diện tích TB</div>
-                  <div className="font-semibold">{Number(summary.avgArea).toLocaleString()} m²</div>
+                  <div className="text-xs text-gray-500">Diá»‡n tÃ­ch TB</div>
+                  <div className="font-semibold">{Number(summary.avgArea).toLocaleString()} mÂ²</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Range giá</div>
+                  <div className="text-xs text-gray-500">Range giÃ¡</div>
                   <div className="font-semibold text-sm">{summary.minRent.toLocaleString()} - {summary.maxRent.toLocaleString()}</div>
                 </div>
               </div>
@@ -2298,7 +1009,7 @@ function CompareModal({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-2 px-3 font-medium text-gray-500">Thuộc tính</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">Thuá»™c tÃ­nh</th>
                     {units.map((u: any) => (
                       <th key={u.id} className="text-left py-2 px-3 font-semibold">
                         {u.code}
@@ -2311,7 +1022,7 @@ function CompareModal({
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Trạng thái</td>
+                    <td className="py-2 px-3 text-gray-500">Tráº¡ng thÃ¡i</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3">
                         <Badge className={STATUS_CONFIG[u.status]?.color}>{STATUS_CONFIG[u.status]?.label}</Badge>
@@ -2319,10 +1030,10 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Diện tích NLA</td>
+                    <td className="py-2 px-3 text-gray-500">Diá»‡n tÃ­ch NLA</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-medium">
-                        {u.areaNLA.toLocaleString()} m²
+                        {u.areaNLA.toLocaleString()} mÂ²
                         <span className={`ml-1 text-xs ${Number(u.areaVsAvg) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ({u.areaVsAvg > 0 ? '+' : ''}{u.areaVsAvg}%)
                         </span>
@@ -2330,10 +1041,10 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Giá thuê/m²</td>
+                    <td className="py-2 px-3 text-gray-500">GiÃ¡ thuÃª/mÂ²</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-medium">
-                        {u.baseRentPerSqm.toLocaleString()} ₫
+                        {u.baseRentPerSqm.toLocaleString()} â‚«
                         <span className={`ml-1 text-xs ${Number(u.rentVsAvg) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ({u.rentVsAvg > 0 ? '+' : ''}{u.rentVsAvg}%)
                         </span>
@@ -2341,35 +1052,35 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Phí CAM/m²</td>
+                    <td className="py-2 px-3 text-gray-500">PhÃ­ CAM/mÂ²</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.camPerSqm.toLocaleString()} ₫</td>
+                      <td key={u.id} className="py-2 px-3">{u.camPerSqm.toLocaleString()} â‚«</td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Tổng/tháng</td>
+                    <td className="py-2 px-3 text-gray-500">Tá»•ng/thÃ¡ng</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-semibold text-gray-700">
-                        {u.totalMonthlyRent?.toLocaleString()} ₫
+                        {u.totalMonthlyRent?.toLocaleString()} â‚«
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Ngành hàng</td>
+                    <td className="py-2 px-3 text-gray-500">NgÃ nh hÃ ng</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.category ?? '—'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.category ?? 'â€”'}</td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Tầng</td>
+                    <td className="py-2 px-3 text-gray-500">Táº§ng</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.floor?.name ?? '—'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.floor?.name ?? 'â€”'}</td>
                     ))}
                   </tr>
                   <tr>
-                    <td className="py-2 px-3 text-gray-500">Khách thuê</td>
+                    <td className="py-2 px-3 text-gray-500">KhÃ¡ch thuÃª</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.tenant?.brandName ?? '—'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.tenant?.brandName ?? 'â€”'}</td>
                     ))}
                   </tr>
                 </tbody>
@@ -2379,250 +1090,13 @@ function CompareModal({
         )}
         
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Đóng</Button>
+          <Button variant="outline" onClick={onClose}>ÄÃ³ng</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-// ─── Analytics View ───────────────────────────────────────────────────────────
-
-function AnalyticsView({ mallId }: { mallId?: string | null }) {
-  const { data: occupancyData } = useQuery({
-    queryKey: ['occupancy', mallId],
-    queryFn: () => spacesApi.occupancySummary(mallId),
-  });
-
-  const occ = occupancyData?.data ?? occupancyData;
-  const occTotal = occ
-    ? Object.entries(STATUS_CONFIG).reduce(
-        (s, [k]) => s + (occ[k === 'UNDER_FITOUT' ? 'underFitout' : k.toLowerCase()] ?? 0), 0)
-    : 0;
-
-  const { data: rentData, isLoading: loadingRent } = useQuery({
-    queryKey: ['rent-analytics', mallId],
-    queryFn: () => spacesApi.rentAnalytics(mallId ?? undefined),
-  });
-
-  const { data: calendarData } = useQuery({
-    queryKey: ['availability-calendar', mallId],
-    queryFn: () => spacesApi.availabilityCalendar({ mallId: mallId ?? undefined, months: 6 }),
-  });
-
-  const { data: expiringData } = useQuery({
-    queryKey: ['expiring-leases-dashboard', mallId],
-    queryFn: () => spacesApi.expiringLeases({ mallId: mallId ?? undefined, days: 180 }),
-  });
-
-  if (loadingRent) {
-    return <div className="py-10 text-center text-gray-400">Đang tải analytics...</div>;
-  }
-
-  const summary = rentData?.summary;
-  const byFloor = rentData?.byFloor ?? [];
-  const byCategory = rentData?.byCategory ?? [];
-  const vacancy = calendarData?.currentlyVacant;
-  const expiringSummary = expiringData?.summary;
-
-  return (
-    <div className="space-y-6">
-      {/* Occupancy status tiles */}
-      {occ && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-          <Card className="relative border border-l-4 border-l-slate-400">
-            <CardContent className="p-3">
-              <span className="absolute top-2 right-2 min-w-[1.375rem] h-[1.375rem] px-1 rounded-full bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center">
-                {occTotal}
-              </span>
-              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center mb-2">
-                <BarChart3 size={14} className="text-slate-600" />
-              </div>
-              <div className="text-xs font-medium text-gray-500">Tất cả</div>
-            </CardContent>
-          </Card>
-          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-            const count = occ[key === 'UNDER_FITOUT' ? 'underFitout' : key.toLowerCase()] ?? 0;
-            const pct = occTotal > 0 ? Math.round((count / occTotal) * 100) : 0;
-            return (
-              <Card key={key} className={`relative border border-l-4 ${cfg.leftBorder} border-gray-100`}>
-                <CardContent className="p-3">
-                  <span className={`absolute top-2 right-2 min-w-[1.375rem] h-[1.375rem] px-1 rounded-full ${cfg.iconBg} ${cfg.textColor} text-xs font-bold flex items-center justify-center`}>
-                    {count}
-                  </span>
-                  <div className={`w-7 h-7 rounded-lg ${cfg.iconBg} ${cfg.textColor} flex items-center justify-center mb-2`}>
-                    {STATUS_ICONS[key]}
-                  </div>
-                  <div className="text-xs font-medium text-gray-500 truncate">{cfg.label}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{pct}%</div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Occupancy bar */}
-      {occ && (
-        <div className="flex items-center gap-3 px-1">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Lấp đầy</span>
-          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
-              style={{ width: `${occ.occupancyRate}%` }}
-            />
-          </div>
-          <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{occ.occupancyRate}%</span>
-          <span className="text-xs text-gray-400 whitespace-nowrap hidden sm:inline">
-            {(occ.leasedArea ?? 0).toLocaleString()} / {(occ.totalArea ?? 0).toLocaleString()} m²
-          </span>
-        </div>
-      )}
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-gray-900">{summary?.totalUnits ?? 0}</div>
-            <div className="text-sm text-gray-500">Tổng units</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-green-600">{summary?.occupiedUnits ?? 0}</div>
-            <div className="text-sm text-gray-500">Đang thuê</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-gray-700">{Number(summary?.avgRentPerSqm ?? 0).toLocaleString()}</div>
-            <div className="text-sm text-gray-500">Giá thuê TB (₫/m²)</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-purple-600">{Number(summary?.totalMonthlyRevenue ?? 0).toLocaleString()}</div>
-            <div className="text-sm text-gray-500">Doanh thu/tháng (₫)</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Rent by Floor */}
-        <Card>
-          <CardContent className="pt-4">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Layers size={16} className="text-gray-400" />
-              Giá thuê theo tầng
-            </h3>
-            <div className="space-y-3">
-              {byFloor.slice(0, 8).map((f: any) => (
-                <div key={f.floorId} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{f.floorName}</span>
-                    <span className="text-xs text-gray-400">({f.unitCount} units)</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">{Number(f.avgRent).toLocaleString()} ₫/m²</span>
-                    <span className="text-xs text-green-600">{f.occupancyRate}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Rent by Category */}
-        <Card>
-          <CardContent className="pt-4">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <BarChart3 size={16} className="text-gray-400" />
-              Giá thuê theo ngành hàng
-            </h3>
-            <div className="space-y-3">
-              {byCategory.slice(0, 8).map((c: any) => (
-                <div key={c.category} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{c.category}</span>
-                    <span className="text-xs text-gray-400">({c.unitCount} units)</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold">{Number(c.avgRent).toLocaleString()} ₫/m²</span>
-                    <span className="text-xs text-green-600">{c.occupancyRate}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Availability Forecast */}
-        <Card>
-          <CardContent className="pt-4">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Calendar size={16} className="text-gray-400" />
-              Dự báo khả dụng (6 tháng)
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-2 bg-red-50 rounded">
-                <span className="text-sm">Đang trống</span>
-                <div className="text-right">
-                  <span className="font-bold text-red-600">{vacancy?.count ?? 0} units</span>
-                  <span className="text-xs text-gray-500 ml-2">{(vacancy?.totalArea ?? 0).toLocaleString()} m²</span>
-                </div>
-              </div>
-              {(calendarData?.upcomingAvailability ?? []).slice(0, 5).map((m: any) => (
-                <div key={m.month} className="flex items-center justify-between">
-                  <span className="text-sm">{m.month}</span>
-                  <div className="text-right">
-                    <span className="font-medium">{m.count} units</span>
-                    <span className="text-xs text-gray-400 ml-2">{m.totalArea.toLocaleString()} m²</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Lease Expiry Summary */}
-        <Card>
-          <CardContent className="pt-4">
-            <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Clock size={16} className="text-gray-400" />
-              Lease sắp hết hạn
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-2 bg-red-50 rounded">
-                <span className="text-sm text-red-700">Trong 30 ngày</span>
-                <span className="font-bold text-red-600">{expiringSummary?.critical ?? 0} units</span>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-orange-50 rounded">
-                <span className="text-sm text-orange-700">30-60 ngày</span>
-                <span className="font-bold text-orange-600">{expiringSummary?.warning ?? 0} units</span>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-amber-50 rounded">
-                <span className="text-sm text-amber-700">60-180 ngày</span>
-                <span className="font-bold text-amber-600">{expiringSummary?.upcoming ?? 0} units</span>
-              </div>
-              <div className="pt-2 border-t text-sm text-gray-500">
-                <div className="flex justify-between">
-                  <span>Tổng diện tích rủi ro:</span>
-                  <span className="font-medium">{(expiringSummary?.totalAreaAtRisk ?? 0).toLocaleString()} m²</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Doanh thu rủi ro/tháng:</span>
-                  <span className="font-medium">{(expiringSummary?.totalRevenueAtRisk ?? 0).toLocaleString()} ₫</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'grid' | 'floor' | 'map' | 'analytics';
 
@@ -2736,21 +1210,21 @@ export default function SpacesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã xóa mặt bằng' });
+      toast({ title: 'ÄÃ£ xÃ³a máº·t báº±ng' });
       setDeletingUnit(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i xÃ³a', variant: 'destructive' }),
   });
 
   const deleteFloorMutation = useMutation({
     mutationFn: (id: string) => spacesApi.deleteFloor(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['floors'] });
-      toast({ title: 'Đã xóa tầng' });
+      toast({ title: 'ÄÃ£ xÃ³a táº§ng' });
       setDeletingFloor(null);
       if (floorFilter === id) setFloorFilter('');
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i xÃ³a', variant: 'destructive' }),
   });
 
   const bulkMutation = useMutation({
@@ -2758,12 +1232,12 @@ export default function SpacesPage() {
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: `Đã cập nhật ${result.updated} mặt bằng` });
+      toast({ title: `ÄÃ£ cáº­p nháº­t ${result.updated} máº·t báº±ng` });
       clearSelection();
       setSelectionMode(false);
       setBulkActionOpen(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i cáº­p nháº­t', variant: 'destructive' }),
   });
 
   const units: Unit[] = data?.data ?? [];
@@ -2781,7 +1255,7 @@ export default function SpacesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mall Spaces</h1>
-          <p className="text-sm text-gray-500 mt-1">Quản lý mặt bằng và tình trạng cho thuê</p>
+          <p className="text-sm text-gray-500 mt-1">Quáº£n lÃ½ máº·t báº±ng vÃ  tÃ¬nh tráº¡ng cho thuÃª</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
@@ -2791,27 +1265,27 @@ export default function SpacesPage() {
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'grid' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Danh sách"
+              title="Danh sÃ¡ch"
             >
-              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sách</span>
+              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sÃ¡ch</span>
             </button>
             <button
               onClick={() => setView('floor')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'floor' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Sơ đồ tầng"
+              title="SÆ¡ Ä‘á»“ táº§ng"
             >
-              <Map size={14} /> <span className="hidden sm:inline">Sơ đồ tầng</span>
+              <Map size={14} /> <span className="hidden sm:inline">SÆ¡ Ä‘á»“ táº§ng</span>
             </button>
             <button
               onClick={() => { setView('map'); setMapEditorMode(false); }}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'map' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Bản đồ số"
+              title="Báº£n Ä‘á»“ sá»‘"
             >
-              <Map size={14} /> <span className="hidden sm:inline">Bản đồ số</span>
+              <Map size={14} /> <span className="hidden sm:inline">Báº£n Ä‘á»“ sá»‘</span>
             </button>
             <button
               onClick={() => setView('analytics')}
@@ -2824,8 +1298,8 @@ export default function SpacesPage() {
             </button>
           </div>
           {selectedMallId && (
-            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
-              <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="ThÃªm máº·t báº±ng">
+              <Plus size={15} /> <span className="hidden sm:inline">ThÃªm máº·t báº±ng</span>
             </Button>
           )}
         </div>
@@ -2840,7 +1314,7 @@ export default function SpacesPage() {
             className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
               ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
           >
-            Tất cả tầng
+            Táº¥t cáº£ táº§ng
           </button>
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
@@ -2864,14 +1338,14 @@ export default function SpacesPage() {
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditingFloor(f); setFloorDialogOpen(true); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="Sửa tầng"
+                    title="Sá»­a táº§ng"
                   >
                     <Pencil size={11} />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeletingFloor(f); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="Xóa tầng"
+                    title="XÃ³a táº§ng"
                   >
                     <Trash2 size={11} />
                   </button>
@@ -2884,7 +1358,7 @@ export default function SpacesPage() {
               onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
               className="shrink-0 text-xs px-2.5 py-1.5 rounded-full font-medium border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 hover:border-gray-400 flex items-center gap-1 whitespace-nowrap"
             >
-              <Plus size={12} /> Thêm tầng
+              <Plus size={12} /> ThÃªm táº§ng
             </button>
           )}
         </div>
@@ -2903,7 +1377,7 @@ export default function SpacesPage() {
             <div className="relative w-full sm:flex-1 sm:max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Tìm mã, tên mặt bằng..."
+                placeholder="TÃ¬m mÃ£, tÃªn máº·t báº±ng..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -2911,10 +1385,10 @@ export default function SpacesPage() {
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Tất cả trạng thái" />
+                <SelectValue placeholder="Táº¥t cáº£ tráº¡ng thÃ¡i" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Tất cả</SelectItem>
+                <SelectItem value="">Táº¥t cáº£</SelectItem>
                 {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                   <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
                 ))}
@@ -2927,7 +1401,7 @@ export default function SpacesPage() {
               className="gap-1.5"
             >
               <CheckSquare size={14} />
-              <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
+              <span className="hidden sm:inline">{selectionMode ? 'ThoÃ¡t' : 'Chá»n nhiá»u'}</span>
             </Button>
             <Button
               variant={showFilters ? 'default' : 'outline'}
@@ -2936,12 +1410,12 @@ export default function SpacesPage() {
               className="gap-1.5"
             >
               <SlidersHorizontal size={14} />
-              Bộ lọc nâng cao
+              Bá»™ lá»c nÃ¢ng cao
               {hasAdvancedFilters && <span className="w-2 h-2 bg-gray-500 rounded-full" />}
             </Button>
             {(statusFilter || floorFilter || search || hasAdvancedFilters) && (
               <Button variant="outline" size="sm" onClick={clearFilters}>
-                <X size={14} className="mr-1" /> Xóa bộ lọc
+                <X size={14} className="mr-1" /> XÃ³a bá»™ lá»c
               </Button>
             )}
           </div>
@@ -2951,7 +1425,7 @@ export default function SpacesPage() {
             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích min (m²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diá»‡n tÃ­ch min (mÂ²)</label>
                   <Input
                     type="number"
                     placeholder="0"
@@ -2960,7 +1434,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích max (m²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diá»‡n tÃ­ch max (mÂ²)</label>
                   <Input
                     type="number"
                     placeholder="1000"
@@ -2969,7 +1443,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê min (₫/m²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">GiÃ¡ thuÃª min (â‚«/mÂ²)</label>
                   <Input
                     type="number"
                     placeholder="0"
@@ -2978,7 +1452,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê max (₫/m²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">GiÃ¡ thuÃª max (â‚«/mÂ²)</label>
                   <Input
                     type="number"
                     placeholder="1000000"
@@ -2989,13 +1463,13 @@ export default function SpacesPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Ngành hàng</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">NgÃ nh hÃ ng</label>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả ngành hàng" />
+                      <SelectValue placeholder="Táº¥t cáº£ ngÃ nh hÃ ng" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Tất cả</SelectItem>
+                      <SelectItem value="">Táº¥t cáº£</SelectItem>
                       {categoryNames.map((c) => (
                         <SelectItem key={c} value={c}>{c}</SelectItem>
                       ))}
@@ -3004,13 +1478,13 @@ export default function SpacesPage() {
                 </div>
                 {/* GAP #4 */}
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Loại sảnh</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Loáº¡i sáº£nh</label>
                   <Select value={spaceTypeFilter} onValueChange={setSpaceTypeFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả loại" />
+                      <SelectValue placeholder="Táº¥t cáº£ loáº¡i" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Tất cả</SelectItem>
+                      <SelectItem value="">Táº¥t cáº£</SelectItem>
                       {SPACE_TYPE_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -3022,10 +1496,10 @@ export default function SpacesPage() {
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Tier</label>
                   <Select value={tierFilter} onValueChange={setTierFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả tier" />
+                      <SelectValue placeholder="Táº¥t cáº£ tier" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Tất cả</SelectItem>
+                      <SelectItem value="">Táº¥t cáº£</SelectItem>
                       {TIER_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -3034,13 +1508,13 @@ export default function SpacesPage() {
                 </div>
                 {/* GAP #3 */}
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Hình thức thuê</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">HÃ¬nh thá»©c thuÃª</label>
                   <Select value={leaseTermFilter} onValueChange={setLeaseTermFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Tất cả" />
+                      <SelectValue placeholder="Táº¥t cáº£" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Tất cả</SelectItem>
+                      <SelectItem value="">Táº¥t cáº£</SelectItem>
                       {LEASE_TERM_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -3058,22 +1532,22 @@ export default function SpacesPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-700">
-              Đã chọn {selectedIds.size} mặt bằng
+              ÄÃ£ chá»n {selectedIds.size} máº·t báº±ng
             </span>
             <Button variant="ghost" size="sm" onClick={() => selectAll(units.map(u => u.id))} className="text-gray-700">
-              Chọn tất cả ({units.length})
+              Chá»n táº¥t cáº£ ({units.length})
             </Button>
             <Button variant="ghost" size="sm" onClick={() => clearSelection()} className="text-gray-700">
-              Bỏ chọn
+              Bá» chá»n
             </Button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {selectedIds.size >= 2 && selectedIds.size <= 5 && (
               <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
-                <Columns size={14} /> So sánh
+                <Columns size={14} /> So sÃ¡nh
               </Button>
             )}
-            {/* GAP #2 — Gộp sảnh: chỉ hiện khi ≥2 unit được chọn */}
+            {/* GAP #2 â€” Gá»™p sáº£nh: chá»‰ hiá»‡n khi â‰¥2 unit Ä‘Æ°á»£c chá»n */}
             {selectedIds.size >= 2 && (
               <Button
                 variant="outline"
@@ -3081,17 +1555,17 @@ export default function SpacesPage() {
                 onClick={() => setMergeDialogOpen(true)}
                 className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
               >
-                <GitMerge size={14} /> Gộp sảnh
+                <GitMerge size={14} /> Gá»™p sáº£nh
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('status')} className="gap-1.5">
-              <RefreshCw size={14} /> Đổi trạng thái
+              <RefreshCw size={14} /> Äá»•i tráº¡ng thÃ¡i
             </Button>
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('category')} className="gap-1.5">
-              <Filter size={14} /> Đổi ngành hàng
+              <Filter size={14} /> Äá»•i ngÃ nh hÃ ng
             </Button>
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('rent')} className="gap-1.5">
-              <DollarSign size={14} /> Đổi giá thuê
+              <DollarSign size={14} /> Äá»•i giÃ¡ thuÃª
             </Button>
           </div>
         </div>
@@ -3159,7 +1633,7 @@ export default function SpacesPage() {
           {/* Map mode toolbar */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Map size={16} className="text-blue-600" /> Bản đồ số mặt bằng
+              <Map size={16} className="text-blue-600" /> Báº£n Ä‘á»“ sá»‘ máº·t báº±ng
             </div>
             {isAdmin && (
               <div className="flex rounded-lg border overflow-hidden text-xs ml-auto">
@@ -3167,13 +1641,13 @@ export default function SpacesPage() {
                   onClick={() => { setMapEditorMode(false); setMapEditorFloorId(null); }}
                   className={`px-3 py-1.5 transition-colors ${!mapEditorMode ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Xem bản đồ
+                  Xem báº£n Ä‘á»“
                 </button>
                 <button
                   onClick={() => setMapEditorMode(true)}
                   className={`px-3 py-1.5 transition-colors ${mapEditorMode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Chỉnh sửa sơ đồ
+                  Chá»‰nh sá»­a sÆ¡ Ä‘á»“
                 </button>
               </div>
             )}
@@ -3183,7 +1657,7 @@ export default function SpacesPage() {
             /* Editor: pick a floor first */
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-500">Chọn tầng để chỉnh sửa:</span>
+                <span className="text-xs text-gray-500">Chá»n táº§ng Ä‘á»ƒ chá»‰nh sá»­a:</span>
                 {floors.map((f: any) => (
                   <button
                     key={f.id}
@@ -3194,9 +1668,9 @@ export default function SpacesPage() {
                         : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
                     }`}
                   >
-                    {f.level} — {f.name}
+                    {f.level} â€” {f.name}
                     {f.floorPlanUrl ? (
-                      <span className="ml-1 text-green-400">✓</span>
+                      <span className="ml-1 text-green-400">âœ“</span>
                     ) : (
                       <span className="ml-1 text-gray-300">+</span>
                     )}
@@ -3207,7 +1681,7 @@ export default function SpacesPage() {
                     onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed border-blue-300 text-blue-500 hover:bg-blue-50 transition-all flex items-center gap-1"
                   >
-                    <Plus size={11} /> Thêm tầng
+                    <Plus size={11} /> ThÃªm táº§ng
                   </button>
                 )}
               </div>
@@ -3216,19 +1690,19 @@ export default function SpacesPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-400 text-sm border-2 border-dashed rounded-xl gap-3">
                   {!selectedMallId ? (
-                    <span className="text-center px-6">Vui lòng chọn một <strong className="text-gray-600">mall cụ thể</strong> ở header trước (không phải "Tất cả Mall")</span>
+                    <span className="text-center px-6">Vui lÃ²ng chá»n má»™t <strong className="text-gray-600">mall cá»¥ thá»ƒ</strong> á»Ÿ header trÆ°á»›c (khÃ´ng pháº£i "Táº¥t cáº£ Mall")</span>
                   ) : floors.length === 0 ? (
                     <>
-                      <span>Chưa có tầng nào trong mall này</span>
+                      <span>ChÆ°a cÃ³ táº§ng nÃ o trong mall nÃ y</span>
                       <button
                         onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                         className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                       >
-                        <Plus size={14} /> Thêm tầng đầu tiên
+                        <Plus size={14} /> ThÃªm táº§ng Ä‘áº§u tiÃªn
                       </button>
                     </>
                   ) : (
-                    <span>Chọn một tầng ở trên để bắt đầu chỉnh sửa sơ đồ</span>
+                    <span>Chá»n má»™t táº§ng á»Ÿ trÃªn Ä‘á»ƒ báº¯t Ä‘áº§u chá»‰nh sá»­a sÆ¡ Ä‘á»“</span>
                   )}
                 </div>
               )}
@@ -3244,14 +1718,14 @@ export default function SpacesPage() {
             ) : (
               <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-400 text-sm border-2 border-dashed rounded-xl">
                 <Map size={36} className="opacity-30" />
-                <p>Chưa có tầng nào trong mall này</p>
+                <p>ChÆ°a cÃ³ táº§ng nÃ o trong mall nÃ y</p>
               </div>
             )
           )}
         </div>
       ) : (
         <>
-          <div className="text-sm text-gray-400 mb-3">{data?.total ?? units.length} mặt bằng</div>
+          <div className="text-sm text-gray-400 mb-3">{data?.total ?? units.length} máº·t báº±ng</div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {units.map((unit) => (
               <UnitCard
@@ -3268,7 +1742,7 @@ export default function SpacesPage() {
           {units.length === 0 && (
             <div className="text-center py-16 text-gray-400">
               <Building2 size={48} className="mx-auto mb-3 opacity-20" />
-              <p className="font-medium">Không tìm thấy mặt bằng</p>
+              <p className="font-medium">KhÃ´ng tÃ¬m tháº¥y máº·t báº±ng</p>
               {selectedMallId && (
                 <Button
                   variant="outline"
@@ -3276,7 +1750,7 @@ export default function SpacesPage() {
                   className="mt-3 gap-2"
                   onClick={() => setCreateOpen(true)}
                 >
-                  <Plus size={14} /> Thêm mặt bằng đầu tiên
+                  <Plus size={14} /> ThÃªm máº·t báº±ng Ä‘áº§u tiÃªn
                 </Button>
               )}
             </div>
@@ -3311,8 +1785,8 @@ export default function SpacesPage() {
       {/* Delete confirm */}
       <ConfirmDialog
         open={!!deletingUnit}
-        title={`Xóa mặt bằng ${deletingUnit?.code}?`}
-        description={`Thao tác này sẽ ẩn mặt bằng "${deletingUnit?.code}" khỏi hệ thống. Dữ liệu lịch sử sẽ được giữ lại.`}
+        title={`XÃ³a máº·t báº±ng ${deletingUnit?.code}?`}
+        description={`Thao tÃ¡c nÃ y sáº½ áº©n máº·t báº±ng "${deletingUnit?.code}" khá»i há»‡ thá»‘ng. Dá»¯ liá»‡u lá»‹ch sá»­ sáº½ Ä‘Æ°á»£c giá»¯ láº¡i.`}
         onConfirm={() => deleteMutation.mutate(deletingUnit.id)}
         onCancel={() => setDeletingUnit(null)}
         loading={deleteMutation.isPending}
@@ -3329,8 +1803,8 @@ export default function SpacesPage() {
       {/* Delete floor confirm */}
       <ConfirmDialog
         open={!!deletingFloor}
-        title={`Xóa tầng ${deletingFloor?.name}?`}
-        description={`Thao tác này sẽ ẩn tầng "${deletingFloor?.name}" khỏi hệ thống. Các mặt bằng thuộc tầng này sẽ không bị xóa.`}
+        title={`XÃ³a táº§ng ${deletingFloor?.name}?`}
+        description={`Thao tÃ¡c nÃ y sáº½ áº©n táº§ng "${deletingFloor?.name}" khá»i há»‡ thá»‘ng. CÃ¡c máº·t báº±ng thuá»™c táº§ng nÃ y sáº½ khÃ´ng bá»‹ xÃ³a.`}
         onConfirm={() => deleteFloorMutation.mutate(deletingFloor.id)}
         onCancel={() => setDeletingFloor(null)}
         loading={deleteFloorMutation.isPending}
