@@ -33,6 +33,7 @@ import {
   STATUS_CONFIG, STATUS_ICONS, SPACE_TYPE_OPTIONS, TIER_OPTIONS,
   LEASE_TERM_OPTIONS, CATEGORIES, API_ORIGIN, mediaUrl, fmtDate, fmtMoney,
 } from './spaces.constants';
+import { useSpacesFilters } from '@/hooks/useSpacesFilters';
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
@@ -2634,10 +2635,21 @@ export default function SpacesPage() {
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'LEASING_MANAGER' || user?.role === 'MALL_DIRECTOR';
 
   // View & filters
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  // Khởi tạo từ query param ?floorId= khi điều hướng tới từ Admin > Cấu trúc không gian
-  const [floorFilter, setFloorFilter] = useState(() => searchParams.get('floorId') ?? '');
+  const {
+    search, setSearch,
+    statusFilter, setStatusFilter,
+    floorFilter, setFloorFilter,
+    minArea, setMinArea,
+    maxArea, setMaxArea,
+    minRent, setMinRent,
+    maxRent, setMaxRent,
+    categoryFilter, setCategoryFilter,
+    spaceTypeFilter, setSpaceTypeFilter,
+    tierFilter, setTierFilter,
+    leaseTermFilter, setLeaseTermFilter,
+    hasAdvancedFilters,
+    clearFilters,
+  } = useSpacesFilters();
   const view = (searchParams.get('view') as ViewMode) ?? 'grid';
   const setView = (v: ViewMode) => setSearchParams((prev) => {
     const next = new URLSearchParams(prev);
@@ -2647,17 +2659,8 @@ export default function SpacesPage() {
   const [mapEditorMode, setMapEditorMode] = useState(false);
   const [mapEditorFloorId, setMapEditorFloorId] = useState<string | null>(null);
   
-  // Advanced filters
+  // Advanced filter panel visibility (local UI state)
   const [showFilters, setShowFilters] = useState(false);
-  const [minArea, setMinArea] = useState('');
-  const [maxArea, setMaxArea] = useState('');
-  const [minRent, setMinRent] = useState('');
-  const [maxRent, setMaxRent] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  // GAP #3 / #4 / #6 — new filters
-  const [spaceTypeFilter, setSpaceTypeFilter] = useState('');
-  const [tierFilter, setTierFilter] = useState('');
-  const [leaseTermFilter, setLeaseTermFilter] = useState('');
 
   // Merge dialog (GAP #2)
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
@@ -2681,20 +2684,12 @@ export default function SpacesPage() {
   // Compare
   const [compareOpen, setCompareOpen] = useState(false);
 
-  // Reset floor filter when mall changes (bỏ qua lần chạy đầu để không xoá mất ?floorId= từ URL khi mới vào trang)
+  // Reset floor filter when mall changes
   const isFirstMallRender = useRef(true);
   useEffect(() => {
     if (isFirstMallRender.current) { isFirstMallRender.current = false; return; }
     setFloorFilter('');
   }, [selectedMallId]);
-
-  // Sau khi đã áp dụng ?floorId= từ URL, dọn query param để không giữ lại khi người dùng tự đổi bộ lọc
-  useEffect(() => {
-    if (searchParams.get('floorId')) {
-      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('floorId'); return next; }, { replace: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Clear selection when exiting selection mode
   useEffect(() => { if (!selectionMode) setSelectedIds(new Set()); }, [selectionMode]);
@@ -2711,8 +2706,6 @@ export default function SpacesPage() {
     const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
-
-  const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter || spaceTypeFilter || tierFilter || leaseTermFilter);
 
   const { data, isLoading } = useQuery({
     queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: leaseTermFilter }],
@@ -2751,7 +2744,7 @@ export default function SpacesPage() {
       qc.invalidateQueries({ queryKey: ['floors'] });
       toast({ title: 'Đã xóa tầng' });
       setDeletingFloor(null);
-      setFloorFilter((prev) => (prev === id ? '' : prev));
+      if (floorFilter === id) setFloorFilter('');
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
   });
@@ -2790,20 +2783,6 @@ export default function SpacesPage() {
     setSelectedIds(new Set(units.map(u => u.id)));
   };
   
-  const clearFilters = () => {
-    setStatusFilter('');
-    setFloorFilter('');
-    setSearch('');
-    setMinArea('');
-    setMaxArea('');
-    setMinRent('');
-    setMaxRent('');
-    setCategoryFilter('');
-    setSpaceTypeFilter('');
-    setTierFilter('');
-    setLeaseTermFilter('');
-  };
-
   return (
     <div>
       {/* Header */}

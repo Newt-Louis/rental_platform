@@ -860,7 +860,7 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
             title="Xem và quản lý mặt bằng của tầng này trong Spaces"
             onClick={() => {
               setSelectedMall(mallId);
-              navigate(`/spaces?floorId=${floor.id}`);
+              navigate(`/spaces?floor=${floor.id}`);
             }}
           >
             <ExternalLink size={11} /> Xem trong Spaces
