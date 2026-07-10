@@ -1109,7 +1109,16 @@ function ConvertBookingFromSpacesDialog({
           {/* ── Mô hình KD ── */}
           <div>
             <label className="text-xs font-medium text-gray-700 mb-1 block">Mô hình Kinh doanh</label>
-            <Input {...register('businessModel')} placeholder="VD: Gian hàng thời trang, Chuỗi F&B, Kiosk..." />
+            <Select value={watch('businessModel')} onValueChange={(v) => setValue('businessModel', v)}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Chọn mô hình kinh doanh..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SHOP">Gian hàng (SHOP)</SelectItem>
+                <SelectItem value="KIOSK">Kiosk</SelectItem>
+                <SelectItem value="POP_UP">Pop-up</SelectItem>
+                <SelectItem value="EVENT">Sự kiện (EVENT)</SelectItem>
+                <SelectItem value="CHAIN">Chuỗi (CHAIN)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* ── Giá thuê ── */}
@@ -2858,7 +2867,7 @@ export default function SpacesPage() {
               className="gap-1.5"
             >
               <CheckSquare size={14} />
-              {selectionMode ? 'Thoát' : 'Chọn nhiều'}
+              <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
             </Button>
           )}
           {selectedMallId && (

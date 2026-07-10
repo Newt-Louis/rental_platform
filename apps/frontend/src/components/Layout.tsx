@@ -122,9 +122,7 @@ export default function Layout() {
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
-          {!collapsed && (
-            <img src="/logo.png" alt="THISO" className="h-8 w-auto hidden md:block" />
-          )}
+          <img src="/logo.png" alt="THISO" className="h-8 w-auto hidden md:block" />
         </div>
 
         <div className="w-px h-5 bg-border shrink-0" />
