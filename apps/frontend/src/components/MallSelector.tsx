@@ -19,9 +19,11 @@ export function MallSelector() {
 
   const mallList: any[] = malls?.data ?? malls ?? [];
 
-  // Auto-select the first mall if not yet set and not admin
+  // Auto-select first mall if none set (non-admin), or if saved ID no longer exists
   useEffect(() => {
-    if (mallList.length > 0 && selectedMallId === null && user?.role !== 'ADMIN') {
+    if (mallList.length === 0) return;
+    const savedExists = selectedMallId && mallList.some((m: any) => m.id === selectedMallId);
+    if (!savedExists && user?.role !== 'ADMIN') {
       setSelectedMall(mallList[0].id, mallList[0].name);
     }
   }, [mallList, selectedMallId, user?.role, setSelectedMall]);

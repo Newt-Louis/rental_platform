@@ -28,12 +28,15 @@ const STATUS_CFG: Record<string, {
 
 type Pt = [number, number];
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+
 function resolveFileUrl(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   if (raw.startsWith('http')) return raw;
   const normalized = raw.replace(/\\/g, '/');
   const idx = normalized.indexOf('uploads/');
-  return idx !== -1 ? '/' + normalized.slice(idx) : undefined;
+  if (idx === -1) return undefined;
+  return `${API_ORIGIN}/${normalized.slice(idx)}`;
 }
 
 function fmtMoney(n?: number | null) {

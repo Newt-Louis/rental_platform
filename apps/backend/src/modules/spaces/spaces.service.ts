@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
@@ -353,6 +353,12 @@ export class SpacesService {
   }
 
   async createUnit(dto: CreateUnitDto) {
+    const existing = await this.prisma.unit.findUnique({
+      where: { mallId_code: { mallId: dto.mallId, code: dto.code } },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
+
     return this.prisma.unit.create({
       data: dto,
       include: {

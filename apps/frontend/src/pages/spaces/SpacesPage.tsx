@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi, contractsApi } from '@/api';
@@ -32,14 +32,24 @@ import type { Unit, UnitMedia, UnitSlotSummary } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  VACANT:       { label: 'Trống',          color: 'bg-red-100 text-red-700 border-red-200' },
-  BOOKING:      { label: 'Booking',        color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  NEGOTIATING:  { label: 'Thương thảo',   color: 'bg-orange-100 text-orange-700 border-orange-200' },
-  CONTRACTED:   { label: 'Hợp đồng',      color: 'bg-blue-100 text-gray-700 border-gray-200' },
-  UNDER_FITOUT: { label: 'Đang thi công', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-  OCCUPIED:     { label: 'Đang thuê',     color: 'bg-green-100 text-green-700 border-green-200' },
-  MERGED:       { label: 'Đã gộp',        color: 'bg-gray-100 text-gray-500 border-gray-200' },
+const STATUS_CONFIG: Record<string, { label: string; color: string; iconBg: string; leftBorder: string; textColor: string }> = {
+  VACANT:       { label: 'Trống',          color: 'bg-red-100 text-red-700 border-red-200',          iconBg: 'bg-red-50',    leftBorder: 'border-l-red-400',    textColor: 'text-red-500' },
+  BOOKING:      { label: 'Booking',        color: 'bg-amber-100 text-amber-700 border-amber-200',    iconBg: 'bg-amber-50',  leftBorder: 'border-l-amber-400',  textColor: 'text-amber-500' },
+  NEGOTIATING:  { label: 'Thương thảo',   color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50', leftBorder: 'border-l-orange-400', textColor: 'text-orange-500' },
+  CONTRACTED:   { label: 'Hợp đồng',      color: 'bg-blue-100 text-gray-700 border-gray-200',       iconBg: 'bg-blue-50',   leftBorder: 'border-l-blue-400',   textColor: 'text-blue-500' },
+  UNDER_FITOUT: { label: 'Đang thi công', color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50', leftBorder: 'border-l-purple-400', textColor: 'text-purple-500' },
+  OCCUPIED:     { label: 'Đang thuê',     color: 'bg-green-100 text-green-700 border-green-200',    iconBg: 'bg-green-50',  leftBorder: 'border-l-green-400',  textColor: 'text-green-500' },
+  MERGED:       { label: 'Đã gộp',        color: 'bg-gray-100 text-gray-500 border-gray-200',       iconBg: 'bg-gray-50',   leftBorder: 'border-l-gray-300',   textColor: 'text-gray-400' },
+};
+
+const STATUS_ICONS: Record<string, React.ReactNode> = {
+  VACANT:       <AlertCircle size={14} />,
+  BOOKING:      <BookmarkPlus size={14} />,
+  NEGOTIATING:  <Users size={14} />,
+  CONTRACTED:   <FileText size={14} />,
+  UNDER_FITOUT: <Building2 size={14} />,
+  OCCUPIED:     <CheckCircle size={14} />,
+  MERGED:       <GitMerge size={14} />,
 };
 
 // GAP #4
@@ -237,6 +247,7 @@ function CreateEditUnitDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: isEdit ? 'Đã cập nhật mặt bằng' : 'Đã tạo mặt bằng mới' });
       onClose();
     },
@@ -2458,6 +2469,17 @@ function CompareModal({
 // ─── Analytics View ───────────────────────────────────────────────────────────
 
 function AnalyticsView({ mallId }: { mallId?: string | null }) {
+  const { data: occupancyData } = useQuery({
+    queryKey: ['occupancy', mallId],
+    queryFn: () => spacesApi.occupancySummary(mallId),
+  });
+
+  const occ = occupancyData?.data ?? occupancyData;
+  const occTotal = occ
+    ? Object.entries(STATUS_CONFIG).reduce(
+        (s, [k]) => s + (occ[k === 'UNDER_FITOUT' ? 'underFitout' : k.toLowerCase()] ?? 0), 0)
+    : 0;
+
   const { data: rentData, isLoading: loadingRent } = useQuery({
     queryKey: ['rent-analytics', mallId],
     queryFn: () => spacesApi.rentAnalytics(mallId ?? undefined),
@@ -2485,6 +2507,58 @@ function AnalyticsView({ mallId }: { mallId?: string | null }) {
 
   return (
     <div className="space-y-6">
+      {/* Occupancy status tiles */}
+      {occ && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+          <Card className="relative border border-l-4 border-l-slate-400">
+            <CardContent className="p-3">
+              <span className="absolute top-2 right-2 min-w-[1.375rem] h-[1.375rem] px-1 rounded-full bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center">
+                {occTotal}
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center mb-2">
+                <BarChart3 size={14} className="text-slate-600" />
+              </div>
+              <div className="text-xs font-medium text-gray-500">Tất cả</div>
+            </CardContent>
+          </Card>
+          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+            const count = occ[key === 'UNDER_FITOUT' ? 'underFitout' : key.toLowerCase()] ?? 0;
+            const pct = occTotal > 0 ? Math.round((count / occTotal) * 100) : 0;
+            return (
+              <Card key={key} className={`relative border border-l-4 ${cfg.leftBorder} border-gray-100`}>
+                <CardContent className="p-3">
+                  <span className={`absolute top-2 right-2 min-w-[1.375rem] h-[1.375rem] px-1 rounded-full ${cfg.iconBg} ${cfg.textColor} text-xs font-bold flex items-center justify-center`}>
+                    {count}
+                  </span>
+                  <div className={`w-7 h-7 rounded-lg ${cfg.iconBg} ${cfg.textColor} flex items-center justify-center mb-2`}>
+                    {STATUS_ICONS[key]}
+                  </div>
+                  <div className="text-xs font-medium text-gray-500 truncate">{cfg.label}</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{pct}%</div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Occupancy bar */}
+      {occ && (
+        <div className="flex items-center gap-3 px-1">
+          <span className="text-xs text-gray-500 whitespace-nowrap">Lấp đầy</span>
+          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
+              style={{ width: `${occ.occupancyRate}%` }}
+            />
+          </div>
+          <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{occ.occupancyRate}%</span>
+          <span className="text-xs text-gray-400 whitespace-nowrap hidden sm:inline">
+            {(occ.leasedArea ?? 0).toLocaleString()} / {(occ.totalArea ?? 0).toLocaleString()} m²
+          </span>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -2646,7 +2720,12 @@ export default function SpacesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   // Khởi tạo từ query param ?floorId= khi điều hướng tới từ Admin > Cấu trúc không gian
   const [floorFilter, setFloorFilter] = useState(() => searchParams.get('floorId') ?? '');
-  const [view, setView] = useState<ViewMode>('grid');
+  const view = (searchParams.get('view') as ViewMode) ?? 'grid';
+  const setView = (v: ViewMode) => setSearchParams((prev) => {
+    const next = new URLSearchParams(prev);
+    next.set('view', v);
+    return next;
+  }, { replace: true });
   const [mapEditorMode, setMapEditorMode] = useState(false);
   const [mapEditorFloorId, setMapEditorFloorId] = useState<string | null>(null);
   
@@ -2693,7 +2772,9 @@ export default function SpacesPage() {
 
   // Sau khi đã áp dụng ?floorId= từ URL, dọn query param để không giữ lại khi người dùng tự đổi bộ lọc
   useEffect(() => {
-    if (searchParams.get('floorId')) setSearchParams({}, { replace: true });
+    if (searchParams.get('floorId')) {
+      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete('floorId'); return next; }, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2735,11 +2816,6 @@ export default function SpacesPage() {
     }),
   });
 
-  const { data: occupancy } = useQuery({
-    queryKey: ['occupancy', selectedMallId],
-    queryFn: () => spacesApi.occupancySummary(selectedMallId),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => spacesApi.deleteUnit(id),
     onSuccess: () => {
@@ -2776,7 +2852,6 @@ export default function SpacesPage() {
   });
 
   const units: Unit[] = data?.data ?? [];
-  const occ = occupancy?.data ?? occupancy;
 
   const unitIds = units.map((u) => u.id);
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({
@@ -2859,17 +2934,6 @@ export default function SpacesPage() {
               <BarChart3 size={14} /> <span className="hidden sm:inline">Analytics</span>
             </button>
           </div>
-          {view === 'grid' && (
-            <Button
-              variant={selectionMode ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setSelectionMode(!selectionMode)}
-              className="gap-1.5"
-            >
-              <CheckSquare size={14} />
-              <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
-            </Button>
-          )}
           {selectedMallId && (
             <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
               <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
@@ -2877,52 +2941,6 @@ export default function SpacesPage() {
           )}
         </div>
       </div>
-
-      {/* Occupancy stats */}
-      {occ && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-            <Card
-              key={key}
-              className={`cursor-pointer border-2 transition-all hover:shadow-sm ${
-                statusFilter === key ? 'border-blue-500 shadow-sm' : 'border-transparent'
-              }`}
-              onClick={() => setStatusFilter(statusFilter === key ? '' : key)}
-            >
-              <CardContent className="pt-4 pb-3 text-center">
-                <div className="text-2xl font-bold text-gray-900">
-                  {occ[key === 'UNDER_FITOUT' ? 'underFitout' : key.toLowerCase()] ?? 0}
-                </div>
-                <div className={`text-xs mt-1.5 font-medium px-2 py-0.5 rounded-full ${cfg.color}`}>
-                  {cfg.label}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Occupancy bar */}
-      {occ && (
-        <Card className="mb-4">
-          <CardContent className="pt-3 pb-3">
-            <div className="flex justify-between text-sm mb-1.5">
-              <span className="text-gray-600 font-medium">Tỷ lệ lấp đầy</span>
-              <span className="font-bold text-gray-700">{occ.occupancyRate}%</span>
-            </div>
-            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
-                style={{ width: `${occ.occupancyRate}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>{(occ.leasedArea ?? 0).toLocaleString()} m² đang thuê</span>
-              <span>{(occ.totalArea ?? 0).toLocaleString()} m² tổng diện tích</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Floor tabs */}
       {(floors.length > 0 || (isAdmin && selectedMallId)) && (
@@ -3013,6 +3031,15 @@ export default function SpacesPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              variant={selectionMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSelectionMode(!selectionMode)}
+              className="gap-1.5"
+            >
+              <CheckSquare size={14} />
+              <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
+            </Button>
             <Button
               variant={showFilters ? 'default' : 'outline'}
               size="sm"
@@ -3286,12 +3313,34 @@ export default function SpacesPage() {
                     )}
                   </button>
                 ))}
+                {selectedMallId && (
+                  <button
+                    onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed border-blue-300 text-blue-500 hover:bg-blue-50 transition-all flex items-center gap-1"
+                  >
+                    <Plus size={11} /> Thêm tầng
+                  </button>
+                )}
               </div>
               {mapEditorFloorId ? (
                 <MallMapEditor floorId={mapEditorFloorId} />
               ) : (
-                <div className="flex items-center justify-center h-64 text-gray-400 text-sm border-2 border-dashed rounded-xl">
-                  Chọn một tầng ở trên để bắt đầu chỉnh sửa sơ đồ
+                <div className="flex flex-col items-center justify-center h-64 text-gray-400 text-sm border-2 border-dashed rounded-xl gap-3">
+                  {!selectedMallId ? (
+                    <span className="text-center px-6">Vui lòng chọn một <strong className="text-gray-600">mall cụ thể</strong> ở header trước (không phải "Tất cả Mall")</span>
+                  ) : floors.length === 0 ? (
+                    <>
+                      <span>Chưa có tầng nào trong mall này</span>
+                      <button
+                        onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus size={14} /> Thêm tầng đầu tiên
+                      </button>
+                    </>
+                  ) : (
+                    <span>Chọn một tầng ở trên để bắt đầu chỉnh sửa sơ đồ</span>
+                  )}
                 </div>
               )}
             </div>

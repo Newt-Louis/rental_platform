@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsInt, Min, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsInt, Min, IsDateString, IsEnum } from 'class-validator';
+import { BusinessModelEnum } from '@prisma/client';
 
 export class CreateBookingDto {
   @ApiProperty({ description: 'ID của unit muốn đặt' })
@@ -167,10 +168,10 @@ export class ConvertToProposalDto {
   @IsNumber()
   escalationPercent?: number;
 
-  @ApiPropertyOptional({ description: 'Mô hình kinh doanh (Gian hàng, Chuỗi, Kiosk...)' })
+  @ApiPropertyOptional({ enum: BusinessModelEnum, description: 'Mô hình kinh doanh' })
   @IsOptional()
-  @IsString()
-  businessModel?: string;
+  @IsEnum(BusinessModelEnum)
+  businessModel?: BusinessModelEnum;
 
   @ApiPropertyOptional({ description: 'Phí Dịch vụ USD/m²/tháng' })
   @IsOptional()

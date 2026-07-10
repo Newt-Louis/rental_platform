@@ -25,12 +25,15 @@ const STATUS_COLOR: Record<string, { fill: string; stroke: string; label: string
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+
 function resolveFileUrl(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   if (raw.startsWith('http')) return raw;
   const normalized = raw.replace(/\\/g, '/');
   const idx = normalized.indexOf('uploads/');
-  return idx !== -1 ? '/' + normalized.slice(idx) : undefined;
+  if (idx === -1) return undefined;
+  return `${API_ORIGIN}/${normalized.slice(idx)}`;
 }
 
 function centroid(pts: Pt[]): Pt {
@@ -131,6 +134,16 @@ export function MallMapEditor({ floorId }: { floorId: string }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // Warn before leaving with unsaved positions
+  useEffect(() => {
+    const hasPendingData = Object.keys(pendingPositions).length > 0;
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasPendingData) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [pendingPositions]);
 
   const cancelDrawing = () => {
     setIsDrawing(false);

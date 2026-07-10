@@ -603,7 +603,7 @@ export class BookingService {
           depositAmount,
           totalContractValue,
           notes: dto.notes,
-          businessModel: dto.businessModel as any,
+          businessModel: dto.businessModel,
           serviceFeeSqm: dto.serviceFeeSqm ?? 0,
           businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
           rentCurrency: dto.rentCurrency ?? 'VND',
