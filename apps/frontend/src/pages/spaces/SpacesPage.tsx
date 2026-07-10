@@ -34,6 +34,7 @@ import {
   LEASE_TERM_OPTIONS, CATEGORIES, API_ORIGIN, mediaUrl, fmtDate, fmtMoney,
 } from './spaces.constants';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
+import { useSpacesStore } from '@/store/spaces.store';
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
@@ -2656,33 +2657,33 @@ export default function SpacesPage() {
     next.set('view', v);
     return next;
   }, { replace: true });
-  const [mapEditorMode, setMapEditorMode] = useState(false);
-  const [mapEditorFloorId, setMapEditorFloorId] = useState<string | null>(null);
-  
+  // Shared UI state from store
+  const {
+    selectedUnit, setSelectedUnit,
+    selectionMode, setSelectionMode,
+    selectedIds, toggleSelect, selectAll, clearSelection,
+    compareOpen, setCompareOpen,
+    mergeDialogOpen, setMergeDialogOpen,
+    mapEditorMode, setMapEditorMode,
+    mapEditorFloorId, setMapEditorFloorId,
+    reset: resetSpacesStore,
+  } = useSpacesStore();
+
   // Advanced filter panel visibility (local UI state)
   const [showFilters, setShowFilters] = useState(false);
 
-  // Merge dialog (GAP #2)
-  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
-  
-  // Selection & modals
-  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
+  // Selection & modals (local)
   const [editingUnit, setEditingUnit] = useState<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [deletingUnit, setDeletingUnit] = useState<any>(null);
 
-  // Floor management
+  // Floor management (local)
   const [floorDialogOpen, setFloorDialogOpen] = useState(false);
   const [editingFloor, setEditingFloor] = useState<any>(null);
   const [deletingFloor, setDeletingFloor] = useState<any>(null);
-  
-  // Bulk selection
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Bulk action panel (local)
   const [bulkActionOpen, setBulkActionOpen] = useState<'status' | 'category' | 'rent' | null>(null);
-  
-  // Compare
-  const [compareOpen, setCompareOpen] = useState(false);
 
   // Reset floor filter when mall changes
   const isFirstMallRender = useRef(true);
@@ -2692,7 +2693,10 @@ export default function SpacesPage() {
   }, [selectedMallId]);
 
   // Clear selection when exiting selection mode
-  useEffect(() => { if (!selectionMode) setSelectedIds(new Set()); }, [selectionMode]);
+  useEffect(() => { if (!selectionMode) clearSelection(); }, [selectionMode]);
+
+  // Reset store state when leaving the page
+  useEffect(() => () => { resetSpacesStore(); }, []);
 
   const { data: floorsData } = useQuery({
     queryKey: ['floors', selectedMallId],
@@ -2755,7 +2759,7 @@ export default function SpacesPage() {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       toast({ title: `Đã cập nhật ${result.updated} mặt bằng` });
-      setSelectedIds(new Set());
+      clearSelection();
       setSelectionMode(false);
       setBulkActionOpen(null);
     },
@@ -2770,18 +2774,6 @@ export default function SpacesPage() {
     queryFn: () => slotsApi.getSummaries(unitIds),
     enabled: unitIds.length > 0,
   });
-  
-  // Bulk selection helpers
-  const toggleSelect = (id: string) => {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedIds(newSet);
-  };
-  
-  const selectAll = () => {
-    setSelectedIds(new Set(units.map(u => u.id)));
-  };
   
   return (
     <div>
@@ -3068,10 +3060,10 @@ export default function SpacesPage() {
             <span className="text-sm font-medium text-gray-700">
               Đã chọn {selectedIds.size} mặt bằng
             </span>
-            <Button variant="ghost" size="sm" onClick={selectAll} className="text-gray-700">
+            <Button variant="ghost" size="sm" onClick={() => selectAll(units.map(u => u.id))} className="text-gray-700">
               Chọn tất cả ({units.length})
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())} className="text-gray-700">
+            <Button variant="ghost" size="sm" onClick={() => clearSelection()} className="text-gray-700">
               Bỏ chọn
             </Button>
           </div>
