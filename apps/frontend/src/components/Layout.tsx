@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsApi, approvalsApi } from '@/api';
@@ -9,7 +9,7 @@ import {
   Hammer, Ticket, Receipt, Cpu, Bot, PieChart,
   Settings, LogOut, Bell, ChevronLeft, ChevronRight, ShoppingBag,
   TrendingUp, BarChart3, Home, Megaphone, Globe, Store, BookmarkCheck, GitBranch,
-  UserCircle, ChevronDown, Sun, Moon,
+  UserCircle, ChevronDown, Sun, Moon, Menu, X,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
@@ -61,6 +61,11 @@ export default function Layout() {
   const { theme, toggleTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const location = useLocation();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Close drawer whenever user navigates
+  useEffect(() => { setMobileSidebarOpen(false); }, [location.pathname]);
   const isTenant = user?.role === 'TENANT';
   const role = user?.role;
 
@@ -102,14 +107,23 @@ export default function Layout() {
       <header className="h-14 shrink-0 z-50 bg-card border-b border-border shadow-md flex items-center px-6 gap-4">
         {/* Logo + sidebar toggle */}
         <div className="flex items-center gap-3 shrink-0">
+          {/* Hamburger — mobile only */}
+          <button
+            className="md:hidden p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Mở menu"
+          >
+            <Menu size={18} />
+          </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors hidden md:block"
+            title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
           {!collapsed && (
-            <img src="/logo.png" alt="THISO" className="h-8 w-auto" />
+            <img src="/logo.png" alt="THISO" className="h-8 w-auto hidden md:block" />
           )}
         </div>
 
@@ -202,13 +216,39 @@ export default function Layout() {
       {/* Body: pl-0 để sidebar sát viền trái, gap-4 và p-4 cho phần còn lại */}
       <div className="flex flex-1 overflow-hidden pt-4 pr-4 pb-4 gap-4">
 
+        {/* Mobile backdrop */}
+        {mobileSidebarOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
         {/* Sidebar — sát viền trái, bo góc phải */}
         <aside
           className={cn(
-            'flex flex-col bg-gray-900 text-white transition-all duration-300 shrink-0 overflow-hidden rounded-r-xl',
-            collapsed ? 'w-16' : 'w-60',
+            'flex flex-col bg-gray-900 text-white overflow-hidden transition-all duration-300',
+            // Mobile: fixed drawer overlay
+            'fixed inset-y-0 left-0 z-50 w-64',
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+            // Desktop: static in flex flow, collapsible
+            'md:relative md:translate-x-0 md:z-auto md:shrink-0 md:rounded-r-xl',
+            collapsed ? 'md:w-16' : 'md:w-60',
           )}
         >
+          {/* Mobile drawer header */}
+          <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0">
+            <img src="/logo.png" alt="THISO" className="h-7 w-auto" />
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+              aria-label="Đóng menu"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
           <nav className="flex-1 overflow-y-auto py-4 scrollbar-hide">
             {isTenant ? (
               filteredTenantNav.map((item) => {
