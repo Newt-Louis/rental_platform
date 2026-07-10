@@ -1640,9 +1640,10 @@ function UnitDetailSheet({
       onClose={onClose}
       title={d?.code ?? ''}
       subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' · ' + d.zone.name : ''}`}
+      className="w-full sm:w-[720px]"
     >
       {d && (
-        <div className="px-6 pb-8 space-y-4 pt-4">
+        <div className="px-3 sm:px-6 pb-8 space-y-4 pt-4">
           {/* Status + category */}
           <div className="flex items-center gap-2 flex-wrap">
             {cfg && (
@@ -2793,12 +2794,12 @@ export default function SpacesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mall Spaces</h1>
           <p className="text-sm text-gray-500 mt-1">Quản lý mặt bằng và tình trạng cho thuê</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white">
             <button
@@ -2806,32 +2807,36 @@ export default function SpacesPage() {
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'grid' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
+              title="Danh sách"
             >
-              <LayoutGrid size={14} /> Danh sách
+              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sách</span>
             </button>
             <button
               onClick={() => setView('floor')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'floor' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
+              title="Sơ đồ tầng"
             >
-              <Map size={14} /> Sơ đồ tầng
+              <Map size={14} /> <span className="hidden sm:inline">Sơ đồ tầng</span>
             </button>
             <button
               onClick={() => { setView('map'); setMapEditorMode(false); }}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'map' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
+              title="Bản đồ số"
             >
-              <Map size={14} /> Bản đồ số
+              <Map size={14} /> <span className="hidden sm:inline">Bản đồ số</span>
             </button>
             <button
               onClick={() => setView('analytics')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
+              title="Analytics"
             >
-              <BarChart3 size={14} /> Analytics
+              <BarChart3 size={14} /> <span className="hidden sm:inline">Analytics</span>
             </button>
           </div>
           {view === 'grid' && (
@@ -2846,8 +2851,8 @@ export default function SpacesPage() {
             </Button>
           )}
           {selectedMallId && (
-            <Button onClick={() => setCreateOpen(true)} className="gap-2">
-              <Plus size={15} /> Thêm mặt bằng
+            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
+              <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
             </Button>
           )}
         </div>
