@@ -2983,8 +2983,8 @@ export default function SpacesPage() {
       {/* Filters (grid view) */}
       {view === 'grid' && (
         <div className="space-y-3 mb-4">
-          <div className="flex gap-3 flex-wrap">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+            <div className="relative w-full sm:flex-1 sm:max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
                 placeholder="Tìm mã, tên mặt bằng..."
@@ -2994,7 +2994,7 @@ export default function SpacesPage() {
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-full sm:w-44">
                 <SelectValue placeholder="Tất cả trạng thái" />
               </SelectTrigger>
               <SelectContent>
@@ -3130,7 +3130,7 @@ export default function SpacesPage() {
 
       {/* Bulk Selection Bar */}
       {selectionMode && selectedIds.size > 0 && view === 'grid' && (
-        <div className="flex items-center justify-between p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-700">
               Đã chọn {selectedIds.size} mặt bằng
@@ -3142,7 +3142,7 @@ export default function SpacesPage() {
               Bỏ chọn
             </Button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {selectedIds.size >= 2 && selectedIds.size <= 5 && (
               <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
                 <Columns size={14} /> So sánh
@@ -3232,7 +3232,7 @@ export default function SpacesPage() {
       ) : view === 'map' ? (
         <div className="space-y-3">
           {/* Map mode toolbar */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Map size={16} className="text-blue-600" /> Bản đồ số mặt bằng
             </div>
