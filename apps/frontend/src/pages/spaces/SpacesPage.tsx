@@ -89,6 +89,14 @@ const CATEGORIES = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+
+function mediaUrl(fileUrl?: string | null): string {
+  if (!fileUrl) return '';
+  if (fileUrl.startsWith('http')) return fileUrl;
+  return `${API_ORIGIN}${fileUrl}`;
+}
+
 function fmtDate(d?: string | null) {
   if (!d) return null;
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -869,6 +877,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
     mutationFn: (mediaId: string) => spacesApi.deleteUnitMedia(unitId, mediaId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
+      qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
       toast({ title: 'Đã xóa media' });
     },
     onError: () => toast({ title: 'Lỗi xóa media', variant: 'destructive' }),
@@ -891,13 +900,15 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
       const fd = new FormData();
       fd.append('file', file);
       const ext = file.name.split('.').pop()?.toLowerCase();
-      const type = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext ?? '') ? 'PHOTO'
+      const typeByExt = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext ?? '') ? 'PHOTO'
         : ['pdf'].includes(ext ?? '') ? 'BROCHURE'
         : ['mp4', 'mov', 'avi'].includes(ext ?? '') ? 'VIDEO'
         : 'PHOTO';
+      const type = mediaType || typeByExt;
       fd.append('type', type);
       await spacesApi.uploadUnitMedia(unitId, fd);
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
+      qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
       toast({ title: 'Đã tải lên thành công' });
     } catch {
       toast({ title: 'Lỗi tải lên', variant: 'destructive' });
@@ -958,9 +969,9 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                 m.isCover ? 'border-amber-400' : 'border-transparent hover:border-gray-200'
               }`}
             >
-              {m.type === 'PHOTO' || m.type === 'RENDER_3D' ? (
+              {m.type === 'PHOTO' || m.type === 'RENDER_3D' || m.type === 'FLOOR_PLAN' || m.type === 'SITE_MAP' ? (
                 <img
-                  src={m.fileUrl}
+                  src={mediaUrl(m.fileUrl)}
                   alt={m.caption ?? m.fileName}
                   className="w-full aspect-square object-cover bg-gray-100"
                 />
@@ -1690,7 +1701,7 @@ function UnitDetailSheet({
             <FloorPlanEditor
               unitId={d.id}
               unitStatus={d.status}
-              floorPlanUrl={d.media?.find((m: any) => m.type === 'FLOOR_PLAN')?.fileUrl}
+              floorPlanUrl={mediaUrl(d.media?.find((m: any) => m.type === 'FLOOR_PLAN')?.fileUrl)}
               unitArea={d.areaNLA}
             />
           )}
@@ -1896,14 +1907,14 @@ function UnitDetailSheet({
             <Button
               variant="outline"
               className="flex-1 gap-2"
-              onClick={() => { onEdit(d); onClose(); }}
+              onClick={() => { onEdit(d); }}
             >
               <Pencil size={14} /> Sửa
             </Button>
             <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
-              onClick={() => { onDelete(d); onClose(); }}
+              onClick={() => { onDelete(d); }}
             >
               <Trash2 size={14} /> Xóa
             </Button>
@@ -2352,7 +2363,7 @@ function CompareModal({
                       <th key={u.id} className="text-left py-2 px-3 font-semibold">
                         {u.code}
                         {u.media?.[0]?.fileUrl && (
-                          <img src={u.media[0].fileUrl} alt="" className="w-20 h-14 object-cover rounded mt-1" />
+                          <img src={mediaUrl(u.media[0].fileUrl)} alt="" className="w-20 h-14 object-cover rounded mt-1" />
                         )}
                       </th>
                     ))}
@@ -3326,12 +3337,12 @@ export default function SpacesPage() {
         </>
       )}
 
-      {/* Unit detail sheet — hidden when edit/delete dialogs are open */}
+      {/* Unit detail sheet */}
       <UnitDetailSheet
-        unit={editingUnit || deletingUnit ? null : selectedUnit}
+        unit={selectedUnit}
         onClose={() => setSelectedUnit(null)}
-        onEdit={(u) => { setSelectedUnit(null); setEditingUnit(u); }}
-        onDelete={(u) => { setSelectedUnit(null); setDeletingUnit(u); }}
+        onEdit={(u) => setEditingUnit(u)}
+        onDelete={(u) => setDeletingUnit(u)}
       />
 
       {/* Create unit dialog */}

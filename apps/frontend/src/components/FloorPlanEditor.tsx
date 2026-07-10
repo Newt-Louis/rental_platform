@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { slotsApi } from '@/api';
+import { slotsApi, spacesApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1040,10 +1040,16 @@ interface DrawState {
   currentY: number;
 }
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+function mediaUrl(url?: string | null) {
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${API_ORIGIN}${url}`;
+}
+
 export function FloorPlanEditor({
   unitId,
   unitStatus,
-  floorPlanUrl,
+  floorPlanUrl: floorPlanUrlProp,
   unitArea,
 }: {
   unitId: string;
@@ -1054,6 +1060,17 @@ export function FloorPlanEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const { data: floorPlanMedia } = useQuery({
+    queryKey: ['unit-media', unitId, 'FLOOR_PLAN'],
+    queryFn: () => spacesApi.listUnitMedia(unitId, 'FLOOR_PLAN'),
+    enabled: !!unitId,
+  });
+  const floorPlanList: any[] = (floorPlanMedia as any[]) ?? [];
+  const [selectedFloorPlanIdx, setSelectedFloorPlanIdx] = useState(0);
+  const floorPlanUrl = mediaUrl(
+    floorPlanList[selectedFloorPlanIdx]?.fileUrl ?? floorPlanUrlProp,
+  );
 
   const bookable = !unitStatus || !UNBOOKABLE_STATUSES[unitStatus];
   const unbookableReason = unitStatus && UNBOOKABLE_STATUSES[unitStatus]
@@ -1263,6 +1280,26 @@ export function FloorPlanEditor({
           </span>
         </div>
       </div>
+
+      {/* Floor plan selector — chỉ hiện khi có nhiều hơn 1 ảnh */}
+      {floorPlanList.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-400 shrink-0">Nền:</span>
+          {floorPlanList.map((m, i) => (
+            <button
+              key={m.id}
+              onClick={() => setSelectedFloorPlanIdx(i)}
+              className={`px-2 py-1 rounded text-xs border transition-colors ${
+                selectedFloorPlanIdx === i
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+              }`}
+            >
+              {m.caption || m.fileName || `Ảnh ${i + 1}`}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Floor plan + SVG overlay */}
       <div
