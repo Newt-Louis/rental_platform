@@ -29,92 +29,10 @@ import {
   GitMerge, Scissors, BadgeCheck,
 } from 'lucide-react';
 import type { Unit, UnitMedia, UnitSlotSummary } from '@/types';
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; iconBg: string; leftBorder: string; textColor: string }> = {
-  VACANT:       { label: 'Trống',          color: 'bg-red-100 text-red-700 border-red-200',          iconBg: 'bg-red-50',    leftBorder: 'border-l-red-400',    textColor: 'text-red-500' },
-  BOOKING:      { label: 'Booking',        color: 'bg-amber-100 text-amber-700 border-amber-200',    iconBg: 'bg-amber-50',  leftBorder: 'border-l-amber-400',  textColor: 'text-amber-500' },
-  NEGOTIATING:  { label: 'Thương thảo',   color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50', leftBorder: 'border-l-orange-400', textColor: 'text-orange-500' },
-  CONTRACTED:   { label: 'Hợp đồng',      color: 'bg-blue-100 text-gray-700 border-gray-200',       iconBg: 'bg-blue-50',   leftBorder: 'border-l-blue-400',   textColor: 'text-blue-500' },
-  UNDER_FITOUT: { label: 'Đang thi công', color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50', leftBorder: 'border-l-purple-400', textColor: 'text-purple-500' },
-  OCCUPIED:     { label: 'Đang thuê',     color: 'bg-green-100 text-green-700 border-green-200',    iconBg: 'bg-green-50',  leftBorder: 'border-l-green-400',  textColor: 'text-green-500' },
-  MERGED:       { label: 'Đã gộp',        color: 'bg-gray-100 text-gray-500 border-gray-200',       iconBg: 'bg-gray-50',   leftBorder: 'border-l-gray-300',   textColor: 'text-gray-400' },
-};
-
-const STATUS_ICONS: Record<string, React.ReactNode> = {
-  VACANT:       <AlertCircle size={14} />,
-  BOOKING:      <BookmarkPlus size={14} />,
-  NEGOTIATING:  <Users size={14} />,
-  CONTRACTED:   <FileText size={14} />,
-  UNDER_FITOUT: <Building2 size={14} />,
-  OCCUPIED:     <CheckCircle size={14} />,
-  MERGED:       <GitMerge size={14} />,
-};
-
-// GAP #4
-const SPACE_TYPE_OPTIONS = [
-  { value: 'RETAIL_UNIT',    label: 'Sảnh bán lẻ' },
-  { value: 'LED',            label: 'Bảng LED' },
-  { value: 'ESCALATOR_WRAP', label: 'Thang cuốn' },
-  { value: 'KIOSK_EVENT',   label: 'Kiosk / Sự kiện' },
-  { value: 'ADVERTISING',   label: 'Quảng cáo' },
-  { value: 'SERVICE',       label: 'Dịch vụ' },
-];
-
-// GAP #6
-const TIER_OPTIONS = [
-  { value: 'A', label: 'Tier A — Prime' },
-  { value: 'B', label: 'Tier B — Standard' },
-  { value: 'C', label: 'Tier C — Value' },
-];
-
-// GAP #3
-const LEASE_TERM_OPTIONS = [
-  { value: 'LONG',  label: 'Dài hạn (3-5 năm)' },
-  { value: 'SHORT', label: 'Ngắn hạn' },
-];
-
-const CATEGORIES = [
-  'F&B - Ẩm thực',
-  'Café & Trà',
-  'Thời trang',
-  'Giày dép & Túi xách',
-  'Phụ kiện & Trang sức',
-  'Làm đẹp & Spa',
-  'Điện tử & Công nghệ',
-  'Giải trí & Vui chơi',
-  'Thể thao & Fitness',
-  'Siêu thị & FMCG',
-  'Cửa hàng tiện lợi',
-  'Trang trí nội thất',
-  'Giáo dục & Trẻ em',
-  'Sức khỏe & Dược phẩm',
-  'Dịch vụ tài chính',
-  'Du lịch & Dịch vụ',
-  'Sách & Văn phòng phẩm',
-  'Thú cưng',
-  'Khác',
-];
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
-
-function mediaUrl(fileUrl?: string | null): string {
-  if (!fileUrl) return '';
-  if (fileUrl.startsWith('http')) return fileUrl;
-  return `${API_ORIGIN}${fileUrl}`;
-}
-
-function fmtDate(d?: string | null) {
-  if (!d) return null;
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-function fmtMoney(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫/m²';
-}
+import {
+  STATUS_CONFIG, STATUS_ICONS, SPACE_TYPE_OPTIONS, TIER_OPTIONS,
+  LEASE_TERM_OPTIONS, CATEGORIES, API_ORIGIN, mediaUrl, fmtDate, fmtMoney,
+} from './spaces.constants';
 
 // ─── Confirm Dialog ───────────────────────────────────────────────────────────
 
