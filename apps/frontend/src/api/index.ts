@@ -95,6 +95,11 @@ export const spacesApi = {
     api.patch(`/spaces/units/${unitId}/map-position`, pos).then((r) => r.data),
   clearUnitMapPosition: (unitId: string) =>
     api.delete(`/spaces/units/${unitId}/map-position`).then((r) => r.data),
+  // Merge / Split (GAP #2)
+  mergeUnits: (data: { unitIds: string[]; code: string; name?: string }) =>
+    api.post('/spaces/units/merge', data).then((r) => r.data),
+  splitUnit: (unitId: string) =>
+    api.post(`/spaces/units/${unitId}/split`).then((r) => r.data),
 };
 
 // CRM - Leads

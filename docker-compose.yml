@@ -12,7 +12,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-leasing_platform}
       TZ: Asia/Ho_Chi_Minh
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-data:/var/lib/postgresql/data
       - ./docker/init-db:/docker-entrypoint-initdb.d:ro
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -147,8 +147,6 @@ networks:
 # Volumes
 # ===========================================
 volumes:
-  postgres_data:
-    name: leasing-postgres-data
   redis_data:
     name: leasing-redis-data
   uploads_data:

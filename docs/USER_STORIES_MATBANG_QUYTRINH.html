@@ -1,0 +1,1734 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>User Stories — Mặt bằng & Quy trình bán hàng — THISO Leasing</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --card: #fff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --primary: #2563eb;
+    --primary-soft: #dbeafe;
+    --success: #10b981;
+    --success-soft: #d1fae5;
+    --warning: #f59e0b;
+    --warning-soft: #fef3c7;
+    --danger: #ef4444;
+    --danger-soft: #fee2e2;
+    --p0: #dc2626;
+    --p1: #ea580c;
+    --p2: #ca8a04;
+    --p3: #16a34a;
+    --p4: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    padding: 24px;
+  }
+  header {
+    max-width: 1280px;
+    margin: 0 auto 24px;
+    background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+    color: #fff;
+    padding: 28px 32px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+  }
+  header h1 {
+    font-size: 26px;
+    margin-bottom: 8px;
+  }
+  header p {
+    font-size: 14px;
+    opacity: 0.9;
+  }
+  .stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    backdrop-filter: blur(10px);
+  }
+  .stat strong { font-size: 18px; margin-right: 4px; }
+  .container { max-width: 1280px; margin: 0 auto; }
+  .toolbar {
+    background: var(--card);
+    padding: 16px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    border: 1px solid var(--border);
+  }
+  .toolbar label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .filter-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .filter-btn {
+    background: #f1f5f9;
+    border: 1px solid transparent;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text);
+  }
+  .filter-btn:hover { background: #e2e8f0; }
+  .filter-btn.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+  #search {
+    flex: 1;
+    min-width: 200px;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  section.module {
+    background: var(--card);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .module-header {
+    background: #f8fafc;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .module-header h2 {
+    font-size: 18px;
+    color: var(--primary);
+  }
+  .module-header .count {
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--primary-soft);
+    color: var(--primary);
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  .stories { padding: 12px; }
+  .story {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    transition: box-shadow 0.15s;
+  }
+  .story:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .story-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .story-id {
+    font-family: "SF Mono", Monaco, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    background: var(--primary-soft);
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .story-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    min-width: 250px;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.status-done { background: var(--success-soft); color: #047857; }
+  .badge.status-partial { background: var(--warning-soft); color: #b45309; }
+  .badge.status-missing { background: var(--danger-soft); color: #b91c1c; }
+  .badge.p-P0 { background: #fecaca; color: var(--p0); }
+  .badge.p-P1 { background: #fed7aa; color: var(--p1); }
+  .badge.p-P2 { background: #fef08a; color: var(--p2); }
+  .badge.p-P3 { background: #bbf7d0; color: var(--p3); }
+  .badge.p-P4 { background: #e2e8f0; color: var(--p4); }
+  .us-block {
+    background: #f8fafc;
+    border-left: 3px solid var(--primary);
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .us-block b { color: var(--primary); }
+  .ac-list {
+    margin-top: 10px;
+    padding-left: 4px;
+  }
+  .ac-list h4 {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+  .ac-list ul { list-style: none; padding: 0; }
+  .ac-list li {
+    padding: 3px 0 3px 22px;
+    position: relative;
+    font-size: 13px;
+    color: #334155;
+  }
+  .ac-list li::before {
+    content: "✓";
+    position: absolute;
+    left: 4px;
+    color: var(--success);
+    font-weight: 700;
+  }
+  .meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e8f0;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .meta-item b { color: #334155; }
+  .hidden { display: none !important; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .toolbar, header .stats { display: none; }
+    section.module { break-inside: avoid; page-break-inside: avoid; }
+    .story { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>User Stories — Mặt bằng &amp; Quy trình bán hàng</h1>
+  <p>THISO Leasing Platform · Cập nhật 2026-07-09 · Nguồn: Meeting 05.06.2026 + <code>docs/</code></p>
+  <div class="stats">
+    <div class="stat"><strong>88</strong> user stories</div>
+    <div class="stat"><strong>7</strong> modules</div>
+    <div class="stat" style="background: rgba(220, 38, 38, 0.3);"><strong id="cnt-p0">0</strong> P0</div>
+    <div class="stat" style="background: rgba(234, 88, 12, 0.3);"><strong id="cnt-p1">0</strong> P1</div>
+    <div class="stat" style="background: rgba(16, 185, 129, 0.3);"><strong id="cnt-done">0</strong> ✅ Done</div>
+    <div class="stat" style="background: rgba(245, 158, 11, 0.3);"><strong id="cnt-partial">0</strong> 🟡 Partial</div>
+    <div class="stat" style="background: rgba(239, 68, 68, 0.3);"><strong id="cnt-missing">0</strong> ❌ Missing</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="toolbar">
+    <div class="filter-group">
+      <label>Trạng thái:</label>
+      <button class="filter-btn active" data-filter="status" data-value="all">Tất cả</button>
+      <button class="filter-btn" data-filter="status" data-value="missing">❌ Missing</button>
+      <button class="filter-btn" data-filter="status" data-value="partial">🟡 Partial</button>
+      <button class="filter-btn" data-filter="status" data-value="done">✅ Done</button>
+    </div>
+    <div class="filter-group">
+      <label>Priority:</label>
+      <button class="filter-btn active" data-filter="priority" data-value="all">All</button>
+      <button class="filter-btn" data-filter="priority" data-value="P0">P0</button>
+      <button class="filter-btn" data-filter="priority" data-value="P1">P1</button>
+      <button class="filter-btn" data-filter="priority" data-value="P2">P2</button>
+      <button class="filter-btn" data-filter="priority" data-value="P3">P3</button>
+      <button class="filter-btn" data-filter="priority" data-value="P4">P4</button>
+    </div>
+    <input type="text" id="search" placeholder="🔍 Tìm theo tên US, module, mô tả...">
+  </div>
+
+  <!-- ============ MODULE 1: MẶT BẰNG ============ -->
+  <section class="module" data-module="spaces">
+    <div class="module-header">
+      <h2>🏢 Tab Mặt bằng — <code>/spaces</code></h2>
+      <span class="count">29 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-01</span>
+          <span class="story-title">Xem thông tin mặt bằng cơ bản</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Nhân viên leasing, <b>I want</b> xem mã lô / diện tích / giá / trạng thái mặt bằng, <b>so that</b> tôi có thể nắm nhanh tình trạng mặt bằng khi tư vấn khách.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Grid view hiển thị code, areaGFA, areaNLA, baseRentPerSqm, status</li>
+            <li>Status màu hóa theo enum VACANT/BOOKING/NEGOTIATING/CONTRACTED/UNDER_FITOUT/OCCUPIED</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span><span class="meta-item"><b>Module:</b> Mặt bằng</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-02</span>
+          <span class="story-title">Gộp / tách sảnh</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> gộp nhiều unit nhỏ thành 1 unit lớn (và ngược lại), <b>so that</b> tôi có thể cho khách thuê diện tích lớn khi 1 unit đơn không đủ.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>API <code>POST /spaces/units/merge</code> với danh sách unitIds</li>
+            <li>Unit gộp tự tính <code>areaGFA/areaNLA</code> = tổng các unit con</li>
+            <li>Unit con chuyển sang <code>isActive=false</code>, giữ history</li>
+            <li>API <code>POST /spaces/units/:id/split</code> để tách ngược</li>
+            <li>Ghi vào <code>UnitHistory</code> mọi lần merge/split</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "có gộp sảnh"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-03</span>
+          <span class="story-title">Phân loại sảnh dài hạn / ngắn hạn</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn (a.Biên), <b>I want</b> chỉ thấy sảnh cho phép cho thuê ngắn hạn, <b>so that</b> tránh book nhầm sảnh chỉ dành cho dài hạn.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Unit có enum <code>leaseTermType</code>: <code>LONG</code> | <code>SHORT</code> (default <code>LONG</code>)</li>
+            <li>Sảnh <code>LONG</code> <b>được</b> cho thuê ngắn hạn (khi trống)</li>
+            <li>Sảnh <code>SHORT</code> <b>không</b> được cho thuê dài hạn</li>
+            <li>Filter trên SpacesPage theo <code>leaseTermType</code></li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "sảnh dài hạn có thể cho thuê ngắn hạn và k ngược lại"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-04</span>
+          <span class="story-title">Loại mặt bằng đặc biệt (LED / thang cuốn / sự kiện / quảng cáo)</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn, <b>I want</b> phân loại các loại mặt bằng đặc biệt (LED, thang cuốn, sự kiện, quảng cáo), <b>so that</b> tôi có thể chào thuê các loại dịch vụ ngoài mặt bằng retail thông thường.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Enum <code>Unit.spaceType</code>: RETAIL_UNIT, LED, ESCALATOR_WRAP, KIOSK_EVENT, ADVERTISING, SERVICE</li>
+            <li>Filter và group SpacesPage theo spaceType</li>
+            <li>Pricing khác nhau theo spaceType</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "mặt bằng, led, dịch vụ, thang cuốn" + "mô hình: sự kiện, quảng cáo, led"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-05</span>
+          <span class="story-title">Sảnh linh động — thuê theo m²</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> book sảnh theo diện tích m² thực tế (không cố định), <b>so that</b> khách có thể thuê 30m² trong 1 zone 200m² thay vì phải thuê nguyên.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Unit có flag <code>isFlexibleArea</code> + <code>minArea/maxArea</code></li>
+            <li>Booking form cho phép nhập <code>bookedArea</code> tự do trong khoảng min-max</li>
+            <li>Pricing = <code>bookedArea × rentPerSqm</code></li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "sảnh có thể linh động k cố định, thuê theo diện tích"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-06</span>
+          <span class="story-title">Sảnh phân 3 cấp (tier)</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> phân loại sảnh theo 3 cấp (A/B/C) tương ứng vị trí đắc địa, <b>so that</b> áp dụng bảng giá 3 mức đúng theo cấp mặt bằng.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Unit.tier enum: A / B / C</li>
+            <li>CategoryMallPricing extend theo tier</li>
+            <li>Hiển thị tier badge trên SpacesPage</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "sảnh 3 cấp"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-07</span>
+          <span class="story-title">Diện tích HĐ vs diện tích thực tế</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> ghi nhận riêng "diện tích trên HĐ" và "diện tích thực tế đo đạc sau bàn giao", <b>so that</b> có thể xuất hóa đơn theo diện tích thực tế và tra soát chênh lệch.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Contract.contractedArea (chốt lúc ký)</li>
+            <li>Contract.actualArea (nhập sau bàn giao đo đạc)</li>
+            <li>Report chênh lệch và impact financials</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT ("Diện tích trên HĐT: 1,115 / Thực tế: 1,375") + Tờ Trình XN mục 6</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-08</span>
+          <span class="story-title">Ngành hàng &amp; mô hình kinh doanh</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Executive, <b>I want</b> chọn mô hình KD của khách (Shop/Kiosk/Popup/Event/Chain) từ enum, <b>so that</b> data chuẩn để filter và report.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Enum <code>businessModel</code>: SHOP, KIOSK, POP_UP, EVENT, CHAIN</li>
+            <li>Migrate free-text businessModel → enum</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "mô hình kinh doanh (kiot, cửa hàng)"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-09</span>
+          <span class="story-title">Media / floor plan / video</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> upload ảnh / floor plan / video / brochure của mặt bằng, <b>so that</b> gửi khách tham khảo hiệu quả.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (đã có UnitMedia)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-10</span>
+          <span class="story-title">Digital map interactive</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> tương tác với bản đồ tầng để chọn mặt bằng, <b>so that</b> trực quan khi làm việc với khách.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (đã có mapPolygon)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-11</span>
+          <span class="story-title">Import unit hàng loạt</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Admin, <b>I want</b> import danh sách unit từ Excel/CSV, <b>so that</b> setup mall mới nhanh.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (đã có UnitImportLog)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-12</span>
+          <span class="story-title">Giá thuê config theo mall × ngành hàng</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> config bảng giá theo mall × ngành hàng × tầng × zone, <b>so that</b> Sale biết ngưỡng chào thuê hợp lệ.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "giá thuê config theo từng mall"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-13</span>
+          <span class="story-title">Cùng sảnh — 2 giá dài / ngắn hạn</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> 1 sảnh có 2 mức giá riêng cho dài hạn (VND/m²/tháng) và ngắn hạn (VND/m²/ngày), <b>so that</b> flexible chào thuê theo nhu cầu khách.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>UnitSlot tự tạo cho unit có <code>leaseTermType=SHORT</code>; unit <code>LONG</code> tạo slot on-demand</li>
+            <li>SpacesPage hiển thị cả 2 giá</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "cùng sảnh có thể cho thuê ngắn dài mà có giá khác nhau"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-14</span>
+          <span class="story-title">Giá khách mới vs khách đã thuê</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn, <b>I want</b> khách đã từng thuê tự động được giảm giá loyalty, <b>so that</b> giữ chân khách thường xuyên.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>SlotPricingRule ruleType mới: EXISTING_TENANT_DISCOUNT, LOYALTY_TIER</li>
+            <li>Auto-check khách đã có Contract active hoặc SlotBooking COMPLETED trước đó</li>
+            <li>Discount % config được</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "Khách chưa thuê có giá khác, đã thuê có giá khác" + "giảm giá cho khách thuê"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-15</span>
+          <span class="story-title">Catalog giá dịch vụ đi kèm</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> chọn dịch vụ đi kèm (LED, thang cuốn, MKT, ngoài giờ) từ catalog, <b>so that</b> báo giá chuẩn không nhập tay.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Model <code>ServicePriceCatalog</code>: mallId, serviceCode, name, unit, price</li>
+            <li>Model <code>ProposalService[]</code> line items link vào Proposal</li>
+            <li>Tổng phí tự tính vào <code>totalContractValue</code></li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting + Tờ Trình XN mục 10-14</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-16</span>
+          <span class="story-title">Giá thuê hiển thị theo công thức, editable</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> thấy công thức tính giá và có thể edit khi thương thảo, <b>so that</b> linh hoạt với khách.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "hiển thị giá theo công thức và có thể edit"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-17</span>
+          <span class="story-title">Report chính sách vs thực tế → Ms.Oanh</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh (PTGĐ), <b>I want</b> xem báo cáo so sánh giá chính sách vs giá cho thuê thực tế theo mall/tháng, <b>so that</b> theo dõi mức độ lệch chính sách và ra quyết định điều chỉnh.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Dashboard mới: Policy vs Actual Rent</li>
+            <li>Breakdown theo mall × tenant × tháng</li>
+            <li>Highlight lệch &gt; 10%</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "giá chính sách, giá cho thuê thực tế -> báo data này lên ms.Oanh"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-18</span>
+          <span class="story-title">Escalation rate tăng giá theo năm</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> config tự động tăng giá 5%/năm cho HĐ dài hạn, <b>so that</b> phù hợp lạm phát.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình XN mục 9</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-19</span>
+          <span class="story-title">Status sảnh: trống / thương thảo / thi công</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Toàn team, <b>I want</b> xem trạng thái sảnh (VACANT/NEGOTIATING/UNDER_FITOUT/OCCUPIED) real-time, <b>so that</b> đồng bộ thông tin.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-20</span>
+          <span class="story-title">Lock sảnh khi đang thương thảo</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> hệ thống block việc book/proposal mới trên sảnh đang NEGOTIATING, <b>so that</b> tránh conflict giữa các Sale trên cùng 1 sảnh.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li><code>bookings.create()</code> reject khi <code>Unit.status ∈ {NEGOTIATING, CONTRACTED, UNDER_FITOUT}</code></li>
+            <li>Error message: "Sảnh đang thương thảo với khách khác"</li>
+            <li>Force override chỉ role LEASING_MANAGER trở lên</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "status đang thương thảo là lock sảnh k cho book"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-21</span>
+          <span class="story-title">Nhiều khách cùng book 1 unit</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> nhiều khách cùng đặt book 1 unit theo thứ tự ưu tiên, <b>so that</b> có backup khi khách #1 hủy.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (đã có UnitBooking.priority)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-22</span>
+          <span class="story-title">Lịch sử sảnh cho khách nào thuê</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> tra lịch sử tất cả tenant đã từng thuê 1 sảnh, <b>so that</b> đánh giá hiệu suất sảnh và churn rate.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "lưu lịch sử sảnh cho khách nào thuê"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-23</span>
+          <span class="story-title">Lịch sử khách đã thuê những sảnh nào</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> tra lịch sử tất cả sảnh 1 tenant đã thuê, <b>so that</b> hiểu profile khách khi tư vấn HĐ mới.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "lưu lịch sử khách đã thuê những sảnh nào"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-24</span>
+          <span class="story-title">Cảnh báo HĐ sắp hết hạn</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> nhận notification tự động 180/90/60/30 ngày trước khi HĐ hết hạn, <b>so that</b> chủ động deal renewal.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Cron daily 08:00 quét <code>Contract.endDate</code></li>
+            <li>Notification cho <code>managedBy</code> + LEASING_MANAGER cùng mall</li>
+            <li>Config được các mốc ngày (180/90/60/30)</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "cảnh báo thời gian gần hết hạn"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-25</span>
+          <span class="story-title">Cảnh báo mốc thi công tránh trễ khai trương</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Fitout Manager, <b>I want</b> nhận cảnh báo khi mốc thi công gần <code>openingDate</code> mà chưa xong, <b>so that</b> escalate kịp thời.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Rule: alert khi milestone chưa hoàn thành và còn ≤ 7/14/30 ngày đến openingDate</li>
+            <li>Escalate theo cấp: Contractor → Fitout Lead → Ms.Oanh</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "cảnh báo mốc thời gian, đặc biệt là thi công"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-26</span>
+          <span class="story-title">Report giá thuê trung bình theo tầng/mall</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> xem giá thuê trung bình / m² breakdown theo mall × tầng, <b>so that</b> benchmark pricing.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "report: giá thuê"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-27</span>
+          <span class="story-title">Report tỉ lệ lấp đầy</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Mall Director, <b>I want</b> xem occupancy rate theo mall/tầng/ngành hàng, <b>so that</b> theo dõi KPI kinh doanh.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "tỉ lệ lấp đầy"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-28</span>
+          <span class="story-title">Tỉ lệ ngành hàng theo tầng, dự án</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> xem breakdown tỉ lệ ngành hàng theo từng tầng và dự án, <b>so that</b> cân bằng tenant mix.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Report matrix Floor × Category</li>
+            <li>Cột: % diện tích, số tenant, doanh thu</li>
+            <li>Verify OccupancyAnalyticsService.byCategory có breakdown floor</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "quan tâm tỉ lệ ngành hàng theo tầng, dự án"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-29</span>
+          <span class="story-title">Doanh thu tiền thuê sảnh (khác doanh thu tenant)</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Finance, <b>I want</b> tách rõ 2 số "doanh thu tiền thuê" (revenue billing) vs "doanh thu tenant" (sales turnover), <b>so that</b> không nhầm lẫn khi báo cáo.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "Doanh thu báo cáo trên tiền thuê sảnh"</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 2: BOOKING ============ -->
+  <section class="module" data-module="bookings">
+    <div class="module-header">
+      <h2>📌 Tab Booking — <code>/bookings</code></h2>
+      <span class="count">9 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-30</span>
+          <span class="story-title">Tạm book unit trước tờ trình</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> tạm book mặt bằng cho khách với thời hạn hold, <b>so that</b> giữ chỗ trong lúc thương thảo trước khi làm tờ trình.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "có báo giá ban đầu, tạm book, làm tờ trình"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-31</span>
+          <span class="story-title">Ưu tiên nhiều khách trên 1 unit</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> nhiều booking cùng 1 unit sắp xếp theo priority 1/2/3, <b>so that</b> khi khách #1 rớt tự chuyển sang khách #2.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-32</span>
+          <span class="story-title">Sale đề xuất giá khi book</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> nhập giá đề xuất khi tạo booking và trigger phê duyệt lệch giá, <b>so that</b> có căn cứ khi thương thảo giá đặc biệt.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-33</span>
+          <span class="story-title">Lock unit khi booking ACTIVE</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Toàn team, <b>I want</b> Unit tự chuyển sang status BOOKING khi có booking ACTIVE, <b>so that</b> SpacesPage hiển thị đúng và tránh conflict.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Service <code>bookings.activate()</code> update Unit.status → BOOKING</li>
+            <li>Service <code>bookings.cancel/expire()</code> revert Unit.status → VACANT (nếu không có booking khác ACTIVE)</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "status đang thương thảo là lock sảnh"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-34</span>
+          <span class="story-title">1 booking gồm nhiều dịch vụ / slot</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn, <b>I want</b> 1 booking gộp nhiều slot + dịch vụ (LED + sự kiện + MKT), có thể bỏ/thêm khi trình Ms.Oanh, <b>so that</b> đóng gói package deal linh hoạt.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Model <code>BookingLine[]</code>: bookingId, slotId?, serviceCode?, qty, price</li>
+            <li>UI CRUD lines trong booking form</li>
+            <li>Tổng tự tính = sum(lines)</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "1 HĐ book nhiều dịch vụ -> có thể bỏ or thêm dịch vụ khi trình ms. oanh"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-35</span>
+          <span class="story-title">Cross-department handoff (Biên → Sơn)</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn (a.Biên), <b>I want</b> gửi yêu cầu book đến team dài hạn (a.Sơn) khi cần dùng sảnh của họ, <b>so that</b> minh bạch không tự ý book chồng chéo.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Enum <code>BookingActivityType.INTER_DEPT_REQUEST</code></li>
+            <li>Notification tự động gửi đến sale phụ trách sảnh</li>
+            <li>Trạng thái: REQUESTED → APPROVED / REJECTED</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "a Biên phải liên hệ a Sơn để booking chứ k tự ý book"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-36</span>
+          <span class="story-title">Lịch sử booking đầy đủ</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Auditor, <b>I want</b> xem toàn bộ lịch sử thay đổi trên 1 booking, <b>so that</b> truy vết audit.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-37</span>
+          <span class="story-title">Booking sảnh ngắn hạn theo ngày/giờ</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn, <b>I want</b> book slot theo ngày/giờ/tháng cho sự kiện, <b>so that</b> flexible thời hạn.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-38</span>
+          <span class="story-title">Booking hết hạn tự release</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> booking PENDING/ACTIVE quá <code>expiresAt</code> tự chuyển EXPIRED và release unit, <b>so that</b> không giữ chỗ khống.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Cron scan booking mỗi giờ</li>
+            <li>Booking EXPIRED → check nếu là Unit BOOKING active thì revert VACANT</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 3: PROPOSALS ============ -->
+  <section class="module" data-module="proposals">
+    <div class="module-header">
+      <h2>📄 Tab Đề xuất — <code>/proposals</code> (Tờ Trình)</h2>
+      <span class="count">13 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="missing" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-39</span>
+          <span class="story-title">Phân loại tài liệu OTL / TIF / Tờ Trình</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Executive, <b>I want</b> tạo Proposal với documentType riêng (OTL / TIF / Tờ Trình xác nhận / Tờ Trình điều chỉnh), <b>so that</b> đúng loại văn bản chính thức gửi khách.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Enum <code>Proposal.documentType</code>: OTL / TIF / TO_TRINH_XAC_NHAN / TO_TRINH_DIEU_CHINH</li>
+            <li>Số hiệu văn bản riêng cho mỗi loại</li>
+            <li>Template PDF khác nhau theo loại</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT (cột OTL vs LA) + Meeting — "Thương thảo thư đề nghị"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-40</span>
+          <span class="story-title">Tờ Trình xác nhận thuê — 21 mục</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Executive, <b>I want</b> form Tờ Trình có đủ 21 mục theo template, <b>so that</b> gửi lên duyệt đầy đủ thông tin.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria (21 mục)</h4>
+          <ul>
+            <li>1. Tên Pháp nhân — 2. Tên Thương hiệu — 3. Ngành hàng — 4. Mô hình KD</li>
+            <li>5. Vị trí — 6. Diện tích — 7. Thời hạn thuê — 8. Ngày tính tiền thuê</li>
+            <li>9. Giá thuê — 10. Phí DV — 11. Phí hỗ trợ KD — 12. Phí tiện ích</li>
+            <li>13. Giờ hoạt động — 14. Phí ngoài giờ — 15. Tỷ giá — 16. Thanh toán</li>
+            <li>17. Đặt cọc — 18. Thời hạn hoàn thiện — 19. Phí thi công — 20. Ngày bàn giao MB — 21. ĐK đặc biệt</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình XN (21 mục nguyên văn)</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-41</span>
+          <span class="story-title">Tách 3 khoản: Cọc thuê + Cọc thi công + Phí thi công</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> ghi nhận riêng 3 khoản (Cọc đảm bảo thuê 3 tháng, Cọc thi công, Phí thi công), <b>so that</b> hạch toán đúng và refund đúng khi thanh lý.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Proposal/Contract có 3 field: <code>depositLease</code>, <code>depositFitout</code>, <code>fitoutFee</code></li>
+            <li>Invoice/Payment link vào từng khoản</li>
+            <li>Termination refund riêng từng khoản</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT (3 cột riêng) + Tờ Trình XN mục 17 & 19</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-42</span>
+          <span class="story-title">Tỷ giá VND/USD</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> nhập tỷ giá VND/USD tại thời điểm phát hành OTL, <b>so that</b> khớp Tờ Trình mục 15.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li><code>Proposal.exchangeRate</code> + <code>exchangeRateSource</code> (VCB, ...)</li>
+            <li>Hiển thị trong PDF Tờ Trình</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình XN mục 15</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-43</span>
+          <span class="story-title">Layout mặt bằng đính kèm PDF Tờ Trình</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> đính kèm ảnh layout mặt bằng vào PDF Tờ Trình, <b>so that</b> minh họa vị trí gian hàng.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Link UnitMedia (type=FLOOR_PLAN) vào Proposal</li>
+            <li>PDF render layout ở section cuối như template</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình XN — "LAYOUT MẶT BẰNG NHƯ SAU"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-44</span>
+          <span class="story-title">Xuất PDF Proposal / Tờ Trình / TIF</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> xuất PDF Proposal/Tờ Trình/TIF trực tiếp từ hệ thống, <b>so that</b> gửi khách và ký duyệt không phải copy Word.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Nút "Xuất PDF" trên ProposalsPage</li>
+            <li>Template match layout Tờ Trình / TIF gốc</li>
+            <li>Dùng <code>pdfmake</code> hoặc <code>puppeteer</code></li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình XN + TIF (đều là văn bản chính thức)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-45</span>
+          <span class="story-title">Sửa giá thẳng trong form</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> edit giá thuê ngay trong Proposal form (có thể cao hoặc thấp hơn quy định), <b>so that</b> linh hoạt thương thảo.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-46</span>
+          <span class="story-title">Giá lệch quy định → auto trigger duyệt Ms.Oanh</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> chỉ những Proposal có giá ngoài range chính sách mới cần tôi duyệt, <b>so that</b> giảm bottleneck cho các deal chuẩn.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>ApprovalPolicyRule mới: <code>conditionType = PRICE_OUT_OF_RANGE</code></li>
+            <li>Check <code>rentPerSqm ∉ [CategoryMallPricing.minRentPerSqm, maxRentPerSqm]</code></li>
+            <li>Nếu trong range: skip step CEO / Ms.Oanh</li>
+            <li>Nếu ngoài: bắt buộc step Ms.Oanh</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "giá thuê trong mức quy định thì k cần ms.Oanh duyệt"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-47</span>
+          <span class="story-title">Đính kèm file trong form Đề xuất</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> đính kèm file (hồ sơ khách, layout, ...) vào Proposal, <b>so that</b> lưu trữ tập trung.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "đính kèm file trong form"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-48</span>
+          <span class="story-title">Versioning Proposal</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> lưu snapshot từng version Proposal khi thương thảo, so sánh diff, <b>so that</b> truy vết lịch sử đàm phán.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-49</span>
+          <span class="story-title">Nhiều kịch bản tài chính</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> tạo nhiều scenarios (mức giá + thời hạn khác nhau) cho 1 Proposal, <b>so that</b> so sánh và chọn phương án tối ưu.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-50</span>
+          <span class="story-title">Deal scoring</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> mỗi Proposal có deal score theo tiêu chí config, <b>so that</b> ưu tiên deal chất lượng.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-51</span>
+          <span class="story-title">Tờ Trình điều chỉnh (pre-signing)</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Executive, <b>I want</b> làm Tờ Trình điều chỉnh chốt thuê (điều chỉnh Ngày bàn giao / Khai trương) trước khi ký HĐ, <b>so that</b> khớp file <code>20260525_TTr Dieu chinh thong tin chot thue.docx</code>.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Template riêng "Tờ Trình điều chỉnh" (khác Amendment sau ký)</li>
+            <li>So sánh cột "Thông tin đã phê duyệt" vs "Thông tin điều chỉnh"</li>
+            <li>Workflow duyệt riêng</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Tờ Trình ĐC</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 4: APPROVALS ============ -->
+  <section class="module" data-module="approvals">
+    <div class="module-header">
+      <h2>✅ Tab Phê duyệt — <code>/approvals</code></h2>
+      <span class="count">7 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-52</span>
+          <span class="story-title">Workflow Dài hạn: Sales → KT → Trang → Ms.Oanh</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale dài hạn (a.Sơn), <b>I want</b> submit Tờ Trình theo đúng flow Sales → KT (a.Công) → TP Cho thuê (c.Trang) → PTGĐ (Ms.Oanh), <b>so that</b> đúng SOP của mall.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Seed ApprovalPolicyRule: step 1=FINANCE (a.Công), 2=LEASING_MANAGER (c.Trang), 3=CEO (Ms.Oanh)</li>
+            <li>Rule condition: <code>DEAL_TYPE = LONG_TERM</code></li>
+            <li>Map user cụ thể vào ApprovalStep.approverId khi create workflow</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting + Tờ Trình XN (chữ ký footer)</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-53</span>
+          <span class="story-title">Workflow Ngắn hạn: Sales → Biên → Hà → KT → Ms.Oanh</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale ngắn hạn, <b>I want</b> workflow riêng cho short-term deal đi qua a.Biên → c.Hà → KT → Ms.Oanh, <b>so that</b> phân tách rõ 2 luồng dài / ngắn.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Option A: Thêm role SHORT_TERM_SALES_LEAD / SHORT_TERM_SALES_MANAGER</li>
+            <li>Option B: Dùng user assignment cụ thể + <code>conditionType = DEAL_TYPE match SHORT_TERM</code></li>
+            <li>Seed ApprovalPolicyRule 4 steps</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting (mục Ngắn hạn) — "sales -> a biên -> c Hà -> KT -> ms.Oanh"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-54</span>
+          <span class="story-title">Ms.Oanh ký tờ trình cuối cùng</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> luôn là step cuối trong mọi workflow duyệt, <b>so that</b> quyết định cuối là của tôi.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "ms. oanh ký tờ trình"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-55</span>
+          <span class="story-title">Skip Ms.Oanh khi giá trong ngưỡng</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> proposal có giá trong range chính sách tự bỏ qua step của tôi, <b>so that</b> chỉ tập trung duyệt case ngoại lệ.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Rule condition: <code>PRICE_WITHIN_POLICY_RANGE</code></li>
+            <li>Check theo <code>CategoryMallPricing.min/max</code></li>
+            <li>Nếu match: skip step CEO/Ms.Oanh</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-56</span>
+          <span class="story-title">Approver bỏ/thêm dịch vụ khi duyệt</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> edit danh sách dịch vụ (bỏ hoặc thêm) khi duyệt Proposal, <b>so that</b> điều chỉnh package trước khi phê duyệt.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>UI: approver có quyền edit Proposal.services[]</li>
+            <li>Audit vào ContractEvent / AuditLog với diff</li>
+            <li>Notify creator để confirm change</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "có thể bỏ or thêm dịch vụ khi trình ms. oanh"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-57</span>
+          <span class="story-title">Ghi comment tại mỗi step duyệt</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Approver, <b>I want</b> ghi comment lý do approve/reject, <b>so that</b> minh bạch quyết định.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-58</span>
+          <span class="story-title">Approval theo mall (site nào duyệt site đó)</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Approver, <b>I want</b> chỉ thấy pending approval của mall mình phụ trách, <b>so that</b> không lẫn data giữa các mall.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Query pending steps filter theo <code>UserMallAccess.mallId</code></li>
+            <li>Trừ role CEO/PTGĐ thấy all</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "site nào thấy data site đó"</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 5: CONTRACTS ============ -->
+  <section class="module" data-module="contracts">
+    <div class="module-header">
+      <h2>📑 Tab Hợp đồng — <code>/contracts</code></h2>
+      <span class="count">11 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-59</span>
+          <span class="story-title">CRUD HĐ + template + clause library</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Legal, <b>I want</b> tạo HĐ từ template + clause library, <b>so that</b> chuẩn hóa và giảm sai sót.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-60</span>
+          <span class="story-title">Amendment sau khi ký</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Legal, <b>I want</b> tạo phụ lục sửa đổi HĐ đã ký, <b>so that</b> quản lý thay đổi có kiểm soát.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-61</span>
+          <span class="story-title">Timeline sự kiện HĐ</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Managed-by user, <b>I want</b> timeline tất cả sự kiện của HĐ, <b>so that</b> theo dõi lifecycle.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 2)</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-62</span>
+          <span class="story-title">File đính kèm HĐ</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Legal, <b>I want</b> upload bản gốc, scan, sửa đổi HĐ, <b>so that</b> có bản mềm tra cứu.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-63</span>
+          <span class="story-title">eSign integration</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> ký HĐ điện tử qua DocuSign/VSign, <b>so that</b> rút ngắn thời gian ký với khách xa.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (best practice)</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-64</span>
+          <span class="story-title">Cảnh báo hạn HĐ (cron)</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> nhận notification tự động khi HĐ gần hết hạn, <b>so that</b> không bỏ lỡ deal renewal.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Cron daily 08:00</li>
+            <li>Mốc: 180/90/60/30 ngày trước endDate</li>
+            <li>Notification cho managedBy + LEASING_MANAGER</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-65</span>
+          <span class="story-title">Renewal risk scoring</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> score risk renewal của HĐ, <b>so that</b> priority chăm sóc.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 5)</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P3">
+        <div class="story-header">
+          <span class="story-id">US-66</span>
+          <span class="story-title">Auto-tính phạt hủy sớm</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P3">P3</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> hệ thống tự tính tiền phạt hủy sớm theo policy config, <b>so that</b> không phải tính tay dễ sai.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Model <code>TerminationPenaltyPolicy</code>: rule (N tháng rent hoặc % deposit)</li>
+            <li>Auto-tính khi tạo ContractTermination</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "có quy định về phạt khi khách hủy sớm"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-67</span>
+          <span class="story-title">Unified timeline: thương thảo → ký → thi công → khai trương</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Mall Director, <b>I want</b> view timeline hợp nhất tình trạng của tenant qua các giai đoạn, <b>so that</b> nắm nhanh khách nào đang ở giai đoạn nào.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-68</span>
+          <span class="story-title">Billing schedule tự sinh từ HĐ</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> lịch hóa đơn tự sinh khi ký HĐ, <b>so that</b> không nhập tay.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận (Wave 3)</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-69</span>
+          <span class="story-title">Xuất PDF HĐ từ template</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Legal, <b>I want</b> xuất HĐ PDF từ template + clause đã chọn, <b>so that</b> gửi khách ngay.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 6: TENANTS ============ -->
+  <section class="module" data-module="tenants">
+    <div class="module-header">
+      <h2>👥 Tab Khách thuê — <code>/tenants</code></h2>
+      <span class="count">9 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-70</span>
+          <span class="story-title">Thông tin thương hiệu, pháp nhân</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> lưu thông tin thương hiệu + pháp nhân + mã số thuế khách, <b>so that</b> làm HĐ đúng thông tin.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-71</span>
+          <span class="story-title">Người đại diện pháp luật</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Legal, <b>I want</b> nhập riêng người đại diện pháp luật (khác contact person), <b>so that</b> HĐ ký đúng thẩm quyền.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Tenant.legalRepresentative + legalRepPosition</li>
+            <li>Field required khi tạo Contract</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-72</span>
+          <span class="story-title">Ngành hàng khách thuê</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> gán ngành hàng cho tenant, <b>so that</b> phân tích tenant mix.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-73</span>
+          <span class="story-title">Logo thương hiệu</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Marketing, <b>I want</b> upload logo tenant, <b>so that</b> hiển thị trong directory mall.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-74</span>
+          <span class="story-title">List sảnh khách đã / đang thuê</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> tra list sảnh khách đã / đang thuê, <b>so that</b> biết lịch sử.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-75</span>
+          <span class="story-title">Tenant portal login</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Tenant, <b>I want</b> login portal xem HĐ / hóa đơn / ticket, <b>so that</b> self-service.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-76</span>
+          <span class="story-title">Excel Báo cáo đánh giá khách thuê</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Chăm sóc khách thuê, <b>I want</b> xuất Excel đúng mẫu <code>THISO MALL_MẪU BÁO CÁO ĐÁNH GIÁ</code>, <b>so that</b> báo cáo Ms.Oanh không phải sửa layout.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>12 cột Tháng 1/2026 – Tháng 12/2026</li>
+            <li>Cột: DT/m², %Tiền thuê/DT, Tổng chi phí</li>
+            <li>Breakdown ngành hàng × tầng</li>
+            <li>Nút export ở TenantsPage hoặc ReportsPage</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel BC (nguyên mẫu)</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-77</span>
+          <span class="story-title">Tenant scoring (đánh giá độ tốt)</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> chấm điểm tenant theo payment history + ticket count + sales trend, <b>so that</b> priorityize khách tốt khi renewal.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel BC + Suy luận</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-78</span>
+          <span class="story-title">Blacklist tenant</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Leasing Manager, <b>I want</b> đánh dấu blacklist tenant có tiền sử xấu, <b>so that</b> block deal mới.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 7: RBAC ============ -->
+  <section class="module" data-module="rbac">
+    <div class="module-header">
+      <h2>🔐 RBAC — Phân quyền theo phạm vi</h2>
+      <span class="count">5 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="partial" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-79</span>
+          <span class="story-title">Site scope: site nào thấy data site đó</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> User site A, <b>I want</b> chỉ thấy bookings/proposals/contracts/tenants của site A, <b>so that</b> không lẫn dữ liệu giữa các mall.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Enforce filter mặc định theo UserMallAccess trên tất cả list endpoint</li>
+            <li>Middleware/Guard tự inject <code>WHERE mallId IN userMallIds</code></li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "site nào thấy data site đó"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-80</span>
+          <span class="story-title">Khối / CEO / PTGĐ thấy all</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Ms.Oanh, <b>I want</b> bypass site scope filter, <b>so that</b> quản trị toàn hệ thống.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "ms.Oanh thấy all"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-81</span>
+          <span class="story-title">Sale scope: Sơn không thấy data của Biên</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale a.Sơn, <b>I want</b> chỉ thấy Booking/Proposal do mình tạo hoặc assign cho mình, <b>so that</b> không thấy deal của Sale khác.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Default filter: <code>WHERE assignedToId = user.id OR createdById = user.id</code></li>
+            <li>Apply cho role LEASING_EXECUTIVE và tương đương ngắn hạn</li>
+            <li>Trưởng phòng / Manager thấy all trong team</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "a Sơn và Biên k thấy data nhau"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-82</span>
+          <span class="story-title">Sale thấy all mặt bằng</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> vẫn thấy toàn bộ mặt bằng (dù không phải mình phụ trách), <b>so that</b> có thể tư vấn khách tổng thể.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Split RBAC scope: <code>spaces:read = all</code>, <code>bookings:read = own</code>, <code>proposals:read = own</code></li>
+            <li>Khi Sale click 1 unit → thấy unit info nhưng không thấy Booking/Proposal của Sale khác</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Meeting — "(chỉ thấy mặt bằng)"</span></div>
+      </div>
+
+      <div class="story" data-status="partial" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-83</span>
+          <span class="story-title">Audit log tự động sửa giá / form</span>
+          <span class="badge status-partial">🟡 Partial</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Auditor, <b>I want</b> mọi thay đổi giá / thông tin form được log tự động với diff before/after, <b>so that</b> compliance.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>NestJS interceptor auto ghi AuditLog</li>
+            <li>Log diff JSON</li>
+            <li>Filter theo entity + user + date</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Suy luận + IMPLEMENTATION.md § Known Limitations</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ MODULE 8: DOCUMENTS ============ -->
+  <section class="module" data-module="documents">
+    <div class="module-header">
+      <h2>📁 Tài liệu (OTL / LA / Cọc / Hoarding)</h2>
+      <span class="count">5 stories</span>
+    </div>
+    <div class="stories">
+
+      <div class="story" data-status="missing" data-priority="P1">
+        <div class="story-header">
+          <span class="story-id">US-84</span>
+          <span class="story-title">OTL — Offer To Lease riêng biệt</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P1">P1</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> phát hành OTL riêng, có số OTL và ngày ký OTL, <b>so that</b> đúng quy trình gửi Thư Đề Nghị Cho Thuê trước ký LA.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Proposal.documentType = OTL</li>
+            <li>Field: otlNumber, otlSentDate, otlSignedDate</li>
+            <li>Track OTL riêng khỏi TIF/Tờ Trình</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT cột "OTL"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-85</span>
+          <span class="story-title">LA — Lease Agreement</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> quản lý LA (Contract), <b>so that</b> đây là văn bản chính thức cho thuê.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT cột "LA"</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P0">
+        <div class="story-header">
+          <span class="story-id">US-86</span>
+          <span class="story-title">Cọc đảm bảo riêng biệt</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P0">P0</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> track riêng Cọc đảm bảo (3 tháng rent), <b>so that</b> phân biệt với Cọc thi công và Phí thi công.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT cột "CỌC ĐẢM BẢO" + xem chi tiết US-41</span></div>
+      </div>
+
+      <div class="story" data-status="missing" data-priority="P2">
+        <div class="story-header">
+          <span class="story-id">US-87</span>
+          <span class="story-title">Hoarding fee</span>
+          <span class="badge status-missing">❌ Missing</span>
+          <span class="badge p-P2">P2</span>
+        </div>
+        <div class="us-block"><b>As a</b> Kế toán, <b>I want</b> track phí Hoarding (rào chắn thi công) riêng, <b>so that</b> hạch toán không nhầm.</div>
+        <div class="ac-list">
+          <h4>Acceptance Criteria</h4>
+          <ul>
+            <li>Contract.hoardingFee</li>
+            <li>Hoặc dùng ServicePriceCatalog code = HOARDING</li>
+          </ul>
+        </div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT cột "HOARDING"</span></div>
+      </div>
+
+      <div class="story" data-status="done" data-priority="P4">
+        <div class="story-header">
+          <span class="story-id">US-88</span>
+          <span class="story-title">Ngày bàn giao / khai trương / thi công</span>
+          <span class="badge status-done">✅ Done</span>
+          <span class="badge p-P4">P4</span>
+        </div>
+        <div class="us-block"><b>As a</b> Sale, <b>I want</b> track ngày bàn giao / khai trương / thời gian thi công trong Proposal, <b>so that</b> đồng bộ với Contract khi convert.</div>
+        <div class="meta"><span class="meta-item"><b>Nguồn:</b> Excel KT + Tờ Trình XN mục 7, 20 + TIF</span></div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const filters = { status: 'all', priority: 'all', search: '' };
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filterKey = btn.dataset.filter;
+      const value = btn.dataset.value;
+      document.querySelectorAll(`.filter-btn[data-filter="${filterKey}"]`).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filters[filterKey] = value;
+      applyFilters();
+    });
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    filters.search = e.target.value.toLowerCase();
+    applyFilters();
+  });
+
+  function applyFilters() {
+    document.querySelectorAll('.story').forEach(story => {
+      const matchStatus = filters.status === 'all' || story.dataset.status === filters.status;
+      const matchPriority = filters.priority === 'all' || story.dataset.priority === filters.priority;
+      const matchSearch = !filters.search || story.textContent.toLowerCase().includes(filters.search);
+      story.classList.toggle('hidden', !(matchStatus && matchPriority && matchSearch));
+    });
+    document.querySelectorAll('.module').forEach(module => {
+      const visible = module.querySelectorAll('.story:not(.hidden)').length;
+      const countEl = module.querySelector('.count');
+      countEl.textContent = `${visible} stories`;
+      module.style.display = visible === 0 ? 'none' : '';
+    });
+  }
+
+  // Update stats
+  function updateStats() {
+    const stories = document.querySelectorAll('.story');
+    let p0 = 0, p1 = 0, done = 0, partial = 0, missing = 0;
+    stories.forEach(s => {
+      if (s.dataset.priority === 'P0') p0++;
+      if (s.dataset.priority === 'P1') p1++;
+      if (s.dataset.status === 'done') done++;
+      if (s.dataset.status === 'partial') partial++;
+      if (s.dataset.status === 'missing') missing++;
+    });
+    document.getElementById('cnt-p0').textContent = p0;
+    document.getElementById('cnt-p1').textContent = p1;
+    document.getElementById('cnt-done').textContent = done;
+    document.getElementById('cnt-partial').textContent = partial;
+    document.getElementById('cnt-missing').textContent = missing;
+  }
+  updateStats();
+</script>
+
+</body>
+</html>

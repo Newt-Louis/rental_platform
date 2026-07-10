@@ -4,6 +4,7 @@ import { OccupancyAnalyticsService } from './occupancy-analytics.service';
 import { RenewalRiskService } from './renewal-risk.service';
 import { ComplianceService } from './compliance.service';
 import { ComplianceSchedulerService } from './compliance-scheduler.service';
+import { ContractExpiryScheduler } from './contract-expiry.scheduler';
 import { AnalyticsController } from './analytics.controller';
 
 @Module({
@@ -14,12 +15,14 @@ import { AnalyticsController } from './analytics.controller';
     RenewalRiskService,
     ComplianceService,
     ComplianceSchedulerService,
+    ContractExpiryScheduler,
   ],
   exports: [
     OccupancyAnalyticsService,
     RenewalRiskService,
     ComplianceService,
     ComplianceSchedulerService,
+    ContractExpiryScheduler,
   ],
 })
 export class AnalyticsModule {}

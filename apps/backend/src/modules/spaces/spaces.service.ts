@@ -8,6 +8,41 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as sharp from 'sharp';
 
+// Relation fields and read-only fields that must never be written directly to Prisma
+const UNIT_RELATION_FIELDS = new Set([
+  'id', 'createdAt', 'updatedAt',
+  'mall', 'building', 'floor', 'zone', 'tenant',
+  'categoryRef', 'contracts', 'media', 'bookings', 'proposals',
+  'unitHistory',
+]);
+
+function sanitizeUnitDto(dto: any): any {
+  const out: any = {};
+  for (const key of Object.keys(dto)) {
+    if (!UNIT_RELATION_FIELDS.has(key)) {
+      out[key] = dto[key];
+    }
+  }
+  return out;
+}
+
+export interface MergeUnitDto {
+  code: string;
+  name?: string;
+  baseRentPerSqm?: number;
+  camPerSqm?: number;
+}
+
+export interface MergeResult {
+  combinedUnit: any;
+  mergedUnitIds: string[];
+}
+
+export interface SplitResult {
+  restoredUnits: any[];
+  deactivatedCombinedId: string;
+}
+
 @Injectable()
 export class SpacesService {
   private readonly logger = new Logger(SpacesService.name);
@@ -163,6 +198,9 @@ export class SpacesService {
     maxArea?: number;
     minRent?: number;
     maxRent?: number;
+    spaceType?: string;
+    tier?: string;
+    leaseTermType?: string;
     page?: number;
     limit?: number;
   }) {
@@ -178,6 +216,10 @@ export class SpacesService {
     if (filters.status) where.status = filters.status;
     if (filters.category) where.category = filters.category;
     if (filters.tenantId) where.tenantId = filters.tenantId;
+    // GAP #3 / #4 / #6
+    if (filters.spaceType) where.spaceType = filters.spaceType;
+    if (filters.tier) where.tier = filters.tier;
+    if (filters.leaseTermType) where.leaseTermType = filters.leaseTermType;
 
     if (filters.minArea !== undefined || filters.maxArea !== undefined) {
       where.areaNLA = {};
@@ -324,7 +366,7 @@ export class SpacesService {
     await this.getUnit(id);
     return this.prisma.unit.update({
       where: { id },
-      data: dto,
+      data: sanitizeUnitDto(dto),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -528,7 +570,7 @@ export class SpacesService {
     // Perform update
     const updated = await this.prisma.unit.update({
       where: { id },
-      data: dto,
+      data: sanitizeUnitDto(dto),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -1289,6 +1331,184 @@ export class SpacesService {
     return this.prisma.unit.update({
       where: { id: unitId },
       data: { mapPosX: null, mapPosY: null, mapPosW: null, mapPosH: null, mapPolygon: null },
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GAP #2 — Merge / Split Units
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async mergeUnits(unitIds: string[], dto: MergeUnitDto, userId?: string): Promise<MergeResult> {
+    if (unitIds.length < 2) {
+      throw new BadRequestException('Cần ít nhất 2 mặt bằng để gộp');
+    }
+
+    const sourceUnits = await this.prisma.unit.findMany({
+      where: { id: { in: unitIds }, isActive: true },
+    });
+
+    if (sourceUnits.length !== unitIds.length) {
+      throw new NotFoundException('Một hoặc nhiều mặt bằng không tồn tại');
+    }
+
+    const mallIds = new Set(sourceUnits.map((u) => u.mallId));
+    if (mallIds.size > 1) {
+      throw new BadRequestException('Tất cả mặt bằng phải thuộc cùng một mall');
+    }
+
+    const nonVacant = sourceUnits.filter((u) => u.status !== UnitStatus.VACANT);
+    if (nonVacant.length > 0) {
+      throw new BadRequestException(
+        `Không thể gộp: mặt bằng ${nonVacant.map((u) => u.code).join(', ')} chưa trống (status: ${nonVacant.map((u) => u.status).join(', ')})`,
+      );
+    }
+
+    const totalGFA = sourceUnits.reduce((s, u) => s + u.areaGFA, 0);
+    const totalNLA = sourceUnits.reduce((s, u) => s + u.areaNLA, 0);
+    const avgRent = dto.baseRentPerSqm
+      ?? sourceUnits.reduce((s, u) => s + u.baseRentPerSqm, 0) / sourceUnits.length;
+    const avgCam = dto.camPerSqm
+      ?? sourceUnits.reduce((s, u) => s + u.camPerSqm, 0) / sourceUnits.length;
+
+    const ref = sourceUnits[0];
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create the combined unit
+      const combined = await tx.unit.create({
+        data: {
+          mallId: ref.mallId,
+          buildingId: ref.buildingId,
+          floorId: ref.floorId,
+          zoneId: ref.zoneId,
+          code: dto.code,
+          name: dto.name ?? dto.code,
+          areaGFA: totalGFA,
+          areaNLA: totalNLA,
+          baseRentPerSqm: avgRent,
+          camPerSqm: avgCam,
+          status: UnitStatus.VACANT,
+          isCombined: true,
+          mergedFromIds: unitIds,
+          categoryId: ref.categoryId,
+          category: ref.category,
+          leaseTermType: (ref as any).leaseTermType,
+          spaceType: (ref as any).spaceType,
+          tier: (ref as any).tier,
+        },
+        include: {
+          floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true, code: true } },
+        },
+      });
+
+      // 2. Mark source units as MERGED
+      for (const unit of sourceUnits) {
+        await tx.unit.update({
+          where: { id: unit.id },
+          data: { status: UnitStatus.MERGED, mergedIntoId: combined.id },
+        });
+
+        await tx.unitHistory.create({
+          data: {
+            unitId: unit.id,
+            changeType: UnitHistoryType.STATUS_CHANGE,
+            fieldName: 'status',
+            oldValue: unit.status,
+            newValue: UnitStatus.MERGED,
+            changedById: userId,
+            notes: `Gộp vào mặt bằng ${combined.code} (${combined.id})`,
+          },
+        });
+      }
+
+      // 3. Record history on combined unit
+      await tx.unitHistory.create({
+        data: {
+          unitId: combined.id,
+          changeType: UnitHistoryType.INFO_UPDATE,
+          fieldName: 'mergedFromIds',
+          oldValue: null,
+          newValue: unitIds,
+          changedById: userId,
+          notes: `Gộp từ: ${sourceUnits.map((u) => u.code).join(', ')}`,
+        },
+      });
+
+      return {
+        combinedUnit: combined,
+        mergedUnitIds: unitIds,
+      };
+    });
+  }
+
+  async splitUnit(unitId: string, userId?: string): Promise<SplitResult> {
+    const combined = await this.prisma.unit.findUnique({ where: { id: unitId } });
+    if (!combined) throw new NotFoundException('Mặt bằng không tồn tại');
+    if (!(combined as any).isCombined) {
+      throw new BadRequestException('Mặt bằng này không phải là mặt bằng gộp');
+    }
+    if (([UnitStatus.OCCUPIED, UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT] as UnitStatus[]).includes(combined.status)) {
+      throw new BadRequestException('Không thể tách khi mặt bằng gộp đang có khách thuê hoặc đang thi công');
+    }
+
+    const mergedFromIds = (combined as any).mergedFromIds as string[] | null;
+    if (!mergedFromIds || mergedFromIds.length === 0) {
+      throw new BadRequestException('Không có thông tin mặt bằng gốc để phục hồi');
+    }
+
+    const sourceUnits = await this.prisma.unit.findMany({
+      where: { id: { in: mergedFromIds } },
+    });
+
+    if (sourceUnits.length !== mergedFromIds.length) {
+      throw new NotFoundException('Không tìm thấy đủ mặt bằng gốc để phục hồi');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Restore source units to VACANT
+      const restored: any[] = [];
+      for (const unit of sourceUnits) {
+        const u = await tx.unit.update({
+          where: { id: unit.id },
+          data: { status: UnitStatus.VACANT, mergedIntoId: null, isActive: true },
+        });
+        restored.push(u);
+
+        await tx.unitHistory.create({
+          data: {
+            unitId: unit.id,
+            changeType: UnitHistoryType.STATUS_CHANGE,
+            fieldName: 'status',
+            oldValue: unit.status,
+            newValue: UnitStatus.VACANT,
+            changedById: userId,
+            notes: `Phục hồi từ mặt bằng gộp ${combined.code} (${combined.id})`,
+          },
+        });
+      }
+
+      // 2. Deactivate combined unit
+      await tx.unit.update({
+        where: { id: unitId },
+        data: { isActive: false },
+      });
+
+      await tx.unitHistory.create({
+        data: {
+          unitId,
+          changeType: UnitHistoryType.STATUS_CHANGE,
+          fieldName: 'isActive',
+          oldValue: true,
+          newValue: false,
+          changedById: userId,
+          notes: `Tách mặt bằng gộp, phục hồi: ${sourceUnits.map((u) => u.code).join(', ')}`,
+        },
+      });
+
+      return {
+        restoredUnits: restored,
+        deactivatedCombinedId: unitId,
+      };
     });
   }
 }

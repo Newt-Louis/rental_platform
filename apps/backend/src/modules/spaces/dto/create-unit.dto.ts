@@ -1,6 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum, IsBoolean } from 'class-validator';
 import { UnitStatus } from '@prisma/client';
+
+// Enums from schema — imported as string enums to avoid circular dependency before prisma client regeneration
+export enum UnitLeaseTermTypeDto {
+  LONG  = 'LONG',
+  SHORT = 'SHORT',
+}
+
+export enum SpaceTypeDto {
+  RETAIL_UNIT    = 'RETAIL_UNIT',
+  LED            = 'LED',
+  ESCALATOR_WRAP = 'ESCALATOR_WRAP',
+  KIOSK_EVENT    = 'KIOSK_EVENT',
+  ADVERTISING    = 'ADVERTISING',
+  SERVICE        = 'SERVICE',
+}
+
+export enum UnitTierDto {
+  A = 'A',
+  B = 'B',
+  C = 'C',
+}
 
 export class CreateUnitDto {
   @ApiProperty()
@@ -58,4 +79,42 @@ export class CreateUnitDto {
   @IsOptional()
   @IsEnum(UnitStatus)
   status?: UnitStatus;
+
+  // ─── GAP #3 — Hình thức thuê ────────────────────────────────────────────
+
+  @ApiPropertyOptional({ enum: UnitLeaseTermTypeDto, description: 'LONG = dài hạn, SHORT = ngắn hạn' })
+  @IsOptional()
+  @IsEnum(UnitLeaseTermTypeDto)
+  leaseTermType?: UnitLeaseTermTypeDto;
+
+  // ─── GAP #4 — Loại mặt bằng ─────────────────────────────────────────────
+
+  @ApiPropertyOptional({ enum: SpaceTypeDto })
+  @IsOptional()
+  @IsEnum(SpaceTypeDto)
+  spaceType?: SpaceTypeDto;
+
+  // ─── GAP #5 — Sảnh linh động ─────────────────────────────────────────────
+
+  @ApiPropertyOptional({ description: 'true = cho phép thuê theo diện tích linh động' })
+  @IsOptional()
+  @IsBoolean()
+  isFlexibleArea?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  minFlexArea?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  maxFlexArea?: number;
+
+  // ─── GAP #6 — Tier ──────────────────────────────────────────────────────
+
+  @ApiPropertyOptional({ enum: UnitTierDto, description: 'A = prime, B = standard, C = value' })
+  @IsOptional()
+  @IsEnum(UnitTierDto)
+  tier?: UnitTierDto;
 }

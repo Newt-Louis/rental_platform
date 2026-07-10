@@ -2,9 +2,9 @@ import {
   Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards,
   UseInterceptors, UploadedFile, UploadedFiles,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { SpacesService } from './spaces.service';
+import { SpacesService, MergeUnitDto } from './spaces.service';
 import { UnitMediaService } from './unit-media.service';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
@@ -129,6 +129,9 @@ export class SpacesController {
   @ApiQuery({ name: 'category', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'spaceType', required: false, description: 'GAP #4 — filter by space type' })
+  @ApiQuery({ name: 'tier', required: false, description: 'GAP #6 — filter by tier (A/B/C)' })
+  @ApiQuery({ name: 'leaseTermType', required: false, description: 'GAP #3 — filter by lease term type (LONG/SHORT)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   getUnits(@Query() query: any) {
@@ -201,6 +204,42 @@ export class SpacesController {
       query.category = query.category.split(',');
     }
     return this.spacesService.getUnitsAdvanced(query);
+  }
+
+  // ─── GAP #2 — Merge / Split Units ────────────────────────────────────────
+
+  @Post('units/merge')
+  @ApiOperation({
+    summary: 'GAP #2 — Gộp nhiều mặt bằng thành 1',
+    description: 'Tạo unit tổng hợp C từ [A, B, ...]. Tất cả unit nguồn phải đang VACANT và cùng mall.',
+  })
+  @ApiBody({
+    schema: {
+      required: ['unitIds', 'code'],
+      properties: {
+        unitIds:         { type: 'array', items: { type: 'string' }, description: 'Ít nhất 2 unit IDs' },
+        code:            { type: 'string', description: 'Mã unit tổng hợp mới (VD: A01+A02)' },
+        name:            { type: 'string' },
+        baseRentPerSqm:  { type: 'number' },
+        camPerSqm:       { type: 'number' },
+      },
+    },
+  })
+  mergeUnits(
+    @Body() body: { unitIds: string[] } & MergeUnitDto,
+    @CurrentUser() user: any,
+  ) {
+    const { unitIds, ...dto } = body;
+    return this.spacesService.mergeUnits(unitIds, dto, user?.id);
+  }
+
+  @Post('units/:id/split')
+  @ApiOperation({
+    summary: 'GAP #2 — Tách mặt bằng tổng hợp về các unit gốc',
+    description: 'Phục hồi các unit gốc về VACANT và vô hiệu hoá unit tổng hợp.',
+  })
+  splitUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.spacesService.splitUnit(id, user?.id);
   }
 
   // ─── Parameterized routes below ──────────────────────────────────────────

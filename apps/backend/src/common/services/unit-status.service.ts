@@ -10,10 +10,22 @@ const ALLOWED_TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
   [UnitStatus.CONTRACTED]: [UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED, UnitStatus.VACANT],
   [UnitStatus.UNDER_FITOUT]: [UnitStatus.OCCUPIED, UnitStatus.VACANT],
   [UnitStatus.OCCUPIED]: [UnitStatus.VACANT, UnitStatus.UNDER_FITOUT],
+  [UnitStatus.MERGED]: [],
 };
 
 /** Trạng thái mặt bằng đã cam kết cho một khách thuê chính thức — không nên nhận thêm booking mới chồng lên. */
 const COMMITTED_STATUSES: UnitStatus[] = [UnitStatus.OCCUPIED, UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT];
+
+/**
+ * GAP #20 — Trạng thái bị khoá hoàn toàn, không nhận bất kỳ booking mới nào.
+ * - NEGOTIATING: đang thương thảo nghiêm túc, không cho phép thêm khách khác xếp hàng.
+ * - MERGED: mặt bằng đã bị gộp vào mặt bằng khác, không còn tồn tại độc lập.
+ */
+const LOCKED_FOR_BOOKING: UnitStatus[] = [
+  UnitStatus.NEGOTIATING,
+  UnitStatus.MERGED,
+  ...COMMITTED_STATUSES,
+];
 
 export interface UnitTransitionOptions {
   force?: boolean;
@@ -35,6 +47,11 @@ export class UnitStatusService {
 
   isCommittedToTenant(status: UnitStatus): boolean {
     return COMMITTED_STATUSES.includes(status);
+  }
+
+  /** GAP #20 — true nếu unit hoàn toàn bị khoá, không nhận booking mới */
+  isLockedForBooking(status: UnitStatus): boolean {
+    return LOCKED_FOR_BOOKING.includes(status);
   }
 
   async transition(unitId: string, toStatus: UnitStatus, options: UnitTransitionOptions = {}) {

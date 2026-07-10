@@ -27,6 +27,35 @@ enum UnitStatus {
   CONTRACTED   // Đã ký hợp đồng, chờ thi công
   UNDER_FITOUT // Đang thi công
   OCCUPIED     // Đang thuê
+  MERGED       // Đã gộp vào sảnh khác (ẩn khỏi danh sách thường)
+}
+
+enum UnitLeaseTermType {
+  LONG   // Dài hạn (3-5 năm)
+  SHORT  // Ngắn hạn (ngày/tuần/tháng)
+}
+
+enum SpaceType {
+  RETAIL_UNIT    // Sảnh bán lẻ thông thường
+  LED            // Bảng LED/màn hình quảng cáo
+  ESCALATOR_WRAP // Thang cuốn
+  KIOSK_EVENT    // Kiosk / sự kiện
+  ADVERTISING    // Vị trí quảng cáo
+  SERVICE        // Dịch vụ (ngân hàng, bưu điện...)
+}
+
+enum UnitTier {
+  A // Prime — giá cao nhất
+  B // Standard
+  C // Value
+}
+
+enum BusinessModelEnum {
+  SHOP
+  KIOSK
+  POP_UP
+  EVENT
+  CHAIN
 }
 
 enum BookingStatus {
@@ -382,6 +411,7 @@ model Mall {
   maintenanceSchedules MaintenanceSchedule[]
   unifiedDocuments     UnifiedDocument[]
   categoryPricings     CategoryMallPricing[]
+  servicePriceCatalog  ServicePriceCatalog[]
 }
 
 model Building {
@@ -483,6 +513,25 @@ model Unit {
   // Phase 2: Additional info
   features          Json?         // {ac: true, water: true, electricity: true, facing: 'N', corner: false}
   virtualTourUrl    String?       // 360° tour / video link
+
+  // GAP #3 — Phân loại hình thức thuê
+  leaseTermType     UnitLeaseTermType?  // LONG hoặc SHORT; LONG có thể cho thuê ngắn hạn khi trống
+
+  // GAP #4 — Loại mặt bằng
+  spaceType         SpaceType?          // RETAIL_UNIT, LED, ESCALATOR_WRAP...
+
+  // GAP #5 — Sảnh linh động
+  isFlexibleArea    Boolean     @default(false) // true = thuê theo m² không cố định
+  minFlexArea       Float?                       // Diện tích tối thiểu có thể book (m²)
+  maxFlexArea       Float?                       // Diện tích tối đa có thể book (m²)
+
+  // GAP #6 — Tier A/B/C
+  tier              UnitTier?           // A = prime, B = standard, C = value
+
+  // GAP #2 — Gộp sảnh
+  isCombined        Boolean     @default(false) // true nếu là unit tổng hợp từ nhiều unit khác
+  mergedFromIds     Json?                        // [unitId, unitId, ...] — các unit nguồn
+  mergedIntoId      String?                      // ID của combined unit mà unit này đã bị gộp vào
 
   // Digital Map — position on floor plan (% of image dimensions, 0-100)
   mapPosX           Float?        // left edge % (legacy rect mode)
@@ -628,7 +677,7 @@ model Proposal {
   notes                String?
 
   // Tờ Trình fields
-  businessModel        String?        // Mô hình Kinh doanh (Gian hàng, Chuỗi, Kiosk...)
+  businessModel        BusinessModelEnum?  // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
   serviceFeeSqm        Float          @default(0)   // Phí Dịch vụ (USD/m²/tháng)
   businessSupportFeeSqm Float         @default(0)   // Phí hỗ trợ Kinh doanh
   rentCurrency         String         @default("VND") // VND hoặc USD
@@ -637,6 +686,14 @@ model Proposal {
   openingDate          DateTime?      // Ngày Khai trương dự kiến
   specialConditions    String?        // Điều kiện đặc biệt (mục 21)
   editorContent        Json?          // Editor state: logo, font, color, item overrides, signatories
+
+  // GAP #42 — Tỷ giá
+  exchangeRate         Float?         // VND/USD tỷ giá tại thời điểm lập Tờ Trình
+  exchangeRateSource   String?        // Nguồn tỷ giá (VCB, ...)
+
+  // GAP #7 — Diện tích trên HĐT vs thực tế
+  contractedArea       Float?         // Diện tích chốt trên Tờ Trình (m²)
+  actualArea           Float?         // Diện tích thực tế sau đo đạc bàn giao (m²)
 
   createdById          String
   isActive             Boolean        @default(true)
@@ -651,6 +708,7 @@ model Proposal {
   versions             ProposalVersion[]
   dealScore            ProposalDealScore?
   scenarios            ProposalScenario[]
+  services             ProposalService[]  // GAP #15 — line items dịch vụ
 }
 
 model ProposalVersion {
@@ -664,6 +722,48 @@ model ProposalVersion {
   createdAt    DateTime @default(now())
 
   @@unique([proposalId, version])
+  @@index([proposalId])
+}
+
+// ─── GAP #15 — Service Price Catalog ──────────────────────────────────────────
+
+model ServicePriceCatalog {
+  id           String   @id @default(cuid())
+  mallId       String
+  mall         Mall     @relation(fields: [mallId], references: [id])
+  serviceCode  String
+  name         String   // Tên dịch vụ: "LED screen", "Escalator wrap", "MKT support"...
+  unit         String   // Đơn vị tính: "m²", "tháng", "kỳ", "lần"
+  defaultPrice Float    // Giá mặc định
+  currency     String   @default("VND")
+  description  String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  proposalServices ProposalService[]
+
+  @@unique([mallId, serviceCode])
+  @@index([mallId, isActive])
+}
+
+model ProposalService {
+  id               String               @id @default(cuid())
+  proposalId       String
+  proposal         Proposal             @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  serviceCatalogId String?
+  serviceCatalog   ServicePriceCatalog? @relation(fields: [serviceCatalogId], references: [id])
+  serviceCode      String
+  name             String
+  quantity         Float                @default(1)
+  unit             String
+  unitPrice        Float
+  totalPrice       Float
+  currency         String               @default("VND")
+  notes            String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
   @@index([proposalId])
 }
 
@@ -740,6 +840,11 @@ model Contract {
   managedById       String?
   managedBy         User?          @relation("ManagedContracts", fields: [managedById], references: [id])
   notes             String?
+
+  // GAP #7 — Diện tích HĐT vs thực tế
+  contractedArea    Float?         // Diện tích ghi trên hợp đồng (m²)
+  actualArea        Float?         // Diện tích thực tế sau đo đạc bàn giao (m²)
+
   isActive          Boolean        @default(true)
   deletedAt         DateTime?
   createdAt         DateTime       @default(now())

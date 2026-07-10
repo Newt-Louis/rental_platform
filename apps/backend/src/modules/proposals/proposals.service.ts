@@ -183,7 +183,7 @@ export class ProposalsService {
         depositAmount: financials.depositAmount,
         totalContractValue: financials.totalContractValue,
         notes: dto.notes,
-        businessModel: dto.businessModel,
+        businessModel: dto.businessModel as any,
         serviceFeeSqm: dto.serviceFeeSqm ?? 0,
         businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
         rentCurrency: dto.rentCurrency ?? 'VND',

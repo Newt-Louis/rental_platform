@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi } from '@/api';
+import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi, contractsApi } from '@/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,6 +26,7 @@ import {
   BookmarkPlus, Clock, ChevronUp, ChevronDown, X, Users, ArrowRight,
   Image, Upload, Star, LayoutList, BarChart3, Filter, CheckSquare, Square,
   Columns, RefreshCw, TrendingUp, AlertCircle, SlidersHorizontal, CheckCircle, Lock,
+  GitMerge, Scissors, BadgeCheck,
 } from 'lucide-react';
 import type { Unit, UnitMedia, UnitSlotSummary } from '@/types';
 
@@ -38,7 +39,31 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   CONTRACTED:   { label: 'Hợp đồng',      color: 'bg-blue-100 text-gray-700 border-gray-200' },
   UNDER_FITOUT: { label: 'Đang thi công', color: 'bg-purple-100 text-purple-700 border-purple-200' },
   OCCUPIED:     { label: 'Đang thuê',     color: 'bg-green-100 text-green-700 border-green-200' },
+  MERGED:       { label: 'Đã gộp',        color: 'bg-gray-100 text-gray-500 border-gray-200' },
 };
+
+// GAP #4
+const SPACE_TYPE_OPTIONS = [
+  { value: 'RETAIL_UNIT',    label: 'Sảnh bán lẻ' },
+  { value: 'LED',            label: 'Bảng LED' },
+  { value: 'ESCALATOR_WRAP', label: 'Thang cuốn' },
+  { value: 'KIOSK_EVENT',   label: 'Kiosk / Sự kiện' },
+  { value: 'ADVERTISING',   label: 'Quảng cáo' },
+  { value: 'SERVICE',       label: 'Dịch vụ' },
+];
+
+// GAP #6
+const TIER_OPTIONS = [
+  { value: 'A', label: 'Tier A — Prime' },
+  { value: 'B', label: 'Tier B — Standard' },
+  { value: 'C', label: 'Tier C — Value' },
+];
+
+// GAP #3
+const LEASE_TERM_OPTIONS = [
+  { value: 'LONG',  label: 'Dài hạn (3-5 năm)' },
+  { value: 'SHORT', label: 'Ngắn hạn' },
+];
 
 const CATEGORIES = [
   'F&B - Ẩm thực',
@@ -123,6 +148,8 @@ function CreateEditUnitDialog({
     defaultValues: {
       code: '', name: '', category: '', floorId: defaultFloorId ?? '',
       zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
+      spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
+      minFlexArea: '', maxFlexArea: '',
     },
   });
 
@@ -141,9 +168,17 @@ function CreateEditUnitDialog({
         baseRentPerSqm: unit.baseRentPerSqm?.toString() ?? '',
         camPerSqm: unit.camPerSqm?.toString() ?? '',
         status: unit.status ?? 'VACANT',
+        spaceType: (unit as any).spaceType ?? '',
+        leaseTermType: (unit as any).leaseTermType ?? '',
+        tier: (unit as any).tier ?? '',
+        isFlexibleArea: (unit as any).isFlexibleArea ?? false,
+        minFlexArea: (unit as any).minFlexArea?.toString() ?? '',
+        maxFlexArea: (unit as any).maxFlexArea?.toString() ?? '',
       } : {
         code: '', name: '', category: '', floorId: defaultFloorId ?? '',
         zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
+        spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
+        minFlexArea: '', maxFlexArea: '',
       });
     }
   }, [open, unit, defaultFloorId]);
@@ -182,6 +217,12 @@ function CreateEditUnitDialog({
         zoneId: data.zoneId || undefined,
         name: data.name || undefined,
         category: data.category || undefined,
+        spaceType: data.spaceType || undefined,
+        leaseTermType: data.leaseTermType || undefined,
+        tier: data.tier || undefined,
+        minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
+        maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
+        isFlexibleArea: !!data.isFlexibleArea,
       };
       return isEdit ? spacesApi.updateUnit(unit.id, payload) : spacesApi.createUnit(payload);
     },
@@ -317,6 +358,67 @@ function CreateEditUnitDialog({
             </div>
           </div>
 
+          {/* GAP #4 + #6 + #3 — Loại sảnh / Tier / Hình thức thuê */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Loại sảnh</label>
+              <Select value={watch('spaceType')} onValueChange={(v) => setValue('spaceType', v)}>
+                <SelectTrigger><SelectValue placeholder="Chọn loại..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Tất cả —</SelectItem>
+                  {SPACE_TYPE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" {...register('spaceType')} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Tier</label>
+              <Select value={watch('tier')} onValueChange={(v) => setValue('tier', v)}>
+                <SelectTrigger><SelectValue placeholder="Chọn tier..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Không chọn —</SelectItem>
+                  {TIER_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" {...register('tier')} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Hình thức thuê</label>
+              <Select value={watch('leaseTermType')} onValueChange={(v) => setValue('leaseTermType', v)}>
+                <SelectTrigger><SelectValue placeholder="Chọn..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Không chọn —</SelectItem>
+                  {LEASE_TERM_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input type="hidden" {...register('leaseTermType')} />
+            </div>
+          </div>
+
+          {/* GAP #5 — Sảnh linh động */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                {...register('isFlexibleArea')}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm font-medium text-gray-700">Sảnh linh động (cho thuê theo m² không cố định)</span>
+            </label>
+            {watch('isFlexibleArea') && (
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Diện tích tối thiểu (m²)</label>
+                  <Input {...register('minFlexArea')} type="number" step="0.1" placeholder="50" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Diện tích tối đa (m²)</label>
+                  <Input {...register('maxFlexArea')} type="number" step="0.1" placeholder="200" />
+                </div>
+              </div>
+            )}
+          </div>
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
             <Button type="submit" disabled={mutation.isPending}>
@@ -432,6 +534,7 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
 
   const sourceType = watch('sourceType');
   const proposedRent = watch('proposedRentPerSqm');
+  const selectedCustomerId = watch('customerId');
   const priceAutofilledRef = useRef(false);
 
   // Mỗi lần mở dialog: reset form, tự điền diện tích đề xuất = full diện tích NLA của mặt bằng
@@ -504,6 +607,15 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, categoryPricing]);
+
+  // GAP #14 — Khách hiện hữu: check if selected customer has active contracts
+  const { data: activeContractsData } = useQuery({
+    queryKey: ['customer-active-contracts', selectedCustomerId],
+    queryFn: () => contractsApi.listContracts({ customerId: selectedCustomerId, status: 'ACTIVE', limit: 1 }),
+    enabled: open && sourceType === 'customer' && !!selectedCustomerId,
+    staleTime: 30_000,
+  });
+  const isExistingTenant = (activeContractsData?.total ?? activeContractsData?.data?.length ?? 0) > 0;
 
   const leads: any[] = leadsData?.data ?? [];
   const customers: any[] = customersData?.data ?? [];
@@ -603,6 +715,14 @@ function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
                 </SelectContent>
               </Select>
               <input type="hidden" {...register('customerId')} />
+              {/* GAP #14 — Khách hiện hữu badge */}
+              {isExistingTenant && (
+                <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+                  <BadgeCheck size={13} className="text-green-600 shrink-0" />
+                  <span className="font-medium">Khách hiện hữu</span>
+                  <span className="text-green-500">— đang có hợp đồng hiện hành</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1498,6 +1618,18 @@ function UnitDetailSheet({
     onError: () => toast({ title: 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
   });
 
+  const splitMutation = useMutation({
+    mutationFn: () => spacesApi.splitUnit((detail as any)?.id ?? unit!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      toast({ title: 'Đã tách sảnh thành công' });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tách sảnh', variant: 'destructive' }),
+  });
+
   const d: any = detail ?? unit;
   const cfg = d ? STATUS_CONFIG[d.status] : null;
   const monthlyEst = d ? ((d.baseRentPerSqm ?? 0) + (d.camPerSqm ?? 0)) * d.areaNLA : 0;
@@ -1636,7 +1768,48 @@ function UnitDetailSheet({
                 icon={DollarSign}
               />
             )}
+            {d.spaceType && (
+              <SheetRow label="Loại sảnh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
+            )}
+            {d.tier && (
+              <SheetRow label="Tier" value={TIER_OPTIONS.find(o => o.value === d.tier)?.label ?? d.tier} icon={Star} />
+            )}
+            {d.leaseTermType && (
+              <SheetRow label="Hình thức thuê" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
+            )}
+            {d.isFlexibleArea && (
+              <SheetRow
+                label="Diện tích linh động"
+                value={`${d.minFlexArea?.toLocaleString() ?? '?'} – ${d.maxFlexArea?.toLocaleString() ?? '?'} m²`}
+                icon={SlidersHorizontal}
+              />
+            )}
           </SheetSection>
+
+          {/* GAP #2 — Sảnh gộp info + Tách sảnh */}
+          {d.isCombined && (
+            <SheetSection label="THÔNG TIN SẢNH GỘP" className="bg-violet-50">
+              <div className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center gap-2 text-sm text-violet-700">
+                  <GitMerge size={14} />
+                  <span>Sảnh này được gộp từ {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sảnh nguồn</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-100"
+                  disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT'}
+                  onClick={() => splitMutation.mutate()}
+                >
+                  <Scissors size={12} />
+                  {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
+                </Button>
+              </div>
+              {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
+                <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
+              )}
+            </SheetSection>
+          )}
 
           {/* Tenant */}
           {d.tenant && (
@@ -1803,7 +1976,14 @@ function UnitCard({
           <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.color}`}>{cfg.label}</span>
         </div>
         <div className="text-xs text-gray-500 space-y-0.5">
-          <div>{unit.floor?.name ?? '—'} · {unit.zone?.name ?? '—'}</div>
+          <div className="flex items-center gap-1">
+            <span>{unit.floor?.name ?? '—'} · {unit.zone?.name ?? '—'}</span>
+            {(unit as any).isCombined && (
+              <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-violet-100 text-violet-600 rounded text-[10px] font-medium">
+                <GitMerge size={9} /> Gộp
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span>{unit.areaNLA.toLocaleString()} m² NLA</span>
             {unit.baseRentPerSqm > 0 && (
@@ -1816,6 +1996,115 @@ function UnitCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Merge Units Dialog (GAP #2) ─────────────────────────────────────────────
+
+function MergeUnitsDialog({
+  open,
+  units,
+  mallId,
+  onClose,
+}: {
+  open: boolean;
+  units: Unit[];
+  mallId: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+    defaultValues: { code: '', name: '' },
+  });
+
+  useEffect(() => {
+    if (open) reset({ code: '', name: '' });
+  }, [open]);
+
+  const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
+  const allVacant = units.every((u) => u.status === 'VACANT');
+
+  const mergeMutation = useMutation({
+    mutationFn: (data: any) => spacesApi.mergeUnits({
+      unitIds: units.map((u) => u.id),
+      code: data.code,
+      name: data.name || undefined,
+    }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      toast({ title: `Đã gộp thành công → ${result.combinedUnit?.code ?? ''}` });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi gộp sảnh', variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <GitMerge size={18} className="text-violet-500" />
+            Gộp sảnh
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          {/* Units to merge */}
+          <div>
+            <p className="text-xs font-semibold tracking-wider text-gray-400 mb-2">SẢNH ĐANG GỘP ({units.length})</p>
+            <div className="space-y-1">
+              {units.map((u) => (
+                <div key={u.id} className="flex items-center justify-between text-sm px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                  <span className="font-mono font-semibold">{u.code}</span>
+                  <span className="text-gray-500">{u.areaNLA?.toLocaleString()} m²</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between text-sm px-3 py-1.5 bg-violet-50 rounded-lg border border-violet-100 mt-1">
+              <span className="font-medium text-violet-700">Tổng diện tích NLA</span>
+              <span className="font-bold text-violet-700">{totalArea.toLocaleString()} m²</span>
+            </div>
+          </div>
+
+          {!allVacant && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertTriangle size={14} />
+              Tất cả các sảnh phải có trạng thái <strong>Trống</strong> để có thể gộp.
+            </div>
+          )}
+
+          {/* New unit code */}
+          <form id="merge-form" onSubmit={handleSubmit((d) => mergeMutation.mutate(d))} className="space-y-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Mã sảnh mới *</label>
+              <Input
+                {...register('code', { required: true })}
+                placeholder="GF-A01+A02"
+                className={errors.code ? 'border-red-400' : ''}
+              />
+              <p className="text-xs text-gray-400 mt-1">Sảnh gộp sẽ có mã mới này. Sảnh nguồn sẽ chuyển sang trạng thái "Đã gộp".</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Tên sảnh (tuỳ chọn)</label>
+              <Input {...register('name')} placeholder="Sảnh A01 + A02 gộp" />
+            </div>
+          </form>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Hủy</Button>
+          <Button
+            form="merge-form"
+            type="submit"
+            disabled={mergeMutation.isPending || !allVacant}
+            className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5"
+          >
+            <GitMerge size={14} />
+            {mergeMutation.isPending ? 'Đang gộp...' : 'Xác nhận gộp'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2347,6 +2636,13 @@ export default function SpacesPage() {
   const [minRent, setMinRent] = useState('');
   const [maxRent, setMaxRent] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  // GAP #3 / #4 / #6 — new filters
+  const [spaceTypeFilter, setSpaceTypeFilter] = useState('');
+  const [tierFilter, setTierFilter] = useState('');
+  const [leaseTermFilter, setLeaseTermFilter] = useState('');
+
+  // Merge dialog (GAP #2)
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   
   // Selection & modals
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
@@ -2396,10 +2692,10 @@ export default function SpacesPage() {
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
-  const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter);
+  const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter || spaceTypeFilter || tierFilter || leaseTermFilter);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter }],
+    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: leaseTermFilter }],
     queryFn: () => spacesApi.listUnits({
       search: search || undefined,
       status: statusFilter || undefined,
@@ -2410,6 +2706,9 @@ export default function SpacesPage() {
       minRent: minRent || undefined,
       maxRent: maxRent || undefined,
       category: categoryFilter || undefined,
+      spaceType: spaceTypeFilter || undefined,
+      tier: tierFilter || undefined,
+      leaseTermType: leaseTermFilter || undefined,
       page: 1,
       limit: 300,
     }),
@@ -2486,6 +2785,9 @@ export default function SpacesPage() {
     setMinRent('');
     setMaxRent('');
     setCategoryFilter('');
+    setSpaceTypeFilter('');
+    setTierFilter('');
+    setLeaseTermFilter('');
   };
 
   return (
@@ -2744,8 +3046,8 @@ export default function SpacesPage() {
                   />
                 </div>
               </div>
-              <div className="flex gap-3">
-                <div className="w-48">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Ngành hàng</label>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                     <SelectTrigger>
@@ -2755,6 +3057,51 @@ export default function SpacesPage() {
                       <SelectItem value="">Tất cả</SelectItem>
                       {categoryNames.map((c) => (
                         <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* GAP #4 */}
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Loại sảnh</label>
+                  <Select value={spaceTypeFilter} onValueChange={setSpaceTypeFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tất cả loại" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Tất cả</SelectItem>
+                      {SPACE_TYPE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* GAP #6 */}
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Tier</label>
+                  <Select value={tierFilter} onValueChange={setTierFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tất cả tier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Tất cả</SelectItem>
+                      {TIER_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* GAP #3 */}
+                <div>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Hình thức thuê</label>
+                  <Select value={leaseTermFilter} onValueChange={setLeaseTermFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tất cả" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Tất cả</SelectItem>
+                      {LEASE_TERM_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -2783,6 +3130,17 @@ export default function SpacesPage() {
             {selectedIds.size >= 2 && selectedIds.size <= 5 && (
               <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
                 <Columns size={14} /> So sánh
+              </Button>
+            )}
+            {/* GAP #2 — Gộp sảnh: chỉ hiện khi ≥2 unit được chọn */}
+            {selectedIds.size >= 2 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMergeDialogOpen(true)}
+                className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
+              >
+                <GitMerge size={14} /> Gộp sảnh
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('status')} className="gap-1.5">
@@ -2826,6 +3184,14 @@ export default function SpacesPage() {
         unitIds={Array.from(selectedIds)}
         open={compareOpen}
         onClose={() => setCompareOpen(false)}
+      />
+
+      {/* Merge Units Dialog (GAP #2) */}
+      <MergeUnitsDialog
+        open={mergeDialogOpen}
+        units={units.filter((u) => selectedIds.has(u.id))}
+        mallId={selectedMallId ?? ''}
+        onClose={() => setMergeDialogOpen(false)}
       />
 
       {/* Content */}
@@ -2955,12 +3321,12 @@ export default function SpacesPage() {
         </>
       )}
 
-      {/* Unit detail sheet */}
+      {/* Unit detail sheet — hidden when edit/delete dialogs are open */}
       <UnitDetailSheet
-        unit={selectedUnit}
+        unit={editingUnit || deletingUnit ? null : selectedUnit}
         onClose={() => setSelectedUnit(null)}
-        onEdit={(u) => setEditingUnit(u)}
-        onDelete={(u) => setDeletingUnit(u)}
+        onEdit={(u) => { setSelectedUnit(null); setEditingUnit(u); }}
+        onDelete={(u) => { setSelectedUnit(null); setDeletingUnit(u); }}
       />
 
       {/* Create unit dialog */}

@@ -53,6 +53,14 @@ export class AnalyticsController {
     return this.occupancy.getVacancyAnalysis(mallId);
   }
 
+  // GAP #28 — Breakdown ngành hàng theo tầng
+  @Get('occupancy/category-by-floor')
+  @ApiOperation({ summary: 'GAP #28 — Breakdown ngành hàng × tầng với tỉ lệ lấp đầy từng ngành' })
+  @ApiQuery({ name: 'mallId', required: false })
+  getCategoryByFloor(@Query('mallId') mallId?: string) {
+    return this.occupancy.getCategoryByFloor(mallId);
+  }
+
   @Get('renewal-risk')
   @ApiOperation({ summary: 'Get renewal risk dashboard' })
   @ApiQuery({ name: 'mallId', required: false })

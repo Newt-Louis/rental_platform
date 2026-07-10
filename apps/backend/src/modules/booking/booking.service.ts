@@ -32,12 +32,12 @@ export class BookingService {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
     if (!unit || !unit.isActive) throw new NotFoundException('Unit không tồn tại');
 
-    // Mặt bằng đã có khách thuê chính thức — chặn sớm trước khi ghi dữ liệu, tránh trường hợp
-    // booking được tạo thành công nhưng bước chuyển trạng thái unit phía sau thất bại do
-    // OCCUPIED/CONTRACTED/UNDER_FITOUT không nằm trong ALLOWED_TRANSITIONS → BOOKING.
-    if (this.unitStatus.isCommittedToTenant(unit.status)) {
+    // GAP #20: Chặn booking khi unit đang bị khoá hoàn toàn —
+    // bao gồm OCCUPIED/CONTRACTED/UNDER_FITOUT (đã có khách chính thức) và
+    // NEGOTIATING (đang thương thảo nghiêm túc, không cho xếp hàng thêm) và MERGED.
+    if (this.unitStatus.isLockedForBooking(unit.status)) {
       throw new BadRequestException(
-        `Không thể tạo booking: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,
+        `Không thể tạo booking: mặt bằng đang bị khoá (trạng thái ${unit.status}).`,
       );
     }
 
@@ -603,7 +603,7 @@ export class BookingService {
           depositAmount,
           totalContractValue,
           notes: dto.notes,
-          businessModel: dto.businessModel,
+          businessModel: dto.businessModel as any,
           serviceFeeSqm: dto.serviceFeeSqm ?? 0,
           businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
           rentCurrency: dto.rentCurrency ?? 'VND',

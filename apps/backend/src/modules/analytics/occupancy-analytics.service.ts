@@ -21,6 +21,8 @@ export class OccupancyAnalyticsService {
         id: true,
         status: true,
         areaNLA: true,
+        baseRentPerSqm: true,
+        camPerSqm: true,
         category: true,
         floor: { select: { id: true, name: true } },
         mall: { select: { id: true, name: true } },
@@ -46,8 +48,14 @@ export class OccupancyAnalyticsService {
       ? Math.round(((occupiedArea + underFitoutArea) / totalArea) * 1000) / 10
       : 0;
 
+    // GAP #26 — avgRentPerSqm theo floor; GAP #29 — totalMonthlyBillingRevenue
+    const totalMonthlyBillingRevenue = occupied.reduce(
+      (s, u) => s + (u.baseRentPerSqm + (u.camPerSqm ?? 0)) * u.areaNLA,
+      0,
+    );
+
     const byCategory = this.groupByField(units, 'category');
-    const byFloor = this.groupByField(units, 'floor');
+    const byFloor = this.groupByFieldWithRent(units, 'floor');
 
     return {
       summary: {
@@ -64,6 +72,8 @@ export class OccupancyAnalyticsService {
         underFitoutArea,
         occupancyRate,
         effectiveOccupancy,
+        // GAP #29 — doanh thu tiền thuê (billing) phân biệt với doanh thu tenant (sales)
+        totalMonthlyBillingRevenue: Math.round(totalMonthlyBillingRevenue),
       },
       byCategory,
       byFloor,
@@ -93,6 +103,89 @@ export class OccupancyAnalyticsService {
       ...data,
       occupancyRate: data.area > 0 ? Math.round((data.occupiedArea / data.area) * 1000) / 10 : 0,
     }));
+  }
+
+  /** GAP #26 — groupByField nhưng bổ sung avgRentPerSqm cho từng floor */
+  private groupByFieldWithRent(units: any[], field: string) {
+    const groups: Record<string, any> = {};
+
+    for (const unit of units) {
+      const key = field === 'floor' ? unit.floor?.name ?? 'Unknown' : unit[field] ?? 'Unknown';
+      if (!groups[key]) {
+        groups[key] = { total: 0, occupied: 0, vacant: 0, area: 0, occupiedArea: 0, rentSum: 0, occupiedCount: 0 };
+      }
+      const g = groups[key];
+      g.total++;
+      g.area += unit.areaNLA ?? 0;
+      if (unit.status === UnitStatus.OCCUPIED) {
+        g.occupied++;
+        g.occupiedArea += unit.areaNLA ?? 0;
+        g.rentSum += unit.baseRentPerSqm ?? 0;
+        g.occupiedCount++;
+      } else if (unit.status === UnitStatus.VACANT) {
+        g.vacant++;
+      }
+    }
+
+    return Object.entries(groups).map(([name, data]: [string, any]) => ({
+      name,
+      total: data.total,
+      occupied: data.occupied,
+      vacant: data.vacant,
+      area: data.area,
+      occupiedArea: data.occupiedArea,
+      // GAP #26 — giá thuê trung bình/m² của các unit OCCUPIED
+      avgRentPerSqm: data.occupiedCount > 0 ? Math.round(data.rentSum / data.occupiedCount) : 0,
+      occupancyRate: data.area > 0 ? Math.round((data.occupiedArea / data.area) * 1000) / 10 : 0,
+    }));
+  }
+
+  // ─── GAP #28 — Breakdown floor × category với occupancy ratio ─────────────
+
+  async getCategoryByFloor(mallId?: string) {
+    const where: any = { isActive: true };
+    if (mallId) where.mallId = mallId;
+
+    const units = await this.prisma.unit.findMany({
+      where,
+      select: {
+        status: true,
+        areaNLA: true,
+        category: true,
+        floor: { select: { id: true, name: true } },
+      },
+    });
+
+    if (units.length === 0) return [];
+
+    // Group: floorName → categoryName → {total, occupied, area}
+    const map = new Map<string, Map<string, { total: number; occupied: number; area: number }>>();
+
+    for (const u of units) {
+      const floorKey = u.floor?.name ?? 'Unknown';
+      const catKey = u.category ?? 'Khác';
+
+      if (!map.has(floorKey)) map.set(floorKey, new Map());
+      const catMap = map.get(floorKey)!;
+
+      if (!catMap.has(catKey)) catMap.set(catKey, { total: 0, occupied: 0, area: 0 });
+      const g = catMap.get(catKey)!;
+      g.total++;
+      g.area += u.areaNLA ?? 0;
+      if (u.status === UnitStatus.OCCUPIED) g.occupied++;
+    }
+
+    return Array.from(map.entries()).map(([floorName, catMap]) => ({
+      floorName,
+      categories: Array.from(catMap.entries()).map(([category, data]) => ({
+        category,
+        total: data.total,
+        occupied: data.occupied,
+        area: data.area,
+        occupancyRate: data.total > 0 ? ((data.occupied / data.total) * 100).toFixed(1) : '0.0',
+        areaRatio: data.area,
+      })).sort((a, b) => b.total - a.total),
+    })).sort((a, b) => a.floorName.localeCompare(b.floorName));
   }
 
   async getOccupancyTrend(mallId?: string, months = 12) {
