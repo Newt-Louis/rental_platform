@@ -68,8 +68,6 @@ export function ConvertBookingDialog({
   const area = Number(watch('area') || 0);
   const rent = Number(watch('rentPerSqm') || 0);
   const cam = Number(watch('camPerSqm') || 0);
-  const monthly = area * (rent + cam);
-
   const currency = watch('rentCurrency');
 
   return (

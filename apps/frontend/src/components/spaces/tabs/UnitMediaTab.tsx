@@ -20,7 +20,6 @@ export function UnitMediaTab({ unitId }: { unitId: string }) {
   const { toast } = useToast();
   const [mediaType, setMediaType] = useState('');
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useState<HTMLInputElement | null>(null);
 
   const { data: mediaList = [], isLoading } = useQuery<UnitMedia[]>({
     queryKey: ['unit-media', unitId, mediaType],
