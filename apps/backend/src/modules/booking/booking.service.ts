@@ -611,6 +611,15 @@ export class BookingService {
           handoverDate: dto.handoverDate ? new Date(dto.handoverDate) : undefined,
           openingDate: dto.openingDate ? new Date(dto.openingDate) : undefined,
           specialConditions: dto.specialConditions,
+          // GAP #91–94
+          utilityFee: dto.utilityFee ?? 0,
+          operatingHours: dto.operatingHours,
+          afterHoursFee: dto.afterHoursFee ?? 0,
+          paymentTermDays: dto.paymentTermDays ?? 30,
+          // GAP #41
+          depositLease: dto.depositLease,
+          depositFitout: dto.depositFitout ?? 0,
+          fitoutFee: dto.fitoutFee ?? 0,
           createdById: userId,
         },
       });

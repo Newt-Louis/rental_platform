@@ -41,3 +41,9 @@ services:
       - "5173:5173"
     # Dev: only expose Vite port (no 8080/nginx)
     expose: []
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5173/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

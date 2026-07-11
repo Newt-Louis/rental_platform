@@ -21,31 +21,31 @@ enum Role {
 }
 
 enum UnitStatus {
-  VACANT       // Trống
-  BOOKING      // Đang booking/giữ chỗ
-  NEGOTIATING  // Đang thương thảo (proposal stage)
-  CONTRACTED   // Đã ký hợp đồng, chờ thi công
-  UNDER_FITOUT // Đang thi công
-  OCCUPIED     // Đang thuê
-  MERGED       // Đã gộp vào sảnh khác (ẩn khỏi danh sách thường)
+  VACANT       // Trng
+  BOOKING      // ang booking/gi ch
+  NEGOTIATING  // ang thng tho (proposal stage)
+  CONTRACTED   //  k hp ng, ch thi cng
+  UNDER_FITOUT // ang thi cng
+  OCCUPIED     // ang thu
+  MERGED       //  gp vo snh khc (n khi danh sch thng)
 }
 
 enum UnitLeaseTermType {
-  LONG   // Dài hạn (3-5 năm)
-  SHORT  // Ngắn hạn (ngày/tuần/tháng)
+  LONG   // Di hn (3-5 nm)
+  SHORT  // Ngn hn (ngy/tun/thng)
 }
 
 enum SpaceType {
-  RETAIL_UNIT    // Sảnh bán lẻ thông thường
-  LED            // Bảng LED/màn hình quảng cáo
-  ESCALATOR_WRAP // Thang cuốn
-  KIOSK_EVENT    // Kiosk / sự kiện
-  ADVERTISING    // Vị trí quảng cáo
-  SERVICE        // Dịch vụ (ngân hàng, bưu điện...)
+  RETAIL_UNIT    // Snh bn l thng thng
+  LED            // Bng LED/mn hnh qung co
+  ESCALATOR_WRAP // Thang cun
+  KIOSK_EVENT    // Kiosk / s kin
+  ADVERTISING    // V tr qung co
+  SERVICE        // Dch v (ngn hng, bu in...)
 }
 
 enum UnitTier {
-  A // Prime — giá cao nhất
+  A // Prime -- gi cao nht
   B // Standard
   C // Value
 }
@@ -59,11 +59,11 @@ enum BusinessModelEnum {
 }
 
 enum BookingStatus {
-  PENDING     // Mới tạo, chờ sale xác nhận
-  ACTIVE      // Đang giữ slot (unit → BOOKING)
-  EXPIRED     // Quá hạn hold
-  CANCELLED   // Hủy thủ công
-  CONVERTED   // Đã chuyển thành Proposal
+  PENDING     // Mi to, ch sale xc nhn
+  ACTIVE      // ang gi slot (unit -> BOOKING)
+  EXPIRED     // Qu hn hold
+  CANCELLED   // Hy th cng
+  CONVERTED   //  chuyn thnh Proposal
 }
 
 enum UnitMediaType {
@@ -134,9 +134,9 @@ enum PriceApprovalStatus {
   REJECTED
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 // CATEGORY MASTER DATA
-// ═══════════════════════════════════════════════════════════════════════════
+// ===========================================================================
 
 model Category {
   id          String      @id @default(cuid())
@@ -174,16 +174,16 @@ model CategoryMallPricing {
   zoneId          String?
   zone            Zone?     @relation(fields: [zoneId], references: [id])
   
-  // Price range (VND/m²/month)
-  minRentPerSqm   Float                 // Giá sàn
-  maxRentPerSqm   Float                 // Giá trần
-  suggestedRent   Float?                // Giá đề xuất (tham khảo)
+  // Price range (VND/m2/month)
+  minRentPerSqm   Float                 // Gi sn
+  maxRentPerSqm   Float                 // Gi trn
+  suggestedRent   Float?                // Gi  xut (tham kho)
   
   // CAM pricing
-  camPerSqm       Float     @default(0) // Phí quản lý chuẩn
+  camPerSqm       Float     @default(0) // Ph qun l chun
   
   effectiveFrom   DateTime  @default(now())
-  effectiveTo     DateTime?             // Null = vô thời hạn
+  effectiveTo     DateTime?             // Null = v thi hn
   notes           String?
   isActive        Boolean   @default(true)
   createdAt       DateTime  @default(now())
@@ -290,7 +290,7 @@ enum TicketStatus {
   CLOSED
 }
 
-// Ai khởi tạo ticket — tenant tự gửi yêu cầu, hay nhân viên tạo phiếu kiểm tra hiện trường gửi cho tenant.
+// Ai khi to ticket -- tenant t gi yu cu, hay nhn vin to phiu kim tra hin trng gi cho tenant.
 enum TicketSource {
   TENANT_REQUEST
   STAFF_INSPECTION
@@ -343,7 +343,7 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  // Liên kết tài khoản đăng nhập (role=TENANT) với Tenant record tương ứng — chỉ có ý nghĩa với role TENANT.
+  // Lin kt ti khon ng nhp (role=TENANT) vi Tenant record tng ng -- ch c  ngha vi role TENANT.
   tenantId      String?
   tenant        Tenant?   @relation(fields: [tenantId], references: [id])
 
@@ -442,7 +442,7 @@ model Floor {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  // Digital Map — floor plan image for interactive map
+  // Digital Map -- floor plan image for interactive map
   floorPlanUrl   String?   // URL/path of uploaded floor plan image
   floorPlanRatio Float?    // aspect ratio (width/height) stored for correct rendering
 
@@ -512,28 +512,28 @@ model Unit {
 
   // Phase 2: Additional info
   features          Json?         // {ac: true, water: true, electricity: true, facing: 'N', corner: false}
-  virtualTourUrl    String?       // 360° tour / video link
+  virtualTourUrl    String?       // 360deg tour / video link
 
-  // GAP #3 — Phân loại hình thức thuê
-  leaseTermType     UnitLeaseTermType?  // LONG hoặc SHORT; LONG có thể cho thuê ngắn hạn khi trống
+  // GAP #3 -- Phn loi hnh thc thu
+  leaseTermType     UnitLeaseTermType?  // LONG hoc SHORT; LONG c th cho thu ngn hn khi trng
 
-  // GAP #4 — Loại mặt bằng
+  // GAP #4 -- Loi mt bng
   spaceType         SpaceType?          // RETAIL_UNIT, LED, ESCALATOR_WRAP...
 
-  // GAP #5 — Sảnh linh động
-  isFlexibleArea    Boolean     @default(false) // true = thuê theo m² không cố định
-  minFlexArea       Float?                       // Diện tích tối thiểu có thể book (m²)
-  maxFlexArea       Float?                       // Diện tích tối đa có thể book (m²)
+  // GAP #5 -- Snh linh ng
+  isFlexibleArea    Boolean     @default(false) // true = thu theo m2 khng c nh
+  minFlexArea       Float?                       // Din tch ti thiu c th book (m2)
+  maxFlexArea       Float?                       // Din tch ti a c th book (m2)
 
-  // GAP #6 — Tier A/B/C
+  // GAP #6 -- Tier A/B/C
   tier              UnitTier?           // A = prime, B = standard, C = value
 
-  // GAP #2 — Gộp sảnh
-  isCombined        Boolean     @default(false) // true nếu là unit tổng hợp từ nhiều unit khác
-  mergedFromIds     Json?                        // [unitId, unitId, ...] — các unit nguồn
-  mergedIntoId      String?                      // ID của combined unit mà unit này đã bị gộp vào
+  // GAP #2 -- Gp snh
+  isCombined        Boolean     @default(false) // true nu l unit tng hp t nhiu unit khc
+  mergedFromIds     Json?                        // [unitId, unitId, ...] -- cc unit ngun
+  mergedIntoId      String?                      // ID ca combined unit m unit ny  b gp vo
 
-  // Digital Map — position on floor plan (% of image dimensions, 0-100)
+  // Digital Map -- position on floor plan (% of image dimensions, 0-100)
   mapPosX           Float?        // left edge % (legacy rect mode)
   mapPosY           Float?        // top edge %
   mapPosW           Float?        // width %
@@ -676,24 +676,35 @@ model Proposal {
   status               ProposalStatus @default(DRAFT)
   notes                String?
 
-  // Tờ Trình fields
+  // T Trnh fields
   businessModel        BusinessModelEnum?  // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
-  serviceFeeSqm        Float          @default(0)   // Phí Dịch vụ (USD/m²/tháng)
-  businessSupportFeeSqm Float         @default(0)   // Phí hỗ trợ Kinh doanh
-  rentCurrency         String         @default("VND") // VND hoặc USD
-  fitoutDays           Int            @default(90)  // Thời hạn hoàn thiện nội thất (ngày)
-  handoverDate         DateTime?      // Ngày Bàn giao Mặt bằng
-  openingDate          DateTime?      // Ngày Khai trương dự kiến
-  specialConditions    String?        // Điều kiện đặc biệt (mục 21)
+  serviceFeeSqm        Float          @default(0)   // Ph Dch v (USD/m2/thng)
+  businessSupportFeeSqm Float         @default(0)   // Ph h tr Kinh doanh
+  rentCurrency         String         @default("VND") // VND hoc USD
+  fitoutDays           Int            @default(90)  // Thi hn hon thin ni tht (ngy)
+  handoverDate         DateTime?      // Ngy Bn giao Mt bng
+  openingDate          DateTime?      // Ngy Khai trng d kin
+  specialConditions    String?        // iu kin c bit (mc 21)
   editorContent        Json?          // Editor state: logo, font, color, item overrides, signatories
 
-  // GAP #42 — Tỷ giá
-  exchangeRate         Float?         // VND/USD tỷ giá tại thời điểm lập Tờ Trình
-  exchangeRateSource   String?        // Nguồn tỷ giá (VCB, ...)
+  // GAP #42 -- T gi
+  exchangeRate         Float?         // VND/USD t gi ti thi im lp T Trnh
+  exchangeRateSource   String?        // Ngun t gi (VCB, ...)
 
-  // GAP #7 — Diện tích trên HĐT vs thực tế
-  contractedArea       Float?         // Diện tích chốt trên Tờ Trình (m²)
-  actualArea           Float?         // Diện tích thực tế sau đo đạc bàn giao (m²)
+  // GAP #7 -- Din tch trn HT vs thc t
+  contractedArea       Float?         // Din tch cht trn T Trnh (m2)
+  actualArea           Float?         // Din tch thc t sau o c bn giao (m2)
+
+  // GAP #91-94 -- 4 field cn thiu trong 21 mc T Trnh XN
+  utilityFee           Float          @default(0)   // Ph tin ch (mc 12 -- VND/thng)
+  operatingHours       String?                       // Gi hot ng (mc 13 -- vd: "10:00-22:00")
+  afterHoursFee        Float          @default(0)   // Ph ngoi gi (mc 14 -- VND/gi)
+  paymentTermDays      Int            @default(30)  // iu khon thanh ton (mc 16 -- s ngy)
+
+  // GAP #41 -- Tch 3 khon cc
+  depositLease         Float?                        // Tin cc thu (VND) -- null = tnh t deposit x monthlyRent
+  depositFitout        Float          @default(0)   // Cc thi cng (VND)
+  fitoutFee            Float          @default(0)   // Ph thi cng (VND)
 
   createdById          String
   isActive             Boolean        @default(true)
@@ -708,7 +719,7 @@ model Proposal {
   versions             ProposalVersion[]
   dealScore            ProposalDealScore?
   scenarios            ProposalScenario[]
-  services             ProposalService[]  // GAP #15 — line items dịch vụ
+  services             ProposalService[]  // GAP #15 -- line items dch v
 }
 
 model ProposalVersion {
@@ -725,16 +736,16 @@ model ProposalVersion {
   @@index([proposalId])
 }
 
-// ─── GAP #15 — Service Price Catalog ──────────────────────────────────────────
+// --- GAP #15 -- Service Price Catalog ------------------------------------------
 
 model ServicePriceCatalog {
   id           String   @id @default(cuid())
   mallId       String
   mall         Mall     @relation(fields: [mallId], references: [id])
   serviceCode  String
-  name         String   // Tên dịch vụ: "LED screen", "Escalator wrap", "MKT support"...
-  unit         String   // Đơn vị tính: "m²", "tháng", "kỳ", "lần"
-  defaultPrice Float    // Giá mặc định
+  name         String   // Tn dch v: "LED screen", "Escalator wrap", "MKT support"...
+  unit         String   // n v tnh: "m2", "thng", "k", "ln"
+  defaultPrice Float    // Gi mc nh
   currency     String   @default("VND")
   description  String?
   isActive     Boolean  @default(true)
@@ -841,9 +852,19 @@ model Contract {
   managedBy         User?          @relation("ManagedContracts", fields: [managedById], references: [id])
   notes             String?
 
-  // GAP #7 — Diện tích HĐT vs thực tế
-  contractedArea    Float?         // Diện tích ghi trên hợp đồng (m²)
-  actualArea        Float?         // Diện tích thực tế sau đo đạc bàn giao (m²)
+  // GAP #7 -- Din tch HT vs thc t
+  contractedArea    Float?         // Din tch ghi trn hp ng (m2)
+  actualArea        Float?         // Din tch thc t sau o c bn giao (m2)
+
+  // GAP #41 -- Tch 3 khon cc (carry-over t Proposal khi convert)
+  depositLease      Float?         // Tin cc thu (VND)
+  depositFitout     Float          @default(0)   // Cc thi cng (VND)
+  fitoutFee         Float          @default(0)   // Ph thi cng (VND)
+
+  // GAP #91, #93 -- Ph tin ch & ph ngoi gi
+  utilityFee        Float          @default(0)   // Ph tin ch (VND/thng)
+  afterHoursFee     Float          @default(0)   // Ph ngoi gi (VND/gi)
+  operatingHours    String?        // Gi hot ng
 
   isActive          Boolean        @default(true)
   deletedAt         DateTime?
@@ -936,18 +957,18 @@ model FitoutProject {
   tasks              FitoutTask[]
 }
 
-// Cấu hình pipeline giai đoạn fitout — thay cho enum FitoutStatus cứng.
-// code giữ nguyên các giá trị enum cũ để tương thích dữ liệu hiện có.
+// Cu hnh pipeline giai on fitout -- thay cho enum FitoutStatus cng.
+// code gi nguyn cc gi tr enum c  tng thch d liu hin c.
 model FitoutStageConfig {
   id                 String   @id @default(cuid())
   code               String   @unique
   name               String
-  phaseGroup         String // Nhóm giai đoạn lớn theo flowchart, vd "GD1_KHOI_DAU"
-  roleColumn         String // OWNER | COORDINATOR | TENANT — cột chịu trách nhiệm chính theo flowchart
+  phaseGroup         String // Nhm giai on ln theo flowchart, vd "GD1_KHOI_DAU"
+  roleColumn         String // OWNER | COORDINATOR | TENANT -- ct chu trch nhim chnh theo flowchart
   order              Int
   meetingRequired    Boolean  @default(false)
-  triggersUnitStatus String? // UnitStatus cần chuyển khi vào stage này, vd "UNDER_FITOUT"
-  setsField          String? // Field trên FitoutProject cần set now(), vd "startDate" | "actualOpenDate"
+  triggersUnitStatus String? // UnitStatus cn chuyn khi vo stage ny, vd "UNDER_FITOUT"
+  setsField          String? // Field trn FitoutProject cn set now(), vd "startDate" | "actualOpenDate"
   colorHex           String   @default("#6b7280")
   isActive           Boolean  @default(true)
   createdAt          DateTime @default(now())
@@ -956,7 +977,7 @@ model FitoutStageConfig {
   @@index([isActive, order])
 }
 
-// Danh mục loại Form/tài liệu fitout — thay cho enum FitoutDocumentType cứng (chỉ 9 loại, không đủ 16 Form của flowchart).
+// Danh mc loi Form/ti liu fitout -- thay cho enum FitoutDocumentType cng (ch 9 loi, khng  16 Form ca flowchart).
 model FitoutFormType {
   id               String   @id @default(cuid())
   code             String   @unique
@@ -964,7 +985,7 @@ model FitoutFormType {
   category         String   @default("OTHER")
   defaultStageCode String?
   approvalLevels   Int      @default(1)
-  approverRoles    Json? // mảng Role theo thứ tự cấp duyệt, vd ["OPERATION","MALL_DIRECTOR"] — độ dài phải khớp approvalLevels
+  approverRoles    Json? // mng Role theo th t cp duyt, vd ["OPERATION","MALL_DIRECTOR"] --  di phi khp approvalLevels
   order            Int      @default(0)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
@@ -975,14 +996,14 @@ model FitoutFormType {
   @@index([isActive, order])
 }
 
-// Đệ trình (Submittal) — Form 1-16 theo flowchart, đa cấp duyệt (tái dùng ApprovalWorkflow/ApprovalStep).
+//  trnh (Submittal) -- Form 1-16 theo flowchart, a cp duyt (ti dng ApprovalWorkflow/ApprovalStep).
 model FitoutSubmittal {
   id                String            @id @default(cuid())
   projectId         String
   project           FitoutProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   formTypeId        String
   formType          FitoutFormType    @relation(fields: [formTypeId], references: [id])
-  stageCode         String // stage tại thời điểm nộp (denormalized để gate-check tra cứu nhanh)
+  stageCode         String // stage ti thi im np (denormalized  gate-check tra cu nhanh)
   title             String
   revisionNo        Int               @default(1)
   parentSubmittalId String?
@@ -1002,7 +1023,7 @@ model FitoutSubmittal {
   @@index([projectId, status])
 }
 
-// Vấn đề/Khiếm khuyết (Defect/NCR) — ghim vị trí trên D-Map, workflow Opened→InProgress→Done→Closed/Reopened.
+// Vn /Khim khuyt (Defect/NCR) -- ghim v tr trn D-Map, workflow Opened->InProgress->Done->Closed/Reopened.
 model FitoutIssue {
   id            String        @id @default(cuid())
   projectId     String
@@ -1016,7 +1037,7 @@ model FitoutIssue {
   severity      String        @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
   status        String        @default("OPENED") // OPENED | IN_PROGRESS | DONE | CLOSED | REOPENED | CANCELLED
   isOverdue     Boolean       @default(false)
-  positionX     Float? // 0-100, toạ độ trong bounding-box của unit (ghim D-Map)
+  positionX     Float? // 0-100, to  trong bounding-box ca unit (ghim D-Map)
   positionY     Float?
   createdById   String
   createdBy     User          @relation("IssueCreatedBy", fields: [createdById], references: [id])
@@ -1032,17 +1053,17 @@ model FitoutIssue {
   @@index([unitId, status])
 }
 
-// Báo cáo ngày (nhật ký công trường điện tử) — nhiều entry/ngày/nhà thầu, gộp ở tầng đọc.
+// Bo co ngy (nht k cng trng in t) -- nhiu entry/ngy/nh thu, gp  tng c.
 model FitoutDailyReportEntry {
   id             String        @id @default(cuid())
   projectId      String
   project        FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  reportDate     DateTime // chỉ lấy phần ngày (00:00) để group theo ngày
+  reportDate     DateTime // ch ly phn ngy (00:00)  group theo ngy
   contractorId   String?
   contractor     FitoutContractor? @relation(fields: [contractorId], references: [id])
   workforceCount Int           @default(0)
   description    String
-  areaTag        String? // khu vực trong mặt bằng, vd "Tầng trệt - khu A"
+  areaTag        String? // khu vc trong mt bng, vd "Tng trt - khu A"
   createdById    String
   createdBy      User          @relation("DailyReportCreatedBy", fields: [createdById], references: [id])
   createdAt      DateTime      @default(now())
@@ -1050,7 +1071,7 @@ model FitoutDailyReportEntry {
   @@index([projectId, reportDate])
 }
 
-// Tiến độ thi công (Gantt) — WBS cây con qua parentTaskId, planned/revised/actual.
+// Tin  thi cng (Gantt) -- WBS cy con qua parentTaskId, planned/revised/actual.
 model FitoutTask {
   id                   String        @id @default(cuid())
   projectId            String
@@ -1079,7 +1100,7 @@ model FitoutTask {
   @@index([projectId, sortOrder])
 }
 
-// Comment/thread dùng chung cho Submittal, Issue (Phase 3), ... — polymorphic entityType/entityId.
+// Comment/thread dng chung cho Submittal, Issue (Phase 3), ... -- polymorphic entityType/entityId.
 model EntityComment {
   id         String   @id @default(cuid())
   entityType String
@@ -1092,7 +1113,7 @@ model EntityComment {
   @@index([entityType, entityId])
 }
 
-// Distribution list dùng chung cho Submittal, Issue (Phase 3), ... — polymorphic entityType/entityId.
+// Distribution list dng chung cho Submittal, Issue (Phase 3), ... -- polymorphic entityType/entityId.
 model EntityDistribution {
   id         String    @id @default(cuid())
   entityType String
@@ -1163,7 +1184,7 @@ model TicketComment {
   createdAt  DateTime @default(now())
 }
 
-// Trạng thái duyệt doanh thu — bền vững trên chính bản ghi, không chỉ nằm trong audit trail.
+// Trng thi duyt doanh thu -- bn vng trn chnh bn ghi, khng ch nm trong audit trail.
 enum SalesApprovalStatus {
   PENDING
   APPROVED
@@ -1215,7 +1236,7 @@ model Invoice {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  // Huỷ hoá đơn có kiểm soát — không xoá bản ghi, chỉ đánh dấu CANCELLED + lưu vết ai/khi nào/vì sao.
+  // Hu ho n c kim sot -- khng xo bn ghi, ch nh du CANCELLED + lu vt ai/khi no/v sao.
   voidedAt      DateTime?
   voidedById    String?
   voidedBy      User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
@@ -1283,7 +1304,7 @@ model Payment {
   notes     String?
   createdAt DateTime      @default(now())
 
-  // Đảo bút toán thanh toán ghi nhầm — không xoá bản ghi, chỉ đánh dấu đã đảo + lưu vết.
+  // o bt ton thanh ton ghi nhm -- khng xo bn ghi, ch nh du  o + lu vt.
   reversedAt     DateTime?
   reversedById   String?
   reversedBy     User?     @relation("PaymentReversedBy", fields: [reversedById], references: [id])
@@ -1544,9 +1565,9 @@ model FloorPlanAnalysis {
   updatedAt   DateTime  @updatedAt
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 // WAVE 4 - Operations & Fitout
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 
 enum FitoutDocumentStatus {
   PENDING
@@ -1642,9 +1663,9 @@ model TicketEscalation {
   @@index([ticketId])
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 // WAVE 5 - Analytics & Scale
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 
 model OccupancySnapshot {
   id              String   @id @default(cuid())
@@ -1709,11 +1730,11 @@ model ComplianceExport {
   @@index([exportType, status])
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 // WAVE 6 - Multi-Mall Governance & Operations Excellence
-// ═══════════════════════════════════════════════════════════════════════════════
+// ===============================================================================
 
-// Phân quyền người dùng theo từng Mall (multi-mall governance)
+// Phn quyn ngi dng theo tng Mall (multi-mall governance)
 model UserMallAccess {
   id        String   @id @default(cuid())
   userId    String
@@ -1750,7 +1771,7 @@ model LeadFollowUp {
   @@index([dueDate, isDone])
 }
 
-// Nhiều kịch bản tài chính cho một Proposal
+// Nhiu kch bn ti chnh cho mt Proposal
 model ProposalScenario {
   id          String   @id @default(cuid())
   proposalId  String
@@ -1766,7 +1787,7 @@ model ProposalScenario {
   @@index([proposalId])
 }
 
-// Quy trình chấm dứt hợp đồng
+// Quy trnh chm dt hp ng
 model ContractTermination {
   id                String    @id @default(cuid())
   contractId        String    @unique
@@ -1791,7 +1812,7 @@ model ContractTermination {
   updatedAt         DateTime  @updatedAt
 }
 
-// Nhà thầu thi công cho Fitout
+// Nh thu thi cng cho Fitout
 model FitoutContractor {
   id           String        @id @default(cuid())
   projectId    String
@@ -1813,7 +1834,7 @@ model FitoutContractor {
   @@index([projectId, isActive])
 }
 
-// Log ra vào công trường thi công
+// Log ra vo cng trng thi cng
 model WorkerAccessLog {
   id           String           @id @default(cuid())
   projectId    String
@@ -1831,7 +1852,7 @@ model WorkerAccessLog {
   @@index([contractorId])
 }
 
-// Lịch bảo trì định kỳ (preventive maintenance)
+// Lch bo tr nh k (preventive maintenance)
 model MaintenanceSchedule {
   id              String     @id @default(cuid())
   mallId          String
@@ -1853,7 +1874,7 @@ model MaintenanceSchedule {
   @@index([mallId, nextDueDate, isActive])
 }
 
-// Đánh giá satisfaction của tenant sau khi đóng ticket
+// nh gi satisfaction ca tenant sau khi ng ticket
 model TicketRating {
   id        String   @id @default(cuid())
   ticketId  String   @unique
@@ -1865,7 +1886,7 @@ model TicketRating {
   @@index([rating])
 }
 
-// Audit trail cho báo cáo doanh thu của tenant
+// Audit trail cho bo co doanh thu ca tenant
 model SalesAuditTrail {
   id            String        @id @default(cuid())
   salesId       String
@@ -1881,7 +1902,7 @@ model SalesAuditTrail {
   @@index([salesId])
 }
 
-// Thông báo từ ban quản lý mall gửi đến tất cả tenant
+// Thng bo t ban qun l mall gi n tt c tenant
 model MallAnnouncement {
   id               String    @id @default(cuid())
   mallId           String
@@ -1893,7 +1914,7 @@ model MallAnnouncement {
   publishedAt      DateTime
   expiresAt        DateTime?
   targetAll        Boolean   @default(true)
-  targetCategories String[]  // filter theo ngành hàng của tenant
+  targetCategories String[]  // filter theo ngnh hng ca tenant
   attachmentUrl    String?
   isActive         Boolean   @default(true)
   createdById      String
@@ -1904,7 +1925,7 @@ model MallAnnouncement {
   @@index([mallId, isActive, publishedAt])
 }
 
-// Document hub tập trung — thay thế rải rác ContractFile, FitoutDocument
+// Document hub tp trung -- thay th ri rc ContractFile, FitoutDocument
 model UnifiedDocument {
   id            String    @id @default(cuid())
   mallId        String?
@@ -1912,10 +1933,10 @@ model UnifiedDocument {
   entityType    String    // 'CONTRACT' | 'FITOUT' | 'TENANT' | 'INVOICE' | 'TICKET' | 'PROPOSAL'
   entityId      String
   category      String    @default("GENERAL") // 'ORIGINAL' | 'SCAN' | 'AMENDMENT' | 'CORRESPONDENCE' | 'SIGNED'
-  documentType  String    // loại tài liệu cụ thể
+  documentType  String    // loi ti liu c th
   fileName      String
   filePath      String
-  fileHash      String?   // SHA-256 để verify integrity
+  fileHash      String?   // SHA-256  verify integrity
   fileSize      Int       @default(0)
   mimeType      String    @default("application/octet-stream")
   version       Int       @default(1)
@@ -1935,7 +1956,7 @@ model UnifiedDocument {
   @@index([uploadedAt])
 }
 
-// Mapping entity trong hệ thống sang đối tượng tương ứng trong SAP
+// Mapping entity trong h thng sang i tng tng ng trong SAP
 model SapEntityMapping {
   id           String   @id @default(cuid())
   entityType   String   // 'TENANT' | 'CONTRACT' | 'INVOICE' | 'PAYMENT'
@@ -1953,12 +1974,12 @@ model SapEntityMapping {
   @@index([entityType, syncStatus])
 }
 
-// ─────────────────────────────────────────────────────
+// -----------------------------------------------------
 // BOOKING & SLOT MANAGEMENT
-// ─────────────────────────────────────────────────────
+// -----------------------------------------------------
 
-// Đặt chỗ slot - bước giữa Lead quan tâm và Proposal chính thức
-// Cho phép nhiều khách cùng book một unit với thứ tự ưu tiên
+// t ch slot - bc gia Lead quan tm v Proposal chnh thc
+// Cho php nhiu khch cng book mt unit vi th t u tin
 model UnitBooking {
   id              String        @id @default(cuid())
   bookingNumber   String        @unique  // BK-YYYY-NNNNN
@@ -1969,27 +1990,27 @@ model UnitBooking {
   customerId      String?
   customer        Customer?     @relation(fields: [customerId], references: [id])
   status          BookingStatus @default(PENDING)
-  priority        Int           @default(1)  // 1 = ưu tiên cao nhất
-  requestedArea   Float?        // Diện tích yêu cầu
-  requestedTerm   Int?          // Thời hạn thuê mong muốn (tháng)
-  expectedRent    Float?        // Mức giá kỳ vọng (khách)
-  holdDays        Int           @default(30) // Số ngày giữ slot
-  expiresAt       DateTime?     // Thời điểm booking hết hạn
-  activatedAt     DateTime?     // Thời điểm chuyển sang ACTIVE
-  convertedAt     DateTime?     // Thời điểm convert sang Proposal
+  priority        Int           @default(1)  // 1 = u tin cao nht
+  requestedArea   Float?        // Din tch yu cu
+  requestedTerm   Int?          // Thi hn thu mong mun (thng)
+  expectedRent    Float?        // Mc gi k vng (khch)
+  holdDays        Int           @default(30) // S ngy gi slot
+  expiresAt       DateTime?     // Thi im booking ht hn
+  activatedAt     DateTime?     // Thi im chuyn sang ACTIVE
+  convertedAt     DateTime?     // Thi im convert sang Proposal
   cancelledAt     DateTime?
   cancelReason    String?
   notes           String?
 
   // Proposed price by sales
-  proposedRentPerSqm    Float?                  // Giá sale đề xuất (VND/m²/tháng)
-  proposedCamPerSqm     Float?                  // CAM đề xuất
+  proposedRentPerSqm    Float?                  // Gi sale  xut (VND/m2/thng)
+  proposedCamPerSqm     Float?                  // CAM  xut
   priceApprovalStatus   PriceApprovalStatus?    // PENDING, APPROVED, REJECTED
-  priceApprovalNote     String?                 // Ghi chú phê duyệt
+  priceApprovalNote     String?                 // Ghi ch ph duyt
   priceApprovedById     String?
   priceApprovedBy       User?         @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
   priceApprovedAt       DateTime?
-  priceDeviationPercent Float?                  // % chênh lệch so với giá sàn
+  priceDeviationPercent Float?                  // % chnh lch so vi gi sn
 
   createdById     String
   createdBy       User          @relation("BookingCreatedBy", fields: [createdById], references: [id])
@@ -2009,14 +2030,14 @@ model UnitBooking {
   @@index([priceApprovalStatus])
 }
 
-// Lịch sử hoạt động của một booking
+// Lch s hot ng ca mt booking
 model BookingActivity {
   id          String              @id @default(cuid())
   bookingId   String
   booking     UnitBooking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   type        BookingActivityType
   note        String
-  metadata    Json?               // Dữ liệu bổ sung (ví dụ: priority cũ/mới)
+  metadata    Json?               // D liu b sung (v d: priority c/mi)
   performedById String
   performedBy   User              @relation(fields: [performedById], references: [id])
   createdAt   DateTime            @default(now())
@@ -2024,19 +2045,19 @@ model BookingActivity {
   @@index([bookingId, createdAt])
 }
 
-// Media/tài liệu gắn với từng unit: ảnh, floor plan, video, brochure
+// Media/ti liu gn vi tng unit: nh, floor plan, video, brochure
 model UnitMedia {
   id           String        @id @default(cuid())
   unitId       String
   unit         Unit          @relation(fields: [unitId], references: [id], onDelete: Cascade)
   type         UnitMediaType @default(PHOTO)
-  fileUrl      String        // Đường dẫn file (local path hoặc CDN URL)
+  fileUrl      String        // ng dn file (local path hoc CDN URL)
   fileName     String
   fileSize     Int?          // Byte
   mimeType     String?
-  caption      String?       // Mô tả ngắn hiển thị trong gallery
-  sortOrder    Int           @default(0)  // Thứ tự hiển thị
-  isCover      Boolean       @default(false) // Ảnh đại diện của unit
+  caption      String?       // M t ngn hin th trong gallery
+  sortOrder    Int           @default(0)  // Th t hin th
+  isCover      Boolean       @default(false) // nh i din ca unit
   uploadedById String
   uploadedBy   User          @relation(fields: [uploadedById], references: [id])
   createdAt    DateTime      @default(now())
@@ -2071,7 +2092,7 @@ model UnitHistory {
   @@index([changeType])
 }
 
-// Log import dữ liệu unit hàng loạt (upload CSV/Excel)
+// Log import d liu unit hng lot (upload CSV/Excel)
 model UnitImportLog {
   id           String   @id @default(cuid())
   mallId       String
@@ -2079,7 +2100,7 @@ model UnitImportLog {
   totalRows    Int      @default(0)
   successRows  Int      @default(0)
   failedRows   Int      @default(0)
-  errors       Json?    // Danh sách lỗi theo dòng
+  errors       Json?    // Danh sch li theo dng
   status       String   @default("PROCESSING") // PROCESSING | COMPLETED | FAILED
   importedById String
   createdAt    DateTime @default(now())
@@ -2176,8 +2197,8 @@ model SlotBooking {
   @@index([startDatetime, endDatetime])
 }
 
-// Cấu hình thương hiệu hiển thị ở màn hình đăng nhập (logo + ảnh nền) — bảng singleton,
-// luôn chỉ có 1 dòng, service tự tạo dòng đầu tiên nếu chưa có.
+// Cu hnh thng hiu hin th  mn hnh ng nhp (logo + nh nn) -- bng singleton,
+// lun ch c 1 dng, service t to dng u tin nu cha c.
 model BrandingSettings {
   id            String   @id @default(cuid())
   logoUrl       String?

@@ -384,10 +384,34 @@ export interface Proposal {
   term: number;
   startDate: string;
   rentPerSqm: number;
+  camPerSqm: number;
+  deposit: number;
   monthlyRent: number;
+  monthlyCAM: number;
+  depositAmount: number;
   totalContractValue: number;
   status: string;
   discount: number;
+  // Tờ Trình fields
+  businessModel?: string;
+  serviceFeeSqm: number;
+  businessSupportFeeSqm: number;
+  rentCurrency: string;
+  fitoutDays: number;
+  handoverDate?: string;
+  openingDate?: string;
+  specialConditions?: string;
+  exchangeRate?: number;
+  exchangeRateSource?: string;
+  // GAP #91–94
+  utilityFee: number;
+  operatingHours?: string;
+  afterHoursFee: number;
+  paymentTermDays: number;
+  // GAP #41
+  depositLease?: number;
+  depositFitout: number;
+  fitoutFee: number;
   createdAt: string;
 }
 
@@ -403,6 +427,14 @@ export interface Contract {
   rent: number;
   cam: number;
   deposit: number;
+  // GAP #41
+  depositLease?: number;
+  depositFitout: number;
+  fitoutFee: number;
+  // GAP #91, #93
+  utilityFee: number;
+  afterHoursFee: number;
+  operatingHours?: string;
   managedBy?: User;
   createdAt: string;
 }

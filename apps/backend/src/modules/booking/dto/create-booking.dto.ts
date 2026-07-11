@@ -212,4 +212,41 @@ export class ConvertToProposalDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // GAP #91–94
+  @ApiPropertyOptional({ description: 'Phí tiện ích VND/tháng' })
+  @IsOptional()
+  @IsNumber()
+  utilityFee?: number;
+
+  @ApiPropertyOptional({ description: 'Giờ hoạt động, vd: "10:00–22:00"' })
+  @IsOptional()
+  @IsString()
+  operatingHours?: string;
+
+  @ApiPropertyOptional({ description: 'Phí ngoài giờ VND/giờ' })
+  @IsOptional()
+  @IsNumber()
+  afterHoursFee?: number;
+
+  @ApiPropertyOptional({ description: 'Điều khoản thanh toán (số ngày)' })
+  @IsOptional()
+  @IsInt()
+  paymentTermDays?: number;
+
+  // GAP #41
+  @ApiPropertyOptional({ description: 'Tiền cọc thuê (VND) — null = tính tự động từ deposit × monthlyRent' })
+  @IsOptional()
+  @IsNumber()
+  depositLease?: number;
+
+  @ApiPropertyOptional({ description: 'Cọc thi công (VND)' })
+  @IsOptional()
+  @IsNumber()
+  depositFitout?: number;
+
+  @ApiPropertyOptional({ description: 'Phí thi công (VND)' })
+  @IsOptional()
+  @IsNumber()
+  fitoutFee?: number;
 }

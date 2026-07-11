@@ -75,4 +75,36 @@ export class CreateContractDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // GAP #41 — 3 khoản cọc
+  @ApiPropertyOptional({ description: 'Tiền cọc thuê (VND)' })
+  @IsOptional()
+  @IsNumber()
+  depositLease?: number;
+
+  @ApiPropertyOptional({ description: 'Cọc thi công (VND)' })
+  @IsOptional()
+  @IsNumber()
+  depositFitout?: number;
+
+  @ApiPropertyOptional({ description: 'Phí thi công (VND)' })
+  @IsOptional()
+  @IsNumber()
+  fitoutFee?: number;
+
+  // GAP #91, #93 — Phí tiện ích & phí ngoài giờ
+  @ApiPropertyOptional({ description: 'Phí tiện ích VND/tháng' })
+  @IsOptional()
+  @IsNumber()
+  utilityFee?: number;
+
+  @ApiPropertyOptional({ description: 'Phí ngoài giờ VND/giờ' })
+  @IsOptional()
+  @IsNumber()
+  afterHoursFee?: number;
+
+  @ApiPropertyOptional({ description: 'Giờ hoạt động, vd: "10:00–22:00"' })
+  @IsOptional()
+  @IsString()
+  operatingHours?: string;
 }

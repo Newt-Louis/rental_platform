@@ -109,6 +109,9 @@ function ConvertToProposalDialog({ booking, open, onClose }: {
   const [form, setForm] = useState({
     area: '', term: '36', startDate: '', rentPerSqm: '',
     camPerSqm: '', deposit: '3', rentFree: '0', escalationPercent: '0', notes: '',
+    // GAP #91–94, #41
+    utilityFee: '0', operatingHours: '', afterHoursFee: '0',
+    paymentTermDays: '30', depositLease: '0', depositFitout: '0', fitoutFee: '0',
   });
 
   const wasOpen = useRef(false);
@@ -131,6 +134,14 @@ function ConvertToProposalDialog({ booking, open, onClose }: {
       deposit: Number(form.deposit), rentFree: Number(form.rentFree),
       escalationPercent: Number(form.escalationPercent),
       notes: form.notes || undefined,
+      // GAP #91–94, #41
+      utilityFee: Number(form.utilityFee) || undefined,
+      operatingHours: form.operatingHours || undefined,
+      afterHoursFee: Number(form.afterHoursFee) || undefined,
+      paymentTermDays: Number(form.paymentTermDays) || undefined,
+      depositLease: Number(form.depositLease) > 0 ? Number(form.depositLease) : undefined,
+      depositFitout: Number(form.depositFitout) || undefined,
+      fitoutFee: Number(form.fitoutFee) || undefined,
     }),
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
@@ -209,6 +220,45 @@ function ConvertToProposalDialog({ booking, open, onClose }: {
               </span>
             </div>
           )}
+
+          {/* GAP #91–94, #41 — phí & khoản cọc */}
+          <div className="border-t border-gray-100 pt-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Phí & Điều khoản (tuỳ chọn)</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Giờ hoạt động</label>
+                <Input value={form.operatingHours} onChange={set('operatingHours')} placeholder="10:00–22:00 hàng ngày" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí tiện ích/tháng (₫)</label>
+                  <Input type="number" value={form.utilityFee} onChange={set('utilityFee')} placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí ngoài giờ/giờ (₫)</label>
+                  <Input type="number" value={form.afterHoursFee} onChange={set('afterHoursFee')} placeholder="0" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Thanh toán (ngày)</label>
+                  <Input type="number" value={form.paymentTermDays} onChange={set('paymentTermDays')} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thuê (₫) — 0=tự tính</label>
+                  <Input type="number" value={form.depositLease} onChange={set('depositLease')} placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thi công (₫)</label>
+                  <Input type="number" value={form.depositFitout} onChange={set('depositFitout')} placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Phí thi công (₫)</label>
+                <Input type="number" value={form.fitoutFee} onChange={set('fitoutFee')} placeholder="0" />
+              </div>
+            </div>
+          </div>
         </div>
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={onClose}>Hủy</Button>
@@ -219,6 +269,171 @@ function ConvertToProposalDialog({ booking, open, onClose }: {
           >
             <ArrowRight size={15} />
             {mutation.isPending ? 'Đang tạo...' : 'Tạo Proposal'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── CreateUnitBookingDialog ──────────────────────────────────────────────────
+
+function CreateUnitBookingDialog({ open, onClose, mallId }: {
+  open: boolean; onClose: () => void; mallId?: string | null;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    unitSearch: '', unitId: '', unitLabel: '',
+    leadSearch: '', leadId: '',
+    requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '',
+  });
+  const setField = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const { data: unitData } = useQuery({
+    queryKey: ['units-vacant', mallId, form.unitSearch],
+    queryFn: () => spacesApi.listUnits({ mallId: mallId ?? undefined, status: 'VACANT', search: form.unitSearch || undefined, limit: 20 }),
+    enabled: open,
+  });
+  const vacantUnits: any[] = Array.isArray(unitData) ? unitData : (unitData?.data ?? []);
+
+  const { data: leadData } = useQuery({
+    queryKey: ['leads-search', form.leadSearch],
+    queryFn: () => crmApi.listLeads({ search: form.leadSearch || undefined, limit: 20 }),
+    enabled: open && form.leadSearch.length > 1,
+  });
+  const leads: any[] = Array.isArray(leadData) ? leadData : (leadData?.data ?? []);
+
+  const mutation = useMutation({
+    mutationFn: () => bookingApi.create({
+      unitId: form.unitId,
+      leadId: form.leadId || undefined,
+      requestedArea: form.requestedArea ? Number(form.requestedArea) : undefined,
+      requestedTerm: form.requestedTerm ? Number(form.requestedTerm) : undefined,
+      expectedRent: form.expectedRent ? Number(form.expectedRent) : undefined,
+      holdDays: Number(form.holdDays) || 30,
+      notes: form.notes || undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      toast({ title: 'Đã tạo booking lô thuê' });
+      onClose();
+      setForm({ unitSearch: '', unitId: '', unitLabel: '', leadSearch: '', leadId: '', requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo booking', variant: 'destructive' }),
+  });
+
+  const canSubmit = !!form.unitId && !mutation.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BookmarkPlus size={18} className="text-amber-600" /> Tạo Booking Giữ Lô
+          </DialogTitle>
+          <p className="text-sm text-gray-500">Đặt giữ mặt bằng dài hạn cho khách hàng. Nếu lô đang có booking active, booking mới sẽ được xếp vào hàng chờ.</p>
+        </DialogHeader>
+
+        <div className="space-y-4 pt-1">
+          {/* Unit picker */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng (Unit) *</label>
+            {form.unitId ? (
+              <div className="flex items-center gap-2 p-2 border rounded-lg bg-amber-50 border-amber-200">
+                <Building2 size={14} className="text-amber-600" />
+                <span className="text-sm font-medium flex-1">{form.unitLabel}</span>
+                <button onClick={() => setForm((f) => ({ ...f, unitId: '', unitLabel: '' }))}
+                  className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+              </div>
+            ) : (
+              <div>
+                <Input value={form.unitSearch} onChange={setField('unitSearch')}
+                  placeholder="Tìm mã lô (A1-01, B2-05...)" className="mb-1" />
+                {vacantUnits.length > 0 && (
+                  <div className="border rounded-lg divide-y max-h-40 overflow-y-auto text-sm">
+                    {vacantUnits.map((u: any) => (
+                      <button key={u.id} className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center gap-3"
+                        onClick={() => setForm((f) => ({ ...f, unitId: u.id, unitLabel: `${u.code}${u.name ? ' — ' + u.name : ''} (${u.areaGFA?.toLocaleString('vi-VN')}m²)`, unitSearch: '' }))}>
+                        <Building2 size={13} className="text-amber-500 shrink-0" />
+                        <span className="font-medium">{u.code}</span>
+                        <span className="text-gray-400">{u.name}</span>
+                        <span className="ml-auto text-xs text-gray-400">{u.floor?.name} · {u.areaGFA?.toLocaleString('vi-VN')}m²</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {form.unitSearch && vacantUnits.length === 0 && (
+                  <p className="text-xs text-gray-400 px-1 mt-1">Không tìm thấy lô VACANT phù hợp</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Lead picker */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Lead / Khách hàng</label>
+            {form.leadId ? (
+              <div className="flex items-center gap-2 p-2 border rounded-lg bg-blue-50 border-blue-200">
+                <User size={14} className="text-blue-600" />
+                <span className="text-sm flex-1">{form.leadSearch}</span>
+                <button onClick={() => setForm((f) => ({ ...f, leadId: '', leadSearch: '' }))}
+                  className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+              </div>
+            ) : (
+              <div>
+                <Input value={form.leadSearch} onChange={setField('leadSearch')}
+                  placeholder="Nhập tên thương hiệu để tìm lead..." className="mb-1" />
+                {leads.length > 0 && (
+                  <div className="border rounded-lg divide-y max-h-36 overflow-y-auto text-sm">
+                    {leads.map((l: any) => (
+                      <button key={l.id} className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-3"
+                        onClick={() => setForm((f) => ({ ...f, leadId: l.id, leadSearch: `${l.brandName} — ${l.contactName}` }))}>
+                        <User size={12} className="text-blue-400 shrink-0" />
+                        <span className="font-medium">{l.brandName}</span>
+                        <span className="text-gray-400 text-xs">{l.contactName}</span>
+                        <span className="ml-auto text-xs text-gray-400">{l.status}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Details */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích (m²)</label>
+              <Input type="number" value={form.requestedArea} onChange={setField('requestedArea')} placeholder="120" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Thời hạn (tháng)</label>
+              <Input type="number" value={form.requestedTerm} onChange={setField('requestedTerm')} placeholder="36" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Giữ (ngày)</label>
+              <Input type="number" value={form.holdDays} onChange={setField('holdDays')} />
+            </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng (₫/m²)</label>
+            <Input type="number" value={form.expectedRent} onChange={setField('expectedRent')} placeholder="680000" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
+            <Textarea value={form.notes} onChange={setField('notes')} rows={2} placeholder="Ghi chú nội bộ..." />
+          </div>
+        </div>
+
+        <DialogFooter className="pt-2">
+          <Button variant="outline" onClick={onClose}>Hủy</Button>
+          <Button disabled={!canSubmit} onClick={() => mutation.mutate()}
+            className="bg-amber-600 hover:bg-amber-700 text-white gap-2">
+            <BookmarkPlus size={14} />
+            {mutation.isPending ? 'Đang tạo...' : 'Tạo Booking'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -890,37 +1105,13 @@ function CreateSlotBookingDialog({ open, onClose, mallId }: {
   );
 }
 
-// ─── Tab button ───────────────────────────────────────────────────────────────
-
-function TabBtn({ active, onClick, icon: Icon, label, count, accent }: {
-  active: boolean; onClick: () => void; icon: React.ElementType;
-  label: string; count?: number; accent: string;
-}) {
-  return (
-    <button onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all border ${
-        active
-          ? `${accent} shadow-sm`
-          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-      }`}
-    >
-      <Icon size={16} />
-      {label}
-      {count !== undefined && (
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-          active ? 'bg-white/40' : 'bg-gray-100 text-gray-600'
-        }`}>{count}</span>
-      )}
-    </button>
-  );
-}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BookingsPage() {
   const { selectedMallId } = useMallStore();
   const { toast } = useToast();
-  const [tab, setTab] = useState<'unit' | 'slot'>('unit');
+  const [typeFilter, setTypeFilter] = useState<'unit' | 'slot'>('unit');
 
   // ── UnitBooking state ──
   const [search, setSearch] = useState('');
@@ -928,6 +1119,8 @@ export default function BookingsPage() {
   const [expiringSoon, setExpiringSoon] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
   const [page, setPage] = useState(1);
+
+  const [createUnitOpen, setCreateUnitOpen] = useState(false);
 
   // ── SlotBooking state ──
   const [slotSearch, setSlotSearch] = useState('');
@@ -1009,39 +1202,14 @@ export default function BookingsPage() {
           <p className="text-sm text-gray-500 mt-1">Theo dõi đặt chỗ lô thuê và slot sự kiện ngắn hạn</p>
         </div>
         <Button variant="outline" size="sm" className="gap-2"
-          onClick={() => tab === 'unit' ? refetchUnit() : refetchSlot()}>
+          onClick={() => typeFilter === 'unit' ? refetchUnit() : refetchSlot()}>
           <RefreshCw size={14} /> Làm mới
         </Button>
       </div>
 
-      {/* Tab switcher */}
-      <div className="flex items-center gap-3 mb-6 p-1 bg-gray-50 border border-gray-200 rounded-xl w-fit">
-        <TabBtn
-          active={tab === 'unit'} onClick={() => setTab('unit')}
-          icon={BookmarkCheck} label="Giữ lô thuê dài hạn"
-          count={s?.active ?? unitBookings.length}
-          accent="bg-amber-50 text-amber-700 border-amber-200"
-        />
-        <TabBtn
-          active={tab === 'slot'} onClick={() => setTab('slot')}
-          icon={CalendarDays} label="Đặt slot ngắn hạn"
-          count={slotBookings.length}
-          accent="bg-violet-50 text-violet-700 border-violet-200"
-        />
-      </div>
-
-      {/* ══════════ TAB 1: UNIT BOOKING ══════════ */}
-      {tab === 'unit' && (
+      {/* ══════════ UNIT BOOKING ══════════ */}
+      {typeFilter === 'unit' && (
         <>
-          {/* Info callout */}
-          <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700 flex items-start gap-2">
-            <BookmarkCheck size={15} className="mt-0.5 flex-shrink-0" />
-            <span>
-              <strong>Giữ lô thuê:</strong> Đặt chỗ dài hạn một lô (unit) trong hàng đợi ưu tiên để vào pipeline
-              đàm phán → lập đề xuất → ký hợp đồng. Một unit có thể có nhiều booking theo thứ tự ưu tiên.
-            </span>
-          </div>
-
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatCard title="Đang active" value={s?.active ?? 0} icon={BookmarkCheck} color="yellow" sub="Đang giữ slot" />
@@ -1053,6 +1221,15 @@ export default function BookingsPage() {
 
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
+                <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
+              </SelectContent>
+            </Select>
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input placeholder="Tìm unit, lead, khách hàng..." className="pl-9 h-9"
@@ -1077,6 +1254,10 @@ export default function BookingsPage() {
             >
               <Clock size={13} /> Sắp hết hạn (7 ngày)
             </button>
+            <Button className="gap-2 bg-amber-600 hover:bg-amber-700 text-white h-9 ml-auto"
+              onClick={() => setCreateUnitOpen(true)}>
+              <Plus size={14} /> Tạo booking lô
+            </Button>
           </div>
 
           {/* Table */}
@@ -1168,19 +1349,9 @@ export default function BookingsPage() {
         </>
       )}
 
-      {/* ══════════ TAB 2: SLOT BOOKING ══════════ */}
-      {tab === 'slot' && (
+      {/* ══════════ SLOT BOOKING ══════════ */}
+      {typeFilter === 'slot' && (
         <>
-          {/* Info callout */}
-          <div className="mb-4 px-4 py-2.5 bg-violet-50 border border-violet-100 rounded-lg text-sm text-violet-700 flex items-start gap-2">
-            <CalendarDays size={15} className="mt-0.5 flex-shrink-0" />
-            <span>
-              <strong>Đặt slot ngắn hạn:</strong> Thuê một phần diện tích (slot/kiosk) trong lô thuê
-              theo ngày, theo giờ hoặc theo tháng — dùng cho pop-up store, sự kiện, quầy bán lẻ tạm thời.
-              Không liên quan đến pipeline hợp đồng dài hạn.
-            </span>
-          </div>
-
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <StatCard title="Chờ xác nhận" value={slotStats.pending} icon={Hourglass} color="blue" sub="Cần xử lý" />
@@ -1192,12 +1363,15 @@ export default function BookingsPage() {
 
           {/* Filters + Create */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <Button
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9"
-              onClick={() => setCreateSlotOpen(true)}
-            >
-              <Plus size={14} /> Tạo booking slot
-            </Button>
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
+                <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
+              </SelectContent>
+            </Select>
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input placeholder="Tìm ref, unit, slot, khách hàng..." className="pl-9 h-9"
@@ -1225,6 +1399,12 @@ export default function BookingsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Button
+              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9 ml-auto"
+              onClick={() => setCreateSlotOpen(true)}
+            >
+              <Plus size={14} /> Tạo booking slot
+            </Button>
           </div>
 
           {/* Table */}
@@ -1303,6 +1483,7 @@ export default function BookingsPage() {
       <BookingDetailSheet booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
       <SlotBookingDetailSheet booking={selectedSlotBooking} onClose={() => setSelectedSlotBooking(null)} />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
+      <CreateUnitBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} />
     </div>
   );
 }

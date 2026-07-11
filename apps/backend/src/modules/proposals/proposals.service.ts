@@ -191,6 +191,15 @@ export class ProposalsService {
         handoverDate: dto.handoverDate ? new Date(dto.handoverDate) : undefined,
         openingDate: dto.openingDate ? new Date(dto.openingDate) : undefined,
         specialConditions: dto.specialConditions,
+        // GAP #91–94
+        utilityFee: dto.utilityFee ?? 0,
+        operatingHours: dto.operatingHours,
+        afterHoursFee: dto.afterHoursFee ?? 0,
+        paymentTermDays: dto.paymentTermDays ?? 30,
+        // GAP #41
+        depositLease: dto.depositLease,
+        depositFitout: dto.depositFitout ?? 0,
+        fitoutFee: dto.fitoutFee ?? 0,
         createdById: userId,
       },
       include: {
@@ -533,6 +542,14 @@ export class ProposalsService {
         deposit: proposal.depositAmount,
         rentFree: proposal.rentFree,
         escalationPercent: proposal.escalationPercent,
+        // GAP #41 — carry-over 3 khoản cọc từ Proposal
+        depositLease: (proposal as any).depositLease ?? undefined,
+        depositFitout: (proposal as any).depositFitout ?? 0,
+        fitoutFee: (proposal as any).fitoutFee ?? 0,
+        // GAP #91, #93 — carry-over phí tiện ích & ngoài giờ
+        utilityFee: (proposal as any).utilityFee ?? 0,
+        afterHoursFee: (proposal as any).afterHoursFee ?? 0,
+        operatingHours: (proposal as any).operatingHours ?? undefined,
       },
     });
 

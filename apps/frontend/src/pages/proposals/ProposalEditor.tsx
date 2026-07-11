@@ -114,8 +114,20 @@ function initEditorContent(p: any): EditorContent {
       note: '',
       locked: true,
     },
-    { label: 'Thời gian hoạt động của TTTM', content: 'Thứ 2 – Thứ 6:   10:00 – 22:00\nThứ 7 – Chủ nhật: 09:30 – 22:00', note: '', locked: true },
-    { label: 'Phí Dịch vụ ngoài giờ', content: 'Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.', note: '', locked: true },
+    {
+      label: 'Thời gian hoạt động của TTTM',
+      content: p.operatingHours ?? 'Thứ 2 – Thứ 6:   10:00 – 22:00\nThứ 7 – Chủ nhật: 09:30 – 22:00',
+      note: '',
+      locked: true,
+    },
+    {
+      label: 'Phí Dịch vụ ngoài giờ',
+      content: p.afterHoursFee
+        ? `Phí ngoài giờ: ${fmtS(p.afterHoursFee)}/giờ. Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.`
+        : 'Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.',
+      note: '',
+      locked: true,
+    },
     {
       label: 'Tỷ giá',
       content: '• Tỷ giá áp dụng cho Tiền thuê là tỷ giá bán ra của Ngân hàng TMCP Ngoại Thương Việt Nam vào ngày Bên Cho Thuê ban hành Thư Đề Nghị Cho Thuê/ Hợp Đồng Thuê.\n• Tỷ giá áp dụng cho Phí Dịch vụ và Phí hỗ trợ Kinh doanh là tỷ giá áp dụng đồng nhất cho Khách thuê tại TTTM: tỷ giá 26.340 VND/USD.',
@@ -130,7 +142,16 @@ function initEditorContent(p: any): EditorContent {
     },
     {
       label: 'Tiền Đặt Cọc',
-      content: `Tiền Đặt cọc tương đương ${depositMonths} (${depositWord}) tháng Tiền thuê và Phí Dịch vụ (không bao gồm Thuế GTGT) và sẽ được thanh toán trong vòng 07 (bảy) ngày kể từ ngày ký Thư Đề Nghị Cho Thuê.`,
+      content: (() => {
+        const leaseDeposit = p.depositLease
+          ? `Tiền Đặt cọc: ${fmtR(p.depositLease)} (tương đương ${depositMonths} tháng tiền thuê và Phí Dịch vụ)`
+          : `Tiền Đặt cọc tương đương ${depositMonths} (${depositWord}) tháng Tiền thuê và Phí Dịch vụ`;
+        const fitoutParts: string[] = [];
+        if (p.depositFitout) fitoutParts.push(`Cọc thi công: ${fmtR(p.depositFitout)}`);
+        if (p.fitoutFee) fitoutParts.push(`Phí thi công: ${fmtR(p.fitoutFee)}`);
+        const extra = fitoutParts.length ? '\n' + fitoutParts.join('\n') : '';
+        return `${leaseDeposit} (không bao gồm Thuế GTGT) và sẽ được thanh toán trong vòng 07 (bảy) ngày kể từ ngày ký Thư Đề Nghị Cho Thuê.${extra}`;
+      })(),
       note: '',
     },
     {
@@ -243,6 +264,34 @@ export function ProposalEditorDialog({ proposal, onClose }: {
   const [doc, setDoc] = useState<EditorContent>(() => initEditorContent(proposal));
   const [sidebar, setSidebar] = useState<'settings' | 'signatories' | 'style'>('settings');
   const [showLockedItems, setShowLockedItems] = useState(true);
+
+  // GAP #41, #91–94 — editable proposal fields (saved separately from editorContent)
+  const [extraFields, setExtraFields] = useState({
+    utilityFee:      proposal.utilityFee      ?? 0,
+    operatingHours:  proposal.operatingHours  ?? '',
+    afterHoursFee:   proposal.afterHoursFee   ?? 0,
+    paymentTermDays: proposal.paymentTermDays ?? 30,
+    depositLease:    proposal.depositLease    ?? 0,  // 0 = tính tự động từ deposit × monthlyRent
+    depositFitout:   proposal.depositFitout   ?? 0,
+    fitoutFee:       proposal.fitoutFee       ?? 0,
+  });
+  const setEF = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setExtraFields((f) => ({ ...f, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
+
+  const saveExtraMutation = useMutation({
+    mutationFn: () => proposalsApi.updateProposal(proposal.id, {
+      utilityFee:      extraFields.utilityFee,
+      operatingHours:  extraFields.operatingHours || undefined,
+      afterHoursFee:   extraFields.afterHoursFee,
+      paymentTermDays: extraFields.paymentTermDays,
+      // depositLease = 0 → gửi undefined → DB lưu null → tính tự động
+      depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : undefined,
+      depositFitout:   extraFields.depositFitout,
+      fitoutFee:       extraFields.fitoutFee,
+    } as any),
+    onSuccess: () => toast({ title: 'Đã lưu phí & điều khoản' }),
+    onError: () => toast({ title: 'Lỗi khi lưu', variant: 'destructive' }),
+  });
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // Draggable window
@@ -686,6 +735,62 @@ export function ProposalEditorDialog({ proposal, onClose }: {
                       <input type="file" accept="image/*" className="hidden" onChange={handleLayoutImageUpload} />
                     </label>
                   )}
+                </div>
+
+                {/* GAP #41, #91–94 — Phí & Điều khoản bổ sung */}
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Phí & Điều khoản</div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[11px] text-gray-500 block mb-0.5">Giờ hoạt động (mục 13)</label>
+                      <input value={extraFields.operatingHours} onChange={setEF('operatingHours')}
+                        placeholder="10:00–22:00 hàng ngày" className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí tiện ích/tháng (₫)</label>
+                        <input type="number" value={extraFields.utilityFee} onChange={setEF('utilityFee')}
+                          className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí ngoài giờ/giờ (₫)</label>
+                        <input type="number" value={extraFields.afterHoursFee} onChange={setEF('afterHoursFee')}
+                          className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-gray-500 block mb-0.5">Thanh toán trong vòng (ngày) — mục 16</label>
+                      <input type="number" value={extraFields.paymentTermDays} onChange={setEF('paymentTermDays')}
+                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                    </div>
+                    <div className="text-[11px] text-gray-400 font-medium mt-1">Cọc & Phí thi công (mục 17, 19)</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <div>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thuê (VND) — 0 = tính tự động</label>
+                        <input type="number" min={0} value={extraFields.depositLease} onChange={setEF('depositLease')}
+                          placeholder="0 = tự tính từ deposit × monthlyRent" className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thi công (VND)</label>
+                          <input type="number" value={extraFields.depositFitout} onChange={setEF('depositFitout')}
+                            className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-0.5">Phí thi công (VND)</label>
+                          <input type="number" value={extraFields.fitoutFee} onChange={setEF('fitoutFee')}
+                            className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => saveExtraMutation.mutate()}
+                      disabled={saveExtraMutation.isPending}
+                      className="w-full mt-1 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {saveExtraMutation.isPending ? 'Đang lưu...' : 'Lưu Phí & Điều khoản'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Show/hide locked items */}
