@@ -1,5 +1,6 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, crmApi, customersApi, categoriesApi, slotsApi, proposalsApi, contractsApi } from '@/api';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
@@ -34,6 +35,7 @@ import {
 } from './spaces.constants';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
 import { useSpacesStore } from '@/store/spaces.store';
+
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { CreateEditUnitDialog } from '@/components/spaces/dialogs/CreateEditUnitDialog';
 import { CreateEditFloorDialog } from '@/components/spaces/dialogs/CreateEditFloorDialog';
@@ -44,8 +46,6 @@ import { BulkStatusDialog, BulkCategoryDialog, BulkRentDialog } from '@/componen
 import { UnitCard } from '@/components/spaces/UnitCard';
 import { SpacesAlerts } from '@/components/spaces/SpacesAlerts';
 import { AnalyticsView } from '@/components/spaces/AnalyticsView';
-
-// Local constant used by SalesPipelineTab (stays in this file)
 const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   ACTIVE:    { label: 'Đang giữ',  color: 'bg-amber-100 text-amber-700' },
   PENDING:   { label: 'Chờ',       color: 'bg-blue-100 text-gray-700' },
@@ -57,12 +57,12 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = 
 // ─── Unit Media Tab ───────────────────────────────────────────────────────────
 
 const MEDIA_TYPE_LABELS: Record<string, string> = {
-  PHOTO: 'áº¢nh',
+  PHOTO: 'Ảnh',
   FLOOR_PLAN: 'Floor Plan',
   VIDEO: 'Video',
   RENDER_3D: '3D Render',
   BROCHURE: 'Brochure',
-  SITE_MAP: 'SÆ¡ Ä‘á»“',
+  SITE_MAP: 'Sơ đồ',
 };
 
 function UnitMediaTab({ unitId }: { unitId: string }) {
@@ -83,18 +83,18 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
-      toast({ title: 'ÄÃ£ xÃ³a media' });
+      toast({ title: 'Đã xóa media' });
     },
-    onError: () => toast({ title: 'Lá»—i xÃ³a media', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lỗi xóa media', variant: 'destructive' }),
   });
 
   const setCoverMutation = useMutation({
     mutationFn: (mediaId: string) => spacesApi.updateUnitMedia(unitId, mediaId, { isCover: true }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
-      toast({ title: 'ÄÃ£ Ä‘áº·t áº£nh bÃ¬a' });
+      toast({ title: 'Đã đặt ảnh bìa' });
     },
-    onError: () => toast({ title: 'Lá»—i', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -114,9 +114,9 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
       await spacesApi.uploadUnitMedia(unitId, fd);
       qc.invalidateQueries({ queryKey: ['unit-media', unitId] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unitId] });
-      toast({ title: 'ÄÃ£ táº£i lÃªn thÃ nh cÃ´ng' });
+      toast({ title: 'Đã tải lên thành công' });
     } catch {
-      toast({ title: 'Lá»—i táº£i lÃªn', variant: 'destructive' });
+      toast({ title: 'Lỗi tải lên', variant: 'destructive' });
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -137,13 +137,13 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {t === '' ? 'Táº¥t cáº£' : MEDIA_TYPE_LABELS[t]}
+              {t === '' ? 'Tất cả' : MEDIA_TYPE_LABELS[t]}
             </button>
           ))}
         </div>
         <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-medium cursor-pointer hover:bg-gray-800 transition-colors">
           <Upload size={12} />
-          {uploading ? 'Äang táº£i...' : 'ThÃªm'}
+          {uploading ? 'Đang tải...' : 'Thêm'}
           <input
             type="file"
             className="hidden"
@@ -163,7 +163,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
       ) : mediaList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-gray-400 gap-2">
           <Image size={32} className="opacity-30" />
-          <p className="text-sm">ChÆ°a cÃ³ tÃ i liá»‡u nÃ o</p>
+          <p className="text-sm">Chưa có tài liệu nào</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
@@ -193,7 +193,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                 {!m.isCover && (m.type === 'PHOTO' || m.type === 'RENDER_3D') && (
                   <button
                     className="w-5 h-5 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500"
-                    title="Äáº·t lÃ m áº£nh bÃ¬a"
+                    title="Đặt làm ảnh bìa"
                     onClick={() => setCoverMutation.mutate(m.id)}
                   >
                     <Star size={10} />
@@ -201,7 +201,7 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
                 )}
                 <button
                   className="w-5 h-5 rounded bg-red-500 text-white flex items-center justify-center hover:bg-red-600"
-                  title="XÃ³a"
+                  title="Xóa"
                   onClick={() => deleteMutation.mutate(m.id)}
                 >
                   <X size={10} />
@@ -220,15 +220,15 @@ function UnitMediaTab({ unitId }: { unitId: string }) {
   );
 }
 
-// â”€â”€â”€ Sales Pipeline Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sales Pipeline Tab ───────────────────────────────────────────────────────
 
 const PROP_STATUS_CFG: Record<string, { label: string; color: string }> = {
   DRAFT:        { label: 'Draft',      color: 'bg-gray-100 text-gray-600' },
-  SUBMITTED:    { label: 'Chá» duyá»‡t', color: 'bg-yellow-100 text-yellow-700' },
-  UNDER_REVIEW: { label: 'Äang xem',  color: 'bg-blue-100 text-blue-700' },
-  APPROVED:     { label: 'ÄÃ£ duyá»‡t',  color: 'bg-green-100 text-green-700' },
-  REJECTED:     { label: 'Tá»« chá»‘i',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'ÄÃ£ kÃ½ HÄ', color: 'bg-purple-100 text-purple-700' },
+  SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
+  UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-blue-700' },
+  APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
+  REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
+  CONVERTED:    { label: 'Đã ký HĐ', color: 'bg-purple-100 text-purple-700' },
 };
 
 function SalesPipelineTab({
@@ -253,30 +253,30 @@ function SalesPipelineTab({
   const activeBookings = bookings.filter((b) => ['ACTIVE','PENDING'].includes(b.status));
   const historyBookings = bookings.filter((b) => !['ACTIVE','PENDING'].includes(b.status));
 
-  // Máº·t báº±ng Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c â€” khÃ´ng cho táº¡o booking má»›i chá»“ng lÃªn (khá»›p cháº·n á»Ÿ backend)
+  // Mặt bằng đã có khách thuê chính thức — không cho tạo booking mới chồng lên (khớp chặn ở backend)
   const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
 
   const fmtVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
   const fmtDate = (d?: string | null) =>
-    d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'â€”';
+    d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
   return (
     <div className="space-y-5">
 
-      {/* Cáº£nh bÃ¡o khi máº·t báº±ng Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c â€” khÃ´ng thá»ƒ táº¡o booking má»›i */}
+      {/* Cảnh báo khi mặt bằng đã có khách thuê chính thức — không thể tạo booking mới */}
       {isCommitted && (
         <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex items-start gap-2 text-xs text-gray-500">
           <Lock size={13} className="mt-0.5 shrink-0" />
-          <span>Máº·t báº±ng Ä‘ang á»Ÿ tráº¡ng thÃ¡i "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" â€” Ä‘Ã£ cÃ³ khÃ¡ch thuÃª chÃ­nh thá»©c nÃªn khÃ´ng thá»ƒ táº¡o booking má»›i cho khÃ¡ch khÃ¡c.</span>
+          <span>Mặt bằng đang ở trạng thái "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" — đã có khách thuê chính thức nên không thể tạo booking mới cho khách khác.</span>
         </div>
       )}
 
-      {/* CTA khi trá»‘ng */}
+      {/* CTA khi trống */}
       {bookings.length === 0 && proposals.length === 0 && !isCommitted && (
         <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 text-center space-y-2">
-          <p className="text-sm text-amber-700 font-medium">Máº·t báº±ng chÆ°a cÃ³ khÃ¡ch â€” táº¡o booking Ä‘á»ƒ báº¯t Ä‘áº§u</p>
+          <p className="text-sm text-amber-700 font-medium">Mặt bằng chưa có khách — tạo booking để bắt đầu</p>
           <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2" onClick={onCreateBooking}>
-            <BookmarkPlus size={14} /> Táº¡o Booking
+            <BookmarkPlus size={14} /> Tạo Booking
           </Button>
         </div>
       )}
@@ -286,18 +286,18 @@ function SalesPipelineTab({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
-              <Users size={11} /> HÃ€NG Äá»¢I BOOKING ({activeBookings.length})
+              <Users size={11} /> HÀNG ĐỢI BOOKING ({activeBookings.length})
             </span>
             {!isCommitted && (
               <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={onCreateBooking}>
-                <Plus size={10} /> ThÃªm
+                <Plus size={10} /> Thêm
               </Button>
             )}
           </div>
           <div className="space-y-2">
             {activeBookings.map((b: any) => {
               const bcfg = BOOKING_STATUS_CONFIG[b.status] ?? BOOKING_STATUS_CONFIG.PENDING;
-              const name = b.lead?.brandName ?? b.customer?.companyName ?? 'â€”';
+              const name = b.lead?.brandName ?? b.customer?.companyName ?? '—';
               const contact = b.lead?.contactName ?? b.customer?.brandName ?? '';
               const dl = b.expiresAt
                 ? Math.max(0, Math.ceil((new Date(b.expiresAt).getTime() - Date.now()) / 86400000))
@@ -328,10 +328,10 @@ function SalesPipelineTab({
 
                   {/* Booking details */}
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-500">
-                    {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} mÂ²</span>}
-                    {b.requestedTerm && <span>Háº¡n: {b.requestedTerm} th</span>}
-                    {b.expectedRent && <span>Ká»³ vá»ng: {fmtVND(b.expectedRent)} â‚«/mÂ²</span>}
-                    {b.proposedRentPerSqm && <span>Äá» xuáº¥t: {fmtVND(b.proposedRentPerSqm)} â‚«/mÂ²</span>}
+                    {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} m²</span>}
+                    {b.requestedTerm && <span>Hạn: {b.requestedTerm} th</span>}
+                    {b.expectedRent && <span>Kỳ vọng: {fmtVND(b.expectedRent)} ₫/m²</span>}
+                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtVND(b.proposedRentPerSqm)} ₫/m²</span>}
                     {b.assignedTo && <span className="col-span-2">Sale: {b.assignedTo.fullName}</span>}
                   </div>
 
@@ -344,7 +344,7 @@ function SalesPipelineTab({
                         {PROP_STATUS_CFG[b.proposal.status]?.label}
                       </Badge>
                       <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
-                        Xem â†’
+                        Xem →
                       </button>
                     </div>
                   )}
@@ -354,13 +354,13 @@ function SalesPipelineTab({
                     {b.status === 'ACTIVE' && !b.proposal && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1 text-green-700 border-green-200 hover:bg-green-50"
                         onClick={() => onConvertBooking(b)}>
-                        <ArrowRight size={10} /> Láº­p Ä‘á» xuáº¥t
+                        <ArrowRight size={10} /> Lập đề xuất
                       </Button>
                     )}
                     {['ACTIVE','PENDING'].includes(b.status) && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1 text-red-600 border-red-200 hover:bg-red-50"
                         disabled={cancelLoading} onClick={() => onCancelBooking(b.id)}>
-                        <X size={10} /> Há»§y
+                        <X size={10} /> Hủy
                       </Button>
                     )}
                   </div>
@@ -376,16 +376,16 @@ function SalesPipelineTab({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
-              <FileText size={11} /> Äá»€ XUáº¤T ({proposals.length})
+              <FileText size={11} /> ĐỀ XUẤT ({proposals.length})
             </span>
             <button className="text-xs text-gray-500 hover:underline" onClick={onNavigateProposals}>
-              Quáº£n lÃ½ â†’
+              Quản lý →
             </button>
           </div>
           <div className="space-y-3">
             {proposals.map((pr: any) => {
               const ps = PROP_STATUS_CFG[pr.status] ?? PROP_STATUS_CFG.DRAFT;
-              const clientName = pr.tenant?.brandName ?? pr.lead?.brandName ?? 'â€”';
+              const clientName = pr.tenant?.brandName ?? pr.lead?.brandName ?? '—';
               const steps: any[] = pr.approvalWorkflow?.steps ?? [];
 
               return (
@@ -415,64 +415,64 @@ function SalesPipelineTab({
                       <div className="space-y-1 text-xs">
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                           <div>
-                            <span className="text-gray-400">Diá»‡n tÃ­ch: </span>
-                            <span className="font-medium">{pr.area?.toLocaleString()} mÂ²</span>
+                            <span className="text-gray-400">Diện tích: </span>
+                            <span className="font-medium">{pr.area?.toLocaleString()} m²</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Thá»i háº¡n: </span>
-                            <span className="font-medium">{pr.term} thÃ¡ng</span>
+                            <span className="text-gray-400">Thời hạn: </span>
+                            <span className="font-medium">{pr.term} tháng</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">GiÃ¡ thuÃª/mÂ²: </span>
-                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} â‚«</span>
+                            <span className="text-gray-400">Giá thuê/m²: </span>
+                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} ₫</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Tiá»n thuÃª/thÃ¡ng: </span>
-                            <span className="font-medium">{fmtVND(pr.monthlyRent)} â‚«</span>
+                            <span className="text-gray-400">Tiền thuê/tháng: </span>
+                            <span className="font-medium">{fmtVND(pr.monthlyRent)} ₫</span>
                           </div>
                           {(pr.monthlyCAM ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">PhÃ­ DVPT/thÃ¡ng: </span>
-                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} â‚«</span>
+                              <span className="text-gray-400">Phí DVPT/tháng: </span>
+                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} ₫</span>
                             </div>
                           )}
                           {(pr.serviceFeeSqm ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">PhÃ­ DV/thÃ¡ng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} â‚«</span>
+                              <span className="text-gray-400">Phí DV/tháng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} ₫</span>
                             </div>
                           )}
                           {(pr.businessSupportFeeSqm ?? 0) > 0 && (
                             <div>
-                              <span className="text-gray-400">PhÃ­ HT KD/thÃ¡ng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} â‚«</span>
+                              <span className="text-gray-400">Phí HT KD/tháng: </span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} ₫</span>
                             </div>
                           )}
                           {pr.discount > 0 && (
                             <div>
-                              <span className="text-gray-400">Chiáº¿t kháº¥u: </span>
+                              <span className="text-gray-400">Chiết khấu: </span>
                               <span className="text-red-600 font-medium">{pr.discount}%</span>
                             </div>
                           )}
                           {pr.rentFree > 0 && (
                             <div>
                               <span className="text-gray-400">Rent-free: </span>
-                              <span className="font-medium">{pr.rentFree} thÃ¡ng</span>
+                              <span className="font-medium">{pr.rentFree} tháng</span>
                             </div>
                           )}
                         </div>
                         {/* Total monthly highlight */}
                         <div className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 mt-1">
-                          <span className="text-gray-500">Tá»•ng pháº£i tráº£/thÃ¡ng:</span>
-                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} â‚«</span>
+                          <span className="text-gray-500">Tổng phải trả/tháng:</span>
+                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} ₫</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-400">Tá»•ng giÃ¡ trá»‹ HÄ:</span>
-                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} â‚«</span>
+                          <span className="text-gray-400">Tổng giá trị HĐ:</span>
+                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} ₫</span>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 text-gray-400">
-                          <span>Báº¯t Ä‘áº§u: {fmtDate(pr.startDate)}</span>
-                          <span>Káº¿t thÃºc: {fmtDate(pr.endDate)}</span>
+                          <span>Bắt đầu: {fmtDate(pr.startDate)}</span>
+                          <span>Kết thúc: {fmtDate(pr.endDate)}</span>
                         </div>
                       </div>
                     );
@@ -481,7 +481,7 @@ function SalesPipelineTab({
                   {/* Approval steps */}
                   {steps.length > 0 && (
                     <div className="border-t border-dashed border-gray-200 pt-2">
-                      <div className="text-xs text-gray-400 mb-1.5 font-medium">QUY TRÃŒNH PHÃŠ DUYá»†T</div>
+                      <div className="text-xs text-gray-400 mb-1.5 font-medium">QUY TRÌNH PHÊ DUYỆT</div>
                       <div className="space-y-1">
                         {steps.map((s: any) => (
                           <div key={s.id} className="flex items-center gap-2 text-xs">
@@ -493,14 +493,14 @@ function SalesPipelineTab({
                               <div className="w-3 h-3 rounded-full border-2 border-gray-300 flex-shrink-0" />
                             )}
                             <span className={`flex-1 ${s.status === 'PENDING' ? 'text-gray-500' : 'text-gray-700'}`}>
-                              BÆ°á»›c {s.stepOrder}: {s.approver?.fullName ?? s.approverRole}
+                              Bước {s.stepOrder}: {s.approver?.fullName ?? s.approverRole}
                             </span>
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               s.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
                               s.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-500'
                             }`}>
-                              {s.status === 'APPROVED' ? 'Duyá»‡t' : s.status === 'REJECTED' ? 'Tá»« chá»‘i' : 'Chá»'}
+                              {s.status === 'APPROVED' ? 'Duyệt' : s.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
                             </span>
                           </div>
                         ))}
@@ -522,18 +522,18 @@ function SalesPipelineTab({
                     {pr.status === 'DRAFT' && (
                       <Button size="sm" className="h-7 text-xs px-2 gap-1 bg-gray-900 hover:bg-gray-800 text-white"
                         disabled={submitLoading} onClick={() => onSubmitProposal(pr.id)}>
-                        <ArrowRight size={11} /> Gá»­i phÃª duyá»‡t
+                        <ArrowRight size={11} /> Gửi phê duyệt
                       </Button>
                     )}
                     {pr.status === 'APPROVED' && !pr.contract && (
                       <Button size="sm" className="h-7 text-xs px-2 gap-1 bg-green-600 hover:bg-green-700 text-white"
                         disabled={convertLoading} onClick={() => onConvertProposal(pr.id)}>
-                        <CheckCircle size={11} /> KÃ½ Há»£p Ä‘á»“ng
+                        <CheckCircle size={11} /> Ký Hợp đồng
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-gray-500"
                       onClick={onNavigateProposals}>
-                      Chi tiáº¿t â†’
+                      Chi tiết →
                     </Button>
                   </div>
                 </div>
@@ -546,11 +546,11 @@ function SalesPipelineTab({
       {/* Booking history */}
       {historyBookings.length > 0 && (
         <div>
-          <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">Lá»ŠCH Sá»¬ BOOKING</div>
+          <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">LỊCH SỬ BOOKING</div>
           <div className="space-y-1">
             {historyBookings.map((b: any) => {
               const bcfg = BOOKING_STATUS_CONFIG[b.status] ?? BOOKING_STATUS_CONFIG.EXPIRED;
-              const name = b.lead?.brandName ?? b.customer?.companyName ?? 'â€”';
+              const name = b.lead?.brandName ?? b.customer?.companyName ?? '—';
               return (
                 <div key={b.id} className="flex items-center justify-between py-1.5 px-2 text-xs text-gray-500 border border-gray-100 rounded-lg bg-gray-50">
                   <span className="font-medium text-gray-700">{name}</span>
@@ -565,7 +565,7 @@ function SalesPipelineTab({
   );
 }
 
-// â”€â”€â”€ Unit Detail Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Unit Detail Sheet ────────────────────────────────────────────────────────
 
 function UnitDetailSheet({
   unit, onClose, onEdit, onDelete,
@@ -586,9 +586,9 @@ function UnitDetailSheet({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
-      toast({ title: 'ÄÃ£ gá»­i phÃª duyá»‡t' });
+      toast({ title: 'Đã gửi phê duyệt' });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const convertProposalMutation = useMutation({
@@ -596,9 +596,9 @@ function UnitDetailSheet({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['units'] });
-      toast({ title: 'ÄÃ£ chuyá»ƒn thÃ nh há»£p Ä‘á»“ng' });
+      toast({ title: 'Đã chuyển thành hợp đồng' });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -623,9 +623,9 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'ÄÃ£ há»§y booking' });
+      toast({ title: 'Đã hủy booking' });
     },
-    onError: () => toast({ title: 'Lá»—i há»§y booking', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
   });
 
   const statusMutation = useMutation({
@@ -634,9 +634,9 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'ÄÃ£ cáº­p nháº­t tráº¡ng thÃ¡i' });
+      toast({ title: 'Đã cập nhật trạng thái' });
     },
-    onError: () => toast({ title: 'Lá»—i cáº­p nháº­t tráº¡ng thÃ¡i', variant: 'destructive' }),
+    onError: () => toast({ title: 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
   });
 
   const splitMutation = useMutation({
@@ -645,10 +645,10 @@ function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'ÄÃ£ tÃ¡ch sáº£nh thÃ nh cÃ´ng' });
+      toast({ title: 'Đã tách sảnh thành công' });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i tÃ¡ch sáº£nh', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tách sảnh', variant: 'destructive' }),
   });
 
   const d: any = detail ?? unit;
@@ -660,7 +660,7 @@ function UnitDetailSheet({
       open={!!unit}
       onClose={onClose}
       title={d?.code ?? ''}
-      subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' Â· ' + d.zone.name : ''}`}
+      subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' · ' + d.zone.name : ''}`}
       className="w-full sm:w-[720px]"
     >
       {d && (
@@ -677,8 +677,8 @@ function UnitDetailSheet({
           {/* Tab switcher */}
           <div className="flex border-b border-gray-200 overflow-x-auto">
             {([
-              ['info', 'ThÃ´ng tin', LayoutList],
-              ['sales', 'BÃ¡n hÃ ng', TrendingUp],
+              ['info', 'Thông tin', LayoutList],
+              ['sales', 'Bán hàng', TrendingUp],
               ['media', 'Media', Image],
               ['slots', 'Booking Slot', BookmarkPlus],
             ] as const).map(([tab, label, Icon]) => {
@@ -729,7 +729,7 @@ function UnitDetailSheet({
               unit={d}
               onCreateBooking={() => setBookingOpen(true)}
               onConvertBooking={(b) => setConvertBooking(b)}
-              onCancelBooking={(id) => cancelBookingMutation.mutate({ id, reason: 'Há»§y tá»« UI' })}
+              onCancelBooking={(id) => cancelBookingMutation.mutate({ id, reason: 'Hủy từ UI' })}
               onSubmitProposal={(id) => submitProposalMutation.mutate(id)}
               onConvertProposal={(id) => convertProposalMutation.mutate(id)}
               onNavigateProposals={() => { navigate('/proposals'); onClose(); }}
@@ -746,12 +746,12 @@ function UnitDetailSheet({
           {slotSummary && slotSummary.totalSlots > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold tracking-wider text-gray-700">BOOKING SLOT (Ã” NHá»Ž)</span>
+                <span className="text-xs font-semibold tracking-wider text-gray-700">BOOKING SLOT (Ô NHỎ)</span>
                 <button
                   onClick={() => setActiveTab('slots')}
                   className="text-xs text-gray-700 hover:underline"
                 >
-                  Xem chi tiáº¿t â†’
+                  Xem chi tiết →
                 </button>
               </div>
               <SlotSummaryBadge summary={slotSummary} />
@@ -760,7 +760,7 @@ function UnitDetailSheet({
 
           {/* Change status */}
           <div>
-            <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">Äá»”I TRáº NG THÃI</label>
+            <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">ĐỔI TRẠNG THÁI</label>
             <Select
               value={d.status}
               onValueChange={(v) => statusMutation.mutate(v)}
@@ -778,43 +778,43 @@ function UnitDetailSheet({
           </div>
 
           {/* Space info */}
-          <SheetSection label="THÃ”NG TIN Máº¶T Báº°NG" className="bg-gray-50">
-            <SheetRow label="Diá»‡n tÃ­ch GFA"      value={`${d.areaGFA?.toLocaleString()} mÂ²`}  icon={Building2} />
-            <SheetRow label="Diá»‡n tÃ­ch NLA"      value={`${d.areaNLA?.toLocaleString()} mÂ²`}  icon={Building2} />
-            <SheetRow label="GiÃ¡ thuÃª cÆ¡ báº£n"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : 'â€”'} icon={DollarSign} />
-            <SheetRow label="PhÃ­ CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : 'â€”'} icon={DollarSign} />
+          <SheetSection label="THÔNG TIN MẶT BẰNG" className="bg-gray-50">
+            <SheetRow label="Diện tích GFA"      value={`${d.areaGFA?.toLocaleString()} m²`}  icon={Building2} />
+            <SheetRow label="Diện tích NLA"      value={`${d.areaNLA?.toLocaleString()} m²`}  icon={Building2} />
+            <SheetRow label="Giá thuê cơ bản"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : '—'} icon={DollarSign} />
+            <SheetRow label="Phí CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : '—'} icon={DollarSign} />
             {monthlyEst > 0 && (
               <SheetRow
-                label="Æ¯á»›c tÃ­nh / thÃ¡ng"
-                value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} â‚«</span>}
+                label="Ước tính / tháng"
+                value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} ₫</span>}
                 icon={DollarSign}
               />
             )}
             {d.spaceType && (
-              <SheetRow label="Loáº¡i sáº£nh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
+              <SheetRow label="Loại sảnh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
             )}
             {d.tier && (
               <SheetRow label="Tier" value={TIER_OPTIONS.find(o => o.value === d.tier)?.label ?? d.tier} icon={Star} />
             )}
             {d.leaseTermType && (
-              <SheetRow label="HÃ¬nh thá»©c thuÃª" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
+              <SheetRow label="Hình thức thuê" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
             )}
             {d.isFlexibleArea && (
               <SheetRow
-                label="Diá»‡n tÃ­ch linh Ä‘á»™ng"
-                value={`${d.minFlexArea?.toLocaleString() ?? '?'} â€“ ${d.maxFlexArea?.toLocaleString() ?? '?'} mÂ²`}
+                label="Diện tích linh động"
+                value={`${d.minFlexArea?.toLocaleString() ?? '?'} – ${d.maxFlexArea?.toLocaleString() ?? '?'} m²`}
                 icon={SlidersHorizontal}
               />
             )}
           </SheetSection>
 
-          {/* GAP #2 â€” Sáº£nh gá»™p info + TÃ¡ch sáº£nh */}
+          {/* GAP #2 — Sảnh gộp info + Tách sảnh */}
           {d.isCombined && (
-            <SheetSection label="THÃ”NG TIN Sáº¢NH Gá»˜P" className="bg-violet-50">
+            <SheetSection label="THÔNG TIN SẢNH GỘP" className="bg-violet-50">
               <div className="flex items-center justify-between px-3 py-2">
                 <div className="flex items-center gap-2 text-sm text-violet-700">
                   <GitMerge size={14} />
-                  <span>Sáº£nh nÃ y Ä‘Æ°á»£c gá»™p tá»« {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sáº£nh nguá»“n</span>
+                  <span>Sảnh này được gộp từ {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sảnh nguồn</span>
                 </div>
                 <Button
                   size="sm"
@@ -824,38 +824,38 @@ function UnitDetailSheet({
                   onClick={() => splitMutation.mutate()}
                 >
                   <Scissors size={12} />
-                  {splitMutation.isPending ? 'Äang tÃ¡ch...' : 'TÃ¡ch sáº£nh'}
+                  {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
                 </Button>
               </div>
               {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
-                <p className="text-xs text-violet-500 px-3 pb-2">KhÃ´ng thá»ƒ tÃ¡ch khi sáº£nh Ä‘ang Ä‘Æ°á»£c sá»­ dá»¥ng.</p>
+                <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
               )}
             </SheetSection>
           )}
 
           {/* Tenant */}
           {d.tenant && (
-            <SheetSection label="KHÃCH THUÃŠ HIá»†N Táº I" className="bg-green-50">
-              <SheetRow label="ThÆ°Æ¡ng hiá»‡u"  value={d.tenant.brandName}    icon={User} />
-              <SheetRow label="CÃ´ng ty"      value={d.tenant.companyName}  icon={Building2} />
-              <SheetRow label="LiÃªn há»‡"      value={d.tenant.contactName}  icon={User} />
+            <SheetSection label="KHÁCH THUÊ HIỆN TẠI" className="bg-green-50">
+              <SheetRow label="Thương hiệu"  value={d.tenant.brandName}    icon={User} />
+              <SheetRow label="Công ty"      value={d.tenant.companyName}  icon={Building2} />
+              <SheetRow label="Liên hệ"      value={d.tenant.contactName}  icon={User} />
               <SheetRow label="Email"         value={d.tenant.contactEmail} icon={Mail} />
-              <SheetRow label="Äiá»‡n thoáº¡i"   value={d.tenant.contactPhone} icon={Phone} />
+              <SheetRow label="Điện thoại"   value={d.tenant.contactPhone} icon={Phone} />
             </SheetSection>
           )}
 
           {/* Lease dates */}
           {(d.leaseStartDate || d.leaseEndDate) && (
-            <SheetSection label="THá»œI Háº N THUÃŠ" className="bg-gray-50">
-              <SheetRow label="NgÃ y báº¯t Ä‘áº§u"  value={fmtDate(d.leaseStartDate)} icon={Calendar} />
-              <SheetRow label="NgÃ y káº¿t thÃºc" value={fmtDate(d.leaseEndDate)}   icon={Calendar} />
+            <SheetSection label="THỜI HẠN THUÊ" className="bg-gray-50">
+              <SheetRow label="Ngày bắt đầu"  value={fmtDate(d.leaseStartDate)} icon={Calendar} />
+              <SheetRow label="Ngày kết thúc" value={fmtDate(d.leaseEndDate)}   icon={Calendar} />
             </SheetSection>
           )}
 
           {/* Active contracts */}
           {Array.isArray(d.contracts) && d.contracts.length > 0 && (
             <div>
-              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">Há»¢P Äá»’NG HIá»†N Táº I</div>
+              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">HỢP ĐỒNG HIỆN TẠI</div>
               <div className="space-y-2">
                 {d.contracts.map((c: any) => (
                   <div key={c.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
@@ -879,24 +879,24 @@ function UnitDetailSheet({
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
-                    <TrendingUp size={12} /> PIPELINE BÃN HÃ€NG
+                    <TrendingUp size={12} /> PIPELINE BÁN HÀNG
                   </span>
                   <button
                     className="text-xs text-amber-700 hover:underline font-medium"
                     onClick={() => setActiveTab('sales')}
                   >
-                    Xem chi tiáº¿t â†’
+                    Xem chi tiết →
                   </button>
                 </div>
                 <div className="flex gap-3 text-xs flex-wrap">
                   {activeBookings.length > 0 && (
                     <span className="flex items-center gap-1 text-amber-700">
-                      <Users size={11} /> {activeBookings.length} booking Ä‘ang chá»
+                      <Users size={11} /> {activeBookings.length} booking đang chờ
                     </span>
                   )}
                   {activeProposals.length > 0 && (
                     <span className="flex items-center gap-1 text-gray-700">
-                      <FileText size={11} /> {activeProposals.length} Ä‘á» xuáº¥t
+                      <FileText size={11} /> {activeProposals.length} đề xuất
                     </span>
                   )}
                 </div>
@@ -911,7 +911,7 @@ function UnitDetailSheet({
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}
               >
-                <BookmarkPlus size={14} /> Táº¡o Booking
+                <BookmarkPlus size={14} /> Tạo Booking
               </Button>
             )}
             <Button
@@ -919,21 +919,21 @@ function UnitDetailSheet({
               className="flex-1 gap-2"
               onClick={() => { onEdit(d); }}
             >
-              <Pencil size={14} /> Sá»­a
+              <Pencil size={14} /> Sửa
             </Button>
             <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
               onClick={() => { onDelete(d); }}
             >
-              <Trash2 size={14} /> XÃ³a
+              <Trash2 size={14} /> Xóa
             </Button>
           </div>
           </>)}
 
-          {/* Booking Dialog â€” Ä‘áº·t ngoÃ i khá»‘i activeTab === 'info' vÃ¬ "Táº¡o Booking" á»Ÿ tab BÃ¡n hÃ ng
-              (SalesPipelineTab) cÅ©ng má»Ÿ dialog nÃ y; trÆ°á»›c Ä‘Ã¢y bá»‹ lá»“ng trong info nÃªn báº¥m tá»« tab
-              khÃ¡c khÃ´ng tháº¥y popup cho tá»›i khi quay láº¡i tab ThÃ´ng tin. */}
+          {/* Booking Dialog — đặt ngoài khối activeTab === 'info' vì "Tạo Booking" ở tab Bán hàng
+              (SalesPipelineTab) cũng mở dialog này; trước đây bị lồng trong info nên bấm từ tab
+              khác không thấy popup cho tới khi quay lại tab Thông tin. */}
           <CreateBookingDialog
             unitId={d.id}
             unitCode={d.code}
@@ -953,6 +953,7 @@ function UnitDetailSheet({
   );
 }
 
+// ─── Compare Modal ────────────────────────────────────────────────────────────
 
 function CompareModal({ 
   unitIds, 
@@ -978,27 +979,27 @@ function CompareModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Columns size={18} className="text-gray-500" />
-            So sÃ¡nh {unitIds.length} máº·t báº±ng
+            So sánh {unitIds.length} mặt bằng
           </DialogTitle>
         </DialogHeader>
         
         {isLoading ? (
-          <div className="py-10 text-center text-gray-400">Äang táº£i...</div>
+          <div className="py-10 text-center text-gray-400">Đang tải...</div>
         ) : units.length > 0 && (
           <div className="space-y-4">
             {/* Summary */}
             {summary && (
               <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">GiÃ¡ thuÃª TB</div>
-                  <div className="font-semibold">{Number(summary.avgRent).toLocaleString()} â‚«/mÂ²</div>
+                  <div className="text-xs text-gray-500">Giá thuê TB</div>
+                  <div className="font-semibold">{Number(summary.avgRent).toLocaleString()} ₫/m²</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Diá»‡n tÃ­ch TB</div>
-                  <div className="font-semibold">{Number(summary.avgArea).toLocaleString()} mÂ²</div>
+                  <div className="text-xs text-gray-500">Diện tích TB</div>
+                  <div className="font-semibold">{Number(summary.avgArea).toLocaleString()} m²</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-xs text-gray-500">Range giÃ¡</div>
+                  <div className="text-xs text-gray-500">Range giá</div>
                   <div className="font-semibold text-sm">{summary.minRent.toLocaleString()} - {summary.maxRent.toLocaleString()}</div>
                 </div>
               </div>
@@ -1009,7 +1010,7 @@ function CompareModal({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-2 px-3 font-medium text-gray-500">Thuá»™c tÃ­nh</th>
+                    <th className="text-left py-2 px-3 font-medium text-gray-500">Thuộc tính</th>
                     {units.map((u: any) => (
                       <th key={u.id} className="text-left py-2 px-3 font-semibold">
                         {u.code}
@@ -1022,7 +1023,7 @@ function CompareModal({
                 </thead>
                 <tbody>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Tráº¡ng thÃ¡i</td>
+                    <td className="py-2 px-3 text-gray-500">Trạng thái</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3">
                         <Badge className={STATUS_CONFIG[u.status]?.color}>{STATUS_CONFIG[u.status]?.label}</Badge>
@@ -1030,10 +1031,10 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Diá»‡n tÃ­ch NLA</td>
+                    <td className="py-2 px-3 text-gray-500">Diện tích NLA</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-medium">
-                        {u.areaNLA.toLocaleString()} mÂ²
+                        {u.areaNLA.toLocaleString()} m²
                         <span className={`ml-1 text-xs ${Number(u.areaVsAvg) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ({u.areaVsAvg > 0 ? '+' : ''}{u.areaVsAvg}%)
                         </span>
@@ -1041,10 +1042,10 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">GiÃ¡ thuÃª/mÂ²</td>
+                    <td className="py-2 px-3 text-gray-500">Giá thuê/m²</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-medium">
-                        {u.baseRentPerSqm.toLocaleString()} â‚«
+                        {u.baseRentPerSqm.toLocaleString()} ₫
                         <span className={`ml-1 text-xs ${Number(u.rentVsAvg) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ({u.rentVsAvg > 0 ? '+' : ''}{u.rentVsAvg}%)
                         </span>
@@ -1052,35 +1053,35 @@ function CompareModal({
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">PhÃ­ CAM/mÂ²</td>
+                    <td className="py-2 px-3 text-gray-500">Phí CAM/m²</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.camPerSqm.toLocaleString()} â‚«</td>
+                      <td key={u.id} className="py-2 px-3">{u.camPerSqm.toLocaleString()} ₫</td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Tá»•ng/thÃ¡ng</td>
+                    <td className="py-2 px-3 text-gray-500">Tổng/tháng</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-semibold text-gray-700">
-                        {u.totalMonthlyRent?.toLocaleString()} â‚«
+                        {u.totalMonthlyRent?.toLocaleString()} ₫
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">NgÃ nh hÃ ng</td>
+                    <td className="py-2 px-3 text-gray-500">Ngành hàng</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.category ?? 'â€”'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.category ?? '—'}</td>
                     ))}
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 px-3 text-gray-500">Táº§ng</td>
+                    <td className="py-2 px-3 text-gray-500">Tầng</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.floor?.name ?? 'â€”'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.floor?.name ?? '—'}</td>
                     ))}
                   </tr>
                   <tr>
-                    <td className="py-2 px-3 text-gray-500">KhÃ¡ch thuÃª</td>
+                    <td className="py-2 px-3 text-gray-500">Khách thuê</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3">{u.tenant?.brandName ?? 'â€”'}</td>
+                      <td key={u.id} className="py-2 px-3">{u.tenant?.brandName ?? '—'}</td>
                     ))}
                   </tr>
                 </tbody>
@@ -1090,13 +1091,14 @@ function CompareModal({
         )}
         
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>ÄÃ³ng</Button>
+          <Button variant="outline" onClick={onClose}>Đóng</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 type ViewMode = 'grid' | 'floor' | 'map' | 'analytics';
 
@@ -1210,21 +1212,21 @@ export default function SpacesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'ÄÃ£ xÃ³a máº·t báº±ng' });
+      toast({ title: 'Đã xóa mặt bằng' });
       setDeletingUnit(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i xÃ³a', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
   });
 
   const deleteFloorMutation = useMutation({
     mutationFn: (id: string) => spacesApi.deleteFloor(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['floors'] });
-      toast({ title: 'ÄÃ£ xÃ³a táº§ng' });
+      toast({ title: 'Đã xóa tầng' });
       setDeletingFloor(null);
       if (floorFilter === id) setFloorFilter('');
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i xÃ³a', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
   });
 
   const bulkMutation = useMutation({
@@ -1232,12 +1234,12 @@ export default function SpacesPage() {
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: `ÄÃ£ cáº­p nháº­t ${result.updated} máº·t báº±ng` });
+      toast({ title: `Đã cập nhật ${result.updated} mặt bằng` });
       clearSelection();
       setSelectionMode(false);
       setBulkActionOpen(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lá»—i cáº­p nháº­t', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
   });
 
   const units: Unit[] = data?.data ?? [];
@@ -1255,7 +1257,7 @@ export default function SpacesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mall Spaces</h1>
-          <p className="text-sm text-gray-500 mt-1">Quáº£n lÃ½ máº·t báº±ng vÃ  tÃ¬nh tráº¡ng cho thuÃª</p>
+          <p className="text-sm text-gray-500 mt-1">Quản lý mặt bằng và tình trạng cho thuê</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
@@ -1265,27 +1267,27 @@ export default function SpacesPage() {
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'grid' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Danh sÃ¡ch"
+              title="Danh sách"
             >
-              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sÃ¡ch</span>
+              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sách</span>
             </button>
             <button
               onClick={() => setView('floor')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'floor' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="SÆ¡ Ä‘á»“ táº§ng"
+              title="Sơ đồ tầng"
             >
-              <Map size={14} /> <span className="hidden sm:inline">SÆ¡ Ä‘á»“ táº§ng</span>
+              <Map size={14} /> <span className="hidden sm:inline">Sơ đồ tầng</span>
             </button>
             <button
               onClick={() => { setView('map'); setMapEditorMode(false); }}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'map' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Báº£n Ä‘á»“ sá»‘"
+              title="Bản đồ số"
             >
-              <Map size={14} /> <span className="hidden sm:inline">Báº£n Ä‘á»“ sá»‘</span>
+              <Map size={14} /> <span className="hidden sm:inline">Bản đồ số</span>
             </button>
             <button
               onClick={() => setView('analytics')}
@@ -1298,8 +1300,8 @@ export default function SpacesPage() {
             </button>
           </div>
           {selectedMallId && (
-            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="ThÃªm máº·t báº±ng">
-              <Plus size={15} /> <span className="hidden sm:inline">ThÃªm máº·t báº±ng</span>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
+              <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
             </Button>
           )}
         </div>
@@ -1314,7 +1316,7 @@ export default function SpacesPage() {
             className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
               ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
           >
-            Táº¥t cáº£ táº§ng
+            Tất cả tầng
           </button>
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
@@ -1338,14 +1340,14 @@ export default function SpacesPage() {
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditingFloor(f); setFloorDialogOpen(true); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="Sá»­a táº§ng"
+                    title="Sửa tầng"
                   >
                     <Pencil size={11} />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeletingFloor(f); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="XÃ³a táº§ng"
+                    title="Xóa tầng"
                   >
                     <Trash2 size={11} />
                   </button>
@@ -1358,7 +1360,7 @@ export default function SpacesPage() {
               onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
               className="shrink-0 text-xs px-2.5 py-1.5 rounded-full font-medium border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 hover:border-gray-400 flex items-center gap-1 whitespace-nowrap"
             >
-              <Plus size={12} /> ThÃªm táº§ng
+              <Plus size={12} /> Thêm tầng
             </button>
           )}
         </div>
@@ -1377,7 +1379,7 @@ export default function SpacesPage() {
             <div className="relative w-full sm:flex-1 sm:max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="TÃ¬m mÃ£, tÃªn máº·t báº±ng..."
+                placeholder="Tìm mã, tên mặt bằng..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -1385,10 +1387,10 @@ export default function SpacesPage() {
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Táº¥t cáº£ tráº¡ng thÃ¡i" />
+                <SelectValue placeholder="Tất cả trạng thái" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Táº¥t cáº£</SelectItem>
+                <SelectItem value="">Tất cả</SelectItem>
                 {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                   <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
                 ))}
@@ -1401,7 +1403,7 @@ export default function SpacesPage() {
               className="gap-1.5"
             >
               <CheckSquare size={14} />
-              <span className="hidden sm:inline">{selectionMode ? 'ThoÃ¡t' : 'Chá»n nhiá»u'}</span>
+              <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
             </Button>
             <Button
               variant={showFilters ? 'default' : 'outline'}
@@ -1410,12 +1412,12 @@ export default function SpacesPage() {
               className="gap-1.5"
             >
               <SlidersHorizontal size={14} />
-              Bá»™ lá»c nÃ¢ng cao
+              Bộ lọc nâng cao
               {hasAdvancedFilters && <span className="w-2 h-2 bg-gray-500 rounded-full" />}
             </Button>
             {(statusFilter || floorFilter || search || hasAdvancedFilters) && (
               <Button variant="outline" size="sm" onClick={clearFilters}>
-                <X size={14} className="mr-1" /> XÃ³a bá»™ lá»c
+                <X size={14} className="mr-1" /> Xóa bộ lọc
               </Button>
             )}
           </div>
@@ -1425,7 +1427,7 @@ export default function SpacesPage() {
             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diá»‡n tÃ­ch min (mÂ²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích min (m²)</label>
                   <Input
                     type="number"
                     placeholder="0"
@@ -1434,7 +1436,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diá»‡n tÃ­ch max (mÂ²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích max (m²)</label>
                   <Input
                     type="number"
                     placeholder="1000"
@@ -1443,7 +1445,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">GiÃ¡ thuÃª min (â‚«/mÂ²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê min (₫/m²)</label>
                   <Input
                     type="number"
                     placeholder="0"
@@ -1452,7 +1454,7 @@ export default function SpacesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">GiÃ¡ thuÃª max (â‚«/mÂ²)</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê max (₫/m²)</label>
                   <Input
                     type="number"
                     placeholder="1000000"
@@ -1463,13 +1465,13 @@ export default function SpacesPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">NgÃ nh hÃ ng</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Ngành hàng</label>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Táº¥t cáº£ ngÃ nh hÃ ng" />
+                      <SelectValue placeholder="Tất cả ngành hàng" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Táº¥t cáº£</SelectItem>
+                      <SelectItem value="">Tất cả</SelectItem>
                       {categoryNames.map((c) => (
                         <SelectItem key={c} value={c}>{c}</SelectItem>
                       ))}
@@ -1478,13 +1480,13 @@ export default function SpacesPage() {
                 </div>
                 {/* GAP #4 */}
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Loáº¡i sáº£nh</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Loại sảnh</label>
                   <Select value={spaceTypeFilter} onValueChange={setSpaceTypeFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Táº¥t cáº£ loáº¡i" />
+                      <SelectValue placeholder="Tất cả loại" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Táº¥t cáº£</SelectItem>
+                      <SelectItem value="">Tất cả</SelectItem>
                       {SPACE_TYPE_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -1496,10 +1498,10 @@ export default function SpacesPage() {
                   <label className="text-xs font-medium text-gray-500 mb-1 block">Tier</label>
                   <Select value={tierFilter} onValueChange={setTierFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Táº¥t cáº£ tier" />
+                      <SelectValue placeholder="Tất cả tier" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Táº¥t cáº£</SelectItem>
+                      <SelectItem value="">Tất cả</SelectItem>
                       {TIER_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -1508,13 +1510,13 @@ export default function SpacesPage() {
                 </div>
                 {/* GAP #3 */}
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">HÃ¬nh thá»©c thuÃª</label>
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Hình thức thuê</label>
                   <Select value={leaseTermFilter} onValueChange={setLeaseTermFilter}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Táº¥t cáº£" />
+                      <SelectValue placeholder="Tất cả" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Táº¥t cáº£</SelectItem>
+                      <SelectItem value="">Tất cả</SelectItem>
                       {LEASE_TERM_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
@@ -1532,22 +1534,22 @@ export default function SpacesPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-700">
-              ÄÃ£ chá»n {selectedIds.size} máº·t báº±ng
+              Đã chọn {selectedIds.size} mặt bằng
             </span>
             <Button variant="ghost" size="sm" onClick={() => selectAll(units.map(u => u.id))} className="text-gray-700">
-              Chá»n táº¥t cáº£ ({units.length})
+              Chọn tất cả ({units.length})
             </Button>
             <Button variant="ghost" size="sm" onClick={() => clearSelection()} className="text-gray-700">
-              Bá» chá»n
+              Bỏ chọn
             </Button>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {selectedIds.size >= 2 && selectedIds.size <= 5 && (
               <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
-                <Columns size={14} /> So sÃ¡nh
+                <Columns size={14} /> So sánh
               </Button>
             )}
-            {/* GAP #2 â€” Gá»™p sáº£nh: chá»‰ hiá»‡n khi â‰¥2 unit Ä‘Æ°á»£c chá»n */}
+            {/* GAP #2 — Gộp sảnh: chỉ hiện khi ≥2 unit được chọn */}
             {selectedIds.size >= 2 && (
               <Button
                 variant="outline"
@@ -1555,17 +1557,17 @@ export default function SpacesPage() {
                 onClick={() => setMergeDialogOpen(true)}
                 className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
               >
-                <GitMerge size={14} /> Gá»™p sáº£nh
+                <GitMerge size={14} /> Gộp sảnh
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('status')} className="gap-1.5">
-              <RefreshCw size={14} /> Äá»•i tráº¡ng thÃ¡i
+              <RefreshCw size={14} /> Đổi trạng thái
             </Button>
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('category')} className="gap-1.5">
-              <Filter size={14} /> Äá»•i ngÃ nh hÃ ng
+              <Filter size={14} /> Đổi ngành hàng
             </Button>
             <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('rent')} className="gap-1.5">
-              <DollarSign size={14} /> Äá»•i giÃ¡ thuÃª
+              <DollarSign size={14} /> Đổi giá thuê
             </Button>
           </div>
         </div>
@@ -1633,7 +1635,7 @@ export default function SpacesPage() {
           {/* Map mode toolbar */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Map size={16} className="text-blue-600" /> Báº£n Ä‘á»“ sá»‘ máº·t báº±ng
+              <Map size={16} className="text-blue-600" /> Bản đồ số mặt bằng
             </div>
             {isAdmin && (
               <div className="flex rounded-lg border overflow-hidden text-xs ml-auto">
@@ -1641,13 +1643,13 @@ export default function SpacesPage() {
                   onClick={() => { setMapEditorMode(false); setMapEditorFloorId(null); }}
                   className={`px-3 py-1.5 transition-colors ${!mapEditorMode ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Xem báº£n Ä‘á»“
+                  Xem bản đồ
                 </button>
                 <button
                   onClick={() => setMapEditorMode(true)}
                   className={`px-3 py-1.5 transition-colors ${mapEditorMode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Chá»‰nh sá»­a sÆ¡ Ä‘á»“
+                  Chỉnh sửa sơ đồ
                 </button>
               </div>
             )}
@@ -1657,7 +1659,7 @@ export default function SpacesPage() {
             /* Editor: pick a floor first */
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-500">Chá»n táº§ng Ä‘á»ƒ chá»‰nh sá»­a:</span>
+                <span className="text-xs text-gray-500">Chọn tầng để chỉnh sửa:</span>
                 {floors.map((f: any) => (
                   <button
                     key={f.id}
@@ -1668,9 +1670,9 @@ export default function SpacesPage() {
                         : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
                     }`}
                   >
-                    {f.level} â€” {f.name}
+                    {f.level} — {f.name}
                     {f.floorPlanUrl ? (
-                      <span className="ml-1 text-green-400">âœ“</span>
+                      <span className="ml-1 text-green-400">✓</span>
                     ) : (
                       <span className="ml-1 text-gray-300">+</span>
                     )}
@@ -1681,7 +1683,7 @@ export default function SpacesPage() {
                     onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed border-blue-300 text-blue-500 hover:bg-blue-50 transition-all flex items-center gap-1"
                   >
-                    <Plus size={11} /> ThÃªm táº§ng
+                    <Plus size={11} /> Thêm tầng
                   </button>
                 )}
               </div>
@@ -1690,19 +1692,19 @@ export default function SpacesPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-400 text-sm border-2 border-dashed rounded-xl gap-3">
                   {!selectedMallId ? (
-                    <span className="text-center px-6">Vui lÃ²ng chá»n má»™t <strong className="text-gray-600">mall cá»¥ thá»ƒ</strong> á»Ÿ header trÆ°á»›c (khÃ´ng pháº£i "Táº¥t cáº£ Mall")</span>
+                    <span className="text-center px-6">Vui lòng chọn một <strong className="text-gray-600">mall cụ thể</strong> ở header trước (không phải "Tất cả Mall")</span>
                   ) : floors.length === 0 ? (
                     <>
-                      <span>ChÆ°a cÃ³ táº§ng nÃ o trong mall nÃ y</span>
+                      <span>Chưa có tầng nào trong mall này</span>
                       <button
                         onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                         className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                       >
-                        <Plus size={14} /> ThÃªm táº§ng Ä‘áº§u tiÃªn
+                        <Plus size={14} /> Thêm tầng đầu tiên
                       </button>
                     </>
                   ) : (
-                    <span>Chá»n má»™t táº§ng á»Ÿ trÃªn Ä‘á»ƒ báº¯t Ä‘áº§u chá»‰nh sá»­a sÆ¡ Ä‘á»“</span>
+                    <span>Chọn một tầng ở trên để bắt đầu chỉnh sửa sơ đồ</span>
                   )}
                 </div>
               )}
@@ -1718,14 +1720,14 @@ export default function SpacesPage() {
             ) : (
               <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-400 text-sm border-2 border-dashed rounded-xl">
                 <Map size={36} className="opacity-30" />
-                <p>ChÆ°a cÃ³ táº§ng nÃ o trong mall nÃ y</p>
+                <p>Chưa có tầng nào trong mall này</p>
               </div>
             )
           )}
         </div>
       ) : (
         <>
-          <div className="text-sm text-gray-400 mb-3">{data?.total ?? units.length} máº·t báº±ng</div>
+          <div className="text-sm text-gray-400 mb-3">{data?.total ?? units.length} mặt bằng</div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {units.map((unit) => (
               <UnitCard
@@ -1742,7 +1744,7 @@ export default function SpacesPage() {
           {units.length === 0 && (
             <div className="text-center py-16 text-gray-400">
               <Building2 size={48} className="mx-auto mb-3 opacity-20" />
-              <p className="font-medium">KhÃ´ng tÃ¬m tháº¥y máº·t báº±ng</p>
+              <p className="font-medium">Không tìm thấy mặt bằng</p>
               {selectedMallId && (
                 <Button
                   variant="outline"
@@ -1750,7 +1752,7 @@ export default function SpacesPage() {
                   className="mt-3 gap-2"
                   onClick={() => setCreateOpen(true)}
                 >
-                  <Plus size={14} /> ThÃªm máº·t báº±ng Ä‘áº§u tiÃªn
+                  <Plus size={14} /> Thêm mặt bằng đầu tiên
                 </Button>
               )}
             </div>
@@ -1785,8 +1787,8 @@ export default function SpacesPage() {
       {/* Delete confirm */}
       <ConfirmDialog
         open={!!deletingUnit}
-        title={`XÃ³a máº·t báº±ng ${deletingUnit?.code}?`}
-        description={`Thao tÃ¡c nÃ y sáº½ áº©n máº·t báº±ng "${deletingUnit?.code}" khá»i há»‡ thá»‘ng. Dá»¯ liá»‡u lá»‹ch sá»­ sáº½ Ä‘Æ°á»£c giá»¯ láº¡i.`}
+        title={`Xóa mặt bằng ${deletingUnit?.code}?`}
+        description={`Thao tác này sẽ ẩn mặt bằng "${deletingUnit?.code}" khỏi hệ thống. Dữ liệu lịch sử sẽ được giữ lại.`}
         onConfirm={() => deleteMutation.mutate(deletingUnit.id)}
         onCancel={() => setDeletingUnit(null)}
         loading={deleteMutation.isPending}
@@ -1803,8 +1805,8 @@ export default function SpacesPage() {
       {/* Delete floor confirm */}
       <ConfirmDialog
         open={!!deletingFloor}
-        title={`XÃ³a táº§ng ${deletingFloor?.name}?`}
-        description={`Thao tÃ¡c nÃ y sáº½ áº©n táº§ng "${deletingFloor?.name}" khá»i há»‡ thá»‘ng. CÃ¡c máº·t báº±ng thuá»™c táº§ng nÃ y sáº½ khÃ´ng bá»‹ xÃ³a.`}
+        title={`Xóa tầng ${deletingFloor?.name}?`}
+        description={`Thao tác này sẽ ẩn tầng "${deletingFloor?.name}" khỏi hệ thống. Các mặt bằng thuộc tầng này sẽ không bị xóa.`}
         onConfirm={() => deleteFloorMutation.mutate(deletingFloor.id)}
         onCancel={() => setDeletingFloor(null)}
         loading={deleteFloorMutation.isPending}
