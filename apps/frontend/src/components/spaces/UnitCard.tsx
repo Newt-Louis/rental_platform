@@ -23,20 +23,23 @@ export function UnitCard({
   const cfg = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.VACANT;
   return (
     <Card
-      className={`hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5 group ${
+      className={`h-full hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5 group ${
         isSelected ? 'ring-2 ring-blue-500 bg-gray-50' : ''
       }`}
-      onClick={selectionMode ? onToggleSelect : onClick}
+      onClick={onClick}
     >
       <CardContent className="pt-4 pb-3">
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-start gap-2">
             {selectionMode && (
-              <div className="pt-0.5">
+              <div
+                className="pt-0.5 shrink-0"
+                onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
+              >
                 {isSelected ? (
-                  <CheckSquare size={16} className="text-gray-700" />
+                  <CheckSquare size={16} className="text-blue-600" />
                 ) : (
-                  <Square size={16} className="text-gray-300" />
+                  <Square size={16} className="text-gray-300 hover:text-gray-500" />
                 )}
               </div>
             )}

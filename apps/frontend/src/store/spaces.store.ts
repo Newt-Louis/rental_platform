@@ -9,6 +9,7 @@ interface SpacesState {
   selectedIds: Set<string>;
   toggleSelect: (id: string) => void;
   selectAll: (ids: string[]) => void;
+  selectMany: (ids: string[]) => void;
   clearSelection: () => void;
   compareOpen: boolean;
   setCompareOpen: (v: boolean) => void;
@@ -25,7 +26,7 @@ export const useSpacesStore = create<SpacesState>()((set) => ({
   selectedUnit: null,
   setSelectedUnit: (unit) => set({ selectedUnit: unit }),
 
-  selectionMode: false,
+  selectionMode: true,
   setSelectionMode: (v) => set({ selectionMode: v }),
 
   selectedIds: new Set<string>(),
@@ -37,6 +38,11 @@ export const useSpacesStore = create<SpacesState>()((set) => ({
       return { selectedIds: next };
     }),
   selectAll: (ids) => set({ selectedIds: new Set(ids) }),
+  selectMany: (ids) => set((s) => {
+    const next = new Set(s.selectedIds);
+    ids.forEach((id) => next.add(id));
+    return { selectedIds: next };
+  }),
   clearSelection: () => set({ selectedIds: new Set() }),
 
   compareOpen: false,
@@ -54,7 +60,7 @@ export const useSpacesStore = create<SpacesState>()((set) => ({
   reset: () =>
     set({
       selectedUnit: null,
-      selectionMode: false,
+      selectionMode: true,
       selectedIds: new Set(),
       compareOpen: false,
       mergeDialogOpen: false,

@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { Search, SlidersHorizontal, X, CheckSquare } from 'lucide-react';
+import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
-import { useSpacesStore } from '@/store/spaces.store';
 import {
   STATUS_CONFIG, SPACE_TYPE_OPTIONS, TIER_OPTIONS, LEASE_TERM_OPTIONS,
 } from './spaces.constants';
@@ -27,8 +26,6 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
     hasAdvancedFilters,
     clearFilters,
   } = useSpacesFilters();
-
-  const { selectionMode, setSelectionMode } = useSpacesStore();
 
   return (
     <div className="space-y-3 mb-4">
@@ -53,16 +50,7 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant={selectionMode ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setSelectionMode(!selectionMode)}
-          className="gap-1.5"
-        >
-          <CheckSquare size={14} />
-          <span className="hidden sm:inline">{selectionMode ? 'Thoát' : 'Chọn nhiều'}</span>
-        </Button>
-        <Button
+<Button
           variant={showFilters ? 'default' : 'outline'}
           size="sm"
           onClick={() => setShowFilters(!showFilters)}

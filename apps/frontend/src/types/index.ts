@@ -121,6 +121,8 @@ export interface Tenant {
 export interface Unit {
   id: string;
   mallId: string;
+  floorId?: string;
+  zoneId?: string;
   code: string;
   name?: string;
   areaGFA: number;
@@ -131,6 +133,12 @@ export interface Unit {
   baseRentPerSqm: number;
   camPerSqm: number;
   status: UnitStatus;
+  spaceType?: string;
+  tier?: string;
+  leaseTermType?: string;
+  isFlexibleArea?: boolean;
+  minFlexArea?: number;
+  maxFlexArea?: number;
   tenant?: Tenant;
   floor?: Floor;
   zone?: Zone;

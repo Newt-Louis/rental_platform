@@ -345,7 +345,7 @@ export default function Layout() {
         </aside>
 
         {/* Main content */}
-        <main className={cn('flex-1 overflow-auto rounded-xl bg-card p-6', isTenant && 'pb-20 md:pb-6')}>
+        <main className={cn('flex-1 overflow-auto rounded-xl bg-card', isTenant && 'pb-20 md:pb-6')}>
           <Outlet />
         </main>
 

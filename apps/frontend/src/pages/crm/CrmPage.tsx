@@ -35,8 +35,9 @@ import {
   ArrowRight, Link2, AlertCircle, LayoutList, Kanban, Bell, Target,
   Percent, Layers, Flame, AlertTriangle, DollarSign, Filter, X, GripVertical,
   Trash2, UserPlus, BarChart3, CheckSquare, Square, RefreshCw, Zap,
-  BookmarkCheck, GitBranch,
+  BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
+import { LeadEditDialog } from '@/pages/bookings/BookingsPage';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
 
@@ -474,6 +475,7 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
   const [activeTab, setActiveTab] = useState<'profile' | 'pipeline' | 'activities'>('profile');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [leadEditOpen, setLeadEditOpen] = useState(false);
 
   const { data: fullLead } = useQuery({
     queryKey: ['lead-detail', lead?.id],
@@ -610,7 +612,18 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
             {activeTab === 'profile' && (
               <div className="space-y-3">
                 {/* Lead contact */}
-                <SheetSection label="LIÊN HỆ" className="bg-gray-50">
+                <SheetSection
+                  label="LIÊN HỆ"
+                  className="bg-gray-50"
+                  action={
+                    <button
+                      onClick={() => setLeadEditOpen(true)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <Pencil size={11} /> Chỉnh sửa
+                    </button>
+                  }
+                >
                   <SheetRow label="Thương hiệu" value={displayLead.brandName} icon={Building2} />
                   <SheetRow label="Người liên hệ" value={displayLead.contactName} icon={Users} />
                   {displayLead.phone && <SheetRow label="Điện thoại" value={displayLead.phone} icon={Phone} />}
@@ -887,6 +900,19 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
         open={timelineOpen}
         onClose={() => setTimelineOpen(false)}
       />
+
+      {displayLead && (
+        <LeadEditDialog
+          lead={displayLead}
+          open={leadEditOpen}
+          bookingId={lead?.id ?? ''}
+          onClose={() => {
+            setLeadEditOpen(false);
+            qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
+            qc.invalidateQueries({ queryKey: ['lead-detail', lead?.id] });
+          }}
+        />
+      )}
     </>
   );
 }

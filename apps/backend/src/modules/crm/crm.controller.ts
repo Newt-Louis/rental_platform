@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards,
+  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { CrmService } from './crm.service';
@@ -17,6 +17,7 @@ import { LeadStatus } from '@prisma/client';
 @Roles(...MODULE_ROLES.crm)
 @Controller('crm')
 export class CrmController {
+  private readonly logger = new Logger(CrmController.name);
   constructor(private readonly crmService: CrmService) {}
 
   @Get('leads')
@@ -86,6 +87,7 @@ export class CrmController {
   @Put('leads/:id')
   @ApiOperation({ summary: 'Update lead' })
   update(@Param('id') id: string, @Body() dto: UpdateLeadDto, @CurrentUser() user: any) {
+    this.logger.log(`[DEBUG] PUT /crm/leads/${id} — raw dto after ValidationPipe: ${JSON.stringify(dto)}`);
     return this.crmService.update(id, dto, user?.id);
   }
 

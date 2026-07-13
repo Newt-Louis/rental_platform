@@ -116,7 +116,7 @@ export function UnitDetailSheet({
     <Sheet
       open={!!unit}
       onClose={onClose}
-      title={d?.code ?? ''}
+      title={d?.name ? `${d.code} — ${d.name}` : (d?.code ?? '')}
       subtitle={`${d?.floor?.name ?? ''}${d?.zone?.name ? ' · ' + d.zone.name : ''}`}
       className="w-full sm:w-[720px]"
     >

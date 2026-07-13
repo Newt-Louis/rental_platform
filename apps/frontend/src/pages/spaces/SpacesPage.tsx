@@ -200,7 +200,7 @@ export default function SpacesPage() {
               <BarChart3 size={14} /> <span className="hidden sm:inline">Analytics</span>
             </button>
           </div>
-          {selectedMallId && (
+{selectedMallId && (
             <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
               <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
             </Button>

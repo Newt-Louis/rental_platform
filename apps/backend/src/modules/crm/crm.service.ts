@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
@@ -7,6 +7,7 @@ import { CustomersService } from './customers.service';
 
 @Injectable()
 export class CrmService {
+  private readonly logger = new Logger(CrmService.name);
   constructor(
     private prisma: PrismaService,
     private customersService: CustomersService,
@@ -215,6 +216,8 @@ export class CrmService {
   };
 
   async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
+    this.logger.log(`[DEBUG] update(${id}) — dto keys: ${JSON.stringify(Object.keys(dto))}`);
+    this.logger.log(`[DEBUG] dto values: ${JSON.stringify(dto)}`);
     const existing = await this.findOne(id);
     const updateData: Record<string, unknown> = {};
     if (dto.brandName !== undefined) updateData.brandName = dto.brandName;
@@ -228,7 +231,10 @@ export class CrmService {
     if (dto.status !== undefined) updateData.status = dto.status;
     if (dto.priority !== undefined) updateData.priority = dto.priority;
     if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
+    if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
+    if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
     if ((dto as any).customerId !== undefined) updateData.customerId = (dto as any).customerId;
+    this.logger.log(`[DEBUG] updateData gửi Prisma: ${JSON.stringify(updateData)}`);
     const updated = await this.prisma.lead.update({
       where: { id },
       data: updateData,

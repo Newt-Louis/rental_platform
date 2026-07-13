@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
+import Selecto from 'react-selecto';
+import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { useSpacesStore } from '@/store/spaces.store';
+import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { UnitCard } from '@/components/spaces/UnitCard';
 import { CompareModal } from '@/components/spaces/CompareModal';
 import { MergeUnitsDialog } from '@/components/spaces/dialogs/MergeUnitsDialog';
@@ -54,6 +57,12 @@ export function SpacesGrid({
     setMergeDialogOpen,
   } = useSpacesStore();
 
+  const { gridRef, selectoRef, selectoProps } = useDragSelect({
+    onSelect: selectAll,
+    onClear: clearSelection,
+    idAttribute: 'data-unit-id',
+  });
+
   const [bulkActionOpen, setBulkActionOpen] = useState<'status' | 'category' | 'rent' | null>(null);
 
   const bulkMutation = useMutation({
@@ -81,63 +90,56 @@ export function SpacesGrid({
 
   return (
     <>
-      {/* Bulk Selection Bar */}
-      {selectionMode && selectedIds.size > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 mb-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-700">
-              Đã chọn {selectedIds.size} mặt bằng
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => selectAll(units.map(u => u.id))} className="text-gray-700">
-              Chọn tất cả ({units.length})
+      {/* Floating Bulk Selection Bar */}
+      {selectionMode && (
+        <BulkSelectionBar
+          selectedCount={selectedIds.size}
+          totalCount={units.length}
+          onSelectAll={() => selectAll(units.map(u => u.id))}
+          onClear={clearSelection}
+        >
+          {selectedIds.size >= 2 && selectedIds.size <= 5 && (
+            <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setCompareOpen(true)}>
+              <Columns size={14} /> So sánh
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => clearSelection()} className="text-gray-700">
-              Bỏ chọn
+          )}
+          {selectedIds.size >= 2 && (
+            <Button size="sm" variant="ghost" className="text-violet-300 hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setMergeDialogOpen(true)}>
+              <GitMerge size={14} /> Gộp sảnh
             </Button>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {selectedIds.size >= 2 && selectedIds.size <= 5 && (
-              <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
-                <Columns size={14} /> So sánh
-              </Button>
-            )}
-            {/* GAP #2 — Gộp sảnh: chỉ hiện khi ≥2 unit được chọn */}
-            {selectedIds.size >= 2 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMergeDialogOpen(true)}
-                className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
-              >
-                <GitMerge size={14} /> Gộp sảnh
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('status')} className="gap-1.5">
-              <RefreshCw size={14} /> Đổi trạng thái
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('category')} className="gap-1.5">
-              <Filter size={14} /> Đổi ngành hàng
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setBulkActionOpen('rent')} className="gap-1.5">
-              <DollarSign size={14} /> Đổi giá thuê
-            </Button>
-          </div>
-        </div>
+          )}
+          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('status')}>
+            <RefreshCw size={14} /> Đổi trạng thái
+          </Button>
+          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('category')}>
+            <Filter size={14} /> Đổi ngành hàng
+          </Button>
+          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('rent')}>
+            <DollarSign size={14} /> Đổi giá thuê
+          </Button>
+        </BulkSelectionBar>
       )}
 
       {/* Unit Grid */}
       <div className="text-sm text-gray-400 mb-3">{units.length} mặt bằng</div>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      {selectionMode && (
+        <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />
+      )}
+      <div
+        ref={gridRef}
+        className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 select-none"
+      >
         {units.map((unit) => (
-          <UnitCard
-            key={unit.id}
-            unit={unit}
-            onClick={() => onUnitClick(unit)}
-            selectionMode={selectionMode}
-            isSelected={selectedIds.has(unit.id)}
-            onToggleSelect={() => toggleSelect(unit.id)}
-            slotSummary={slotSummaries[unit.id]}
-          />
+          <div key={unit.id} className={`${DRAG_SELECT_CLASS} h-full`} data-unit-id={unit.id}>
+            <UnitCard
+              unit={unit}
+              onClick={() => onUnitClick(unit)}
+              selectionMode={selectionMode}
+              isSelected={selectedIds.has(unit.id)}
+              onToggleSelect={() => toggleSelect(unit.id)}
+              slotSummary={slotSummaries[unit.id]}
+            />
+          </div>
         ))}
       </div>
 
