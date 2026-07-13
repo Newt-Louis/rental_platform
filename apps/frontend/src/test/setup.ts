@@ -1,0 +1,2 @@
+// apps/frontend/src/test/setup.ts
+import '@testing-library/jest-dom';
