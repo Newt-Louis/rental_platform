@@ -170,10 +170,12 @@ export class BookingService {
     mallId?: string;
     expiringSoon?: boolean;
     search?: string;
+    createdFrom?: string;
+    createdTo?: string;
     page?: number;
     limit?: number;
   }) {
-    const { expiringSoon, search, ...filters } = query;
+    const { expiringSoon, search, createdFrom, createdTo, ...filters } = query;
     const p = Math.max(1, parseInt(String(query.page)) || 1);
     const l = Math.max(1, parseInt(String(query.limit)) || 20);
     const skip = (p - 1) * l;
@@ -191,6 +193,15 @@ export class BookingService {
       where.status = BookingStatus.ACTIVE;
       where.expiresAt = { lte: in7days, gte: new Date() };
     }
+    if (createdFrom || createdTo) {
+      where.createdAt = {};
+      if (createdFrom) where.createdAt.gte = new Date(createdFrom);
+      if (createdTo) {
+        const to = new Date(createdTo);
+        to.setHours(23, 59, 59, 999);
+        where.createdAt.lte = to;
+      }
+    }
     if (search) {
       where.OR = [
         { bookingNumber: { contains: search, mode: 'insensitive' } },
@@ -207,7 +218,7 @@ export class BookingService {
         skip,
         take: l,
         include: this.defaultInclude(),
-        orderBy: [{ unitId: 'asc' }, { priority: 'asc' }],
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.unitBooking.count({ where }),
     ]);
@@ -260,10 +271,39 @@ export class BookingService {
   async update(id: string, dto: UpdateBookingDto, userId: string) {
     const booking = await this.requireBooking(id, [BookingStatus.ACTIVE, BookingStatus.PENDING]);
 
-    // Get unit for price validation
-    const unit = await this.prisma.unit.findUnique({ where: { id: booking.unitId } });
+    // ── Đổi lead ──────────────────────────────────────────────────────────────
+    if (dto.leadId !== undefined && dto.leadId !== booking.leadId) {
+      if (dto.leadId) {
+        const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId } });
+        if (!lead) throw new NotFoundException('Lead không tồn tại');
+      }
+    }
 
-    // Validate proposed price if changed
+    // ── Đổi unit ──────────────────────────────────────────────────────────────
+    let newUnitId: string | undefined;
+    let newPriority: number | undefined;
+    let newStatus: BookingStatus | undefined;
+
+    if (dto.unitId !== undefined && dto.unitId !== booking.unitId) {
+      const newUnit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
+      if (!newUnit || !newUnit.isActive) throw new NotFoundException('Mặt bằng không tồn tại');
+      if (this.unitStatus.isLockedForBooking(newUnit.status)) {
+        throw new BadRequestException(`Không thể chuyển sang mặt bằng này (trạng thái ${newUnit.status})`);
+      }
+
+      // Đếm vị trí trong queue của unit mới
+      const queueCount = await this.prisma.unitBooking.count({
+        where: { unitId: dto.unitId, status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] }, isActive: true },
+      });
+      newUnitId = dto.unitId;
+      newPriority = queueCount + 1;
+      newStatus = queueCount === 0 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
+    }
+
+    // ── Validate giá đề xuất (dùng unit hiện tại hoặc unit mới) ──────────────
+    const targetUnitId = newUnitId ?? booking.unitId;
+    const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId } });
+
     let priceApprovalStatus: PriceApprovalStatus | null | undefined = undefined;
     let priceDeviationPercent: number | null | undefined = undefined;
 
@@ -290,6 +330,8 @@ export class BookingService {
     const updated = await this.prisma.unitBooking.update({
       where: { id },
       data: {
+        ...(dto.leadId !== undefined && { leadId: dto.leadId || null }),
+        ...(newUnitId && { unitId: newUnitId, priority: newPriority, status: newStatus, activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : undefined }),
         assignedToId: dto.assignedToId,
         requestedArea: dto.requestedArea,
         requestedTerm: dto.requestedTerm,
@@ -302,6 +344,18 @@ export class BookingService {
       },
       include: this.defaultInclude(),
     });
+
+    // ── Sau khi đổi unit: dọn queue cũ + cập nhật status unit mới ────────────
+    if (newUnitId) {
+      await this.promoteNextInQueue(booking.unitId, userId);
+      if (newStatus === BookingStatus.ACTIVE) {
+        await this.unitStatus.transition(newUnitId, UnitStatus.BOOKING, {
+          userId,
+          reason: `Booking ${id} chuyển sang unit này`,
+        });
+      }
+    }
+
     await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' });
     return updated;
   }
@@ -829,7 +883,7 @@ export class BookingService {
           mall: { select: { id: true, name: true, code: true } },
         },
       },
-      lead: { select: { id: true, brandName: true, contactName: true, status: true, priority: true } },
+      lead: { select: { id: true, brandName: true, contactName: true, company: true, phone: true, email: true, category: true, notes: true, status: true, priority: true } },
       customer: { select: { id: true, customerCode: true, companyName: true, brandName: true, status: true } },
       createdBy: { select: { id: true, fullName: true, email: true } },
       assignedTo: { select: { id: true, fullName: true, email: true } },

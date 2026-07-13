@@ -271,3 +271,9 @@ kai update
 
 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+có cái lệnh này:
+docker compose --env-file .env.build -f docker-compose.build.yml build
+docker compose --env-file .env.build -f docker-compose.build.yml push
+#   docker compose -f docker-compose.uat.yml pull
+#   docker compose -f docker-compose.uat.yml up -d
+\opt\registry\registry_command.sh

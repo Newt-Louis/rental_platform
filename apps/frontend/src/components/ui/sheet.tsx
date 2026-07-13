@@ -57,10 +57,13 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
   );
 }
 
-export function SheetSection({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+export function SheetSection({ label, children, className, id, action }: { label: string; children: React.ReactNode; className?: string; id?: string; action?: React.ReactNode }) {
   return (
-    <div className={cn('rounded-xl p-4', className)}>
-      <div className="text-xs font-semibold tracking-wider mb-3 opacity-60">{label}</div>
+    <div id={id} className={cn('rounded-xl p-4', className)}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold tracking-wider opacity-60">{label}</div>
+        {action}
+      </div>
       <div className="space-y-0">{children}</div>
     </div>
   );

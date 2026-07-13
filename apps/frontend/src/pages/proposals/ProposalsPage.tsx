@@ -10,10 +10,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Search, FileText, Send, Building2, DollarSign, Calendar, User, CheckCircle, XCircle,
-  Download, History, Plus, Star, Trash2, ArrowRight, Link2, Users, AlertTriangle, PenSquare,
+  Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
+  X, Loader2,
 } from 'lucide-react';
 import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
@@ -307,7 +310,7 @@ function ProposalDetailSheet({
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: detail } = useQuery({
+  const { data: detail, isFetching } = useQuery({
     queryKey: ['proposal-detail', proposal?.id],
     queryFn: () => proposalsApi.getProposal(proposal!.id),
     enabled: !!proposal?.id,
@@ -375,8 +378,8 @@ function ProposalDetailSheet({
       subtitle={p?.tenant?.brandName}
     >
       {p && (
-        <div className="px-6 pb-8 pt-4">
-          {/* Reject dialog */}
+        <>
+          {/* Reject dialog — renders via portal, not clipped by sheet overflow */}
           <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
             <DialogContent className="max-w-sm">
               <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={16} className="text-red-500" />Từ chối đề xuất</DialogTitle></DialogHeader>
@@ -401,225 +404,262 @@ function ProposalDetailSheet({
           </Dialog>
 
           <Tabs defaultValue="detail">
-            <TabsList className="mb-4">
-              <TabsTrigger value="detail">Chi tiết</TabsTrigger>
-              <TabsTrigger value="scenarios">Kịch bản</TabsTrigger>
-              <TabsTrigger value="versions">Phiên bản</TabsTrigger>
-            </TabsList>
-            <TabsContent value="detail" className="space-y-4">
-          {/* Status */}
-          <div className="flex items-center gap-2">
-            {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{st.label}</Badge>}
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => scoreMutation.mutate()}>
-              Tính deal score
-            </Button>
-          </div>
-
-          {/* Lead nguồn */}
-          {p.lead && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
-                <Link2 size={11} /> LEAD NGUỒN
-              </div>
-              <button
-                className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                onClick={() => { onClose(); navigate('/crm'); }}
-              >
-                <div>
-                  <div className="font-medium text-gray-900">{p.lead.brandName}</div>
-                  <div className="text-xs text-gray-500">{p.lead.contactName}</div>
+            {/* Tabs header — sticky at top of scroll area */}
+            <div className="px-6 pt-4 pb-0 border-b border-gray-100 sticky top-0 bg-white z-10">
+              {isFetching && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
+                  <Loader2 size={11} className="animate-spin" /> Đang tải...
                 </div>
-                <div className="flex items-center gap-1 text-xs text-gray-500">
-                  <span>{p.lead.status}</span>
-                  <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                </div>
-              </button>
+              )}
+              <TabsList className="mb-0">
+                <TabsTrigger value="detail">Chi tiết</TabsTrigger>
+                <TabsTrigger value="scenarios">Kịch bản</TabsTrigger>
+                <TabsTrigger value="versions">Phiên bản</TabsTrigger>
+              </TabsList>
             </div>
-          )}
 
-          {/* Contract kết quả */}
-          {p.contract && (
-            <div className="rounded-xl border border-green-200 bg-green-50 p-3">
-              <div className="text-xs font-semibold text-green-600 mb-1.5 flex items-center gap-1">
-                <CheckCircle size={11} /> HỢP ĐỒNG ĐÃ KÝ
-              </div>
-              <button
-                className="flex items-center justify-between w-full text-sm hover:text-green-700 group"
-                onClick={() => { onClose(); navigate('/contracts'); }}
-              >
-                <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
-                <div className="flex items-center gap-1 text-xs text-green-600">
-                  <span>{p.contract.status}</span>
-                  <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+            {/* Scrollable content */}
+            <div className="px-6 py-4">
+              <TabsContent value="detail" className="space-y-4 mt-0">
+                {/* Status */}
+                <div className="flex items-center gap-2">
+                  {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{st.label}</Badge>}
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => scoreMutation.mutate()}>
+                    Tính deal score
+                  </Button>
                 </div>
-              </button>
-            </div>
-          )}
 
-          {/* Parties */}
-          <SheetSection label="ĐỀ XUẤT CHO" className="bg-gray-50">
-            <SheetRow label="Khách thuê" value={p.tenant?.brandName} icon={User} />
-            <SheetRow label="Công ty" value={p.tenant?.companyName} icon={Building2} />
-            <SheetRow label="Mặt bằng" value={p.unit?.code} icon={Building2} />
-            <SheetRow label="Diện tích" value={p.area ? `${p.area.toLocaleString()} m²` : null} icon={Building2} />
-          </SheetSection>
-
-          {/* Financials */}
-          <SheetSection label="TÀI CHÍNH" className="bg-gray-50">
-            <SheetRow
-              label="Tiền thuê / tháng"
-              value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent)}</span>}
-              icon={DollarSign}
-            />
-            <SheetRow
-              label="Phí CAM / tháng"
-              value={p.monthlyCAM ? fmtFull(p.monthlyCAM) : null}
-              icon={DollarSign}
-            />
-            {p.marketingFee > 0 && (
-              <SheetRow label="Phí marketing" value={fmtFull(p.marketingFee)} icon={DollarSign} />
-            )}
-            {p.rentFree > 0 && (
-              <SheetRow label="Miễn tiền thuê" value={`${p.rentFree} tháng`} icon={Calendar} />
-            )}
-            {p.discount > 0 && (
-              <SheetRow label="Chiết khấu" value={`${p.discount}%`} icon={DollarSign} />
-            )}
-            <SheetRow
-              label="Tổng giá trị HĐ"
-              value={<span className="font-bold text-green-700">{fmt(p.totalContractValue)}</span>}
-              icon={DollarSign}
-            />
-          </SheetSection>
-
-          {/* Term */}
-          <SheetSection label="THỜI HẠN" className="bg-gray-50">
-            <SheetRow label="Ngày bắt đầu" value={fmtDate(p.startDate)} icon={Calendar} />
-            <SheetRow label="Ngày kết thúc" value={fmtDate(p.endDate)} icon={Calendar} />
-            <SheetRow
-              label="Thời hạn"
-              value={p.term ? `${p.term} tháng` : null}
-              icon={Calendar}
-            />
-            {p.escalationPercent > 0 && (
-              <SheetRow label="Tăng giá/năm" value={`${p.escalationPercent}%`} icon={Calendar} />
-            )}
-          </SheetSection>
-
-          {/* Approval workflow */}
-          {approvals.length > 0 && (
-            <div>
-              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">QUY TRÌNH PHÊ DUYỆT</div>
-              <div className="space-y-2">
-                {approvals.map((a: any) => (
-                  <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                    {a.status === 'APPROVED' ? (
-                      <CheckCircle size={16} className="text-green-500 shrink-0" />
-                    ) : a.status === 'REJECTED' ? (
-                      <XCircle size={16} className="text-red-500 shrink-0" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">
-                        Cấp {a.level}: {a.approver?.fullName ?? '—'}
-                      </div>
-                      {a.comment && (
-                        <div className="text-xs text-gray-500 mt-0.5 truncate">{a.comment}</div>
-                      )}
+                {/* Lead nguồn */}
+                {p.lead && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <div className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
+                      <Link2 size={11} /> LEAD NGUỒN
                     </div>
-                    <Badge className={`text-xs border-0 shrink-0 ${
-                      a.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                      a.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-500'
-                    }`}>
-                      {a.status === 'APPROVED' ? 'Duyệt' : a.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
-                    </Badge>
+                    <button
+                      className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                      onClick={() => { onClose(); navigate('/crm'); }}
+                    >
+                      <div>
+                        <div className="font-medium text-gray-900">{p.lead.brandName}</div>
+                        <div className="text-xs text-gray-500">{p.lead.contactName}</div>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-gray-500">
+                        <span>{p.lead.status}</span>
+                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </button>
                   </div>
-                ))}
+                )}
+
+                {/* Contract kết quả */}
+                {p.contract && (
+                  <div className="rounded-xl border border-green-200 bg-green-50 p-3">
+                    <div className="text-xs font-semibold text-green-600 mb-1.5 flex items-center gap-1">
+                      <CheckCircle size={11} /> HỢP ĐỒNG ĐÃ KÝ
+                    </div>
+                    <button
+                      className="flex items-center justify-between w-full text-sm hover:text-green-700 group"
+                      onClick={() => { onClose(); navigate('/contracts'); }}
+                    >
+                      <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
+                      <div className="flex items-center gap-1 text-xs text-green-600">
+                        <span>{p.contract.status}</span>
+                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                      </div>
+                    </button>
+                  </div>
+                )}
+
+                {/* Parties */}
+                <SheetSection label="ĐỀ XUẤT CHO" className="bg-gray-50">
+                  <SheetRow label="Khách thuê" value={p.tenant?.brandName} icon={User} />
+                  <SheetRow label="Công ty" value={p.tenant?.companyName} icon={Building2} />
+                  <SheetRow label="Mặt bằng" value={p.unit?.code} icon={Building2} />
+                  <SheetRow label="Diện tích" value={p.area ? `${p.area.toLocaleString()} m²` : null} icon={Building2} />
+                </SheetSection>
+
+                {/* Financials */}
+                <SheetSection label="TÀI CHÍNH" className="bg-gray-50">
+                  <SheetRow
+                    label="Tiền thuê / tháng"
+                    value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent)}</span>}
+                    icon={DollarSign}
+                  />
+                  <SheetRow
+                    label="Phí CAM / tháng"
+                    value={p.monthlyCAM ? fmtFull(p.monthlyCAM) : null}
+                    icon={DollarSign}
+                  />
+                  {p.marketingFee > 0 && (
+                    <SheetRow label="Phí marketing" value={fmtFull(p.marketingFee)} icon={DollarSign} />
+                  )}
+                  {p.rentFree > 0 && (
+                    <SheetRow label="Miễn tiền thuê" value={`${p.rentFree} tháng`} icon={Calendar} />
+                  )}
+                  {p.discount > 0 && (
+                    <SheetRow label="Chiết khấu" value={`${p.discount}%`} icon={DollarSign} />
+                  )}
+                  <SheetRow
+                    label="Tổng giá trị HĐ"
+                    value={<span className="font-bold text-green-700">{fmt(p.totalContractValue)}</span>}
+                    icon={DollarSign}
+                  />
+                </SheetSection>
+
+                {/* Term */}
+                <SheetSection label="THỜI HẠN" className="bg-gray-50">
+                  <SheetRow label="Ngày bắt đầu" value={fmtDate(p.startDate)} icon={Calendar} />
+                  <SheetRow label="Ngày kết thúc" value={fmtDate(p.endDate)} icon={Calendar} />
+                  <SheetRow
+                    label="Thời hạn"
+                    value={p.term ? `${p.term} tháng` : null}
+                    icon={Calendar}
+                  />
+                  {p.escalationPercent > 0 && (
+                    <SheetRow label="Tăng giá/năm" value={`${p.escalationPercent}%`} icon={Calendar} />
+                  )}
+                </SheetSection>
+
+                {/* Approval workflow */}
+                {approvals.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">QUY TRÌNH PHÊ DUYỆT</div>
+                    <div className="space-y-2">
+                      {approvals.map((a: any) => (
+                        <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          {a.status === 'APPROVED' ? (
+                            <CheckCircle size={16} className="text-green-500 shrink-0" />
+                          ) : a.status === 'REJECTED' ? (
+                            <XCircle size={16} className="text-red-500 shrink-0" />
+                          ) : (
+                            <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium">
+                              Cấp {a.level}: {a.approver?.fullName ?? '—'}
+                            </div>
+                            {a.comment && (
+                              <div className="text-xs text-gray-500 mt-0.5 truncate">{a.comment}</div>
+                            )}
+                          </div>
+                          <Badge className={`text-xs border-0 shrink-0 ${
+                            a.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                            a.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {a.status === 'APPROVED' ? 'Duyệt' : a.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="scenarios" className="mt-0">
+                <ProposalScenariosPanel proposalId={p.id} />
+              </TabsContent>
+              <TabsContent value="versions" className="mt-0">
+                <ProposalVersionsPanel proposalId={p.id} />
+              </TabsContent>
+            </div>
+
+            {/* Action footer — sticky at bottom of scroll area */}
+            <div className="px-6 py-4 border-t border-gray-100 bg-white sticky bottom-0 space-y-2">
+              {p.status === 'DRAFT' && (
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => submitMutation.mutate()}
+                  disabled={submitMutation.isPending}
+                >
+                  <Send size={15} /> Gửi phê duyệt
+                </Button>
+              )}
+              {p.status === 'APPROVED' && (
+                <Button
+                  className="w-full gap-2 bg-green-600 hover:bg-green-700"
+                  onClick={() => convertMutation.mutate()}
+                  disabled={convertMutation.isPending}
+                >
+                  <FileText size={15} /> Chuyển thành Hợp đồng
+                </Button>
+              )}
+              {['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => { setRejectReason(''); setShowRejectDialog(true); }}
+                >
+                  <XCircle size={15} /> Từ chối đề xuất
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700"
+                  onClick={() => setShowEditor(true)}
+                >
+                  <PenSquare size={15} /> Chỉnh sửa Tờ Trình
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={async () => {
+                    try {
+                      const blob = await proposalsApi.exportPdf(p.id);
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `proposal-${p.proposalNumber}.pdf`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch {
+                      toast({ title: 'Không thể xuất PDF', variant: 'destructive' });
+                    }
+                  }}
+                >
+                  <Download size={15} />
+                </Button>
               </div>
             </div>
-          )}
-
-          {/* Actions */}
-          <div className="space-y-2 pt-2">
-            {p.status === 'DRAFT' && (
-              <Button
-                className="w-full gap-2"
-                onClick={() => submitMutation.mutate()}
-                disabled={submitMutation.isPending}
-              >
-                <Send size={15} /> Gửi phê duyệt
-              </Button>
-            )}
-            {p.status === 'APPROVED' && (
-              <Button
-                className="w-full gap-2 bg-green-600 hover:bg-green-700"
-                onClick={() => convertMutation.mutate()}
-                disabled={convertMutation.isPending}
-              >
-                <FileText size={15} /> Chuyển thành Hợp đồng
-              </Button>
-            )}
-            {['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                onClick={() => { setRejectReason(''); setShowRejectDialog(true); }}
-              >
-                <XCircle size={15} /> Từ chối đề xuất
-              </Button>
-            )}
-            <Button
-              className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
-              onClick={() => setShowEditor(true)}
-            >
-              <PenSquare size={15} /> Chỉnh sửa & Xem trước Tờ Trình
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2"
-              onClick={async () => {
-                try {
-                  const blob = await proposalsApi.exportPdf(p.id);
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `proposal-${p.proposalNumber}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } catch {
-                  toast({ title: 'Không thể xuất PDF', variant: 'destructive' });
-                }
-              }}
-            >
-              <Download size={15} /> Xuất PDF (Server)
-            </Button>
-          </div>
-            </TabsContent>
-            <TabsContent value="scenarios">
-              <ProposalScenariosPanel proposalId={p.id} />
-            </TabsContent>
-            <TabsContent value="versions">
-              <ProposalVersionsPanel proposalId={p.id} />
-            </TabsContent>
           </Tabs>
-        </div>
+        </>
       )}
     </Sheet>
     </>
   );
 }
 
+const EMPTY_FILTERS = { search: '', status: '', dateFrom: '', dateTo: '' };
+
 export default function ProposalsPage() {
-  const [search, setSearch] = useState('');
+  // draft = what user is typing; applied = what's sent to API
+  const [draft, setDraft] = useState(EMPTY_FILTERS);
+  const [applied, setApplied] = useState(EMPTY_FILTERS);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
 
+  const setDraftField = (k: keyof typeof draft, v: string) =>
+    setDraft((f) => ({ ...f, [k]: v }));
+
+  const hasApplied = !!(applied.search || applied.status || applied.dateFrom || applied.dateTo);
+  const isDirty =
+    draft.search !== applied.search ||
+    draft.status !== applied.status ||
+    draft.dateFrom !== applied.dateFrom ||
+    draft.dateTo !== applied.dateTo;
+
+  function applyFilters() { setApplied({ ...draft }); }
+  function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); }
+
   const { data, isLoading } = useQuery({
-    queryKey: ['proposals', search],
-    queryFn: () => proposalsApi.listProposals({ search: search || undefined }),
+    queryKey: ['proposals', applied],
+    queryFn: () => proposalsApi.listProposals({
+      search: applied.search || undefined,
+      status: applied.status || undefined,
+      dateFrom: applied.dateFrom || undefined,
+      dateTo: applied.dateTo || undefined,
+    }),
   });
 
   const submitMutation = useMutation({
@@ -651,14 +691,53 @@ export default function ProposalsPage() {
         </div>
       </div>
 
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <Input
-          placeholder="Tìm proposal..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Input
+            placeholder="Tìm proposal, khách thuê, mặt bằng..."
+            value={draft.search}
+            onChange={(e) => setDraftField('search', e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
+            className="pl-9 h-9"
+          />
+        </div>
+        <Select value={draft.status || 'ALL'} onValueChange={(v) => setDraftField('status', v === 'ALL' ? '' : v)}>
+          <SelectTrigger className="h-9 w-40">
+            <SelectValue placeholder="Trạng thái" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả</SelectItem>
+            {Object.entries(STATUS_MAP).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <DateRangePicker
+          from={draft.dateFrom}
+          to={draft.dateTo}
+          onFromChange={(v) => setDraftField('dateFrom', v)}
+          onToChange={(v) => setDraftField('dateTo', v)}
+          placeholder="Khoảng ngày tạo"
         />
+        <Button
+          className="h-9 gap-1.5"
+          onClick={applyFilters}
+          disabled={!isDirty && hasApplied}
+        >
+          <Search size={14} /> Tìm kiếm
+        </Button>
+        {(hasApplied || isDirty) && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1 text-gray-500"
+            onClick={clearFilters}
+          >
+            <X size={13} /> Xóa
+          </Button>
+        )}
       </div>
 
       {isLoading ? (

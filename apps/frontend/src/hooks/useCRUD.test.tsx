@@ -102,4 +102,16 @@ describe('useCRUD', () => {
     });
     expect(mockToast).toHaveBeenCalledWith({ title: 'Đã xảy ra lỗi', variant: 'destructive' });
   });
+
+  it('does not fire toast when createFn is absent and create is called', async () => {
+    const queryFn = vi.fn().mockResolvedValue([]);
+    // No createFn provided
+    const { result } = renderHook(
+      () => useCRUD({ queryKey: ['items'], queryFn, entityLabel: 'Mục' }),
+      { wrapper: makeWrapper() }
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => result.current.create.mutateAsync({} as unknown));
+    expect(mockToast).not.toHaveBeenCalled();
+  });
 });

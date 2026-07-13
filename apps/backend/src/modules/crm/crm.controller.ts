@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { CrmService } from './crm.service';
-import { CreateLeadDto } from './dto/create-lead.dto';
+import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -85,7 +85,7 @@ export class CrmController {
 
   @Put('leads/:id')
   @ApiOperation({ summary: 'Update lead' })
-  update(@Param('id') id: string, @Body() dto: Partial<CreateLeadDto>, @CurrentUser() user: any) {
+  update(@Param('id') id: string, @Body() dto: UpdateLeadDto, @CurrentUser() user: any) {
     return this.crmService.update(id, dto, user?.id);
   }
 

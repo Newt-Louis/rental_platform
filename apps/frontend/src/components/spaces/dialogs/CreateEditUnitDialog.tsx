@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, categoriesApi } from '@/api';
@@ -24,7 +24,9 @@ export function CreateEditUnitDialog({
   const { toast } = useToast();
   const isEdit = !!unit;
 
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isDirty } } = useForm({
     defaultValues: {
       code: '', name: '', category: '', floorId: defaultFloorId ?? '',
       zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
@@ -84,6 +86,20 @@ export function CreateEditUnitDialog({
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
+  const handleClose = useCallback(() => {
+    if (isDirty) {
+      setShowUnsavedConfirm(true);
+    } else {
+      onClose();
+    }
+  }, [isDirty, onClose]);
+
+  const handleDiscardAndClose = useCallback(() => {
+    setShowUnsavedConfirm(false);
+    reset();
+    onClose();
+  }, [reset, onClose]);
+
   const mutation = useMutation({
     mutationFn: (data: any) => {
       const payload = {
@@ -117,9 +133,27 @@ export function CreateEditUnitDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+    <>
+      <Dialog open={showUnsavedConfirm} onOpenChange={(v) => !v && setShowUnsavedConfirm(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Bỏ thay đổi chưa lưu?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-500">Dữ liệu bạn đã nhập sẽ bị mất nếu rời đi.</p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setShowUnsavedConfirm(false)}>
+              Tiếp tục chỉnh sửa
+            </Button>
+            <Button type="button" onClick={handleDiscardAndClose} className="bg-red-600 hover:bg-red-700 text-white">
+              Bỏ thay đổi
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
           <DialogTitle>{isEdit ? `Sửa mặt bằng: ${unit.code}` : 'Thêm mặt bằng mới'}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
@@ -301,7 +335,7 @@ export function CreateEditUnitDialog({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="button" variant="outline" onClick={handleClose}>Hủy</Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo mặt bằng'}
             </Button>
@@ -309,5 +343,6 @@ export function CreateEditUnitDialog({
         </form>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

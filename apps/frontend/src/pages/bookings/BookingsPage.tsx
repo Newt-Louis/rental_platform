@@ -10,14 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import {
   BookmarkCheck, Clock, BookmarkX, ArrowRight, Building2, User, Calendar,
-  ChevronRight, Search, AlertTriangle, DollarSign, RefreshCw,
+  ChevronRight, Search, AlertTriangle, DollarSign,
   BookmarkPlus, X, FileText, Activity, CalendarDays, Timer, CalendarRange,
-  CheckCircle2, Ban, Hourglass, Plus, ChevronDown, Loader2,
+  CheckCircle2, Ban, Hourglass, Plus, ChevronDown, Loader2, Pencil,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
 
@@ -486,20 +488,75 @@ function ExtendDialog({ bookingId, open, onClose }: { bookingId: string; open: b
 
 // ─── UnitBooking Detail Sheet ──────────────────────────────────────────────────
 
-function BookingDetailSheet({ booking, onClose }: { booking: UnitBooking | null; onClose: () => void }) {
+const CATEGORY_OPTS: Record<string, string> = {
+  FB: '🍜 F&B', FASHION: '👗 Thời trang', ENTERTAINMENT: '🎮 Giải trí',
+  SERVICES: '⚙️ Dịch vụ', EDUCATION: '📚 Giáo dục', HEALTH: '🏥 Sức khoẻ', RETAIL: '🛍️ Bán lẻ',
+};
+
+const EMPTY_EF = {
+  unitId: '', unitLabel: '', unitSearch: '',
+  leadId: '', leadLabel: '',
+  requestedArea: '', requestedTerm: '', expectedRent: '',
+  proposedRentPerSqm: '', proposedCamPerSqm: '',
+  notes: '',
+};
+
+function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooking | null; onClose: () => void; scrollTo?: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { selectedMallId } = useMallStore();
   const [convertOpen, setConvertOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
+  const [leadEditOpen, setLeadEditOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [ef, setEf] = useState(EMPTY_EF);
+  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const [leadFilter, setLeadFilter] = useState('');
+  const [lastBooking, setLastBooking] = useState<UnitBooking | null>(null);
+
+  const setEfField = (k: keyof typeof ef) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setEf((f) => ({ ...f, [k]: e.target.value }));
+
+  useEffect(() => { if (booking) setLastBooking(booking); }, [booking]);
+
+  useEffect(() => {
+    if (!booking || !scrollTo) return;
+    const t = setTimeout(() => {
+      document.getElementById(scrollTo)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [booking?.id, scrollTo]);
+
+  const activeId = booking?.id ?? lastBooking?.id;
 
   const { data: detail } = useQuery({
-    queryKey: ['booking-detail', booking?.id],
-    queryFn: () => bookingApi.get(booking!.id),
-    enabled: !!booking?.id,
+    queryKey: ['booking-detail', activeId],
+    queryFn: () => bookingApi.get(activeId!),
+    enabled: !!activeId,
   });
 
+  // pickers for edit mode
+  const { data: unitData } = useQuery({
+    queryKey: ['edit-vacant-units', ef.unitSearch, selectedMallId],
+    queryFn: () => spacesApi.listUnits({ search: ef.unitSearch || undefined, status: 'VACANT', mallId: selectedMallId ?? undefined, limit: 20 }),
+    enabled: isEditing && !ef.unitId && ef.unitSearch.length > 0,
+  });
+  const { data: allLeadsData } = useQuery({
+    queryKey: ['all-leads-picker'],
+    queryFn: () => crmApi.listLeads({ limit: 200 }),
+    enabled: isEditing,
+    staleTime: 60000,
+  });
+  const vacantUnits: any[] = Array.isArray(unitData) ? unitData : (unitData?.data ?? []);
+  const allLeads: any[] = Array.isArray(allLeadsData) ? allLeadsData : (allLeadsData?.data ?? []);
+  const filteredLeads = allLeads.filter((l) =>
+    !leadFilter ||
+    l.brandName?.toLowerCase().includes(leadFilter.toLowerCase()) ||
+    l.contactName?.toLowerCase().includes(leadFilter.toLowerCase())
+  );
+
   const cancelMutation = useMutation({
-    mutationFn: () => bookingApi.cancel(booking!.id, 'Hủy từ trang Booking'),
+    mutationFn: () => bookingApi.cancel(activeId!, 'Hủy từ trang Booking'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
@@ -509,19 +566,63 @@ function BookingDetailSheet({ booking, onClose }: { booking: UnitBooking | null;
     onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
   });
 
-  const d: UnitBooking = detail?.data ?? detail ?? booking;
-  if (!d) return null;
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, unknown> = {};
+      if (d && ef.unitId && ef.unitId !== d.unitId) payload.unitId = ef.unitId;
+      if (d && ef.leadId !== (d.leadId ?? '')) payload.leadId = ef.leadId || null;
+      if (ef.requestedArea) payload.requestedArea = Number(ef.requestedArea);
+      if (ef.requestedTerm) payload.requestedTerm = Number(ef.requestedTerm);
+      if (ef.expectedRent) payload.expectedRent = Number(ef.expectedRent);
+      if (ef.proposedRentPerSqm) payload.proposedRentPerSqm = Number(ef.proposedRentPerSqm);
+      if (ef.proposedCamPerSqm) payload.proposedCamPerSqm = Number(ef.proposedCamPerSqm);
+      payload.notes = ef.notes || undefined;
+      return bookingApi.update(activeId!, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      toast({ title: 'Đã cập nhật booking' });
+      setIsEditing(false);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật booking', variant: 'destructive' }),
+  });
 
-  const cfg = UNIT_STATUS_CONFIG[d.status];
-  const dl = daysLeft(d.expiresAt);
-  const clientName = d.lead?.brandName ?? d.customer?.companyName ?? '—';
-  const contactName = d.lead?.contactName ?? d.customer?.brandName ?? '';
+  const d = (detail?.data ?? detail ?? booking ?? lastBooking) as UnitBooking | null;
+
+  const startEditing = () => {
+    if (!d) return;
+    const cName = d.lead?.brandName ?? d.customer?.companyName ?? '';
+    setEf({
+      unitId: d.unitId ?? '',
+      unitLabel: d.unit ? `${d.unit.code}${d.unit.name ? ' — ' + d.unit.name : ''} (${(d.unit.areaGFA as any)?.toLocaleString('vi-VN') ?? '?'}m²)` : '',
+      unitSearch: '',
+      leadId: d.leadId ?? '',
+      leadLabel: cName,
+      requestedArea: String(d.requestedArea ?? ''),
+      requestedTerm: String(d.requestedTerm ?? ''),
+      expectedRent: String(d.expectedRent ?? ''),
+      proposedRentPerSqm: String((d as any).proposedRentPerSqm ?? ''),
+      proposedCamPerSqm: String((d as any).proposedCamPerSqm ?? ''),
+      notes: d.notes ?? '',
+    });
+    setLeadFilter('');
+    setIsEditing(true);
+  };
+
+  const cfg = d ? UNIT_STATUS_CONFIG[d.status] : undefined;
+  const dl = d ? daysLeft(d.expiresAt) : null;
+  const clientName = d?.lead?.brandName ?? d?.customer?.companyName ?? '—';
+  const contactName = d?.lead?.contactName ?? d?.customer?.brandName ?? '';
   const activities: any[] = (detail?.data ?? detail)?.activities ?? (detail as any)?.activities ?? [];
+  const canEdit = d ? ['ACTIVE', 'PENDING'].includes(d.status) : false;
 
   return (
-    <Sheet open={!!booking} onClose={onClose} title={d.bookingNumber} subtitle={`${d.unit?.code ?? ''} · ${clientName}`}>
-      <div className="px-6 pb-8 space-y-4 pt-4">
-        {/* Type badge */}
+    <Sheet open={!!booking} onClose={onClose} title={d?.bookingNumber ?? ''} subtitle={`${d?.unit?.code ?? ''} · ${clientName}`}>
+      {d && <div className="px-6 pb-8 space-y-4 pt-4">
+
+        {/* Status badges */}
         <div className="flex items-center gap-2 flex-wrap">
           <Badge className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 text-xs font-semibold">
             📌 Giữ lô thuê dài hạn
@@ -533,110 +634,464 @@ function BookingDetailSheet({ booking, onClose }: { booking: UnitBooking | null;
               {dl > 0 ? `Còn ${dl} ngày` : 'Hết hạn hôm nay'}
             </Badge>
           )}
+          {isEditing && <Badge className="bg-amber-100 text-amber-700 border border-amber-300 text-xs">Đang chỉnh sửa</Badge>}
         </div>
 
-        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50">
-          <SheetRow label="Tên"     value={clientName}   icon={User} />
-          {contactName && <SheetRow label="Liên hệ" value={contactName} icon={User} />}
-          <SheetRow label="Nguồn"   value={d.leadId ? 'Lead (CRM)' : 'Customer profile'} icon={User} />
-        </SheetSection>
+        {isEditing ? (
+          /* ── EDIT MODE ─────────────────────────────────────────────────── */
+          <div className="space-y-4">
 
-        <SheetSection label="MẶT BẰNG" className="bg-gray-50">
-          <SheetRow label="Mã"         value={d.unit?.code ?? '—'} icon={Building2} />
-          <SheetRow label="Diện tích"  value={d.unit?.areaNLA ? `${d.unit.areaNLA.toLocaleString()} m² NLA` : '—'} icon={Building2} />
-          <SheetRow label="Tầng"       value={(d.unit as any)?.floor?.name ?? '—'} icon={Building2} />
-          {d.unit?.baseRentPerSqm ? (
-            <SheetRow label="Giá cơ bản" value={`${new Intl.NumberFormat('vi-VN').format(d.unit.baseRentPerSqm)} ₫/m²`} icon={DollarSign} />
-          ) : null}
-        </SheetSection>
-
-        <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50">
-          <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
-          <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
-          <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${new Intl.NumberFormat('vi-VN').format(d.expectedRent)} ₫/m²` : '—'} icon={DollarSign} />
-        </SheetSection>
-
-        <SheetSection label="THỜI GIAN" className="bg-gray-50">
-          <SheetRow label="Tạo lúc"   value={fmtDate(d.createdAt)}   icon={Calendar} />
-          <SheetRow label="Kích hoạt" value={fmtDate(d.activatedAt)} icon={Calendar} />
-          <SheetRow label="Hết hạn"   value={fmtDate(d.expiresAt)}   icon={Calendar} />
-          {d.convertedAt && <SheetRow label="Convert" value={fmtDate(d.convertedAt)} icon={Calendar} />}
-        </SheetSection>
-
-        {d.assignedTo && (
-          <SheetSection label="PHỤ TRÁCH" className="bg-gray-50">
-            <SheetRow label="Sale" value={d.assignedTo.fullName} icon={User} />
-          </SheetSection>
-        )}
-        {d.notes && (
-          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
-        )}
-
-        {d.proposal && (
-          <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100 rounded-xl">
-            <div className="flex items-center gap-2 text-sm">
-              <FileText size={14} className="text-green-600" />
-              <span className="font-medium">{d.proposal.proposalNumber}</span>
-            </div>
-            <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
-          </div>
-        )}
-
-        {['ACTIVE', 'PENDING'].includes(d.status) && (
-          <div className="space-y-2 pt-2 border-t border-gray-100">
-            {d.status === 'ACTIVE' && !d.proposal && (
-              <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => setConvertOpen(true)}>
-                <ArrowRight size={15} /> Lập Đề xuất (Proposal)
-              </Button>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-2" onClick={() => setExtendOpen(true)}>
-                <Clock size={14} /> Gia hạn
-              </Button>
-              <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-                <X size={14} /> Hủy booking
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {activities.length > 0 && (
-          <div>
-            <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
-              <Activity size={11} /> LỊCH SỬ ({activities.length})
-            </div>
-            <div className="space-y-2">
-              {activities.map((a: any) => (
-                <div key={a.id} className="flex gap-2 text-xs">
-                  <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
-                  <div>
-                    <span className="font-medium">{ACTIVITY_LABELS[a.type] ?? a.type}</span>
-                    {' — '}<span className="text-gray-500">{a.note}</span>
-                    <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
-                  </div>
+            {/* Unit picker */}
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs font-semibold tracking-wider text-blue-500 mb-2">MẶT BẰNG</p>
+              {ef.unitId ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-amber-50 border-amber-200">
+                  <Building2 size={14} className="text-amber-600" />
+                  <span className="text-sm font-medium flex-1">{ef.unitLabel}</span>
+                  <button onClick={() => setEf((f) => ({ ...f, unitId: '', unitLabel: '' }))}
+                    className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
                 </div>
-              ))}
+              ) : (
+                <div>
+                  <Input value={ef.unitSearch} onChange={setEfField('unitSearch')}
+                    placeholder="Tìm mã lô mới (để trống = giữ nguyên)..." className="mb-1 bg-white" />
+                  {vacantUnits.length > 0 && (
+                    <div className="border rounded-lg divide-y max-h-36 overflow-y-auto text-sm bg-white">
+                      {vacantUnits.map((u: any) => (
+                        <button key={u.id} className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center gap-3"
+                          onClick={() => setEf((f) => ({ ...f, unitId: u.id, unitLabel: `${u.code}${u.name ? ' — ' + u.name : ''} (${u.areaGFA?.toLocaleString('vi-VN')}m²)`, unitSearch: '' }))}>
+                          <Building2 size={13} className="text-amber-500 shrink-0" />
+                          <span className="font-medium">{u.code}</span>
+                          <span className="text-gray-400">{u.name}</span>
+                          <span className="ml-auto text-xs text-gray-400">{u.floor?.name} · {u.areaGFA?.toLocaleString('vi-VN')}m²</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {ef.unitSearch && vacantUnits.length === 0 && (
+                    <p className="text-xs text-gray-400 px-1 mt-1">Không tìm thấy lô VACANT phù hợp</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1.5">Hiện tại: <span className="font-medium text-gray-600">{d.unit?.code}</span> — bỏ trống để giữ nguyên</p>
+                </div>
+              )}
+            </div>
+
+            {/* Lead combobox */}
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-xs font-semibold tracking-wider text-gray-500 mb-2">KHÁCH HÀNG</p>
+              <Popover open={leadPickerOpen} onOpenChange={(v) => { setLeadPickerOpen(v); if (!v) setLeadFilter(''); }}>
+                <PopoverTrigger asChild>
+                  <button className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    {ef.leadId ? (
+                      <span className="flex items-center gap-2 truncate">
+                        <User size={13} className="text-blue-500 shrink-0" />
+                        <span className="truncate">{ef.leadLabel}</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Chọn khách hàng...</span>
+                    )}
+                    <ChevronDown size={15} className="opacity-50 shrink-0 ml-2" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" align="start">
+                  <div className="p-2 border-b border-gray-100">
+                    <Input
+                      value={leadFilter}
+                      onChange={(e) => setLeadFilter(e.target.value)}
+                      placeholder="Lọc theo tên thương hiệu / liên hệ..."
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {ef.leadId && (
+                      <button className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-50"
+                        onClick={() => { setEf((f) => ({ ...f, leadId: '', leadLabel: '' })); setLeadPickerOpen(false); setLeadFilter(''); }}>
+                        <X size={12} /> Bỏ chọn
+                      </button>
+                    )}
+                    {filteredLeads.map((l: any) => (
+                      <button key={l.id}
+                        className={`w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm ${ef.leadId === l.id ? 'bg-blue-50' : ''}`}
+                        onClick={() => { setEf((f) => ({ ...f, leadId: l.id, leadLabel: `${l.brandName} — ${l.contactName}` })); setLeadPickerOpen(false); setLeadFilter(''); }}>
+                        <User size={12} className="text-blue-400 shrink-0" />
+                        <span className="font-medium truncate">{l.brandName}</span>
+                        <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
+                        <span className="ml-auto text-xs text-gray-400 shrink-0">{l.status}</span>
+                      </button>
+                    ))}
+                    {filteredLeads.length === 0 && (
+                      <p className="text-sm text-gray-400 px-3 py-4 text-center">Không tìm thấy khách hàng</p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-gray-400 mt-1.5">Hiện tại: <span className="font-medium text-gray-600">{clientName}</span></p>
+            </div>
+
+            {/* YÊU CẦU KHÁCH inputs */}
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold tracking-wider text-amber-600 mb-3">YÊU CẦU KHÁCH</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">DT mong muốn (m²)</label>
+                  <Input type="number" value={ef.requestedArea} onChange={setEfField('requestedArea')} placeholder="120" className="bg-white" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Thời hạn (tháng)</label>
+                  <Input type="number" value={ef.requestedTerm} onChange={setEfField('requestedTerm')} placeholder="36" className="bg-white" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng (₫/m²)</label>
+                  <Input type="number" value={ef.expectedRent} onChange={setEfField('expectedRent')} placeholder="680000" className="bg-white" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá thuê đề xuất (₫/m²)</label>
+                  <Input type="number" value={ef.proposedRentPerSqm} onChange={setEfField('proposedRentPerSqm')} placeholder="650000" className="bg-white" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">CAM đề xuất (₫/m²)</label>
+                  <Input type="number" value={ef.proposedCamPerSqm} onChange={setEfField('proposedCamPerSqm')} placeholder="50000" className="bg-white" />
+                </div>
+              </div>
+            </div>
+
+            {/* Ghi chú */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
+              <Textarea value={ef.notes} onChange={setEfField('notes')} rows={3} placeholder="Ghi chú nội bộ..." />
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white gap-2"
+                onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+                <Pencil size={13} /> {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </Button>
+              <Button variant="outline" className="flex-1 gap-2" onClick={() => setIsEditing(false)}>
+                <X size={13} /> Hủy chỉnh sửa
+              </Button>
             </div>
           </div>
-        )}
-      </div>
+        ) : (
+          /* ── VIEW MODE ─────────────────────────────────────────────────── */
+          <>
+            <SheetSection label="KHÁCH HÀNG" className="bg-gray-50" id="bs-customer"
+              action={d.leadId && canEdit ? (
+                <button
+                  className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="Sửa thông tin khách hàng"
+                  onClick={() => setLeadEditOpen(true)}
+                >
+                  <Pencil size={13} />
+                </button>
+              ) : undefined}
+            >
+              <SheetRow label="Tên"     value={clientName}   icon={User} />
+              {contactName && <SheetRow label="Liên hệ" value={contactName} icon={User} />}
+              <SheetRow label="Nguồn"   value={d.leadId ? 'Lead (CRM)' : 'Customer profile'} icon={User} />
+            </SheetSection>
 
-      <ConvertToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />
-      <ExtendDialog bookingId={d.id} open={extendOpen} onClose={() => setExtendOpen(false)} />
+            <SheetSection label="MẶT BẰNG" className="bg-gray-50" id="bs-unit">
+              <SheetRow label="Mã"         value={d.unit?.code ?? '—'} icon={Building2} />
+              <SheetRow label="Diện tích"  value={d.unit?.areaNLA ? `${d.unit.areaNLA.toLocaleString()} m² NLA` : '—'} icon={Building2} />
+              <SheetRow label="Tầng"       value={(d.unit as any)?.floor?.name ?? '—'} icon={Building2} />
+              {d.unit?.baseRentPerSqm ? (
+                <SheetRow label="Giá cơ bản" value={`${new Intl.NumberFormat('vi-VN').format(d.unit.baseRentPerSqm)} ₫/m²`} icon={DollarSign} />
+              ) : null}
+            </SheetSection>
+
+            <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50" id="bs-request">
+              <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
+              <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
+              <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${new Intl.NumberFormat('vi-VN').format(d.expectedRent)} ₫/m²` : '—'} icon={DollarSign} />
+            </SheetSection>
+
+            <SheetSection label="THỜI GIAN" className="bg-gray-50" id="bs-timeline">
+              <SheetRow label="Tạo lúc"   value={fmtDate(d.createdAt)}   icon={Calendar} />
+              <SheetRow label="Kích hoạt" value={fmtDate(d.activatedAt)} icon={Calendar} />
+              <SheetRow label="Hết hạn"   value={fmtDate(d.expiresAt)}   icon={Calendar} />
+              {d.convertedAt && <SheetRow label="Convert" value={fmtDate(d.convertedAt)} icon={Calendar} />}
+            </SheetSection>
+
+            {d.assignedTo && (
+              <SheetSection label="PHỤ TRÁCH" className="bg-gray-50" id="bs-assignee">
+                <SheetRow label="Sale" value={d.assignedTo.fullName} icon={User} />
+              </SheetSection>
+            )}
+            {d.notes && (
+              <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
+            )}
+
+            {d.proposal && (
+              <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100 rounded-xl">
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText size={14} className="text-green-600" />
+                  <span className="font-medium">{d.proposal.proposalNumber}</span>
+                </div>
+                <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
+              </div>
+            )}
+
+            {canEdit && (
+              <div className="space-y-2 pt-2 border-t border-gray-100">
+                {d.status === 'ACTIVE' && !d.proposal && (
+                  <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => setConvertOpen(true)}>
+                    <ArrowRight size={15} /> Lập Đề xuất (Proposal)
+                  </Button>
+                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 gap-2" onClick={startEditing}>
+                    <Pencil size={14} /> Chỉnh sửa
+                  </Button>
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setExtendOpen(true)}>
+                    <Clock size={14} /> Gia hạn
+                  </Button>
+                  <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                    <X size={14} /> Hủy booking
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {activities.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+                  <Activity size={11} /> LỊCH SỬ ({activities.length})
+                </div>
+                <div className="space-y-2">
+                  {activities.map((a: any) => (
+                    <div key={a.id} className="flex gap-2 text-xs">
+                      <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-medium">{ACTIVITY_LABELS[a.type] ?? a.type}</span>
+                        {' — '}<span className="text-gray-500">{a.note}</span>
+                        <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>}
+
+      {d && <ConvertToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />}
+      {d && <ExtendDialog bookingId={d.id} open={extendOpen} onClose={() => setExtendOpen(false)} />}
+      {d?.lead && <LeadEditDialog lead={d.lead} open={leadEditOpen} onClose={() => setLeadEditOpen(false)} bookingId={d.id} />}
     </Sheet>
+  );
+}
+
+// ─── LeadEditDialog — style giống TenantFormDialog ────────────────────────────
+
+const RE_PHONE = /^(0|\+84)[0-9]{8,10}$/;
+const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Chuẩn hoá số điện thoại: xoá khoảng trắng, dấu gạch, ngoặc
+function normalizePhone(p: string | null | undefined) {
+  return (p ?? '').replace(/[\s\-().]/g, '');
+}
+
+function validateLeadForm(f: { brandName: string; contactName: string; phone: string; email: string }) {
+  const errors: Partial<Record<'brandName' | 'contactName' | 'phone' | 'email', string>> = {};
+  if (!f.brandName.trim()) errors.brandName = 'Tên thương hiệu không được để trống';
+  else if (f.brandName.trim().length < 2) errors.brandName = 'Tên thương hiệu quá ngắn (tối thiểu 2 ký tự)';
+  if (!f.contactName.trim()) errors.contactName = 'Người liên hệ không được để trống';
+  if (f.phone && !RE_PHONE.test(f.phone.trim())) errors.phone = 'Số điện thoại không hợp lệ (VD: 0912345678)';
+  if (f.email && !RE_EMAIL.test(f.email.trim())) errors.email = 'Email không đúng định dạng';
+  return errors;
+}
+
+function LeadEditDialog({ lead, open, onClose, bookingId }: { lead: any; open: boolean; onClose: () => void; bookingId: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    brandName: lead?.brandName ?? '',
+    company: lead?.company ?? '',
+    contactName: lead?.contactName ?? '',
+    phone: lead?.phone ?? '',
+    email: lead?.email ?? '',
+    category: lead?.category ?? '',
+    notes: lead?.notes ?? '',
+  });
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (open && lead) {
+      setForm({
+        brandName: lead.brandName ?? '',
+        company: lead.company ?? '',
+        contactName: lead.contactName ?? '',
+        phone: normalizePhone(lead.phone),
+        email: lead.email ?? '',
+        category: lead.category ?? '',
+        notes: lead.notes ?? '',
+      });
+      setTouched({});
+    }
+  }, [open, lead?.id]);
+
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
+
+  const errors = validateLeadForm(form);
+  const hasErrors = Object.keys(errors).length > 0;
+
+  const mutation = useMutation({
+    mutationFn: () => crmApi.updateLead(lead.id, {
+      brandName: form.brandName.trim() || undefined,
+      company: form.company.trim() || undefined,
+      contactName: form.contactName.trim() || undefined,
+      phone: form.phone.trim() || undefined,
+      email: form.email.trim() || undefined,
+      category: form.category || undefined,
+      notes: form.notes.trim() || undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['booking-detail', bookingId] });
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['all-leads-picker'] });
+      toast({ title: 'Đã cập nhật thông tin khách hàng' });
+      onClose();
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.message;
+      const text = Array.isArray(msg) ? msg.join(' | ') : (msg ?? 'Lỗi cập nhật khách hàng');
+      toast({ title: text, variant: 'destructive' });
+    },
+  });
+
+  const handleSubmit = () => {
+    setTouched({ brandName: true, contactName: true, phone: true, email: true });
+    if (hasErrors) {
+      toast({ title: 'Vui lòng kiểm tra lại thông tin', variant: 'destructive' });
+      return;
+    }
+    mutation.mutate();
+  };
+
+  const fieldClass = (k: keyof typeof errors) =>
+    touched[k] && errors[k] ? 'border-red-400 focus:ring-red-400' : '';
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Chỉnh sửa khách hàng</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Thương hiệu *</label>
+              <Input
+                value={form.brandName}
+                onChange={(e) => set('brandName', e.target.value)}
+                onBlur={() => touch('brandName')}
+                placeholder="VD: Highlands Coffee"
+                className={fieldClass('brandName')}
+              />
+              {touched.brandName && errors.brandName && (
+                <p className="text-xs text-red-500 mt-1">{errors.brandName}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Tên công ty</label>
+              <Input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Công ty TNHH..." />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Người liên hệ *</label>
+              <Input
+                value={form.contactName}
+                onChange={(e) => set('contactName', e.target.value)}
+                onBlur={() => touch('contactName')}
+                placeholder="Họ và tên"
+                className={fieldClass('contactName')}
+              />
+              {touched.contactName && errors.contactName && (
+                <p className="text-xs text-red-500 mt-1">{errors.contactName}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Ngành</label>
+              <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
+                value={form.category} onChange={(e) => set('category', e.target.value)}>
+                <option value="">-- Chọn ngành --</option>
+                {Object.entries(CATEGORY_OPTS).map(([k, label]) => (
+                  <option key={k} value={k}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Điện thoại</label>
+              <Input
+                value={form.phone}
+                onChange={(e) => set('phone', e.target.value)}
+                onBlur={() => touch('phone')}
+                placeholder="0912345678"
+                className={fieldClass('phone')}
+              />
+              {touched.phone && errors.phone && (
+                <p className="text-xs text-red-500 mt-1">{errors.phone}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Email</label>
+              <Input
+                type="text"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                onBlur={() => touch('email')}
+                placeholder="contact@domain.com"
+                className={fieldClass('email')}
+              />
+              {touched.email && errors.email && (
+                <p className="text-xs text-red-500 mt-1">{errors.email}</p>
+              )}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Ghi chú</label>
+            <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} placeholder="Ghi chú nội bộ..." />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="button" disabled={mutation.isPending} onClick={handleSubmit}>
+              {mutation.isPending ? 'Đang lưu...' : 'Cập nhật'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ─── SlotBooking Detail Sheet ──────────────────────────────────────────────────
 
-function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onClose: () => void }) {
+function SlotBookingDetailSheet({ booking, onClose, scrollTo }: { booking: any | null; onClose: () => void; scrollTo?: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [lastBooking, setLastBooking] = useState<any | null>(null);
+
+  useEffect(() => { if (booking) setLastBooking(booking); }, [booking]);
+
+  useEffect(() => {
+    if (!booking || !scrollTo) return;
+    const t = setTimeout(() => {
+      document.getElementById(scrollTo)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [booking?.id, scrollTo]);
+
+  const d = booking ?? lastBooking;
 
   const confirmMutation = useMutation({
-    mutationFn: () => slotsApi.confirmBooking(booking.id),
+    mutationFn: () => slotsApi.confirmBooking(d?.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
       toast({ title: 'Đã xác nhận booking slot' });
@@ -646,7 +1101,7 @@ function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onC
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => slotsApi.cancelBooking(booking.id, 'Hủy từ trang Booking'),
+    mutationFn: () => slotsApi.cancelBooking(d?.id, 'Hủy từ trang Booking'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
       toast({ title: 'Đã hủy booking slot' });
@@ -655,18 +1110,16 @@ function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onC
     onError: () => toast({ title: 'Lỗi hủy', variant: 'destructive' }),
   });
 
-  if (!booking) return null;
-
-  const typeCfg = SLOT_TYPE_CONFIG[booking.type] ?? SLOT_TYPE_CONFIG.DAILY;
-  const statusCfg = SLOT_STATUS_CONFIG[booking.status];
-  const clientName = booking.customer?.companyName ?? booking.lead?.brandName ?? '—';
+  const typeCfg = d ? (SLOT_TYPE_CONFIG[d.type] ?? SLOT_TYPE_CONFIG.DAILY) : SLOT_TYPE_CONFIG.DAILY;
+  const statusCfg = d ? SLOT_STATUS_CONFIG[d.status] : undefined;
+  const clientName = d?.customer?.companyName ?? d?.lead?.brandName ?? '—';
 
   return (
     <Sheet open={!!booking} onClose={onClose}
-      title={booking.bookingRef}
-      subtitle={`${booking.slot?.unit?.code ?? ''} · ${booking.slot?.code ?? ''} · ${clientName}`}
+      title={d?.bookingRef ?? ''}
+      subtitle={`${d?.slot?.unit?.code ?? ''} · ${d?.slot?.code ?? ''} · ${clientName}`}
     >
-      <div className="px-6 pb-8 space-y-4 pt-4">
+      {d && <div className="px-6 pb-8 space-y-4 pt-4">
         {/* Type + status badges */}
         <div className="flex items-center gap-2 flex-wrap">
           <Badge className="bg-violet-50 text-violet-700 border border-violet-200 px-2.5 py-0.5 text-xs font-semibold">
@@ -678,35 +1131,35 @@ function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onC
           <Badge className={`${statusCfg?.color} border text-xs`}>{statusCfg?.label}</Badge>
         </div>
 
-        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50">
+        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50" id="sbs-customer">
           <SheetRow label="Tên"   value={clientName} icon={User} />
-          <SheetRow label="Nguồn" value={booking.customerId ? 'Customer profile' : 'Lead (CRM)'} icon={User} />
+          <SheetRow label="Nguồn" value={d.customerId ? 'Customer profile' : 'Lead (CRM)'} icon={User} />
         </SheetSection>
 
-        <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50">
-          <SheetRow label="Lô (Unit)"  value={booking.slot?.unit?.code ?? '—'} icon={Building2} />
-          <SheetRow label="Slot"       value={`${booking.slot?.code ?? '—'} — ${booking.slot?.name ?? ''}`} icon={Building2} />
-          <SheetRow label="Diện tích"  value={booking.slot?.area ? `${booking.slot.area} m²` : '—'} icon={Building2} />
+        <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50" id="sbs-location">
+          <SheetRow label="Lô (Unit)"  value={d.slot?.unit?.code ?? '—'} icon={Building2} />
+          <SheetRow label="Slot"       value={`${d.slot?.code ?? '—'} — ${d.slot?.name ?? ''}`} icon={Building2} />
+          <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
         </SheetSection>
 
-        <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50">
-          <SheetRow label="Bắt đầu"  value={fmtDatetime(booking.startDatetime)} icon={Calendar} />
-          <SheetRow label="Kết thúc" value={fmtDatetime(booking.endDatetime)}   icon={Calendar} />
+        <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50" id="sbs-timeline">
+          <SheetRow label="Bắt đầu"  value={fmtDatetime(d.startDatetime)} icon={Calendar} />
+          <SheetRow label="Kết thúc" value={fmtDatetime(d.endDatetime)}   icon={Calendar} />
         </SheetSection>
 
-        <SheetSection label="GIÁ TIỀN" className="bg-gray-50">
-          <SheetRow label="Giá gốc"     value={fmtMoney(booking.baseAmount)}   icon={DollarSign} />
-          {booking.discountPct > 0 && (
-            <SheetRow label="Chiết khấu" value={`${booking.discountPct}%`} icon={DollarSign} />
+        <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">
+          <SheetRow label="Giá gốc"     value={fmtMoney(d.baseAmount)}   icon={DollarSign} />
+          {d.discountPct > 0 && (
+            <SheetRow label="Chiết khấu" value={`${d.discountPct}%`} icon={DollarSign} />
           )}
-          <SheetRow label="Thành tiền"  value={fmtMoney(booking.totalAmount)}  icon={DollarSign} />
+          <SheetRow label="Thành tiền"  value={fmtMoney(d.totalAmount)}  icon={DollarSign} />
         </SheetSection>
 
-        {booking.notes && (
-          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{booking.notes}</div>
+        {d.notes && (
+          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
         )}
 
-        {['PENDING'].includes(booking.status) && (
+        {['PENDING'].includes(d.status) && (
           <div className="flex gap-2 pt-2 border-t border-gray-100">
             <Button className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
               onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
@@ -718,13 +1171,13 @@ function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onC
             </Button>
           </div>
         )}
-        {booking.status === 'CONFIRMED' && (
+        {d.status === 'CONFIRMED' && (
           <Button variant="outline" className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
             onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
             <X size={14} /> Hủy booking
           </Button>
         )}
-      </div>
+      </div>}
     </Sheet>
   );
 }
@@ -1114,20 +1567,35 @@ export default function BookingsPage() {
   const [typeFilter, setTypeFilter] = useState<'unit' | 'slot'>('unit');
 
   // ── UnitBooking state ──
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [expiringSoon, setExpiringSoon] = useState(false);
+  const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '' };
+  const [unitDraft, setUnitDraft] = useState(UNIT_EMPTY);
+  const [unitApplied, setUnitApplied] = useState(UNIT_EMPTY);
   const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
+  const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
-
   const [createUnitOpen, setCreateUnitOpen] = useState(false);
 
+  const setUnitField = <K extends keyof typeof UNIT_EMPTY>(k: K, v: typeof UNIT_EMPTY[K]) =>
+    setUnitDraft((f) => ({ ...f, [k]: v }));
+  const unitHasApplied = !!(unitApplied.search || unitApplied.status || unitApplied.expiringSoon || unitApplied.dateFrom || unitApplied.dateTo);
+  const unitIsDirty = JSON.stringify(unitDraft) !== JSON.stringify(unitApplied);
+  function applyUnit() { setUnitApplied({ ...unitDraft }); setPage(1); }
+  function clearUnit() { setUnitDraft(UNIT_EMPTY); setUnitApplied(UNIT_EMPTY); setPage(1); }
+
   // ── SlotBooking state ──
-  const [slotSearch, setSlotSearch] = useState('');
-  const [slotStatusFilter, setSlotStatusFilter] = useState('');
-  const [slotTypeFilter, setSlotTypeFilter] = useState('');
+  const SLOT_EMPTY = { search: '', status: '', type: '' };
+  const [slotDraft, setSlotDraft] = useState(SLOT_EMPTY);
+  const [slotApplied, setSlotApplied] = useState(SLOT_EMPTY);
   const [selectedSlotBooking, setSelectedSlotBooking] = useState<any | null>(null);
+  const [slotSection, setSlotSection] = useState<string | undefined>();
   const [createSlotOpen, setCreateSlotOpen] = useState(false);
+
+  const setSlotField = <K extends keyof typeof SLOT_EMPTY>(k: K, v: typeof SLOT_EMPTY[K]) =>
+    setSlotDraft((f) => ({ ...f, [k]: v }));
+  const slotHasApplied = !!(slotApplied.search || slotApplied.status || slotApplied.type);
+  const slotIsDirty = JSON.stringify(slotDraft) !== JSON.stringify(slotApplied);
+  function applySlot() { setSlotApplied({ ...slotDraft }); }
+  function clearSlot() { setSlotDraft(SLOT_EMPTY); setSlotApplied(SLOT_EMPTY); }
 
   // ── UnitBooking data ──
   const { data: stats } = useQuery({
@@ -1137,12 +1605,14 @@ export default function BookingsPage() {
   });
 
   const { data, isLoading: unitLoading, refetch: refetchUnit } = useQuery({
-    queryKey: ['bookings', selectedMallId, statusFilter, expiringSoon, search, page],
+    queryKey: ['bookings', selectedMallId, unitApplied, page],
     queryFn: () => bookingApi.list({
       mallId: selectedMallId ?? undefined,
-      status: statusFilter || undefined,
-      expiringSoon: expiringSoon || undefined,
-      search: search || undefined,
+      status: unitApplied.status || undefined,
+      expiringSoon: unitApplied.expiringSoon || undefined,
+      search: unitApplied.search || undefined,
+      createdFrom: unitApplied.dateFrom || undefined,
+      createdTo: unitApplied.dateTo || undefined,
       page, limit: 25,
     }),
     refetchInterval: 60_000,
@@ -1150,11 +1620,11 @@ export default function BookingsPage() {
 
   // ── SlotBooking data ──
   const { data: slotData, isLoading: slotLoading, refetch: refetchSlot } = useQuery({
-    queryKey: ['slot-bookings', selectedMallId, slotStatusFilter, slotTypeFilter],
+    queryKey: ['slot-bookings', selectedMallId, slotApplied.status, slotApplied.type],
     queryFn: () => slotsApi.listAllBookings({
       mallId: selectedMallId ?? undefined,
-      status: slotStatusFilter || undefined,
-      type: slotTypeFilter || undefined,
+      status: slotApplied.status || undefined,
+      type: slotApplied.type || undefined,
     }),
     refetchInterval: 60_000,
   });
@@ -1166,14 +1636,14 @@ export default function BookingsPage() {
 
   const rawSlotBookings: any[] = Array.isArray(slotData) ? slotData : (slotData?.data ?? []);
 
-  // Client-side filter by mallId (backend doesn't filter by mallId) and search
+  // Client-side filter by mallId and applied search
   const allSlotBookings = selectedMallId
     ? rawSlotBookings.filter((b) => b.slot?.unit?.mallId === selectedMallId)
     : rawSlotBookings;
 
-  const slotBookings = slotSearch
+  const slotBookings = slotApplied.search
     ? allSlotBookings.filter((b) => {
-        const q = slotSearch.toLowerCase();
+        const q = slotApplied.search.toLowerCase();
         return (
           b.bookingRef?.toLowerCase().includes(q) ||
           b.slot?.unit?.code?.toLowerCase().includes(q) ||
@@ -1201,41 +1671,31 @@ export default function BookingsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Quản lý Booking</h1>
           <p className="text-sm text-gray-500 mt-1">Theo dõi đặt chỗ lô thuê và slot sự kiện ngắn hạn</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2"
-          onClick={() => typeFilter === 'unit' ? refetchUnit() : refetchSlot()}>
-          <RefreshCw size={14} /> Làm mới
-        </Button>
+        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
+          <SelectTrigger className="h-9 w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
+            <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ══════════ UNIT BOOKING ══════════ */}
       {typeFilter === 'unit' && (
         <>
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatCard title="Đang active" value={s?.active ?? 0} icon={BookmarkCheck} color="yellow" sub="Đang giữ slot" />
-            <StatCard title="Chờ trong queue" value={s?.pending ?? 0} icon={BookmarkPlus} color="blue" sub="Hàng đợi ưu tiên" />
-            <StatCard title="Sắp hết hạn" value={s?.expiringSoon ?? 0} icon={AlertTriangle} color="red"
-              badge={s?.expiringSoon > 0 ? 'Cần xử lý' : undefined} />
-            <StatCard title="Đã convert" value={s?.converted ?? 0} icon={ArrowRight} color="green" sub="Thành Proposal" />
-          </div>
-
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
-              <SelectTrigger className="h-9 w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
-                <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
-              </SelectContent>
-            </Select>
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input placeholder="Tìm unit, lead, khách hàng..." className="pl-9 h-9"
-                value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+                value={unitDraft.search}
+                onChange={(e) => setUnitField('search', e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyUnit()}
+              />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v === 'ALL' ? '' : v); setPage(1); }}>
+            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
                 <SelectValue placeholder="Trạng thái" />
               </SelectTrigger>
@@ -1248,12 +1708,27 @@ export default function BookingsPage() {
             </Select>
             <button
               className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
-                expiringSoon ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                unitDraft.expiringSoon ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'
               }`}
-              onClick={() => { setExpiringSoon(!expiringSoon); setPage(1); }}
+              onClick={() => setUnitField('expiringSoon', !unitDraft.expiringSoon)}
             >
               <Clock size={13} /> Sắp hết hạn (7 ngày)
             </button>
+            <DateRangePicker
+              from={unitDraft.dateFrom}
+              to={unitDraft.dateTo}
+              onFromChange={(v) => setUnitField('dateFrom', v)}
+              onToChange={(v) => setUnitField('dateTo', v)}
+              placeholder="Khoảng ngày tạo"
+            />
+            <Button className="h-9 gap-1.5" onClick={applyUnit} disabled={!unitIsDirty && unitHasApplied}>
+              <Search size={14} /> Tìm kiếm
+            </Button>
+            {(unitHasApplied || unitIsDirty) && (
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearUnit}>
+                <X size={13} /> Xóa
+              </Button>
+            )}
             <Button className="gap-2 bg-amber-600 hover:bg-amber-700 text-white h-9 ml-auto"
               onClick={() => setCreateUnitOpen(true)}>
               <Plus size={14} /> Tạo booking lô
@@ -1287,6 +1762,8 @@ export default function BookingsPage() {
                     <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">Ưu tiên</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Hết hạn</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ngày tạo</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Cập nhật</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Sale</th>
                     <th className="px-3 py-3" />
                   </tr>
@@ -1298,24 +1775,28 @@ export default function BookingsPage() {
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
                     return (
                       <tr key={b.id} className="hover:bg-amber-50/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedBooking(b)}>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingNumber}</td>
-                        <td className="px-4 py-3">
+                        onClick={(e) => {
+                          const section = (e.target as HTMLElement).closest('td')?.dataset.section;
+                          setBookingSection(section || undefined);
+                          setSelectedBooking(b);
+                        }}>
+                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingNumber}</td>
+                        <td data-section="bs-unit" className="px-4 py-3">
                           <span className="font-medium">{b.unit?.code ?? '—'}</span>
                           {(b.unit as any)?.floor?.name && (
                             <span className="text-xs text-gray-400 ml-1.5">{(b.unit as any).floor.name}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="bs-customer" className="px-4 py-3">
                           <div className="font-medium">{clientName}</div>
                           {b.lead?.contactName && <div className="text-xs text-gray-400">{b.lead.contactName}</div>}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td data-section="" className="px-3 py-3 text-center">
                           <span className={`w-6 h-6 rounded-full inline-flex items-center justify-center text-xs font-bold ${
                             b.priority === 1 ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-600'
                           }`}>{b.priority}</span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="bs-timeline" className="px-4 py-3">
                           {b.status === 'ACTIVE' && dl !== null ? (
                             <span className={`text-xs font-medium ${dl <= 7 ? 'text-red-500' : dl <= 14 ? 'text-amber-500' : 'text-gray-500'}`}>
                               {dl > 0 ? `${dl} ngày` : 'Hôm nay'}
@@ -1324,11 +1805,13 @@ export default function BookingsPage() {
                             <span className="text-xs text-gray-400">{fmtDate(b.expiresAt)}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${cfg?.color}`}>{cfg?.label}</Badge>
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
-                        <td className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td data-section="bs-assignee" className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
+                        <td data-section="" className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
                       </tr>
                     );
                   })}
@@ -1352,32 +1835,17 @@ export default function BookingsPage() {
       {/* ══════════ SLOT BOOKING ══════════ */}
       {typeFilter === 'slot' && (
         <>
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatCard title="Chờ xác nhận" value={slotStats.pending} icon={Hourglass} color="blue" sub="Cần xử lý" />
-            <StatCard title="Đã xác nhận"  value={slotStats.confirmed} icon={CheckCircle2} color="purple" sub="Đang hiệu lực" />
-            <StatCard title="Hoàn thành"   value={slotStats.completed} icon={CalendarRange} color="green" sub="Đã kết thúc" />
-            <StatCard title="Doanh thu slot" value={fmt(slotStats.revenue)} icon={DollarSign} color="teal"
-              sub="Confirmed + Completed" badge={slotStats.revenue > 0 ? '₫' : undefined} />
-          </div>
-
           {/* Filters + Create */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
-              <SelectTrigger className="h-9 w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
-                <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
-              </SelectContent>
-            </Select>
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input placeholder="Tìm ref, unit, slot, khách hàng..." className="pl-9 h-9"
-                value={slotSearch} onChange={(e) => setSlotSearch(e.target.value)} />
+                value={slotDraft.search}
+                onChange={(e) => setSlotField('search', e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applySlot()}
+              />
             </div>
-            <Select value={slotStatusFilter} onValueChange={(v) => setSlotStatusFilter(v === 'ALL' ? '' : v)}>
+            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-44">
                 <SelectValue placeholder="Trạng thái" />
               </SelectTrigger>
@@ -1388,7 +1856,7 @@ export default function BookingsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={slotTypeFilter} onValueChange={(v) => setSlotTypeFilter(v === 'ALL' ? '' : v)}>
+            <Select value={slotDraft.type || 'ALL'} onValueChange={(v) => setSlotField('type', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
                 <SelectValue placeholder="Loại slot" />
               </SelectTrigger>
@@ -1399,6 +1867,14 @@ export default function BookingsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Button className="h-9 gap-1.5" onClick={applySlot} disabled={!slotIsDirty && slotHasApplied}>
+              <Search size={14} /> Tìm kiếm
+            </Button>
+            {(slotHasApplied || slotIsDirty) && (
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearSlot}>
+                <X size={13} /> Xóa
+              </Button>
+            )}
             <Button
               className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9 ml-auto"
               onClick={() => setCreateSlotOpen(true)}
@@ -1446,29 +1922,33 @@ export default function BookingsPage() {
                     const TypeIcon = typeCfg.icon;
                     return (
                       <tr key={b.id} className="hover:bg-violet-50/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedSlotBooking(b)}>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingRef}</td>
-                        <td className="px-4 py-3">
+                        onClick={(e) => {
+                          const section = (e.target as HTMLElement).closest('td')?.dataset.section;
+                          setSlotSection(section || undefined);
+                          setSelectedSlotBooking(b);
+                        }}>
+                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingRef}</td>
+                        <td data-section="" className="px-4 py-3">
                           <Badge className={`${typeCfg.color} border-0 text-xs flex items-center gap-1 w-fit`}>
                             <TypeIcon size={11} /> {typeCfg.label}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="sbs-location" className="px-4 py-3">
                           <div className="font-medium">{b.slot?.unit?.code ?? '—'}</div>
                           <div className="text-xs text-gray-400">{b.slot?.code} · {b.slot?.name}</div>
                         </td>
-                        <td className="px-4 py-3 font-medium">{clientName}</td>
-                        <td className="px-4 py-3 text-xs text-gray-600">
+                        <td data-section="sbs-customer" className="px-4 py-3 font-medium">{clientName}</td>
+                        <td data-section="sbs-timeline" className="px-4 py-3 text-xs text-gray-600">
                           <div>{fmtDatetime(b.startDatetime)}</div>
                           <div className="text-gray-400">→ {fmtDatetime(b.endDatetime)}</div>
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-800">
+                        <td data-section="sbs-price" className="px-4 py-3 text-right font-medium text-gray-800">
                           {fmtMoney(b.totalAmount)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>
                         </td>
-                        <td className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td data-section="" className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
                       </tr>
                     );
                   })}
@@ -1480,8 +1960,8 @@ export default function BookingsPage() {
       )}
 
       {/* Detail sheets */}
-      <BookingDetailSheet booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
-      <SlotBookingDetailSheet booking={selectedSlotBooking} onClose={() => setSelectedSlotBooking(null)} />
+      <BookingDetailSheet booking={selectedBooking} scrollTo={bookingSection} onClose={() => { setSelectedBooking(null); setBookingSection(undefined); }} />
+      <SlotBookingDetailSheet booking={selectedSlotBooking} scrollTo={slotSection} onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); }} />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
       <CreateUnitBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} />
     </div>

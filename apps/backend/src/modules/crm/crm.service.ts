@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateLeadDto } from './dto/create-lead.dto';
+import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { LeadStatus } from '@prisma/client';
 import { CustomersService } from './customers.service';
@@ -214,11 +214,24 @@ export class CrmService {
     PROSPECT: 1, NEGOTIATING: 2, ACTIVE: 3, INACTIVE: 0, BLACKLISTED: 0,
   };
 
-  async update(id: string, dto: Partial<CreateLeadDto> & { customerId?: string }, userId?: string) {
+  async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
     const existing = await this.findOne(id);
+    const updateData: Record<string, unknown> = {};
+    if (dto.brandName !== undefined) updateData.brandName = dto.brandName;
+    if (dto.company !== undefined) updateData.company = dto.company;
+    if (dto.contactName !== undefined) updateData.contactName = dto.contactName;
+    if (dto.phone !== undefined) updateData.phone = dto.phone;
+    if (dto.email !== undefined) updateData.email = dto.email;
+    if (dto.category !== undefined) updateData.category = dto.category;
+    if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.source !== undefined) updateData.source = dto.source;
+    if (dto.status !== undefined) updateData.status = dto.status;
+    if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
+    if ((dto as any).customerId !== undefined) updateData.customerId = (dto as any).customerId;
     const updated = await this.prisma.lead.update({
       where: { id },
-      data: dto,
+      data: updateData,
       include: {
         assignedTo: { select: { id: true, fullName: true } },
         customer: { select: { id: true, customerCode: true, status: true } },

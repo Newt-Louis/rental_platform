@@ -16,6 +16,7 @@ export type RouteModule =
   | 'spaces'
   | 'crm'
   | 'deal-pipeline'
+  | 'pipeline-stats'
   | 'bookings'
   | 'proposals'
   | 'approvals'
@@ -40,6 +41,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   spaces: ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'],
   crm: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
   'deal-pipeline': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
+  'pipeline-stats': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
   bookings: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
   proposals: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
   approvals: ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL', 'CEO', 'OPERATION'],
@@ -66,6 +68,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   spaces: 'spaces',
   crm: 'crm',
   'deal-pipeline': 'deal-pipeline',
+  'pipeline-stats': 'pipeline-stats',
   bookings: 'bookings',
   proposals: 'proposals',
   approvals: 'approvals',
@@ -119,6 +122,7 @@ export const NAV_GROUPS = [
       { label: 'Phê duyệt', path: '/approvals', module: 'approvals' as RouteModule },
       { label: 'Hợp đồng', path: '/contracts', module: 'contracts' as RouteModule },
       { label: 'Khách thuê', path: '/tenants', module: 'tenants' as RouteModule },
+      { label: 'Thống kê', path: '/pipeline-stats', module: 'pipeline-stats' as RouteModule },
     ],
   },
   {

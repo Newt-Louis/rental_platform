@@ -29,19 +29,31 @@ export function useCRUD<TData, TCreate = unknown, TUpdate = unknown>(
 
   const create = useMutation<unknown, unknown, TCreate>({
     mutationFn: (data: TCreate) => createFn ? createFn(data) : Promise.resolve(),
-    onSuccess: () => { invalidate(); toast({ title: `${entityLabel} đã được tạo` }); },
+    onSuccess: () => {
+      if (!createFn) return;
+      invalidate();
+      toast({ title: `${entityLabel} đã được tạo` });
+    },
     onError,
   });
 
   const update = useMutation<unknown, unknown, { id: string; data: TUpdate }>({
     mutationFn: (payload) => updateFn ? updateFn(payload) : Promise.resolve(),
-    onSuccess: () => { invalidate(); toast({ title: `${entityLabel} đã được cập nhật` }); },
+    onSuccess: () => {
+      if (!updateFn) return;
+      invalidate();
+      toast({ title: `${entityLabel} đã được cập nhật` });
+    },
     onError,
   });
 
   const remove = useMutation<unknown, unknown, string>({
     mutationFn: (id: string) => deleteFn ? deleteFn(id) : Promise.resolve(),
-    onSuccess: () => { invalidate(); toast({ title: `${entityLabel} đã được xóa` }); },
+    onSuccess: () => {
+      if (!deleteFn) return;
+      invalidate();
+      toast({ title: `${entityLabel} đã được xóa` });
+    },
     onError,
   });
 

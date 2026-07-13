@@ -32,6 +32,7 @@ import TenantsPage from '@/pages/tenants/TenantsPage';
 import AuditLogPage from '@/pages/audit-log/AuditLogPage';
 import DealPipelinePage from '@/pages/deals/DealPipelinePage';
 import BookingsPage from '@/pages/bookings/BookingsPage';
+import SalesPipelineStatsPage from '@/pages/pipeline-stats/SalesPipelineStatsPage';
 import ProfilePage from '@/pages/profile/ProfilePage';
 import { Navigate } from 'react-router-dom';
 
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="deal-pipeline" element={<RoleRoute><DealPipelinePage /></RoleRoute>} />
           <Route path="tenants" element={<RoleRoute><TenantsPage /></RoleRoute>} />
           <Route path="bookings" element={<RoleRoute><BookingsPage /></RoleRoute>} />
+          <Route path="pipeline-stats" element={<RoleRoute><SalesPipelineStatsPage /></RoleRoute>} />
           <Route path="proposals" element={<RoleRoute><ProposalsPage /></RoleRoute>} />
           <Route path="approvals" element={<RoleRoute><ApprovalsPage /></RoleRoute>} />
           <Route path="contracts" element={<RoleRoute><ContractsPage /></RoleRoute>} />

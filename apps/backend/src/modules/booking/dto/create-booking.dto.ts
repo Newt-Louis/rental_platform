@@ -61,6 +61,16 @@ export class CreateBookingDto {
 }
 
 export class UpdateBookingDto {
+  @ApiPropertyOptional({ description: 'Chuyển sang lead khác' })
+  @IsOptional()
+  @IsString()
+  leadId?: string;
+
+  @ApiPropertyOptional({ description: 'Chuyển sang mặt bằng khác (chỉ cho PENDING booking)' })
+  @IsOptional()
+  @IsString()
+  unitId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
