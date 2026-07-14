@@ -20,6 +20,14 @@ export class TransformInterceptor<T>
     context: ExecutionContext,
     next: CallHandler,
   ): Observable<Response<T>> {
+    const request = context.switchToHttp().getRequest();
+    const path = request.path as string;
+
+    // Skip wrapping for auth endpoints to maintain compatibility
+    if (path.includes('/auth')) {
+      return next.handle();
+    }
+
     return next.handle().pipe(
       map((data) => ({
         success: true,
