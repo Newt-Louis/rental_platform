@@ -23,7 +23,7 @@ import {
   ChevronRight, Search, AlertTriangle, DollarSign,
   BookmarkPlus, X, FileText, Activity, CalendarDays, Timer, CalendarRange,
   CheckCircle2, Ban, Hourglass, Plus, ChevronDown, Loader2, Pencil,
-  CheckSquare, Square, Trash2,
+  CheckSquare, Square, Trash2, RotateCcw,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
 
@@ -505,7 +505,7 @@ const EMPTY_EF = {
   notes: '',
 };
 
-function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooking | null; onClose: () => void; scrollTo?: string }) {
+function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { booking: UnitBooking | null; onClose: () => void; scrollTo?: string; initialEditing?: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { selectedMallId } = useMallStore();
@@ -530,6 +530,28 @@ function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooki
     }, 350);
     return () => clearTimeout(t);
   }, [booking?.id, scrollTo]);
+
+  useEffect(() => {
+    if (!booking || !initialEditing) { if (!booking) setIsEditing(false); return; }
+    const src = booking;
+    const cName = src.lead?.brandName ?? src.customer?.companyName ?? '';
+    setEf({
+      unitId: src.unitId ?? '',
+      unitLabel: src.unit ? `${src.unit.code}${src.unit.name ? ' — ' + src.unit.name : ''} (${(src.unit.areaGFA as any)?.toLocaleString('vi-VN') ?? '?'}m²)` : '',
+      unitSearch: '',
+      leadId: src.leadId ?? '',
+      leadLabel: cName,
+      requestedArea: String(src.requestedArea ?? ''),
+      requestedTerm: String(src.requestedTerm ?? ''),
+      expectedRent: String(src.expectedRent ?? ''),
+      proposedRentPerSqm: String((src as any).proposedRentPerSqm ?? ''),
+      proposedCamPerSqm: String((src as any).proposedCamPerSqm ?? ''),
+      notes: src.notes ?? '',
+    });
+    setLeadFilter('');
+    setIsEditing(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.id, initialEditing]);
 
   const activeId = booking?.id ?? lastBooking?.id;
 
@@ -568,6 +590,17 @@ function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooki
       onClose();
     },
     onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
+  });
+
+  const reinstateMutation = useMutation({
+    mutationFn: () => bookingApi.reinstate(activeId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      toast({ title: 'Đã khôi phục booking' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi khôi phục booking', variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
@@ -621,6 +654,7 @@ function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooki
   const contactName = d?.lead?.contactName ?? d?.customer?.brandName ?? '';
   const activities: any[] = (detail?.data ?? detail)?.activities ?? (detail as any)?.activities ?? [];
   const canEdit = d ? ['ACTIVE', 'PENDING'].includes(d.status) : false;
+  const canReinstate = d?.status === 'CANCELLED';
 
   return (
     <Sheet open={!!booking} onClose={onClose} title={d?.bookingNumber ?? ''} subtitle={`${d?.unit?.code ?? ''} · ${clientName}`}>
@@ -859,6 +893,15 @@ function BookingDetailSheet({ booking, onClose, scrollTo }: { booking: UnitBooki
                     <X size={14} /> Hủy booking
                   </Button>
                 </div>
+              </div>
+            )}
+
+            {canReinstate && (
+              <div className="pt-2 border-t border-gray-100">
+                <Button variant="outline" className="w-full gap-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                  onClick={() => reinstateMutation.mutate()} disabled={reinstateMutation.isPending}>
+                  <RotateCcw size={14} /> Khôi phục booking
+                </Button>
               </div>
             )}
 
@@ -1734,12 +1777,56 @@ export default function BookingsPage() {
   // ── Bulk selection ──
   const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set());
   const [confirmCancelIds, setConfirmCancelIds] = useState<string[] | null>(null);
+  const [confirmReinstateId, setConfirmReinstateId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteSlotId, setConfirmDeleteSlotId] = useState<string | null>(null);
   const { gridRef, selectoRef, selectoProps } = useDragSelect({
     onSelect: (ids) => setSelectedUnitIds(new Set(ids)),
     onClear: () => setSelectedUnitIds(new Set()),
     idAttribute: 'data-booking-id',
     selectFromInside: true,
   });
+  const reinstateListMutation = useMutation({
+    mutationFn: (id: string) => bookingApi.reinstate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      setConfirmReinstateId(null);
+      toast({ title: 'Đã khôi phục booking' });
+    },
+    onError: (e: any) => {
+      setConfirmReinstateId(null);
+      toast({ title: e?.response?.data?.message ?? 'Lỗi khôi phục booking', variant: 'destructive' });
+    },
+  });
+
+  const softDeleteMutation = useMutation({
+    mutationFn: (id: string) => bookingApi.softDelete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      setConfirmDeleteId(null);
+      toast({ title: 'Đã xóa booking' });
+    },
+    onError: (e: any) => {
+      setConfirmDeleteId(null);
+      toast({ title: e?.response?.data?.message ?? 'Lỗi xóa booking', variant: 'destructive' });
+    },
+  });
+
+  const deleteSlotMutation = useMutation({
+    mutationFn: (id: string) => slotsApi.deleteSlotBooking(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
+      setConfirmDeleteSlotId(null);
+      toast({ title: 'Đã xóa slot booking' });
+    },
+    onError: (e: any) => {
+      setConfirmDeleteSlotId(null);
+      toast({ title: e?.response?.data?.message ?? 'Lỗi xóa slot booking', variant: 'destructive' });
+    },
+  });
+
   const bulkCancelMutation = useMutation({
     mutationFn: (ids: string[]) =>
       Promise.allSettled(ids.map((id) => bookingApi.cancel(id))).then((results) => {
@@ -1766,6 +1853,7 @@ export default function BookingsPage() {
   const [unitDraft, setUnitDraft] = useState(UNIT_EMPTY);
   const [unitApplied, setUnitApplied] = useState(UNIT_EMPTY);
   const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
+  const [editDirectly, setEditDirectly] = useState(false);
   const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [createUnitOpen, setCreateUnitOpen] = useState(false);
@@ -1869,7 +1957,7 @@ export default function BookingsPage() {
       >
         <Button
           size="sm" variant="ghost"
-          className="text-red-400 hover:bg-red-900/30 gap-1.5 shrink-0"
+          className="text-red-400 gap-1.5 shrink-0"
           disabled={bulkCancelMutation.isPending}
           onClick={() => {
             const cancellable = unitBookings
@@ -1957,7 +2045,7 @@ export default function BookingsPage() {
           </div>
 
           {/* Table */}
-          <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />
+          {!selectedBooking && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
           <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
             {unitLoading ? (
               <div className="p-6 space-y-3">
@@ -2063,7 +2151,46 @@ export default function BookingsPage() {
                         <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
                         <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
                         <td data-section="bs-assignee" className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
-                        <td data-section="" className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td data-section="" className="px-3 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {['ACTIVE', 'PENDING'].includes(b.status) && (
+                              <>
+                                <button
+                                  className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                  title="Chỉnh sửa booking"
+                                  onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                  title="Hủy booking"
+                                  onClick={(e) => { e.stopPropagation(); setConfirmCancelIds([b.id]); }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
+                            {b.status === 'CANCELLED' && (
+                              <button
+                                className="p-1 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                title="Khôi phục booking"
+                                onClick={(e) => { e.stopPropagation(); setConfirmReinstateId(b.id); }}
+                              >
+                                <RotateCcw size={13} />
+                              </button>
+                            )}
+                            {['CANCELLED', 'EXPIRED'].includes(b.status) && (
+                              <button
+                                className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Xóa booking"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(b.id); }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -2200,7 +2327,21 @@ export default function BookingsPage() {
                         <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>
                         </td>
-                        <td data-section="" className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td data-section="" className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            {b.status === 'CANCELLED' ? (
+                              <button
+                                className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Xóa slot booking"
+                                onClick={() => setConfirmDeleteSlotId(b.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            ) : (
+                              <ChevronRight size={15} className="text-gray-300" />
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -2212,10 +2353,92 @@ export default function BookingsPage() {
       )}
 
       {/* Detail sheets */}
-      <BookingDetailSheet booking={selectedBooking} scrollTo={bookingSection} onClose={() => { setSelectedBooking(null); setBookingSection(undefined); }} />
+      <BookingDetailSheet booking={selectedBooking} scrollTo={bookingSection} initialEditing={editDirectly} onClose={() => { setSelectedBooking(null); setBookingSection(undefined); setEditDirectly(false); }} />
       <SlotBookingDetailSheet booking={selectedSlotBooking} scrollTo={slotSection} onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); }} />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
       <CreateUnitBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} />
+
+      {/* Reinstate Confirmation Dialog */}
+      <Dialog open={!!confirmReinstateId} onOpenChange={(o) => { if (!o) setConfirmReinstateId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-600">
+              <RotateCcw size={18} /> Xác nhận khôi phục booking
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Booking sẽ được đưa vào cuối hàng đợi của mặt bằng và được gia hạn thêm từ hôm nay.
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>
+              Hủy
+            </Button>
+            <Button
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={reinstateListMutation.isPending}
+              onClick={() => confirmReinstateId && reinstateListMutation.mutate(confirmReinstateId)}
+            >
+              {reinstateListMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              Khôi phục
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Soft Delete Confirmation Dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle size={18} /> Xác nhận xóa booking
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Booking sẽ bị xóa khỏi danh sách và không thể khôi phục. Bạn có chắc chắn muốn tiếp tục?
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)} disabled={softDeleteMutation.isPending}>
+              Hủy
+            </Button>
+            <Button
+              variant="destructive" size="sm"
+              disabled={softDeleteMutation.isPending}
+              onClick={() => confirmDeleteId && softDeleteMutation.mutate(confirmDeleteId)}
+            >
+              {softDeleteMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              Xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Slot Booking Delete Confirmation Dialog */}
+      <Dialog open={!!confirmDeleteSlotId} onOpenChange={(o) => { if (!o) setConfirmDeleteSlotId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle size={18} /> Xác nhận xóa slot booking
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Slot booking đã hủy sẽ bị xóa vĩnh viễn. Bạn có chắc chắn muốn tiếp tục?
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteSlotId(null)} disabled={deleteSlotMutation.isPending}>
+              Hủy
+            </Button>
+            <Button
+              variant="destructive" size="sm"
+              disabled={deleteSlotMutation.isPending}
+              onClick={() => confirmDeleteSlotId && deleteSlotMutation.mutate(confirmDeleteSlotId)}
+            >
+              {deleteSlotMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              Xóa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk Cancel Confirmation Dialog */}
       <Dialog open={!!confirmCancelIds} onOpenChange={(o) => { if (!o) setConfirmCancelIds(null); }}>
@@ -2227,7 +2450,7 @@ export default function BookingsPage() {
           </DialogHeader>
           <p className="text-sm text-gray-600">
             Bạn có chắc muốn hủy <span className="font-semibold">{confirmCancelIds?.length ?? 0} booking</span> đã chọn?
-            {selectedUnitIds.size !== (confirmCancelIds?.length ?? 0) && (
+            {selectedUnitIds.size > 0 && selectedUnitIds.size !== (confirmCancelIds?.length ?? 0) && (
               <span className="block mt-1 text-amber-600 text-xs">
                 ({selectedUnitIds.size - (confirmCancelIds?.length ?? 0)} booking ở trạng thái không thể hủy sẽ được bỏ qua)
               </span>

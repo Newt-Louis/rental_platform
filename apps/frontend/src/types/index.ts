@@ -388,6 +388,11 @@ export interface Proposal {
   proposalNumber: string;
   unit: Unit;
   tenant?: Tenant;
+  lead?: { id: string; brandName?: string; contactName?: string };
+  booking?: {
+    lead?: { id: string; brandName?: string; contactName?: string };
+    customer?: { id: string; brandName?: string; companyName?: string };
+  };
   area: number;
   term: number;
   startDate: string;

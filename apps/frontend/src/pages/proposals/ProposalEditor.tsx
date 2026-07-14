@@ -279,16 +279,16 @@ export function ProposalEditorDialog({ proposal, onClose }: {
     setExtraFields((f) => ({ ...f, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
 
   const saveExtraMutation = useMutation({
-    mutationFn: () => proposalsApi.updateProposal(proposal.id, {
+    mutationFn: () => proposalsApi.updateDocFields(proposal.id, {
       utilityFee:      extraFields.utilityFee,
       operatingHours:  extraFields.operatingHours || undefined,
       afterHoursFee:   extraFields.afterHoursFee,
       paymentTermDays: extraFields.paymentTermDays,
-      // depositLease = 0 → gửi undefined → DB lưu null → tính tự động
-      depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : undefined,
+      // depositLease = 0 → gửi null → DB lưu null → tính tự động
+      depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : null,
       depositFitout:   extraFields.depositFitout,
       fitoutFee:       extraFields.fitoutFee,
-    } as any),
+    }),
     onSuccess: () => toast({ title: 'Đã lưu phí & điều khoản' }),
     onError: () => toast({ title: 'Lỗi khi lưu', variant: 'destructive' }),
   });

@@ -51,8 +51,11 @@ export class ContractsController {
   @ApiOperation({ summary: 'List contracts' })
   @Roles(...MODULE_ROLES.contracts, Role.TENANT)
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
+  @ApiQuery({ name: 'type', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'startDateFrom', required: false })
+  @ApiQuery({ name: 'startDateTo', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   findAll(@Query() query: any, @CurrentUser() user: any) {

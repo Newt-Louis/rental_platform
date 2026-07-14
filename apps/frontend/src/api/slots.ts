@@ -25,4 +25,6 @@ export const slotsApi = {
     api.patch(`/slots/bookings/${bookingId}/confirm`).then((r) => r.data),
   cancelBooking: (bookingId: string, reason?: string) =>
     api.patch(`/slots/bookings/${bookingId}/cancel`, { reason }).then((r) => r.data),
+  deleteSlotBooking: (bookingId: string) =>
+    api.delete(`/slots/bookings/${bookingId}`).then((r) => r.data),
 };

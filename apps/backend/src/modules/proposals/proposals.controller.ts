@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Patch, Delete, Param, Body, Query, UseGuards, Res,
+  Controller, Get, Post, Put, Patch, Delete, Param, Body, Query, UseGuards, Res, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -66,6 +66,13 @@ export class ProposalsController {
     return this.proposalsService.convertToContract(id);
   }
 
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Soft-delete a DRAFT proposal' })
+  remove(@Param('id') id: string) {
+    return this.proposalsService.remove(id);
+  }
+
   @Post(':id/reject')
   @ApiOperation({ summary: 'Reject a submitted/under-review proposal' })
   reject(
@@ -93,6 +100,12 @@ export class ProposalsController {
   @ApiOperation({ summary: 'Save proposal editor content (logo, font, item overrides, signatories)' })
   saveEditorContent(@Param('id') id: string, @Body() body: { editorContent: any }) {
     return this.proposalsService.saveEditorContent(id, body.editorContent);
+  }
+
+  @Patch(':id/doc-fields')
+  @ApiOperation({ summary: 'Update supplementary doc fields (fees, hours, deposit) — editable regardless of status' })
+  updateDocFields(@Param('id') id: string, @Body() body: any) {
+    return this.proposalsService.updateDocFields(id, body);
   }
 
   @Get(':id/versions')

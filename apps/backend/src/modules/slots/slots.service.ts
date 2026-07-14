@@ -420,4 +420,14 @@ export class SlotsService {
     await this.prisma.unitSlot.createMany({ data });
     return this.listSlots(unitId);
   }
+
+  async deleteSlotBooking(id: string) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (booking.status !== 'CANCELLED') {
+      throw new BadRequestException('Chỉ có thể xóa slot booking đã hủy');
+    }
+    await this.prisma.slotBooking.delete({ where: { id } });
+    return { message: 'Slot booking đã được xóa' };
+  }
 }

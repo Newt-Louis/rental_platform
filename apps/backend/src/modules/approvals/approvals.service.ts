@@ -40,18 +40,22 @@ export class ApprovalsService {
   ) {}
 
   async getPending(userId: string, userRole: string) {
+    const where: any = {
+      status: StepStatus.PENDING,
+      workflow: { status: WorkflowStatus.IN_PROGRESS },
+    };
+    if (userRole !== 'ADMIN') {
+      where.approverRole = userRole as any;
+    }
+
     const steps = await this.prisma.approvalStep.findMany({
-      where: {
-        status: StepStatus.PENDING,
-        approverRole: userRole as any,
-        workflow: { status: WorkflowStatus.IN_PROGRESS },
-      },
+      where,
       include: {
         workflow: {
           include: {
             proposal: {
               include: {
-                unit: { select: { id: true, code: true, name: true } },
+                unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true } } } },
                 tenant: { select: { id: true, brandName: true } },
               },
             },
@@ -62,7 +66,12 @@ export class ApprovalsService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return steps;
+    // Only return steps where all earlier steps in the same workflow are APPROVED.
+    // This prevents showing future steps that can't be acted on yet.
+    return steps.filter((step) => {
+      const earlierSteps = step.workflow.steps.filter((s) => s.stepOrder < step.stepOrder);
+      return earlierSteps.every((s) => s.status === StepStatus.APPROVED);
+    });
   }
 
   async getWorkflow(workflowId: string) {
@@ -147,7 +156,7 @@ export class ApprovalsService {
 
     if (!step) throw new NotFoundException('Approval step not found');
     if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
-    if (step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
+    if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
 
     const unapprovedEarlierStep = step.workflow.steps.find(
       (s) => s.stepOrder < step.stepOrder && s.status !== StepStatus.APPROVED,
@@ -202,7 +211,7 @@ export class ApprovalsService {
 
     if (!step) throw new NotFoundException('Approval step not found');
     if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
-    if (step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
+    if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
 
     await this.prisma.approvalStep.update({
       where: { id: stepId },

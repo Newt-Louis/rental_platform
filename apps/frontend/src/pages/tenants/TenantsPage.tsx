@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { tenantsApi } from '@/api';
@@ -567,17 +567,21 @@ function TenantCard({ t, selected, onSelect, onEdit }: {
 export default function TenantsPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editTenant, setEditTenant] = useState<any>(null);
 
+  useEffect(() => { setPage(1); }, [search, category]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['tenants', search, category],
-    queryFn: () => tenantsApi.listTenants({ search: search || undefined, category: category || undefined, limit: 100 }),
+    queryKey: ['tenants', search, category, page],
+    queryFn: () => tenantsApi.listTenants({ search: search || undefined, category: category || undefined, page, limit: 25 }),
   });
 
   const tenants: any[] = data?.data ?? [];
   const total: number = data?.total ?? 0;
+  const totalPages: number = data?.totalPages ?? 1;
 
   const openEdit = useCallback((t: any, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -646,6 +650,16 @@ export default function TenantsPage() {
               onEdit={(e) => openEdit(t, e)} />
           ))}
         </div>
+        {totalPages > 1 && (
+          <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+            <span>{total} khách thuê</span>
+            <div className="flex items-center gap-1.5">
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
+              <span className="px-1">Trang {page} / {totalPages}</span>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── RIGHT: Detail panel ── */}
@@ -669,7 +683,7 @@ export default function TenantsPage() {
         </div>
       )}
 
-      <TenantFormDialog open={showForm} onClose={closeForm} tenant={editTenant} />
+      <TenantFormDialog key={editTenant?.id ?? 'new'} open={showForm} onClose={closeForm} tenant={editTenant} />
     </div>
   );
 }

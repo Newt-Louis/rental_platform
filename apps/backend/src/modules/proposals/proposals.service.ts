@@ -113,6 +113,12 @@ export class ProposalsService {
           unit: { select: { id: true, code: true, name: true, floor: { select: { name: true } } } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
           lead: { select: { id: true, brandName: true, contactName: true } },
+          booking: {
+            select: {
+              lead: { select: { id: true, brandName: true, contactName: true } },
+              customer: { select: { id: true, brandName: true, companyName: true } },
+            },
+          },
           approvalWorkflow: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -652,6 +658,40 @@ export class ProposalsService {
     });
   }
 
+  /** Update supplementary doc-generation fields (fees, hours, deposit amounts).
+   *  These fields feed the Tờ Trình document and are editable regardless of proposal status. */
+  async updateDocFields(
+    id: string,
+    dto: {
+      utilityFee?: number;
+      operatingHours?: string;
+      afterHoursFee?: number;
+      paymentTermDays?: number;
+      depositLease?: number | null;
+      depositFitout?: number;
+      fitoutFee?: number;
+    },
+  ) {
+    await this.findOne(id);
+    return this.prisma.proposal.update({
+      where: { id },
+      data: {
+        utilityFee:      dto.utilityFee,
+        operatingHours:  dto.operatingHours,
+        afterHoursFee:   dto.afterHoursFee,
+        paymentTermDays: dto.paymentTermDays,
+        depositLease:    dto.depositLease,
+        depositFitout:   dto.depositFitout,
+        fitoutFee:       dto.fitoutFee,
+      },
+      select: {
+        id: true, proposalNumber: true,
+        utilityFee: true, operatingHours: true, afterHoursFee: true,
+        paymentTermDays: true, depositLease: true, depositFitout: true, fitoutFee: true,
+      },
+    });
+  }
+
   async listVersions(proposalId: string) {
     await this.findOne(proposalId);
     return this.prisma.proposalVersion.findMany({
@@ -693,5 +733,17 @@ export class ProposalsService {
       diffs,
       diffCount: diffs.length,
     };
+  }
+
+  async remove(id: string) {
+    const proposal = await this.findOne(id);
+    if (!['DRAFT', 'REJECTED'].includes(proposal.status)) {
+      throw new BadRequestException('Chỉ có thể xóa đề xuất ở trạng thái DRAFT hoặc REJECTED');
+    }
+    await this.prisma.proposal.update({
+      where: { id },
+      data: { isActive: false, deletedAt: new Date() },
+    });
+    return { message: 'Đề xuất đã được xóa' };
   }
 }

@@ -123,6 +123,11 @@ export class SlotsController {
     return this.slotsService.cancelBooking(bookingId, body?.reason);
   }
 
+  @Delete('bookings/:bookingId')
+  deleteSlotBooking(@Param('bookingId') bookingId: string) {
+    return this.slotsService.deleteSlotBooking(bookingId);
+  }
+
   // ── All bookings (manager view) ─────────────────────────────────────────
 
   @Get('bookings/all')

@@ -21,8 +21,12 @@ export const proposalsApi = {
     api.get(`/proposals/${id}/versions/compare`, { params: { from, to } }).then((r) => r.data),
   rejectProposal: (id: string, rejectionReason: string) =>
     api.post(`/proposals/${id}/reject`, { rejectionReason }).then((r) => r.data),
+  deleteProposal: (id: string) =>
+    api.delete(`/proposals/${id}`).then((r) => r.data),
   saveEditorContent: (id: string, editorContent: any) =>
     api.patch(`/proposals/${id}/editor-content`, { editorContent }).then((r) => r.data),
+  updateDocFields: (id: string, data: Record<string, unknown>) =>
+    api.patch(`/proposals/${id}/doc-fields`, data).then((r) => r.data),
 };
 
 export const proposalScenariosApi = {

@@ -560,6 +560,64 @@ export class BookingService {
     return this.findOne(id);
   }
 
+  // ─── Khôi phục booking đã hủy ────────────────────────────────────────────
+
+  async reinstate(id: string, userId: string) {
+    const booking = await this.prisma.unitBooking.findUnique({ where: { id } });
+    if (!booking || !booking.isActive) throw new NotFoundException('Booking không tồn tại');
+    if (booking.status !== BookingStatus.CANCELLED) {
+      throw new BadRequestException('Chỉ booking đã hủy mới có thể khôi phục');
+    }
+
+    const unit = await this.prisma.unit.findUnique({ where: { id: booking.unitId } });
+    if (!unit || !unit.isActive) throw new BadRequestException('Mặt bằng không còn khả dụng');
+    if (this.unitStatus.isLockedForBooking(unit.status)) {
+      throw new BadRequestException(
+        `Không thể khôi phục: mặt bằng đang bị khoá (trạng thái ${unit.status}).`,
+      );
+    }
+
+    const maxPriority = await this.prisma.unitBooking.aggregate({
+      where: {
+        unitId: booking.unitId,
+        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+        isActive: true,
+      },
+      _max: { priority: true },
+    });
+    const newPriority = (maxPriority._max.priority ?? 0) + 1;
+    const newStatus = newPriority === 1 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
+
+    const holdDays = booking.holdDays ?? 30;
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + holdDays);
+
+    await this.prisma.unitBooking.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        priority: newPriority,
+        cancelledAt: null,
+        cancelReason: null,
+        expiresAt,
+        activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : null,
+      },
+    });
+
+    if (newStatus === BookingStatus.ACTIVE) {
+      await this.unitStatus.transition(booking.unitId, UnitStatus.BOOKING, {
+        userId,
+        reason: `Booking ${booking.bookingNumber} được khôi phục`,
+      });
+    }
+
+    await this.logActivity(id, BookingActivityType.ACTIVATED, userId, {
+      note: `Booking được khôi phục. Priority: ${newPriority}`,
+    });
+
+    return this.findOne(id);
+  }
+
   // ─── Hủy booking ──────────────────────────────────────────────────────────
 
   async cancel(id: string, dto: CancelBookingDto, userId: string) {
@@ -888,5 +946,20 @@ export class BookingService {
       createdBy: { select: { id: true, fullName: true, email: true } },
       assignedTo: { select: { id: true, fullName: true, email: true } },
     };
+  }
+
+  // ─── Soft delete booking (chỉ CANCELLED hoặc EXPIRED) ────────────────────
+
+  async softDelete(id: string) {
+    const booking = await this.prisma.unitBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Booking không tồn tại');
+    if (booking.status !== BookingStatus.CANCELLED && booking.status !== BookingStatus.EXPIRED) {
+      throw new BadRequestException('Chỉ có thể xóa booking đã hủy hoặc hết hạn');
+    }
+    await this.prisma.unitBooking.update({
+      where: { id },
+      data: { isActive: false },
+    });
+    return { message: 'Booking đã được xóa' };
   }
 }

@@ -24,9 +24,12 @@ export class ContractsService {
 
   async findAll(query: {
     status?: ContractStatus;
+    type?: string;
     tenantId?: string;
     unitId?: string;
     search?: string;
+    startDateFrom?: string;
+    startDateTo?: string;
     page?: number;
     limit?: number;
   }, currentUser?: CurrentUser) {
@@ -37,6 +40,7 @@ export class ContractsService {
 
     const where: any = { isActive: true, deletedAt: null };
     if (filters.status) where.status = filters.status;
+    if (filters.type) where.type = filters.type;
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
       where.tenantId = currentUser.tenantId ?? '__none__';
@@ -44,10 +48,16 @@ export class ContractsService {
       where.tenantId = filters.tenantId;
     }
     if (filters.unitId) where.unitId = filters.unitId;
+    if (query.startDateFrom || query.startDateTo) {
+      where.startDate = {};
+      if (query.startDateFrom) where.startDate.gte = new Date(query.startDateFrom);
+      if (query.startDateTo) where.startDate.lte = new Date(query.startDateTo + 'T23:59:59');
+    }
     if (search) {
       where.OR = [
         { contractNumber: { contains: search, mode: 'insensitive' } },
         { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+        { unit: { code: { contains: search, mode: 'insensitive' } } },
       ];
     }
 

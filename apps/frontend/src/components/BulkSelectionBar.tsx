@@ -28,7 +28,7 @@ export function BulkSelectionBar({
           <Button
             size="sm"
             variant="ghost"
-            className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
+            className="text-white gap-1.5 shrink-0"
             onClick={onSelectAll}
           >
             <CheckSquare size={14} /> Chọn tất cả ({totalCount})

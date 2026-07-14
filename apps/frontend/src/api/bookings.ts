@@ -18,6 +18,8 @@ export const bookingApi = {
     api.patch(`/bookings/${id}/extend`, { additionalDays, reason }).then((r) => r.data),
   cancel: (id: string, reason?: string) =>
     api.patch(`/bookings/${id}/cancel`, { reason }).then((r) => r.data),
+  reinstate: (id: string) =>
+    api.patch(`/bookings/${id}/reinstate`).then((r) => r.data),
   convertToProposal: (id: string, data: Record<string, unknown>) =>
     api.post(`/bookings/${id}/convert-to-proposal`, data).then((r) => r.data),
   // Price approval
@@ -27,4 +29,6 @@ export const bookingApi = {
     api.patch(`/bookings/${id}/price/approve`, { note }).then((r) => r.data),
   rejectPrice: (id: string, reason: string) =>
     api.patch(`/bookings/${id}/price/reject`, { reason }).then((r) => r.data),
+  softDelete: (id: string) =>
+    api.delete(`/bookings/${id}`).then((r) => r.data),
 };

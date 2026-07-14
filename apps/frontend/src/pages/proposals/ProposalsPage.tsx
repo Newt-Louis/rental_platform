@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import Selecto from 'react-selecto';
+import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
+import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { proposalsApi, dealScoringApi, proposalScenariosApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +19,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Search, FileText, Send, Building2, DollarSign, Calendar, User, CheckCircle, XCircle,
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
-  X, Loader2,
+  X, Loader2, Pencil, CheckSquare, Square,
 } from 'lucide-react';
 import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
@@ -595,7 +598,7 @@ function ProposalDetailSheet({
               )}
               <div className="flex gap-2">
                 <Button
-                  className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700"
+                  className="flex-1 gap-2 text-white bg-indigo-600 hover:bg-indigo-700"
                   onClick={() => setShowEditor(true)}
                 >
                   <PenSquare size={15} /> Chỉnh sửa Tờ Trình
@@ -635,9 +638,22 @@ export default function ProposalsPage() {
   // draft = what user is typing; applied = what's sent to API
   const [draft, setDraft] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
+  const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  // ── Bulk selection ──
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const { gridRef, selectoRef, selectoProps } = useDragSelect({
+    onSelect: (ids) => setSelectedIds(new Set(ids)),
+    onClear: () => setSelectedIds(new Set()),
+    idAttribute: 'data-proposal-id',
+    selectFromInside: true,
+  });
 
   const setDraftField = (k: keyof typeof draft, v: string) =>
     setDraft((f) => ({ ...f, [k]: v }));
@@ -649,16 +665,18 @@ export default function ProposalsPage() {
     draft.dateFrom !== applied.dateFrom ||
     draft.dateTo !== applied.dateTo;
 
-  function applyFilters() { setApplied({ ...draft }); }
-  function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); }
+  function applyFilters() { setApplied({ ...draft }); setPage(1); }
+  function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['proposals', applied],
+    queryKey: ['proposals', applied, page],
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
       status: applied.status || undefined,
       dateFrom: applied.dateFrom || undefined,
       dateTo: applied.dateTo || undefined,
+      page,
+      limit: 25,
     }),
   });
 
@@ -680,10 +698,94 @@ export default function ProposalsPage() {
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => proposalsApi.deleteProposal(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['proposals'] });
+      toast({ title: 'Đã xóa đề xuất' });
+      setDeletingProposal(null);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi khi xóa', variant: 'destructive' }),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      Promise.allSettled(ids.map((id) => proposalsApi.deleteProposal(id))).then((results) => ({
+        ok: results.filter((r) => r.status === 'fulfilled').length,
+        fail: results.filter((r) => r.status === 'rejected').length,
+      })),
+    onSuccess: ({ ok, fail }) => {
+      qc.invalidateQueries({ queryKey: ['proposals'] });
+      setSelectedIds(new Set());
+      setConfirmBulkDelete(false);
+      if (fail > 0) {
+        toast({ title: `Đã xóa ${ok} đề xuất, ${fail} không thể xóa (sai trạng thái)`, variant: 'destructive' });
+      } else {
+        toast({ title: `Đã xóa ${ok} đề xuất` });
+      }
+    },
+    onError: () => toast({ title: 'Lỗi khi xóa hàng loạt', variant: 'destructive' }),
+  });
+
+  const bulkSubmitMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      Promise.allSettled(ids.map((id) => proposalsApi.submitProposal(id))).then((results) => ({
+        ok: results.filter((r) => r.status === 'fulfilled').length,
+        fail: results.filter((r) => r.status === 'rejected').length,
+      })),
+    onSuccess: ({ ok, fail }) => {
+      qc.invalidateQueries({ queryKey: ['proposals'] });
+      setSelectedIds(new Set());
+      if (fail > 0) {
+        toast({ title: `Đã gửi ${ok} đề xuất, ${fail} không thể gửi`, variant: 'destructive' });
+      } else {
+        toast({ title: `Đã gửi ${ok} đề xuất để phê duyệt` });
+      }
+    },
+    onError: () => toast({ title: 'Lỗi khi gửi hàng loạt', variant: 'destructive' }),
+  });
+
   const proposals: Proposal[] = data?.data ?? [];
+  const totalPages: number = data?.totalPages ?? 1;
+  const total: number = data?.total ?? 0;
+
+  const selectedList = proposals.filter((p) => selectedIds.has(p.id));
+  const canBulkSubmit = selectedList.some((p) => p.status === 'DRAFT');
+  const canBulkDelete = selectedList.some((p) => ['DRAFT', 'REJECTED'].includes(p.status));
 
   return (
     <div>
+      {/* Bulk Selection Bar */}
+      <BulkSelectionBar
+        selectedCount={selectedIds.size}
+        totalCount={proposals.length}
+        onSelectAll={() => setSelectedIds(new Set(proposals.map((p) => p.id)))}
+        onClear={() => setSelectedIds(new Set())}
+      >
+        {canBulkSubmit && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white gap-1.5 shrink-0"
+            disabled={bulkSubmitMutation.isPending}
+            onClick={() => bulkSubmitMutation.mutate([...selectedIds].filter((id) => proposals.find((p) => p.id === id)?.status === 'DRAFT'))}
+          >
+            <Send size={14} /> Gửi phê duyệt
+          </Button>
+        )}
+        {canBulkDelete && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-red-400 hover:text-red-300 gap-1.5 shrink-0"
+            disabled={bulkDeleteMutation.isPending}
+            onClick={() => setConfirmBulkDelete(true)}
+          >
+            <Trash2 size={14} /> Xóa
+          </Button>
+        )}
+      </BulkSelectionBar>
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Proposals</h1>
@@ -747,81 +849,207 @@ export default function ProposalsPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Số PO</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Khách thuê</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Mặt bằng</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Diện tích</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Thuê/tháng</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Giá trị HĐ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {proposals.map((p) => {
-                const st = STATUS_MAP[p.status] ?? STATUS_MAP.DRAFT;
-                return (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedProposal(p)}
-                  >
-                    <td className="px-4 py-3 font-mono text-xs">{p.proposalNumber}</td>
-                    <td className="px-4 py-3">{p.tenant?.brandName ?? '—'}</td>
-                    <td className="px-4 py-3 text-gray-500">{p.unit?.code}</td>
-                    <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
-                    <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>
-                    <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
-                    <td className="px-4 py-3">
-                      <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
-                    </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex gap-1 justify-end">
-                        {p.status === 'DRAFT' && (
+        <>
+          {!selectedProposal && !editingProposal && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
+          <div ref={gridRef} className="bg-white rounded-lg border overflow-hidden select-none">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-3 py-3 w-8">
+                    <div
+                      className="cursor-pointer"
+                      onClick={() => {
+                        if (selectedIds.size === proposals.length) {
+                          setSelectedIds(new Set());
+                        } else {
+                          setSelectedIds(new Set(proposals.map((p) => p.id)));
+                        }
+                      }}
+                    >
+                      {selectedIds.size === proposals.length && proposals.length > 0
+                        ? <CheckSquare size={15} className="text-blue-600" />
+                        : <Square size={15} className="text-gray-300" />}
+                    </div>
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Số PO</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Khách thuê</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Mặt bằng</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Diện tích</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Thuê/tháng</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Giá trị HĐ</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Trạng thái</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {proposals.map((p) => {
+                  const st = STATUS_MAP[p.status] ?? STATUS_MAP.DRAFT;
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`${DRAG_SELECT_CLASS} hover:bg-gray-50 cursor-pointer transition-colors ${selectedIds.has(p.id) ? 'bg-blue-50' : ''}`}
+                      data-proposal-id={p.id}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('[data-checkbox]')) return;
+                        setSelectedProposal(p);
+                      }}
+                    >
+                      <td className="px-3 py-3 w-8" data-checkbox>
+                        <div
+                          data-checkbox
+                          className="cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); setSelectedIds((prev) => { const next = new Set(prev); next.has(p.id) ? next.delete(p.id) : next.add(p.id); return next; }); }}
+                        >
+                          {selectedIds.has(p.id)
+                            ? <CheckSquare size={15} className="text-blue-600" />
+                            : <Square size={15} className="text-gray-300" />}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{p.proposalNumber}</td>
+                      <td className="px-4 py-3">
+                        {p.tenant?.brandName ?? p.lead?.brandName ?? p.booking?.lead?.brandName ?? p.booking?.customer?.brandName ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{p.unit?.code}</td>
+                      <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
+                      <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>
+                      <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
+                      <td className="px-4 py-3">
+                        <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                      </td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1 justify-end">
+                          {p.status === 'DRAFT' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                              onClick={(e) => { e.stopPropagation(); submitMutation.mutate(p.id); }}
+                              disabled={submitMutation.isPending}
+                            >
+                              <Send size={12} /> Gửi
+                            </Button>
+                          )}
+                          {p.status === 'APPROVED' && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700 text-white"
+                              onClick={(e) => { e.stopPropagation(); convertMutation.mutate(p.id); }}
+                              disabled={convertMutation.isPending}
+                            >
+                              <FileText size={12} /> Ký HĐ
+                            </Button>
+                          )}
                           <Button
                             size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1"
-                            onClick={(e) => { e.stopPropagation(); submitMutation.mutate(p.id); }}
-                            disabled={submitMutation.isPending}
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-gray-400 hover:text-indigo-600"
+                            title="Chỉnh sửa"
+                            onClick={(e) => { e.stopPropagation(); setEditingProposal(p); }}
                           >
-                            <Send size={12} /> Gửi
+                            <Pencil size={13} />
                           </Button>
-                        )}
-                        {p.status === 'APPROVED' && (
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={(e) => { e.stopPropagation(); convertMutation.mutate(p.id); }}
-                            disabled={convertMutation.isPending}
-                          >
-                            Ký HĐ
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {proposals.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              <FileText size={40} className="mx-auto mb-2 opacity-20" />
-              <p>Chưa có proposal nào</p>
+                          {['DRAFT', 'REJECTED'].includes(p.status) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-gray-400 hover:text-red-500"
+                              title="Xóa"
+                              onClick={(e) => { e.stopPropagation(); setDeletingProposal(p); }}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {proposals.length === 0 && (
+              <div className="text-center py-12 text-gray-400">
+                <FileText size={40} className="mx-auto mb-2 opacity-20" />
+                <p>Chưa có proposal nào</p>
+              </div>
+            )}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+              <span>{total} đề xuất</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => { setPage(p => p - 1); setSelectedIds(new Set()); }}>Trước</Button>
+                <span className="px-2 py-1">Trang {page} / {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => { setPage(p => p + 1); setSelectedIds(new Set()); }}>Sau</Button>
+              </div>
             </div>
           )}
-        </div>
+        </>
       )}
 
       <ProposalDetailSheet
         proposal={selectedProposal}
         onClose={() => setSelectedProposal(null)}
       />
+
+      {editingProposal && (
+        <ProposalEditorDialog
+          proposal={editingProposal}
+          onClose={() => setEditingProposal(null)}
+        />
+      )}
+
+      {/* Bulk delete confirm dialog */}
+      <Dialog open={confirmBulkDelete} onOpenChange={(open) => !open && setConfirmBulkDelete(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-500" /> Xác nhận xóa hàng loạt
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Bạn có chắc muốn xóa <strong>{[...selectedIds].filter((id) => proposals.find((p) => p.id === id && ['DRAFT', 'REJECTED'].includes(p.status))).length}</strong> đề xuất đã chọn? Hành động này không thể hoàn tác.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setConfirmBulkDelete(false)}>Hủy</Button>
+            <Button
+              variant="destructive"
+              disabled={bulkDeleteMutation.isPending}
+              onClick={() => {
+                const ids = [...selectedIds].filter((id) => proposals.find((p) => p.id === id && ['DRAFT', 'REJECTED'].includes(p.status)));
+                bulkDeleteMutation.mutate(ids);
+              }}
+            >
+              {bulkDeleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              Xóa
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm dialog */}
+      <Dialog open={!!deletingProposal} onOpenChange={(open) => !open && setDeletingProposal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-500" /> Xác nhận xóa
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Bạn có chắc muốn xóa đề xuất <strong>{deletingProposal?.proposalNumber}</strong>? Hành động này không thể hoàn tác.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeletingProposal(null)}>Hủy</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deletingProposal && deleteMutation.mutate(deletingProposal.id)}
+            >
+              {deleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              Xóa
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

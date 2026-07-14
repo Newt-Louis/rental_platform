@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { contractsApi, terminationApi } from '@/api';
@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
@@ -30,6 +31,14 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   EXPIRED:           { label: 'Hết hạn',         color: 'bg-red-100 text-red-700' },
   TERMINATING:       { label: 'Đang chấm dứt',   color: 'bg-orange-100 text-orange-700' },
   TERMINATED:        { label: 'Đã chấm dứt',    color: 'bg-gray-200 text-gray-600' },
+};
+
+const TYPE_MAP: Record<string, string> = {
+  LOI:              'LOI',
+  LEASE_AGREEMENT:  'Hợp đồng thuê',
+  APPENDIX:         'Phụ lục',
+  RENEWAL:          'Gia hạn',
+  TERMINATION:      'Chấm dứt HĐ',
 };
 
 function daysUntil(date: string) {
@@ -757,12 +766,32 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 export default function ContractsPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [type, setType] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showExpiring, setShowExpiring] = useState(false);
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+
+  const hasFilter = !!(search || status || type || dateFrom || dateTo);
+
+  useEffect(() => { setPage(1); }, [search, status, type, dateFrom, dateTo]);
+
+  function clearFilters() {
+    setSearch(''); setStatus(''); setType(''); setDateFrom(''); setDateTo('');
+  }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contracts', { search, status }],
-    queryFn: () => contractsApi.listContracts({ search: search || undefined, status: status || undefined }),
+    queryKey: ['contracts', { search, status, type, dateFrom, dateTo, page }],
+    queryFn: () => contractsApi.listContracts({
+      search: search || undefined,
+      status: status || undefined,
+      type: type || undefined,
+      startDateFrom: dateFrom || undefined,
+      startDateTo: dateTo || undefined,
+      page,
+      limit: 25,
+    }),
     enabled: !showExpiring,
   });
 
@@ -775,6 +804,8 @@ export default function ContractsPage() {
   const contracts: Contract[] = showExpiring
     ? (expiringData?.data ?? expiringData ?? [])
     : (data?.data ?? []);
+  const totalPages: number = data?.totalPages ?? 1;
+  const total: number = data?.total ?? 0;
 
   return (
     <div>
@@ -791,23 +822,50 @@ export default function ContractsPage() {
       </div>
 
       {!showExpiring && (
-        <div className="flex gap-3 mb-4">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <Input placeholder="Tìm hợp đồng..." value={search}
-              onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input
+              placeholder="Số HĐ / khách thuê / mặt bằng..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
+          <Select value={type} onValueChange={setType}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Loại HĐ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Tất cả loại</SelectItem>
+              {Object.entries(TYPE_MAP).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Trạng thái" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tất cả</SelectItem>
+              <SelectItem value="">Tất cả TT</SelectItem>
               {Object.entries(STATUS_MAP).map(([k, v]) => (
                 <SelectItem key={k} value={k}>{v.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
+          <DateRangePicker
+            from={dateFrom}
+            to={dateTo}
+            onFromChange={setDateFrom}
+            onToChange={setDateTo}
+            placeholder="Ngày bắt đầu HĐ"
+          />
+          {hasFilter && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5 text-gray-500 h-9">
+              <X size={14} /> Xóa lọc
+            </Button>
+          )}
         </div>
       )}
 
@@ -882,6 +940,17 @@ export default function ContractsPage() {
               <p>Không có hợp đồng nào</p>
             </div>
           )}
+        </div>
+      )}
+
+      {!showExpiring && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+          <span>{total} hợp đồng</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
+            <span className="px-2 py-1">Trang {page} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+          </div>
         </div>
       )}
 

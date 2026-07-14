@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards,
+  Controller, Get, Post, Put, Patch, Delete, Param, Body, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody, ApiParam,
@@ -112,6 +112,12 @@ export class BookingController {
     return this.bookingService.cancel(id, dto, user.id);
   }
 
+  @Patch(':id/reinstate')
+  @ApiOperation({ summary: 'Khôi phục booking đã hủy — đưa vào cuối queue của unit' })
+  reinstate(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.bookingService.reinstate(id, user.id);
+  }
+
   // ─── Convert to Proposal ──────────────────────────────────────────────────
 
   @Post(':id/convert-to-proposal')
@@ -160,6 +166,13 @@ export class BookingController {
     @CurrentUser() user: any,
   ) {
     return this.bookingService.rejectPrice(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Xóa mềm booking đã hủy hoặc hết hạn' })
+  softDelete(@Param('id') id: string) {
+    return this.bookingService.softDelete(id);
   }
 
   // ─── Admin: expire manual trigger ────────────────────────────────────────

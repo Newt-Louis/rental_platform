@@ -27,14 +27,14 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
     <>
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200',
+          'fixed inset-0 z-[105] bg-black/40 transition-opacity duration-200',
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
         )}
         onClick={onClose}
       />
       <div
         className={cn(
-          'fixed right-0 top-0 z-50 h-full w-[560px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
+          'fixed right-0 top-0 z-[110] h-full w-[560px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
           open ? 'translate-x-0' : 'translate-x-full',
           className,
         )}
