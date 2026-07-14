@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { crmApi, customersApi, followUpApi } from '@/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,7 +42,16 @@ function KpiCards() {
   const { data: followUpsTodayRaw, isLoading: l3 } = useQuery({
     queryKey: ['follow-ups-today-count'],
     queryFn: () => followUpApi.list({ isDone: 'false', daysAhead: 1 }),
-    select: (r: any) => (Array.isArray(r) ? r : r?.data ?? []),
+    select: (r: any) => {
+      const arr = Array.isArray(r) ? r : r?.data ?? [];
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      return arr.filter((fu: any) => {
+        const d = new Date(fu.dueDate);
+        return d >= todayStart && d <= todayEnd;
+      });
+    },
   });
 
   const wonCount: number = Array.isArray(leadStats?.byStatus)
@@ -217,15 +227,20 @@ function FollowUpScheduleCard() {
   });
 
   const items: any[] = data ?? [];
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   const grouped: Record<string, any[]> = {};
-  items.forEach((fu) => {
-    const key = new Date(fu.dueDate).toDateString();
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(fu);
-  });
+  [...items]
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .forEach((fu) => {
+      const key = new Date(fu.dueDate).toDateString();
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(fu);
+    });
 
   const DAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
   const formatGroupDate = (key: string) => {
