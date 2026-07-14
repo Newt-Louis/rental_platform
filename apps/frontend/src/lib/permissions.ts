@@ -15,6 +15,7 @@ export type RouteModule =
   | 'dashboard'
   | 'spaces'
   | 'crm'
+  | 'crm-overview'
   | 'deal-pipeline'
   | 'pipeline-stats'
   | 'bookings'
@@ -40,6 +41,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: ['ADMIN', 'CEO', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'],
   spaces: ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'],
   crm: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
+  'crm-overview': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
   'deal-pipeline': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
   'pipeline-stats': ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'CEO'],
   bookings: ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'],
@@ -67,6 +69,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   dashboard: 'dashboard',
   spaces: 'spaces',
   crm: 'crm',
+  'crm-overview': 'crm-overview',
   'deal-pipeline': 'deal-pipeline',
   'pipeline-stats': 'pipeline-stats',
   bookings: 'bookings',
@@ -130,6 +133,7 @@ export const NAV_GROUPS = [
     // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
     label: 'Khách hàng tiềm năng (CRM)',
     items: [
+      { label: 'Tổng quan', path: '/crm-overview', module: 'crm-overview' as RouteModule },
       { label: 'CRM & Leads', path: '/crm', module: 'crm' as RouteModule },
     ],
   },

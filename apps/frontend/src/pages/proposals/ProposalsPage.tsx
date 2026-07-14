@@ -529,29 +529,56 @@ function ProposalDetailSheet({
                     <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">QUY TRÌNH PHÊ DUYỆT</div>
                     <div className="space-y-2">
                       {approvals.map((a: any) => (
-                        <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                          {a.status === 'APPROVED' ? (
-                            <CheckCircle size={16} className="text-green-500 shrink-0" />
-                          ) : a.status === 'REJECTED' ? (
-                            <XCircle size={16} className="text-red-500 shrink-0" />
-                          ) : (
-                            <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium">
-                              Cấp {a.level}: {a.approver?.fullName ?? '—'}
-                            </div>
-                            {a.comment && (
-                              <div className="text-xs text-gray-500 mt-0.5 truncate">{a.comment}</div>
+                        <div key={a.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          <div className="flex items-start gap-3">
+                            {a.status === 'APPROVED' ? (
+                              <CheckCircle size={16} className="text-green-500 shrink-0 mt-0.5" />
+                            ) : a.status === 'REJECTED' ? (
+                              <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0 mt-0.5" />
                             )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="text-sm font-medium">
+                                    Bước {a.stepOrder}: {a.stepName}
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    {a.approver?.fullName
+                                      ? <span className="font-medium text-gray-700">{a.approver.fullName}</span>
+                                      : <span className="text-gray-400">Chưa có người duyệt</span>
+                                    }
+                                    {a.approver?.role && (
+                                      <span className="ml-1 text-gray-400">· {a.approver.role}</span>
+                                    )}
+                                  </div>
+                                  {a.decidedAt && (
+                                    <div className="text-xs text-gray-400 mt-0.5">
+                                      {new Date(a.decidedAt).toLocaleString('vi-VN', {
+                                        day: '2-digit', month: '2-digit', year: 'numeric',
+                                        hour: '2-digit', minute: '2-digit',
+                                      })}
+                                    </div>
+                                  )}
+                                  {a.comment && (
+                                    <div className={`text-xs mt-1 px-2 py-1 rounded ${
+                                      a.status === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      {a.comment}
+                                    </div>
+                                  )}
+                                </div>
+                                <Badge className={`text-xs border-0 shrink-0 ${
+                                  a.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                  a.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-500'
+                                }`}>
+                                  {a.status === 'APPROVED' ? 'Đã duyệt' : a.status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt'}
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                          <Badge className={`text-xs border-0 shrink-0 ${
-                            a.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                            a.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
-                            {a.status === 'APPROVED' ? 'Duyệt' : a.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
-                          </Badge>
                         </div>
                       ))}
                     </div>

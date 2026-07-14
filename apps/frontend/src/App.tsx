@@ -9,6 +9,7 @@ import LoginPage from '@/pages/auth/LoginPage';
 import DashboardPage from '@/pages/dashboard/DashboardPage';
 import SpacesPage from '@/pages/spaces/SpacesPage';
 import CrmPage from '@/pages/crm/CrmPage';
+import CrmOverviewPage from '@/pages/crm/CrmOverviewPage';
 import ProposalsPage from '@/pages/proposals/ProposalsPage';
 import ApprovalsPage from '@/pages/approvals/ApprovalsPage';
 import ContractsPage from '@/pages/contracts/ContractsPage';
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="dashboard" element={<RoleRoute><DashboardPage /></RoleRoute>} />
           <Route path="spaces" element={<RoleRoute><SpacesPage /></RoleRoute>} />
           <Route path="crm" element={<RoleRoute><CrmPage /></RoleRoute>} />
+          <Route path="crm-overview" element={<RoleRoute><CrmOverviewPage /></RoleRoute>} />
           <Route path="deal-pipeline" element={<RoleRoute><DealPipelinePage /></RoleRoute>} />
           <Route path="tenants" element={<RoleRoute><TenantsPage /></RoleRoute>} />
           <Route path="bookings" element={<RoleRoute><BookingsPage /></RoleRoute>} />
