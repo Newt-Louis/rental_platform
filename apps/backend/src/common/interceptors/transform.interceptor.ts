@@ -21,10 +21,10 @@ export class TransformInterceptor<T>
     next: CallHandler,
   ): Observable<Response<T>> {
     const request = context.switchToHttp().getRequest();
-    const path = request.path as string;
+    const url = request.url as string;
 
     // Skip wrapping for auth endpoints to maintain compatibility
-    if (path.includes('/auth')) {
+    if (url.includes('/auth/')) {
       return next.handle();
     }
 
