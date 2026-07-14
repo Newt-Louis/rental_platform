@@ -1,7 +1,10 @@
 import api from '@/lib/axios';
 
 export const approvalsApi = {
-  pending: () => api.get('/approvals/pending').then((r) => r.data),
+  pending: (params?: { page?: number; limit?: number }) =>
+    api.get('/approvals/pending', { params }).then((r) => r.data.data ?? r.data),
+  history: (params?: { page?: number; limit?: number; status?: string }) =>
+    api.get('/approvals/history', { params }).then((r) => r.data.data ?? r.data),
   approve: (id: string, comment?: string) =>
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
   reject: (id: string, comment?: string) =>

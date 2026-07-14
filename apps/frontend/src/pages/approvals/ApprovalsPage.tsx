@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/components/ui/use-toast';
 import {
   CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
-  Building2, Loader2,
+  Building2, Loader2, History, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 function fmt(n: number) {
@@ -26,8 +26,11 @@ function fmtPrice(n: number | null | undefined) {
 export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [view, setView] = useState<'proposals' | 'prices'>('proposals');
+  const [view, setView] = useState<'proposals' | 'prices' | 'history'>('proposals');
+  const [proposalPage, setProposalPage] = useState(1);
   const [pricePage, setPricePage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
 
   // ── Selection state ──
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
@@ -53,20 +56,35 @@ export default function ApprovalsPage() {
 
   // ── Queries ──
   const { data, isLoading } = useQuery({
-    queryKey: ['pending-approvals'],
-    queryFn: approvalsApi.pending,
+    queryKey: ['pending-approvals', proposalPage],
+    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15 }),
     refetchInterval: 30_000,
   });
+  const { data: historyData, isLoading: loadingHistory } = useQuery({
+    queryKey: ['approvals-history', historyPage, historyStatus],
+    queryFn: () => approvalsApi.history({
+      page: historyPage,
+      limit: 25,
+      status: historyStatus === 'ALL' ? undefined : historyStatus,
+    }),
+    enabled: view === 'history',
+  });
+
   const { data: priceApprovalsData, isLoading: loadingPriceApprovals } = useQuery({
     queryKey: ['pending-price-approvals', pricePage],
     queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25 }),
     refetchInterval: 30_000,
   });
 
-  const steps: any[] = data?.data ?? data ?? [];
+  const steps: any[] = data?.data ?? [];
+  const proposalTotalPages: number = data?.totalPages ?? 1;
+  const proposalTotal: number = data?.total ?? 0;
   const priceApprovals: any[] = priceApprovalsData?.data ?? [];
   const priceTotalPages: number = priceApprovalsData?.totalPages ?? 1;
   const priceTotal: number = priceApprovalsData?.total ?? 0;
+  const historySteps: any[] = historyData?.data ?? [];
+  const historyTotalPages: number = historyData?.totalPages ?? 1;
+  const historyTotal: number = historyData?.total ?? 0;
 
   // ── Mutations — single ──
   const approveMutation = useMutation({
@@ -223,7 +241,7 @@ export default function ApprovalsPage() {
           <p className="text-sm text-gray-500 mt-1">Các yêu cầu phê duyệt đang chờ xử lý</p>
         </div>
         <div className="flex gap-2">
-          <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{steps.length} deal</Badge>
+          <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{proposalTotal} deal</Badge>
           <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceApprovals.length} giá</Badge>
         </div>
       </div>
@@ -231,11 +249,11 @@ export default function ApprovalsPage() {
       {/* ── Tab toggle ── */}
       <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-1 w-fit">
         <button
-          onClick={() => { setView('proposals'); setSelectedPriceIds(new Set()); }}
+          onClick={() => { setView('proposals'); setProposalPage(1); setSelectedPriceIds(new Set()); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'proposals' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <CheckSquare size={14} className="inline mr-1.5" />
-          Proposal ({steps.length})
+          Proposal ({proposalTotal})
         </button>
         <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
@@ -243,6 +261,13 @@ export default function ApprovalsPage() {
         >
           <DollarSign size={14} className="inline mr-1.5" />
           Giá Booking ({priceApprovals.length})
+        </button>
+        <button
+          onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+        >
+          <History size={14} className="inline mr-1.5" />
+          Lịch sử
         </button>
       </div>
 
@@ -374,6 +399,22 @@ export default function ApprovalsPage() {
                 </table>
               </div>
             </>
+          )}
+          {!isLoading && proposalTotalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+              <span>{proposalTotal} deal chờ duyệt</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={proposalPage === 1}
+                  onClick={() => { setProposalPage(p => p - 1); setSelectedProposalIds(new Set()); }}>
+                  <ChevronLeft size={14} />
+                </Button>
+                <span className="px-2 py-1 text-xs">Trang {proposalPage} / {proposalTotalPages}</span>
+                <Button variant="outline" size="sm" disabled={proposalPage >= proposalTotalPages}
+                  onClick={() => { setProposalPage(p => p + 1); setSelectedProposalIds(new Set()); }}>
+                  <ChevronRight size={14} />
+                </Button>
+              </div>
+            </div>
           )}
         </>
       )}
@@ -518,6 +559,151 @@ export default function ApprovalsPage() {
                 <Button variant="outline" size="sm" disabled={pricePage === 1} onClick={() => { setPricePage(p => p - 1); setSelectedPriceIds(new Set()); }}>Trước</Button>
                 <span className="px-2 py-1">Trang {pricePage} / {priceTotalPages}</span>
                 <Button variant="outline" size="sm" disabled={pricePage >= priceTotalPages} onClick={() => { setPricePage(p => p + 1); setSelectedPriceIds(new Set()); }}>Sau</Button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ══════════ HISTORY TAB ══════════ */}
+      {view === 'history' && (
+        <>
+          {/* Filter bar */}
+          <div className="flex items-center gap-2 mb-4">
+            {(['ALL', 'APPROVED', 'REJECTED'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => { setHistoryStatus(s); setHistoryPage(1); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                  historyStatus === s
+                    ? s === 'APPROVED' ? 'bg-green-50 border-green-300 text-green-700'
+                      : s === 'REJECTED' ? 'bg-red-50 border-red-300 text-red-700'
+                      : 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {s === 'ALL' ? 'Tất cả' : s === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}
+              </button>
+            ))}
+            {!loadingHistory && (
+              <span className="text-xs text-gray-400 ml-auto">{historyTotal} bản ghi</span>
+            )}
+          </div>
+
+          {loadingHistory ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex gap-4 items-center">
+                  <Skeleton className="h-4 w-4" /><Skeleton className="h-4 w-28" /><Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-32" /><Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
+          ) : historySteps.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">
+              <History size={48} className="mx-auto mb-3 opacity-30" />
+              <p className="text-lg font-medium">Chưa có lịch sử</p>
+              <p className="text-sm mt-1">Các quyết định duyệt/từ chối sẽ hiện ở đây</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Proposal</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách thuê</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Bước duyệt</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Người duyệt</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Lý do / Ghi chú</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Kết quả</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {historySteps.map((step: any) => {
+                    const proposal = step.workflow?.proposal;
+                    return (
+                      <tr key={step.id} className="hover:bg-gray-50/60 transition-colors">
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs text-gray-600">
+                            {proposal?.proposalNumber ?? '—'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-sm">{proposal?.tenant?.brandName ?? '—'}</div>
+                          {proposal?.unit && (
+                            <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                              <Building2 size={11} />
+                              {proposal.unit.code}
+                              {proposal.unit.floor?.name && ` · ${proposal.unit.floor.name}`}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-medium text-gray-800">{step.stepName}</div>
+                          <span className="text-xs text-gray-400">Bước {step.stepOrder}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {step.approver ? (
+                            <div>
+                              <div className="text-sm font-medium">{step.approver.fullName}</div>
+                              <div className="text-xs text-gray-400">{step.approver.role}</div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          {step.decidedAt
+                            ? new Date(step.decidedAt).toLocaleString('vi-VN', {
+                                day: '2-digit', month: '2-digit', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit',
+                              })
+                            : '—'}
+                        </td>
+                        <td className="px-4 py-3 max-w-[200px]">
+                          {step.comment ? (
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              step.status === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {step.comment}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {step.status === 'APPROVED' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              <CheckCircle size={12} /> Đã duyệt
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                              <XCircle size={12} /> Từ chối
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {!loadingHistory && historyTotalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+              <span>{historyTotal} bản ghi</span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={historyPage === 1}
+                  onClick={() => setHistoryPage(p => p - 1)}>
+                  <ChevronLeft size={14} />
+                </Button>
+                <span className="px-2 py-1 text-xs">Trang {historyPage} / {historyTotalPages}</span>
+                <Button variant="outline" size="sm" disabled={historyPage >= historyTotalPages}
+                  onClick={() => setHistoryPage(p => p + 1)}>
+                  <ChevronRight size={14} />
+                </Button>
               </div>
             </div>
           )}

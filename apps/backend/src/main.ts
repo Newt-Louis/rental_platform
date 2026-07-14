@@ -5,6 +5,7 @@ import { WinstonModule } from 'nest-winston';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { PrismaService } from './prisma/prisma.service';
 import * as winston from 'winston';
 import helmet from 'helmet';
@@ -70,6 +71,9 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Response transform interceptor — wrap responses with { success, data }
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   // Audit log interceptor — log tất cả write operations
   const prisma = app.get(PrismaService);

@@ -24,7 +24,13 @@ export const bookingApi = {
     api.post(`/bookings/${id}/convert-to-proposal`, data).then((r) => r.data),
   // Price approval
   getPendingPriceApproval: (params?: { mallId?: string; page?: number; limit?: number }) =>
-    api.get('/bookings/price-approval/pending', { params }).then((r) => r.data),
+    api.get('/bookings/price-approval/pending', { params }).then((r) => {
+      const response = r.data;
+      // Handle both array and paginated object responses
+      if (Array.isArray(response)) return response;
+      if (response?.data) return response;
+      return { data: [], total: 0, page: 1, limit: 25, totalPages: 1 };
+    }),
   approvePrice: (id: string, note?: string) =>
     api.patch(`/bookings/${id}/price/approve`, { note }).then((r) => r.data),
   rejectPrice: (id: string, reason: string) =>
