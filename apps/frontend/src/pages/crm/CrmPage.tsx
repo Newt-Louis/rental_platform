@@ -33,7 +33,7 @@ import {
   ChevronRight, Star, Activity, FileText, UserCheck, Ban, Clock, PhoneCall,
   MailIcon, MapPin, Globe, Hash, Briefcase, MessageSquare, CheckCircle,
   ArrowRight, Link2, AlertCircle, LayoutList, Kanban, Bell, Target,
-  Percent, Layers, Flame, AlertTriangle, DollarSign, Filter, X, GripVertical,
+  Flame, AlertTriangle, DollarSign, Filter, X, GripVertical,
   Trash2, UserPlus, BarChart3, CheckSquare, Square, RefreshCw, Zap,
   BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
@@ -183,59 +183,6 @@ function RatingStars({ value }: { value?: number }) {
       {[1, 2, 3, 4, 5].map((i) => (
         <Star key={i} size={11} className={i <= (value ?? 0) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200 fill-gray-200'} />
       ))}
-    </div>
-  );
-}
-
-// ─── Stats Header ──────────────────────────────────────────────────────────────
-
-function StatsHeader() {
-  const { data: leadStats } = useQuery({
-    queryKey: ['crm-stats'],
-    queryFn: crmApi.stats,
-    select: (r) => r?.data ?? r,
-  });
-  const { data: custStats } = useQuery({
-    queryKey: ['customers-stats'],
-    queryFn: customersApi.stats,
-    select: (r) => r?.data ?? r,
-  });
-  const { data: followUps } = useQuery({
-    queryKey: ['follow-ups-today'],
-    queryFn: () => Promise.resolve(0),
-    select: () => 0,
-  });
-
-  const totalLeads: number = leadStats?.total ?? 0;
-  const wonLeads: number = leadStats?.won ?? 0;
-  const winRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
-  const activeCustomers: number = (custStats?.byStatus ?? []).find((s: any) => s.status === 'ACTIVE')?.count ?? 0;
-  const negotiating: number = (custStats?.byStatus ?? []).find((s: any) => s.status === 'NEGOTIATING')?.count ?? 0;
-
-  const kpis = [
-    { label: 'Tổng leads',      value: totalLeads,    icon: Layers,   color: 'text-gray-700',  bg: 'bg-gray-50' },
-    { label: 'Tỷ lệ thành công', value: `${winRate}%`, icon: Percent,  color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Đang đàm phán',   value: negotiating,   icon: Target,   color: 'text-orange-600',bg: 'bg-orange-50' },
-    { label: 'Đang thuê',       value: activeCustomers, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Follow-up hôm nay', value: followUps ?? 0, icon: Bell, color: 'text-purple-600', bg: 'bg-purple-50' },
-  ];
-
-  return (
-    <div className="grid grid-cols-5 gap-3 mb-5">
-      {kpis.map((k) => {
-        const Icon = k.icon;
-        return (
-          <div key={k.label} className={`${k.bg} rounded-xl p-3 flex items-center gap-3`}>
-            <div className={`shrink-0 w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm`}>
-              <Icon size={17} className={k.color} />
-            </div>
-            <div>
-              <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
-              <div className="text-xs text-gray-500 leading-tight">{k.label}</div>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -2519,9 +2466,6 @@ export default function CrmPage() {
           <Plus size={15} /> Thêm mới
         </Button>
       </div>
-
-      {/* Stats */}
-      <StatsHeader />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
