@@ -19,8 +19,19 @@ export class ApprovalsController {
 
   @Get('pending')
   @ApiOperation({ summary: 'Get pending approval steps for current user' })
-  getPending(@CurrentUser() user: any) {
-    return this.approvalsService.getPending(user.id, user.role);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  getPending(@CurrentUser() user: any, @Query() query: any) {
+    return this.approvalsService.getPending(user.id, user.role, query);
+  }
+
+  @Get('history')
+  @ApiOperation({ summary: 'Get decided approval steps (approved/rejected) for current user' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: ['APPROVED', 'REJECTED'] })
+  getHistory(@CurrentUser() user: any, @Query() query: any) {
+    return this.approvalsService.getHistory(user.id, user.role, query);
   }
 
   @Get()

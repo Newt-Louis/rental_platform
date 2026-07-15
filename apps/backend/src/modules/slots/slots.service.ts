@@ -421,6 +421,58 @@ export class SlotsService {
     return this.listSlots(unitId);
   }
 
+  async updateSlotBooking(id: string, dto: { startDatetime?: string; endDatetime?: string; discountPct?: number; notes?: string }) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (['CANCELLED', 'COMPLETED'].includes(booking.status)) {
+      throw new BadRequestException('Không thể sửa booking đã hủy hoặc hoàn thành');
+    }
+
+    const start = dto.startDatetime ? new Date(dto.startDatetime) : booking.startDatetime;
+    const end = dto.endDatetime ? new Date(dto.endDatetime) : booking.endDatetime;
+    if (end <= start) throw new BadRequestException('endDatetime phải sau startDatetime');
+
+    if (dto.startDatetime || dto.endDatetime) {
+      const conflict = await this.prisma.slotBooking.findFirst({
+        where: {
+          id: { not: id },
+          slotId: booking.slotId,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          startDatetime: { lt: end },
+          endDatetime: { gt: start },
+        },
+      });
+      if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
+    }
+
+    const data: any = {};
+    if (dto.startDatetime) data.startDatetime = start;
+    if (dto.endDatetime) data.endDatetime = end;
+    if (dto.notes !== undefined) data.notes = dto.notes;
+
+    if (dto.startDatetime || dto.endDatetime) {
+      const priceData = await this.calculatePrice(booking.slotId, booking.type as SlotBookingType, start, end);
+      const disc = dto.discountPct ?? (booking.discountPct ?? 0);
+      data.baseAmount = priceData.baseAmount;
+      data.discountPct = disc;
+      data.totalAmount = priceData.baseAmount * (1 - disc / 100);
+    } else if (dto.discountPct !== undefined) {
+      data.discountPct = dto.discountPct;
+      data.totalAmount = (booking.baseAmount ?? 0) * (1 - dto.discountPct / 100);
+    }
+
+    return this.prisma.slotBooking.update({
+      where: { id },
+      data,
+      include: {
+        slot: { select: { id: true, code: true, name: true, area: true, unit: { select: { id: true, code: true, mallId: true } } } },
+        lead: { select: { id: true, brandName: true, contactName: true } },
+        customer: { select: { id: true, companyName: true, brandName: true } },
+        createdBy: { select: { id: true, fullName: true } },
+      },
+    });
+  }
+
   async deleteSlotBooking(id: string) {
     const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
     if (!booking) throw new NotFoundException('Slot booking không tồn tại');

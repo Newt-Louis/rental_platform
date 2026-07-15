@@ -99,15 +99,21 @@ export function NotificationCenter({
   const unreadInList = notifications?.filter((n) => !n.isRead).length ?? 0;
 
   return (
-    <Sheet open={open} onClose={() => onOpenChange(false)} title="Thông báo">
+    <Sheet
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={
+        <div className="flex items-center gap-2">
+          <Bell size={16} className="text-gray-500" />
+          <span>Thông báo</span>
+          {unreadInList > 0 && (
+            <Badge className="bg-red-500 text-white border-0">{unreadInList}</Badge>
+          )}
+        </div>
+      }
+    >
       <div className="px-6 pb-6 flex flex-col h-full">
-        <div className="flex items-center justify-between mb-4 shrink-0">
-          <div className="flex items-center gap-2">
-            <Bell size={16} className="text-gray-500" />
-            {unreadInList > 0 && (
-              <Badge className="bg-red-500 text-white border-0">{unreadInList} chưa đọc</Badge>
-            )}
-          </div>
+        <div className="flex items-center justify-end mb-4 shrink-0">
           {unreadInList > 0 && (
             <Button
               variant="ghost"

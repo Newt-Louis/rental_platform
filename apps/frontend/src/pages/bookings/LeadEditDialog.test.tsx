@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LeadEditDialog } from './BookingsPage';
+import { LeadEditDialog } from '@/components/crm';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,6 @@ function renderDialog(props?: Partial<{ lead: any; open: boolean; onClose: () =>
       lead={props?.lead ?? MOCK_LEAD}
       open={props?.open ?? true}
       onClose={props?.onClose ?? onClose}
-      bookingId="booking-test-id"
     />,
     { wrapper: Wrapper },
   );

@@ -29,10 +29,22 @@ export class TransformInterceptor<T>
     }
 
     return next.handle().pipe(
-      map((data) => ({
-        success: true,
-        data,
-      })),
+      map((data) => {
+        // If response is a paginated object (has data, total, limit), spread it with success flag
+        // to avoid double wrapping: { data: [...], total, page, limit, totalPages }
+        if (
+          data &&
+          typeof data === 'object' &&
+          'data' in data &&
+          'total' in data &&
+          'limit' in data
+        ) {
+          return { success: true, ...data };
+        }
+
+        // Otherwise, wrap in data property
+        return { success: true, data };
+      }),
     );
   }
 }

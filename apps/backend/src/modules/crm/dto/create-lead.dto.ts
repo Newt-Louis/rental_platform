@@ -162,4 +162,14 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   assignedToId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  expectedRent?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  expectedArea?: number;
 }

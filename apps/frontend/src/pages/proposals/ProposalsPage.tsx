@@ -676,7 +676,7 @@ export default function ProposalsPage() {
       dateFrom: applied.dateFrom || undefined,
       dateTo: applied.dateTo || undefined,
       page,
-      limit: 25,
+      limit: 15,
     }),
   });
 

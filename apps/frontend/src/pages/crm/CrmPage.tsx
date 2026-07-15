@@ -37,7 +37,7 @@ import {
   Trash2, UserPlus, BarChart3, CheckSquare, Square, RefreshCw, Zap,
   BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
-import { LeadEditDialog } from '@/pages/bookings/BookingsPage';
+import { LeadEditDialog } from '@/components/crm';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
 
@@ -852,11 +852,10 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
         <LeadEditDialog
           lead={displayLead}
           open={leadEditOpen}
-          bookingId={lead?.id ?? ''}
-          onClose={() => {
-            setLeadEditOpen(false);
-            qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
-            qc.invalidateQueries({ queryKey: ['lead-detail', lead?.id] });
+          onClose={() => setLeadEditOpen(false)}
+          queryKeys={{
+            pipeline: 'crm-pipeline',
+            leadDetail: 'lead-detail',
           }}
         />
       )}

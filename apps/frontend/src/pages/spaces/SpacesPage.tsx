@@ -96,7 +96,8 @@ export default function SpacesPage() {
 
   const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000 });
   const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
+    const opts = Array.isArray(categoryOptions) ? categoryOptions : categoryOptions?.data ?? [];
+    const fromApi = opts.map((c: any) => c.name).filter(Boolean);
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
@@ -120,7 +121,7 @@ export default function SpacesPage() {
     }),
   });
 
-  const units: Unit[] = data?.data ?? [];
+  const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
   const unitIds = units.map((u) => u.id);
 
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({

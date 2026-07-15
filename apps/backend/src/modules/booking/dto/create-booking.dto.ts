@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsInt, Min, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsInt, Min, IsDateString, IsEnum, ValidateIf } from 'class-validator';
 import { BusinessModelEnum } from '@prisma/client';
 
 export class CreateBookingDto {
@@ -7,14 +7,14 @@ export class CreateBookingDto {
   @IsString()
   unitId: string;
 
-  @ApiPropertyOptional({ description: 'ID lead đang quan tâm' })
-  @IsOptional()
-  @IsString()
+  @ValidateIf((o) => !o.customerId)
+  @IsString({ message: 'Phải chọn Lead hoặc Customer' })
+  @ApiPropertyOptional({ description: 'ID lead đang quan tâm (bắt buộc nếu không có customerId)' })
   leadId?: string;
 
-  @ApiPropertyOptional({ description: 'ID customer (nếu đã là customer)' })
-  @IsOptional()
-  @IsString()
+  @ValidateIf((o) => !o.leadId)
+  @IsString({ message: 'Phải chọn Lead hoặc Customer' })
+  @ApiPropertyOptional({ description: 'ID customer (bắt buộc nếu không có leadId)' })
   customerId?: string;
 
   @ApiPropertyOptional({ description: 'Sale phụ trách booking này' })

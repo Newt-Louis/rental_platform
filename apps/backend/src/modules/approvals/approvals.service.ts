@@ -39,7 +39,9 @@ export class ApprovalsService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  async getPending(userId: string, userRole: string) {
+  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number } = {}) {
+    const { page = 1, limit = 15 } = query;
+
     const where: any = {
       status: StepStatus.PENDING,
       workflow: { status: WorkflowStatus.IN_PROGRESS },
@@ -67,11 +69,16 @@ export class ApprovalsService {
     });
 
     // Only return steps where all earlier steps in the same workflow are APPROVED.
-    // This prevents showing future steps that can't be acted on yet.
-    return steps.filter((step) => {
+    const filtered = steps.filter((step) => {
       const earlierSteps = step.workflow.steps.filter((s) => s.stepOrder < step.stepOrder);
       return earlierSteps.every((s) => s.status === StepStatus.APPROVED);
     });
+
+    const total = filtered.length;
+    const skip = (Number(page) - 1) * Number(limit);
+    const data = filtered.slice(skip, skip + Number(limit));
+
+    return { data, total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) };
   }
 
   async getWorkflow(workflowId: string) {
@@ -232,6 +239,44 @@ export class ApprovalsService {
     } satisfies ApprovalWorkflowRejectedEvent);
 
     return { message: 'Step rejected' };
+  }
+
+  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string }) {
+    const { page = 1, limit = 25, status } = query;
+    const skip = (page - 1) * +limit;
+
+    const where: any = {
+      status: status ? { in: [status] } : { in: [StepStatus.APPROVED, StepStatus.REJECTED] },
+      workflow: { entityType: 'PROPOSAL' },
+    };
+    if (userRole !== 'ADMIN') {
+      where.approverId = userId;
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.approvalStep.findMany({
+        where,
+        include: {
+          approver: { select: { id: true, fullName: true, role: true } },
+          workflow: {
+            include: {
+              proposal: {
+                include: {
+                  tenant: { select: { id: true, brandName: true } },
+                  unit: { select: { id: true, code: true, floor: { select: { name: true } } } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { decidedAt: 'desc' },
+        skip,
+        take: +limit,
+      }),
+      this.prisma.approvalStep.count({ where }),
+    ]);
+
+    return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
   async listPolicyRules() {

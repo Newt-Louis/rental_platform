@@ -4,14 +4,15 @@ import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { useNavigate } from 'react-router-dom';
-import { bookingApi, slotsApi, spacesApi, crmApi, customersApi, usersApi } from '@/api';
+import { bookingApi, slotsApi, spacesApi, crmApi, customersApi, usersApi, authApi } from '@/api';
+import { LeadEditDialog } from '@/components/crm';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -20,7 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import {
   BookmarkCheck, Clock, BookmarkX, ArrowRight, Building2, User, Calendar,
-  ChevronRight, Search, AlertTriangle, DollarSign,
+  Search, AlertTriangle, DollarSign,
   BookmarkPlus, X, FileText, Activity, CalendarDays, Timer, CalendarRange,
   CheckCircle2, Ban, Hourglass, Plus, ChevronDown, Loader2, Pencil,
   CheckSquare, Square, Trash2, RotateCcw,
@@ -70,6 +71,12 @@ function fmtDate(d?: string | null) {
 function fmtDatetime(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+function toDatetimeLocal(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function daysLeft(expiresAt?: string) {
   if (!expiresAt) return null;
@@ -292,7 +299,7 @@ function CreateUnitBookingDialog({ open, onClose, mallId }: {
   const [form, setForm] = useState({
     unitSearch: '', unitId: '', unitLabel: '',
     leadSearch: '', leadId: '',
-    requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '',
+    requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '', assignedToId: '',
   });
   const setField = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -307,9 +314,16 @@ function CreateUnitBookingDialog({ open, onClose, mallId }: {
   const { data: leadData } = useQuery({
     queryKey: ['leads-search', form.leadSearch],
     queryFn: () => crmApi.listLeads({ search: form.leadSearch || undefined, limit: 20 }),
-    enabled: open && form.leadSearch.length > 1,
+    enabled: open && !form.leadId,
+  });
+  const { data: usersData } = useQuery({
+    queryKey: ['users-list'],
+    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    enabled: open,
+    staleTime: 60000,
   });
   const leads: any[] = Array.isArray(leadData) ? leadData : (leadData?.data ?? []);
+  const users: any[] = Array.isArray(usersData) ? usersData : (usersData?.data ?? []);
 
   const mutation = useMutation({
     mutationFn: () => bookingApi.create({
@@ -320,18 +334,19 @@ function CreateUnitBookingDialog({ open, onClose, mallId }: {
       expectedRent: form.expectedRent ? Number(form.expectedRent) : undefined,
       holdDays: Number(form.holdDays) || 30,
       notes: form.notes || undefined,
+      assignedToId: form.assignedToId || undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       toast({ title: 'Đã tạo booking lô thuê' });
       onClose();
-      setForm({ unitSearch: '', unitId: '', unitLabel: '', leadSearch: '', leadId: '', requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '' });
+      setForm({ unitSearch: '', unitId: '', unitLabel: '', leadSearch: '', leadId: '', requestedArea: '', requestedTerm: '', expectedRent: '', holdDays: '30', notes: '', assignedToId: '' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo booking', variant: 'destructive' }),
   });
 
-  const canSubmit = !!form.unitId && !mutation.isPending;
+  const canSubmit = !!form.unitId && !!form.leadId && !mutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -380,7 +395,7 @@ function CreateUnitBookingDialog({ open, onClose, mallId }: {
 
           {/* Lead picker */}
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Lead / Khách hàng</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Lead / Khách hàng *</label>
             {form.leadId ? (
               <div className="flex items-center gap-2 p-2 border rounded-lg bg-blue-50 border-blue-200">
                 <User size={14} className="text-blue-600" />
@@ -432,7 +447,20 @@ function CreateUnitBookingDialog({ open, onClose, mallId }: {
             <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
             <Textarea value={form.notes} onChange={setField('notes')} rows={2} placeholder="Ghi chú nội bộ..." />
           </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Phụ trách (Sale)</label>
+            <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
+              value={form.assignedToId} onChange={(e) => setForm((f) => ({ ...f, assignedToId: e.target.value }))}>
+              <option value="">-- Chưa phân công --</option>
+              {users.map((u: any) => (
+                <option key={u.id} value={u.id}>{u.fullName}</option>
+              ))}
+            </select>
+          </div>
         </div>
+
+        {!form.unitId && <p className="text-xs text-red-600">Chọn mặt bằng để tiếp tục</p>}
+        {form.unitId && !form.leadId && <p className="text-xs text-red-600">Chọn Lead/Khách hàng để tiếp tục</p>}
 
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={onClose}>Hủy</Button>
@@ -492,17 +520,12 @@ function ExtendDialog({ bookingId, open, onClose }: { bookingId: string; open: b
 
 // ─── UnitBooking Detail Sheet ──────────────────────────────────────────────────
 
-const CATEGORY_OPTS: Record<string, string> = {
-  FB: '🍜 F&B', FASHION: '👗 Thời trang', ENTERTAINMENT: '🎮 Giải trí',
-  SERVICES: '⚙️ Dịch vụ', EDUCATION: '📚 Giáo dục', HEALTH: '🏥 Sức khoẻ', RETAIL: '🛍️ Bán lẻ',
-};
-
 const EMPTY_EF = {
   unitId: '', unitLabel: '', unitSearch: '',
   leadId: '', leadLabel: '',
   requestedArea: '', requestedTerm: '', expectedRent: '',
   proposedRentPerSqm: '', proposedCamPerSqm: '',
-  notes: '',
+  notes: '', assignedToId: '',
 };
 
 function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { booking: UnitBooking | null; onClose: () => void; scrollTo?: string; initialEditing?: boolean }) {
@@ -514,8 +537,7 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
   const [leadEditOpen, setLeadEditOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [ef, setEf] = useState(EMPTY_EF);
-  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
-  const [leadFilter, setLeadFilter] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
   const [lastBooking, setLastBooking] = useState<UnitBooking | null>(null);
 
   const setEfField = (k: keyof typeof ef) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -547,8 +569,8 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
       proposedRentPerSqm: String((src as any).proposedRentPerSqm ?? ''),
       proposedCamPerSqm: String((src as any).proposedCamPerSqm ?? ''),
       notes: src.notes ?? '',
+      assignedToId: (src as any).assignedToId ?? '',
     });
-    setLeadFilter('');
     setIsEditing(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booking?.id, initialEditing]);
@@ -573,13 +595,15 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
     enabled: isEditing,
     staleTime: 60000,
   });
+  const { data: usersData } = useQuery({
+    queryKey: ['users-picker'],
+    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    enabled: isEditing,
+    staleTime: 60000,
+  });
   const vacantUnits: any[] = Array.isArray(unitData) ? unitData : (unitData?.data ?? []);
   const allLeads: any[] = Array.isArray(allLeadsData) ? allLeadsData : (allLeadsData?.data ?? []);
-  const filteredLeads = allLeads.filter((l) =>
-    !leadFilter ||
-    l.brandName?.toLowerCase().includes(leadFilter.toLowerCase()) ||
-    l.contactName?.toLowerCase().includes(leadFilter.toLowerCase())
-  );
+  const users: any[] = Array.isArray(usersData) ? usersData : (usersData?.data ?? []);
 
   const cancelMutation = useMutation({
     mutationFn: () => bookingApi.cancel(activeId!, 'Hủy từ trang Booking'),
@@ -608,6 +632,7 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
       const payload: Record<string, unknown> = {};
       if (d && ef.unitId && ef.unitId !== d.unitId) payload.unitId = ef.unitId;
       if (d && ef.leadId !== (d.leadId ?? '')) payload.leadId = ef.leadId || null;
+      if (d && ef.assignedToId !== ((d as any).assignedToId ?? '')) payload.assignedToId = ef.assignedToId || null;
       if (ef.requestedArea) payload.requestedArea = Number(ef.requestedArea);
       if (ef.requestedTerm) payload.requestedTerm = Number(ef.requestedTerm);
       if (ef.expectedRent) payload.expectedRent = Number(ef.expectedRent);
@@ -643,8 +668,8 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
       proposedRentPerSqm: String((d as any).proposedRentPerSqm ?? ''),
       proposedCamPerSqm: String((d as any).proposedCamPerSqm ?? ''),
       notes: d.notes ?? '',
+      assignedToId: (d as any).assignedToId ?? '',
     });
-    setLeadFilter('');
     setIsEditing(true);
   };
 
@@ -717,53 +742,37 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
             {/* Lead combobox */}
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
               <p className="text-xs font-semibold tracking-wider text-gray-500 mb-2">KHÁCH HÀNG</p>
-              <Popover open={leadPickerOpen} onOpenChange={(v) => { setLeadPickerOpen(v); if (!v) setLeadFilter(''); }}>
-                <PopoverTrigger asChild>
-                  <button className="flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900">
-                    {ef.leadId ? (
-                      <span className="flex items-center gap-2 truncate">
-                        <User size={13} className="text-blue-500 shrink-0" />
-                        <span className="truncate">{ef.leadLabel}</span>
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">Chọn khách hàng...</span>
-                    )}
-                    <ChevronDown size={15} className="opacity-50 shrink-0 ml-2" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-0" align="start">
-                  <div className="p-2 border-b border-gray-100">
-                    <Input
-                      value={leadFilter}
-                      onChange={(e) => setLeadFilter(e.target.value)}
-                      placeholder="Lọc theo tên thương hiệu / liên hệ..."
-                      className="h-8 text-sm"
-                      autoFocus
-                    />
-                  </div>
-                  <div className="max-h-56 overflow-y-auto">
-                    {ef.leadId && (
-                      <button className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-50"
-                        onClick={() => { setEf((f) => ({ ...f, leadId: '', leadLabel: '' })); setLeadPickerOpen(false); setLeadFilter(''); }}>
-                        <X size={12} /> Bỏ chọn
-                      </button>
-                    )}
-                    {filteredLeads.map((l: any) => (
-                      <button key={l.id}
-                        className={`w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 text-sm ${ef.leadId === l.id ? 'bg-blue-50' : ''}`}
-                        onClick={() => { setEf((f) => ({ ...f, leadId: l.id, leadLabel: `${l.brandName} — ${l.contactName}` })); setLeadPickerOpen(false); setLeadFilter(''); }}>
-                        <User size={12} className="text-blue-400 shrink-0" />
-                        <span className="font-medium truncate">{l.brandName}</span>
-                        <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
-                        <span className="ml-auto text-xs text-gray-400 shrink-0">{l.status}</span>
-                      </button>
-                    ))}
-                    {filteredLeads.length === 0 && (
-                      <p className="text-sm text-gray-400 px-3 py-4 text-center">Không tìm thấy khách hàng</p>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {ef.leadId ? (
+                <div className="flex items-center gap-2 p-2 border rounded-lg bg-blue-50 border-blue-200">
+                  <User size={14} className="text-blue-600" />
+                  <span className="text-sm font-medium flex-1">{ef.leadLabel}</span>
+                  <button onClick={() => { setEf((f) => ({ ...f, leadId: '', leadLabel: '' })); setLeadSearch(''); }}
+                    className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                </div>
+              ) : (
+                <div>
+                  <Input value={leadSearch} onChange={(e) => setLeadSearch(e.target.value)}
+                    placeholder="Tìm tên thương hiệu hoặc liên hệ..." className="mb-1 bg-white" />
+                  {(() => {
+                    const filtered = allLeads.filter((l: any) => !leadSearch || l.brandName?.toLowerCase().includes(leadSearch.toLowerCase()) || l.contactName?.toLowerCase().includes(leadSearch.toLowerCase()));
+                    return filtered.length > 0 ? (
+                      <div className="border rounded-lg divide-y max-h-36 overflow-y-auto text-sm bg-white">
+                        {filtered.map((l: any) => (
+                          <button key={l.id} className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-3"
+                            onClick={() => { setEf((f) => ({ ...f, leadId: l.id, leadLabel: `${l.brandName} — ${l.contactName}` })); setLeadSearch(''); }}>
+                            <User size={12} className="text-blue-400 shrink-0" />
+                            <span className="font-medium truncate">{l.brandName}</span>
+                            <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
+                            <span className="ml-auto text-xs text-gray-400 shrink-0">{l.status}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : leadSearch ? (
+                      <p className="text-xs text-gray-400 px-1 mt-1">Không tìm thấy khách hàng phù hợp</p>
+                    ) : null;
+                  })()}
+                </div>
+              )}
               <p className="text-xs text-gray-400 mt-1.5">Hiện tại: <span className="font-medium text-gray-600">{clientName}</span></p>
             </div>
 
@@ -800,6 +809,18 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
               <Textarea value={ef.notes} onChange={setEfField('notes')} rows={3} placeholder="Ghi chú nội bộ..." />
+            </div>
+
+            {/* Phụ trách */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Phụ trách (Sale)</label>
+              <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
+                value={ef.assignedToId} onChange={(e) => setEf((f) => ({ ...f, assignedToId: e.target.value }))}>
+                <option value="">-- Chưa phân công --</option>
+                {users.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.fullName}</option>
+                ))}
+              </select>
             </div>
 
             {/* Save / Cancel */}
@@ -930,362 +951,50 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
 
       {d && <ConvertToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />}
       {d && <ExtendDialog bookingId={d.id} open={extendOpen} onClose={() => setExtendOpen(false)} />}
-      {d?.lead && <LeadEditDialog lead={d.lead} open={leadEditOpen} onClose={() => setLeadEditOpen(false)} bookingId={d.id} />}
+      {d?.lead && (
+        <LeadEditDialog
+          lead={d.lead}
+          open={leadEditOpen}
+          onClose={() => setLeadEditOpen(false)}
+          queryKeys={{
+            bookingDetail: 'booking-detail',
+            bookingsList: 'bookings',
+            leadsPicker: 'all-leads-picker',
+            pipeline: 'crm-pipeline',
+            leadDetail: 'lead-detail',
+          }}
+        />
+      )}
     </Sheet>
-  );
-}
-
-// ─── LeadEditDialog ───────────────────────────────────────────────────────────
-
-const RE_PHONE = /^(0|\+84)[0-9]{8,10}$/;
-const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function normalizePhone(p: string | null | undefined) {
-  return (p ?? '').replace(/[\s\-().]/g, '');
-}
-
-const LEAD_SOURCE_OPTS = [
-  { value: 'BROKER', label: 'Môi giới' },
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'REFERRAL', label: 'Giới thiệu' },
-  { value: 'WALK_IN', label: 'Trực tiếp' },
-  { value: 'EXISTING_TENANT', label: 'KH hiện tại' },
-];
-
-const LEAD_PRIORITY_OPTS = [
-  { value: 'HOT', label: '🔥 Hot' },
-  { value: 'WARM', label: '🌤 Warm' },
-  { value: 'COLD', label: '🧊 Cold' },
-];
-
-function validateLeadForm(f: { brandName: string; contactName: string; phone: string; email: string }) {
-  const errors: Partial<Record<'brandName' | 'contactName' | 'phone' | 'email', string>> = {};
-  if (!f.brandName.trim()) errors.brandName = 'Tên thương hiệu không được để trống';
-  else if (f.brandName.trim().length < 2) errors.brandName = 'Tên thương hiệu quá ngắn (tối thiểu 2 ký tự)';
-  if (!f.contactName.trim()) errors.contactName = 'Người liên hệ không được để trống';
-  if (f.phone && !RE_PHONE.test(f.phone.trim())) errors.phone = 'Số điện thoại không hợp lệ (VD: 0912345678)';
-  if (f.email && !RE_EMAIL.test(f.email.trim())) errors.email = 'Email không đúng định dạng';
-  return errors;
-}
-
-export function LeadEditDialog({ lead, open, onClose, bookingId }: { lead: any; open: boolean; onClose: () => void; bookingId: string }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'lead' | 'profile'>('lead');
-
-  const [form, setForm] = useState({
-    // Tab 1 — Lead
-    brandName: lead?.brandName ?? '',
-    contactName: lead?.contactName ?? '',
-    phone: lead?.phone ?? '',
-    email: lead?.email ?? '',
-    category: lead?.category ?? '',
-    source: lead?.source ?? '',
-    priority: lead?.priority ?? '',
-    expectedArea: lead?.expectedArea?.toString() ?? '',
-    expectedRent: lead?.expectedRent?.toString() ?? '',
-    notes: lead?.notes ?? '',
-    assignedToId: lead?.assignedToId ?? '',
-    // Tab 2 — Hồ sơ KH
-    company: lead?.company ?? '',
-    contactTitle: lead?.customer?.contactTitle ?? '',
-    website: lead?.customer?.website ?? '',
-    budgetMin: lead?.customer?.budgetMin?.toString() ?? '',
-    budgetMax: lead?.customer?.budgetMax?.toString() ?? '',
-    rating: lead?.customer?.rating?.toString() ?? '',
-  });
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
-
-  const { data: usersData } = useQuery({
-    queryKey: ['users-picker'],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
-    enabled: open,
-    staleTime: 60_000,
-  });
-  const users: any[] = usersData?.data ?? usersData ?? [];
-
-  useEffect(() => {
-    if (open && lead) {
-      setForm({
-        brandName: lead.brandName ?? '',
-        contactName: lead.contactName ?? '',
-        phone: normalizePhone(lead.phone),
-        email: lead.email ?? '',
-        category: lead.category ?? '',
-        source: lead.source ?? '',
-        priority: lead.priority ?? '',
-        expectedArea: lead.expectedArea?.toString() ?? '',
-        expectedRent: lead.expectedRent?.toString() ?? '',
-        notes: lead.notes ?? '',
-        assignedToId: lead.assignedToId ?? '',
-        company: lead.company ?? '',
-        contactTitle: lead.customer?.contactTitle ?? '',
-        website: lead.customer?.website ?? '',
-        budgetMin: lead.customer?.budgetMin?.toString() ?? '',
-        budgetMax: lead.customer?.budgetMax?.toString() ?? '',
-        rating: lead.customer?.rating?.toString() ?? '',
-      });
-      setTouched({});
-      setActiveTab('lead');
-    }
-  }, [open, lead?.id]);
-
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
-
-  const errors = validateLeadForm(form);
-  const hasErrors = Object.keys(errors).length > 0;
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      await crmApi.updateLead(lead.id, {
-        brandName: form.brandName.trim() || undefined,
-        company: form.company.trim(),
-        contactName: form.contactName.trim() || undefined,
-        phone: form.phone.trim() || undefined,
-        email: form.email.trim() || undefined,
-        category: form.category || undefined,
-        source: form.source || undefined,
-        priority: form.priority || undefined,
-        expectedArea: form.expectedArea ? +form.expectedArea : undefined,
-        expectedRent: form.expectedRent ? +form.expectedRent : undefined,
-        notes: form.notes.trim(),
-        assignedToId: form.assignedToId || undefined,
-      });
-      const customerId = lead.customerId ?? lead.customer?.id;
-      if (customerId && (form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
-        await customersApi.updateCustomer(customerId, {
-          contactTitle: form.contactTitle || undefined,
-          website: form.website || undefined,
-          budgetMin: form.budgetMin ? +form.budgetMin : undefined,
-          budgetMax: form.budgetMax ? +form.budgetMax : undefined,
-          rating: form.rating ? +form.rating : undefined,
-        });
-      }
-    },
-    onSuccess: async () => {
-      await qc.refetchQueries({ queryKey: ['booking-detail', bookingId] });
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['all-leads-picker'] });
-      qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
-      qc.invalidateQueries({ queryKey: ['lead-detail', lead?.id] });
-      toast({ title: 'Đã cập nhật thông tin khách hàng' });
-      onClose();
-    },
-    onError: (e: any) => {
-      const msg = e?.response?.data?.message;
-      const text = Array.isArray(msg) ? msg.join(' | ') : (msg ?? 'Lỗi cập nhật khách hàng');
-      toast({ title: text, variant: 'destructive' });
-    },
-  });
-
-  const handleSubmit = () => {
-    setTouched({ brandName: true, contactName: true, phone: true, email: true });
-    if (hasErrors) {
-      toast({ title: 'Vui lòng kiểm tra lại thông tin', variant: 'destructive' });
-      return;
-    }
-    mutation.mutate();
-  };
-
-  const fieldClass = (k: keyof typeof errors) =>
-    touched[k] && errors[k] ? 'border-red-400 focus:ring-red-400' : '';
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Chỉnh sửa khách hàng</DialogTitle>
-        </DialogHeader>
-
-        {/* Tab switcher */}
-        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-1">
-          <button
-            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${activeTab === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setActiveTab('lead')}
-          >
-            Lead / Cơ hội
-          </button>
-          <button
-            className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${activeTab === 'profile' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setActiveTab('profile')}
-          >
-            Hồ sơ Khách hàng
-          </button>
-        </div>
-
-        <div className="space-y-3 text-sm">
-          {/* ── Tab 1: Lead ── */}
-          {activeTab === 'lead' && (<>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Thương hiệu *</label>
-                <Input
-                  value={form.brandName}
-                  onChange={(e) => set('brandName', e.target.value)}
-                  onBlur={() => touch('brandName')}
-                  placeholder="VD: Highlands Coffee"
-                  className={fieldClass('brandName')}
-                />
-                {touched.brandName && errors.brandName && (
-                  <p className="text-xs text-red-500 mt-1">{errors.brandName}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Người liên hệ *</label>
-                <Input
-                  value={form.contactName}
-                  onChange={(e) => set('contactName', e.target.value)}
-                  onBlur={() => touch('contactName')}
-                  placeholder="Họ và tên"
-                  className={fieldClass('contactName')}
-                />
-                {touched.contactName && errors.contactName && (
-                  <p className="text-xs text-red-500 mt-1">{errors.contactName}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Điện thoại</label>
-                <Input
-                  value={form.phone}
-                  onChange={(e) => set('phone', e.target.value)}
-                  onBlur={() => touch('phone')}
-                  placeholder="0912345678"
-                  className={fieldClass('phone')}
-                />
-                {touched.phone && errors.phone && (
-                  <p className="text-xs text-red-500 mt-1">{errors.phone}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Email</label>
-                <Input
-                  value={form.email}
-                  onChange={(e) => set('email', e.target.value)}
-                  onBlur={() => touch('email')}
-                  placeholder="contact@domain.com"
-                  className={fieldClass('email')}
-                />
-                {touched.email && errors.email && (
-                  <p className="text-xs text-red-500 mt-1">{errors.email}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngành hàng</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.category} onChange={(e) => set('category', e.target.value)}>
-                  <option value="">-- Chọn ngành --</option>
-                  {Object.entries(CATEGORY_OPTS).map(([k, label]) => (
-                    <option key={k} value={k}>{label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Nguồn</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.source} onChange={(e) => set('source', e.target.value)}>
-                  <option value="">-- Nguồn --</option>
-                  {LEAD_SOURCE_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Mức độ tiềm năng</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-                  <option value="">-- Priority --</option>
-                  {LEAD_PRIORITY_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Phụ trách</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.assignedToId} onChange={(e) => set('assignedToId', e.target.value)}>
-                  <option value="">-- Chưa phân công --</option>
-                  {users.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.fullName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Diện tích (m²)</label>
-                <Input type="number" value={form.expectedArea} onChange={(e) => set('expectedArea', e.target.value)} placeholder="100" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng (₫/m²)</label>
-                <Input type="number" value={form.expectedRent} onChange={(e) => set('expectedRent', e.target.value)} placeholder="680000" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Ghi chú</label>
-              <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} placeholder="Ghi chú nội bộ..." />
-            </div>
-          </>)}
-
-          {/* ── Tab 2: Hồ sơ KH ── */}
-          {activeTab === 'profile' && (<>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Tên công ty</label>
-                <Input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Công ty TNHH..." />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Chức danh liên hệ</label>
-                <Input value={form.contactTitle} onChange={(e) => set('contactTitle', e.target.value)} placeholder="Giám đốc KD" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-gray-500 mb-1 block">Website</label>
-                <Input value={form.website} onChange={(e) => set('website', e.target.value)} placeholder="https://..." />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngân sách tối thiểu (tr/m²)</label>
-                <Input type="number" step="0.1" value={form.budgetMin} onChange={(e) => set('budgetMin', e.target.value)} placeholder="0.5" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngân sách tối đa (tr/m²)</label>
-                <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 mb-1 block">Tiềm năng (1–5★)</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.rating} onChange={(e) => set('rating', e.target.value)}>
-                  <option value="">-- Chưa đánh giá --</option>
-                  {[1, 2, 3, 4, 5].map((v) => (
-                    <option key={v} value={v}>{'★'.repeat(v)} ({v}/5)</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {!lead?.customerId && !lead?.customer?.id && (
-              <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
-                Chưa có hồ sơ khách hàng liên kết. Trường công ty sẽ được lưu vào lead.
-              </p>
-            )}
-          </>)}
-
-          <div className="flex justify-end gap-2 pt-1 border-t border-gray-100">
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="button" disabled={mutation.isPending} onClick={handleSubmit}>
-              {mutation.isPending ? 'Đang lưu...' : 'Cập nhật'}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
 // ─── SlotBooking Detail Sheet ──────────────────────────────────────────────────
 
-function SlotBookingDetailSheet({ booking, onClose, scrollTo }: { booking: any | null; onClose: () => void; scrollTo?: string }) {
+type SlotEditForm = { startDatetime: string; endDatetime: string; discountPct: string; notes: string };
+
+function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: {
+  booking: any | null; onClose: () => void; scrollTo?: string; initialEditing?: boolean;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [lastBooking, setLastBooking] = useState<any | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [ef, setEf] = useState<SlotEditForm>({ startDatetime: '', endDatetime: '', discountPct: '0', notes: '' });
 
-  useEffect(() => { if (booking) setLastBooking(booking); }, [booking]);
+  useEffect(() => {
+    if (booking) {
+      setLastBooking(booking);
+      setIsEditing(!!initialEditing);
+      setEf({
+        startDatetime: toDatetimeLocal(booking.startDatetime),
+        endDatetime: toDatetimeLocal(booking.endDatetime),
+        discountPct: String(booking.discountPct ?? 0),
+        notes: booking.notes ?? '',
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.id]);
 
   useEffect(() => {
     if (!booking || !scrollTo) return;
@@ -1296,6 +1005,25 @@ function SlotBookingDetailSheet({ booking, onClose, scrollTo }: { booking: any |
   }, [booking?.id, scrollTo]);
 
   const d = booking ?? lastBooking;
+
+  const setEfField = (k: keyof SlotEditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setEf((f) => ({ ...f, [k]: e.target.value }));
+
+  const updateMutation = useMutation({
+    mutationFn: () => slotsApi.updateSlotBooking(d?.id, {
+      startDatetime: ef.startDatetime ? new Date(ef.startDatetime).toISOString() : undefined,
+      endDatetime: ef.endDatetime ? new Date(ef.endDatetime).toISOString() : undefined,
+      discountPct: ef.discountPct !== '' ? Number(ef.discountPct) : undefined,
+      notes: ef.notes,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
+      toast({ title: 'Đã cập nhật booking slot' });
+      setIsEditing(false);
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
+  });
 
   const confirmMutation = useMutation({
     mutationFn: () => slotsApi.confirmBooking(d?.id),
@@ -1320,6 +1048,7 @@ function SlotBookingDetailSheet({ booking, onClose, scrollTo }: { booking: any |
   const typeCfg = d ? (SLOT_TYPE_CONFIG[d.type] ?? SLOT_TYPE_CONFIG.DAILY) : SLOT_TYPE_CONFIG.DAILY;
   const statusCfg = d ? SLOT_STATUS_CONFIG[d.status] : undefined;
   const clientName = d?.customer?.companyName ?? d?.lead?.brandName ?? '—';
+  const canEdit = d && ['PENDING', 'CONFIRMED'].includes(d.status);
 
   return (
     <Sheet open={!!booking} onClose={onClose}
@@ -1338,51 +1067,95 @@ function SlotBookingDetailSheet({ booking, onClose, scrollTo }: { booking: any |
           <Badge className={`${statusCfg?.color} border text-xs`}>{statusCfg?.label}</Badge>
         </div>
 
-        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50" id="sbs-customer">
-          <SheetRow label="Tên"   value={clientName} icon={User} />
-          <SheetRow label="Nguồn" value={d.customerId ? 'Customer profile' : 'Lead (CRM)'} icon={User} />
-        </SheetSection>
+        {isEditing ? (
+          /* ── EDIT MODE ────────────────────────────────────────────────── */
+          <div className="space-y-4">
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+              <p className="text-xs font-semibold tracking-wider text-violet-500 mb-3">VỊ TRÍ SLOT</p>
+              <p className="text-sm font-medium text-gray-700">
+                {d.slot?.unit?.code} · {d.slot?.code} — {d.slot?.name}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{d.slot?.area} m² · {typeCfg.label}</p>
+            </div>
 
-        <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50" id="sbs-location">
-          <SheetRow label="Lô (Unit)"  value={d.slot?.unit?.code ?? '—'} icon={Building2} />
-          <SheetRow label="Slot"       value={`${d.slot?.code ?? '—'} — ${d.slot?.name ?? ''}`} icon={Building2} />
-          <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
-        </SheetSection>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Bắt đầu</label>
+              <Input type="datetime-local" value={ef.startDatetime} onChange={setEfField('startDatetime')} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Kết thúc</label>
+              <Input type="datetime-local" value={ef.endDatetime} onChange={setEfField('endDatetime')} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Chiết khấu (%)</label>
+              <Input type="number" min={0} max={100} value={ef.discountPct} onChange={setEfField('discountPct')} className="w-28" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
+              <Textarea value={ef.notes} onChange={setEfField('notes')} rows={2} placeholder="Ghi chú..." />
+            </div>
 
-        <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50" id="sbs-timeline">
-          <SheetRow label="Bắt đầu"  value={fmtDatetime(d.startDatetime)} icon={Calendar} />
-          <SheetRow label="Kết thúc" value={fmtDatetime(d.endDatetime)}   icon={Calendar} />
-        </SheetSection>
-
-        <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">
-          <SheetRow label="Giá gốc"     value={fmtMoney(d.baseAmount)}   icon={DollarSign} />
-          {d.discountPct > 0 && (
-            <SheetRow label="Chiết khấu" value={`${d.discountPct}%`} icon={DollarSign} />
-          )}
-          <SheetRow label="Thành tiền"  value={fmtMoney(d.totalAmount)}  icon={DollarSign} />
-        </SheetSection>
-
-        {d.notes && (
-          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
-        )}
-
-        {['PENDING'].includes(d.status) && (
-          <div className="flex gap-2 pt-2 border-t border-gray-100">
-            <Button className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-              onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
-              <CheckCircle2 size={14} /> Xác nhận
-            </Button>
-            <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
-              onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-              <X size={14} /> Hủy
-            </Button>
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <Button className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+                <Pencil size={13} /> {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </Button>
+              <Button variant="outline" className="flex-1 gap-2" onClick={() => setIsEditing(false)}>
+                <X size={13} /> Hủy chỉnh sửa
+              </Button>
+            </div>
           </div>
-        )}
-        {d.status === 'CONFIRMED' && (
-          <Button variant="outline" className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
-            onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-            <X size={14} /> Hủy booking
-          </Button>
+        ) : (
+          /* ── VIEW MODE ────────────────────────────────────────────────── */
+          <>
+            <SheetSection label="KHÁCH HÀNG" className="bg-gray-50" id="sbs-customer">
+              <SheetRow label="Tên"   value={clientName} icon={User} />
+              <SheetRow label="Nguồn" value={d.customerId ? 'Customer profile' : 'Lead (CRM)'} icon={User} />
+            </SheetSection>
+
+            <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50" id="sbs-location">
+              <SheetRow label="Lô (Unit)"  value={d.slot?.unit?.code ?? '—'} icon={Building2} />
+              <SheetRow label="Slot"       value={`${d.slot?.code ?? '—'} — ${d.slot?.name ?? ''}`} icon={Building2} />
+              <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
+            </SheetSection>
+
+            <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50" id="sbs-timeline">
+              <SheetRow label="Bắt đầu"  value={fmtDatetime(d.startDatetime)} icon={Calendar} />
+              <SheetRow label="Kết thúc" value={fmtDatetime(d.endDatetime)}   icon={Calendar} />
+            </SheetSection>
+
+            <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">
+              <SheetRow label="Giá gốc"     value={fmtMoney(d.baseAmount)}   icon={DollarSign} />
+              {d.discountPct > 0 && (
+                <SheetRow label="Chiết khấu" value={`${d.discountPct}%`} icon={DollarSign} />
+              )}
+              <SheetRow label="Thành tiền"  value={fmtMoney(d.totalAmount)}  icon={DollarSign} />
+            </SheetSection>
+
+            {d.notes && (
+              <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
+            )}
+
+            {canEdit && (
+              <div className="space-y-2 pt-2 border-t border-gray-100">
+                {d.status === 'PENDING' && (
+                  <Button className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                    onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
+                    <CheckCircle2 size={14} /> Xác nhận
+                  </Button>
+                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setIsEditing(true)}>
+                    <Pencil size={14} /> Chỉnh sửa
+                  </Button>
+                  <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                    <X size={14} /> Hủy booking
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>}
     </Sheet>
@@ -1774,6 +1547,12 @@ export default function BookingsPage() {
   const qc = useQueryClient();
   const [typeFilter, setTypeFilter] = useState<'unit' | 'slot'>('unit');
 
+  const { data: currentUser } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => authApi.me(),
+  });
+  const isAdmin = currentUser?.role === 'ADMIN';
+
   // ── Bulk selection ──
   const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set());
   const [confirmCancelIds, setConfirmCancelIds] = useState<string[] | null>(null);
@@ -1871,6 +1650,7 @@ export default function BookingsPage() {
   const [slotApplied, setSlotApplied] = useState(SLOT_EMPTY);
   const [selectedSlotBooking, setSelectedSlotBooking] = useState<any | null>(null);
   const [slotSection, setSlotSection] = useState<string | undefined>();
+  const [editSlotDirectly, setEditSlotDirectly] = useState(false);
   const [createSlotOpen, setCreateSlotOpen] = useState(false);
 
   const setSlotField = <K extends keyof typeof SLOT_EMPTY>(k: K, v: typeof SLOT_EMPTY[K]) =>
@@ -1896,7 +1676,7 @@ export default function BookingsPage() {
       search: unitApplied.search || undefined,
       createdFrom: unitApplied.dateFrom || undefined,
       createdTo: unitApplied.dateTo || undefined,
-      page, limit: 25,
+      page, limit: 15,
     }),
     refetchInterval: 60_000,
   });
@@ -2099,16 +1879,11 @@ export default function BookingsPage() {
                     const cfg = UNIT_STATUS_CONFIG[b.status];
                     const dl = daysLeft(b.expiresAt);
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
+                    const openBooking = (section?: string) => { setBookingSection(section); setSelectedBooking(b); };
                     return (
                       <tr key={b.id}
-                        className={`${DRAG_SELECT_CLASS} hover:bg-amber-50/30 cursor-pointer transition-colors ${selectedUnitIds.has(b.id) ? 'bg-blue-50' : ''}`}
-                        data-booking-id={b.id}
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest('[data-checkbox]')) return;
-                          const section = (e.target as HTMLElement).closest('td')?.dataset.section;
-                          setBookingSection(section || undefined);
-                          setSelectedBooking(b);
-                        }}>
+                        className={`${DRAG_SELECT_CLASS} hover:bg-amber-50/30 transition-colors ${selectedUnitIds.has(b.id) ? 'bg-blue-50' : ''}`}
+                        data-booking-id={b.id}>
                         <td className="px-3 py-3 w-8" data-checkbox>
                           <div
                             data-checkbox
@@ -2120,7 +1895,7 @@ export default function BookingsPage() {
                               : <Square size={15} className="text-gray-300 hover:text-gray-500" />}
                           </div>
                         </td>
-                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingNumber}</td>
+                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600 cursor-pointer" onClick={() => openBooking(undefined)}>{b.bookingNumber}</td>
                         <td data-section="bs-unit" className="px-4 py-3">
                           <span className="font-medium">{b.unit?.code ?? '—'}</span>
                           {(b.unit as any)?.floor?.name && (
@@ -2167,7 +1942,7 @@ export default function BookingsPage() {
                                   title="Hủy booking"
                                   onClick={(e) => { e.stopPropagation(); setConfirmCancelIds([b.id]); }}
                                 >
-                                  <Trash2 size={13} />
+                                  <Ban size={13} />
                                 </button>
                               </>
                             )}
@@ -2180,10 +1955,10 @@ export default function BookingsPage() {
                                 <RotateCcw size={13} />
                               </button>
                             )}
-                            {['CANCELLED', 'EXPIRED'].includes(b.status) && (
+                            {(isAdmin || ['CANCELLED', 'EXPIRED'].includes(b.status)) && (
                               <button
                                 className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                title="Xóa booking"
+                                title={isAdmin ? 'Xóa booking (Admin)' : 'Xóa booking'}
                                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(b.id); }}
                               >
                                 <Trash2 size={13} />
@@ -2290,6 +2065,8 @@ export default function BookingsPage() {
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thành tiền</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ngày tạo</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Cập nhật</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
@@ -2300,36 +2077,45 @@ export default function BookingsPage() {
                     const clientName = b.customer?.companyName ?? b.lead?.brandName ?? '—';
                     const TypeIcon = typeCfg.icon;
                     return (
-                      <tr key={b.id} className="hover:bg-violet-50/30 cursor-pointer transition-colors"
-                        onClick={(e) => {
-                          const section = (e.target as HTMLElement).closest('td')?.dataset.section;
-                          setSlotSection(section || undefined);
-                          setSelectedSlotBooking(b);
-                        }}>
-                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingRef}</td>
-                        <td data-section="" className="px-4 py-3">
+                      <tr key={b.id} className="hover:bg-violet-50/30 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-violet-600 cursor-pointer hover:text-violet-800 hover:underline"
+                          onClick={() => { setSlotSection(undefined); setSelectedSlotBooking(b); }}>
+                          {b.bookingRef}
+                        </td>
+                        <td className="px-4 py-3">
                           <Badge className={`${typeCfg.color} border-0 text-xs flex items-center gap-1 w-fit`}>
                             <TypeIcon size={11} /> {typeCfg.label}
                           </Badge>
                         </td>
-                        <td data-section="sbs-location" className="px-4 py-3">
+                        <td className="px-4 py-3">
                           <div className="font-medium">{b.slot?.unit?.code ?? '—'}</div>
                           <div className="text-xs text-gray-400">{b.slot?.code} · {b.slot?.name}</div>
                         </td>
-                        <td data-section="sbs-customer" className="px-4 py-3 font-medium">{clientName}</td>
-                        <td data-section="sbs-timeline" className="px-4 py-3 text-xs text-gray-600">
+                        <td className="px-4 py-3 font-medium">{clientName}</td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
                           <div>{fmtDatetime(b.startDatetime)}</div>
                           <div className="text-gray-400">→ {fmtDatetime(b.endDatetime)}</div>
                         </td>
-                        <td data-section="sbs-price" className="px-4 py-3 text-right font-medium text-gray-800">
+                        <td className="px-4 py-3 text-right font-medium text-gray-800">
                           {fmtMoney(b.totalAmount)}
                         </td>
-                        <td data-section="" className="px-4 py-3">
+                        <td className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>
                         </td>
-                        <td data-section="" className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            {b.status === 'CANCELLED' ? (
+                            {['PENDING', 'CONFIRMED'].includes(b.status) && (
+                              <button
+                                className="p-1 rounded text-violet-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                                title="Chỉnh sửa booking slot"
+                                onClick={() => { setSelectedSlotBooking(b); setEditSlotDirectly(true); }}
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {b.status === 'CANCELLED' && (
                               <button
                                 className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                                 title="Xóa slot booking"
@@ -2337,8 +2123,6 @@ export default function BookingsPage() {
                               >
                                 <Trash2 size={13} />
                               </button>
-                            ) : (
-                              <ChevronRight size={15} className="text-gray-300" />
                             )}
                           </div>
                         </td>
@@ -2354,7 +2138,7 @@ export default function BookingsPage() {
 
       {/* Detail sheets */}
       <BookingDetailSheet booking={selectedBooking} scrollTo={bookingSection} initialEditing={editDirectly} onClose={() => { setSelectedBooking(null); setBookingSection(undefined); setEditDirectly(false); }} />
-      <SlotBookingDetailSheet booking={selectedSlotBooking} scrollTo={slotSection} onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); }} />
+      <SlotBookingDetailSheet booking={selectedSlotBooking} scrollTo={slotSection} initialEditing={editSlotDirectly} onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); setEditSlotDirectly(false); }} />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
       <CreateUnitBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} />
 

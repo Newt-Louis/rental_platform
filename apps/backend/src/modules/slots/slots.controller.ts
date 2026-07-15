@@ -123,6 +123,14 @@ export class SlotsController {
     return this.slotsService.cancelBooking(bookingId, body?.reason);
   }
 
+  @Patch('bookings/:bookingId')
+  updateSlotBooking(
+    @Param('bookingId') bookingId: string,
+    @Body() body: { startDatetime?: string; endDatetime?: string; discountPct?: number; notes?: string },
+  ) {
+    return this.slotsService.updateSlotBooking(bookingId, body);
+  }
+
   @Delete('bookings/:bookingId')
   deleteSlotBooking(@Param('bookingId') bookingId: string) {
     return this.slotsService.deleteSlotBooking(bookingId);

@@ -14,7 +14,19 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Handle TransformInterceptor response: { success: true, data: T }
+    // Keep paginated responses { success, data: [...], total, page, ... } as-is
+    // Only extract non-paginated { success: true, data: {...} }
+    if (
+      response.data?.success !== undefined &&
+      'data' in response.data &&
+      !('total' in response.data)
+    ) {
+      response.data = response.data.data;
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token');

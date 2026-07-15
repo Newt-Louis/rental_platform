@@ -170,9 +170,9 @@ export class BookingController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Xóa mềm booking đã hủy hoặc hết hạn' })
-  softDelete(@Param('id') id: string) {
-    return this.bookingService.softDelete(id);
+  @ApiOperation({ summary: 'Xóa mềm booking (Admin có thể xóa bất kỳ, người khác chỉ xóa CANCELLED/EXPIRED)' })
+  softDelete(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.bookingService.softDelete(id, user);
   }
 
   // ─── Admin: expire manual trigger ────────────────────────────────────────

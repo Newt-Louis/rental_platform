@@ -941,21 +941,25 @@ export class BookingService {
           mall: { select: { id: true, name: true, code: true } },
         },
       },
-      lead: { select: { id: true, brandName: true, contactName: true, company: true, phone: true, email: true, category: true, notes: true, status: true, priority: true } },
+      lead: { select: { id: true, brandName: true, contactName: true, company: true, phone: true, email: true, category: true, notes: true, status: true, priority: true, source: true, assignedToId: true, expectedArea: true, expectedRent: true } },
       customer: { select: { id: true, customerCode: true, companyName: true, brandName: true, status: true } },
       createdBy: { select: { id: true, fullName: true, email: true } },
       assignedTo: { select: { id: true, fullName: true, email: true } },
     };
   }
 
-  // ─── Soft delete booking (chỉ CANCELLED hoặc EXPIRED) ────────────────────
+  // ─── Soft delete booking (Admin có thể xóa bất kỳ, người khác chỉ xóa CANCELLED/EXPIRED) ────
 
-  async softDelete(id: string) {
+  async softDelete(id: string, user?: any) {
     const booking = await this.prisma.unitBooking.findUnique({ where: { id } });
     if (!booking) throw new NotFoundException('Booking không tồn tại');
-    if (booking.status !== BookingStatus.CANCELLED && booking.status !== BookingStatus.EXPIRED) {
+
+    // Admin có thể xóa bất kỳ booking nào, người khác chỉ xóa CANCELLED hoặc EXPIRED
+    const isAdmin = user?.role === 'ADMIN';
+    if (!isAdmin && booking.status !== BookingStatus.CANCELLED && booking.status !== BookingStatus.EXPIRED) {
       throw new BadRequestException('Chỉ có thể xóa booking đã hủy hoặc hết hạn');
     }
+
     await this.prisma.unitBooking.update({
       where: { id },
       data: { isActive: false },

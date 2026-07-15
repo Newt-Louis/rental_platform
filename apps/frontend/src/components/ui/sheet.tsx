@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 interface SheetProps {
   open: boolean;
   onClose: () => void;
-  title?: string;
+  title?: React.ReactNode;
   subtitle?: string;
   children: React.ReactNode;
   className?: string;
