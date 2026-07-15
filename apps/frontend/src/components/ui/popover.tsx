@@ -1,19 +1,10 @@
 import * as React from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
-import { Slot } from '@radix-ui/react-slot';
 import { cn } from '@/lib/utils';
 
 const Popover = PopoverPrimitive.Root;
 const PopoverAnchor = PopoverPrimitive.Anchor;
-
-const PopoverTrigger = React.forwardRef<
-  React.ElementRef<typeof PopoverPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Trigger> & { asChild?: boolean }
->(({ asChild, ...props }, ref) => {
-  const Component = asChild ? Slot : PopoverPrimitive.Trigger;
-  return <Component ref={ref} {...props} />;
-});
-PopoverTrigger.displayName = PopoverPrimitive.Trigger.displayName;
+const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverContent = React.forwardRef<
   React.ElementRef<typeof PopoverPrimitive.Content>,

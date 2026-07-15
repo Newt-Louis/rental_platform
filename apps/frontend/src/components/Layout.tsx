@@ -86,7 +86,7 @@ export default function Layout() {
 
   const { data: pendingApprovalCount } = useQuery({
     queryKey: ['approvals-pending-nav'],
-    queryFn: approvalsApi.pending,
+    queryFn: () => approvalsApi.pending(),
     refetchInterval: 60_000,
     enabled: !isTenant && canAccessModule(role, 'approvals'),
     select: (r: any) => {

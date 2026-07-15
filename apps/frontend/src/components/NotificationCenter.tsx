@@ -63,7 +63,7 @@ export function NotificationCenter({
 
   const { data: pendingApprovals } = useQuery({
     queryKey: ['approvals-pending-count'],
-    queryFn: approvalsApi.pending,
+    queryFn: () => approvalsApi.pending(),
     enabled: open,
     select: (r: any) => {
       const items = Array.isArray(r) ? r : r?.data ?? [];

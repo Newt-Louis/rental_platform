@@ -276,4 +276,6 @@ docker compose --env-file .env.build -f docker-compose.build.yml build
 docker compose --env-file .env.build -f docker-compose.build.yml push
 #   docker compose -f docker-compose.uat.yml pull
 #   docker compose -f docker-compose.uat.yml up -d
+
+bash deploy-uat.sh
 \opt\registry\registry_command.sh

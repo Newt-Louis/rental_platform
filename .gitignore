@@ -1,3 +1,7 @@
+# ─── Deploy Scripts (chứa credentials) ──────────────────────────────────────
+deploy-uat.sh
+deploy-prod.sh
+
 # ─── Environment / Secrets ─────────────────────────────────────────────────
 .env
 .env.local
