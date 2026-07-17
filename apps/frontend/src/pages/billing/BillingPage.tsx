@@ -19,6 +19,9 @@ import {
 } from 'lucide-react';
 import api from '@/lib/axios';
 import type { Invoice, ArAgingRow } from '@/types';
+import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
+import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
+import { AsyncState } from '@/components/ui/async-state';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -107,6 +110,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ amount: '', method: 'BANK_TRANSFER', reference: '', paidAt: '', notes: '' });
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const remaining = invoice ? (invoice.totalAmount - (invoice.totalPaid ?? 0)) : 0;
 
@@ -117,7 +121,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
       reference: form.reference || undefined,
       paidAt: form.paidAt || undefined,
       notes: form.notes || undefined,
-    }),
+    }, idempotencyKey),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoices'] });
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoice.id] });
@@ -159,7 +163,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
                 <SelectItem value="BANK_TRANSFER">Chuyển khoản ngân hàng</SelectItem>
                 <SelectItem value="CASH">Tiền mặt</SelectItem>
                 <SelectItem value="CHEQUE">Séc</SelectItem>
-                <SelectItem value="ONLINE">Online payment</SelectItem>
+                <SelectItem value="ONLINE">Thanh toán trực tuyến</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -203,7 +207,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
   const { user } = useAuthStore();
   const isStaff = user?.role !== 'TENANT';
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [confirmIssue, setConfirmIssue] = useState(false);
   const [editLineId, setEditLineId] = useState<string | null>(null);
+  const [removeLineId, setRemoveLineId] = useState<string | null>(null);
+  const [reasonAction, setReasonAction] = useState<{ type: 'void' | 'reverse'; paymentId?: string } | null>(null);
   const [editForm, setEditForm] = useState({ description: '', qty: '', unitPrice: '' });
 
   // Add cost form state
@@ -228,6 +235,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
+      setRemoveLineId(null);
       setAddForm(p => ({ ...p, description: '', qty: '', unitPrice: '', showForm: false }));
       toast({ title: 'Đã thêm chi phí' });
     },
@@ -262,6 +270,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
       toast({ title: 'Đã phát hành hóa đơn — Thông báo gửi khách hàng' });
+      setConfirmIssue(false);
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
@@ -287,13 +296,11 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
   });
 
   const handleVoid = () => {
-    const reason = window.prompt('Lý do hủy hóa đơn này?');
-    if (reason && reason.trim()) voidMutation.mutate(reason.trim());
+    setReasonAction({ type: 'void' });
   };
 
   const handleReversePayment = (paymentId: string) => {
-    const reason = window.prompt('Lý do đảo bút toán thanh toán này?');
-    if (reason && reason.trim()) reverseMutation.mutate({ paymentId, reason: reason.trim() });
+    setReasonAction({ type: 'reverse', paymentId });
   };
 
   if (!invoiceId) return null;
@@ -552,11 +559,11 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                                   </div>
                                 ) : (
                                   <div className="flex gap-1">
-                                    <button onClick={() => startEdit(line)} className="p-1 hover:bg-gray-100 rounded">
+                                    <button onClick={() => startEdit(line)} className="p-1 hover:bg-gray-100 rounded" aria-label={`Sửa dòng ${line.description}`}>
                                       <Edit2 size={11} className="text-gray-400" />
                                     </button>
-                                    <button onClick={() => removeLineMutation.mutate(line.id)}
-                                      className="p-1 hover:bg-red-50 rounded">
+                                    <button onClick={() => setRemoveLineId(line.id)}
+                                      className="p-1 hover:bg-red-50 rounded" aria-label={`Xóa dòng ${line.description}`}>
                                       <Trash2 size={11} className="text-red-400" />
                                     </button>
                                   </div>
@@ -571,6 +578,16 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                 )}
               </div>
             </div>
+            <ConfirmDialog
+              open={!!removeLineId}
+              title="Xóa dòng chi phí?"
+              description="Tổng tiền và thuế của hóa đơn sẽ được tính lại. Chỉ nên xóa khi dòng chi phí được thêm nhầm."
+              onCancel={() => setRemoveLineId(null)}
+              onConfirm={() => removeLineId && removeLineMutation.mutate(removeLineId)}
+              loading={removeLineMutation.isPending}
+              confirmLabel="Xóa dòng chi phí"
+              loadingLabel="Đang xóa..."
+            />
 
             {/* ── TOTALS ── */}
             <div className="border border-gray-200 rounded-lg bg-gray-50 p-4 space-y-2">
@@ -647,7 +664,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
               <AlertTriangle size={12} /> Kiểm tra và bổ sung các chi phí biến đổi trước khi gửi khách
             </p>
             <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => issueMutation.mutate()}
+              onClick={() => setConfirmIssue(true)}
               disabled={issueMutation.isPending}>
               <Send size={15} />
               {issueMutation.isPending ? 'Đang phát hành...' : 'Phát hành & Gửi khách hàng'}
@@ -684,6 +701,30 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
       />
+      <ConfirmDialog
+        open={confirmIssue}
+        title="Phát hành hóa đơn?"
+        description="Hóa đơn sẽ được khóa nội dung và gửi thông báo cho khách thuê. Hãy kiểm tra các dòng chi phí, thuế và hạn thanh toán trước khi tiếp tục."
+        onCancel={() => setConfirmIssue(false)}
+        onConfirm={() => issueMutation.mutate()}
+        loading={issueMutation.isPending}
+        confirmLabel="Phát hành hóa đơn"
+        loadingLabel="Đang phát hành..."
+      />
+      <ReasonActionDialog
+        open={!!reasonAction}
+        onOpenChange={(open) => !open && setReasonAction(null)}
+        title={reasonAction?.type === 'void' ? 'Hủy hóa đơn' : 'Đảo bút toán thanh toán'}
+        description="Thao tác ảnh hưởng đến công nợ và sẽ được lưu trong lịch sử kiểm toán."
+        confirmLabel="Xác nhận"
+        loading={voidMutation.isPending || reverseMutation.isPending}
+        onConfirm={(reason) => {
+          if (reasonAction?.type === 'void') voidMutation.mutate(reason, { onSuccess: () => setReasonAction(null) });
+          if (reasonAction?.type === 'reverse' && reasonAction.paymentId) {
+            reverseMutation.mutate({ paymentId: reasonAction.paymentId, reason }, { onSuccess: () => setReasonAction(null) });
+          }
+        }}
+      />
     </div>
   );
 }
@@ -717,7 +758,7 @@ function InvoicesTab() {
     }
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['invoices', { search, status }],
     queryFn: () => billingApi.listInvoices({ search: search || undefined, status: status || undefined }),
   });
@@ -783,7 +824,10 @@ function InvoicesTab() {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch}
+          errorTitle="Không thể tải danh sách hóa đơn"><div /></AsyncState>
+      ) : isLoading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -858,7 +902,7 @@ function InvoicesTab() {
 // ── AR Aging Tab ──────────────────────────────────────────────────────────────
 
 function ArAgingTab() {
-  const { data, isLoading } = useQuery({ queryKey: ['ar-aging'], queryFn: billingApi.arAging });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging'], queryFn: billingApi.arAging });
   const rows: ArAgingRow[] = data?.data ?? data ?? [];
   const total = rows.reduce((s, r) => s + r.total, 0);
 
@@ -879,7 +923,13 @@ function ArAgingTab() {
           );
         })}
       </div>
-      {isLoading ? <Skeleton className="h-64" /> : (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch}
+          errorTitle="Không thể tải báo cáo tuổi nợ"><div /></AsyncState>
+      ) : isLoading ? <Skeleton className="h-64" /> : rows.length === 0 ? (
+        <AsyncState isLoading={false} isEmpty emptyTitle="Chưa có công nợ theo tuổi nợ"
+          emptyDescription="Các khoản phải thu sẽ được phân nhóm theo số ngày quá hạn."><div /></AsyncState>
+      ) : (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
@@ -924,7 +974,7 @@ export default function BillingPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Billing & Thu tiền</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Hóa đơn và thu tiền</h1>
         <p className="text-sm text-gray-500 mt-1">
           Quản lý hóa đơn theo quy trình: hệ thống tạo draft → vận hành bổ sung chi phí → gửi khách → kế toán thu tiền
         </p>
@@ -932,10 +982,10 @@ export default function BillingPage() {
       <Tabs defaultValue="invoices">
         <TabsList className="mb-4">
           <TabsTrigger value="invoices">Hóa đơn</TabsTrigger>
-          <TabsTrigger value="ar-aging">AR Aging</TabsTrigger>
-          <TabsTrigger value="schedule">Billing Schedule</TabsTrigger>
-          <TabsTrigger value="dunning">Dunning</TabsTrigger>
-          <TabsTrigger value="kpi">Collection KPI</TabsTrigger>
+          <TabsTrigger value="ar-aging">Tuổi nợ</TabsTrigger>
+          <TabsTrigger value="schedule">Lịch lập hóa đơn</TabsTrigger>
+          <TabsTrigger value="dunning">Nhắc nợ</TabsTrigger>
+          <TabsTrigger value="kpi">Hiệu quả thu hồi</TabsTrigger>
         </TabsList>
         <TabsContent value="invoices"><InvoicesTab /></TabsContent>
         <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>

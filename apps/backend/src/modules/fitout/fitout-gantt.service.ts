@@ -1,12 +1,13 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
 export class FitoutGanttService {
   private readonly logger = new Logger(FitoutGanttService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
   async listTasks(projectId: string) {
     return this.prisma.fitoutTask.findMany({
@@ -86,6 +87,10 @@ export class FitoutGanttService {
 
   @Cron('0 1 * * *', { name: 'fitout-gantt-late-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkLateTasks() {
+    return this.schedulerLock.runExclusive('fitout-gantt-late-check', 14_400_000, () => this.checkLateTasksUnlocked());
+  }
+
+  private async checkLateTasksUnlocked() {
     this.logger.log('Checking late fitout Gantt tasks...');
     const now = new Date();
 

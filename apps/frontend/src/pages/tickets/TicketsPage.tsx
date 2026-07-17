@@ -482,7 +482,7 @@ function MaintenanceTab() {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['maintenance-schedules'],
     queryFn: () => maintenanceApi.list(),
   });
@@ -510,6 +510,13 @@ function MaintenanceTab() {
       </div>
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 rounded" />)}</div>
+      ) : isError ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
+          <Ticket size={36} className="mx-auto mb-3 text-red-400" />
+          <p className="font-medium text-red-700">Không thể tải lịch bảo trì</p>
+          <p className="mt-1 text-sm text-red-600">Kiểm tra kết nối và thử tải lại dữ liệu.</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+        </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-hidden">
           <table className="w-full text-sm">
@@ -585,7 +592,7 @@ export default function TicketsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['tickets', { search, status, priority }],
     queryFn: () => ticketsApi.listTickets({
       search: search || undefined,
@@ -658,6 +665,13 @@ export default function TicketsPage() {
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14 rounded" />)}
         </div>
+      ) : isError ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
+          <Ticket size={36} className="mx-auto mb-3 text-red-400" />
+          <p className="font-medium text-red-700">Không thể tải danh sách ticket</p>
+          <p className="mt-1 text-sm text-red-600">Kiểm tra kết nối và thử tải lại dữ liệu.</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+        </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-hidden">
           <table className="w-full text-sm">
@@ -703,7 +717,17 @@ export default function TicketsPage() {
           {tickets.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Ticket size={40} className="mx-auto mb-2 opacity-30" />
-              <p>Không có ticket nào</p>
+              <p className="font-medium text-gray-600">
+                {search || status || priority ? 'Không có ticket phù hợp bộ lọc' : 'Chưa có ticket nào'}
+              </p>
+              <p className="mt-1 text-sm">
+                {search || status || priority ? 'Hãy thay đổi từ khóa hoặc bộ lọc.' : 'Tạo phiếu đầu tiên để bắt đầu theo dõi xử lý.'}
+              </p>
+              {search || status || priority ? (
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setStatus(''); setPriority(''); }}>Xóa bộ lọc</Button>
+              ) : (
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>Tạo phiếu kiểm tra</Button>
+              )}
             </div>
           )}
         </div>

@@ -15,6 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { MallMapViewer } from '@/components/MallMapViewer';
+import { ChangeOrderControl, RiskRegister } from '@/components/fitout/RiskChangeControl';
+import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
@@ -69,6 +71,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const [gateWarning, setGateWarning] = useState<{ missing: { documentType: string; description?: string }[] } | null>(null);
   const [pendingAdvanceStatus, setPendingAdvanceStatus] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
+  const [rejectStepId, setRejectStepId] = useState<string | null>(null);
   const canOverrideGate = !!user?.role && ROLES_ALLOWED_TO_OVERRIDE_GATE.includes(user.role);
 
   const { data: project, isLoading } = useQuery({
@@ -455,13 +458,17 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 
           {/* Tabs for Checklist, Documents & Milestones */}
           <Tabs defaultValue="checklist" className="mt-4">
-            <TabsList className="w-full grid grid-cols-5">
-              <TabsTrigger value="checklist" className="text-xs">Checklist</TabsTrigger>
-              <TabsTrigger value="documents" className="text-xs">Submittals</TabsTrigger>
-              <TabsTrigger value="issues" className="text-xs">Vấn đề</TabsTrigger>
-              <TabsTrigger value="milestones" className="text-xs">SLA</TabsTrigger>
-              <TabsTrigger value="contractors" className="text-xs">Nhà thầu</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto pb-1" aria-label="Không gian làm việc dự án">
+              <TabsList className="inline-flex h-10 w-max min-w-full justify-start">
+                <TabsTrigger value="checklist" className="text-xs">Checklist</TabsTrigger>
+                <TabsTrigger value="documents" className="text-xs">Submittals</TabsTrigger>
+                <TabsTrigger value="issues" className="text-xs">Vấn đề</TabsTrigger>
+                <TabsTrigger value="risks" className="text-xs">Rủi ro</TabsTrigger>
+                <TabsTrigger value="changes" className="text-xs">Change Order</TabsTrigger>
+                <TabsTrigger value="milestones" className="text-xs">SLA</TabsTrigger>
+                <TabsTrigger value="contractors" className="text-xs">Nhà thầu</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="checklist" className="mt-3">
               <div className="flex items-center justify-between mb-2">
@@ -634,10 +641,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                                 Duyệt
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-xs text-red-500"
-                                onClick={() => {
-                                  const reason = window.prompt('Lý do từ chối:');
-                                  if (reason !== null) rejectStepMutation.mutate({ stepId: pendingStep.id, comment: reason });
-                                }}>
+                                onClick={() => setRejectStepId(pendingStep.id)}>
                                 Từ chối
                               </Button>
                             </>
@@ -761,6 +765,14 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   })
                 )}
               </div>
+            </TabsContent>
+
+            <TabsContent value="risks" className="mt-3">
+              {projectId && <RiskRegister projectId={projectId} />}
+            </TabsContent>
+
+            <TabsContent value="changes" className="mt-3">
+              {projectId && <ChangeOrderControl projectId={projectId} />}
             </TabsContent>
 
             <TabsContent value="milestones" className="mt-3">
@@ -904,6 +916,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           )}
         </div>
       )}
+      <ReasonActionDialog
+        open={!!rejectStepId}
+        onOpenChange={(open) => !open && setRejectStepId(null)}
+        title="Từ chối hồ sơ"
+        description="Lý do sẽ được gửi cho người nộp và lưu trong lịch sử phê duyệt."
+        confirmLabel="Từ chối"
+        loading={rejectStepMutation.isPending}
+        onConfirm={(reason) => rejectStepId && rejectStepMutation.mutate({ stepId: rejectStepId, comment: reason }, { onSuccess: () => setRejectStepId(null) })}
+      />
     </Sheet>
   );
 }
@@ -916,7 +937,7 @@ export default function FitoutPage() {
   const navigate = useNavigate();
   const canManageConfig = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['fitouts'],
     queryFn: () => fitoutApi.listFitouts({ limit: 100 }),
   });
@@ -978,10 +999,18 @@ export default function FitoutPage() {
             <Card key={i}><CardContent className="pt-4"><Skeleton className="h-40" /></CardContent></Card>
           ))}
         </div>
+      ) : isError ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 py-14 text-center">
+          <Hammer size={44} className="mx-auto mb-3 text-red-400" />
+          <p className="font-medium text-red-700">Không thể tải danh sách dự án fitout</p>
+          <p className="mt-1 text-sm text-red-600">Dữ liệu tiến độ chưa sẵn sàng. Vui lòng thử lại.</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+        </div>
       ) : projects.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <Hammer size={48} className="mx-auto mb-3 opacity-30" />
           <p>{filterStatus ? 'Không có dự án ở trạng thái này' : 'Chưa có dự án fitout nào'}</p>
+          {filterStatus && <Button variant="outline" size="sm" className="mt-4" onClick={() => setFilterStatus('')}>Xem tất cả dự án</Button>}
         </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-4">

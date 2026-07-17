@@ -34,12 +34,14 @@ export class SpacesController {
   }
 
   @Post('malls')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create mall' })
   createMall(@Body() dto: CreateMallDto) {
     return this.spacesService.createMall(dto);
   }
 
   @Post('malls/setup')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create mall with floors and zones in one transaction' })
   setupMall(@Body() dto: any) {
     return this.spacesService.setupMall(dto);
@@ -52,12 +54,14 @@ export class SpacesController {
   }
 
   @Patch('malls/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update mall' })
   updateMall(@Param('id') id: string, @Body() dto: Partial<CreateMallDto>) {
     return this.spacesService.updateMall(id, dto);
   }
 
   @Delete('malls/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate mall' })
   deleteMall(@Param('id') id: string) {
     return this.spacesService.deleteMall(id);
@@ -73,18 +77,21 @@ export class SpacesController {
   }
 
   @Post('floors')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create floor' })
   createFloor(@Body() dto: { mallId: string; name: string; level: string; sortOrder?: number }) {
     return this.spacesService.createFloor(dto);
   }
 
   @Patch('floors/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update floor' })
   updateFloor(@Param('id') id: string, @Body() dto: { name?: string; level?: string; sortOrder?: number }) {
     return this.spacesService.updateFloor(id, dto);
   }
 
   @Delete('floors/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate floor' })
   deleteFloor(@Param('id') id: string) {
     return this.spacesService.deleteFloor(id);
@@ -101,18 +108,21 @@ export class SpacesController {
   }
 
   @Post('zones')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create zone' })
   createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string }) {
     return this.spacesService.createZone(dto);
   }
 
   @Patch('zones/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update zone' })
   updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string }) {
     return this.spacesService.updateZone(id, dto);
   }
 
   @Delete('zones/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate zone' })
   deleteZone(@Param('id') id: string) {
     return this.spacesService.deleteZone(id);
@@ -209,6 +219,7 @@ export class SpacesController {
   // ─── GAP #2 — Merge / Split Units ────────────────────────────────────────
 
   @Post('units/merge')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({
     summary: 'GAP #2 — Gộp nhiều mặt bằng thành 1',
     description: 'Tạo unit tổng hợp C từ [A, B, ...]. Tất cả unit nguồn phải đang VACANT và cùng mall.',
@@ -234,6 +245,7 @@ export class SpacesController {
   }
 
   @Post('units/:id/split')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({
     summary: 'GAP #2 — Tách mặt bằng tổng hợp về các unit gốc',
     description: 'Phục hồi các unit gốc về VACANT và vô hiệu hoá unit tổng hợp.',
@@ -251,24 +263,28 @@ export class SpacesController {
   }
 
   @Post('units')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create unit' })
   createUnit(@Body() dto: CreateUnitDto) {
     return this.spacesService.createUnit(dto);
   }
 
   @Patch('units/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit' })
   updateUnit(@Param('id') id: string, @Body() dto: any) {
     return this.spacesService.updateUnit(id, dto);
   }
 
   @Patch('units/:id/status')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit status' })
   updateUnitStatus(@Param('id') id: string, @Body('status') status: UnitStatus, @CurrentUser() user: any) {
     return this.spacesService.updateUnitStatus(id, status, user?.id);
   }
 
   @Delete('units/:id')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete unit' })
   deleteUnit(@Param('id') id: string) {
     return this.spacesService.deleteUnit(id);
@@ -284,6 +300,7 @@ export class SpacesController {
   }
 
   @Post('units/:id/media')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Upload media cho unit (ảnh, floor plan, video, brochure)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
@@ -302,6 +319,7 @@ export class SpacesController {
   }
 
   @Patch('units/:id/media/:mediaId')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Cập nhật caption, thứ tự, hoặc đánh dấu cover' })
   updateUnitMedia(
     @Param('id') id: string,
@@ -313,6 +331,7 @@ export class SpacesController {
   }
 
   @Delete('units/:id/media/:mediaId')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Xóa media của unit' })
   deleteUnitMedia(@Param('id') id: string, @Param('mediaId') mediaId: string) {
     return this.unitMediaService.deleteMedia(id, mediaId);
@@ -321,6 +340,7 @@ export class SpacesController {
   // ─── Unit Import (Bulk Data Upload) ──────────────────────────────────────
 
   @Post('units/import')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({
     summary: 'Import dữ liệu unit hàng loạt từ CSV/JSON',
     description: 'Hỗ trợ tạo mới và cập nhật. Columns bắt buộc: code, areaGFA, areaNLA. Optional: name, category, baseRentPerSqm, camPerSqm, description',
@@ -354,6 +374,7 @@ export class SpacesController {
   }
 
   @Patch('units/:id/with-history')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit with history tracking' })
   updateUnitWithHistory(
     @Param('id') id: string,
@@ -401,6 +422,7 @@ export class SpacesController {
   // ═══════════════════════════════════════════════════════════════════════════
 
   @Post('units/bulk-update')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Bulk update multiple units' })
   bulkUpdateUnits(
     @Body() body: { unitIds: string[]; updates: any },
@@ -420,6 +442,7 @@ export class SpacesController {
   }
 
   @Post('floors/:id/floor-plan')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Upload floor plan image for a floor (JPG/PNG/WebP)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
@@ -431,12 +454,14 @@ export class SpacesController {
   }
 
   @Delete('floors/:id/floor-plan')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete floor plan image' })
   deleteFloorPlan(@Param('id') id: string) {
     return this.spacesService.deleteFloorPlan(id);
   }
 
   @Patch('floors/:id/map-positions')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Batch save unit positions on floor map (% coordinates)' })
   saveMapPositions(
     @Param('id') id: string,
@@ -446,6 +471,7 @@ export class SpacesController {
   }
 
   @Patch('units/:id/map-position')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update a single unit map position on floor plan' })
   updateUnitMapPosition(
     @Param('id') id: string,
@@ -455,6 +481,7 @@ export class SpacesController {
   }
 
   @Delete('units/:id/map-position')
+  @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Remove unit from floor map (clear position)' })
   clearUnitMapPosition(@Param('id') id: string) {
     return this.spacesService.clearUnitMapPosition(id);

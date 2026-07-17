@@ -21,27 +21,27 @@ enum Role {
 }
 
 enum UnitStatus {
-  VACANT       // Trng
-  BOOKING      // ang booking/gi ch
-  NEGOTIATING  // ang thng tho (proposal stage)
-  CONTRACTED   //  k hp ng, ch thi cng
+  VACANT // Trng
+  BOOKING // ang booking/gi ch
+  NEGOTIATING // ang thng tho (proposal stage)
+  CONTRACTED //  k hp ng, ch thi cng
   UNDER_FITOUT // ang thi cng
-  OCCUPIED     // ang thu
-  MERGED       //  gp vo snh khc (n khi danh sch thng)
+  OCCUPIED // ang thu
+  MERGED //  gp vo snh khc (n khi danh sch thng)
 }
 
 enum UnitLeaseTermType {
-  LONG   // Di hn (3-5 nm)
-  SHORT  // Ngn hn (ngy/tun/thng)
+  LONG // Di hn (3-5 nm)
+  SHORT // Ngn hn (ngy/tun/thng)
 }
 
 enum SpaceType {
-  RETAIL_UNIT    // Snh bn l thng thng
-  LED            // Bng LED/mn hnh qung co
+  RETAIL_UNIT // Snh bn l thng thng
+  LED // Bng LED/mn hnh qung co
   ESCALATOR_WRAP // Thang cun
-  KIOSK_EVENT    // Kiosk / s kin
-  ADVERTISING    // V tr qung co
-  SERVICE        // Dch v (ngn hng, bu in...)
+  KIOSK_EVENT // Kiosk / s kin
+  ADVERTISING // V tr qung co
+  SERVICE // Dch v (ngn hng, bu in...)
 }
 
 enum UnitTier {
@@ -59,11 +59,11 @@ enum BusinessModelEnum {
 }
 
 enum BookingStatus {
-  PENDING     // Mi to, ch sale xc nhn
-  ACTIVE      // ang gi slot (unit -> BOOKING)
-  EXPIRED     // Qu hn hold
-  CANCELLED   // Hy th cng
-  CONVERTED   //  chuyn thnh Proposal
+  PENDING // Mi to, ch sale xc nhn
+  ACTIVE // ang gi slot (unit -> BOOKING)
+  EXPIRED // Qu hn hold
+  CANCELLED // Hy th cng
+  CONVERTED //  chuyn thnh Proposal
 }
 
 enum UnitMediaType {
@@ -139,24 +139,24 @@ enum PriceApprovalStatus {
 // ===========================================================================
 
 model Category {
-  id          String      @id @default(cuid())
-  code        String      @unique    // "FNB", "FASHION", "BEAUTY"
-  name        String                 // "F&B", "Fashion", "Beauty & Wellness"
+  id          String     @id @default(cuid())
+  code        String     @unique // "FNB", "FASHION", "BEAUTY"
+  name        String // "F&B", "Fashion", "Beauty & Wellness"
   description String?
-  parentId    String?                // For sub-categories
-  parent      Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[]  @relation("CategoryHierarchy")
-  sortOrder   Int         @default(0)
-  isActive    Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  parentId    String? // For sub-categories
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   // Relations
-  units             Unit[]
-  tenants           Tenant[]
-  leads             Lead[]
-  customers         Customer[]
-  categoryPricings  CategoryMallPricing[]
+  units            Unit[]
+  tenants          Tenant[]
+  leads            Lead[]
+  customers        Customer[]
+  categoryPricings CategoryMallPricing[]
 
   @@index([code])
   @@index([parentId])
@@ -164,32 +164,32 @@ model Category {
 }
 
 model CategoryMallPricing {
-  id              String    @id @default(cuid())
-  mallId          String
-  mall            Mall      @relation(fields: [mallId], references: [id])
-  categoryId      String
-  category        Category  @relation(fields: [categoryId], references: [id])
-  floorId         String?
-  floor           Floor?    @relation(fields: [floorId], references: [id])
-  zoneId          String?
-  zone            Zone?     @relation(fields: [zoneId], references: [id])
-  
+  id         String   @id @default(cuid())
+  mallId     String
+  mall       Mall     @relation(fields: [mallId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  floorId    String?
+  floor      Floor?   @relation(fields: [floorId], references: [id])
+  zoneId     String?
+  zone       Zone?    @relation(fields: [zoneId], references: [id])
+
   // Price range (VND/m2/month)
-  minRentPerSqm   Float                 // Gi sn
-  maxRentPerSqm   Float                 // Gi trn
-  suggestedRent   Float?                // Gi  xut (tham kho)
-  
+  minRentPerSqm Float // Gi sn
+  maxRentPerSqm Float // Gi trn
+  suggestedRent Float? // Gi  xut (tham kho)
+
   // CAM pricing
-  camPerSqm       Float     @default(0) // Ph qun l chun
-  
-  effectiveFrom   DateTime  @default(now())
-  effectiveTo     DateTime?             // Null = v thi hn
-  notes           String?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdById     String?
-  createdBy       User?     @relation("CategoryPricingCreatedBy", fields: [createdById], references: [id])
+  camPerSqm Float @default(0) // Ph qun l chun
+
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime? // Null = v thi hn
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  createdBy     User?     @relation("CategoryPricingCreatedBy", fields: [createdById], references: [id])
 
   @@unique([mallId, categoryId, floorId, zoneId, effectiveFrom])
   @@index([mallId, categoryId, isActive])
@@ -330,74 +330,78 @@ enum SapStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  password      String
-  fullName      String
-  role          Role      @default(LEASING_EXECUTIVE)
-  phone         String?
-  avatar        String?
-  department    String?
-  isActive      Boolean   @default(true)
-  deletedAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  email      String    @unique
+  password   String
+  fullName   String
+  role       Role      @default(LEASING_EXECUTIVE)
+  phone      String?
+  avatar     String?
+  department String?
+  isActive   Boolean   @default(true)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   // Lin kt ti khon ng nhp (role=TENANT) vi Tenant record tng ng -- ch c  ngha vi role TENANT.
-  tenantId      String?
-  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
-  assignedLeads        Lead[]             @relation("AssignedLeads")
-  approvalSteps        ApprovalStep[]
-  ticketsAssigned      Ticket[]           @relation("AssignedTickets")
-  auditLogs            AuditLog[]
-  notifications        Notification[]
-  managedContracts     Contract[]         @relation("ManagedContracts")
-  fitoutProjects       FitoutProject[]    @relation("OperationManaged")
-  recordedSales        SalesTurnover[]    @relation("RecordedBy")
-  leadActivities       LeadActivity[]
-  assignedCustomers    Customer[]         @relation("AssignedCustomers")
-  createdCustomers     Customer[]         @relation("CreatedCustomers")
-  customerActivities   CustomerActivity[] @relation("CustomerActivityBy")
-  contractEvents       ContractEvent[]
-  mallAccess           UserMallAccess[]
-  followUpsAssigned    LeadFollowUp[]     @relation("FollowUpAssigned")
-  uploadedDocuments    UnifiedDocument[]  @relation("DocumentUploadedBy")
-  salesAudits          SalesAuditTrail[]  @relation("SalesAuditBy")
-  announcements        MallAnnouncement[] @relation("AnnouncementCreatedBy")
-  createdBookings      UnitBooking[]      @relation("BookingCreatedBy")
-  assignedBookings     UnitBooking[]      @relation("BookingAssignedTo")
-  approvedBookingPrices UnitBooking[]     @relation("BookingPriceApprover")
-  bookingActivities    BookingActivity[]
-  uploadedUnitMedia    UnitMedia[]
-  unitHistoryChanges   UnitHistory[]      @relation("UnitHistoryChangedBy")
-  slotBookings         SlotBooking[]      @relation("SlotBookedBy")
-  categoryPricings     CategoryMallPricing[] @relation("CategoryPricingCreatedBy")
-  submittedSubmittals  FitoutSubmittal[]  @relation("SubmittalSubmittedBy")
-  entityComments       EntityComment[]
-  entityDistributions  EntityDistribution[]
-  createdIssues        FitoutIssue[]      @relation("IssueCreatedBy")
-  assignedIssues       FitoutIssue[]      @relation("IssueAssignedTo")
-  createdDailyReports  FitoutDailyReportEntry[] @relation("DailyReportCreatedBy")
-  createdTickets       Ticket[]           @relation("TicketCreatedBy")
-  ticketComments       TicketComment[]
-  voidedInvoices       Invoice[]          @relation("InvoiceVoidedBy")
-  reversedPayments     Payment[]          @relation("PaymentReversedBy")
+  assignedLeads          Lead[]                   @relation("AssignedLeads")
+  approvalSteps          ApprovalStep[]
+  ticketsAssigned        Ticket[]                 @relation("AssignedTickets")
+  auditLogs              AuditLog[]
+  notifications          Notification[]
+  managedContracts       Contract[]               @relation("ManagedContracts")
+  fitoutProjects         FitoutProject[]          @relation("OperationManaged")
+  recordedSales          SalesTurnover[]          @relation("RecordedBy")
+  leadActivities         LeadActivity[]
+  assignedCustomers      Customer[]               @relation("AssignedCustomers")
+  createdCustomers       Customer[]               @relation("CreatedCustomers")
+  customerActivities     CustomerActivity[]       @relation("CustomerActivityBy")
+  contractEvents         ContractEvent[]
+  mallAccess             UserMallAccess[]
+  followUpsAssigned      LeadFollowUp[]           @relation("FollowUpAssigned")
+  uploadedDocuments      UnifiedDocument[]        @relation("DocumentUploadedBy")
+  salesAudits            SalesAuditTrail[]        @relation("SalesAuditBy")
+  announcements          MallAnnouncement[]       @relation("AnnouncementCreatedBy")
+  createdBookings        UnitBooking[]            @relation("BookingCreatedBy")
+  assignedBookings       UnitBooking[]            @relation("BookingAssignedTo")
+  approvedBookingPrices  UnitBooking[]            @relation("BookingPriceApprover")
+  bookingActivities      BookingActivity[]
+  uploadedUnitMedia      UnitMedia[]
+  unitHistoryChanges     UnitHistory[]            @relation("UnitHistoryChangedBy")
+  slotBookings           SlotBooking[]            @relation("SlotBookedBy")
+  categoryPricings       CategoryMallPricing[]    @relation("CategoryPricingCreatedBy")
+  submittedSubmittals    FitoutSubmittal[]        @relation("SubmittalSubmittedBy")
+  entityComments         EntityComment[]
+  entityDistributions    EntityDistribution[]
+  createdIssues          FitoutIssue[]            @relation("IssueCreatedBy")
+  assignedIssues         FitoutIssue[]            @relation("IssueAssignedTo")
+  createdDailyReports    FitoutDailyReportEntry[] @relation("DailyReportCreatedBy")
+  ownedFitoutRisks       FitoutRisk[]             @relation("FitoutRiskOwner")
+  createdFitoutRisks     FitoutRisk[]             @relation("FitoutRiskCreatedBy")
+  requestedFitoutChanges FitoutChangeOrder[]      @relation("FitoutChangeRequestedBy")
+  approvedFitoutChanges  FitoutChangeOrder[]      @relation("FitoutChangeApprovedBy")
+  createdTickets         Ticket[]                 @relation("TicketCreatedBy")
+  ticketComments         TicketComment[]
+  voidedInvoices         Invoice[]                @relation("InvoiceVoidedBy")
+  reversedPayments       Payment[]                @relation("PaymentReversedBy")
 
   @@index([tenantId])
 }
 
 model Mall {
-  id          String     @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  code        String     @unique
+  code        String   @unique
   address     String?
   city        String?
   totalArea   Float?
   description String?
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   buildings            Building[]
   floors               Floor[]
@@ -415,40 +419,40 @@ model Mall {
 }
 
 model Building {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   mallId    String
-  mall      Mall      @relation(fields: [mallId], references: [id])
+  mall      Mall     @relation(fields: [mallId], references: [id])
   name      String
   code      String
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  floors    Floor[]
-  zones     Zone[]
-  units     Unit[]
+  floors Floor[]
+  zones  Zone[]
+  units  Unit[]
 }
 
 model Floor {
-  id             String    @id @default(cuid())
-  mallId         String
-  mall           Mall      @relation(fields: [mallId], references: [id])
-  buildingId     String?
-  building       Building? @relation(fields: [buildingId], references: [id])
-  name           String
-  level          String
-  sortOrder      Int       @default(0)
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  mallId     String
+  mall       Mall      @relation(fields: [mallId], references: [id])
+  buildingId String?
+  building   Building? @relation(fields: [buildingId], references: [id])
+  name       String
+  level      String
+  sortOrder  Int       @default(0)
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   // Digital Map -- floor plan image for interactive map
-  floorPlanUrl   String?   // URL/path of uploaded floor plan image
-  floorPlanRatio Float?    // aspect ratio (width/height) stored for correct rendering
+  floorPlanUrl   String? // URL/path of uploaded floor plan image
+  floorPlanRatio Float? // aspect ratio (width/height) stored for correct rendering
 
-  zones             Zone[]
-  units             Unit[]
-  categoryPricings  CategoryMallPricing[]
+  zones            Zone[]
+  units            Unit[]
+  categoryPricings CategoryMallPricing[]
 }
 
 model Zone {
@@ -465,80 +469,80 @@ model Zone {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  units             Unit[]
-  categoryPricings  CategoryMallPricing[]
+  units            Unit[]
+  categoryPricings CategoryMallPricing[]
 }
 
 model Unit {
-  id              String     @id @default(cuid())
-  mallId          String
-  mall            Mall       @relation(fields: [mallId], references: [id])
-  buildingId      String?
-  building        Building?  @relation(fields: [buildingId], references: [id])
-  floorId         String?
-  floor           Floor?     @relation(fields: [floorId], references: [id])
-  zoneId          String?
-  zone            Zone?      @relation(fields: [zoneId], references: [id])
-  code            String
-  name            String?
-  areaGFA         Float
-  areaNLA         Float
-  category        String?      // Legacy: free text category
-  categoryId      String?      // NEW: FK to Category master
-  categoryRef     Category?    @relation(fields: [categoryId], references: [id])
-  baseRentPerSqm  Float      @default(0)
-  camPerSqm       Float      @default(0)
-  status          UnitStatus @default(VACANT)
-  tenantId        String?
-  tenant          Tenant?    @relation("OccupiedUnit", fields: [tenantId], references: [id])
-  leaseStartDate  DateTime?
-  leaseEndDate    DateTime?
-  description     String?
-  isActive        Boolean    @default(true)
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id             String     @id @default(cuid())
+  mallId         String
+  mall           Mall       @relation(fields: [mallId], references: [id])
+  buildingId     String?
+  building       Building?  @relation(fields: [buildingId], references: [id])
+  floorId        String?
+  floor          Floor?     @relation(fields: [floorId], references: [id])
+  zoneId         String?
+  zone           Zone?      @relation(fields: [zoneId], references: [id])
+  code           String
+  name           String?
+  areaGFA        Float
+  areaNLA        Float
+  category       String? // Legacy: free text category
+  categoryId     String? // NEW: FK to Category master
+  categoryRef    Category?  @relation(fields: [categoryId], references: [id])
+  baseRentPerSqm Float      @default(0)
+  camPerSqm      Float      @default(0)
+  status         UnitStatus @default(VACANT)
+  tenantId       String?
+  tenant         Tenant?    @relation("OccupiedUnit", fields: [tenantId], references: [id])
+  leaseStartDate DateTime?
+  leaseEndDate   DateTime?
+  description    String?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   // Phase 1 & 2: New pricing fields
-  marketRentPerSqm  Float?        // Market reference rent
-  askingRentPerSqm  Float?        // Asking rent (negotiable)
-  escalationRate    Float?        // Annual escalation rate (%)
-  minLeaseTerm      Int?          // Minimum lease term (months)
-  maxLeaseTerm      Int?          // Maximum lease term (months)
+  marketRentPerSqm Float? // Market reference rent
+  askingRentPerSqm Float? // Asking rent (negotiable)
+  escalationRate   Float? // Annual escalation rate (%)
+  minLeaseTerm     Int? // Minimum lease term (months)
+  maxLeaseTerm     Int? // Maximum lease term (months)
 
   // Phase 1: Tracking fields
-  vacantSince       DateTime?     // When unit became vacant
-  lastRenovation    DateTime?     // Last renovation date
-  condition         String?       // EXCELLENT, GOOD, FAIR, NEEDS_RENOVATION
+  vacantSince    DateTime? // When unit became vacant
+  lastRenovation DateTime? // Last renovation date
+  condition      String? // EXCELLENT, GOOD, FAIR, NEEDS_RENOVATION
 
   // Phase 2: Additional info
-  features          Json?         // {ac: true, water: true, electricity: true, facing: 'N', corner: false}
-  virtualTourUrl    String?       // 360deg tour / video link
+  features       Json? // {ac: true, water: true, electricity: true, facing: 'N', corner: false}
+  virtualTourUrl String? // 360deg tour / video link
 
   // GAP #3 -- Phn loi hnh thc thu
-  leaseTermType     UnitLeaseTermType?  // LONG hoc SHORT; LONG c th cho thu ngn hn khi trng
+  leaseTermType UnitLeaseTermType? // LONG hoc SHORT; LONG c th cho thu ngn hn khi trng
 
   // GAP #4 -- Loi mt bng
-  spaceType         SpaceType?          // RETAIL_UNIT, LED, ESCALATOR_WRAP...
+  spaceType SpaceType? // RETAIL_UNIT, LED, ESCALATOR_WRAP...
 
   // GAP #5 -- Snh linh ng
-  isFlexibleArea    Boolean     @default(false) // true = thu theo m2 khng c nh
-  minFlexArea       Float?                       // Din tch ti thiu c th book (m2)
-  maxFlexArea       Float?                       // Din tch ti a c th book (m2)
+  isFlexibleArea Boolean @default(false) // true = thu theo m2 khng c nh
+  minFlexArea    Float? // Din tch ti thiu c th book (m2)
+  maxFlexArea    Float? // Din tch ti a c th book (m2)
 
   // GAP #6 -- Tier A/B/C
-  tier              UnitTier?           // A = prime, B = standard, C = value
+  tier UnitTier? // A = prime, B = standard, C = value
 
   // GAP #2 -- Gp snh
-  isCombined        Boolean     @default(false) // true nu l unit tng hp t nhiu unit khc
-  mergedFromIds     Json?                        // [unitId, unitId, ...] -- cc unit ngun
-  mergedIntoId      String?                      // ID ca combined unit m unit ny  b gp vo
+  isCombined    Boolean @default(false) // true nu l unit tng hp t nhiu unit khc
+  mergedFromIds Json? // [unitId, unitId, ...] -- cc unit ngun
+  mergedIntoId  String? // ID ca combined unit m unit ny  b gp vo
 
   // Digital Map -- position on floor plan (% of image dimensions, 0-100)
-  mapPosX           Float?        // left edge % (legacy rect mode)
-  mapPosY           Float?        // top edge %
-  mapPosW           Float?        // width %
-  mapPosH           Float?        // height %
-  mapPolygon        Json?         // [[x%, y%], ...] polygon vertices
+  mapPosX    Float? // left edge % (legacy rect mode)
+  mapPosY    Float? // top edge %
+  mapPosW    Float? // width %
+  mapPosH    Float? // height %
+  mapPolygon Json? // [[x%, y%], ...] polygon vertices
 
   proposals            Proposal[]
   contracts            Contract[]
@@ -563,23 +567,23 @@ model Unit {
 }
 
 model Tenant {
-  id             String    @id @default(cuid())
-  companyName    String
-  brandName      String
-  taxCode        String?   @unique
-  contactName    String?
-  contactEmail   String?
-  contactPhone   String?
-  address        String?
-  category       String?      // Legacy: free text
-  categoryId     String?      // NEW: FK to Category master
-  categoryRef    Category?    @relation(fields: [categoryId], references: [id])
-  logo           String?
-  isPortalUser   Boolean   @default(false)
-  isActive       Boolean   @default(true)
-  deletedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  companyName  String
+  brandName    String
+  taxCode      String?   @unique
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  category     String? // Legacy: free text
+  categoryId   String? // NEW: FK to Category master
+  categoryRef  Category? @relation(fields: [categoryId], references: [id])
+  logo         String?
+  isPortalUser Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   occupiedUnits  Unit[]          @relation("OccupiedUnit")
   leads          Lead[]
@@ -596,37 +600,37 @@ model Tenant {
 }
 
 model Lead {
-  id           String       @id @default(cuid())
-  brandName    String
-  company      String?
-  contactName  String
-  phone        String?
-  email        String?
-  category     String?      // Legacy: free text
-  categoryId   String?      // NEW: FK to Category master
-  categoryRef  Category?    @relation(fields: [categoryId], references: [id])
-  source       LeadSource   @default(WALK_IN)
-  status       LeadStatus   @default(NEW)
-  priority     LeadPriority @default(WARM)
-  assignedToId String?
-  assignedTo   User?        @relation("AssignedLeads", fields: [assignedToId], references: [id])
-  tenantId     String?
-  tenant       Tenant?      @relation(fields: [tenantId], references: [id])
-  customerId   String?
-  customer     Customer?    @relation(fields: [customerId], references: [id])
-  notes        String?
-  expectedRent Float?
-  expectedArea Float?
+  id                String       @id @default(cuid())
+  brandName         String
+  company           String?
+  contactName       String
+  phone             String?
+  email             String?
+  category          String? // Legacy: free text
+  categoryId        String? // NEW: FK to Category master
+  categoryRef       Category?    @relation(fields: [categoryId], references: [id])
+  source            LeadSource   @default(WALK_IN)
+  status            LeadStatus   @default(NEW)
+  priority          LeadPriority @default(WARM)
+  assignedToId      String?
+  assignedTo        User?        @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  tenantId          String?
+  tenant            Tenant?      @relation(fields: [tenantId], references: [id])
+  customerId        String?
+  customer          Customer?    @relation(fields: [customerId], references: [id])
+  notes             String?
+  expectedRent      Float?
+  expectedArea      Float?
   estimatedValue    Float?
   expectedCloseDate DateTime?
   preferredCategory String?
-  position          Int        @default(0)
+  position          Int          @default(0)
   lastActivityAt    DateTime?
   lostReason        String?
-  isActive     Boolean    @default(true)
-  deletedAt    DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  isActive          Boolean      @default(true)
+  deletedAt         DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   activities   LeadActivity[]
   proposals    Proposal[]
@@ -649,77 +653,77 @@ model LeadActivity {
 }
 
 model Proposal {
-  id                   String         @id @default(cuid())
-  proposalNumber       String         @unique
-  leadId               String?
-  lead                 Lead?          @relation(fields: [leadId], references: [id])
-  tenantId             String?
-  tenant               Tenant?        @relation(fields: [tenantId], references: [id])
-  unitId               String
-  unit                 Unit           @relation(fields: [unitId], references: [id])
-  area                 Float
-  term                 Int
-  startDate            DateTime
-  endDate              DateTime?
-  rentPerSqm           Float
-  camPerSqm            Float          @default(0)
-  deposit              Float          @default(3)
-  rentFree             Int            @default(0)
-  escalationPercent    Float          @default(0)
-  revenueSharePercent  Float          @default(0)
-  marketingFee         Float          @default(0)
-  monthlyRent          Float
-  monthlyCAM           Float
-  depositAmount        Float
-  totalContractValue   Float
-  discount             Float          @default(0)
-  status               ProposalStatus @default(DRAFT)
-  notes                String?
+  id                  String         @id @default(cuid())
+  proposalNumber      String         @unique
+  leadId              String?
+  lead                Lead?          @relation(fields: [leadId], references: [id])
+  tenantId            String?
+  tenant              Tenant?        @relation(fields: [tenantId], references: [id])
+  unitId              String
+  unit                Unit           @relation(fields: [unitId], references: [id])
+  area                Float
+  term                Int
+  startDate           DateTime
+  endDate             DateTime?
+  rentPerSqm          Float
+  camPerSqm           Float          @default(0)
+  deposit             Float          @default(3)
+  rentFree            Int            @default(0)
+  escalationPercent   Float          @default(0)
+  revenueSharePercent Float          @default(0)
+  marketingFee        Float          @default(0)
+  monthlyRent         Float
+  monthlyCAM          Float
+  depositAmount       Float
+  totalContractValue  Float
+  discount            Float          @default(0)
+  status              ProposalStatus @default(DRAFT)
+  notes               String?
 
   // T Trnh fields
-  businessModel        BusinessModelEnum?  // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
-  serviceFeeSqm        Float          @default(0)   // Ph Dch v (USD/m2/thng)
-  businessSupportFeeSqm Float         @default(0)   // Ph h tr Kinh doanh
-  rentCurrency         String         @default("VND") // VND hoc USD
-  fitoutDays           Int            @default(90)  // Thi hn hon thin ni tht (ngy)
-  handoverDate         DateTime?      // Ngy Bn giao Mt bng
-  openingDate          DateTime?      // Ngy Khai trng d kin
-  specialConditions    String?        // iu kin c bit (mc 21)
-  editorContent        Json?          // Editor state: logo, font, color, item overrides, signatories
+  businessModel         BusinessModelEnum? // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
+  serviceFeeSqm         Float              @default(0) // Ph Dch v (USD/m2/thng)
+  businessSupportFeeSqm Float              @default(0) // Ph h tr Kinh doanh
+  rentCurrency          String             @default("VND") // VND hoc USD
+  fitoutDays            Int                @default(90) // Thi hn hon thin ni tht (ngy)
+  handoverDate          DateTime? // Ngy Bn giao Mt bng
+  openingDate           DateTime? // Ngy Khai trng d kin
+  specialConditions     String? // iu kin c bit (mc 21)
+  editorContent         Json? // Editor state: logo, font, color, item overrides, signatories
 
   // GAP #42 -- T gi
-  exchangeRate         Float?         // VND/USD t gi ti thi im lp T Trnh
-  exchangeRateSource   String?        // Ngun t gi (VCB, ...)
+  exchangeRate       Float? // VND/USD t gi ti thi im lp T Trnh
+  exchangeRateSource String? // Ngun t gi (VCB, ...)
 
   // GAP #7 -- Din tch trn HT vs thc t
-  contractedArea       Float?         // Din tch cht trn T Trnh (m2)
-  actualArea           Float?         // Din tch thc t sau o c bn giao (m2)
+  contractedArea Float? // Din tch cht trn T Trnh (m2)
+  actualArea     Float? // Din tch thc t sau o c bn giao (m2)
 
   // GAP #91-94 -- 4 field cn thiu trong 21 mc T Trnh XN
-  utilityFee           Float          @default(0)   // Ph tin ch (mc 12 -- VND/thng)
-  operatingHours       String?                       // Gi hot ng (mc 13 -- vd: "10:00-22:00")
-  afterHoursFee        Float          @default(0)   // Ph ngoi gi (mc 14 -- VND/gi)
-  paymentTermDays      Int            @default(30)  // iu khon thanh ton (mc 16 -- s ngy)
+  utilityFee      Float   @default(0) // Ph tin ch (mc 12 -- VND/thng)
+  operatingHours  String? // Gi hot ng (mc 13 -- vd: "10:00-22:00")
+  afterHoursFee   Float   @default(0) // Ph ngoi gi (mc 14 -- VND/gi)
+  paymentTermDays Int     @default(30) // iu khon thanh ton (mc 16 -- s ngy)
 
   // GAP #41 -- Tch 3 khon cc
-  depositLease         Float?                        // Tin cc thu (VND) -- null = tnh t deposit x monthlyRent
-  depositFitout        Float          @default(0)   // Cc thi cng (VND)
-  fitoutFee            Float          @default(0)   // Ph thi cng (VND)
+  depositLease  Float? // Tin cc thu (VND) -- null = tnh t deposit x monthlyRent
+  depositFitout Float  @default(0) // Cc thi cng (VND)
+  fitoutFee     Float  @default(0) // Ph thi cng (VND)
 
-  createdById          String
-  isActive             Boolean        @default(true)
-  deletedAt            DateTime?
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  createdById String
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  bookingId            String?        @unique
-  booking              UnitBooking?   @relation(fields: [bookingId], references: [id])
-  approvalWorkflow     ApprovalWorkflow?
-  contract             Contract?
-  versions             ProposalVersion[]
-  dealScore            ProposalDealScore?
-  scenarios            ProposalScenario[]
-  services             ProposalService[]  // GAP #15 -- line items dch v
+  bookingId        String?            @unique
+  booking          UnitBooking?       @relation(fields: [bookingId], references: [id])
+  approvalWorkflow ApprovalWorkflow?
+  contract         Contract?
+  versions         ProposalVersion[]
+  dealScore        ProposalDealScore?
+  scenarios        ProposalScenario[]
+  services         ProposalService[] // GAP #15 -- line items dch v
 }
 
 model ProposalVersion {
@@ -743,9 +747,9 @@ model ServicePriceCatalog {
   mallId       String
   mall         Mall     @relation(fields: [mallId], references: [id])
   serviceCode  String
-  name         String   // Tn dch v: "LED screen", "Escalator wrap", "MKT support"...
-  unit         String   // n v tnh: "m2", "thng", "k", "ln"
-  defaultPrice Float    // Gi mc nh
+  name         String // Tn dch v: "LED screen", "Escalator wrap", "MKT support"...
+  unit         String // n v tnh: "m2", "thng", "k", "ln"
+  defaultPrice Float // Gi mc nh
   currency     String   @default("VND")
   description  String?
   isActive     Boolean  @default(true)
@@ -779,33 +783,33 @@ model ProposalService {
 }
 
 model ApprovalWorkflow {
-  id          String         @id @default(cuid())
-  entityType  String
-  entityId    String
-  proposalId  String?        @unique
-  proposal    Proposal?      @relation(fields: [proposalId], references: [id])
-  status      WorkflowStatus @default(PENDING)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id         String         @id @default(cuid())
+  entityType String
+  entityId   String
+  proposalId String?        @unique
+  proposal   Proposal?      @relation(fields: [proposalId], references: [id])
+  status     WorkflowStatus @default(PENDING)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
-  steps       ApprovalStep[]
+  steps           ApprovalStep[]
   fitoutSubmittal FitoutSubmittal?
 }
 
 model ApprovalStep {
-  id           String     @id @default(cuid())
+  id           String           @id @default(cuid())
   workflowId   String
   workflow     ApprovalWorkflow @relation(fields: [workflowId], references: [id])
   stepOrder    Int
   stepName     String
   approverRole Role
   approverId   String?
-  approver     User?      @relation(fields: [approverId], references: [id])
-  status       StepStatus @default(PENDING)
+  approver     User?            @relation(fields: [approverId], references: [id])
+  status       StepStatus       @default(PENDING)
   comment      String?
   decidedAt    DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 }
 
 model ApprovalPolicyRule {
@@ -853,34 +857,34 @@ model Contract {
   notes             String?
 
   // GAP #7 -- Din tch HT vs thc t
-  contractedArea    Float?         // Din tch ghi trn hp ng (m2)
-  actualArea        Float?         // Din tch thc t sau o c bn giao (m2)
+  contractedArea Float? // Din tch ghi trn hp ng (m2)
+  actualArea     Float? // Din tch thc t sau o c bn giao (m2)
 
   // GAP #41 -- Tch 3 khon cc (carry-over t Proposal khi convert)
-  depositLease      Float?         // Tin cc thu (VND)
-  depositFitout     Float          @default(0)   // Cc thi cng (VND)
-  fitoutFee         Float          @default(0)   // Ph thi cng (VND)
+  depositLease  Float? // Tin cc thu (VND)
+  depositFitout Float  @default(0) // Cc thi cng (VND)
+  fitoutFee     Float  @default(0) // Ph thi cng (VND)
 
   // GAP #91, #93 -- Ph tin ch & ph ngoi gi
-  utilityFee        Float          @default(0)   // Ph tin ch (VND/thng)
-  afterHoursFee     Float          @default(0)   // Ph ngoi gi (VND/gi)
-  operatingHours    String?        // Gi hot ng
+  utilityFee     Float   @default(0) // Ph tin ch (VND/thng)
+  afterHoursFee  Float   @default(0) // Ph ngoi gi (VND/gi)
+  operatingHours String? // Gi hot ng
 
-  isActive          Boolean        @default(true)
-  deletedAt         DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  files             ContractFile[]
-  fitoutProject     FitoutProject?
-  invoices          Invoice[]
-  billingSchedule   BillingScheduleEntry[]
-  amendments        ContractAmendment[]
-  events            ContractEvent[]
-  templateId        String?
-  template          ContractTemplate? @relation(fields: [templateId], references: [id])
-  renewalRiskScore  RenewalRiskScore?
-  termination       ContractTermination?
+  files            ContractFile[]
+  fitoutProject    FitoutProject?
+  invoices         Invoice[]
+  billingSchedule  BillingScheduleEntry[]
+  amendments       ContractAmendment[]
+  events           ContractEvent[]
+  templateId       String?
+  template         ContractTemplate?      @relation(fields: [templateId], references: [id])
+  renewalRiskScore RenewalRiskScore?
+  termination      ContractTermination?
 }
 
 enum BillingScheduleStatus {
@@ -911,50 +915,108 @@ model BillingScheduleEntry {
 }
 
 model ContractFile {
-  id              String    @id @default(cuid())
-  contractId      String
-  contract        Contract  @relation(fields: [contractId], references: [id])
-  fileName        String
-  filePath        String
-  fileType        String?
-  fileSize        Int?
-  uploadedById    String?
-  sha256Hash      String?
-  signedAt        DateTime?
-  signerName      String?
-  signerRole      String?
-  verifyCode      String?   @unique
-  createdAt       DateTime  @default(now())
+  id           String    @id @default(cuid())
+  contractId   String
+  contract     Contract  @relation(fields: [contractId], references: [id])
+  fileName     String
+  filePath     String
+  fileType     String?
+  fileSize     Int?
+  uploadedById String?
+  sha256Hash   String?
+  signedAt     DateTime?
+  signerName   String?
+  signerRole   String?
+  verifyCode   String?   @unique
+  createdAt    DateTime  @default(now())
 }
 
 model FitoutProject {
-  id                 String       @id @default(cuid())
-  contractId         String       @unique
-  contract           Contract     @relation(fields: [contractId], references: [id])
+  id                 String    @id @default(cuid())
+  contractId         String    @unique
+  contract           Contract  @relation(fields: [contractId], references: [id])
   tenantId           String
-  tenant             Tenant       @relation(fields: [tenantId], references: [id])
+  tenant             Tenant    @relation(fields: [tenantId], references: [id])
   unitId             String
-  unit               Unit         @relation(fields: [unitId], references: [id])
-  status             String       @default("CONTRACT_SIGNED") // FK to FitoutStageConfig.code
+  unit               Unit      @relation(fields: [unitId], references: [id])
+  status             String    @default("CONTRACT_SIGNED") // FK to FitoutStageConfig.code
   handoverDate       DateTime?
   startDate          DateTime?
   expectedOpenDate   DateTime?
   actualOpenDate     DateTime?
   operationManagerId String?
-  operationManager   User?        @relation("OperationManaged", fields: [operationManagerId], references: [id])
+  operationManager   User?     @relation("OperationManaged", fields: [operationManagerId], references: [id])
   notes              String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  checklists         FitoutChecklist[]
-  documents          FitoutDocument[]
-  milestones         FitoutMilestone[]
-  contractors        FitoutContractor[]
-  workerLogs         WorkerAccessLog[]
-  submittals         FitoutSubmittal[]
-  issues             FitoutIssue[]
-  dailyReports       FitoutDailyReportEntry[]
-  tasks              FitoutTask[]
+  checklists   FitoutChecklist[]
+  documents    FitoutDocument[]
+  milestones   FitoutMilestone[]
+  contractors  FitoutContractor[]
+  workerLogs   WorkerAccessLog[]
+  submittals   FitoutSubmittal[]
+  issues       FitoutIssue[]
+  dailyReports FitoutDailyReportEntry[]
+  tasks        FitoutTask[]
+  risks        FitoutRisk[]
+  changeOrders FitoutChangeOrder[]
+}
+
+model FitoutRisk {
+  id              String        @id @default(cuid())
+  projectId       String
+  project         FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  riskNumber      String
+  title           String
+  description     String?
+  category        String        @default("GENERAL")
+  probability     Int
+  impact          Int
+  score           Int
+  status          String        @default("OPEN")
+  mitigationPlan  String?
+  contingencyPlan String?
+  ownerId         String?
+  owner           User?         @relation("FitoutRiskOwner", fields: [ownerId], references: [id])
+  dueDate         DateTime?
+  closedAt        DateTime?
+  createdById     String
+  createdBy       User          @relation("FitoutRiskCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([projectId, riskNumber])
+  @@index([projectId, status])
+  @@index([projectId, score])
+}
+
+model FitoutChangeOrder {
+  id                 String        @id @default(cuid())
+  projectId          String
+  project            FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeNumber       String
+  title              String
+  description        String?
+  reason             String?
+  status             String        @default("DRAFT")
+  costType           String        @default("ADDITION")
+  proposedAmount     Decimal       @default(0) @db.Decimal(18, 2)
+  approvedAmount     Decimal?      @db.Decimal(18, 2)
+  currency           String        @default("VND")
+  scheduleImpactDays Int           @default(0)
+  requestedById      String
+  requestedBy        User          @relation("FitoutChangeRequestedBy", fields: [requestedById], references: [id])
+  approvedById       String?
+  approvedBy         User?         @relation("FitoutChangeApprovedBy", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  rejectedAt         DateTime?
+  decisionNote       String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@unique([projectId, changeNumber])
+  @@index([projectId, status])
 }
 
 // Cu hnh pipeline giai on fitout -- thay cho enum FitoutStatus cng.
@@ -991,7 +1053,7 @@ model FitoutFormType {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  submittals       FitoutSubmittal[]
+  submittals FitoutSubmittal[]
 
   @@index([isActive, order])
 }
@@ -1025,29 +1087,29 @@ model FitoutSubmittal {
 
 // Vn /Khim khuyt (Defect/NCR) -- ghim v tr trn D-Map, workflow Opened->InProgress->Done->Closed/Reopened.
 model FitoutIssue {
-  id            String        @id @default(cuid())
-  projectId     String
-  project       FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  unitId        String
-  unit          Unit          @relation(fields: [unitId], references: [id])
-  floorId       String?
-  title         String
-  description   String?
-  category      String        @default("DEFECT") // DEFECT | NCR | SAFETY | GENERAL
-  severity      String        @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
-  status        String        @default("OPENED") // OPENED | IN_PROGRESS | DONE | CLOSED | REOPENED | CANCELLED
-  isOverdue     Boolean       @default(false)
-  positionX     Float? // 0-100, to  trong bounding-box ca unit (ghim D-Map)
-  positionY     Float?
-  createdById   String
-  createdBy     User          @relation("IssueCreatedBy", fields: [createdById], references: [id])
-  assigneeId    String?
-  assignee      User?         @relation("IssueAssignedTo", fields: [assigneeId], references: [id])
-  dueDate       DateTime?
-  closedAt      DateTime?
-  reopenCount   Int           @default(0)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id          String        @id @default(cuid())
+  projectId   String
+  project     FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unitId      String
+  unit        Unit          @relation(fields: [unitId], references: [id])
+  floorId     String?
+  title       String
+  description String?
+  category    String        @default("DEFECT") // DEFECT | NCR | SAFETY | GENERAL
+  severity    String        @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status      String        @default("OPENED") // OPENED | IN_PROGRESS | DONE | CLOSED | REOPENED | CANCELLED
+  isOverdue   Boolean       @default(false)
+  positionX   Float? // 0-100, to  trong bounding-box ca unit (ghim D-Map)
+  positionY   Float?
+  createdById String
+  createdBy   User          @relation("IssueCreatedBy", fields: [createdById], references: [id])
+  assigneeId  String?
+  assignee    User?         @relation("IssueAssignedTo", fields: [assigneeId], references: [id])
+  dueDate     DateTime?
+  closedAt    DateTime?
+  reopenCount Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([projectId, status])
   @@index([unitId, status])
@@ -1055,47 +1117,47 @@ model FitoutIssue {
 
 // Bo co ngy (nht k cng trng in t) -- nhiu entry/ngy/nh thu, gp  tng c.
 model FitoutDailyReportEntry {
-  id             String        @id @default(cuid())
+  id             String            @id @default(cuid())
   projectId      String
-  project        FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project        FitoutProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   reportDate     DateTime // ch ly phn ngy (00:00)  group theo ngy
   contractorId   String?
   contractor     FitoutContractor? @relation(fields: [contractorId], references: [id])
-  workforceCount Int           @default(0)
+  workforceCount Int               @default(0)
   description    String
   areaTag        String? // khu vc trong mt bng, vd "Tng trt - khu A"
   createdById    String
-  createdBy      User          @relation("DailyReportCreatedBy", fields: [createdById], references: [id])
-  createdAt      DateTime      @default(now())
+  createdBy      User              @relation("DailyReportCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime          @default(now())
 
   @@index([projectId, reportDate])
 }
 
 // Tin  thi cng (Gantt) -- WBS cy con qua parentTaskId, planned/revised/actual.
 model FitoutTask {
-  id                   String        @id @default(cuid())
+  id                   String            @id @default(cuid())
   projectId            String
-  project              FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project              FitoutProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name                 String
   parentTaskId         String?
-  parent               FitoutTask?   @relation("TaskWbs", fields: [parentTaskId], references: [id])
-  children             FitoutTask[]  @relation("TaskWbs")
+  parent               FitoutTask?       @relation("TaskWbs", fields: [parentTaskId], references: [id])
+  children             FitoutTask[]      @relation("TaskWbs")
   plannedStart         DateTime
   plannedEnd           DateTime
   revisedStart         DateTime?
   revisedEnd           DateTime?
   actualStart          DateTime?
   actualEnd            DateTime?
-  percentComplete      Int           @default(0)
-  isLate               Boolean       @default(false)
-  sortOrder            Int           @default(0)
+  percentComplete      Int               @default(0)
+  isLate               Boolean           @default(false)
+  sortOrder            Int               @default(0)
   assignedContractorId String?
   assignedContractor   FitoutContractor? @relation(fields: [assignedContractorId], references: [id])
-  dependsOnTaskId       String?
-  dependsOn             FitoutTask?  @relation("TaskDependency", fields: [dependsOnTaskId], references: [id])
-  dependents            FitoutTask[] @relation("TaskDependency")
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  dependsOnTaskId      String?
+  dependsOn            FitoutTask?       @relation("TaskDependency", fields: [dependsOnTaskId], references: [id])
+  dependents           FitoutTask[]      @relation("TaskDependency")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   @@index([projectId, sortOrder])
 }
@@ -1166,9 +1228,9 @@ model Ticket {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  comments     TicketComment[]
-  escalations  TicketEscalation[]
-  rating       TicketRating?
+  comments    TicketComment[]
+  escalations TicketEscalation[]
+  rating      TicketRating?
 
   @@index([slaDueAt, status])
 }
@@ -1209,9 +1271,9 @@ model SalesTurnover {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  @@unique([tenantId, unitId, period])
+  auditTrail SalesAuditTrail[]
 
-  auditTrail   SalesAuditTrail[]
+  @@unique([tenantId, unitId, period])
 }
 
 model Invoice {
@@ -1237,15 +1299,15 @@ model Invoice {
   updatedAt     DateTime      @updatedAt
 
   // Hu ho n c kim sot -- khng xo bn ghi, ch nh du CANCELLED + lu vt ai/khi no/v sao.
-  voidedAt      DateTime?
-  voidedById    String?
-  voidedBy      User?         @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
-  voidReason    String?
+  voidedAt   DateTime?
+  voidedById String?
+  voidedBy   User?     @relation("InvoiceVoidedBy", fields: [voidedById], references: [id])
+  voidReason String?
 
-  lines              InvoiceLine[]
-  payments           Payment[]
-  billingSchedule    BillingScheduleEntry?
-  arDunningLogs      ArDunningLog[]
+  lines           InvoiceLine[]
+  payments        Payment[]
+  billingSchedule BillingScheduleEntry?
+  arDunningLogs   ArDunningLog[]
 }
 
 model ArDunningPolicy {
@@ -1261,7 +1323,7 @@ model ArDunningPolicy {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  logs           ArDunningLog[]
+  logs ArDunningLog[]
 
   @@index([isActive, level])
 }
@@ -1292,17 +1354,19 @@ model InvoiceLine {
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  invoiceId String
-  invoice   Invoice       @relation(fields: [invoiceId], references: [id])
-  tenantId  String
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
-  amount    Float
-  method    PaymentMethod @default(BANK_TRANSFER)
-  reference String?
-  paidAt    DateTime
-  notes     String?
-  createdAt DateTime      @default(now())
+  id              String        @id @default(cuid())
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  amount          Float
+  method          PaymentMethod @default(BANK_TRANSFER)
+  reference       String?
+  idempotencyKey  String?       @unique
+  idempotencyHash String?
+  paidAt          DateTime
+  notes           String?
+  createdAt       DateTime      @default(now())
 
   // o bt ton thanh ton ghi nhm -- khng xo bn ghi, ch nh du  o + lu vt.
   reversedAt     DateTime?
@@ -1379,20 +1443,20 @@ model ContractClause {
 }
 
 model ContractAmendment {
-  id              String           @id @default(cuid())
+  id              String          @id @default(cuid())
   contractId      String
-  contract        Contract         @relation(fields: [contractId], references: [id])
-  amendmentNumber String           @unique
+  contract        Contract        @relation(fields: [contractId], references: [id])
+  amendmentNumber String          @unique
   type            AmendmentType
-  status          AmendmentStatus  @default(DRAFT)
+  status          AmendmentStatus @default(DRAFT)
   effectiveDate   DateTime
   changes         Json
   reason          String?
   submittedAt     DateTime?
   approvedAt      DateTime?
   createdById     String?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([contractId, status])
 }
@@ -1488,6 +1552,41 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  eventKey      String    @unique
+  eventName     String
+  aggregateType String
+  aggregateId   String
+  payload       Json
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  processedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt, createdAt])
+}
+
+model EmailDelivery {
+  id                String    @id @default(cuid())
+  eventKey          String    @unique
+  recipient         Json
+  payload           Json
+  status            String    @default("PENDING")
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime  @default(now())
+  providerMessageId String?
+  deliveredAt       DateTime?
+  lastError         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt, createdAt])
+}
+
 model Customer {
   id                   String         @id @default(cuid())
   customerCode         String         @unique
@@ -1503,48 +1602,48 @@ model Customer {
   website              String?
   source               LeadSource     @default(WALK_IN)
   status               CustomerStatus @default(PROSPECT)
-  preferredCategory    String?      // Legacy: free text
-  preferredCategoryId  String?      // NEW: FK to Category master
-  preferredCategoryRef Category?    @relation(fields: [preferredCategoryId], references: [id])
-  expectedArea      Float?
-  budgetMin         Float?
-  budgetMax         Float?
-  rating            Int?           @default(3)
-  assignedToId      String?
-  assignedTo        User?          @relation("AssignedCustomers", fields: [assignedToId], references: [id])
-  tenantId          String?
-  tenant            Tenant?        @relation(fields: [tenantId], references: [id])
-  createdById       String?
-  createdBy         User?          @relation("CreatedCustomers", fields: [createdById], references: [id])
-  notes             String?
-  wonAt             DateTime?
-  lostAt            DateTime?
-  lostReason        String?
-  isActive          Boolean        @default(true)
-  deletedAt         DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  preferredCategory    String? // Legacy: free text
+  preferredCategoryId  String? // NEW: FK to Category master
+  preferredCategoryRef Category?      @relation(fields: [preferredCategoryId], references: [id])
+  expectedArea         Float?
+  budgetMin            Float?
+  budgetMax            Float?
+  rating               Int?           @default(3)
+  assignedToId         String?
+  assignedTo           User?          @relation("AssignedCustomers", fields: [assignedToId], references: [id])
+  tenantId             String?
+  tenant               Tenant?        @relation(fields: [tenantId], references: [id])
+  createdById          String?
+  createdBy            User?          @relation("CreatedCustomers", fields: [createdById], references: [id])
+  notes                String?
+  wonAt                DateTime?
+  lostAt               DateTime?
+  lostReason           String?
+  isActive             Boolean        @default(true)
+  deletedAt            DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  leads             Lead[]
-  activities        CustomerActivity[]
-  followUps         LeadFollowUp[]
-  bookings          UnitBooking[]
-  slotBookings      SlotBooking[]
+  leads        Lead[]
+  activities   CustomerActivity[]
+  followUps    LeadFollowUp[]
+  bookings     UnitBooking[]
+  slotBookings SlotBooking[]
 }
 
 model CustomerActivity {
-  id           String       @id @default(cuid())
-  customerId   String
-  customer     Customer     @relation(fields: [customerId], references: [id])
-  type         ActivityType
-  subject      String?
-  note         String
-  scheduledAt  DateTime?
-  completedAt  DateTime?
-  outcome      String?
-  createdById  String
-  createdBy    User         @relation("CustomerActivityBy", fields: [createdById], references: [id])
-  createdAt    DateTime     @default(now())
+  id          String       @id @default(cuid())
+  customerId  String
+  customer    Customer     @relation(fields: [customerId], references: [id])
+  type        ActivityType
+  subject     String?
+  note        String
+  scheduledAt DateTime?
+  completedAt DateTime?
+  outcome     String?
+  createdById String
+  createdBy   User         @relation("CustomerActivityBy", fields: [createdById], references: [id])
+  createdAt   DateTime     @default(now())
 }
 
 model FloorPlanAnalysis {
@@ -1577,21 +1676,21 @@ enum FitoutDocumentStatus {
 }
 
 model FitoutDocument {
-  id            String               @id @default(cuid())
-  projectId     String
-  project       FitoutProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  documentType  String // FK to FitoutFormType.code
-  fileName      String
-  filePath      String
-  fileSizeKb    Int                  @default(0)
-  status        FitoutDocumentStatus @default(PENDING)
-  requiredFor   String? // FK to FitoutStageConfig.code
-  uploadedById  String?
-  reviewedById  String?
-  reviewedAt    DateTime?
-  reviewNote    String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  id           String               @id @default(cuid())
+  projectId    String
+  project      FitoutProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  documentType String // FK to FitoutFormType.code
+  fileName     String
+  filePath     String
+  fileSizeKb   Int                  @default(0)
+  status       FitoutDocumentStatus @default(PENDING)
+  requiredFor  String? // FK to FitoutStageConfig.code
+  uploadedById String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
 
   @@index([projectId, documentType])
 }
@@ -1638,15 +1737,15 @@ model FitoutMilestone {
 }
 
 model TicketSlaPolicy {
-  id             String         @id @default(cuid())
-  ticketType     TicketType
-  priority       TicketPriority
-  responseHours  Int
+  id              String         @id @default(cuid())
+  ticketType      TicketType
+  priority        TicketPriority
+  responseHours   Int
   resolutionHours Int
-  escalateToRole Role?
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  escalateToRole  Role?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@unique([ticketType, priority])
 }
@@ -1704,28 +1803,28 @@ model RenewalRiskScore {
 }
 
 model MallPolicy {
-  id          String   @id @default(cuid())
-  mallId      String   @unique
-  mall        Mall     @relation(fields: [mallId], references: [id])
-  policies    Json
-  kpiTargets  Json?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  mallId     String   @unique
+  mall       Mall     @relation(fields: [mallId], references: [id])
+  policies   Json
+  kpiTargets Json?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model ComplianceExport {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   exportType   String
   mallId       String?
   periodStart  DateTime
   periodEnd    DateTime
   filePath     String?
-  status       String   @default("PENDING")
+  status       String    @default("PENDING")
   requestedBy  String
   completedAt  DateTime?
   errorMessage String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([exportType, status])
 }
@@ -1736,16 +1835,16 @@ model ComplianceExport {
 
 // Phn quyn ngi dng theo tng Mall (multi-mall governance)
 model UserMallAccess {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mallId    String
-  mall      Mall     @relation(fields: [mallId], references: [id], onDelete: Cascade)
-  role      Role
-  isActive  Boolean  @default(true)
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mallId      String
+  mall        Mall     @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  role        Role
+  isActive    Boolean  @default(true)
   grantedById String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([userId, mallId])
   @@index([mallId, isActive])
@@ -1779,7 +1878,7 @@ model ProposalScenario {
   name        String
   description String?
   isSelected  Boolean  @default(false)
-  terms       Json     // { area, term, rentPerSqm, camPerSqm, deposit, rentFree, escalation, discount, monthlyRent, totalValue }
+  terms       Json // { area, term, rentPerSqm, camPerSqm, deposit, rentFree, escalation, discount, monthlyRent, totalValue }
   score       Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1792,15 +1891,15 @@ model ContractTermination {
   id                String    @id @default(cuid())
   contractId        String    @unique
   contract          Contract  @relation(fields: [contractId], references: [id])
-  initiatedBy       String    // 'THISO' | 'TENANT'
+  initiatedBy       String // 'THISO' | 'TENANT'
   reason            String
   effectiveDate     DateTime
   noticePeriodDays  Int       @default(60)
   depositRefund     Float?
   penaltyAmount     Float?
   handoverDate      DateTime?
-  handoverCondition String?   // 'GOOD' | 'FAIR' | 'DAMAGED'
-  utilityFinalRead  Json?     // { electricity, water, gas }
+  handoverCondition String? // 'GOOD' | 'FAIR' | 'DAMAGED'
+  utilityFinalRead  Json? // { electricity, water, gas }
   accessCardReturn  Boolean   @default(false)
   signageRemoved    Boolean   @default(false)
   keysReturned      Boolean   @default(false)
@@ -1814,18 +1913,18 @@ model ContractTermination {
 
 // Nh thu thi cng cho Fitout
 model FitoutContractor {
-  id           String        @id @default(cuid())
-  projectId    String
-  project      FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  companyName  String
-  licenseNo    String?
-  contactName  String
-  phone        String
-  email        String?
-  startDate    DateTime
-  endDate      DateTime?
-  isActive     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
+  id          String        @id @default(cuid())
+  projectId   String
+  project     FitoutProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  companyName String
+  licenseNo   String?
+  contactName String
+  phone       String
+  email       String?
+  startDate   DateTime
+  endDate     DateTime?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
 
   workers      WorkerAccessLog[]
   dailyReports FitoutDailyReportEntry[]
@@ -1854,34 +1953,34 @@ model WorkerAccessLog {
 
 // Lch bo tr nh k (preventive maintenance)
 model MaintenanceSchedule {
-  id              String     @id @default(cuid())
-  mallId          String
-  mall            Mall       @relation(fields: [mallId], references: [id])
-  unitId          String?
-  unit            Unit?      @relation(fields: [unitId], references: [id])
-  title           String
-  description     String?
-  frequency       String     // 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY'
-  nextDueDate     DateTime
-  lastExecutedAt  DateTime?
-  assignedRole    Role       @default(OPERATION)
-  estimatedHours  Float?
-  isActive        Boolean    @default(true)
-  createdById     String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id             String    @id @default(cuid())
+  mallId         String
+  mall           Mall      @relation(fields: [mallId], references: [id])
+  unitId         String?
+  unit           Unit?     @relation(fields: [unitId], references: [id])
+  title          String
+  description    String?
+  frequency      String // 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY'
+  nextDueDate    DateTime
+  lastExecutedAt DateTime?
+  assignedRole   Role      @default(OPERATION)
+  estimatedHours Float?
+  isActive       Boolean   @default(true)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([mallId, nextDueDate, isActive])
 }
 
 // nh gi satisfaction ca tenant sau khi ng ticket
 model TicketRating {
-  id        String   @id @default(cuid())
-  ticketId  String   @unique
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  rating    Int      // 1-5
-  comment   String?
-  ratedAt   DateTime @default(now())
+  id       String   @id @default(cuid())
+  ticketId String   @unique
+  ticket   Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  rating   Int // 1-5
+  comment  String?
+  ratedAt  DateTime @default(now())
 
   @@index([rating])
 }
@@ -1891,7 +1990,7 @@ model SalesAuditTrail {
   id            String        @id @default(cuid())
   salesId       String
   sales         SalesTurnover @relation(fields: [salesId], references: [id], onDelete: Cascade)
-  action        String        // 'SUBMITTED' | 'REVISED' | 'APPROVED' | 'DISPUTED'
+  action        String // 'SUBMITTED' | 'REVISED' | 'APPROVED' | 'DISPUTED'
   oldValue      Float?
   newValue      Float
   reason        String?
@@ -1909,12 +2008,12 @@ model MallAnnouncement {
   mall             Mall      @relation(fields: [mallId], references: [id])
   title            String
   content          String    @db.Text
-  category         String    // 'MAINTENANCE' | 'EVENT' | 'POLICY' | 'PROMOTION' | 'EMERGENCY'
+  category         String // 'MAINTENANCE' | 'EVENT' | 'POLICY' | 'PROMOTION' | 'EMERGENCY'
   priority         String    @default("NORMAL") // 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   publishedAt      DateTime
   expiresAt        DateTime?
   targetAll        Boolean   @default(true)
-  targetCategories String[]  // filter theo ngnh hng ca tenant
+  targetCategories String[] // filter theo ngnh hng ca tenant
   attachmentUrl    String?
   isActive         Boolean   @default(true)
   createdById      String
@@ -1930,13 +2029,13 @@ model UnifiedDocument {
   id            String    @id @default(cuid())
   mallId        String?
   mall          Mall?     @relation(fields: [mallId], references: [id])
-  entityType    String    // 'CONTRACT' | 'FITOUT' | 'TENANT' | 'INVOICE' | 'TICKET' | 'PROPOSAL'
+  entityType    String // 'CONTRACT' | 'FITOUT' | 'TENANT' | 'INVOICE' | 'TICKET' | 'PROPOSAL'
   entityId      String
   category      String    @default("GENERAL") // 'ORIGINAL' | 'SCAN' | 'AMENDMENT' | 'CORRESPONDENCE' | 'SIGNED'
-  documentType  String    // loi ti liu c th
+  documentType  String // loi ti liu c th
   fileName      String
   filePath      String
-  fileHash      String?   // SHA-256  verify integrity
+  fileHash      String? // SHA-256  verify integrity
   fileSize      Int       @default(0)
   mimeType      String    @default("application/octet-stream")
   version       Int       @default(1)
@@ -1958,17 +2057,17 @@ model UnifiedDocument {
 
 // Mapping entity trong h thng sang i tng tng ng trong SAP
 model SapEntityMapping {
-  id           String   @id @default(cuid())
-  entityType   String   // 'TENANT' | 'CONTRACT' | 'INVOICE' | 'PAYMENT'
-  entityId     String
-  sapRef       String   // BP number / doc number trong SAP
-  sapSystem    String   @default("S4HANA")
-  sapCompanyCode String @default("1000")
-  lastSyncAt   DateTime @default(now())
-  syncStatus   String   @default("SYNCED") // SYNCED | PENDING | FAILED
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default(cuid())
+  entityType     String // 'TENANT' | 'CONTRACT' | 'INVOICE' | 'PAYMENT'
+  entityId       String
+  sapRef         String // BP number / doc number trong SAP
+  sapSystem      String   @default("S4HANA")
+  sapCompanyCode String   @default("1000")
+  lastSyncAt     DateTime @default(now())
+  syncStatus     String   @default("SYNCED") // SYNCED | PENDING | FAILED
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([entityType, entityId])
   @@index([entityType, syncStatus])
@@ -1981,47 +2080,47 @@ model SapEntityMapping {
 // t ch slot - bc gia Lead quan tm v Proposal chnh thc
 // Cho php nhiu khch cng book mt unit vi th t u tin
 model UnitBooking {
-  id              String        @id @default(cuid())
-  bookingNumber   String        @unique  // BK-YYYY-NNNNN
-  unitId          String
-  unit            Unit          @relation(fields: [unitId], references: [id])
-  leadId          String?
-  lead            Lead?         @relation(fields: [leadId], references: [id])
-  customerId      String?
-  customer        Customer?     @relation(fields: [customerId], references: [id])
-  status          BookingStatus @default(PENDING)
-  priority        Int           @default(1)  // 1 = u tin cao nht
-  requestedArea   Float?        // Din tch yu cu
-  requestedTerm   Int?          // Thi hn thu mong mun (thng)
-  expectedRent    Float?        // Mc gi k vng (khch)
-  holdDays        Int           @default(30) // S ngy gi slot
-  expiresAt       DateTime?     // Thi im booking ht hn
-  activatedAt     DateTime?     // Thi im chuyn sang ACTIVE
-  convertedAt     DateTime?     // Thi im convert sang Proposal
-  cancelledAt     DateTime?
-  cancelReason    String?
-  notes           String?
+  id            String        @id @default(cuid())
+  bookingNumber String        @unique // BK-YYYY-NNNNN
+  unitId        String
+  unit          Unit          @relation(fields: [unitId], references: [id])
+  leadId        String?
+  lead          Lead?         @relation(fields: [leadId], references: [id])
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  status        BookingStatus @default(PENDING)
+  priority      Int           @default(1) // 1 = u tin cao nht
+  requestedArea Float? // Din tch yu cu
+  requestedTerm Int? // Thi hn thu mong mun (thng)
+  expectedRent  Float? // Mc gi k vng (khch)
+  holdDays      Int           @default(30) // S ngy gi slot
+  expiresAt     DateTime? // Thi im booking ht hn
+  activatedAt   DateTime? // Thi im chuyn sang ACTIVE
+  convertedAt   DateTime? // Thi im convert sang Proposal
+  cancelledAt   DateTime?
+  cancelReason  String?
+  notes         String?
 
   // Proposed price by sales
-  proposedRentPerSqm    Float?                  // Gi sale  xut (VND/m2/thng)
-  proposedCamPerSqm     Float?                  // CAM  xut
-  priceApprovalStatus   PriceApprovalStatus?    // PENDING, APPROVED, REJECTED
-  priceApprovalNote     String?                 // Ghi ch ph duyt
+  proposedRentPerSqm    Float? // Gi sale  xut (VND/m2/thng)
+  proposedCamPerSqm     Float? // CAM  xut
+  priceApprovalStatus   PriceApprovalStatus? // PENDING, APPROVED, REJECTED
+  priceApprovalNote     String? // Ghi ch ph duyt
   priceApprovedById     String?
-  priceApprovedBy       User?         @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
+  priceApprovedBy       User?                @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
   priceApprovedAt       DateTime?
-  priceDeviationPercent Float?                  // % chnh lch so vi gi sn
+  priceDeviationPercent Float? // % chnh lch so vi gi sn
 
-  createdById     String
-  createdBy       User          @relation("BookingCreatedBy", fields: [createdById], references: [id])
-  assignedToId    String?
-  assignedTo      User?         @relation("BookingAssignedTo", fields: [assignedToId], references: [id])
-  isActive        Boolean       @default(true)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdById  String
+  createdBy    User     @relation("BookingCreatedBy", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo   User?    @relation("BookingAssignedTo", fields: [assignedToId], references: [id])
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  proposal        Proposal?
-  activities      BookingActivity[]
+  proposal   Proposal?
+  activities BookingActivity[]
 
   @@index([unitId, status, priority])
   @@index([leadId])
@@ -2032,15 +2131,15 @@ model UnitBooking {
 
 // Lch s hot ng ca mt booking
 model BookingActivity {
-  id          String              @id @default(cuid())
-  bookingId   String
-  booking     UnitBooking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  type        BookingActivityType
-  note        String
-  metadata    Json?               // D liu b sung (v d: priority c/mi)
+  id            String              @id @default(cuid())
+  bookingId     String
+  booking       UnitBooking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  type          BookingActivityType
+  note          String
+  metadata      Json? // D liu b sung (v d: priority c/mi)
   performedById String
-  performedBy   User              @relation(fields: [performedById], references: [id])
-  createdAt   DateTime            @default(now())
+  performedBy   User                @relation(fields: [performedById], references: [id])
+  createdAt     DateTime            @default(now())
 
   @@index([bookingId, createdAt])
 }
@@ -2051,12 +2150,12 @@ model UnitMedia {
   unitId       String
   unit         Unit          @relation(fields: [unitId], references: [id], onDelete: Cascade)
   type         UnitMediaType @default(PHOTO)
-  fileUrl      String        // ng dn file (local path hoc CDN URL)
+  fileUrl      String // ng dn file (local path hoc CDN URL)
   fileName     String
-  fileSize     Int?          // Byte
+  fileSize     Int? // Byte
   mimeType     String?
-  caption      String?       // M t ngn hin th trong gallery
-  sortOrder    Int           @default(0)  // Th t hin th
+  caption      String? // M t ngn hin th trong gallery
+  sortOrder    Int           @default(0) // Th t hin th
   isCover      Boolean       @default(false) // nh i din ca unit
   uploadedById String
   uploadedBy   User          @relation(fields: [uploadedById], references: [id])
@@ -2076,17 +2175,17 @@ enum UnitHistoryType {
 }
 
 model UnitHistory {
-  id           String          @id @default(cuid())
-  unitId       String
-  unit         Unit            @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  changeType   UnitHistoryType
-  fieldName    String?         // Field that changed (e.g., 'status', 'baseRentPerSqm')
-  oldValue     Json?           // Previous value
-  newValue     Json?           // New value
-  changedById  String?
-  changedBy    User?           @relation("UnitHistoryChangedBy", fields: [changedById], references: [id])
-  notes        String?
-  createdAt    DateTime        @default(now())
+  id          String          @id @default(cuid())
+  unitId      String
+  unit        Unit            @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  changeType  UnitHistoryType
+  fieldName   String? // Field that changed (e.g., 'status', 'baseRentPerSqm')
+  oldValue    Json? // Previous value
+  newValue    Json? // New value
+  changedById String?
+  changedBy   User?           @relation("UnitHistoryChangedBy", fields: [changedById], references: [id])
+  notes       String?
+  createdAt   DateTime        @default(now())
 
   @@index([unitId, createdAt])
   @@index([changeType])
@@ -2094,16 +2193,16 @@ model UnitHistory {
 
 // Log import d liu unit hng lot (upload CSV/Excel)
 model UnitImportLog {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   mallId       String
   fileName     String
-  totalRows    Int      @default(0)
-  successRows  Int      @default(0)
-  failedRows   Int      @default(0)
-  errors       Json?    // Danh sch li theo dng
-  status       String   @default("PROCESSING") // PROCESSING | COMPLETED | FAILED
+  totalRows    Int       @default(0)
+  successRows  Int       @default(0)
+  failedRows   Int       @default(0)
+  errors       Json? // Danh sch li theo dng
+  status       String    @default("PROCESSING") // PROCESSING | COMPLETED | FAILED
   importedById String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
   completedAt  DateTime?
 
   @@index([mallId, createdAt])
@@ -2124,28 +2223,28 @@ enum SlotBookingStatus {
 }
 
 model UnitSlot {
-  id               String     @id @default(cuid())
+  id               String    @id @default(cuid())
   unitId           String
-  unit             Unit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unit             Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
   code             String
   name             String
   area             Float
   description      String?
-  slotType         SlotType?  @default(FLEXIBLE)
+  slotType         SlotType? @default(FLEXIBLE)
   pricePerDaySqm   Float?
   pricePerHour     Float?
   pricePerSqmMonth Float?
-  posX             Float?     @default(10)
-  posY             Float?     @default(10)
-  posW             Float?     @default(20)
-  posH             Float?     @default(20)
+  posX             Float?    @default(10)
+  posY             Float?    @default(10)
+  posW             Float?    @default(20)
+  posH             Float?    @default(20)
   fillColor        String?
-  isActive         Boolean    @default(true)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  pricingRules     SlotPricingRule[]
-  bookings         SlotBooking[]
+  pricingRules SlotPricingRule[]
+  bookings     SlotBooking[]
 
   @@unique([unitId, code])
   @@index([unitId, isActive])
@@ -2156,7 +2255,7 @@ model SlotPricingRule {
   slotId      String
   slot        UnitSlot  @relation(fields: [slotId], references: [id], onDelete: Cascade)
   name        String
-  ruleType    String    // WEEKEND, HOLIDAY, SEASONAL, MIN_DAYS
+  ruleType    String // WEEKEND, HOLIDAY, SEASONAL, MIN_DAYS
   multiplier  Float?    @default(1)
   discountPct Float?    @default(0)
   minDays     Int?
@@ -2178,13 +2277,13 @@ model SlotBooking {
   lead          Lead?             @relation(fields: [leadId], references: [id])
   customerId    String?
   customer      Customer?         @relation(fields: [customerId], references: [id])
-  type          String            // DAILY, HOURLY, MONTHLY
+  type          String // DAILY, HOURLY, MONTHLY
   startDatetime DateTime
   endDatetime   DateTime
   totalArea     Float?
   baseAmount    Float?
   discountPct   Float?            @default(0)
-  totalAmount   Float             // Final amount after discount
+  totalAmount   Float // Final amount after discount
   status        SlotBookingStatus @default(PENDING)
   notes         String?
   cancelReason  String?

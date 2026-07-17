@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 const ENTITY_TYPE = 'FITOUT_ISSUE';
 
@@ -25,6 +26,7 @@ export class FitoutIssueService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   async list(projectId: string, query: { status?: string; category?: string; assigneeId?: string } = {}) {
@@ -232,6 +234,10 @@ export class FitoutIssueService {
 
   @Cron('0 8 * * *', { name: 'fitout-issue-overdue-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkOverdueIssues() {
+    return this.schedulerLock.runExclusive('fitout-issue-overdue-check', 14_400_000, () => this.checkOverdueIssuesUnlocked());
+  }
+
+  private async checkOverdueIssuesUnlocked() {
     this.logger.log('Checking overdue fitout issues...');
     const now = new Date();
 

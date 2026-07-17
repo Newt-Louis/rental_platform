@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ComplianceService } from './compliance.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 const EXPORT_TYPES = ['CONTRACTS', 'INVOICES', 'APPROVALS', 'AUDIT_TRAIL'];
 
@@ -21,11 +22,23 @@ export class ComplianceSchedulerService {
   constructor(
     private prisma: PrismaService,
     private complianceService: ComplianceService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   // Run on 2nd of every month at 6:00 AM — generate compliance exports for previous month
-  @Cron('0 6 2 * *')
+  @Cron('0 6 2 * *', {
+    name: 'compliance-monthly-reports',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  })
   async generateMonthlyReports() {
+    return this.schedulerLock.runExclusive(
+      'compliance-monthly-reports',
+      6 * 60 * 60_000,
+      () => this.generateMonthlyReportsUnlocked(),
+    );
+  }
+
+  private async generateMonthlyReportsUnlocked() {
     this.logger.log('Running monthly compliance report generation...');
 
     const now = new Date();
@@ -72,8 +85,19 @@ export class ComplianceSchedulerService {
   }
 
   // Apply retention policy — purge expired compliance exports
-  @Cron('0 3 1 * *')
+  @Cron('0 3 1 * *', {
+    name: 'compliance-retention-purge',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  })
   async applyRetentionPolicies() {
+    return this.schedulerLock.runExclusive(
+      'compliance-retention-purge',
+      6 * 60 * 60_000,
+      () => this.applyRetentionPoliciesUnlocked(),
+    );
+  }
+
+  private async applyRetentionPoliciesUnlocked() {
     this.logger.log('Applying document retention policies...');
 
     const malls = await this.prisma.mall.findMany({

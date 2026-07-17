@@ -1,5 +1,5 @@
-import { renderHook } from '@testing-library/react';
-import { afterEach, describe, it, expect } from 'vitest';
+import { cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { usePermission } from './usePermission';
 import { useAuthStore } from '@/store/auth.store';
 import type { User } from '@/types';
@@ -13,7 +13,8 @@ const makeUser = (role: User['role']): User => ({
 });
 
 describe('usePermission', () => {
-  afterEach(() => useAuthStore.setState({ user: null }));
+  beforeEach(() => useAuthStore.setState({ user: null }));
+  afterEach(() => cleanup());
 
   it('returns null user when not authenticated', () => {
     const { result } = renderHook(() => usePermission());
@@ -54,8 +55,9 @@ describe('usePermission', () => {
     ];
     nonTenantRoles.forEach(role => {
       useAuthStore.setState({ user: makeUser(role) });
-      const { result } = renderHook(() => usePermission());
+      const { result, unmount } = renderHook(() => usePermission());
       expect(result.current.isStaff).toBe(true);
+      unmount();
     });
   });
 

@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { StepStatus, WorkflowStatus } from '@prisma/client';
+import { Prisma, StepStatus, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
+import { OutboxService } from '../../common/services/outbox.service';
 
 /**
  * Sinh khi 1 ApprovalWorkflow hoàn tất (tất cả step đã APPROVED).
@@ -37,6 +38,7 @@ export class ApprovalsService {
   constructor(
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
+    private outbox: OutboxService,
   ) {}
 
   async getPending(userId: string, userRole: string, query: { page?: number; limit?: number } = {}) {
@@ -150,93 +152,122 @@ export class ApprovalsService {
   }
 
   async approve(stepId: string, userId: string, userRole: string, comment?: string) {
-    const step = await this.prisma.approvalStep.findUnique({
-      where: { id: stepId },
-      include: {
-        workflow: {
-          include: {
-            steps: { orderBy: { stepOrder: 'asc' } },
+    const result = await this.prisma.$transaction(async (tx) => {
+      const step = await tx.approvalStep.findUnique({
+        where: { id: stepId },
+        include: {
+          workflow: {
+            include: {
+              steps: { orderBy: { stepOrder: 'asc' } },
+            },
           },
         },
-      },
-    });
-
-    if (!step) throw new NotFoundException('Approval step not found');
-    if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
-    if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
-
-    const unapprovedEarlierStep = step.workflow.steps.find(
-      (s) => s.stepOrder < step.stepOrder && s.status !== StepStatus.APPROVED,
-    );
-    if (unapprovedEarlierStep) {
-      throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
-    }
-
-    await this.prisma.approvalStep.update({
-      where: { id: stepId },
-      data: { status: StepStatus.APPROVED, approverId: userId, comment, decidedAt: new Date() },
-    });
-
-    const allOtherStepsApproved = step.workflow.steps
-      .filter((s) => s.id !== step.id)
-      .every((s) => s.status === StepStatus.APPROVED);
-
-    if (allOtherStepsApproved) {
-      await this.prisma.approvalWorkflow.update({
-        where: { id: step.workflowId },
-        data: { status: WorkflowStatus.APPROVED },
       });
 
-      this.eventEmitter.emit('approval.workflow.completed', {
-        workflowId: step.workflowId,
-        entityType: step.workflow.entityType,
-        entityId: step.workflow.entityId,
-        decidedByUserId: userId,
-      } satisfies ApprovalWorkflowCompletedEvent);
-    } else {
-      const nextStep = step.workflow.steps.find(
+      if (!step) throw new NotFoundException('Approval step not found');
+      if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
+      if (step.workflow.status !== WorkflowStatus.IN_PROGRESS) {
+        throw new BadRequestException('Workflow is not in progress');
+      }
+      if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) {
+        throw new ForbiddenException('Not authorized for this step');
+      }
+
+      const unapprovedEarlierStep = step.workflow.steps.find(
+        (s) => s.stepOrder < step.stepOrder && s.status !== StepStatus.APPROVED,
+      );
+      if (unapprovedEarlierStep) {
+        throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
+      }
+
+      await tx.approvalStep.update({
+        where: { id: stepId },
+        data: { status: StepStatus.APPROVED, approverId: userId, comment, decidedAt: new Date() },
+      });
+
+      const completed = step.workflow.steps
+        .filter((s) => s.id !== step.id)
+        .every((s) => s.status === StepStatus.APPROVED);
+
+      if (completed) {
+        await tx.approvalWorkflow.update({
+          where: { id: step.workflowId },
+          data: { status: WorkflowStatus.APPROVED },
+        });
+        await this.outbox.enqueue(tx, {
+          eventKey: `approval:${step.workflowId}:completed`,
+          eventName: 'approval.workflow.completed',
+          aggregateType: 'APPROVAL_WORKFLOW',
+          aggregateId: step.workflowId,
+          payload: {
+            workflowId: step.workflowId,
+            entityType: step.workflow.entityType,
+            entityId: step.workflow.entityId,
+            decidedByUserId: userId,
+          },
+        });
+      }
+
+      const nextStep = completed ? undefined : step.workflow.steps.find(
         (s) => s.stepOrder === step.stepOrder + 1 && s.status === StepStatus.PENDING,
       );
-      if (nextStep) {
-        this.eventEmitter.emit('approval.workflow.step-advanced', {
-          workflowId: step.workflowId,
-          entityType: step.workflow.entityType,
-          entityId: step.workflow.entityId,
-          nextStepOrder: nextStep.stepOrder,
-        } satisfies ApprovalWorkflowStepAdvancedEvent);
-      }
+
+      return { step, completed, nextStepOrder: nextStep?.stepOrder };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    if (!result.completed && result.nextStepOrder !== undefined) {
+      this.eventEmitter.emit('approval.workflow.step-advanced', {
+        workflowId: result.step.workflowId,
+        entityType: result.step.workflow.entityType,
+        entityId: result.step.workflow.entityId,
+        nextStepOrder: result.nextStepOrder,
+      } satisfies ApprovalWorkflowStepAdvancedEvent);
     }
 
     return { message: 'Step approved successfully' };
   }
 
   async reject(stepId: string, userId: string, userRole: string, comment?: string) {
-    const step = await this.prisma.approvalStep.findUnique({
-      where: { id: stepId },
-      include: { workflow: true },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const current = await tx.approvalStep.findUnique({
+        where: { id: stepId },
+        include: { workflow: true },
+      });
 
-    if (!step) throw new NotFoundException('Approval step not found');
-    if (step.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
-    if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) throw new ForbiddenException('Not authorized for this step');
+      if (!current) throw new NotFoundException('Approval step not found');
+      if (current.status !== StepStatus.PENDING) throw new BadRequestException('Step is not pending');
+      if (current.workflow.status !== WorkflowStatus.IN_PROGRESS) {
+        throw new BadRequestException('Workflow is not in progress');
+      }
+      if (userRole !== 'ADMIN' && current.approverRole !== (userRole as any)) {
+        throw new ForbiddenException('Not authorized for this step');
+      }
 
-    await this.prisma.approvalStep.update({
-      where: { id: stepId },
-      data: { status: StepStatus.REJECTED, approverId: userId, comment, decidedAt: new Date() },
-    });
+      await tx.approvalStep.update({
+        where: { id: stepId },
+        data: { status: StepStatus.REJECTED, approverId: userId, comment, decidedAt: new Date() },
+      });
 
-    await this.prisma.approvalWorkflow.update({
-      where: { id: step.workflowId },
-      data: { status: WorkflowStatus.REJECTED },
-    });
+      await tx.approvalWorkflow.update({
+        where: { id: current.workflowId },
+        data: { status: WorkflowStatus.REJECTED },
+      });
+      await this.outbox.enqueue(tx, {
+        eventKey: `approval:${current.workflowId}:rejected`,
+        eventName: 'approval.workflow.rejected',
+        aggregateType: 'APPROVAL_WORKFLOW',
+        aggregateId: current.workflowId,
+        payload: {
+          workflowId: current.workflowId,
+          entityType: current.workflow.entityType,
+          entityId: current.workflow.entityId,
+          decidedByUserId: userId,
+          comment,
+        },
+      });
 
-    this.eventEmitter.emit('approval.workflow.rejected', {
-      workflowId: step.workflowId,
-      entityType: step.workflow.entityType,
-      entityId: step.workflow.entityId,
-      decidedByUserId: userId,
-      comment,
-    } satisfies ApprovalWorkflowRejectedEvent);
+      return current;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     return { message: 'Step rejected' };
   }

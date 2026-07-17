@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CreateSalesDto, DisputeSalesDto } from './dto/sales.dto';
 
 @ApiTags('Sales Turnover')
 @ApiBearerAuth('JWT-auth')
@@ -42,7 +43,7 @@ export class SalesController {
 
   @Post()
   @ApiOperation({ summary: 'Record sales turnover (upsert by period)' })
-  create(@Body() dto: any, @CurrentUser() user: any) {
+  create(@Body() dto: CreateSalesDto, @CurrentUser() user: any) {
     return this.salesService.create(dto, user.id, user);
   }
 
@@ -71,7 +72,7 @@ export class SalesController {
   @Post(':id/dispute')
   @ApiOperation({ summary: 'Dispute a sales record' })
   @Roles(...MODULE_ROLES.salesStaff)
-  disputeSales(@Param('id') id: string, @Body('reason') reason: string, @CurrentUser() user: any) {
-    return this.salesService.disputeSales(id, reason, user.id);
+  disputeSales(@Param('id') id: string, @Body() dto: DisputeSalesDto, @CurrentUser() user: any) {
+    return this.salesService.disputeSales(id, dto.reason, user.id);
   }
 }

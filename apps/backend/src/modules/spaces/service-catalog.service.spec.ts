@@ -133,6 +133,9 @@ describe('ServiceCatalogService', () => {
       prisma.proposal.findUnique.mockResolvedValue({ id: 'prop-1', isActive: true });
       prisma.proposalService.deleteMany.mockResolvedValue({ count: 2 });
       prisma.proposalService.createMany.mockResolvedValue({ count: 1 });
+      prisma.proposalService.findMany.mockResolvedValue([
+        { id: 's1', serviceCode: 'LED_SCREEN', name: 'LED Screen', quantity: 1, unitPrice: 5000000, totalPrice: 5000000, currency: 'VND' },
+      ]);
 
       const services = [
         { serviceCode: 'LED_SCREEN', name: 'LED Screen', quantity: 1, unit: 'tháng', unitPrice: 5000000, totalPrice: 5000000, currency: 'VND' },

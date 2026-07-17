@@ -5,6 +5,7 @@ import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { Badge } from '@/components/ui/badge';
 import {
   Building2, Users, TrendingUp, AlertTriangle, Clock, Ticket,
@@ -244,7 +245,7 @@ export default function DashboardPage() {
   const { selectedMallId, selectedMallName } = useMallStore();
   const { user } = useAuthStore();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard', selectedMallId],
     queryFn: () => dashboardApi.getDashboard(selectedMallId ?? undefined),
     refetchInterval: 60_000,
@@ -283,6 +284,9 @@ export default function DashboardPage() {
         </div>
       </div>
     );
+  }
+  if (isError) {
+    return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải tổng quan vận hành"><div /></AsyncState>;
   }
 
   const otherArea = (d?.totalArea ?? 0) - (d?.leasedArea ?? 0) - (d?.vacantArea ?? 0);

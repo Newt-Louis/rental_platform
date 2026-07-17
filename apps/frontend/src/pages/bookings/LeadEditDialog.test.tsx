@@ -15,6 +15,7 @@ vi.mock('@/api', () => ({
   slotsApi:    { list: vi.fn() },
   spacesApi:   { listUnits: vi.fn() },
   customersApi:{ listCustomers: vi.fn() },
+  usersApi:    { listUsers: vi.fn().mockResolvedValue({ data: [] }) },
 }));
 
 const mockToast = vi.fn();
@@ -72,13 +73,15 @@ function renderDialog(props?: Partial<{ lead: any; open: boolean; onClose: () =>
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('LeadEditDialog — form render', () => {
-  it('hiển thị đúng dữ liệu lead khi mở dialog', () => {
+  it('hiển thị đúng dữ liệu lead khi mở dialog', async () => {
+    const user = userEvent.setup();
     renderDialog();
     expect(screen.getByDisplayValue('Pizza Hut')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Pizza Corp')).toBeInTheDocument();
     expect(screen.getByDisplayValue('David Lee')).toBeInTheDocument();
     expect(screen.getByDisplayValue('0912345678')).toBeInTheDocument();
     expect(screen.getByDisplayValue('david@pizza.com')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Hồ sơ Khách hàng/i }));
+    expect(screen.getByDisplayValue('Pizza Corp')).toBeInTheDocument();
   });
 
   it('không render khi open=false', () => {
@@ -138,6 +141,7 @@ describe('LeadEditDialog — gọi API và payload', () => {
     const user = userEvent.setup();
     renderDialog();
 
+    await user.click(screen.getByRole('button', { name: /Hồ sơ Khách hàng/i }));
     await user.clear(screen.getByDisplayValue('Pizza Corp'));
     await user.click(screen.getByRole('button', { name: 'Cập nhật' }));
 
@@ -191,6 +195,7 @@ describe('LeadEditDialog — backend response', () => {
     const brandInput = screen.getByDisplayValue('Pizza Hut');
     await user.clear(brandInput);
     await user.type(brandInput, 'Burger King');
+    await user.click(screen.getByRole('button', { name: /Hồ sơ Khách hàng/i }));
     await user.clear(screen.getByDisplayValue('Pizza Corp'));
 
     await user.click(screen.getByRole('button', { name: 'Cập nhật' }));
@@ -221,7 +226,7 @@ describe('LeadEditDialog — backend response', () => {
     });
   });
 
-  it('log payload và response thực tế để debug', async () => {
+  it('gửi giá trị rỗng để backend xóa company', async () => {
     const user = userEvent.setup();
     let capturedPayload: any;
     let capturedResponse: any;
@@ -247,20 +252,12 @@ describe('LeadEditDialog — backend response', () => {
     const brandInput = screen.getByDisplayValue('Pizza Hut');
     await user.clear(brandInput);
     await user.type(brandInput, 'Burger King');
+    await user.click(screen.getByRole('button', { name: /Hồ sơ Khách hàng/i }));
     await user.clear(screen.getByDisplayValue('Pizza Corp')); // xóa company
 
     await user.click(screen.getByRole('button', { name: 'Cập nhật' }));
 
     await waitFor(() => expect(mockUpdateLead).toHaveBeenCalled());
-
-    console.table({
-      'brandName gửi đi':     capturedPayload.brandName,
-      'company gửi đi':       capturedPayload.company,
-      'phone gửi đi':         capturedPayload.phone,
-      'brandName từ backend': capturedResponse.brandName,
-      'company từ backend':   capturedResponse.company,
-      'phone từ backend':     capturedResponse.phone,
-    });
 
     expect(capturedPayload.brandName).toBe('Burger King');
     expect(capturedPayload.company).toBe('');        // gửi '' để xóa

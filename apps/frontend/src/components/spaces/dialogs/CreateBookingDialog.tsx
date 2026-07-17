@@ -50,10 +50,16 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, unit?.id]);
 
-  const { data: leadsData } = useQuery({
-    queryKey: ['leads-all'],
-    queryFn: () => crmApi.listLeads({ limit: 200, status: 'QUALIFIED' }),
+  const {
+    data: leadsData,
+    isLoading: leadsLoading,
+    isError: leadsError,
+    refetch: refetchLeads,
+  } = useQuery({
+    queryKey: ['booking-eligible-leads'],
+    queryFn: () => crmApi.listLeads({ limit: 200, statuses: 'NEW,CONTACTED,QUALIFIED' }),
     enabled: open,
+    staleTime: 15_000,
   });
   const { data: customersData } = useQuery({
     queryKey: ['customers-all'],
@@ -166,7 +172,11 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
                       ? 'border-amber-400 bg-amber-50 text-amber-700'
                       : 'border-gray-200 text-gray-500 hover:border-gray-300'
                   }`}
-                  onClick={() => setValue('sourceType', v)}
+                  onClick={() => {
+                    setValue('sourceType', v);
+                    if (v === 'lead') setValue('customerId', '');
+                    if (v === 'customer') setValue('leadId', '');
+                  }}
                 >
                   {label}
                 </button>
@@ -178,11 +188,21 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
           {sourceType === 'lead' && (
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Lead *</label>
-              <Select value={watch('leadId')} onValueChange={(v) => setValue('leadId', v)}>
+              <Select value={watch('leadId')} onValueChange={(v) => setValue('leadId', v, { shouldValidate: true })}>
                 <SelectTrigger className={errors.leadId ? 'border-red-400' : ''}>
                   <SelectValue placeholder="Chọn lead..." />
                 </SelectTrigger>
                 <SelectContent>
+                  {leadsLoading && <div className="px-3 py-2 text-sm text-gray-500">Đang tải danh sách Lead...</div>}
+                  {leadsError && (
+                    <div className="space-y-2 px-3 py-2 text-sm text-red-600">
+                      <p>Không thể tải danh sách Lead.</p>
+                      <Button type="button" size="sm" variant="outline" onClick={() => refetchLeads()}>Thử lại</Button>
+                    </div>
+                  )}
+                  {!leadsLoading && !leadsError && leads.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">Chưa có Lead mới, đang liên hệ hoặc đã đủ điều kiện.</div>
+                  )}
                   {leads.map((l: any) => (
                     <SelectItem key={l.id} value={l.id}>
                       {l.brandName} — {l.contactName}
@@ -190,7 +210,14 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
                   ))}
                 </SelectContent>
               </Select>
-              <input type="hidden" {...register('leadId')} />
+              <input
+                type="hidden"
+                {...register('leadId', {
+                  validate: (value) => sourceType !== 'lead' || !!value || 'Vui lòng chọn Lead',
+                })}
+              />
+              <p className="mt-1 text-xs text-gray-500">Hiển thị Lead mới, đang liên hệ và đã đủ điều kiện.</p>
+              {errors.leadId && <p className="mt-1 text-xs text-red-600">{String(errors.leadId.message)}</p>}
             </div>
           )}
 
@@ -198,7 +225,7 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
           {sourceType === 'customer' && (
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Customer *</label>
-              <Select value={watch('customerId')} onValueChange={(v) => setValue('customerId', v)}>
+              <Select value={watch('customerId')} onValueChange={(v) => setValue('customerId', v, { shouldValidate: true })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn customer..." />
                 </SelectTrigger>
@@ -210,7 +237,13 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
                   ))}
                 </SelectContent>
               </Select>
-              <input type="hidden" {...register('customerId')} />
+              <input
+                type="hidden"
+                {...register('customerId', {
+                  validate: (value) => sourceType !== 'customer' || !!value || 'Vui lòng chọn Customer',
+                })}
+              />
+              {errors.customerId && <p className="mt-1 text-xs text-red-600">{String(errors.customerId.message)}</p>}
               {/* GAP #14 — Khách hiện hữu badge */}
               {isExistingTenant && (
                 <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">

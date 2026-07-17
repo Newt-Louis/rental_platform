@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { getDefaultHomePath } from '@/lib/permissions';
 
 interface LoginForm {
   email: string;
@@ -36,7 +37,7 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(data.email, data.password);
       login(res.accessToken, res.user);
-      navigate('/dashboard');
+      navigate(getDefaultHomePath(res.user.role), { replace: true });
     } catch (err: any) {
       toast({
         title: 'Đăng nhập thất bại',

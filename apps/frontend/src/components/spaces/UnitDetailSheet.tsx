@@ -23,6 +23,9 @@ import { UnitMediaTab } from './tabs/UnitMediaTab';
 import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
+import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
+import { useAuthStore } from '@/store/auth.store';
 
 export function UnitDetailSheet({
   unit, onClose, onEdit, onDelete,
@@ -35,9 +38,14 @@ export function UnitDetailSheet({
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const canManageSpaces = ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER'].includes(user?.role ?? '');
+  const canManageSales = ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE'].includes(user?.role ?? '');
   const [bookingOpen, setBookingOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'sales' | 'media' | 'slots'>('info');
   const [convertBooking, setConvertBooking] = useState<any | null>(null);
+  const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
+  const [splitConfirmOpen, setSplitConfirmOpen] = useState(false);
 
   const submitProposalMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
@@ -81,6 +89,7 @@ export function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       toast({ title: 'Đã hủy booking' });
+      setCancelBookingId(null);
     },
     onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
   });
@@ -103,6 +112,7 @@ export function UnitDetailSheet({
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       toast({ title: 'Đã tách sảnh thành công' });
+      setSplitConfirmOpen(false);
       onClose();
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tách sảnh', variant: 'destructive' }),
@@ -186,13 +196,14 @@ export function UnitDetailSheet({
               unit={d}
               onCreateBooking={() => setBookingOpen(true)}
               onConvertBooking={(b) => setConvertBooking(b)}
-              onCancelBooking={(id) => cancelBookingMutation.mutate({ id, reason: 'Hủy từ UI' })}
+              onCancelBooking={(id) => setCancelBookingId(id)}
               onSubmitProposal={(id) => submitProposalMutation.mutate(id)}
               onConvertProposal={(id) => convertProposalMutation.mutate(id)}
               onNavigateProposals={() => { navigate('/proposals'); onClose(); }}
               cancelLoading={cancelBookingMutation.isPending}
               submitLoading={submitProposalMutation.isPending}
               convertLoading={convertProposalMutation.isPending}
+              canManageSales={canManageSales}
             />
           )}
 
@@ -216,7 +227,7 @@ export function UnitDetailSheet({
           )}
 
           {/* Change status */}
-          <div>
+          {canManageSpaces && <div>
             <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">ĐỔI TRẠNG THÁI</label>
             <Select
               value={d.status}
@@ -232,7 +243,7 @@ export function UnitDetailSheet({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div>}
 
           {/* Space info */}
           <SheetSection label="THÔNG TIN MẶT BẰNG" className="bg-gray-50">
@@ -273,16 +284,16 @@ export function UnitDetailSheet({
                   <GitMerge size={14} />
                   <span>Sảnh này được gộp từ {Array.isArray(d.mergedFromIds) ? d.mergedFromIds.length : '?'} sảnh nguồn</span>
                 </div>
-                <Button
+                {canManageSpaces && <Button
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-100"
                   disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT'}
-                  onClick={() => splitMutation.mutate()}
+                  onClick={() => setSplitConfirmOpen(true)}
                 >
                   <Scissors size={12} />
                   {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
-                </Button>
+                </Button>}
               </div>
               {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
                 <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
@@ -362,8 +373,8 @@ export function UnitDetailSheet({
           })()}
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2 border-t border-gray-100">
-            {(d.status === 'VACANT' || d.status === 'BOOKING') && (
+          {(canManageSpaces || canManageSales) && <div className="flex gap-2 pt-2 border-t border-gray-100">
+            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
               <Button
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}
@@ -371,21 +382,21 @@ export function UnitDetailSheet({
                 <BookmarkPlus size={14} /> Tạo Booking
               </Button>
             )}
-            <Button
+            {canManageSpaces && <Button
               variant="outline"
               className="flex-1 gap-2"
               onClick={() => { onEdit(d); }}
             >
               <Pencil size={14} /> Sửa
-            </Button>
-            <Button
+            </Button>}
+            {canManageSpaces && <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
               onClick={() => { onDelete(d); }}
             >
               <Trash2 size={14} /> Xóa
-            </Button>
-          </div>
+            </Button>}
+          </div>}
           </>)}
 
           {/* Booking Dialog — đặt ngoài khối activeTab === 'info' vì "Tạo Booking" ở tab Bán hàng
@@ -403,6 +414,28 @@ export function UnitDetailSheet({
           <ConvertBookingDialog
             booking={convertBooking}
             onClose={() => setConvertBooking(null)}
+          />
+
+          <ReasonActionDialog
+            open={!!cancelBookingId}
+            onOpenChange={(nextOpen) => !nextOpen && setCancelBookingId(null)}
+            title="Hủy booking?"
+            description="Booking sẽ rời hàng đợi và lý do được lưu vào lịch sử để các bộ phận liên quan tra cứu."
+            confirmLabel="Hủy booking"
+            loading={cancelBookingMutation.isPending}
+            onConfirm={(reason) => {
+              if (cancelBookingId) cancelBookingMutation.mutate({ id: cancelBookingId, reason });
+            }}
+          />
+
+          <ConfirmActionDialog
+            open={splitConfirmOpen}
+            onOpenChange={setSplitConfirmOpen}
+            title={`Tách sảnh ${d.code}?`}
+            description="Hệ thống sẽ khôi phục các mặt bằng nguồn và ngừng sử dụng sảnh gộp. Hãy kiểm tra trạng thái khai thác trước khi tiếp tục."
+            confirmLabel="Tách sảnh"
+            loading={splitMutation.isPending}
+            onConfirm={() => splitMutation.mutate()}
           />
         </div>
       )}

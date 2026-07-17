@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
+import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import {
   Search, FileText, Send, Building2, DollarSign, Calendar, User, CheckCircle, XCircle,
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
@@ -177,6 +178,7 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
+  const [deletingScenario, setDeletingScenario] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['proposal-scenarios', proposalId],
@@ -197,6 +199,7 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
     mutationFn: (sid: string) => proposalScenariosApi.delete(proposalId, sid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposal-scenarios', proposalId] });
+      setDeletingScenario(null);
       toast({ title: 'Đã xóa kịch bản' });
     },
   });
@@ -206,6 +209,16 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
   return (
     <div className="space-y-3">
       <AddScenarioDialog open={showAdd} onClose={() => setShowAdd(false)} proposalId={proposalId} />
+      <ConfirmDialog
+        open={!!deletingScenario}
+        title="Xóa kịch bản tài chính?"
+        description={`Kịch bản “${deletingScenario?.name ?? ''}” sẽ bị xóa khỏi đề xuất. Các số liệu so sánh của kịch bản này sẽ không còn hiển thị.`}
+        onCancel={() => setDeletingScenario(null)}
+        onConfirm={() => deletingScenario && deleteMutation.mutate(deletingScenario.id)}
+        loading={deleteMutation.isPending}
+        confirmLabel="Xóa kịch bản"
+        loadingLabel="Đang xóa..."
+      />
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Kịch bản tài chính ({scenarios.length})</span>
         <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowAdd(true)}>
@@ -237,7 +250,7 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
                         Chọn
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-400 hover:text-red-500" onClick={() => deleteMutation.mutate(s.id)}>
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-400 hover:text-red-500" onClick={() => setDeletingScenario({ id: s.id, name: s.name })} aria-label={`Xóa kịch bản ${s.name}`}>
                       <Trash2 size={12} />
                     </Button>
                   </div>

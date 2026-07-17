@@ -46,6 +46,10 @@ export class MallAccessService {
       unitId?: string;
       floorId?: string;
       contractId?: string;
+      fitoutProjectId?: string;
+      fitoutSubmittalId?: string;
+      fitoutIssueId?: string;
+      invoiceId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -70,6 +74,38 @@ export class MallAccessService {
         select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
       });
       mallId = contract?.unit?.mallId ?? contract?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.fitoutProjectId) {
+      const project = await this.prisma.fitoutProject.findUnique({
+        where: { id: sources.fitoutProjectId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = project?.unit?.mallId ?? project?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.fitoutSubmittalId) {
+      const submittal = await this.prisma.fitoutSubmittal.findUnique({
+        where: { id: sources.fitoutSubmittalId },
+        select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = submittal?.project?.unit?.mallId ?? submittal?.project?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.fitoutIssueId) {
+      const issue = await this.prisma.fitoutIssue.findUnique({
+        where: { id: sources.fitoutIssueId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = issue?.unit?.mallId ?? issue?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.invoiceId) {
+      const invoice = await this.prisma.invoice.findUnique({
+        where: { id: sources.invoiceId },
+        select: { contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId;
     }
 
     if (mallId) {

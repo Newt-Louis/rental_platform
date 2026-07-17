@@ -101,7 +101,7 @@ export function canAccessModule(role: string | undefined, module: RouteModule): 
 export function canAccessPath(role: string | undefined, path: string): boolean {
   const segment = path.replace(/^\//, '').split('/')[0] as RouteModule;
   const module = PATH_TO_MODULE[segment];
-  if (!module) return true;
+  if (!module) return false;
   return canAccessModule(role, module);
 }
 
@@ -133,8 +133,8 @@ export const NAV_GROUPS = [
     // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
     label: 'Khách hàng tiềm năng (CRM)',
     items: [
-      { label: 'Tổng quan', path: '/crm-overview', module: 'crm-overview' as RouteModule },
-      { label: 'CRM & Leads', path: '/crm', module: 'crm' as RouteModule },
+      { label: 'Điều hành CRM', path: '/crm-overview', module: 'crm-overview' as RouteModule },
+      { label: 'Xử lý Lead', path: '/crm', module: 'crm' as RouteModule },
     ],
   },
   {

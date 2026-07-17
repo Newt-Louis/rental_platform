@@ -1,13 +1,15 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
 export function ConfirmDialog({
   open, title, description, onConfirm, onCancel, loading,
+  confirmLabel = 'Xác nhận xóa', loadingLabel = 'Đang xử lý...', cancelLabel = 'Hủy',
 }: {
   open: boolean; title: string; description: string;
   onConfirm: () => void; onCancel: () => void; loading?: boolean;
+  confirmLabel?: string; loadingLabel?: string; cancelLabel?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
@@ -20,11 +22,11 @@ export function ConfirmDialog({
             <DialogTitle>{title}</DialogTitle>
           </div>
         </DialogHeader>
-        <p className="text-sm text-gray-500">{description}</p>
+        <DialogDescription>{description}</DialogDescription>
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={onCancel} disabled={loading}>Hủy</Button>
+          <Button variant="outline" onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
           <Button variant="destructive" onClick={onConfirm} disabled={loading}>
-            {loading ? 'Đang xóa...' : 'Xác nhận xóa'}
+            {loading ? loadingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

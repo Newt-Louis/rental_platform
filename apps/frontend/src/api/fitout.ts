@@ -117,3 +117,79 @@ export const fitoutGanttApi = {
   update: (id: string, data: Record<string, unknown>) => api.patch(`/fitout-tasks/${id}`, data).then((r) => r.data),
   remove: (id: string) => api.delete(`/fitout-tasks/${id}`).then((r) => r.data),
 };
+
+export type FitoutRiskStatus = 'OPEN' | 'MITIGATING' | 'CLOSED';
+export type FitoutRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface FitoutRisk {
+  id: string;
+  projectId: string;
+  title: string;
+  category?: string;
+  probability: number;
+  impact: number;
+  level?: FitoutRiskLevel;
+  status: FitoutRiskStatus;
+  owner?: string | { id: string; fullName: string };
+  mitigation?: string;
+  dueDate?: string;
+}
+
+export const fitoutRiskApi = {
+  list: (projectId: string) =>
+    api.get(`/fitouts/${projectId}/controls/risks`).then((r) => {
+      const rows = Array.isArray(r.data) ? r.data : r.data?.data ?? [];
+      return rows.map((risk: any) => ({ ...risk, mitigation: risk.mitigationPlan }));
+    }),
+  summary: (projectId: string) =>
+    api.get(`/fitouts/${projectId}/controls/summary`).then((r) => r.data?.risks),
+  create: (data: Omit<FitoutRisk, 'id' | 'status' | 'level'>) =>
+    api.post(`/fitouts/${data.projectId}/controls/risks`, {
+      title: data.title, category: data.category, probability: data.probability,
+      impact: data.impact, mitigationPlan: data.mitigation, dueDate: data.dueDate,
+    }).then((r) => r.data),
+  update: (projectId: string, id: string, data: Partial<FitoutRisk>) =>
+    api.patch(`/fitouts/${projectId}/controls/risks/${id}`, data).then((r) => r.data),
+  transition: (projectId: string, id: string, status: FitoutRiskStatus) =>
+    api.patch(`/fitouts/${projectId}/controls/risks/${id}`, { status }).then((r) => r.data),
+};
+
+export type ChangeOrderStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface FitoutChangeOrder {
+  id: string;
+  projectId: string;
+  code?: string;
+  title: string;
+  reason?: string;
+  estimatedCost: number;
+  approvedCost?: number;
+  scheduleImpactDays?: number;
+  status: ChangeOrderStatus;
+  requestedBy?: string | { id: string; fullName: string };
+  createdAt?: string;
+}
+
+export const fitoutChangeOrderApi = {
+  list: (projectId: string) =>
+    api.get(`/fitouts/${projectId}/controls/change-orders`).then((r) => {
+      const rows = Array.isArray(r.data) ? r.data : r.data?.data ?? [];
+      return rows.map((order: any) => ({
+        ...order,
+        code: order.changeNumber,
+        estimatedCost: Number(order.proposedAmount),
+        approvedCost: order.approvedAmount == null ? undefined : Number(order.approvedAmount),
+      }));
+    }),
+  summary: (projectId: string) =>
+    api.get(`/fitouts/${projectId}/controls/summary`).then((r) => r.data?.changes),
+  create: (data: Omit<FitoutChangeOrder, 'id' | 'status' | 'code'>) =>
+    api.post(`/fitouts/${data.projectId}/controls/change-orders`, {
+      title: data.title, reason: data.reason, proposedAmount: data.estimatedCost,
+      scheduleImpactDays: data.scheduleImpactDays,
+    }).then((r) => r.data),
+  transition: (projectId: string, id: string, status: 'APPROVED' | 'REJECTED', data?: { approvedCost?: number }) =>
+    api.patch(`/fitouts/${projectId}/controls/change-orders/${id}/decision`, {
+      decision: status, approvedAmount: data?.approvedCost,
+    }).then((r) => r.data),
+};

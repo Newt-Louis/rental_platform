@@ -24,12 +24,19 @@ export class MallAccessGuard implements CanActivate {
     const query = req.query ?? {};
     const body = req.body ?? {};
     const params = req.params ?? {};
+    const path = String(req.path ?? '');
+    const resourceId = params.id;
 
     await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, {
       mallId: query.mallId ?? body.mallId ?? params.mallId,
       unitId: body.unitId ?? params.unitId ?? query.unitId,
       floorId: body.floorId ?? params.floorId ?? query.floorId,
-      contractId: params.id && req.path?.includes('contract') ? params.id : body.contractId,
+      contractId: resourceId && path.includes('contract') ? resourceId : body.contractId,
+      fitoutProjectId: query.projectId ?? body.projectId
+        ?? (resourceId && /^\/fitout(?:\/|$)/.test(path) ? resourceId : undefined),
+      fitoutSubmittalId: resourceId && path.includes('fitout-submittal') ? resourceId : undefined,
+      fitoutIssueId: resourceId && path.includes('fitout-issue') ? resourceId : undefined,
+      invoiceId: resourceId && path.includes('/invoices/') ? resourceId : undefined,
     });
 
     return true;

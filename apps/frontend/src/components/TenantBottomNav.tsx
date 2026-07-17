@@ -13,7 +13,7 @@ const ITEMS = [
 /** Bottom navigation for tenant mobile / PWA */
 export function TenantBottomNav() {
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-slate-900 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
+    <nav aria-label="Điều hướng tenant" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-slate-900 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
       <div className="flex justify-around items-stretch h-14">
         {ITEMS.map(({ path, label, icon: Icon, end }) => (
           <NavLink
@@ -27,7 +27,7 @@ export function TenantBottomNav() {
               )
             }
           >
-            <Icon size={20} />
+            <Icon size={20} aria-hidden="true" />
             <span>{label}</span>
           </NavLink>
         ))}

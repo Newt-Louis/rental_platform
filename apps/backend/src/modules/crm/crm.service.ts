@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
@@ -15,17 +15,31 @@ export class CrmService {
 
   async findAll(query: {
     status?: LeadStatus;
+    statuses?: string;
     assignedToId?: string;
     customerId?: string;
     search?: string;
     page?: number;
     limit?: number;
   }) {
-    const { page = 1, limit = 20, search, status, assignedToId, customerId } = query;
+    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null };
-    if (status) where.status = status;
+    if (status && statuses) {
+      throw new BadRequestException('Chỉ dùng một trong hai bộ lọc status hoặc statuses');
+    }
+    if (statuses) {
+      const requestedStatuses = [...new Set(statuses.split(',').map((value) => value.trim()).filter(Boolean))];
+      const validStatuses = new Set<string>(Object.values(LeadStatus));
+      const invalidStatuses = requestedStatuses.filter((value) => !validStatuses.has(value));
+      if (!requestedStatuses.length || invalidStatuses.length) {
+        throw new BadRequestException(`Trạng thái Lead không hợp lệ: ${invalidStatuses.join(', ') || statuses}`);
+      }
+      where.status = { in: requestedStatuses as LeadStatus[] };
+    } else if (status) {
+      where.status = status;
+    }
     if (assignedToId) where.assignedToId = assignedToId;
     if (customerId) where.customerId = customerId;
     if (search) {

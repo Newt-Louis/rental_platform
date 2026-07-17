@@ -5,7 +5,8 @@ import { ContractStatus, UnitStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { BillingScheduleService } from '../billing/billing-schedule.service';
+import { OutboxService } from '../../common/services/outbox.service';
 
 interface CurrentUser {
   id: string;
@@ -19,8 +20,49 @@ export class ContractsService {
     private prisma: PrismaService,
     private events: ContractEventsService,
     private unitStatus: UnitStatusService,
-    private eventEmitter: EventEmitter2,
+    private billingScheduleService: BillingScheduleService,
+    private outbox: OutboxService,
   ) {}
+
+  async getActivationReadiness(id: string) {
+    const contract = await this.prisma.contract.findUnique({
+      where: { id },
+      include: {
+        tenant: { select: { id: true, isActive: true, deletedAt: true } },
+        unit: { select: { id: true, isActive: true, status: true } },
+        proposal: {
+          select: {
+            handoverDate: true,
+            openingDate: true,
+          },
+        },
+      },
+    });
+    if (!contract) throw new NotFoundException('Contract not found');
+
+    const missing: string[] = [];
+    if (!contract.isActive || contract.deletedAt) missing.push('Contract record is inactive');
+    if (!contract.tenant.isActive || contract.tenant.deletedAt) missing.push('Tenant is inactive');
+    if (!contract.unit.isActive) missing.push('Unit is inactive');
+    if (contract.unit.status !== UnitStatus.CONTRACTED) {
+      missing.push(`Unit must be CONTRACTED before activation (current: ${contract.unit.status})`);
+    }
+    if (!(contract.startDate instanceof Date) || !(contract.endDate instanceof Date)) {
+      missing.push('Contract start and end dates are required');
+    } else if (contract.endDate <= contract.startDate) {
+      missing.push('Contract end date must be after start date');
+    }
+    if (contract.rent < 0 || contract.cam < 0 || contract.deposit < 0) {
+      missing.push('Contract financial amounts cannot be negative');
+    }
+    if (contract.paymentTerm < 0) missing.push('Payment term cannot be negative');
+
+    return {
+      ready: missing.length === 0,
+      missing,
+      contract,
+    };
+  }
 
   async findAll(query: {
     status?: ContractStatus;
@@ -200,30 +242,68 @@ export class ContractsService {
   }
 
   async updateStatus(id: string, status: ContractStatus, userId?: string) {
-    const before = await this.findOne(id);
-    const updated = await this.prisma.contract.update({ where: { id }, data: { status } });
-
-    await this.events.logEvent({
-      contractId: id,
-      eventType: 'STATUS_CHANGED',
-      title: `Status changed to ${status}`,
-      beforeValue: before.status,
-      afterValue: status,
-      userId,
-    });
-
-    if (status === ContractStatus.ACTIVE && before.status !== ContractStatus.ACTIVE) {
-      const withProposal = await this.prisma.contract.findUnique({
-        where: { id },
-        include: { proposal: { select: { fitoutDays: true, handoverDate: true, openingDate: true } } },
+    const readiness = status === ContractStatus.ACTIVE
+      ? await this.getActivationReadiness(id)
+      : null;
+    if (readiness && !readiness.ready) {
+      throw new BadRequestException({
+        message: 'Contract is not ready for activation',
+        missing: readiness.missing,
       });
-      this.eventEmitter.emit('contract.activated', {
-        contractId: id,
-        tenantId: updated.tenantId,
-        unitId: updated.unitId,
-        handoverDate: withProposal?.proposal?.handoverDate ?? null,
-        openingDate: withProposal?.proposal?.openingDate ?? null,
-      });
+    }
+
+    const before = readiness?.contract ?? await this.findOne(id);
+    const updated = before.status === status
+      ? before
+      : await this.prisma.$transaction(async (tx) => {
+          const contract = await tx.contract.update({ where: { id }, data: { status } });
+          await tx.contractEvent.create({
+            data: {
+              contractId: id,
+              eventType: 'STATUS_CHANGED',
+              title: `Status changed to ${status}`,
+              beforeValue: before.status,
+              afterValue: status,
+              userId,
+            },
+          });
+          if (status === ContractStatus.ACTIVE) {
+            await this.outbox.enqueue(tx, {
+              eventKey: `contract:${id}:activated`,
+              eventName: 'contract.activated',
+              aggregateType: 'CONTRACT',
+              aggregateId: id,
+              payload: {
+                contractId: id,
+                tenantId: contract.tenantId,
+                unitId: contract.unitId,
+                handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
+                openingDate: readiness?.contract.proposal?.openingDate ?? null,
+              },
+            });
+          }
+          return contract;
+        });
+
+    if (status === ContractStatus.ACTIVE) {
+      if (before.status === ContractStatus.ACTIVE) {
+        await this.prisma.$transaction((tx) =>
+          this.outbox.enqueue(tx, {
+            eventKey: `contract:${id}:activated`,
+            eventName: 'contract.activated',
+            aggregateType: 'CONTRACT',
+            aggregateId: id,
+            payload: {
+              contractId: id,
+              tenantId: updated.tenantId,
+              unitId: updated.unitId,
+              handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
+              openingDate: readiness?.contract.proposal?.openingDate ?? null,
+            },
+          }),
+        );
+      }
+      await this.billingScheduleService.buildScheduleForContract(id);
     }
 
     return updated;

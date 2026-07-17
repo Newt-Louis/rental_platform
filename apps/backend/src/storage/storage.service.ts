@@ -18,6 +18,16 @@ export class StorageService {
     }
   }
 
+  private resolveWithinUploadDir(filePath: string): string | null {
+    const root = path.resolve(this.uploadDir);
+    const target = path.resolve(root, filePath);
+    if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+      this.logger.warn(`Rejected unsafe storage path: ${filePath}`);
+      return null;
+    }
+    return target;
+  }
+
   async saveFile(
     file: Express.Multer.File,
     subfolder: string = '',
@@ -54,7 +64,8 @@ export class StorageService {
   }
 
   async deleteFile(filePath: string): Promise<boolean> {
-    const fullPath = path.join(this.uploadDir, filePath);
+    const fullPath = this.resolveWithinUploadDir(filePath);
+    if (!fullPath) return false;
     try {
       if (fs.existsSync(fullPath)) {
         fs.unlinkSync(fullPath);
@@ -69,7 +80,8 @@ export class StorageService {
   }
 
   getFileStream(filePath: string): fs.ReadStream | null {
-    const fullPath = path.join(this.uploadDir, filePath);
+    const fullPath = this.resolveWithinUploadDir(filePath);
+    if (!fullPath) return null;
     if (fs.existsSync(fullPath)) {
       return fs.createReadStream(fullPath);
     }

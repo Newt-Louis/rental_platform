@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractStatus, InvoiceStatus } from '@prisma/client';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -9,7 +10,7 @@ type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export class RenewalRiskService {
   private readonly logger = new Logger(RenewalRiskService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
   async calculateRiskScore(contractId: string) {
     const contract = await this.prisma.contract.findUnique({
@@ -123,6 +124,10 @@ export class RenewalRiskService {
 
   @Cron('0 2 * * *', { name: 'renewal-risk-calc', timeZone: 'Asia/Ho_Chi_Minh' })
   async recalculateAllRisks() {
+    return this.schedulerLock.runExclusive('renewal-risk-calc', 21_600_000, () => this.recalculateAllRisksUnlocked());
+  }
+
+  private async recalculateAllRisksUnlocked() {
     this.logger.log('Recalculating renewal risks...');
 
     const contracts = await this.prisma.contract.findMany({

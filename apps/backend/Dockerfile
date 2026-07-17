@@ -8,7 +8,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat python3 make g++ vips-dev fftw-dev
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -53,10 +53,11 @@ USER nestjs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget -qO- http://localhost:3000/api/health || exit 1
+    CMD wget -qO- http://localhost:3000/api/health/ready || exit 1
 
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
 
-# Run migrations and start server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Database migrations are an explicit deployment job in docker-compose.yml.
+# Keeping startup migration-free prevents concurrent replicas from racing.
+CMD ["node", "dist/main.js"]

@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { EmailDeliveryService } from '../notifications/email-delivery.service';
 
 @Injectable()
 export class FitoutSlaService {
@@ -13,6 +15,8 @@ export class FitoutSlaService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   async listPolicies() {
@@ -78,6 +82,10 @@ export class FitoutSlaService {
 
   @Cron('0 8 * * *', { name: 'fitout-sla-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkSlaBreaches() {
+    return this.schedulerLock.runExclusive('fitout-sla-check', 14_400_000, () => this.checkSlaBreachesUnlocked());
+  }
+
+  private async checkSlaBreachesUnlocked() {
     this.logger.log('Checking fitout SLA breaches...');
     const now = new Date();
 
@@ -124,7 +132,8 @@ export class FitoutSlaService {
         });
 
         if (milestone.project.operationManager.email) {
-          await this.emailService.sendMail({
+          await this.emailDelivery.enqueue(this.prisma, {
+            eventKey: `fitout-sla:${milestone.id}:manager:${milestone.project.operationManagerId}`,
             to: milestone.project.operationManager.email,
             subject: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
             html: this.emailService.fitoutSlaHtml({
@@ -154,7 +163,8 @@ export class FitoutSlaService {
           });
 
           if (mgr.email) {
-            await this.emailService.sendMail({
+            await this.emailDelivery.enqueue(this.prisma, {
+              eventKey: `fitout-sla:${milestone.id}:escalation:${mgr.id}`,
               to: mgr.email,
               subject: `🚨 Fitout escalation — ${milestone.project.tenant.brandName}`,
               html: this.emailService.fitoutSlaHtml({

@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CreateDailyReportDto } from './dto/fitout-operations.dto';
 
 @ApiTags('Fitout Daily Reports')
 @ApiBearerAuth('JWT-auth')
@@ -29,7 +30,7 @@ export class FitoutDailyReportController {
 
   @Post()
   @ApiOperation({ summary: 'Create a daily report entry' })
-  create(@Body() body: any, @CurrentUser() user: any) {
+  create(@Body() body: CreateDailyReportDto, @CurrentUser() user: any) {
     return this.dailyReportService.create(body.projectId, body, user.id);
   }
 

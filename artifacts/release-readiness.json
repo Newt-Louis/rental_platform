@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "mode": "ci",
+  "startedAt": "2026-07-16T16:30:15.569Z",
+  "completedAt": "2026-07-16T16:30:20.615Z",
+  "verdict": "READY",
+  "counts": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 4
+  },
+  "migrations": {
+    "expectation": "prisma migrate deploy must complete successfully before application rollout",
+    "checkedLive": false,
+    "note": "CI validates schema only; it does not claim UAT migrations are applied"
+  },
+  "results": [
+    {
+      "name": "Operations static gates",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe scripts/ops-static-check.mjs",
+      "durationMs": 1528,
+      "detail": "Static operations check: 171 reachable backend files, 18 cron jobs.\nPASS: cron names are unique and production deployment invariants are satisfied (0 warnings)."
+    },
+    {
+      "name": "Operations fixture tests",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe --test scripts/ops-automation.test.mjs scripts/backup-restore.test.mjs scripts/performance-smoke.test.mjs",
+      "durationMs": 3440,
+      "detail": "✔ restore verification rejects a production-like target (225.9168ms)\n✔ guard-only verification validates isolated target and checksum (1103.9805ms)\n✔ readiness automation passes against a healthy deployment fixture (1191.6327ms)\n✔ public smoke automation passes and skips RBAC without credentials (1587.0974ms)\n✔ read-only performance gate passes a healthy local fixture (1701.2298ms)\n✔ performance runner rejects a non-local target without confirmation (1046.704ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3244.6838"
+    },
+    {
+      "name": "Full build and test evidence",
+      "status": "SKIP",
+      "detail": "Set RELEASE_RUN_FULL_BUILD=true or provide CI evidence artifacts"
+    },
+    {
+      "name": "Backup manifest evidence",
+      "status": "SKIP",
+      "artifact": "artifacts/backup-manifest.json",
+      "detail": "optional artifact is missing"
+    },
+    {
+      "name": "Performance evidence",
+      "status": "SKIP",
+      "artifact": "artifacts/performance-report.json",
+      "detail": "optional artifact is missing"
+    },
+    {
+      "name": "Deployment environment preflight",
+      "status": "SKIP",
+      "detail": "ENV_FILE not provided"
+    }
+  ]
+}

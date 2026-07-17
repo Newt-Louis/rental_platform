@@ -26,7 +26,7 @@ const PROP_STATUS_CFG: Record<string, { label: string; color: string }> = {
 export function SalesPipelineTab({
   unit, onCreateBooking, onConvertBooking, onCancelBooking,
   onSubmitProposal, onConvertProposal, onNavigateProposals,
-  cancelLoading, submitLoading, convertLoading,
+  cancelLoading, submitLoading, convertLoading, canManageSales,
 }: {
   unit: any;
   onCreateBooking: () => void;
@@ -38,6 +38,7 @@ export function SalesPipelineTab({
   cancelLoading: boolean;
   submitLoading: boolean;
   convertLoading: boolean;
+  canManageSales: boolean;
 }) {
   const bookings: any[] = unit.bookings ?? [];
   const proposals: any[] = unit.proposals ?? [];
@@ -64,7 +65,7 @@ export function SalesPipelineTab({
       )}
 
       {/* CTA khi trống */}
-      {bookings.length === 0 && proposals.length === 0 && !isCommitted && (
+      {bookings.length === 0 && proposals.length === 0 && !isCommitted && canManageSales && (
         <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 text-center space-y-2">
           <p className="text-sm text-amber-700 font-medium">Mặt bằng chưa có khách — tạo booking để bắt đầu</p>
           <Button size="sm" className="bg-amber-500 hover:bg-amber-600 text-white gap-2" onClick={onCreateBooking}>
@@ -80,7 +81,7 @@ export function SalesPipelineTab({
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
               <Users size={11} /> HÀNG ĐỢI BOOKING ({activeBookings.length})
             </span>
-            {!isCommitted && (
+            {!isCommitted && canManageSales && (
               <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1" onClick={onCreateBooking}>
                 <Plus size={10} /> Thêm
               </Button>
@@ -135,14 +136,16 @@ export function SalesPipelineTab({
                       <Badge className={`text-xs border-0 ${PROP_STATUS_CFG[b.proposal.status]?.color}`}>
                         {PROP_STATUS_CFG[b.proposal.status]?.label}
                       </Badge>
-                      <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
-                        Xem →
-                      </button>
+                      {canManageSales && (
+                        <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
+                          Xem →
+                        </button>
+                      )}
                     </div>
                   )}
 
                   {/* Actions */}
-                  <div className="mt-2 flex gap-1.5 flex-wrap">
+                  {canManageSales && <div className="mt-2 flex gap-1.5 flex-wrap">
                     {b.status === 'ACTIVE' && !b.proposal && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1 text-green-700 border-green-200 hover:bg-green-50"
                         onClick={() => onConvertBooking(b)}>
@@ -155,7 +158,7 @@ export function SalesPipelineTab({
                         <X size={10} /> Hủy
                       </Button>
                     )}
-                  </div>
+                  </div>}
                 </div>
               );
             })}
@@ -170,9 +173,11 @@ export function SalesPipelineTab({
             <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
               <FileText size={11} /> ĐỀ XUẤT ({proposals.length})
             </span>
-            <button className="text-xs text-gray-500 hover:underline" onClick={onNavigateProposals}>
-              Quản lý →
-            </button>
+            {canManageSales && (
+              <button className="text-xs text-gray-500 hover:underline" onClick={onNavigateProposals}>
+                Quản lý →
+              </button>
+            )}
           </div>
           <div className="space-y-3">
             {proposals.map((pr: any) => {
@@ -310,7 +315,7 @@ export function SalesPipelineTab({
                   )}
 
                   {/* Quick actions */}
-                  <div className="flex gap-1.5 flex-wrap">
+                  {canManageSales && <div className="flex gap-1.5 flex-wrap">
                     {pr.status === 'DRAFT' && (
                       <Button size="sm" className="h-7 text-xs px-2 gap-1 bg-gray-900 hover:bg-gray-800 text-white"
                         disabled={submitLoading} onClick={() => onSubmitProposal(pr.id)}>
@@ -327,7 +332,7 @@ export function SalesPipelineTab({
                       onClick={onNavigateProposals}>
                       Chi tiết →
                     </Button>
-                  </div>
+                  </div>}
                 </div>
               );
             })}

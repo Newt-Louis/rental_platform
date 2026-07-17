@@ -19,6 +19,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/ui/page-header';
+import { AsyncState } from '@/components/ui/async-state';
 import {
   BookmarkCheck, Clock, BookmarkX, ArrowRight, Building2, User, Calendar,
   Search, AlertTriangle, DollarSign,
@@ -1667,7 +1669,7 @@ export default function BookingsPage() {
     refetchInterval: 60_000,
   });
 
-  const { data, isLoading: unitLoading, refetch: refetchUnit } = useQuery({
+  const { data, isLoading: unitLoading, isError: unitError, refetch: refetchUnit } = useQuery({
     queryKey: ['bookings', selectedMallId, unitApplied, page],
     queryFn: () => bookingApi.list({
       mallId: selectedMallId ?? undefined,
@@ -1682,7 +1684,7 @@ export default function BookingsPage() {
   });
 
   // ── SlotBooking data ──
-  const { data: slotData, isLoading: slotLoading, refetch: refetchSlot } = useQuery({
+  const { data: slotData, isLoading: slotLoading, isError: slotError, refetch: refetchSlot } = useQuery({
     queryKey: ['slot-bookings', selectedMallId, slotApplied.status, slotApplied.type],
     queryFn: () => slotsApi.listAllBookings({
       mallId: selectedMallId ?? undefined,
@@ -1754,8 +1756,24 @@ export default function BookingsPage() {
         </Button>
       </BulkSelectionBar>
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <PageHeader
+        className="mb-5"
+        eyebrow="Không gian làm việc"
+        title="Quản lý đặt chỗ"
+        description="Theo dõi giữ chỗ mặt bằng dài hạn và lịch đặt không gian ngắn hạn."
+        actions={
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
+            <SelectTrigger className="h-9 w-full sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ mặt bằng dài hạn</span></SelectItem>
+              <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt không gian ngắn hạn</span></SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
+      <div className="hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Quản lý Booking</h1>
           <p className="text-sm text-gray-500 mt-1">Theo dõi đặt chỗ lô thuê và slot sự kiện ngắn hạn</p>
@@ -1827,7 +1845,9 @@ export default function BookingsPage() {
           {/* Table */}
           {!selectedBooking && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
           <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
-            {unitLoading ? (
+            {unitError ? (
+              <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle="Không thể tải danh sách giữ chỗ"><div /></AsyncState>
+            ) : unitLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex gap-4 items-center">
@@ -2039,7 +2059,9 @@ export default function BookingsPage() {
 
           {/* Table */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {slotLoading ? (
+            {slotError ? (
+              <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle="Không thể tải danh sách đặt không gian"><div /></AsyncState>
+            ) : slotLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex gap-4 items-center">

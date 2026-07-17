@@ -574,7 +574,7 @@ export default function TenantsPage() {
 
   useEffect(() => { setPage(1); }, [search, category]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['tenants', search, category, page],
     queryFn: () => tenantsApi.listTenants({ search: search || undefined, category: category || undefined, page, limit: 25 }),
   });
@@ -638,10 +638,23 @@ export default function TenantsPage() {
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
           {isLoading ? (
             Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)
+          ) : isError ? (
+            <div role="alert" className="text-center py-16 px-4">
+              <Building2 size={40} className="mx-auto mb-2 text-red-300" />
+              <p className="text-sm font-medium text-red-700">Không thể tải danh sách khách thuê</p>
+              <p className="mt-1 text-xs text-red-600">Vui lòng kiểm tra kết nối và thử lại.</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+            </div>
           ) : tenants.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <Building2 size={40} className="mx-auto mb-2 opacity-20" />
-              <p className="text-sm">Chưa có khách thuê nào</p>
+              <p className="text-sm font-medium text-gray-600">{search || category ? 'Không có khách thuê phù hợp' : 'Chưa có khách thuê nào'}</p>
+              <p className="mt-1 text-xs">{search || category ? 'Thử thay đổi từ khóa hoặc ngành hàng.' : 'Thêm khách thuê đầu tiên để quản lý hồ sơ và hợp đồng.'}</p>
+              {search || category ? (
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setCategory(''); setPage(1); }}>Xóa bộ lọc</Button>
+              ) : (
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setEditTenant(null); setShowForm(true); }}>Thêm khách thuê</Button>
+              )}
             </div>
           ) : tenants.map((t) => (
             <TenantCard key={t.id} t={t}

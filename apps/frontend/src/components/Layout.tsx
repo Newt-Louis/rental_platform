@@ -25,6 +25,7 @@ import {
 import { MallSelector } from '@/components/MallSelector';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { TenantBottomNav } from '@/components/TenantBottomNav';
+import { ErpProcessGuide } from '@/components/ErpProcessGuide';
 import {
   NAV_GROUPS,
   TENANT_NAV,
@@ -54,6 +55,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   '/cross-mall': Globe,
   '/announcements': Megaphone,
   '/tenant-portal': ShoppingBag,
+  '/audit-log': FileText,
   '/admin': Settings,
 };
 
@@ -106,7 +108,7 @@ export default function Layout() {
     <div className="h-screen bg-background flex flex-col overflow-hidden">
 
       {/* Full-width header */}
-      <header className="h-14 shrink-0 z-50 bg-card border-b border-border shadow-md flex items-center px-6 gap-4">
+      <header className="h-14 shrink-0 z-50 bg-card border-b border-border shadow-md flex items-center px-3 md:px-6 gap-2 md:gap-4">
         {/* Logo + sidebar toggle */}
         <div className="flex items-center gap-3 shrink-0">
           {/* Hamburger — mobile only */}
@@ -121,6 +123,8 @@ export default function Layout() {
             onClick={() => setCollapsed(!collapsed)}
             className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors hidden md:block"
             title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+            aria-label={collapsed ? 'Mở rộng menu điều hướng' : 'Thu gọn menu điều hướng'}
+            aria-expanded={!collapsed}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
@@ -131,10 +135,10 @@ export default function Layout() {
 
         {/* Brand + mall selector */}
         <div className="flex items-center gap-4">
-          <span className="text-sm text-muted-foreground">THISO {isTenant ? 'Mall' : 'Leasing'}</span>
+          <span className="hidden sm:inline text-sm text-muted-foreground">THISO {isTenant ? 'Mall' : 'Leasing'}</span>
           {!isTenant && (
             <>
-              <div className="w-px h-4 bg-border" />
+              <div className="hidden sm:block w-px h-4 bg-border" />
               <MallSelector />
             </>
           )}
@@ -145,7 +149,7 @@ export default function Layout() {
         {/* Right actions */}
         <div className="flex items-center gap-2">
           {!isTenant && canAccessModule(role, 'ai') && (
-            <Button variant="ghost" size="sm" onClick={() => navigate('/ai')} className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/ai')} className="hidden sm:flex gap-1.5 text-muted-foreground hover:text-foreground">
               <Bot size={15} />
               AI
             </Button>
@@ -157,6 +161,7 @@ export default function Layout() {
             className="text-muted-foreground hover:text-foreground"
             onClick={toggleTheme}
             title={theme === 'light' ? 'Chuyển Dark mode' : 'Chuyển Light mode'}
+            aria-label={theme === 'light' ? 'Bật giao diện tối' : 'Bật giao diện sáng'}
           >
             {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
           </Button>
@@ -166,6 +171,7 @@ export default function Layout() {
             size="sm"
             className="relative text-muted-foreground hover:text-foreground"
             onClick={() => setNotifOpen(true)}
+            aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'}
           >
             <Bell size={15} />
             {unreadCount > 0 && (
@@ -183,7 +189,7 @@ export default function Layout() {
                     {user?.fullName?.charAt(0) ?? 'U'}
                   </AvatarFallback>
                 </Avatar>
-                <div className="text-sm font-medium text-foreground">{user?.fullName}</div>
+                <div className="hidden lg:block text-sm font-medium text-foreground">{user?.fullName}</div>
                 {user?.role === 'ADMIN' && (
                   <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">Admin</span>
                 )}
@@ -227,6 +233,9 @@ export default function Layout() {
 
         {/* Sidebar — sát viền trái, bo góc phải */}
         <aside
+          aria-label="Điều hướng chính"
+          aria-modal={mobileSidebarOpen || undefined}
+          role={mobileSidebarOpen ? 'dialog' : undefined}
           className={cn(
             'flex flex-col bg-gray-900 text-white overflow-hidden transition-all duration-300',
             // Mobile: fixed drawer overlay
@@ -347,6 +356,7 @@ export default function Layout() {
 
         {/* Main content */}
         <main className={cn('flex-1 overflow-auto rounded-xl bg-card', isTenant && 'pb-20 md:pb-6')}>
+          {!isTenant && <div className="px-4 pt-4 lg:px-6"><ErpProcessGuide /></div>}
           <Outlet />
         </main>
 

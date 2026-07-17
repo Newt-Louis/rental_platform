@@ -134,6 +134,12 @@ export class ContractsController {
     return this.contractsService.updateStatus(id, status, user?.id);
   }
 
+  @Get(':id/activation-readiness')
+  @ApiOperation({ summary: 'Check prerequisites before activating a contract' })
+  activationReadiness(@Param('id') id: string) {
+    return this.contractsService.getActivationReadiness(id);
+  }
+
   // ── Contract Files (scan upload, delete) ────────────────────────────────────
 
   @Get(':id/files')
