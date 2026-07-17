@@ -2,6 +2,7 @@ import api from '@/lib/axios';
 
 export const usersApi = {
   listUsers: (params?: Record<string, unknown>) => api.get('/users', { params }).then((r) => r.data),
+  getStats: () => api.get('/users/stats').then((r) => r.data),
   getUser: (id: string) => api.get(`/users/${id}`).then((r) => r.data),
   updateUser: (id: string, data: Record<string, unknown>) =>
     api.patch(`/users/${id}`, data).then((r) => r.data),

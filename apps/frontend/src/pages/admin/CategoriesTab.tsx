@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { categoriesApi, spacesApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
@@ -290,8 +290,16 @@ export function CategoriesTab() {
   const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
   const malls: Mall[] = mallsData?.data ?? mallsData ?? [];
 
-  // Auto-select first mall
-  if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
+  // Keep state updates out of render and preserve the current selection when possible.
+  useEffect(() => {
+    if (malls.length === 0) {
+      setSelectedMallId('');
+      return;
+    }
+    if (!selectedMallId || !malls.some((mall) => mall.id === selectedMallId)) {
+      setSelectedMallId(malls[0].id);
+    }
+  }, [malls, selectedMallId]);
 
   const { data: pricingData, isLoading: loadingPricing } = useQuery({
     queryKey: ['category-pricing', selectedMallId],

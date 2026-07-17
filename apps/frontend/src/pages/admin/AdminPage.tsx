@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useDeferredValue, useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, spacesApi, tenantsApi, brandingApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
@@ -21,6 +21,7 @@ import {
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import type { User } from '@/types';
 
@@ -171,7 +172,7 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
             {showResetPwd ? (
               <form onSubmit={handleSubmit((d) => resetPwdMutation.mutate(d))} className="space-y-2 bg-amber-50 rounded-xl p-4">
                 <div className="text-xs font-semibold text-amber-600 mb-2">ĐỔI MẬT KHẨU</div>
-                <Input {...register('newPassword', { required: true, minLength: 6 })} type="password" placeholder="Mật khẩu mới (tối thiểu 6 ký tự)" />
+                <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder="Mật khẩu mới (tối thiểu 8 ký tự)" />
                 <div className="flex gap-2">
                   <Button size="sm" type="submit" disabled={resetPwdMutation.isPending} className="flex-1">Đặt lại</Button>
                   <Button size="sm" type="button" variant="outline" onClick={() => { setShowResetPwd(false); reset(); }}>Hủy</Button>
@@ -244,7 +245,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Họ tên *</Label><Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" /></div>
             <div><Label>Email *</Label><Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" /></div>
-            <div><Label>Mật khẩu *</Label><Input {...register('password', { required: true })} type="password" placeholder="••••••••" className="mt-1" /></div>
+            <div><Label>Mật khẩu *</Label><Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder="Tối thiểu 8 ký tự" className="mt-1" /></div>
             <div>
               <Label>Vai trò</Label>
               <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
@@ -278,20 +279,30 @@ function UsersTab() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const deferredSearch = useDeferredValue(search.trim());
 
-  const { data, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.listUsers() });
-  const users: User[] = data?.data ?? data ?? [];
-
-  const filtered = users.filter((u) => {
-    const matchSearch = !search || u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = !roleFilter || u.role === roleFilter;
-    return matchSearch && matchRole;
+  useEffect(() => setPage(1), [deferredSearch, roleFilter, statusFilter]);
+  const queryParams = {
+    page,
+    limit: 20,
+    ...(deferredSearch ? { search: deferredSearch } : {}),
+    ...(roleFilter ? { role: roleFilter } : {}),
+    ...(statusFilter ? { isActive: statusFilter === 'active' } : {}),
+  };
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['users', queryParams],
+    queryFn: () => usersApi.listUsers(queryParams),
   });
+  const { data: stats } = useQuery({ queryKey: ['users', 'stats'], queryFn: usersApi.getStats });
+  const users: User[] = data?.data ?? [];
+  const totalPages = Number(data?.totalPages ?? 1);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <div className="flex gap-3 flex-1 max-w-lg">
+        <div className="flex flex-wrap gap-3 flex-1">
           <div className="relative flex-1">
             <Users size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input placeholder="Tìm theo tên hoặc email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
@@ -300,6 +311,11 @@ function UsersTab() {
             <option value="">Tất cả vai trò</option>
             {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
           </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">Tất cả trạng thái</option>
+            <option value="active">Đang hoạt động</option>
+            <option value="locked">Đã khóa</option>
+          </select>
         </div>
         <Button onClick={() => setShowCreate(true)} className="gap-2">
           <Plus size={15} /> Thêm tài khoản
@@ -307,11 +323,11 @@ function UsersTab() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-5 lg:grid-cols-4">
         {[
-          { label: 'Tổng tài khoản', value: users.length, color: 'bg-gray-50 text-gray-700' },
-          { label: 'Đang hoạt động', value: users.filter(u => u.isActive).length, color: 'bg-green-50 text-green-700' },
-          { label: 'Đã khóa', value: users.filter(u => !u.isActive).length, color: 'bg-red-50 text-red-700' },
+          { label: 'Tổng tài khoản', value: stats?.total ?? '—', color: 'bg-gray-50 text-gray-700' },
+          { label: 'Đang hoạt động', value: stats?.active ?? '—', color: 'bg-green-50 text-green-700' },
+          { label: 'Đã khóa', value: stats?.locked ?? '—', color: 'bg-red-50 text-red-700' },
           { label: 'Vai trò', value: Object.keys(ROLE_MAP).length, color: 'bg-purple-50 text-purple-700' },
         ].map((s, i) => (
           <div key={i} className={`${s.color} rounded-xl p-3 text-center`}>
@@ -323,6 +339,11 @@ function UsersTab() {
 
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : isError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+          <p className="mb-3 text-sm text-red-700">Không thể tải danh sách tài khoản.</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>Thử lại</Button>
+        </div>
       ) : (
         <div className="bg-white rounded-xl border overflow-hidden">
           <table className="w-full text-sm">
@@ -337,7 +358,7 @@ function UsersTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((u) => {
+              {users.map((u) => {
                 const roleInfo = ROLE_MAP[u.role] ?? { label: u.role, color: 'bg-gray-100 text-gray-700' };
                 return (
                   <tr key={u.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedUser(u)}>
@@ -360,12 +381,22 @@ function UsersTab() {
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+          {users.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Users size={36} className="mx-auto mb-2 opacity-20" />
               <p className="text-sm">Không tìm thấy tài khoản nào</p>
             </div>
           )}
+        </div>
+      )}
+
+      {!isLoading && !isError && totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
+          <span>{data?.total ?? 0} tài khoản · Trang {page}/{totalPages}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Trước</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Sau</Button>
+          </div>
         </div>
       )}
 
@@ -1334,8 +1365,23 @@ const TABS = [
   { id: 'system',      label: 'Hệ thống',           icon: Settings },
 ];
 
+const TAB_GROUPS = [
+  { label: 'Người dùng & truy cập', ids: ['users', 'mall-access', 'permissions'] },
+  { label: 'Tổ chức & Mall', ids: ['malls', 'structure'] },
+  { label: 'Danh mục kinh doanh', ids: ['categories'] },
+  { label: 'Quy trình', ids: ['approval'] },
+  { label: 'Nền tảng', ids: ['system'] },
+];
+
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState('users');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const activeTab = TABS.some((tab) => tab.id === requestedSection) ? requestedSection! : 'users';
+  const selectTab = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('section', id);
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -1360,30 +1406,37 @@ export default function AdminPage() {
       <select
         id="admin-section"
         value={activeTab}
-        onChange={(event) => setActiveTab(event.target.value)}
+        onChange={(event) => selectTab(event.target.value)}
         className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
       >
         {TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
       </select>
-      <div className="mb-6 hidden overflow-x-auto rounded-xl bg-gray-100 p-1 sm:flex">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex min-w-max items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
-                activeTab === tab.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
-              }`}
-            >
-              <Icon size={15} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      <div className="mb-6 hidden gap-2 overflow-x-auto rounded-xl border bg-white p-2 sm:flex">
+        {TAB_GROUPS.map((group) => (
+          <div key={group.label} className="min-w-max border-r border-gray-100 pr-2 last:border-r-0 last:pr-0">
+            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</div>
+            <div className="flex gap-1">
+              {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => selectTab(tab.id)}
+                    aria-current={activeTab === tab.id ? 'page' : undefined}
+                    className={`flex min-w-max items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      activeTab === tab.id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
+                    }`}
+                  >
+                    <Icon size={15} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Tab content */}
@@ -1395,7 +1448,7 @@ export default function AdminPage() {
         {activeTab === 'categories'  && <CategoriesTab />}
         {activeTab === 'permissions' && <PermissionsTab />}
         {activeTab === 'approval'    && <ApprovalPolicyTab />}
-        {activeTab === 'system'      && <SystemTab />}
+        {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><OperationalSystemTab /></div>}
       </div>
     </div>
   );
