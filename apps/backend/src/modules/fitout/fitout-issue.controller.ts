@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CreateFitoutIssueDto, UpdateFitoutIssueDto } from './dto/fitout-operations.dto';
 
 @ApiTags('Fitout Issues')
 @ApiBearerAuth('JWT-auth')
@@ -28,7 +29,7 @@ export class FitoutIssueController {
 
   @Post()
   @ApiOperation({ summary: 'Create (tạo mới) a fitout issue/defect' })
-  create(@Body() body: any, @CurrentUser() user: any) {
+  create(@Body() body: CreateFitoutIssueDto, @CurrentUser() user: any) {
     return this.issueService.create(body.projectId, body, user.id);
   }
 
@@ -40,7 +41,7 @@ export class FitoutIssueController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update issue fields' })
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateFitoutIssueDto) {
     return this.issueService.update(id, body);
   }
 

@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { InvoiceStatus, PaymentMethod } from '@prisma/client';
+import { InvoiceStatus, PaymentMethod, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 
 interface CurrentUser {
@@ -12,6 +12,26 @@ interface CurrentUser {
 @Injectable()
 export class BillingService {
   constructor(private prisma: PrismaService) {}
+
+  private async runSerializableTransaction<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+    maxAttempts = 3,
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        const isWriteConflict =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034';
+        if (!isWriteConflict || attempt === maxAttempts) throw error;
+      }
+    }
+
+    throw new Error('Serializable transaction retry limit exceeded');
+  }
 
   async findAllInvoices(query: {
     status?: InvoiceStatus;
@@ -240,35 +260,94 @@ export class BillingService {
     reference?: string;
     paidAt?: string;
     notes?: string;
+    idempotencyKey?: string;
   }, currentUser?: CurrentUser) {
     const invoice = await this.findOneInvoice(invoiceId, currentUser);
     if (invoice.status === InvoiceStatus.CANCELLED) {
       throw new BadRequestException('Hóa đơn đã bị hủy — không thể ghi nhận thanh toán');
     }
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        invoiceId,
-        tenantId: invoice.tenantId,
-        amount: dto.amount,
-        method: dto.method ?? PaymentMethod.BANK_TRANSFER,
-        reference: dto.reference,
-        paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
-        notes: dto.notes,
-      },
+    const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
+    const idempotencyHash = idempotencyKey
+      ? crypto
+          .createHash('sha256')
+          .update(JSON.stringify({
+            invoiceId,
+            amount: dto.amount,
+            method: dto.method ?? PaymentMethod.BANK_TRANSFER,
+            reference: dto.reference ?? null,
+            paidAt: dto.paidAt ?? null,
+            notes: dto.notes ?? null,
+          }))
+          .digest('hex')
+      : undefined;
+
+    if (idempotencyKey) {
+      const existing = await this.prisma.payment.findUnique({ where: { idempotencyKey } });
+      if (existing) {
+        if (
+          existing.invoiceId !== invoiceId ||
+          existing.idempotencyHash !== idempotencyHash
+        ) {
+          throw new ConflictException(
+            'Idempotency key was already used with a different payment payload',
+          );
+        }
+        return existing;
+      }
+    }
+
+    return this.runSerializableTransaction(async (tx) => {
+      let payment;
+      try {
+        payment = await tx.payment.create({
+          data: {
+            invoiceId,
+            tenantId: invoice.tenantId,
+            amount: dto.amount,
+            method: dto.method ?? PaymentMethod.BANK_TRANSFER,
+            reference: dto.reference,
+            paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+            notes: dto.notes,
+            idempotencyKey,
+            idempotencyHash,
+          },
+        });
+      } catch (error) {
+        if (
+          idempotencyKey &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const concurrent = await tx.payment.findUnique({ where: { idempotencyKey } });
+          if (
+            concurrent &&
+            concurrent.invoiceId === invoiceId &&
+            concurrent.idempotencyHash === idempotencyHash
+          ) {
+            return concurrent;
+          }
+          throw new ConflictException(
+            'Idempotency key was already used with a different payment payload',
+          );
+        }
+        throw error;
+      }
+
+      await this.recomputeInvoiceStatusFromPayments(invoiceId, tx);
+      return payment;
     });
-
-    await this.recomputeInvoiceStatusFromPayments(invoiceId);
-
-    return payment;
   }
 
   /** Tính lại trạng thái hóa đơn dựa trên tổng các bút toán CÒN HIỆU LỰC (chưa bị đảo). */
-  private async recomputeInvoiceStatusFromPayments(invoiceId: string) {
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+  private async recomputeInvoiceStatusFromPayments(
+    invoiceId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
     if (!invoice || invoice.status === InvoiceStatus.CANCELLED) return;
 
-    const activePayments = await this.prisma.payment.findMany({ where: { invoiceId, reversedAt: null } });
+    const activePayments = await db.payment.findMany({ where: { invoiceId, reversedAt: null } });
     const totalPaid = activePayments.reduce((s, p) => s + p.amount, 0);
 
     let newStatus: InvoiceStatus;
@@ -280,7 +359,7 @@ export class BillingService {
       newStatus = invoice.issuedAt ? InvoiceStatus.ISSUED : InvoiceStatus.DRAFT;
     }
 
-    await this.prisma.invoice.update({
+    await db.invoice.update({
       where: { id: invoiceId },
       data: { status: newStatus, paidAt: newStatus === InvoiceStatus.PAID ? new Date() : null },
     });
@@ -319,14 +398,15 @@ export class BillingService {
     if (payment.reversedAt) throw new BadRequestException('Bút toán này đã được đảo trước đó');
     if (!reason?.trim()) throw new BadRequestException('Phải nêu lý do đảo bút toán');
 
-    const reversed = await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { reversedAt: new Date(), reversedById: userId, reversalReason: reason.trim() },
+    return this.runSerializableTransaction(async (tx) => {
+      const reversed = await tx.payment.update({
+        where: { id: paymentId },
+        data: { reversedAt: new Date(), reversedById: userId, reversalReason: reason.trim() },
+      });
+
+      await this.recomputeInvoiceStatusFromPayments(payment.invoiceId, tx);
+      return reversed;
     });
-
-    await this.recomputeInvoiceStatusFromPayments(payment.invoiceId);
-
-    return reversed;
   }
 
   async calculateRevenueShare(period: string, mallId?: string) {

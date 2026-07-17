@@ -2,12 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatus } from '@prisma/client';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
 export class OccupancyAnalyticsService {
   private readonly logger = new Logger(OccupancyAnalyticsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
   async getOccupancyV2(mallId?: string, floorId?: string, category?: string) {
     const where: any = { isActive: true };
@@ -207,6 +208,10 @@ export class OccupancyAnalyticsService {
 
   @Cron('0 1 1 * *', { name: 'occupancy-snapshot', timeZone: 'Asia/Ho_Chi_Minh' })
   async takeMonthlySnapshot() {
+    return this.schedulerLock.runExclusive('occupancy-snapshot', 21_600_000, () => this.takeMonthlySnapshotUnlocked());
+  }
+
+  private async takeMonthlySnapshotUnlocked() {
     this.logger.log('Taking monthly occupancy snapshot...');
     const now = new Date();
     const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;

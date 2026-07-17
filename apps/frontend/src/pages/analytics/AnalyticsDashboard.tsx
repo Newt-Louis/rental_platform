@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
 import {
   TrendingUp, TrendingDown, Building2, AlertTriangle, DollarSign,
   Calendar, Percent, Users, Clock, Shield, RefreshCw,
@@ -54,7 +55,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
 }
 
 function OccupancyTab({ mallId }: { mallId?: string }) {
-  const { data: occupancy, isLoading } = useQuery({
+  const { data: occupancy, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-occupancy', mallId],
     queryFn: () => analyticsApi.getOccupancyV2({ mallId }),
   });
@@ -70,6 +71,7 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích lấp đầy"><div /></AsyncState>;
 
   const s = occupancy?.summary ?? {};
   const byCategory = occupancy?.byCategory ?? [];
@@ -154,12 +156,13 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
 }
 
 function RenewalRiskTab({ mallId }: { mallId?: string }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-renewal-risk', mallId],
     queryFn: () => analyticsApi.getRenewalRiskDashboard(mallId),
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích rủi ro gia hạn"><div /></AsyncState>;
 
   const summary = data?.summary ?? {};
   const topRisks = data?.topRisks ?? [];
@@ -240,12 +243,13 @@ function RenewalRiskTab({ mallId }: { mallId?: string }) {
 }
 
 function MultiMallTab() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-multi-mall'],
     queryFn: () => analyticsApi.getMultiMallComparison(),
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích liên trung tâm"><div /></AsyncState>;
 
   const malls = (data ?? []) as any[];
 

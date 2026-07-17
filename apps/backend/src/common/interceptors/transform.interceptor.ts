@@ -39,11 +39,11 @@ export class TransformInterceptor<T>
           'total' in data &&
           'limit' in data
         ) {
-          return { success: true, ...data };
+          return { success: true, requestId: request.requestId ?? null, ...data };
         }
 
         // Otherwise, wrap in data property
-        return { success: true, data };
+        return { success: true, requestId: request.requestId ?? null, data };
       }),
     );
   }

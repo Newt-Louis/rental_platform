@@ -8,6 +8,9 @@ async function main() {
   console.log('Starting seed...');
 
   // Clean up existing data (Wave 6-7 tables first)
+  await prisma.emailDelivery.deleteMany();
+  await prisma.outboxEvent.deleteMany();
+  await prisma.unifiedDocument.deleteMany();
   await prisma.bookingActivity.deleteMany();
   await prisma.unitBooking.deleteMany();
   await prisma.customerActivity.deleteMany();
@@ -17,7 +20,6 @@ async function main() {
   await prisma.fitoutContractor.deleteMany();
   await prisma.salesAuditTrail.deleteMany();
   await prisma.proposalScenario.deleteMany();
-  await prisma.proposalNegotiationRound.deleteMany();
   await prisma.sapEntityMapping.deleteMany();
   await prisma.userMallAccess.deleteMany();
   await prisma.mallAnnouncement.deleteMany();
@@ -53,7 +55,6 @@ async function main() {
   await prisma.payment.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
-  await prisma.ticketFile.deleteMany();
   await prisma.ticketComment.deleteMany();
   await prisma.ticket.deleteMany();
   await prisma.salesTurnover.deleteMany();
@@ -664,17 +665,23 @@ async function main() {
 
   const tenantPortalPassword = await bcrypt.hash('Tenant123!', 10);
   const tenants = await Promise.all(
-    tenantsData.map((t) =>
-      prisma.tenant.create({
-        data: {
-          ...t,
-          isPortalUser: true,
-          portalPassword: tenantPortalPassword,
-          isActive: true,
-        },
-      })
-    )
+    tenantsData.map(({ portalEmail: _portalEmail, ...tenant }) =>
+      prisma.tenant.create({ data: { ...tenant, isPortalUser: true, isActive: true } })
+    ),
   );
+
+  await Promise.all(tenants.map((tenant, index) =>
+    prisma.user.create({
+      data: {
+        email: tenantsData[index].portalEmail,
+        password: tenantPortalPassword,
+        fullName: tenantsData[index].contactName,
+        role: Role.TENANT,
+        tenantId: tenant.id,
+        isActive: true,
+      },
+    }),
+  ));
 
   console.log('Tenants created');
 

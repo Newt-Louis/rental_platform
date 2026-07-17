@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Res } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Res, Headers } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
@@ -11,6 +11,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { InvoiceStatus } from '@prisma/client';
+import { RecordPaymentDto } from './dto/record-payment.dto';
+import { AddInvoiceLineDto, CreateInvoiceDto, UpdateInvoiceLineDto } from './dto/invoice.dto';
 
 @ApiTags('Billing & AR')
 @ApiBearerAuth('JWT-auth')
@@ -69,7 +71,7 @@ export class BillingController {
   @Post('invoices')
   @ApiOperation({ summary: 'Create invoice' })
   @Roles(...MODULE_ROLES.billingStaff)
-  create(@Body() dto: any) {
+  create(@Body() dto: CreateInvoiceDto) {
     return this.billingService.createInvoice(dto);
   }
 
@@ -85,14 +87,14 @@ export class BillingController {
   @Post('invoices/:id/lines')
   @ApiOperation({ summary: 'Add variable cost line to DRAFT invoice (electricity, water, services)' })
   @Roles(...MODULE_ROLES.billingStaff)
-  addLine(@Param('id') id: string, @Body() dto: any) {
+  addLine(@Param('id') id: string, @Body() dto: AddInvoiceLineDto) {
     return this.billingService.addInvoiceLine(id, dto);
   }
 
   @Patch('invoices/:id/lines/:lineId')
   @ApiOperation({ summary: 'Update an invoice line (qty, price, description)' })
   @Roles(...MODULE_ROLES.billingStaff)
-  updateLine(@Param('id') id: string, @Param('lineId') lineId: string, @Body() dto: any) {
+  updateLine(@Param('id') id: string, @Param('lineId') lineId: string, @Body() dto: UpdateInvoiceLineDto) {
     return this.billingService.updateInvoiceLine(id, lineId, dto);
   }
 
@@ -112,8 +114,16 @@ export class BillingController {
 
   @Post('invoices/:id/payment')
   @ApiOperation({ summary: 'Record payment for invoice' })
-  recordPayment(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
-    return this.billingService.recordPayment(id, dto, user);
+  recordPayment(
+    @Param('id') id: string,
+    @Body() dto: RecordPaymentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    return this.billingService.recordPayment(id, {
+      ...dto,
+      idempotencyKey: idempotencyKey || dto.idempotencyKey,
+    }, user);
   }
 
   @Post('invoices/:id/void')

@@ -8,6 +8,30 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // Paths to skip audit logging (read-only, auth, health)
 const SKIP_PATHS = ['/api/auth/', '/api/health', '/api/notifications', '/api/ai/chat'];
+const SENSITIVE_KEYS = /password|passcode|secret|token|authorization|api[-_]?key|cookie|creditcard|cardnumber|cvv/i;
+const REDACTED = '[REDACTED]';
+
+export function redactSensitiveData(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return '[CIRCULAR]';
+    seen.add(value);
+    return value.map((item) => redactSensitiveData(item, seen));
+  }
+
+  if (value && typeof value === 'object') {
+    if (seen.has(value)) return '[CIRCULAR]';
+    seen.add(value);
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        SENSITIVE_KEYS.test(key) ? REDACTED : redactSensitiveData(item, seen),
+      ]),
+    );
+  }
+
+  return value;
+}
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
@@ -39,7 +63,7 @@ export class AuditLogInterceptor implements NestInterceptor {
                 entityType,
                 entityId,
                 endpoint: `${method} ${url}`,
-                payload: body ? JSON.stringify(body).substring(0, 2000) : null,
+                payload: this.serializePayload(body),
                 ipAddress: req.ip ?? req.headers?.['x-forwarded-for'] ?? null,
                 userAgent: req.headers?.['user-agent']?.substring(0, 500) ?? null,
                 duration,
@@ -60,7 +84,7 @@ export class AuditLogInterceptor implements NestInterceptor {
                 entityType,
                 entityId: params?.id ?? null,
                 endpoint: `${method} ${url}`,
-                payload: body ? JSON.stringify(body).substring(0, 2000) : null,
+                payload: this.serializePayload(body),
                 ipAddress: req.ip ?? null,
                 userAgent: req.headers?.['user-agent']?.substring(0, 500) ?? null,
                 duration,
@@ -84,5 +108,15 @@ export class AuditLogInterceptor implements NestInterceptor {
       approvals: 'APPROVAL', 'floor-plan': 'FLOOR_PLAN',
     };
     return map[segments[0]] ?? segments[0]?.toUpperCase() ?? 'UNKNOWN';
+  }
+
+  private serializePayload(body: unknown): string | null {
+    if (body === undefined || body === null) return null;
+
+    try {
+      return JSON.stringify(redactSensitiveData(body)).substring(0, 2000);
+    } catch {
+      return JSON.stringify({ auditPayload: '[UNSERIALIZABLE]' });
+    }
   }
 }

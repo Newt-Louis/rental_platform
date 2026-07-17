@@ -25,11 +25,12 @@ describe('BookingService — unit status lock (#20)', () => {
 
   const prisma = {
     unit: { findUnique: jest.fn() },
-    lead: { findUnique: jest.fn() },
+    lead: { findUnique: jest.fn(), update: jest.fn() },
     customer: { findUnique: jest.fn() },
     unitBooking: {
       findFirst: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({ _max: { priority: 0 } }),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
@@ -50,7 +51,9 @@ describe('BookingService — unit status lock (#20)', () => {
     prisma.unitBooking.findFirst.mockResolvedValue(null);
     prisma.unitBooking.create.mockResolvedValue({ id: 'booking-1' });
     prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 0 } });
+    prisma.unitBooking.count.mockResolvedValue(0);
     prisma.bookingActivity.create.mockResolvedValue({});
+    prisma.lead.update.mockResolvedValue({});
     unitStatus.transition.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
@@ -67,6 +70,7 @@ describe('BookingService — unit status lock (#20)', () => {
   it('blocks booking when unit is OCCUPIED', async () => {
     prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.OCCUPIED));
     unitStatus.isCommittedToTenant.mockReturnValue(true);
+    unitStatus.isLockedForBooking.mockReturnValue(true);
 
     await expect(service.create(createDto as any, 'user-1')).rejects.toThrow(BadRequestException);
   });
@@ -74,6 +78,7 @@ describe('BookingService — unit status lock (#20)', () => {
   it('blocks booking when unit is CONTRACTED', async () => {
     prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.CONTRACTED));
     unitStatus.isCommittedToTenant.mockReturnValue(true);
+    unitStatus.isLockedForBooking.mockReturnValue(true);
 
     await expect(service.create(createDto as any, 'user-1')).rejects.toThrow(BadRequestException);
   });
@@ -81,6 +86,7 @@ describe('BookingService — unit status lock (#20)', () => {
   it('blocks booking when unit is UNDER_FITOUT', async () => {
     prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.UNDER_FITOUT));
     unitStatus.isCommittedToTenant.mockReturnValue(true);
+    unitStatus.isLockedForBooking.mockReturnValue(true);
 
     await expect(service.create(createDto as any, 'user-1')).rejects.toThrow(BadRequestException);
   });

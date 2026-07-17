@@ -22,7 +22,9 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new OccupancyAnalyticsService(prisma);
+    service = new OccupancyAnalyticsService(prisma, {
+      runExclusive: jest.fn((_name, _ttl, task) => task()),
+    } as any);
   });
 
   // ─── #26 avgRentPerSqm breakdown by floor ────────────────────────────────
@@ -38,8 +40,8 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       const result = await service.getOccupancyV2();
 
-      const t1 = result.byFloor['T1'];
-      const t2 = result.byFloor['T2'];
+      const t1 = result.byFloor.find((floor: any) => floor.name === 'T1');
+      const t2 = result.byFloor.find((floor: any) => floor.name === 'T2');
 
       expect(t1).toBeDefined();
       expect(t1.avgRentPerSqm).toBe(600); // (500+700)/2
@@ -52,7 +54,7 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
       ]);
 
       const result = await service.getOccupancyV2();
-      expect(result.byFloor['T1'].avgRentPerSqm).toBe(0);
+      expect(result.byFloor.find((floor: any) => floor.name === 'T1')?.avgRentPerSqm).toBe(0);
     });
   });
 

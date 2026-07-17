@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { AsyncState } from '@/components/ui/async-state';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,25 +66,25 @@ function SectionHeading({ icon: Icon, children }: { icon: React.ElementType; chi
 export default function SalesPipelineStatsPage() {
   const { selectedMallId } = useMallStore();
 
-  const { data: bookingStatsData, refetch: refetchBooking, isFetching: fetchingBooking } = useQuery({
+  const { data: bookingStatsData, refetch: refetchBooking, isFetching: fetchingBooking, isError: bookingError } = useQuery({
     queryKey: ['booking-stats', selectedMallId],
     queryFn: () => bookingApi.stats(selectedMallId ?? undefined),
     refetchInterval: 60_000,
   });
 
-  const { data: pipelineStatsData, refetch: refetchPipeline, isFetching: fetchingPipeline } = useQuery({
+  const { data: pipelineStatsData, refetch: refetchPipeline, isFetching: fetchingPipeline, isError: pipelineError } = useQuery({
     queryKey: ['crm-pipeline-stats'],
     queryFn: () => crmApi.pipelineStats(),
     refetchInterval: 60_000,
   });
 
-  const { data: pipelineReportData, refetch: refetchReport, isFetching: fetchingReport } = useQuery({
+  const { data: pipelineReportData, refetch: refetchReport, isFetching: fetchingReport, isError: reportError } = useQuery({
     queryKey: ['pipeline-report'],
     queryFn: () => reportsApi.pipelineReport(),
     refetchInterval: 60_000,
   });
 
-  const { data: slotBookingsData, refetch: refetchSlot, isFetching: fetchingSlot } = useQuery({
+  const { data: slotBookingsData, refetch: refetchSlot, isFetching: fetchingSlot, isError: slotError } = useQuery({
     queryKey: ['slot-bookings-all', selectedMallId],
     queryFn: () => slotsApi.listAllBookings({ mallId: selectedMallId ?? undefined }),
     refetchInterval: 60_000,
@@ -175,6 +176,23 @@ export default function SalesPipelineStatsPage() {
           <Skeleton className="h-64 rounded-xl" />
         </div>
       </div>
+    );
+  }
+  if (bookingError || pipelineError || reportError || slotError) {
+    return (
+      <AsyncState
+        isLoading={false}
+        isError
+        errorTitle="Không thể tải thống kê pipeline"
+        onRetry={() => {
+          refetchBooking();
+          refetchPipeline();
+          refetchReport();
+          refetchSlot();
+        }}
+      >
+        <div />
+      </AsyncState>
     );
   }
 

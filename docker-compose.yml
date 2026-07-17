@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-leasing}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leasing123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-leasing_platform}
       TZ: Asia/Ho_Chi_Minh
     volumes:
@@ -57,10 +57,11 @@ services:
     container_name: leasing-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:-leasing123}@postgres:5432/${POSTGRES_DB:-leasing_platform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-thiso-leasing-jwt-secret-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
       ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -85,7 +86,7 @@ services:
     networks:
       - leasing-network
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -100,7 +101,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: leasing-migrate
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:-leasing123}@postgres:5432/${POSTGRES_DB:-leasing_platform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
       SEED_DATABASE: ${SEED_DATABASE:-false}
     depends_on:
       postgres:

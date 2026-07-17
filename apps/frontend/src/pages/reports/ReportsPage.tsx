@@ -11,20 +11,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 function OccupancyReport() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-occupancy'],
     queryFn: () => reportsApi.occupancyReport(),
   });
 
   const d = data?.data ?? data;
-  if (isLoading) return <Skeleton className="h-64" />;
-
   const statusData = d?.byStatus
     ? Object.entries(d.byStatus).map(([k, v]: any) => ({ name: k, value: v }))
     : [];
@@ -38,7 +37,15 @@ function OccupancyReport() {
       }))
     : [];
 
-  return (
+  return <AsyncState
+    isLoading={isLoading}
+    isError={isError}
+    isEmpty={statusData.length === 0 && floorData.length === 0}
+    onRetry={refetch}
+    loading={<Skeleton className="h-64" />}
+    emptyTitle="Chưa có dữ liệu lấp đầy"
+    emptyDescription="Dữ liệu sẽ xuất hiện khi mặt bằng được cấu hình và cập nhật trạng thái."
+  >(
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">Theo trạng thái</CardTitle></CardHeader>
@@ -68,12 +75,12 @@ function OccupancyReport() {
         </CardContent>
       </Card>
     </div>
-  );
+  )</AsyncState>;
 }
 
 function RevenueReport() {
   const year = new Date().getFullYear();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-revenue', year],
     queryFn: () => reportsApi.revenueReport({ year }),
   });
@@ -81,9 +88,8 @@ function RevenueReport() {
   const d = data?.data ?? data;
   const byPeriod = d?.byPeriod ?? [];
 
-  if (isLoading) return <Skeleton className="h-64" />;
-
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError} isEmpty={byPeriod.length === 0} onRetry={refetch}
+    loading={<Skeleton className="h-64" />} emptyTitle="Chưa có dữ liệu doanh thu">
     <Card>
       <CardHeader><CardTitle className="text-sm">Doanh thu theo tháng {year}</CardTitle></CardHeader>
       <CardContent>
@@ -98,25 +104,28 @@ function RevenueReport() {
         </ResponsiveContainer>
       </CardContent>
     </Card>
-  );
+  </AsyncState>;
 }
 
 function PipelineReport() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-pipeline'],
     queryFn: reportsApi.pipelineReport,
   });
 
   const d = data?.data ?? data;
-  if (isLoading) return <Skeleton className="h-64" />;
+  const leads = d?.leads ?? [];
+  const proposals = d?.proposals ?? [];
 
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError}
+    isEmpty={leads.length === 0 && proposals.length === 0} onRetry={refetch}
+    loading={<Skeleton className="h-64" />} emptyTitle="Chưa có dữ liệu pipeline">
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">Leads theo trạng thái</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {(d?.leads ?? []).map((l: any, i: number) => (
+            {leads.map((l: any, i: number) => (
               <div key={i} className="flex justify-between items-center">
                 <span className="text-sm">{l.status}</span>
                 <Badge variant="secondary">{l._count}</Badge>
@@ -129,7 +138,7 @@ function PipelineReport() {
         <CardHeader><CardTitle className="text-sm">Proposals theo trạng thái</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {(d?.proposals ?? []).map((p: any, i: number) => (
+            {proposals.map((p: any, i: number) => (
               <div key={i} className="flex justify-between items-center">
                 <span className="text-sm">{p.status}</span>
                 <div className="flex items-center gap-2">
@@ -146,19 +155,21 @@ function PipelineReport() {
         </CardContent>
       </Card>
     </div>
-  );
+  </AsyncState>;
 }
 
 function ContractExpiryReport() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-expiry'],
     queryFn: () => reportsApi.contractExpiryReport({ days: 180 }),
   });
 
   const contracts = data?.data ?? data ?? [];
-  if (isLoading) return <Skeleton className="h-64" />;
 
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError} isEmpty={contracts.length === 0}
+    onRetry={refetch} loading={<Skeleton className="h-64" />}
+    emptyTitle="Không có hợp đồng sắp hết hạn"
+    emptyDescription="Không có hợp đồng hết hạn trong 180 ngày tới.">
     <div className="bg-white rounded-lg border overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b">
@@ -184,9 +195,8 @@ function ContractExpiryReport() {
           ))}
         </tbody>
       </table>
-      {contracts.length === 0 && <div className="text-center py-8 text-gray-400">Không có hợp đồng sắp hết hạn</div>}
     </div>
-  );
+  </AsyncState>;
 }
 
 function fmtMoney(n: number) {
@@ -195,14 +205,18 @@ function fmtMoney(n: number) {
 
 function RevenueReceivablesReport() {
   const year = new Date().getFullYear();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-revenue-receivables', year],
     queryFn: () => reportsApi.revenueReceivablesReport({ year }),
   });
   const d = data?.data ?? data;
-  if (isLoading) return <Skeleton className="h-64" />;
+  const byPeriod = d?.byPeriod ?? [];
+  const byType = d?.byType ?? [];
 
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError}
+    isEmpty={!d || (byPeriod.length === 0 && byType.length === 0 && !d.totalBilled)}
+    onRetry={refetch} loading={<Skeleton className="h-64" />}
+    emptyTitle="Chưa có dữ liệu doanh thu và công nợ">
     <div className="space-y-6">
       <p className="text-xs text-gray-400 -mt-2">
         Doanh thu &amp; công nợ chi tiết — không thay được báo cáo lãi/lỗ (P&amp;L) vì hệ thống chưa có dữ liệu chi phí/OPEX để đối trừ.
@@ -218,7 +232,7 @@ function RevenueReceivablesReport() {
           <CardHeader><CardTitle className="text-sm">Theo tháng</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={d?.byPeriod ?? []}>
+              <BarChart data={byPeriod}>
                 <XAxis dataKey="period" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1e6).toFixed(0)}M`} />
                 <Tooltip formatter={(v: any) => [`${(v / 1e6).toFixed(1)}M VNĐ`]} />
@@ -232,7 +246,7 @@ function RevenueReceivablesReport() {
           <CardHeader><CardTitle className="text-sm">Theo loại hoá đơn</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(d?.byType ?? []).map((t: any) => (
+              {byType.map((t: any) => (
                 <div key={t.type} className="flex justify-between items-center text-sm">
                   <span>{t.type}</span>
                   <span className="text-gray-500">{fmtMoney(t.collected)} / {fmtMoney(t.billed)}</span>
@@ -243,18 +257,20 @@ function RevenueReceivablesReport() {
         </Card>
       </div>
     </div>
-  );
+  </AsyncState>;
 }
 
 function ArAgingReport() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-ar-aging'],
     queryFn: () => reportsApi.arAgingReport(),
   });
   const rows: any[] = data?.data ?? data ?? [];
-  if (isLoading) return <Skeleton className="h-64" />;
 
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError} isEmpty={rows.length === 0}
+    onRetry={refetch} loading={<Skeleton className="h-64" />}
+    emptyTitle="Không có công nợ theo tuổi nợ"
+    emptyDescription="Hiện chưa có khoản phải thu cần phân loại theo tuổi nợ.">
     <div className="bg-white rounded-lg border overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b">
@@ -282,20 +298,20 @@ function ArAgingReport() {
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && <div className="text-center py-8 text-gray-400">Không có công nợ quá hạn</div>}
     </div>
-  );
+  </AsyncState>;
 }
 
 function ComplianceReport() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-compliance'],
     queryFn: () => reportsApi.complianceReport(),
   });
   const d = data?.data ?? data;
-  if (isLoading) return <Skeleton className="h-64" />;
 
-  return (
+  return <AsyncState isLoading={isLoading} isError={isError} isEmpty={!d}
+    onRetry={refetch} loading={<Skeleton className="h-64" />}
+    emptyTitle="Chưa có dữ liệu tuân thủ">
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tổng thao tác ghi (30 ngày)</p><p className="text-xl font-bold">{d?.totalActions ?? 0}</p></CardContent></Card>
@@ -323,7 +339,7 @@ function ComplianceReport() {
         </CardContent>
       </Card>
     </div>
-  );
+  </AsyncState>;
 }
 
 export default function ReportsPage() {

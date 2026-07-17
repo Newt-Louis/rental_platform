@@ -101,7 +101,7 @@ export default function SpacesPage() {
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: leaseTermFilter }],
     queryFn: () => spacesApi.listUnits({
       search: search || undefined,
@@ -201,7 +201,7 @@ export default function SpacesPage() {
               <BarChart3 size={14} /> <span className="hidden sm:inline">Analytics</span>
             </button>
           </div>
-{selectedMallId && (
+{isAdmin && selectedMallId && (
             <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
               <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
             </Button>
@@ -271,6 +271,14 @@ export default function SpacesPage() {
       {/* Alerts */}
       {view !== 'analytics' && <SpacesAlerts mallId={selectedMallId} />}
 
+      {isError && view !== 'analytics' && (
+        <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+          <p className="font-medium text-red-700">Không thể tải dữ liệu mặt bằng</p>
+          <p className="mt-1 text-sm text-red-600">Bộ lọc hiện tại chưa thể được áp dụng. Vui lòng thử lại.</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>Thử lại</Button>
+        </div>
+      )}
+
       {/* Analytics View */}
       {view === 'analytics' && <AnalyticsView mallId={selectedMallId} />}
 
@@ -278,7 +286,7 @@ export default function SpacesPage() {
       {view === 'grid' && <SpacesFilters categoryNames={categoryNames} />}
 
       {/* Grid view */}
-      {view === 'grid' && (
+      {view === 'grid' && !isError && (
         <SpacesGrid
           units={units}
           slotSummaries={slotSummaries}
@@ -293,7 +301,7 @@ export default function SpacesPage() {
       )}
 
       {/* Floor plan view */}
-      {!isLoading && view === 'floor' && (
+      {!isLoading && !isError && view === 'floor' && (
         <FloorPlan
           units={units}
           onUnitClick={setSelectedUnit}
@@ -308,7 +316,7 @@ export default function SpacesPage() {
       )}
 
       {/* Map view */}
-      {!isLoading && view === 'map' && (
+      {!isLoading && !isError && view === 'map' && (
         <div className="space-y-3">
           {/* Map mode toolbar */}
           <div className="flex items-center gap-3 flex-wrap">

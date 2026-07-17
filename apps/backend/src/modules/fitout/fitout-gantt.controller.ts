@@ -4,6 +4,7 @@ import { FitoutGanttService } from './fitout-gantt.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { CreateGanttTaskDto, UpdateGanttTaskDto } from './dto/fitout-operations.dto';
 
 @ApiTags('Fitout Gantt')
 @ApiBearerAuth('JWT-auth')
@@ -21,13 +22,13 @@ export class FitoutGanttController {
 
   @Post()
   @ApiOperation({ summary: 'Create a Gantt task' })
-  create(@Body() body: any) {
+  create(@Body() body: CreateGanttTaskDto) {
     return this.ganttService.createTask(body.projectId, body);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a Gantt task' })
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateGanttTaskDto) {
     return this.ganttService.updateTask(id, body);
   }
 

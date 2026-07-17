@@ -1355,22 +1355,32 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
+      {/* Responsive navigation */}
+      <label htmlFor="admin-section" className="sr-only">Chọn khu vực cấu hình</label>
+      <select
+        id="admin-section"
+        value={activeTab}
+        onChange={(event) => setActiveTab(event.target.value)}
+        className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
+      >
+        {TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+      </select>
+      <div className="mb-6 hidden overflow-x-auto rounded-xl bg-gray-100 p-1 sm:flex">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={`flex min-w-max items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
                 activeTab === tab.id
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
               }`}
             >
               <Icon size={15} />
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span>{tab.label}</span>
             </button>
           );
         })}

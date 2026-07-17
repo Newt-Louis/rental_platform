@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { LeadStatus } from '@prisma/client';
+import { LeadStatus, Role } from '@prisma/client';
 
 @ApiTags('CRM')
 @ApiBearerAuth('JWT-auth')
@@ -23,6 +23,7 @@ export class CrmController {
   @Get('leads')
   @ApiOperation({ summary: 'List leads with filters and pagination' })
   @ApiQuery({ name: 'status', required: false, enum: LeadStatus })
+  @ApiQuery({ name: 'statuses', required: false, description: 'Danh sách trạng thái phân tách bằng dấu phẩy' })
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
@@ -115,8 +116,11 @@ export class CrmController {
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'isDone', required: false })
   @ApiQuery({ name: 'daysAhead', required: false })
+  @ApiQuery({ name: 'scope', required: false, enum: ['mine', 'team'] })
   listFollowUps(@Query() query: any, @CurrentUser() user: any) {
-    const assignedToId = query.assignedToId ?? (query.leadId ? undefined : user.id);
+    const canViewTeam = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR].includes(user.role);
+    const teamScope = query.scope === 'team' && canViewTeam;
+    const assignedToId = query.assignedToId ?? (query.leadId || teamScope ? undefined : user.id);
     return this.crmService.listFollowUps({ ...query, assignedToId });
   }
 
@@ -172,7 +176,7 @@ export class CrmController {
 
   // ── Stale Leads ────────────────────────────────────────────────────────────────
 
-  @Get('leads/stale')
+  @Get('stale-leads')
   @ApiOperation({ summary: 'Get stale leads (no activity for X days)' })
   @ApiQuery({ name: 'days', required: false, description: 'Days without activity (default 14)' })
   getStaleLeads(@Query('days') days?: string) {

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Pencil, Trash2, Plus, MousePointer, ZoomIn, AlertTriangle, Grid3x3, BookmarkPlus, Lock, Check, X } from 'lucide-react';
 import type { UnitSlot, SlotBooking } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 
 // ── Slot colors by status ───────────────────────────────────────────────────
 
@@ -1081,6 +1082,7 @@ export function FloorPlanEditor({
   const [drawing, setDrawing] = useState<DrawState | null>(null);
   const [pendingZone, setPendingZone] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<UnitSlot | null>(null);
+  const [deleteSlot, setDeleteSlot] = useState<UnitSlot | null>(null);
   const [editSlot, setEditSlot] = useState<UnitSlot | null>(null);
   const [bookSlot, setBookSlot] = useState<UnitSlot | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -1401,9 +1403,7 @@ export function FloorPlanEditor({
             setSelectedSlot(null);
           }}
           onDelete={() => {
-            if (confirm(`Xóa slot "${selectedSlot.name}"?`)) {
-              deleteMutation.mutate(selectedSlot.id);
-            }
+            setDeleteSlot(selectedSlot);
           }}
           onBook={() => setBookSlot(selectedSlot)}
         />
@@ -1516,6 +1516,16 @@ export function FloorPlanEditor({
         unitId={unitId}
         unitArea={unitArea}
         onClose={() => setShowGridDialog(false)}
+      />
+      <ConfirmActionDialog
+        open={!!deleteSlot}
+        onOpenChange={(open) => !open && setDeleteSlot(null)}
+        title="Xóa khung đặt chỗ"
+        description={`Khung "${deleteSlot?.name ?? ''}" sẽ bị xóa và không thể khôi phục.`}
+        confirmLabel="Xóa"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteSlot && deleteMutation.mutate(deleteSlot.id, { onSuccess: () => setDeleteSlot(null) })}
       />
     </div>
   );

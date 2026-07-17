@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Building2, TrendingUp, AlertTriangle, Ticket, DollarSign } from 'lucide-react';
+import { AsyncState } from '@/components/ui/async-state';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
@@ -19,7 +20,7 @@ function OccupancyBar({ rate }: { rate: number }) {
 }
 
 export default function CrossMallDashboard() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['cross-mall-dashboard'],
     queryFn: () => dashboardApi.getCrossMallDashboard(),
     refetchInterval: 120_000,
@@ -41,6 +42,9 @@ export default function CrossMallDashboard() {
         </div>
       </div>
     );
+  }
+  if (isError) {
+    return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải so sánh liên trung tâm"><div /></AsyncState>;
   }
 
   return (

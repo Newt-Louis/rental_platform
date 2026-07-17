@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
 import {
   CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
   Building2, Loader2, History, ChevronLeft, ChevronRight,
@@ -55,12 +56,12 @@ export default function ApprovalsPage() {
   const [rejectReason, setRejectReason] = useState('');
 
   // ── Queries ──
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['pending-approvals', proposalPage],
     queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15 }),
     refetchInterval: 30_000,
   });
-  const { data: historyData, isLoading: loadingHistory } = useQuery({
+  const { data: historyData, isLoading: loadingHistory, isError: historyError, refetch: refetchHistory } = useQuery({
     queryKey: ['approvals-history', historyPage, historyStatus],
     queryFn: () => approvalsApi.history({
       page: historyPage,
@@ -70,7 +71,7 @@ export default function ApprovalsPage() {
     enabled: view === 'history',
   });
 
-  const { data: priceApprovalsData, isLoading: loadingPriceApprovals } = useQuery({
+  const { data: priceApprovalsData, isLoading: loadingPriceApprovals, isError: priceError, refetch: refetchPrices } = useQuery({
     queryKey: ['pending-price-approvals', pricePage],
     queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25 }),
     refetchInterval: 30_000,
@@ -274,7 +275,11 @@ export default function ApprovalsPage() {
       {/* ══════════ PROPOSALS TABLE ══════════ */}
       {view === 'proposals' && (
         <>
-          {isLoading ? (
+          {isError ? (
+            <AsyncState isLoading={false} isError onRetry={refetch}>
+              <div />
+            </AsyncState>
+          ) : isLoading ? (
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex gap-4 items-center">
@@ -422,7 +427,12 @@ export default function ApprovalsPage() {
       {/* ══════════ PRICES TABLE ══════════ */}
       {view === 'prices' && (
         <>
-          {loadingPriceApprovals ? (
+          {priceError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchPrices}
+              errorTitle="Không thể tải danh sách giá chờ duyệt">
+              <div />
+            </AsyncState>
+          ) : loadingPriceApprovals ? (
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex gap-4 items-center">
@@ -590,7 +600,12 @@ export default function ApprovalsPage() {
             )}
           </div>
 
-          {loadingHistory ? (
+          {historyError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchHistory}
+              errorTitle="Không thể tải lịch sử phê duyệt">
+              <div />
+            </AsyncState>
+          ) : loadingHistory ? (
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex gap-4 items-center">

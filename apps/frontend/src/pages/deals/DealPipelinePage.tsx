@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import {
@@ -42,7 +43,7 @@ export default function DealPipelinePage() {
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
   const mallId = selectedMallId || malls[0]?.id;
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['deal-pipeline', mallId, search, stageFilter],
     queryFn: () =>
       crmApi.getDeals({
@@ -116,7 +117,9 @@ export default function DealPipelinePage() {
       </div>
 
       {/* Deal list */}
-      {isLoading ? (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải danh sách cơ hội"><div /></AsyncState>
+      ) : isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />

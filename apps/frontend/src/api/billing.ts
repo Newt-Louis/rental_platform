@@ -9,8 +9,10 @@ export const billingApi = {
     api.get(`/billing/invoices/${id}`).then((r) => r.data),
   issueInvoice: (id: string) =>
     api.post(`/billing/invoices/${id}/issue`).then((r) => r.data),
-  recordPayment: (id: string, data: Record<string, unknown>) =>
-    api.post(`/billing/invoices/${id}/payment`, data).then((r) => r.data),
+  recordPayment: (id: string, data: Record<string, unknown>, idempotencyKey?: string) =>
+    api.post(`/billing/invoices/${id}/payment`, data, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }).then((r) => r.data),
   arAging: () => api.get('/billing/ar-aging').then((r) => r.data),
   getSchedule: (contractId: string) => api.get(`/billing/schedule/${contractId}`).then((r) => r.data),
   buildSchedule: (contractId: string) => api.post(`/billing/schedule/${contractId}/build`).then((r) => r.data),

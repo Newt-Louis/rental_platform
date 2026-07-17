@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { daysOverdue, policiesToApply } from './ar-dunning.util';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { EmailDeliveryService } from '../notifications/email-delivery.service';
 
 @Injectable()
 export class ArDunningService {
@@ -13,6 +15,8 @@ export class ArDunningService {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   async listPolicies() {
@@ -23,6 +27,10 @@ export class ArDunningService {
 
   @Cron('0 10 * * *', { name: 'ar-dunning-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async runDunning(asOf: Date = new Date()) {
+    return this.schedulerLock.runExclusive('ar-dunning-check', 14_400_000, () => this.runDunningUnlocked(asOf));
+  }
+
+  private async runDunningUnlocked(asOf: Date) {
     const policies = await this.prisma.arDunningPolicy.findMany({
       where: { isActive: true },
       orderBy: { level: 'asc' },
@@ -76,8 +84,8 @@ export class ArDunningService {
         }
 
         if (policy.notifyTenant && invoice.tenant.contactEmail) {
-          try {
-            await this.emailService.sendMail({
+          await this.emailDelivery.enqueue(this.prisma, {
+              eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
               to: invoice.tenant.contactEmail,
               subject: `[THISO] Nhắc thanh toán hóa đơn ${invoice.invoiceNumber} (L${policy.level})`,
               html: this.emailService.invoiceOverdueHtml({
@@ -89,9 +97,6 @@ export class ArDunningService {
                 contactEmail: process.env.SMTP_USER ?? 'finance@thiso.com.vn',
               }),
             });
-          } catch (e) {
-            this.logger.warn(`Dunning email failed for invoice ${invoice.id}: ${e.message}`);
-          }
         }
 
         await this.prisma.arDunningLog.create({

@@ -54,17 +54,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
   });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  const { data: usersData, isLoading: usersLoading, error: usersError } = useQuery({
+  const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
     queryFn: () => usersApi.listUsers({ limit: 100 }),
     enabled: open,
     staleTime: 60_000,
   });
   const users: any[] = usersData?.data ?? usersData ?? [];
-
-  useEffect(() => {
-    console.log('[LeadEditDialog] Users data:', { usersData, usersLoading, usersError, users: users.length });
-  }, [usersData, usersLoading, usersError, users]);
 
   useEffect(() => {
     if (open && lead) {
@@ -87,7 +83,6 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         budgetMax: lead.customer?.budgetMax?.toString() ?? '',
         rating: lead.customer?.rating?.toString() ?? '',
       };
-      console.log('[LeadEditDialog] Dialog opened with lead:', { lead, newForm });
       setForm(newForm);
       setTouched({});
       setActiveTab('lead');
@@ -95,7 +90,6 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
   }, [open, lead?.id]);
 
   const set = (k: string, v: string) => {
-    console.log(`[LeadEditDialog] Updating ${k}:`, v);
     setForm((f) => ({ ...f, [k]: v }));
   };
   const touch = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
@@ -107,7 +101,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     mutationFn: async () => {
       const payload = {
         brandName: form.brandName.trim() || undefined,
-        company: form.company.trim() || undefined,
+        company: form.company.trim(),
         contactName: form.contactName.trim() || undefined,
         phone: form.phone.trim() || undefined,
         email: form.email.trim() || undefined,
@@ -119,7 +113,6 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         notes: form.notes.trim() || undefined,
         assignedToId: form.assignedToId || undefined,
       };
-      console.log('[LeadEditDialog] Updating lead with payload:', payload);
       await crmApi.updateLead(lead.id, payload);
       const customerId = lead.customerId ?? lead.customer?.id;
       if (customerId && (form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
@@ -133,7 +126,6 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
       }
     },
     onSuccess: async () => {
-      console.log('[LeadEditDialog] Update success! Invalidating queries:', queryKeys);
       const tasks = [];
       if (queryKeys?.bookingDetail) {
         tasks.push(qc.refetchQueries({ queryKey: [queryKeys.bookingDetail] }));
@@ -156,10 +148,8 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
       onClose();
     },
     onError: (e: any) => {
-      console.error('[LeadEditDialog] Update failed:', e);
       const msg = e?.response?.data?.message;
       const text = Array.isArray(msg) ? msg.join(' | ') : (msg ?? 'Lỗi cập nhật khách hàng');
-      console.error('[LeadEditDialog] Error detail:', text);
       toast({ title: text, variant: 'destructive' });
     },
   });
@@ -175,7 +165,6 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
 
   const fieldClass = (k: keyof typeof errors) =>
     touched[k] && errors[k] ? 'border-red-400 focus:ring-red-400' : '';
-  console.log(form)
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">

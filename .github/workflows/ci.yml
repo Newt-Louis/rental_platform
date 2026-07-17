@@ -7,6 +7,48 @@ on:
     branches: [ main, master ]
 
 jobs:
+  operations:
+    name: Operations automation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate operations scripts
+        run: |
+          node --check scripts/ops-preflight.mjs
+          node --check scripts/ops-readiness.mjs
+          node --check scripts/smoke-test.mjs
+          node --check scripts/ops-static-check.mjs
+          node --check scripts/backup-database.mjs
+          node --check scripts/verify-database-restore.mjs
+          node --check scripts/performance-smoke.mjs
+          node --check scripts/release-readiness.mjs
+          node --check scripts/ux-static-check.mjs
+
+      - name: Test operations automation
+        run: node --test scripts/ops-automation.test.mjs scripts/backup-restore.test.mjs scripts/performance-smoke.test.mjs scripts/release-readiness.test.mjs
+
+      - name: Validate scheduler and production readiness invariants
+        run: node scripts/ops-static-check.mjs
+
+      - name: Validate accessible UX interactions
+        run: node scripts/ux-static-check.mjs
+
+      - name: Generate CI release-readiness report
+        run: RELEASE_MODE=ci RELEASE_REPORT=artifacts/release-readiness.json node scripts/release-readiness.mjs
+
+      - name: Upload release-readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-readiness
+          path: artifacts/release-readiness.json
+
   backend:
     name: Backend build
     runs-on: ubuntu-latest
@@ -22,15 +64,16 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/backend/package.json
+          cache-dependency-path: apps/backend/package-lock.json
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Lint
         run: npm run lint -- --max-warnings=0
@@ -56,18 +99,15 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/frontend/package.json
+          cache-dependency-path: apps/frontend/package-lock.json
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
+
+      - name: Test
+        run: npm test
 
       - name: Build
         env:
           VITE_API_URL: http://localhost:3000/api
         run: npm run build
-

@@ -7,6 +7,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
+import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle } from 'lucide-react';
 
 const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -63,6 +65,7 @@ function AuditTrailDialog({ salesId, open, onClose }: { salesId: string; open: b
 export default function SalesPage() {
   const [period, setPeriod] = useState(getPeriod(0));
   const [auditSalesId, setAuditSalesId] = useState<string | null>(null);
+  const [disputeSalesId, setDisputeSalesId] = useState<string | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -72,12 +75,12 @@ export default function SalesPage() {
 
   const periods = [getPeriod(-2), getPeriod(-1), getPeriod(0)];
 
-  const { data: summary, isLoading: loadingSummary } = useQuery({
+  const { data: summary, isLoading: loadingSummary, isError: summaryError, refetch: refetchSummary, dataUpdatedAt } = useQuery({
     queryKey: ['sales-summary', period],
     queryFn: () => salesApi.salesSummary(period),
   });
 
-  const { data: topTenants, isLoading: loadingTop } = useQuery({
+  const { data: topTenants, isLoading: loadingTop, isError: topError, refetch: refetchTop } = useQuery({
     queryKey: ['sales-top', period],
     queryFn: () => salesApi.topTenants(period),
     enabled: isStaff,
@@ -110,8 +113,7 @@ export default function SalesPage() {
   });
 
   const handleDispute = (id: string) => {
-    const reason = window.prompt('Lý do tranh chấp số liệu doanh thu này?');
-    if (reason && reason.trim()) disputeMutation.mutate({ id, reason: reason.trim() });
+    setDisputeSalesId(id);
   };
 
   const s = summary?.data ?? summary;
@@ -122,8 +124,9 @@ export default function SalesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sales Turnover</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Doanh thu khách thuê</h1>
           <p className="text-sm text-gray-500 mt-1">Doanh thu khách thuê hàng tháng</p>
+          {dataUpdatedAt > 0 && <p className="text-xs text-gray-400 mt-1">Cập nhật gần nhất: {new Date(dataUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
         </div>
         <div className="flex gap-1 rounded-lg border overflow-hidden">
           {periods.map((p) => (
@@ -141,6 +144,10 @@ export default function SalesPage() {
       </div>
 
       {/* Summary cards */}
+      {summaryError ? (
+        <AsyncState isLoading={false} isError onRetry={refetchSummary}
+          errorTitle="Không thể tải tổng hợp doanh thu"><div /></AsyncState>
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {loadingSummary ? (
           Array.from({ length: 4 }).map((_, i) => (
@@ -175,6 +182,7 @@ export default function SalesPage() {
           </>
         )}
       </div>
+      )}
 
       {auditSalesId && <AuditTrailDialog salesId={auditSalesId} open={!!auditSalesId} onClose={() => setAuditSalesId(null)} />}
 
@@ -229,7 +237,10 @@ export default function SalesPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loadingTop ? (
+          {topError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchTop}
+              errorTitle="Không thể tải xếp hạng doanh thu"><div /></AsyncState>
+          ) : loadingTop ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
             </div>
@@ -295,6 +306,15 @@ export default function SalesPage() {
         </CardContent>
       </Card>
       )}
+      <ReasonActionDialog
+        open={!!disputeSalesId}
+        onOpenChange={(open) => !open && setDisputeSalesId(null)}
+        title="Tranh chấp số liệu doanh thu"
+        description="Vui lòng ghi rõ lý do để bộ phận phụ trách kiểm tra và lưu vết xử lý."
+        confirmLabel="Gửi tranh chấp"
+        loading={disputeMutation.isPending}
+        onConfirm={(reason) => disputeSalesId && disputeMutation.mutate({ id: disputeSalesId, reason }, { onSuccess: () => setDisputeSalesId(null) })}
+      />
     </div>
   );
 }

@@ -13,6 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
@@ -132,7 +134,7 @@ function SignFileDialog({ contractId, file, open, onClose }: {
 function VerifyDialog({ verifyCode, open, onClose }: {
   verifyCode: string; open: boolean; onClose: () => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['verify-signature', verifyCode],
     queryFn: () => contractsApi.verifyFile(verifyCode),
     enabled: open && !!verifyCode,
@@ -208,6 +210,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
   const [signFile, setSignFile] = useState<any>(null);
   const [verifyCode, setVerifyCode] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deleteFile, setDeleteFile] = useState<any>(null);
 
   const { data: files = [], isLoading } = useQuery({
     queryKey: ['contract-files', contractId],
@@ -353,9 +356,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   )}
 
                   {/* Delete */}
-                  <button onClick={() => {
-                    if (confirm(`Xóa file "${f.fileName}"?`)) deleteMutation.mutate(f.id);
-                  }}
+                  <button onClick={() => setDeleteFile(f)}
                     className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500"
                     title="Xóa">
                     <Trash2 size={14} />
@@ -382,6 +383,16 @@ function DocumentsTab({ contractId }: { contractId: string }) {
       )}
 
       {/* Dialogs */}
+      <ConfirmActionDialog
+        open={!!deleteFile}
+        onOpenChange={(open) => !open && setDeleteFile(null)}
+        title="Xóa tài liệu hợp đồng"
+        description={`Tài liệu "${deleteFile?.fileName ?? ''}" sẽ bị xóa khỏi hợp đồng.`}
+        confirmLabel="Xóa tài liệu"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteFile && deleteMutation.mutate(deleteFile.id, { onSuccess: () => setDeleteFile(null) })}
+      />
       {signFile && (
         <SignFileDialog contractId={contractId} file={signFile}
           open={!!signFile} onClose={() => setSignFile(null)} />
@@ -781,7 +792,7 @@ export default function ContractsPage() {
     setSearch(''); setStatus(''); setType(''); setDateFrom(''); setDateTo('');
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['contracts', { search, status, type, dateFrom, dateTo, page }],
     queryFn: () => contractsApi.listContracts({
       search: search || undefined,
@@ -795,7 +806,7 @@ export default function ContractsPage() {
     enabled: !showExpiring,
   });
 
-  const { data: expiringData, isLoading: loadingExpiring } = useQuery({
+  const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
     queryKey: ['contracts-expiring'],
     queryFn: contractsApi.expiring,
     enabled: showExpiring,
@@ -869,7 +880,13 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {(isLoading || loadingExpiring) ? (
+      {(showExpiring ? expiringError : isError) ? (
+        <AsyncState isLoading={false} isError
+          onRetry={showExpiring ? refetchExpiring : refetch}
+          errorTitle="Không thể tải danh sách hợp đồng">
+          <div />
+        </AsyncState>
+      ) : (isLoading || loadingExpiring) ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded" />)}
         </div>

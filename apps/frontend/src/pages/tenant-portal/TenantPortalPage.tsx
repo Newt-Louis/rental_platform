@@ -13,6 +13,7 @@ import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
 import {
   ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
@@ -495,22 +496,22 @@ export default function TenantPortalPage() {
   const [invoiceFilter, setInvoiceFilter] = useState('');
   const [ticketSearch, setTicketSearch] = useState('');
 
-  const { data: contractsData, isLoading: cLoading } = useQuery({
+  const { data: contractsData, isLoading: cLoading, isError: cError, refetch: refetchContracts } = useQuery({
     queryKey: ['portal-contracts'],
     queryFn: () => contractsApi.listContracts({ status: 'ACTIVE', limit: 50 }),
   });
 
-  const { data: invoicesData, isLoading: iLoading } = useQuery({
+  const { data: invoicesData, isLoading: iLoading, isError: iError, refetch: refetchInvoices } = useQuery({
     queryKey: ['portal-invoices', invoiceFilter],
     queryFn: () => billingApi.listInvoices({ status: invoiceFilter || undefined, limit: 100 }),
   });
 
-  const { data: ticketsData, isLoading: tLoading } = useQuery({
+  const { data: ticketsData, isLoading: tLoading, isError: tError, refetch: refetchTickets } = useQuery({
     queryKey: ['portal-tickets', ticketSearch],
     queryFn: () => ticketsApi.listTickets({ search: ticketSearch || undefined, limit: 100 }),
   });
 
-  const { data: fitoutsData } = useQuery({
+  const { data: fitoutsData, isLoading: fLoading, isError: fError, refetch: refetchFitouts } = useQuery({
     queryKey: ['portal-fitouts'],
     queryFn: () => fitoutApi.listFitouts({ limit: 50 }),
   });
@@ -541,7 +542,7 @@ export default function TenantPortalPage() {
           <ShoppingBag size={20} className="text-white" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tenant Portal</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Cổng thông tin khách thuê</h1>
           <p className="text-sm text-gray-500">Quản lý hợp đồng, hóa đơn và yêu cầu vận hành</p>
         </div>
       </div>
@@ -592,7 +593,8 @@ export default function TenantPortalPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="contracts">
-        <TabsList className="mb-4">
+        <div className="mb-4 overflow-x-auto pb-1">
+        <TabsList className="w-max min-w-full justify-start">
           <TabsTrigger value="contracts" className="gap-1.5">
             <File size={13} /> Hợp đồng
             {contracts.length > 0 && (
@@ -618,10 +620,13 @@ export default function TenantPortalPage() {
             )}
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* ── Contracts tab ─────────────────────────────────── */}
         <TabsContent value="contracts">
-          {cLoading ? (
+          {cError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchContracts} errorTitle="Không thể tải hợp đồng"><div /></AsyncState>
+          ) : cLoading ? (
             <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)}</div>
           ) : contracts.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
@@ -684,7 +689,9 @@ export default function TenantPortalPage() {
             </div>
           </div>
 
-          {iLoading ? (
+          {iError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchInvoices} errorTitle="Không thể tải hóa đơn"><div /></AsyncState>
+          ) : iLoading ? (
             <Skeleton className="h-48" />
           ) : invoices.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
@@ -764,7 +771,9 @@ export default function TenantPortalPage() {
             </Button>
           </div>
 
-          {tLoading ? (
+          {tError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchTickets} errorTitle="Không thể tải yêu cầu vận hành"><div /></AsyncState>
+          ) : tLoading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-20" />)}</div>
           ) : tickets.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
@@ -815,7 +824,11 @@ export default function TenantPortalPage() {
 
         {/* ── Fitout tab ────────────────────────────────────── */}
         <TabsContent value="fitout">
-          {fitouts.length === 0 ? (
+          {fError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchFitouts} errorTitle="Không thể tải tiến độ fit-out"><div /></AsyncState>
+          ) : fLoading ? (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-32" />)}</div>
+          ) : fitouts.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <Hammer size={40} className="mx-auto mb-2 opacity-20" />
               <p>Không có dự án fitout nào</p>

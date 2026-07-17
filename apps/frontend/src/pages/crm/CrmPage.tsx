@@ -14,6 +14,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { useAuthStore } from '@/store/auth.store';
 import {
   DndContext,
   DragOverlay,
@@ -1073,10 +1076,12 @@ interface PipelineFilters {
 
 // ─── Pipeline View (Kanban + List) ─────────────────────────────────────────────
 
-function PipelineView({ onAddNew }: { onAddNew: () => void }) {
+function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onOpenCustomers?: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
 
   // State
   const [search, setSearch] = useState('');
@@ -1092,6 +1097,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionOpen, setBulkActionOpen] = useState<'assign' | 'status' | 'priority' | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // Filters from URL
   const filters: PipelineFilters = useMemo(() => ({
@@ -1160,6 +1166,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       setSelectedIds(new Set());
       setSelectionMode(false);
       setBulkActionOpen(null);
+      setConfirmBulkDelete(false);
     },
     onError: () => {
       toast({ title: 'Lỗi', description: 'Không thể thực hiện hành động', variant: 'destructive' });
@@ -1183,12 +1190,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     return result;
   }, [pipeline]);
 
-  // Get current user ID from auth context (simplified)
-  const currentUserId = useMemo(() => {
-    const authStr = localStorage.getItem('auth');
-    if (!authStr) return null;
-    try { return JSON.parse(authStr)?.user?.id; } catch { return null; }
-  }, []);
+  const currentUserId = user?.id ?? null;
 
   // Apply filters to leads
   const filteredPipelineData = useMemo(() => {
@@ -1239,6 +1241,15 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     () => Object.values(filteredPipelineData).flatMap(v => v.leads),
     [filteredPipelineData],
   );
+
+  useEffect(() => {
+    const requestedLeadId = searchParams.get('leadId');
+    if (!requestedLeadId || selectedLead?.id === requestedLeadId) return;
+    const match = Object.values(pipelineData)
+      .flatMap((column) => column.leads)
+      .find((lead) => lead.id === requestedLeadId);
+    if (match) setSelectedLead(match);
+  }, [pipelineData, searchParams, selectedLead?.id]);
 
   // Reset to page 1 whenever the filtered data changes
   useEffect(() => { setListPage(1); }, [filteredPipelineData]);
@@ -1378,10 +1389,10 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
           <button onClick={() => setView('list')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'list' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
             <LayoutList size={13} /> Danh sách
           </button>
-          <button onClick={() => setView('analytics')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+          <button onClick={() => navigate('/crm-overview')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
             <BarChart3 size={13} /> Analytics
           </button>
-          <button onClick={() => setView('customers')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'customers' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+          <button onClick={() => onOpenCustomers ? onOpenCustomers() : setView('customers')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'customers' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
             <Users size={13} /> Hồ sơ KH
           </button>
         </div>
@@ -1394,30 +1405,40 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 
       {/* Bulk Action Bar */}
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white rounded-xl shadow-2xl px-6 py-3 flex items-center gap-4 z-50">
-          <span className="text-sm font-medium">{selectedIds.size} leads đã chọn</span>
+        <div className="fixed bottom-3 md:bottom-6 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 bg-gray-900 text-white rounded-xl shadow-2xl px-3 md:px-6 py-3 flex items-center gap-2 md:gap-4 z-50 overflow-x-auto">
+          <span className="text-sm font-medium whitespace-nowrap">{selectedIds.size} lead đã chọn</span>
           <div className="h-6 w-px bg-gray-700" />
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={selectAll}>
             <CheckSquare size={14} className="mr-1" /> Chọn tất cả
           </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('assign')}>
-            <UserPlus size={14} className="mr-1" /> Assign
+            <UserPlus size={14} className="mr-1" /> Phân công
           </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('status')}>
-            <ArrowRight size={14} className="mr-1" /> Đổi status
+            <ArrowRight size={14} className="mr-1" /> Đổi trạng thái
           </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('priority')}>
-            <Flame size={14} className="mr-1" /> Đổi priority
+            <Flame size={14} className="mr-1" /> Đổi ưu tiên
           </Button>
-          <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => bulkMutation.mutate({ action: 'delete' })}>
+          <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => setConfirmBulkDelete(true)}>
             <Trash2 size={14} className="mr-1" /> Xóa
           </Button>
           <div className="h-6 w-px bg-gray-700" />
           <Button size="sm" variant="ghost" className="text-gray-400 hover:bg-gray-800" onClick={clearSelection}>
-            <X size={14} />
+            <X size={14} /><span className="sr-only">Bỏ chọn</span>
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Xóa ${selectedIds.size} lead?`}
+        description="Các lead đã chọn sẽ bị xóa khỏi pipeline. Hành động này có thể ảnh hưởng báo cáo và lịch sử chăm sóc khách hàng."
+        onCancel={() => setConfirmBulkDelete(false)}
+        onConfirm={() => bulkMutation.mutate({ action: 'delete' })}
+        loading={bulkMutation.isPending}
+        confirmLabel="Xóa các lead"
+        loadingLabel="Đang xóa..."
+      />
 
       {/* Bulk Action Dialogs */}
       <Dialog open={bulkActionOpen === 'assign'} onOpenChange={(open) => !open && setBulkActionOpen(null)}>
@@ -1723,7 +1744,14 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
         </div>
       )}
 
-      <LeadDetailSheet lead={selectedLead} onClose={() => setSelectedLead(null)} />
+      <LeadDetailSheet lead={selectedLead} onClose={() => {
+        setSelectedLead(null);
+        setSearchParams((previous) => {
+          const next = new URLSearchParams(previous);
+          next.delete('leadId');
+          return next;
+        }, { replace: true });
+      }} />
     </div>
   );
 }
@@ -2449,14 +2477,20 @@ function FollowUpsView() {
 
 // ─── Main CRM Page ─────────────────────────────────────────────────────────────
 
-export default function CrmPage() {
+function LegacyCrmPage() {
   const [activeTab, setActiveTab] = useState('pipeline');
   const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-5 shrink-0">
+      <PageHeader
+        className="mb-5 shrink-0"
+        eyebrow="Không gian làm việc"
+        title="CRM — Kinh doanh và tiếp thị"
+        description="Quản lý vòng đời khách hàng từ tiếp cận, chăm sóc, đàm phán đến ký hợp đồng."
+        actions={<Button onClick={() => setShowAdd(true)} className="w-full gap-2 sm:w-auto"><Plus size={15} /> Thêm khách hàng</Button>}
+      />
+      <div className="hidden">
         <div>
           <h1 className="text-xl font-bold text-gray-900">CRM — Sales & Marketing</h1>
           <p className="text-sm text-gray-500 mt-0.5">Quản lý toàn bộ vòng đời khách hàng: Tiếp cận → Đàm phán → Ký hợp đồng</p>
@@ -2468,7 +2502,8 @@ export default function CrmPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="mb-4 w-full justify-start bg-gray-100 p-1 rounded-xl shrink-0">
+        <div className="mb-4 overflow-x-auto pb-1 shrink-0">
+        <TabsList className="w-max min-w-full justify-start bg-gray-100 p-1 rounded-xl">
           <TabsTrigger value="pipeline" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
             <Target size={14} /> Liên hệ & Pipeline
           </TabsTrigger>
@@ -2476,6 +2511,7 @@ export default function CrmPage() {
             <Bell size={14} /> Follow-ups
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="pipeline" className="flex-1 overflow-y-auto pb-4 mt-0">
           <PipelineView onAddNew={() => setShowAdd(true)} />
@@ -2486,6 +2522,114 @@ export default function CrmPage() {
         </TabsContent>
       </Tabs>
 
+      <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
+    </div>
+  );
+}
+
+function FollowUpsWorkspace() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['follow-ups', 'open', 7],
+    queryFn: () => followUpApi.list({ isDone: 'false', daysAhead: 7 }),
+    select: (response: any) => response?.data ?? response ?? [],
+  });
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => followUpApi.complete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
+      toast({ title: 'Đã hoàn thành follow-up' });
+    },
+    onError: () => toast({ title: 'Không thể hoàn thành follow-up', variant: 'destructive' }),
+  });
+
+  const items: any[] = Array.isArray(data) ? data : [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today.getTime() + 86_400_000);
+  const groups = [
+    { key: 'overdue', label: 'Quá hạn', tone: 'text-red-700', items: items.filter((item) => new Date(item.dueDate) < today) },
+    { key: 'today', label: 'Hôm nay', tone: 'text-amber-700', items: items.filter((item) => new Date(item.dueDate) >= today && new Date(item.dueDate) < tomorrow) },
+    { key: 'upcoming', label: '7 ngày tới', tone: 'text-gray-700', items: items.filter((item) => new Date(item.dueDate) >= tomorrow) },
+  ];
+
+  if (isLoading) return <div className="space-y-2">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div>;
+  if (isError) return (
+    <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+      <p className="font-medium text-red-700">Không thể tải lịch follow-up</p>
+      <p className="mt-1 text-sm text-red-600">Vui lòng kiểm tra kết nối rồi tải lại.</p>
+      <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>Thử lại</Button>
+    </div>
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-3">
+      {groups.map((group) => (
+        <section key={group.key} className="rounded-xl border bg-white p-4" aria-labelledby={`follow-up-${group.key}`}>
+          <h2 id={`follow-up-${group.key}`} className={`mb-3 flex items-center justify-between text-sm font-semibold ${group.tone}`}>
+            {group.label}<Badge variant="outline">{group.items.length}</Badge>
+          </h2>
+          {group.items.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">Không có công việc</p>
+          ) : (
+            <div className="space-y-2">
+              {group.items.map((item: any) => (
+                <article key={item.id} className="rounded-lg border p-3">
+                  <button
+                    type="button"
+                    className="text-left text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+                    onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}
+                  >{item.lead?.brandName ?? item.customer?.companyName ?? 'Follow-up'}</button>
+                  {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-400">Hạn {fmtDate(item.dueDate)}</span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
+                      <CheckCircle size={12} className="mr-1" /> Hoàn thành
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+export default function CrmPage() {
+  const [searchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const [activeTab, setActiveTab] = useState(
+    requestedSection === 'followups' || requestedSection === 'customers' ? requestedSection : 'leads',
+  );
+  const [showAdd, setShowAdd] = useState(false);
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        className="mb-5 shrink-0"
+        eyebrow="Không gian làm việc"
+        title="CRM — Khách hàng tiềm năng"
+        description="Xử lý Lead hằng ngày, lịch chăm sóc và hồ sơ khách hàng trước khi chuyển sang Booking."
+        actions={<Button onClick={() => setShowAdd(true)} className="w-full gap-2 sm:w-auto"><Plus size={15} /> Tạo Lead / hồ sơ</Button>}
+      />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 shrink-0 overflow-x-auto pb-1">
+          <TabsList className="w-max min-w-full justify-start rounded-xl bg-gray-100 p-1">
+            <TabsTrigger value="leads" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Target size={14} /> Leads</TabsTrigger>
+            <TabsTrigger value="followups" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Bell size={14} /> Follow-ups</TabsTrigger>
+            <TabsTrigger value="customers" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Users size={14} /> Hồ sơ khách hàng</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="leads" className="mt-0 flex-1 overflow-y-auto pb-4">
+          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} />
+        </TabsContent>
+        <TabsContent value="followups" className="mt-0 flex-1 overflow-y-auto pb-4"><FollowUpsWorkspace /></TabsContent>
+        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} /></TabsContent>
+      </Tabs>
       <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
     </div>
   );

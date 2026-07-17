@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "mode": "uat",
+  "startedAt": "2026-07-17T01:26:57.219Z",
+  "completedAt": "2026-07-17T01:30:33.924Z",
+  "verdict": "READY",
+  "counts": {
+    "passed": 13,
+    "failed": 0,
+    "skipped": 1
+  },
+  "migrations": {
+    "expectation": "prisma migrate deploy must complete successfully before application rollout",
+    "checkedLive": false,
+    "note": "Database migration deployment evidence must be attached by the release operator"
+  },
+  "results": [
+    {
+      "name": "Operations static gates",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe scripts/ops-static-check.mjs",
+      "durationMs": 1329,
+      "detail": "Static operations check: 171 reachable backend files, 18 cron jobs.\nPASS: cron names are unique and production deployment invariants are satisfied (0 warnings)."
+    },
+    {
+      "name": "Operations fixture tests",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe --test scripts/ops-automation.test.mjs scripts/backup-restore.test.mjs scripts/performance-smoke.test.mjs",
+      "durationMs": 2350,
+      "detail": "✔ restore verification rejects a production-like target (306.6926ms)\n✔ guard-only verification validates isolated target and checksum (337.2186ms)\n✔ readiness automation passes against a healthy deployment fixture (607.4724ms)\n✔ public smoke automation passes and skips RBAC without credentials (382.4635ms)\n✔ read-only performance gate passes a healthy local fixture (1612.3912ms)\n✔ performance runner rejects a non-local target without confirmation (166.4994ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 2211.9655"
+    },
+    {
+      "name": "Prisma schema validation",
+      "status": "PASS",
+      "command": "npx prisma validate",
+      "durationMs": 7898,
+      "detail": "Environment variables loaded from .env\nPrisma schema loaded from prisma\\schema.prisma\nThe schema at D:\\leasing-platform-thiso\\apps\\backend\\prisma\\schema.prisma is valid 🚀"
+    },
+    {
+      "name": "Prisma client generation",
+      "status": "PASS",
+      "command": "npx prisma generate",
+      "durationMs": 13285,
+      "detail": "Environment variables loaded from .env\nPrisma schema loaded from prisma\\schema.prisma\n\n✔ Generated Prisma Client (v5.10.0) to .\\node_modules\\@prisma\\client in 2.92s\n\nStart using Prisma Client in Node.js (See: https://pris.ly/d/client)\n```\nimport { PrismaClient } from '@prisma/client'\nconst prisma = new PrismaClient()\n```\nor start using Prisma Client at the edge (See: https://pris.ly/d/accelerate)\n```\nimport { PrismaClient } from '@prisma/client/edge'\nconst prisma = new PrismaClient()\n```\n\nSee other ways of importing Prisma Client: http://pris.ly/d/importing-client\n\n┌─────────────────────────────────────────────────────────────┐\n│  Deploying your app to serverless or edge functions?        │\n│  Try Prisma Accelerate for connection pooling and caching.  │\n│  https://pris.ly/cli/accelerate                             │\n└─────────────────────────────────────────────────────────────┘"
+    },
+    {
+      "name": "Backend tests",
+      "status": "PASS",
+      "command": "npm test -- --runInBand",
+      "durationMs": 47997,
+      "detail": "ap.example.test\u001b[39m\n\u001b[33m[Nest] 41668  - \u001b[39m07/17/2026, 8:27:56 AM \u001b[33m   WARN\u001b[39m \u001b[38;5;3m[SapService] \u001b[39m\u001b[33mSAP circuit breaker opened for 100ms\u001b[39m\n\u001b[32m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:05 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[EmailService] \u001b[39m\u001b[32mEmail service enabled (smtp.example.test:587)\u001b[39m\n\u001b[32m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:05 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[EmailService] \u001b[39m\u001b[32mEmail sent to tenant@example.test: message-1\u001b[39m\n\u001b[32m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:05 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[EmailService] \u001b[39m\u001b[32mEmail service enabled (smtp.example.test:587)\u001b[39m\n\u001b[32m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:07 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RequestObservabilityInterceptor] \u001b[39m\u001b[32m{\"requestId\":\"uat-contract-123\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"durationMs\":1,\"userId\":null}\u001b[39m\n\u001b[32m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:07 AM \u001b[32m    LOG\u001b[39m \u001b[38;5;3m[RequestObservabilityInterceptor] \u001b[39m\u001b[32m{\"requestId\":\"e967316d-9da7-47c0-87f0-fda49721e8ab\",\"method\":\"GET\",\"path\":\"/\",\"status\":200,\"durationMs\":0,\"userId\":null}\u001b[39m\n\u001b[95m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:07 AM \u001b[95m  DEBUG\u001b[39m \u001b[38;5;3m[SchedulerLockService] \u001b[39m\u001b[95mSkipped billing; another instance owns the scheduler lock\u001b[39m\n\u001b[33m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:07 AM \u001b[33m   WARN\u001b[39m \u001b[38;5;3m[SchedulerLockService] \u001b[39m\u001b[33mRedis is unavailable; scheduler locks are running in single-instance fallback mode\u001b[39m\n\u001b[33m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:08 AM \u001b[33m   WARN\u001b[39m \u001b[38;5;3m[StorageService] \u001b[39m\u001b[33mRejected unsafe storage path: ../outside.txt\u001b[39m\n\u001b[33m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:08 AM \u001b[33m   WARN\u001b[39m \u001b[38;5;3m[StorageService] \u001b[39m\u001b[33mRejected unsafe storage path: C:\\Users\\User\\AppData\\Local\\Temp\\outside.txt\u001b[39m\n\u001b[33m[Nest] 41668  - \u001b[39m07/17/2026, 8:28:08 AM \u001b[33m   WARN\u001b[39m \u001b[38;5;3m[StorageService] \u001b[39m\u001b[33mRejected unsafe storage path: C:\\Users\\User\\AppData\\Local\\Temp\\outside-1784251688764.txt\u001b[39m"
+    },
+    {
+      "name": "Backend build",
+      "status": "PASS",
+      "command": "npm run build",
+      "durationMs": 47733,
+      "detail": "> leasing-platform-backend@1.0.0 build\n> nest build"
+    },
+    {
+      "name": "Frontend tests",
+      "status": "PASS",
+      "command": "npm test",
+      "durationMs": 25718,
+      "detail": "> leasing-platform-frontend@1.0.0 test\n> vitest run\n\n\n\u001b[1m\u001b[7m\u001b[36m RUN \u001b[39m\u001b[27m\u001b[22m \u001b[36mv2.1.9 \u001b[39m\u001b[90mD:/leasing-platform-thiso/apps/frontend\u001b[39m\n\n \u001b[32m✓\u001b[39m src/lib/permissions.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 11\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/hooks/useDetailSheet.test.ts \u001b[2m(\u001b[22m\u001b[2m4 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 65\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/hooks/useFormDialog.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 74\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/hooks/useFilters.test.tsx \u001b[2m(\u001b[22m\u001b[2m6 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 127\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/hooks/usePermission.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 71\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/hooks/useCRUD.test.tsx \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 570\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/components/ui/async-state.test.tsx \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 191\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/components/spaces/dialogs/ConfirmDialog.test.tsx \u001b[2m(\u001b[22m\u001b[2m3 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[90m 285\u001b[2mms\u001b[22m\u001b[39m\n \u001b[32m✓\u001b[39m src/pages/bookings/LeadEditDialog.test.tsx \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 2007\u001b[2mms\u001b[22m\u001b[39m\n   \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m LeadEditDialog — form render\u001b[2m > \u001b[22mhiển thị đúng dữ liệu lead khi mở dialog \u001b[33m310\u001b[2mms\u001b[22m\u001b[39m\n   \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m LeadEditDialog — gọi API và payload\u001b[2m > \u001b[22mgọi crmApi.updateLead với đúng lead.id và payload \u001b[33m326\u001b[2mms\u001b[22m\u001b[39m\n   \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m LeadEditDialog — backend response\u001b[2m > \u001b[22monSuccess: đóng dialog và hiển thị toast thành công \u001b[33m388\u001b[2mms\u001b[22m\u001b[39m\n   \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m LeadEditDialog — backend response\u001b[2m > \u001b[22mgửi giá trị rỗng để backend xóa company \u001b[33m375\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m9 passed\u001b[39m\u001b[22m\u001b[90m (9)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m52 passed\u001b[39m\u001b[22m\u001b[90m (52)\u001b[39m\n\u001b[2m   Start at \u001b[22m 08:29:00\n\u001b[2m   Duration \u001b[22m 19.75s\u001b[2m (transform 1.77s, setup 19.24s, collect 17.86s, tests 3.40s, environment 100.88s, prepare 7.03s)\u001b[22m"
+    },
+    {
+      "name": "Frontend build",
+      "status": "PASS",
+      "command": "npm run build",
+      "durationMs": 66762,
+      "detail": "2m 26.34 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:   5.64 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/TenantPortalPage-DfokXx05.js          \u001b[39m\u001b[1m\u001b[2m 27.19 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:   7.47 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/index.esm-DZdpUUHU.js                 \u001b[39m\u001b[1m\u001b[2m 27.26 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  10.08 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/AiPage-DOSJ-Hhr.js                    \u001b[39m\u001b[1m\u001b[2m 27.65 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:   8.45 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/ContractsPage-OCRRYw1v.js             \u001b[39m\u001b[1m\u001b[2m 32.22 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:   9.32 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/BillingPage-Guq7KOji.js               \u001b[39m\u001b[1m\u001b[2m 41.51 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  11.16 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/FitoutPage-MAKZvmAN.js                \u001b[39m\u001b[1m\u001b[2m 45.71 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  11.62 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/ProposalsPage-D5lUh158.js             \u001b[39m\u001b[1m\u001b[2m 64.17 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  17.89 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/AdminPage-zatmmdWQ.js                 \u001b[39m\u001b[1m\u001b[2m 69.88 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  16.69 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/BulkSelectionBar-CAJ_vutg.js          \u001b[39m\u001b[1m\u001b[2m 70.04 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  21.46 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/BookingsPage-DyQhD3or.js              \u001b[39m\u001b[1m\u001b[2m 76.39 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  16.99 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/date-range-picker-B9YJMGb-.js         \u001b[39m\u001b[1m\u001b[2m 88.24 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  25.83 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/CrmPage-Dbfkj8uy.js                   \u001b[39m\u001b[1m\u001b[2m128.75 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  36.45 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/SpacesPage-Dq1dzHaM.js                \u001b[39m\u001b[1m\u001b[2m159.94 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  39.18 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/generateCategoricalChart-DkDQ-LpT.js  \u001b[39m\u001b[1m\u001b[2m350.08 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  98.43 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/index-HVRorr-M.js                     \u001b[39m\u001b[1m\u001b[2m454.90 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip: 146.51 kB\u001b[22m\n\u001b[32m✓ built in 27.70s\u001b[39m"
+    },
+    {
+      "name": "Backup manifest evidence",
+      "status": "PASS",
+      "artifact": "artifacts/backups/leasing-leasing_platform_uat-20260717T011838Z.dump.json",
+      "bytes": 294,
+      "detail": "artifact present"
+    },
+    {
+      "name": "Performance evidence",
+      "status": "PASS",
+      "artifact": "artifacts/performance-report.json",
+      "bytes": 516,
+      "detail": "artifact present"
+    },
+    {
+      "name": "Live UAT readiness",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe scripts/ops-readiness.mjs",
+      "durationMs": 268,
+      "detail": "┌─────────┬──────────────────────┬────────┬─────┬────────────┐\n│ (index) │ name                 │ status │ ms  │ detail     │\n├─────────┼──────────────────────┼────────┼─────┼────────────┤\n│ 0       │ 'API liveness'       │ 'PASS' │ 102 │ 'HTTP 200' │\n│ 1       │ 'API readiness'      │ 'PASS' │ 15  │ 'HTTP 200' │\n│ 2       │ 'Frontend health'    │ 'PASS' │ 9   │ 'HTTP 200' │\n│ 3       │ 'Frontend API proxy' │ 'PASS' │ 21  │ 'HTTP 200' │\n│ 4       │ 'Frontend SPA shell' │ 'PASS' │ 7   │ 'HTTP 200' │\n└─────────┴──────────────────────┴────────┴─────┴────────────┘\nReadiness summary: 5/5 checks passed."
+    },
+    {
+      "name": "Live UAT role smoke",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe scripts/smoke-test.mjs",
+      "durationMs": 3078,
+      "detail": "        │\n│ 43      │ 'ceo@thiso.com'              │ 'Authentication'                 │ 'PASS' │ 115 │ 'CEO'                                                              │\n│ 44      │ 'ceo@thiso.com'              │ 'Current user authorization'     │ 'PASS' │ 15  │ [Object]                                                           │\n│ 45      │ 'ceo@thiso.com'              │ 'Dashboard'                      │ 'PASS' │ 24  │ [Object]                                                           │\n│ 46      │ 'ceo@thiso.com'              │ 'Revenue and receivables report' │ 'PASS' │ 25  │ [Object]                                                           │\n│ 47      │ 'ceo@thiso.com'              │ 'Occupancy analytics'            │ 'PASS' │ 22  │ [Object]                                                           │\n│ 48      │ 'ceo@thiso.com'              │ 'Audit log'                      │ 'PASS' │ 24  │ [ [Object] ]                                                       │\n│ 49      │ 'portal.highlands@thiso.com' │ 'Authentication'                 │ 'PASS' │ 97  │ 'TENANT'                                                           │\n│ 50      │ 'portal.highlands@thiso.com' │ 'Current user authorization'     │ 'PASS' │ 16  │ [Object]                                                           │\n│ 51      │ 'portal.highlands@thiso.com' │ 'Tenant contracts'               │ 'PASS' │ 24  │ [ [Object] ]                                                       │\n│ 52      │ 'portal.highlands@thiso.com' │ 'Tenant invoices'                │ 'PASS' │ 23  │ [ [Object] ]                                                       │\n│ 53      │ 'portal.highlands@thiso.com' │ 'Tenant tickets'                 │ 'PASS' │ 22  │ [ [Object] ]                                                       │\n└─────────┴──────────────────────────────┴──────────────────────────────────┴────────┴─────┴────────────────────────────────────────────────────────────────────┘\nSmoke summary: 54 passed, 0 failed, 0 skipped."
+    },
+    {
+      "name": "Live UAT performance execution",
+      "status": "SKIP",
+      "detail": "Use approved capacity window and set RUN_UAT_PERFORMANCE=true"
+    },
+    {
+      "name": "Deployment environment preflight",
+      "status": "PASS",
+      "command": "c:\\program files\\nodejs\\node.exe scripts/ops-preflight.mjs artifacts/uat-preflight.env",
+      "durationMs": 284,
+      "detail": "PASS: artifacts/uat-preflight.env and Docker Compose configuration are deployment-ready."
+    }
+  ]
+}

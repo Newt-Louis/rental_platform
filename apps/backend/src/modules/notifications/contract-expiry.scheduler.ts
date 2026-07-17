@@ -4,6 +4,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import * as crypto from 'crypto';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { EmailDeliveryService } from './email-delivery.service';
 
 @Injectable()
 export class ContractExpiryScheduler {
@@ -13,11 +15,17 @@ export class ContractExpiryScheduler {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   // Chạy lúc 8:00 sáng mỗi ngày
   @Cron('0 8 * * *', { name: 'contract-expiry-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkContractExpiry() {
+    return this.schedulerLock.runExclusive('contract-expiry-check', 10_800_000, () => this.checkContractExpiryUnlocked());
+  }
+
+  private async checkContractExpiryUnlocked() {
     this.logger.log('Running contract expiry check...');
 
     const today = new Date();
@@ -68,8 +76,8 @@ export class ContractExpiryScheduler {
 
         // Email cho manager phụ trách
         if (contract.managedBy?.email) {
-          try {
-            await this.emailService.sendMail({
+          await this.emailDelivery.enqueue(this.prisma, {
+              eventKey: `contract-expiry:${contract.id}:${daysLeft}:manager`,
               to: contract.managedBy.email,
               subject: `[THISO] Hợp đồng ${contract.contractNumber} còn ${daysLeft} ngày — ${contract.tenant.brandName}`,
               html: this.emailService.contractExpiryHtml({
@@ -81,15 +89,12 @@ export class ContractExpiryScheduler {
                 contactName: contract.managedBy.fullName,
               }),
             });
-          } catch (e) {
-            this.logger.warn(`Failed to send email for contract ${contract.id}: ${e.message}`);
-          }
         }
 
         // Email cho khách thuê (nếu có email)
         if (contract.tenant.contactEmail && daysLeft <= 60) {
-          try {
-            await this.emailService.sendMail({
+          await this.emailDelivery.enqueue(this.prisma, {
+              eventKey: `contract-expiry:${contract.id}:${daysLeft}:tenant`,
               to: contract.tenant.contactEmail,
               subject: `[THISO Mall] Hợp đồng thuê mặt bằng của ${contract.tenant.brandName} còn ${daysLeft} ngày`,
               html: this.emailService.contractExpiryHtml({
@@ -101,9 +106,6 @@ export class ContractExpiryScheduler {
                 contactName: contract.tenant.contactName ?? contract.tenant.brandName,
               }),
             });
-          } catch (e) {
-            this.logger.warn(`Failed to send tenant email for contract ${contract.id}: ${e.message}`);
-          }
         }
 
         this.logger.log(`Notified: contract ${contract.contractNumber} expires in ${daysLeft} days (${contract.tenant.brandName})`);
@@ -116,6 +118,10 @@ export class ContractExpiryScheduler {
   // Cron job 8:30 AM — tự tạo draft renewal proposal cho HĐ còn 90 ngày
   @Cron('30 8 * * *', { name: 'contract-renewal-proposals', timeZone: 'Asia/Ho_Chi_Minh' })
   async autoCreateRenewalProposals() {
+    return this.schedulerLock.runExclusive('contract-renewal-proposals', 10_800_000, () => this.autoCreateRenewalProposalsUnlocked());
+  }
+
+  private async autoCreateRenewalProposalsUnlocked() {
     this.logger.log('Running auto renewal proposal creation...');
     const today = new Date();
     const target = new Date(today);
@@ -205,6 +211,10 @@ export class ContractExpiryScheduler {
   // Cron job 7:30 AM — nhắc nhở follow-up CRM đến hạn hôm nay
   @Cron('30 7 * * *', { name: 'crm-followup-reminder', timeZone: 'Asia/Ho_Chi_Minh' })
   async remindFollowUps() {
+    return this.schedulerLock.runExclusive('crm-followup-reminder', 10_800_000, () => this.remindFollowUpsUnlocked());
+  }
+
+  private async remindFollowUpsUnlocked() {
     this.logger.log('Running CRM follow-up reminders...');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -243,6 +253,10 @@ export class ContractExpiryScheduler {
   // Cron job 8:05 AM — AI Proactive Insights gửi cho CEO/ADMIN
   @Cron('5 8 * * 1-5', { name: 'ai-proactive-insights', timeZone: 'Asia/Ho_Chi_Minh' })
   async sendAiProactiveInsights() {
+    return this.schedulerLock.runExclusive('ai-proactive-insights', 10_800_000, () => this.sendAiProactiveInsightsUnlocked());
+  }
+
+  private async sendAiProactiveInsightsUnlocked() {
     this.logger.log('Running AI proactive insights...');
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return;
@@ -316,6 +330,10 @@ Hãy đưa ra 3 điểm cần chú ý quan trọng nhất và 2 hành động ư
   // Cron job hàng ngày lúc 9:00 — chỉ đánh dấu OVERDUE (dunning xử lý thông báo)
   @Cron('0 9 * * *', { name: 'invoice-overdue-mark', timeZone: 'Asia/Ho_Chi_Minh' })
   async markOverdueInvoices() {
+    return this.schedulerLock.runExclusive('invoice-overdue-mark', 10_800_000, () => this.markOverdueInvoicesUnlocked());
+  }
+
+  private async markOverdueInvoicesUnlocked() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

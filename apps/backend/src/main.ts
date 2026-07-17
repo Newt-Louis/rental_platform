@@ -6,13 +6,45 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { RequestObservabilityInterceptor } from './common/interceptors/request-observability.interceptor';
+import { OperationalMetricsService } from './common/services/operational-metrics.service';
 import { PrismaService } from './prisma/prisma.service';
 import * as winston from 'winston';
 import helmet from 'helmet';
 import { json, urlencoded, static as expressStatic } from 'express';
 import * as path from 'path';
 
+function getCorsOrigins(): string[] | boolean {
+  const configuredOrigins = process.env.CORS_ORIGIN
+    ?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configuredOrigins?.length) return configuredOrigins;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CORS_ORIGIN must be configured in production');
+  }
+
+  return true;
+}
+
+function validateProductionSecrets() {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  const jwtSecret = process.env.JWT_SECRET;
+  const knownPlaceholder =
+    jwtSecret?.includes('change-me') ||
+    jwtSecret?.includes('change-in-production') ||
+    jwtSecret?.includes('replace-with');
+
+  if (!jwtSecret || jwtSecret.length < 32 || knownPlaceholder) {
+    throw new Error('JWT_SECRET must be a unique secret of at least 32 characters in production');
+  }
+}
+
 async function bootstrap() {
+  validateProductionSecrets();
+
   const logger = WinstonModule.createLogger({
     transports: [
       new winston.transports.Console({
@@ -55,7 +87,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? '*',
+    origin: getCorsOrigins(),
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Accept, Authorization',
     credentials: true,
@@ -73,7 +105,10 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // Response transform interceptor — wrap responses with { success, data }
-  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalInterceptors(
+    new RequestObservabilityInterceptor(app.get(OperationalMetricsService)),
+    new TransformInterceptor(),
+  );
 
   // Audit log interceptor — log tất cả write operations
   const prisma = app.get(PrismaService);

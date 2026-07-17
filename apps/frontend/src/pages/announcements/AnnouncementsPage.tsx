@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useMallStore } from '@/store/mall.store';
 import { Plus, Megaphone, AlertTriangle, Wrench, Star, Tag, Zap, Clock } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { AsyncState } from '@/components/ui/async-state';
 
 const CATEGORIES = [
   { key: 'MAINTENANCE', label: 'Bảo trì', icon: Wrench, color: 'bg-yellow-100 text-yellow-700' },
@@ -108,7 +109,7 @@ export default function AnnouncementsPage() {
   const isTenant = user?.role === 'TENANT';
   const isStaff = !isTenant;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: isStaff ? ['announcements-admin', selectedMallId] : ['announcements', selectedMallId],
     queryFn: () => isStaff
       ? announcementsApi.list(selectedMallId || undefined)
@@ -162,7 +163,9 @@ export default function AnnouncementsPage() {
         })}
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải thông báo"><div /></AsyncState>
+      ) : isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-24 bg-gray-100 animate-pulse rounded-xl" />

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
 import { Cpu, RefreshCw, CheckCircle, XCircle, Clock, Link2, AlertCircle, Scale, FlaskConical } from 'lucide-react';
 
 const STATUS_MAP = {
@@ -22,7 +23,7 @@ export default function SapPage() {
   const { toast } = useToast();
   const [mappingForm, setMappingForm] = useState({ entityType: 'TENANT', entityId: '', sapRef: '', sapCompanyCode: '1000' });
 
-  const { data: logsData, isLoading } = useQuery({
+  const { data: logsData, isLoading, isError: logsError, refetch: refetchLogs, dataUpdatedAt: logsUpdatedAt } = useQuery({
     queryKey: ['sap-logs'],
     queryFn: () => sapApi.getLogs({ limit: 50 }),
     refetchInterval: 15_000,
@@ -43,7 +44,7 @@ export default function SapPage() {
     queryFn: () => sapApi.getStats(),
   });
 
-  const { data: reconciliationData, isLoading: reconLoading } = useQuery({
+  const { data: reconciliationData, isLoading: reconLoading, isError: reconError, refetch: refetchReconciliation } = useQuery({
     queryKey: ['sap-reconciliation'],
     queryFn: () => sapApi.listReconciliation({ limit: 50 }),
     refetchInterval: 30_000,
@@ -97,7 +98,7 @@ export default function SapPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">SAP Integration</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Tích hợp SAP</h1>
             {sapEnabled ? (
               <Badge className="bg-green-100 text-green-700 border-0 gap-1">
                 <CheckCircle size={12} /> Live
@@ -133,7 +134,8 @@ export default function SapPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      {logsUpdatedAt > 0 && <p className="-mt-4 mb-4 text-right text-xs text-gray-400">Cập nhật gần nhất: {new Date(logsUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">{successCount}</p>
@@ -168,9 +170,9 @@ export default function SapPage() {
               <Badge className="ml-1 bg-red-500 text-white border-0 text-[10px] px-1.5">{mismatchCount}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="mappings">Entity Mappings</TabsTrigger>
-          <TabsTrigger value="logs">Integration Log</TabsTrigger>
-          <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
+          <TabsTrigger value="mappings">Ánh xạ dữ liệu</TabsTrigger>
+          <TabsTrigger value="logs">Nhật ký tích hợp</TabsTrigger>
+          <TabsTrigger value="endpoints">Điểm kết nối</TabsTrigger>
         </TabsList>
 
         <TabsContent value="reconciliation">
@@ -201,7 +203,10 @@ export default function SapPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {reconLoading ? (
+              {reconError ? (
+                <AsyncState isLoading={false} isError onRetry={refetchReconciliation}
+                  errorTitle="Không thể tải dữ liệu đối soát"><div /></AsyncState>
+              ) : reconLoading ? (
                 <Skeleton className="h-48 m-4" />
               ) : (
                 <div className="divide-y">
@@ -321,7 +326,10 @@ export default function SapPage() {
         <TabsContent value="logs">
           <Card>
             <CardContent className="p-0">
-              {isLoading ? <Skeleton className="h-64 m-4" /> : (
+              {logsError ? (
+                <AsyncState isLoading={false} isError onRetry={refetchLogs}
+                  errorTitle="Không thể tải nhật ký tích hợp"><div /></AsyncState>
+              ) : isLoading ? <Skeleton className="h-64 m-4" /> : (
                 <div className="divide-y">
                   {logs.map((log: any) => {
                     const st = STATUS_MAP[log.status as keyof typeof STATUS_MAP];

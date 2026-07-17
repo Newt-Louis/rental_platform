@@ -9,6 +9,13 @@ export class SapService {
   private readonly enabled = process.env.SAP_ENABLED === 'true';
   private accessToken: string | null = null;
   private tokenExpiresAt: Date | null = null;
+  private consecutiveFailures = 0;
+  private circuitOpenUntil = 0;
+  private readonly timeoutMs = this.envNumber('SAP_TIMEOUT_MS', 15_000, 100);
+  private readonly maxAttempts = this.envNumber('SAP_MAX_ATTEMPTS', 3, 1);
+  private readonly retryBaseMs = this.envNumber('SAP_RETRY_BASE_MS', 250, 0);
+  private readonly circuitThreshold = this.envNumber('SAP_CIRCUIT_FAILURE_THRESHOLD', 5, 1);
+  private readonly circuitCooldownMs = this.envNumber('SAP_CIRCUIT_COOLDOWN_MS', 60_000, 100);
 
   constructor(private prisma: PrismaService) {
     if (this.enabled) {
@@ -54,8 +61,12 @@ export class SapService {
 
     if (!this.enabled) {
       this.logger.warn(`SAP syncCustomer skipped (disabled) for tenant ${tenantId}`);
-      return this.prisma.sapIntegrationLog.create({
-        data: {
+      const idempotencyKey = this.idempotencyKey('TENANT', tenantId, endpoint);
+      return this.prisma.sapIntegrationLog.upsert({
+        where: { idempotencyKey },
+        update: { payload, status: SapStatus.PENDING, errorMessage: 'SAP integration disabled — queued for when enabled' },
+        create: {
+          idempotencyKey,
           entityType: 'TENANT',
           entityId: tenantId,
           endpoint,
@@ -91,8 +102,12 @@ export class SapService {
 
     if (!this.enabled) {
       this.logger.warn(`SAP syncInvoice skipped (disabled) for invoice ${invoiceId}`);
-      return this.prisma.sapIntegrationLog.create({
-        data: {
+      const idempotencyKey = this.idempotencyKey('INVOICE', invoiceId, endpoint);
+      return this.prisma.sapIntegrationLog.upsert({
+        where: { idempotencyKey },
+        update: { payload, status: SapStatus.PENDING, errorMessage: 'SAP integration disabled — queued for when enabled' },
+        create: {
+          idempotencyKey,
           entityType: 'INVOICE',
           entityId: invoiceId,
           endpoint,
@@ -112,7 +127,7 @@ export class SapService {
     }
 
     const tokenUrl = `${this.baseUrl}/oauth/token`;
-    const response = await fetch(tokenUrl, {
+    const response = await this.fetchWithResilience(tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -120,7 +135,7 @@ export class SapService {
         client_id: process.env.SAP_CLIENT_ID ?? '',
         client_secret: process.env.SAP_CLIENT_SECRET ?? '',
       }),
-    });
+    }, 'oauth');
 
     if (!response.ok) {
       throw new Error(`SAP OAuth failed: ${response.status} ${await response.text()}`);
@@ -136,6 +151,86 @@ export class SapService {
     return `${entityType}:${entityId}:${endpoint}`;
   }
 
+  private envNumber(name: string, fallback: number, minimum: number) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value >= minimum ? value : fallback;
+  }
+
+  private isTransientStatus(status: number) {
+    return status === 408 || status === 425 || status === 429 || status >= 500;
+  }
+
+  private isTransientError(error: unknown) {
+    const candidate = error as NodeJS.ErrnoException;
+    return candidate?.name === 'AbortError'
+      || candidate?.name === 'TimeoutError'
+      || ['ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ETIMEDOUT'].includes(candidate?.code ?? '');
+  }
+
+  private async delay(ms: number) {
+    if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private assertCircuitClosed() {
+    if (this.circuitOpenUntil > Date.now()) {
+      throw new Error(`SAP circuit breaker open until ${new Date(this.circuitOpenUntil).toISOString()}`);
+    }
+    if (this.circuitOpenUntil) {
+      this.circuitOpenUntil = 0;
+      this.consecutiveFailures = 0;
+    }
+  }
+
+  private recordSuccess() {
+    this.consecutiveFailures = 0;
+    this.circuitOpenUntil = 0;
+  }
+
+  private recordFailure() {
+    this.consecutiveFailures++;
+    if (this.consecutiveFailures >= this.circuitThreshold) {
+      this.circuitOpenUntil = Date.now() + this.circuitCooldownMs;
+      this.logger.warn(`SAP circuit breaker opened for ${this.circuitCooldownMs}ms`);
+    }
+  }
+
+  private async fetchWithResilience(
+    url: string,
+    init: RequestInit,
+    operation: string,
+  ): Promise<Response> {
+    this.assertCircuitClosed();
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        if (response.ok || !this.isTransientStatus(response.status)) {
+          this.recordSuccess();
+          return response;
+        }
+        lastError = new Error(`SAP ${operation} transient HTTP ${response.status}`);
+      } catch (error) {
+        lastError = error;
+        if (!this.isTransientError(error)) {
+          this.recordFailure();
+          throw error;
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (attempt < this.maxAttempts) {
+        await this.delay(this.retryBaseMs * 2 ** (attempt - 1));
+      }
+    }
+
+    this.recordFailure();
+    throw lastError instanceof Error ? lastError : new Error(`SAP ${operation} failed`);
+  }
+
   private async callSapApi(opts: {
     method: string;
     endpoint: string;
@@ -144,10 +239,8 @@ export class SapService {
     entityId: string;
   }): Promise<any> {
     const idempotencyKey = this.idempotencyKey(opts.entityType, opts.entityId, opts.endpoint);
-    const existing = await this.prisma.sapIntegrationLog.findFirst({
-      where: { idempotencyKey, status: SapStatus.SUCCESS },
-    });
-    if (existing) return existing;
+    const existing = await this.prisma.sapIntegrationLog.findUnique({ where: { idempotencyKey } });
+    if (existing?.status === SapStatus.SUCCESS) return existing;
 
     const startedAt = Date.now();
     let responseText = '';
@@ -157,16 +250,16 @@ export class SapService {
       const token = await this.getAccessToken();
       const url = `${this.baseUrl}${opts.endpoint}`;
 
-      const response = await fetch(url, {
+      const response = await this.fetchWithResilience(url, {
         method: opts.method,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Idempotency-Key': idempotencyKey,
         },
         body: opts.payload,
-        signal: AbortSignal.timeout(15000),
-      });
+      }, opts.endpoint);
 
       responseText = await response.text();
 
@@ -177,8 +270,15 @@ export class SapService {
       status = SapStatus.SUCCESS;
       this.logger.log(`SAP ${opts.endpoint} success for ${opts.entityType}:${opts.entityId} (${Date.now() - startedAt}ms)`);
 
-      return this.prisma.sapIntegrationLog.create({
-        data: {
+      return this.prisma.sapIntegrationLog.upsert({
+        where: { idempotencyKey },
+        update: {
+          response: responseText.substring(0, 5000),
+          status,
+          errorMessage: null,
+          payload: opts.payload,
+        },
+        create: {
           entityType: opts.entityType,
           entityId: opts.entityId,
           endpoint: opts.endpoint,
@@ -191,8 +291,15 @@ export class SapService {
     } catch (error) {
       this.logger.error(`SAP ${opts.endpoint} failed for ${opts.entityType}:${opts.entityId}: ${error.message}`);
 
-      return this.prisma.sapIntegrationLog.create({
-        data: {
+      return this.prisma.sapIntegrationLog.upsert({
+        where: { idempotencyKey },
+        update: {
+          response: responseText.substring(0, 2000) || null,
+          status: SapStatus.FAILED,
+          errorMessage: error.message.substring(0, 500),
+          payload: opts.payload,
+        },
+        create: {
           entityType: opts.entityType,
           entityId: opts.entityId,
           endpoint: opts.endpoint,
