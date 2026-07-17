@@ -32,7 +32,7 @@ export class TenantsService {
             select: { contracts: true, tickets: true, invoices: true },
           },
         },
-        orderBy: { brandName: 'asc' },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.tenant.count({ where }),
     ]);

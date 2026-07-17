@@ -55,7 +55,7 @@ services:
       REDIS_URL: redis://redis-uat:6379
       JWT_SECRET: ${UAT_JWT_SECRET:?UAT_JWT_SECRET is required}
       JWT_EXPIRES_IN: 1d
-      CORS_ORIGIN: http://localhost:${UAT_FRONTEND_PORT:-58080}
+      CORS_ORIGIN: ${UAT_CORS_ORIGIN:-http://125.234.136.72:58080}
       ALLOW_PUBLIC_REGISTER: "false"
       NODE_ENV: production
       PORT: 3000
