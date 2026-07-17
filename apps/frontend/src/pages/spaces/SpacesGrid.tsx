@@ -57,7 +57,7 @@ export function SpacesGrid({
     setMergeDialogOpen,
   } = useSpacesStore();
 
-  const { gridRef, selectoRef, selectoProps } = useDragSelect({
+  const { gridRef, selectoRef, selectoProps, dialogOpen } = useDragSelect({
     onSelect: selectAll,
     onClear: clearSelection,
     idAttribute: 'data-unit-id',
@@ -122,7 +122,7 @@ export function SpacesGrid({
 
       {/* Unit Grid */}
       <div className="text-sm text-gray-400 mb-3">{units.length} mặt bằng</div>
-      {selectionMode && (
+      {selectionMode && !dialogOpen && (
         <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />
       )}
       <div

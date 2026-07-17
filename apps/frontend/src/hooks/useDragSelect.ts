@@ -1,4 +1,4 @@
-import { useRef, useEffect, RefObject } from 'react';
+import { useRef, useEffect, useState, RefObject } from 'react';
 
 export const DRAG_SELECT_CLASS = 'selecto-unit';
 
@@ -28,6 +28,8 @@ interface UseDragSelectReturn {
     onSelectStart: () => void;
     onSelect: (e: any) => void;
   };
+  /** True while any [role="dialog"] is present in the DOM — unmount <Selecto> when this is true */
+  dialogOpen: boolean;
 }
 
 export function useDragSelect({
@@ -44,6 +46,19 @@ export function useDragSelect({
   const onClearRef = useRef(onClear);
   onSelectRef.current = onSelect;
   onClearRef.current = onClear;
+
+  // Track whether any Radix UI dialog is open.
+  // We unmount <Selecto> entirely when a dialog is open because gesto (Selecto's
+  // drag engine) captures pointerdown at the document level before dragCondition
+  // is checked, stealing focus from inputs/selects inside dialogs.
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => setDialogOpen(!!document.querySelector('[role="dialog"]'));
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const onMouseDown = (e: MouseEvent) => {
@@ -77,5 +92,5 @@ export function useDragSelect({
     },
   };
 
-  return { gridRef, selectoRef, selectoProps };
+  return { gridRef, selectoRef, selectoProps, dialogOpen };
 }
