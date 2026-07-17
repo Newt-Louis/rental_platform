@@ -2,7 +2,11 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, StepStatus, WorkflowStatus } from '@prisma/client';
-import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
+import {
+  ApprovalPolicyConditionType,
+  ApprovalPolicyOperator,
+  CreateApprovalPolicyRuleDto,
+} from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
 import { OutboxService } from '../../common/services/outbox.service';
 
@@ -317,20 +321,10 @@ export class ApprovalsService {
   }
 
   async createPolicyRule(dto: CreateApprovalPolicyRuleDto) {
+    const data = this.normalizeAndValidatePolicyRule(dto);
+    await this.assertPolicyRuleUnique(data);
     return this.prisma.approvalPolicyRule.create({
-      data: {
-        code: dto.code.trim(),
-        name: dto.name.trim(),
-        stepName: dto.stepName.trim(),
-        stepOrder: dto.stepOrder,
-        approverRole: dto.approverRole,
-        conditionType: dto.conditionType,
-        operator: dto.operator,
-        threshold: dto.threshold,
-        matchValue: dto.matchValue,
-        isRequired: dto.isRequired ?? false,
-        isActive: dto.isActive ?? true,
-      },
+      data,
     });
   }
 
@@ -338,21 +332,90 @@ export class ApprovalsService {
     const existing = await this.prisma.approvalPolicyRule.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Approval policy rule not found');
 
+    const data = this.normalizeAndValidatePolicyRule({ ...existing, ...dto });
+    await this.assertPolicyRuleUnique(data, id);
     return this.prisma.approvalPolicyRule.update({
       where: { id },
-      data: {
-        code: dto.code?.trim(),
-        name: dto.name?.trim(),
-        stepName: dto.stepName?.trim(),
-        stepOrder: dto.stepOrder,
-        approverRole: dto.approverRole,
-        conditionType: dto.conditionType,
-        operator: dto.operator,
-        threshold: dto.threshold,
-        matchValue: dto.matchValue,
-        isRequired: dto.isRequired,
-        isActive: dto.isActive,
-      },
+      data,
     });
+  }
+
+  private normalizeAndValidatePolicyRule(rule: any) {
+    const code = rule.code?.trim().toUpperCase();
+    const name = rule.name?.trim();
+    const stepName = rule.stepName?.trim();
+    const conditionType = rule.conditionType as ApprovalPolicyConditionType;
+    const operator = rule.operator || null;
+    const matchValue = typeof rule.matchValue === 'string' ? rule.matchValue.trim() || null : null;
+    const threshold = rule.threshold ?? null;
+
+    if (!code || !name || !stepName) {
+      throw new BadRequestException('Code, name and step name must not be empty');
+    }
+
+    const numericConditions = new Set([
+      ApprovalPolicyConditionType.DISCOUNT_PCT,
+      ApprovalPolicyConditionType.RENT_FREE_DAYS,
+      ApprovalPolicyConditionType.PRICE_DEVIATION_PCT,
+    ]);
+    const numericOperators = new Set(['>', '>=', '<', '<=', '=']);
+
+    if (numericConditions.has(conditionType)) {
+      if (!operator || (!numericOperators.has(operator) && !(conditionType === ApprovalPolicyConditionType.PRICE_DEVIATION_PCT && operator === ApprovalPolicyOperator.BETWEEN))) {
+        throw new BadRequestException('Numeric conditions require a supported comparison operator');
+      }
+      if (threshold === null || !Number.isFinite(threshold)) {
+        throw new BadRequestException('Numeric conditions require a finite threshold');
+      }
+      if (operator === ApprovalPolicyOperator.BETWEEN) {
+        const maximum = Number(matchValue);
+        if (matchValue === null || !Number.isFinite(maximum) || maximum <= threshold) {
+          throw new BadRequestException('BETWEEN requires matchValue to be a number greater than threshold');
+        }
+      } else if (matchValue !== null) {
+        throw new BadRequestException('matchValue is only allowed for BETWEEN numeric conditions');
+      }
+    } else if (conditionType === ApprovalPolicyConditionType.INDUSTRY_TAG) {
+      if (!matchValue) throw new BadRequestException('INDUSTRY_TAG requires matchValue');
+      if (operator || threshold !== null) throw new BadRequestException('INDUSTRY_TAG does not accept operator or threshold');
+    } else if ([ApprovalPolicyConditionType.HAS_AR_DEBT, ApprovalPolicyConditionType.PRICE_BELOW_MIN].includes(conditionType)) {
+      if (operator || threshold !== null || matchValue !== null) {
+        throw new BadRequestException(`${conditionType} does not accept operator, threshold or matchValue`);
+      }
+    } else {
+      throw new BadRequestException('Unsupported approval policy condition type');
+    }
+
+    return {
+      code, name, stepName, stepOrder: rule.stepOrder, approverRole: rule.approverRole,
+      conditionType, operator, threshold, matchValue,
+      isRequired: rule.isRequired ?? false, isActive: rule.isActive ?? true,
+    };
+  }
+
+  private async assertPolicyRuleUnique(rule: any, excludeId?: string) {
+    const rules = await this.prisma.approvalPolicyRule.findMany({
+      where: excludeId ? { id: { not: excludeId } } : undefined,
+    });
+    if (rules.some((item: any) => item.code.toLowerCase() === rule.code.toLowerCase())) {
+      throw new BadRequestException(`Approval policy code ${rule.code} already exists`);
+    }
+    if (!rule.isActive) return;
+    const activeRules = rules.filter((item: any) => item.isActive);
+    const sameTarget = (item: any) => item.conditionType === rule.conditionType
+      && item.stepOrder === rule.stepOrder && item.approverRole === rule.approverRole
+      && item.stepName.trim().toLowerCase() === rule.stepName.toLowerCase();
+    const exact = activeRules.find((item: any) => sameTarget(item) && (item.operator ?? null) === rule.operator
+      && (item.threshold ?? null) === rule.threshold
+      && (item.matchValue?.trim().toLowerCase() ?? null) === (rule.matchValue?.toLowerCase() ?? null));
+    if (exact) throw new BadRequestException(`Approval policy duplicates active rule ${exact.code}`);
+
+    if (rule.operator === ApprovalPolicyOperator.BETWEEN) {
+      const min = rule.threshold;
+      const max = Number(rule.matchValue);
+      const overlap = activeRules.find((item: any) => sameTarget(item) && item.operator === ApprovalPolicyOperator.BETWEEN
+        && Math.max(min, item.threshold) <= Math.min(max, Number(item.matchValue)));
+      if (overlap) throw new BadRequestException(`Approval policy range overlaps active rule ${overlap.code}`);
+    }
   }
 }

@@ -20,6 +20,73 @@ export interface PriceValidationResult {
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
+  private async validateCategoryParent(categoryId: string, parentId: string) {
+    if (parentId === categoryId) {
+      throw new BadRequestException('Category cannot be its own parent');
+    }
+
+    const visited = new Set<string>();
+    let currentId: string | null = parentId;
+    while (currentId) {
+      if (currentId === categoryId) {
+        throw new BadRequestException('Parent category cannot be a descendant of this category');
+      }
+      if (visited.has(currentId)) {
+        throw new BadRequestException('Category hierarchy already contains a cycle');
+      }
+      visited.add(currentId);
+      const current = await this.prisma.category.findUnique({
+        where: { id: currentId },
+        select: { parentId: true },
+      });
+      if (!current) throw new NotFoundException('Parent category not found');
+      currentId = current.parentId;
+    }
+  }
+
+  private validatePricingValues(
+    min: number,
+    max: number,
+    suggested: number | null | undefined,
+    effectiveFrom: Date,
+    effectiveTo: Date | null,
+  ) {
+    if (min > max) throw new BadRequestException('Minimum rent cannot be greater than maximum rent');
+    if (suggested != null && (suggested < min || suggested > max)) {
+      throw new BadRequestException('Suggested rent must be between minimum and maximum rent');
+    }
+    if (effectiveTo && effectiveTo < effectiveFrom) {
+      throw new BadRequestException('Effective-to date cannot be earlier than effective-from date');
+    }
+  }
+
+  private async ensurePricingDoesNotOverlap(params: {
+    mallId: string;
+    categoryId: string;
+    floorId: string | null;
+    zoneId: string | null;
+    effectiveFrom: Date;
+    effectiveTo: Date | null;
+    excludeId?: string;
+  }) {
+    const conflict = await this.prisma.categoryMallPricing.findFirst({
+      where: {
+        mallId: params.mallId,
+        categoryId: params.categoryId,
+        floorId: params.floorId,
+        zoneId: params.zoneId,
+        isActive: true,
+        ...(params.excludeId && { id: { not: params.excludeId } }),
+        effectiveFrom: { lte: params.effectiveTo ?? new Date('9999-12-31T23:59:59.999Z') },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: params.effectiveFrom } }],
+      },
+      select: { id: true },
+    });
+    if (conflict) {
+      throw new ConflictException('An active pricing rule already covers this scope and date range');
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CATEGORY CRUD
   // ═══════════════════════════════════════════════════════════════════════════
@@ -133,9 +200,7 @@ export class CategoriesService {
       }
     }
 
-    if (dto.parentId && dto.parentId === id) {
-      throw new BadRequestException('Category cannot be its own parent');
-    }
+    if (dto.parentId) await this.validateCategoryParent(id, dto.parentId);
 
     return this.prisma.category.update({
       where: { id },
@@ -256,12 +321,23 @@ export class CategoriesService {
       }
     }
 
-    // Validate min <= max
-    if (dto.minRentPerSqm > dto.maxRentPerSqm) {
-      throw new BadRequestException('Minimum rent cannot be greater than maximum rent');
-    }
-
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
+    const effectiveTo = dto.effectiveTo ? new Date(dto.effectiveTo) : null;
+    this.validatePricingValues(
+      dto.minRentPerSqm,
+      dto.maxRentPerSqm,
+      dto.suggestedRent,
+      effectiveFrom,
+      effectiveTo,
+    );
+    await this.ensurePricingDoesNotOverlap({
+      mallId: dto.mallId,
+      categoryId: dto.categoryId,
+      floorId: dto.floorId ?? null,
+      zoneId: dto.zoneId ?? null,
+      effectiveFrom,
+      effectiveTo,
+    });
 
     return this.prisma.categoryMallPricing.create({
       data: {
@@ -274,7 +350,7 @@ export class CategoriesService {
         suggestedRent: dto.suggestedRent,
         camPerSqm: dto.camPerSqm ?? 0,
         effectiveFrom,
-        effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+        effectiveTo,
         notes: dto.notes,
         createdById: userId,
       },
@@ -291,11 +367,32 @@ export class CategoriesService {
     const pricing = await this.prisma.categoryMallPricing.findUnique({ where: { id } });
     if (!pricing) throw new NotFoundException('Category pricing not found');
 
-    // Validate min <= max if both are being updated
     const newMin = dto.minRentPerSqm ?? pricing.minRentPerSqm;
     const newMax = dto.maxRentPerSqm ?? pricing.maxRentPerSqm;
-    if (newMin > newMax) {
-      throw new BadRequestException('Minimum rent cannot be greater than maximum rent');
+    const newSuggested = dto.suggestedRent ?? pricing.suggestedRent;
+    const newEffectiveTo =
+      dto.effectiveTo !== undefined
+        ? dto.effectiveTo
+          ? new Date(dto.effectiveTo)
+          : null
+        : pricing.effectiveTo;
+    this.validatePricingValues(
+      newMin,
+      newMax,
+      newSuggested,
+      pricing.effectiveFrom,
+      newEffectiveTo,
+    );
+    if (dto.isActive !== false) {
+      await this.ensurePricingDoesNotOverlap({
+        mallId: pricing.mallId,
+        categoryId: pricing.categoryId,
+        floorId: pricing.floorId,
+        zoneId: pricing.zoneId,
+        effectiveFrom: pricing.effectiveFrom,
+        effectiveTo: newEffectiveTo,
+        excludeId: id,
+      });
     }
 
     return this.prisma.categoryMallPricing.update({

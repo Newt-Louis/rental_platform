@@ -24,3 +24,4 @@ export * from './users';
 export * from './audit-log';
 export * from './mall-access';
 export * from './analytics';
+export * from './health';
