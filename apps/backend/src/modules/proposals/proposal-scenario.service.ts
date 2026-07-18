@@ -41,8 +41,8 @@ export class ProposalScenarioService {
     });
   }
 
-  async updateScenario(id: string, dto: Partial<{ name: string; description: string; terms: ScenarioTerms }>) {
-    const existing = await this.prisma.proposalScenario.findUnique({ where: { id } });
+  async updateScenario(proposalId: string, id: string, dto: Partial<{ name: string; description: string; terms: ScenarioTerms }>) {
+    const existing = await this.prisma.proposalScenario.findFirst({ where: { id, proposalId } });
     if (!existing) throw new NotFoundException('Scenario not found');
 
     const updateData: any = {};
@@ -56,8 +56,8 @@ export class ProposalScenarioService {
     return this.prisma.proposalScenario.update({ where: { id }, data: updateData });
   }
 
-  async deleteScenario(id: string) {
-    const existing = await this.prisma.proposalScenario.findUnique({ where: { id } });
+  async deleteScenario(proposalId: string, id: string) {
+    const existing = await this.prisma.proposalScenario.findFirst({ where: { id, proposalId } });
     if (!existing) throw new NotFoundException('Scenario not found');
     return this.prisma.proposalScenario.delete({ where: { id } });
   }

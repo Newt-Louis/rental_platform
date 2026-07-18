@@ -64,6 +64,7 @@ export class MallAccessService {
       slotId?: string;
       slotBookingId?: string;
       slotPricingRuleId?: string;
+      proposalId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -152,6 +153,14 @@ export class MallAccessService {
         select: { slot: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
       });
       mallId = rule?.slot?.unit?.mallId ?? rule?.slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.proposalId) {
+      const proposal = await this.prisma.proposal.findUnique({
+        where: { id: sources.proposalId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = proposal?.unit?.mallId ?? proposal?.unit?.floor?.mallId;
     }
 
     if (mallId) {

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsDateString, IsInt, Min } from 'class-validator';
+import { PartialType } from '@nestjs/swagger';
+import { IsString, IsOptional, IsNumber, IsDateString, IsInt, Min, Max, MinLength } from 'class-validator';
 
 export class CreateProposalDto {
   @ApiPropertyOptional()
@@ -18,6 +19,7 @@ export class CreateProposalDto {
 
   @ApiProperty()
   @IsNumber()
+  @Min(0.01)
   area: number;
 
   @ApiProperty()
@@ -31,31 +33,38 @@ export class CreateProposalDto {
 
   @ApiProperty()
   @IsNumber()
+  @Min(0)
   rentPerSqm: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   camPerSqm?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   deposit?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
+  @Min(0)
   rentFree?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   escalationPercent?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(100)
   discount?: number;
 
   @ApiPropertyOptional()
@@ -149,4 +158,12 @@ export class CreateProposalDto {
   @IsOptional()
   @IsNumber()
   fitoutFee?: number;
+}
+
+export class UpdateProposalDto extends PartialType(CreateProposalDto) {}
+
+export class RejectProposalDto {
+  @IsString()
+  @MinLength(5)
+  rejectionReason: string;
 }
