@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/auth.store';
-import { AlertTriangle, ArrowRight, Bell, Clock, Flame, Target, TrendingUp } from 'lucide-react';
+import { useMallStore } from '@/store/mall.store';
+import { AlertTriangle, ArrowRight, Bell, Clock, Compass, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
 
 const SOURCE_LABELS: Record<string, string> = {
   BROKER: 'Môi giới', WEBSITE: 'Website', REFERRAL: 'Giới thiệu',
@@ -34,18 +35,20 @@ function daysSince(value?: string | null) {
 export default function CrmOverviewPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { selectedMallId } = useMallStore();
   const canViewTeam = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(user?.role ?? '');
-  const statsQuery = useQuery({ queryKey: ['crm-pipeline-stats'], queryFn: () => crmApi.pipelineStats() });
-  const staleQuery = useQuery({ queryKey: ['crm-stale-leads', 14], queryFn: () => crmApi.staleLeads(14) });
+  const statsQuery = useQuery({ queryKey: ['crm-pipeline-stats', selectedMallId], queryFn: () => crmApi.pipelineStats(selectedMallId ?? undefined) });
+  const staleQuery = useQuery({ queryKey: ['crm-stale-leads', 14, selectedMallId], queryFn: () => crmApi.staleLeads(14, selectedMallId ?? undefined) });
   const followUpsQuery = useQuery({
-    queryKey: ['follow-ups-upcoming', 7, canViewTeam ? 'team' : 'mine'],
-    queryFn: () => followUpApi.list({ isDone: 'false', daysAhead: 7, scope: canViewTeam ? 'team' : 'mine' }),
+    queryKey: ['follow-ups-upcoming', 7, canViewTeam ? 'team' : 'mine', selectedMallId],
+    queryFn: () => followUpApi.list({ isDone: 'false', daysAhead: 7, scope: canViewTeam ? 'team' : 'mine', mallId: selectedMallId ?? undefined }),
   });
 
   const stats: any = statsQuery.data?.data ?? statsQuery.data ?? {};
   const staleLeads: any[] = staleQuery.data?.data ?? staleQuery.data ?? [];
   const followUps: any[] = followUpsQuery.data?.data ?? followUpsQuery.data ?? [];
   const summary = stats.summary ?? {};
+  const byStatus: Record<string, number> = stats.byStatus ?? {};
   const today = useMemo(() => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -61,6 +64,15 @@ export default function CrmOverviewPage() {
     { label: 'Tỷ lệ thắng', value: `${(stats.conversionRates?.overallWinRate ?? 0).toFixed(1)}%`, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
     { label: 'Việc cần làm hôm nay', value: overdue.length + dueToday.length, icon: Bell, tone: 'text-red-700 bg-red-50' },
   ];
+  const funnel = [
+    { key: 'NEW', label: 'Mới', hint: 'Cần liên hệ', color: 'bg-sky-500' },
+    { key: 'CONTACTED', label: 'Đã liên hệ', hint: 'Đang tìm hiểu', color: 'bg-blue-500' },
+    { key: 'QUALIFIED', label: 'Tiềm năng', hint: 'Đủ điều kiện', color: 'bg-indigo-500' },
+    { key: 'PROPOSAL', label: 'Đề xuất', hint: 'Đã gửi phương án', color: 'bg-violet-500' },
+    { key: 'NEGOTIATION', label: 'Đàm phán', hint: 'Sắp chốt', color: 'bg-amber-500' },
+    { key: 'WON', label: 'Thành công', hint: 'Đã chuyển đổi', color: 'bg-emerald-500' },
+  ];
+  const maxStage = Math.max(1, ...funnel.map((item) => byStatus[item.key] ?? 0));
   const isLoading = statsQuery.isLoading || staleQuery.isLoading || followUpsQuery.isLoading;
   const isError = statsQuery.isError || staleQuery.isError || followUpsQuery.isError;
 
@@ -72,6 +84,21 @@ export default function CrmOverviewPage() {
         description="Ưu tiên công việc cần xử lý, sức khỏe pipeline và hiệu quả nguồn Lead. Các thao tác chi tiết được thực hiện tại CRM."
         actions={<Button onClick={() => navigate('/crm')} className="gap-2">Mở CRM <ArrowRight size={15} /></Button>}
       />
+
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 px-5 py-5 text-white shadow-sm sm:px-7">
+        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-blue-400/20 blur-3xl" />
+        <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+          <div className="max-w-2xl">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-200"><Compass size={14} /> Bắt đầu ngày làm việc</div>
+            <h2 className="text-xl font-semibold sm:text-2xl">{overdue.length ? `${overdue.length} việc đã quá hạn cần ưu tiên` : 'Pipeline đang được kiểm soát tốt'}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-blue-100/80">Đi từ việc cần làm, mở đúng hồ sơ lead và ghi nhận kết quả. Mọi thay đổi sẽ cập nhật lại sức khỏe pipeline tại đây.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" className="gap-2 bg-white text-slate-900 hover:bg-blue-50" onClick={() => navigate('/crm?section=followups')}><Bell size={15} /> Xử lý {overdue.length + dueToday.length} việc hôm nay</Button>
+            <Button className="gap-2 border border-white/20 bg-white/10 hover:bg-white/20" onClick={() => navigate('/crm?quickFilter=my-leads')}><Users size={15} /> Lead của tôi</Button>
+          </div>
+        </div>
+      </section>
 
       <AsyncState
         isLoading={isLoading}
@@ -89,6 +116,23 @@ export default function CrmOverviewPage() {
             </Card>
           ))}
         </div>
+
+        <Card className="overflow-hidden border-blue-100 shadow-none">
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+            <div><CardTitle className="flex items-center gap-2 text-base"><Sparkles size={16} className="text-blue-600" /> Khám phá hành trình chuyển đổi</CardTitle><p className="mt-1 text-xs text-gray-500">Chọn một giai đoạn để mở đúng nhóm lead cần xử lý.</p></div>
+            <Badge className="bg-blue-50 text-blue-700">{summary.total ?? 0} lead</Badge>
+          </CardHeader>
+          <CardContent className="grid gap-2 pt-2 sm:grid-cols-2 lg:grid-cols-6">
+            {funnel.map((stage, index) => {
+              const count = byStatus[stage.key] ?? 0;
+              return <button key={stage.key} onClick={() => navigate(`/crm?status=${stage.key}`)} className="group relative overflow-hidden rounded-xl border bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+                <div className="flex items-start justify-between gap-2"><span className="text-xs font-medium text-gray-500">{index + 1}. {stage.label}</span><ArrowRight size={13} className="text-gray-300 transition group-hover:translate-x-0.5 group-hover:text-blue-600" /></div>
+                <div className="mt-2 text-2xl font-bold text-gray-900">{count}</div><div className="text-[11px] text-gray-400">{stage.hint}</div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100"><div className={`h-full rounded-full ${stage.color}`} style={{ width: `${Math.max(count ? 8 : 0, count / maxStage * 100)}%` }} /></div>
+              </button>;
+            })}
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 xl:grid-cols-2">
           <Card>

@@ -41,6 +41,7 @@ import {
   BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
 import { LeadEditDialog } from '@/components/crm';
+import { useMallStore } from '@/store/mall.store';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
 
@@ -1067,11 +1068,12 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
 // ─── Filter Types ───────────────────────────────────────────────────────────────
 
 interface PipelineFilters {
+  status?: string;
   assignedTo?: string;
   category?: string;
   source?: string;
   priority?: string;
-  quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | null;
+  quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | 'unassigned' | null;
 }
 
 // ─── Pipeline View (Kanban + List) ─────────────────────────────────────────────
@@ -1082,6 +1084,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
   const { toast } = useToast();
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const { selectedMallId } = useMallStore();
 
   // State
   const [search, setSearch] = useState('');
@@ -1101,6 +1104,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 
   // Filters from URL
   const filters: PipelineFilters = useMemo(() => ({
+    status: searchParams.get('status') || undefined,
     assignedTo: searchParams.get('assignedTo') || undefined,
     category: searchParams.get('category') || undefined,
     source: searchParams.get('source') || undefined,
@@ -1139,8 +1143,14 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 
   // Pipeline data
   const { data: pipeline, isLoading } = useQuery({
-    queryKey: ['crm-pipeline'],
-    queryFn: () => crmApi.pipeline(100),
+    queryKey: ['crm-pipeline', selectedMallId],
+    queryFn: () => crmApi.pipeline(100, selectedMallId ?? undefined),
+  });
+  const requestedLeadId = searchParams.get('leadId');
+  const { data: requestedLeadData } = useQuery({
+    queryKey: ['crm-lead', requestedLeadId],
+    queryFn: () => crmApi.getLead(requestedLeadId!),
+    enabled: !!requestedLeadId,
   });
 
   // Move lead mutation
@@ -1191,6 +1201,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
   }, [pipeline]);
 
   const currentUserId = user?.id ?? null;
+  const canManageTeam = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(user?.role ?? '');
 
   // Apply filters to leads
   const filteredPipelineData = useMemo(() => {
@@ -1198,6 +1209,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 
     for (const [status, data] of Object.entries(pipelineData)) {
       let leads = [...data.leads];
+      if (filters.status && status !== filters.status) leads = [];
 
       // Quick filters
       if (filters.quickFilter === 'my-leads' && currentUserId) {
@@ -1206,6 +1218,8 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
         leads = leads.filter(l => l.priority === 'HOT');
       } else if (filters.quickFilter === 'stale-leads') {
         leads = leads.filter(l => getDaysAgo(l.lastActivityAt) > 7);
+      } else if (filters.quickFilter === 'unassigned') {
+        leads = leads.filter(l => !l.assignedTo);
       }
 
       // Individual filters
@@ -1243,13 +1257,14 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
   );
 
   useEffect(() => {
-    const requestedLeadId = searchParams.get('leadId');
     if (!requestedLeadId || selectedLead?.id === requestedLeadId) return;
     const match = Object.values(pipelineData)
       .flatMap((column) => column.leads)
       .find((lead) => lead.id === requestedLeadId);
+    const fetched = requestedLeadData?.data ?? requestedLeadData;
     if (match) setSelectedLead(match);
-  }, [pipelineData, searchParams, selectedLead?.id]);
+    else if (fetched?.id === requestedLeadId) setSelectedLead(fetched);
+  }, [pipelineData, requestedLeadId, requestedLeadData, selectedLead?.id]);
 
   // Reset to page 1 whenever the filtered data changes
   useEffect(() => { setListPage(1); }, [filteredPipelineData]);
@@ -1262,6 +1277,13 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 
   const totalValue = allLeads.filter((l) => l.expectedRent && l.expectedArea)
     .reduce((s, l) => s + (l.expectedRent ?? 0) * (l.expectedArea ?? 0), 0);
+  const allUnfilteredLeads = useMemo(() => Object.values(pipelineData).flatMap(v => v.leads), [pipelineData]);
+  const discoveryStats = {
+    mine: allUnfilteredLeads.filter((lead) => lead.assignedTo?.id === currentUserId).length,
+    hot: allUnfilteredLeads.filter((lead) => lead.priority === 'HOT' && !['WON', 'LOST'].includes(lead.status)).length,
+    stale: allUnfilteredLeads.filter((lead) => getDaysAgo(lead.lastActivityAt) > 7 && !['WON', 'LOST'].includes(lead.status)).length,
+    unassigned: allUnfilteredLeads.filter((lead) => !lead.assignedTo).length,
+  };
 
   // Selection helpers
   const toggleSelect = useCallback((leadId: string, selected: boolean) => {
@@ -1359,6 +1381,16 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { key: 'my-leads', label: 'Lead của tôi', value: discoveryStats.mine, hint: 'Danh sách cần chăm sóc', className: 'border-blue-100 bg-blue-50/60 text-blue-700' },
+          { key: 'hot-leads', label: 'Cơ hội nóng', value: discoveryStats.hot, hint: 'Ưu tiên liên hệ trước', className: 'border-red-100 bg-red-50/60 text-red-700' },
+          { key: 'stale-leads', label: 'Đang bị bỏ quên', value: discoveryStats.stale, hint: 'Quá 7 ngày chưa tương tác', className: 'border-amber-100 bg-amber-50/60 text-amber-700' },
+          { key: 'unassigned', label: 'Chưa phân công', value: discoveryStats.unassigned, hint: 'Cần giao người phụ trách', className: 'border-gray-200 bg-gray-50 text-gray-700' },
+        ].map((item) => <button key={item.label} type="button" onClick={() => item.key && updateFilter('quickFilter', filters.quickFilter === item.key ? null : item.key)} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${item.className}`}>
+          <div className="flex items-center justify-between"><span className="text-sm font-semibold">{item.label}</span><span className="text-xl font-bold">{item.value}</span></div><p className="mt-1 text-xs opacity-70">{item.hint}</p>
+        </button>)}
+      </div>
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
@@ -1411,18 +1443,18 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={selectAll}>
             <CheckSquare size={14} className="mr-1" /> Chọn tất cả
           </Button>
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('assign')}>
+          {canManageTeam && <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('assign')}>
             <UserPlus size={14} className="mr-1" /> Phân công
-          </Button>
+          </Button>}
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('status')}>
             <ArrowRight size={14} className="mr-1" /> Đổi trạng thái
           </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('priority')}>
             <Flame size={14} className="mr-1" /> Đổi ưu tiên
           </Button>
-          <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => setConfirmBulkDelete(true)}>
+          {canManageTeam && <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => setConfirmBulkDelete(true)}>
             <Trash2 size={14} className="mr-1" /> Xóa
-          </Button>
+          </Button>}
           <div className="h-6 w-px bg-gray-700" />
           <Button size="sm" variant="ghost" className="text-gray-400 hover:bg-gray-800" onClick={clearSelection}>
             <X size={14} /><span className="sr-only">Bỏ chọn</span>

@@ -13,6 +13,27 @@ export class CrmService {
     private customersService: CustomersService,
   ) {}
 
+  private leadScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    if (!scope?.mallIds) return {};
+    const mallIds = scope.mallIds;
+    const relatedToMall = [
+      { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: mallIds } } } } },
+      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } } },
+    ];
+    return { AND: [{
+      OR: scope.role === Role.LEASING_EXECUTIVE
+        ? [{ assignedToId: scope.userId }]
+        : relatedToMall,
+    }] };
+  }
+
+  async assertLeadAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const lead = await this.prisma.lead.findFirst({ where: { id, isActive: true, ...this.leadScope(scope) }, select: { id: true } });
+    if (!lead) throw new NotFoundException('Lead not found or outside your mall access');
+  }
+
   async findAll(query: {
     status?: LeadStatus;
     statuses?: string;
@@ -21,11 +42,12 @@ export class CrmService {
     search?: string;
     page?: number;
     limit?: number;
+    scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
     const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = { isActive: true, deletedAt: null };
+    const where: any = { isActive: true, deletedAt: null, ...this.leadScope(query.scope) };
     if (status && statuses) {
       throw new BadRequestException('Chỉ dùng một trong hai bộ lọc status hoặc statuses');
     }
@@ -70,7 +92,7 @@ export class CrmService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async getPipeline(limit = 100) {
+  async getPipeline(limit = 100, scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const statuses = Object.values(LeadStatus);
     const pipeline: Record<string, { leads: any[]; total: number; hasMore: boolean }> = {};
 
@@ -78,7 +100,7 @@ export class CrmService {
       statuses.map(async (status) => {
         const [leads, total] = await Promise.all([
           this.prisma.lead.findMany({
-            where: { status, isActive: true, deletedAt: null },
+            where: { status, isActive: true, deletedAt: null, ...this.leadScope(scope) },
             include: {
               assignedTo: { select: { id: true, fullName: true, avatar: true } },
               customer: { select: { id: true, customerCode: true } },
@@ -91,7 +113,7 @@ export class CrmService {
             ],
             take: limit,
           }),
-          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null } }),
+          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null, ...this.leadScope(scope) } }),
         ]);
         pipeline[status] = { leads, total, hasMore: total > limit };
       }),
@@ -230,8 +252,6 @@ export class CrmService {
   };
 
   async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
-    this.logger.log(`[DEBUG] update(${id}) — dto keys: ${JSON.stringify(Object.keys(dto))}`);
-    this.logger.log(`[DEBUG] dto values: ${JSON.stringify(dto)}`);
     const existing = await this.findOne(id);
     const updateData: Record<string, unknown> = {};
     if (dto.brandName !== undefined) updateData.brandName = dto.brandName;
@@ -248,7 +268,6 @@ export class CrmService {
     if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
     if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
     if ((dto as any).customerId !== undefined) updateData.customerId = (dto as any).customerId;
-    this.logger.log(`[DEBUG] updateData gửi Prisma: ${JSON.stringify(updateData)}`);
     const updated = await this.prisma.lead.update({
       where: { id },
       data: updateData,
@@ -314,24 +333,25 @@ export class CrmService {
     return activity;
   }
 
-  async getStats() {
+  async getStats(scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const scopedWhere = { isActive: true, ...this.leadScope(scope) };
     const [total, byStatus, wonThisMonth, lostThisMonth] = await Promise.all([
-      this.prisma.lead.count({ where: { isActive: true } }),
+      this.prisma.lead.count({ where: scopedWhere }),
       this.prisma.lead.groupBy({
         by: ['status'],
-        where: { isActive: true },
+        where: scopedWhere,
         _count: true,
       }),
       this.prisma.lead.count({
         where: {
-          isActive: true,
+          ...scopedWhere,
           status: 'WON',
           updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
       }),
       this.prisma.lead.count({
         where: {
-          isActive: true,
+          ...scopedWhere,
           status: 'LOST',
           updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
@@ -341,7 +361,7 @@ export class CrmService {
     return { total, byStatus, wonThisMonth, lostThisMonth };
   }
 
-  async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number }) {
+  async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number; scope?: { userId: string; role: Role; mallIds?: string[] } }) {
     const where: any = {};
     if (query.leadId) where.leadId = query.leadId;
     if (query.assignedToId) where.assignedToId = query.assignedToId;
@@ -350,6 +370,12 @@ export class CrmService {
       const future = new Date();
       future.setDate(future.getDate() + +query.daysAhead);
       where.dueDate = { lte: future };
+    }
+    if (query.scope?.mallIds && !query.assignedToId) {
+      where.AND = [{ OR: [
+        { lead: { is: this.leadScope(query.scope) } },
+        { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: query.scope.mallIds } } } } },
+      ] }];
     }
     return this.prisma.leadFollowUp.findMany({
       where,
@@ -462,7 +488,7 @@ export class CrmService {
     const leadWhere: any = { isActive: true };
     if (mallFilter) {
       leadWhere.OR = scope?.role === Role.LEASING_EXECUTIVE
-        ? [{ assignedToId: scope.userId }, ...assetScope]
+        ? [{ assignedToId: scope.userId }]
         : assetScope;
     }
 
@@ -602,13 +628,14 @@ export class CrmService {
 
   // ─── Stale Leads ────────────────────────────────────────────────────────────────
 
-  async getStaleLeads(days: number = 14) {
+  async getStaleLeads(days: number = 14, scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
     return this.prisma.lead.findMany({
       where: {
         isActive: true,
+        ...this.leadScope(scope),
         status: { notIn: ['WON', 'LOST'] },
         OR: [
           { lastActivityAt: { lt: cutoffDate } },
