@@ -28,6 +28,16 @@ export class MallAccessService {
     }
   }
 
+  async getAccessibleMallIds(userId: string, role: string): Promise<string[] | null> {
+    if (this.bypassesMallCheck(role)) return null;
+
+    const accesses = await this.prisma.userMallAccess.findMany({
+      where: { userId, isActive: true },
+      select: { mallId: true },
+    });
+    return accesses.map((access) => access.mallId);
+  }
+
   /** Resolve mallId from unitId when mallId not provided explicitly */
   async resolveMallIdFromUnit(unitId: string): Promise<string | null> {
     const unit = await this.prisma.unit.findUnique({

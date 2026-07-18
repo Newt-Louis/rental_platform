@@ -1,15 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi, bookingApi } from '@/api';
+import { dashboardApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Building2, Users, TrendingUp, AlertTriangle, Clock, Ticket,
-  CheckSquare, DollarSign, BookmarkCheck, ArrowUpRight,
+  CheckSquare, DollarSign, BookmarkCheck, ArrowUpRight, RefreshCw,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -61,6 +62,15 @@ function StatCard({
     <Card
       className={`relative overflow-hidden border border-gray-100 shadow-sm ${to ? 'cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5' : ''}`}
       onClick={to ? () => navigate(to) : undefined}
+      onKeyDown={to ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          navigate(to);
+        }
+      } : undefined}
+      role={to ? 'link' : undefined}
+      tabIndex={to ? 0 : undefined}
+      aria-label={to ? `${title}: ${value}` : undefined}
     >
       <CardContent className="pt-5 pb-4 px-5">
         <div className="flex items-start justify-between">
@@ -187,7 +197,7 @@ function BillingProgress({
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-700 ${r.barColor}`}
-              style={{ width: `${r.pct}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, r.pct))}%` }}
             />
           </div>
         </div>
@@ -203,8 +213,9 @@ function BillingProgress({
 }
 
 function ActionItems({ items }: {
-  items: { label: string; value: number; urgent: boolean }[];
+  items: { label: string; value: number; urgent: boolean; to: string }[];
 }) {
+  const navigate = useNavigate();
   const sorted = [...items].sort((a, b) => {
     if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
     return b.value - a.value;
@@ -218,9 +229,11 @@ function ActionItems({ items }: {
       {sorted.map((item) => {
         const isAlert = item.urgent && item.value > 0;
         return (
-          <div
+          <button
+            type="button"
             key={item.label}
-            className={`flex items-center justify-between py-2.5 px-3 rounded-lg ${isAlert ? 'bg-red-50' : 'bg-gray-50'}`}
+            onClick={() => navigate(item.to)}
+            className={`flex w-full items-center justify-between py-2.5 px-3 rounded-lg text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isAlert ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50 hover:bg-gray-100'}`}
           >
             <div className="flex items-center gap-2.5 min-w-0">
               <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${isAlert ? 'bg-red-500' : 'bg-gray-300'}`} />
@@ -234,7 +247,8 @@ function ActionItems({ items }: {
             >
               {item.value}
             </Badge>
-          </div>
+            <ArrowUpRight size={13} className="ml-2 shrink-0 text-gray-400" />
+          </button>
         );
       })}
     </div>
@@ -245,24 +259,21 @@ export default function DashboardPage() {
   const { selectedMallId, selectedMallName } = useMallStore();
   const { user } = useAuthStore();
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ['dashboard', selectedMallId],
     queryFn: () => dashboardApi.getDashboard(selectedMallId ?? undefined),
     refetchInterval: 60_000,
   });
-  const { data: bookingStats } = useQuery({
-    queryKey: ['booking-stats', selectedMallId],
-    queryFn: () => bookingApi.stats(selectedMallId ?? undefined),
-    refetchInterval: 60_000,
-  });
-
   const d = data?.data ?? data;
+  const bookingStats = d?.bookingStats;
   const focusAreas: string[] = d?.focusAreas ?? ['overview'];
 
   const showOccupancy = focusAreas.some((f) => ['occupancy', 'pipeline', 'overview', 'booking'].includes(f));
-  const showFinance   = focusAreas.some((f) => ['billing', 'sales', 'overview', 'contracts'].includes(f));
+  const showFinance   = focusAreas.some((f) => ['billing', 'sales', 'overview'].includes(f));
   const showOperations = focusAreas.some((f) => ['tickets', 'fitout', 'overview'].includes(f));
-  const showLeasing   = focusAreas.some((f) => ['booking', 'approvals', 'pipeline', 'overview'].includes(f));
+  const showLeasing   = focusAreas.some((f) => ['booking', 'pipeline', 'overview'].includes(f));
+  const showApprovals = focusAreas.some((f) => ['approvals', 'pipeline', 'overview'].includes(f));
+  const showContracts = focusAreas.some((f) => ['contracts', 'pipeline', 'overview'].includes(f));
 
   if (isLoading) {
     return (
@@ -295,13 +306,13 @@ export default function DashboardPage() {
   });
 
   const actionItems = [
-    showLeasing  && { label: 'Deal chờ phê duyệt',       value: d?.pendingApprovals ?? 0,      urgent: false },
-    showFinance  && { label: 'Hóa đơn quá hạn',          value: d?.overdueCount ?? 0,          urgent: true  },
-    (showLeasing || showFinance) && { label: 'HĐ hết hạn trong 30 ngày', value: d?.expiringIn30 ?? 0, urgent: true  },
-    (showLeasing || showFinance) && { label: 'HĐ hết hạn trong 90 ngày', value: d?.expiringIn90 ?? 0, urgent: false },
-    showOperations && { label: 'Ticket đang mở',          value: d?.openTickets ?? 0,           urgent: false },
-    showLeasing  && { label: 'Booking sắp hết hạn',      value: bookingStats?.expiringSoon ?? 0, urgent: true },
-  ].filter(Boolean) as { label: string; value: number; urgent: boolean }[];
+    showApprovals && { label: 'Deal chờ phê duyệt', value: d?.pendingApprovals ?? 0, urgent: false, to: '/approvals' },
+    showFinance  && { label: 'Hóa đơn quá hạn', value: d?.overdueCount ?? 0, urgent: true, to: '/billing?status=OVERDUE' },
+    (showLeasing || showFinance || showContracts) && { label: 'HĐ hết hạn trong 30 ngày', value: d?.expiringIn30 ?? 0, urgent: true, to: '/contracts?expiring=30' },
+    (showLeasing || showFinance || showContracts) && { label: 'HĐ hết hạn trong 90 ngày', value: d?.expiringIn90 ?? 0, urgent: false, to: '/contracts?expiring=90' },
+    showOperations && { label: 'Ticket đang mở', value: d?.openTickets ?? 0, urgent: false, to: '/tickets?status=OPEN' },
+    showLeasing  && { label: 'Booking sắp hết hạn', value: bookingStats?.expiringSoon ?? 0, urgent: true, to: '/bookings?expiringSoon=true' },
+  ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[];
 
   return (
     <div className="space-y-6">
@@ -323,12 +334,19 @@ export default function DashboardPage() {
               {FOCUS_LABELS[f] ?? f}
             </Badge>
           ))}
+          <span className="text-xs text-gray-400">
+            {dataUpdatedAt ? `Cập nhật ${new Date(dataUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5">
+            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+            Làm mới
+          </Button>
         </div>
       </div>
 
       {/* KPI Row 1: Occupancy + Finance */}
       {(showOccupancy || showFinance) && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {showOccupancy && (
             <>
               <StatCard
@@ -374,8 +392,8 @@ export default function DashboardPage() {
       )}
 
       {/* KPI Row 2: Leasing + Operations */}
-      {(showLeasing || showOperations) && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {(showLeasing || showApprovals || showContracts || showFinance || showOperations) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {showLeasing && (
             <>
               <StatCard
@@ -394,17 +412,19 @@ export default function DashboardPage() {
                 badge={(bookingStats?.expiringSoon ?? 0) > 0 ? { text: 'Cần xử lý ngay', variant: 'destructive' } : undefined}
                 to="/bookings?expiringSoon=true"
               />
-              <StatCard
-                title="Chờ phê duyệt"
-                value={d?.pendingApprovals ?? 0}
-                sub="Deal đang trong luồng"
-                icon={CheckSquare}
-                color="blue"
-                to="/approvals"
-              />
             </>
           )}
-          {(showLeasing || showFinance) && (
+          {showApprovals && (
+            <StatCard
+              title="Chờ phê duyệt"
+              value={d?.pendingApprovals ?? 0}
+              sub="Deal đang trong luồng"
+              icon={CheckSquare}
+              color="blue"
+              to="/approvals"
+            />
+          )}
+          {(showLeasing || showFinance || showContracts) && (
             <StatCard
               title="HĐ hết hạn < 30 ngày"
               value={d?.expiringIn30 ?? 0}

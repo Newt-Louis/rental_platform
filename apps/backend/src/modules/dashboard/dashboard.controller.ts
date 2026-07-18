@@ -17,9 +17,9 @@ export class DashboardController {
   @ApiQuery({ name: 'mallId', required: false })
   getDashboard(
     @Query('mallId') mallId?: string,
-    @CurrentUser() user?: { role: string },
+    @CurrentUser() user?: { id: string; role: string },
   ) {
-    return this.dashboardService.getDashboard(mallId, user?.role);
+    return this.dashboardService.getDashboard(mallId, user);
   }
 
   @Get('cross-mall')

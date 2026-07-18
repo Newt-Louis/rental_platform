@@ -490,19 +490,27 @@ export interface SalesTurnover {
 }
 
 export interface DashboardData {
-  occupancyRate: number;
-  totalArea: number;
-  vacantArea: number;
-  leasedArea: number;
-  totalTenants: number;
-  monthlyRevenue: number;
-  collectedRevenue: number;
-  overdueAmount: number;
-  overdueCount: number;
-  expiringIn30: number;
-  expiringIn90: number;
-  pendingApprovals: number;
-  openTickets: number;
+  mallId: string | null;
+  focusAreas: string[];
+  occupancyRate?: number;
+  totalArea?: number;
+  vacantArea?: number;
+  leasedArea?: number;
+  totalTenants?: number;
+  monthlyRevenue?: number;
+  collectedRevenue?: number;
+  overdueAmount?: number;
+  overdueCount?: number;
+  expiringIn30?: number;
+  expiringIn90?: number;
+  pendingApprovals?: number;
+  openTickets?: number;
+  bookingStats?: {
+    active: number;
+    pending: number;
+    expiringSoon: number;
+  };
+  fromCache?: boolean;
 }
 
 export interface Fitout {
