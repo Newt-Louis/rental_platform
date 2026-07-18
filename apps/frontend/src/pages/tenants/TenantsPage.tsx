@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { usePermission } from '@/hooks/usePermission';
 import {
   Search, Building2, Phone, Mail, FileText, Receipt, Ticket,
   Plus, Edit2, Globe, Shield, MapPin, Hash, User, X,
@@ -169,8 +170,8 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
 
 // ── Tenant Detail Panel ───────────────────────────────────────────────────────
 
-function TenantDetailPanel({ tenantId, onEdit, onClose }: {
-  tenantId: string; onEdit: () => void; onClose: () => void;
+function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
+  tenantId: string; onEdit: () => void; onClose: () => void; canEdit: boolean;
 }) {
   const navigate = useNavigate();
 
@@ -224,9 +225,9 @@ function TenantDetailPanel({ tenantId, onEdit, onClose }: {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5 h-8">
+            {canEdit && <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5 h-8">
               <Edit2 size={12} /> Sửa
-            </Button>
+            </Button>}
             <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X size={16} className="text-gray-400" />
             </button>
@@ -498,8 +499,8 @@ function TenantDetailPanel({ tenantId, onEdit, onClose }: {
 
 // ── Tenant Card ───────────────────────────────────────────────────────────────
 
-function TenantCard({ t, selected, onSelect, onEdit }: {
-  t: any; selected: boolean; onSelect: () => void; onEdit: (e: React.MouseEvent) => void;
+function TenantCard({ t, selected, onSelect, onEdit, canEdit }: {
+  t: any; selected: boolean; onSelect: () => void; onEdit: (e: React.MouseEvent) => void; canEdit: boolean;
 }) {
   const catMeta = t.category ? CATEGORY_META[t.category] : null;
   const activeContract = t.contracts?.find((c: any) => c.status === 'ACTIVE' || c.status === 'EXPIRING');
@@ -552,11 +553,11 @@ function TenantCard({ t, selected, onSelect, onEdit }: {
           </div>
         </div>
 
-        <button
+        {canEdit && <button
           onClick={onEdit}
           className="p-1.5 rounded-lg hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <Edit2 size={12} className="text-gray-400" />
-        </button>
+        </button>}
       </div>
     </div>
   );
@@ -565,6 +566,8 @@ function TenantCard({ t, selected, onSelect, onEdit }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function TenantsPage() {
+  const { hasRole } = usePermission();
+  const canManage = hasRole(['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR']);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(1);
@@ -593,7 +596,7 @@ export default function TenantsPage() {
   const selectedTenant = tenants.find((t) => t.id === selectedId);
 
   // Stats
-  const activeCount = tenants.filter((t) => t.contracts?.some((c: any) => c.status === 'ACTIVE')).length;
+  const activeCount: number = data?.activeCount ?? 0;
 
   return (
     <div className="flex gap-0 h-full -mx-6 -my-6">
@@ -611,10 +614,10 @@ export default function TenantsPage() {
                 {total} khách · {activeCount} đang thuê
               </p>
             </div>
-            <Button size="sm" className="gap-1.5 h-8 text-xs shrink-0"
+            {canManage && <Button size="sm" className="gap-1.5 h-8 text-xs shrink-0"
               onClick={() => { setEditTenant(null); setShowForm(true); }}>
               <Plus size={13} /> Thêm mới
-            </Button>
+            </Button>}
           </div>
 
           <div className="flex gap-2">
@@ -657,7 +660,7 @@ export default function TenantsPage() {
               )}
             </div>
           ) : tenants.map((t) => (
-            <TenantCard key={t.id} t={t}
+            <TenantCard key={t.id} t={t} canEdit={canManage}
               selected={selectedId === t.id}
               onSelect={() => setSelectedId(t.id === selectedId ? null : t.id)}
               onEdit={(e) => openEdit(t, e)} />
@@ -680,6 +683,7 @@ export default function TenantsPage() {
         <div className="flex-1 overflow-hidden bg-white">
           <TenantDetailPanel
             tenantId={selectedId}
+            canEdit={canManage}
             onEdit={() => { const t = tenants.find((x) => x.id === selectedId); if (t) openEdit(t); }}
             onClose={() => setSelectedId(null)}
           />

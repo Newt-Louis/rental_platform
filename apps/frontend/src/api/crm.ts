@@ -20,7 +20,7 @@ export const crmApi = {
     api.put(`/crm/leads/${id}/move`, { status, position }).then((r) => r.data),
   bulkAction: (action: string, leadIds: string[], data?: Record<string, unknown>) =>
     api.post('/crm/leads/bulk', { action, leadIds, data }).then((r) => r.data),
-  pipelineStats: () => api.get('/crm/pipeline/stats').then((r) => r.data),
+  pipelineStats: (mallId?: string) => api.get('/crm/pipeline/stats', { params: { mallId } }).then((r) => r.data),
   staleLeads: (days?: number) => api.get('/crm/stale-leads', { params: days ? { days } : undefined }).then((r) => r.data),
   autoMoveStale: (days?: number) => api.post('/crm/leads/auto-move-stale', null, { params: days ? { days } : undefined }).then((r) => r.data),
   autoAssign: (id: string) => api.post(`/crm/leads/${id}/auto-assign`).then((r) => r.data),

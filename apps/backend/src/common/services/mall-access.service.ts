@@ -67,6 +67,7 @@ export class MallAccessService {
       proposalId?: string;
       approvalStepId?: string;
       approvalWorkflowId?: string;
+      tenantId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -180,6 +181,18 @@ export class MallAccessService {
         mallId = workflow?.proposal?.unit?.mallId ?? workflow?.proposal?.unit?.floor?.mallId
           ?? workflow?.fitoutSubmittal?.project?.unit?.mallId ?? workflow?.fitoutSubmittal?.project?.unit?.floor?.mallId;
       }
+    }
+
+    if (!mallId && sources.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: sources.tenantId },
+        select: {
+          contracts: { where: { isActive: true }, take: 1, select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          proposals: { where: { isActive: true }, take: 1, select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+        },
+      });
+      const unit = tenant?.contracts[0]?.unit ?? tenant?.proposals[0]?.unit;
+      mallId = unit?.mallId ?? unit?.floor?.mallId;
     }
 
     if (mallId) {

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { LeadStatus } from '@prisma/client';
+import { LeadStatus, Role } from '@prisma/client';
 import { CustomersService } from './customers.service';
 
 @Injectable()
@@ -450,15 +450,25 @@ export class CrmService {
 
   // ─── Pipeline Analytics ─────────────────────────────────────────────────────────
 
-  async getPipelineStats() {
+  async getPipelineStats(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const mallFilter = scope?.mallIds;
+    const assetScope = mallFilter ? [
+      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
+      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
+      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } } },
+    ] : [];
+    const leadWhere: any = { isActive: true };
+    if (mallFilter) {
+      leadWhere.OR = scope?.role === Role.LEASING_EXECUTIVE
+        ? [{ assignedToId: scope.userId }, ...assetScope]
+        : assetScope;
+    }
 
     // Get all leads for calculations
     const leads = await this.prisma.lead.findMany({
-      where: { isActive: true },
+      where: leadWhere,
       select: {
         id: true,
         status: true,
@@ -493,12 +503,13 @@ export class CrmService {
     const totalLost = statusCounts['LOST'] || 0;
     const totalActive = leads.length - totalWon - totalLost;
 
+    const percent = (numerator: number, denominator: number) => denominator > 0 ? (numerator / denominator) * 100 : 0;
     const conversionRates = {
-      newToContacted: totalNew > 0 ? ((totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon) / (totalNew + totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon + totalLost)) * 100 : 0,
-      contactedToQualified: totalContacted > 0 ? ((totalQualified + totalProposal + totalNegotiation + totalWon) / (totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      qualifiedToProposal: totalQualified > 0 ? ((totalProposal + totalNegotiation + totalWon) / (totalQualified + totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      proposalToNegotiation: totalProposal > 0 ? ((totalNegotiation + totalWon) / (totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      negotiationToWon: totalNegotiation > 0 ? (totalWon / (totalNegotiation + totalWon)) * 100 : 0,
+      newToContacted: percent(leads.length - totalNew, leads.length),
+      contactedToQualified: percent(totalQualified + totalProposal + totalNegotiation + totalWon, totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon),
+      qualifiedToProposal: percent(totalProposal + totalNegotiation + totalWon, totalQualified + totalProposal + totalNegotiation + totalWon),
+      proposalToNegotiation: percent(totalNegotiation + totalWon, totalProposal + totalNegotiation + totalWon),
+      negotiationToWon: percent(totalWon, totalNegotiation + totalWon),
       overallWinRate: (totalWon + totalLost) > 0 ? (totalWon / (totalWon + totalLost)) * 100 : 0,
     };
 
@@ -549,6 +560,18 @@ export class CrmService {
       .filter(l => !['WON', 'LOST'].includes(l.status))
       .reduce((sum, l) => sum + (l.estimatedValue ?? ((l.expectedRent ?? 0) * (l.expectedArea ?? 0))), 0);
 
+    const proposalWhere: any = { isActive: true };
+    if (mallFilter) proposalWhere.unit = { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] };
+    const proposalGroups = await this.prisma.proposal.groupBy({
+      by: ['status'], where: proposalWhere, _count: { _all: true }, _sum: { totalContractValue: true },
+    });
+    const proposalByStatus: Record<string, number> = {};
+    const proposalValueByStatus: Record<string, number> = {};
+    proposalGroups.forEach((group) => {
+      proposalByStatus[group.status] = group._count._all;
+      proposalValueByStatus[group.status] = group._sum.totalContractValue ?? 0;
+    });
+
     // This month stats
     const wonThisMonth = leads.filter(l => l.status === 'WON' && new Date(l.updatedAt) >= startOfMonth).length;
     const lostThisMonth = leads.filter(l => l.status === 'LOST' && new Date(l.updatedAt) >= startOfMonth).length;
@@ -569,6 +592,8 @@ export class CrmService {
       byStatus: statusCounts,
       valueByStatus: statusValues,
       byPriority,
+      proposalByStatus,
+      proposalValueByStatus,
       conversionRates,
       winLossBySource,
       winLossByCategory,

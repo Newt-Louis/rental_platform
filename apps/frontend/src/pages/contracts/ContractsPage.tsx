@@ -15,6 +15,7 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
+import { useMallStore } from '@/store/mall.store';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
@@ -775,6 +776,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ContractsPage() {
+  const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
@@ -786,14 +788,14 @@ export default function ContractsPage() {
 
   const hasFilter = !!(search || status || type || dateFrom || dateTo);
 
-  useEffect(() => { setPage(1); }, [search, status, type, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [search, status, type, dateFrom, dateTo, selectedMallId]);
 
   function clearFilters() {
     setSearch(''); setStatus(''); setType(''); setDateFrom(''); setDateTo('');
   }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['contracts', { search, status, type, dateFrom, dateTo, page }],
+    queryKey: ['contracts', { search, status, type, dateFrom, dateTo, page, selectedMallId }],
     queryFn: () => contractsApi.listContracts({
       search: search || undefined,
       status: status || undefined,
@@ -802,13 +804,14 @@ export default function ContractsPage() {
       startDateTo: dateTo || undefined,
       page,
       limit: 25,
+      mallId: selectedMallId ?? undefined,
     }),
     enabled: !showExpiring,
   });
 
   const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
-    queryKey: ['contracts-expiring'],
-    queryFn: contractsApi.expiring,
+    queryKey: ['contracts-expiring', selectedMallId],
+    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined),
     enabled: showExpiring,
   });
 
@@ -891,7 +894,7 @@ export default function ContractsPage() {
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded" />)}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border overflow-hidden">
+        <div className="bg-white rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>

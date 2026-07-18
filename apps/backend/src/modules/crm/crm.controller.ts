@@ -10,6 +10,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LeadStatus, Role } from '@prisma/client';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('CRM')
 @ApiBearerAuth('JWT-auth')
@@ -18,7 +19,7 @@ import { LeadStatus, Role } from '@prisma/client';
 @Controller('crm')
 export class CrmController {
   private readonly logger = new Logger(CrmController.name);
-  constructor(private readonly crmService: CrmService) {}
+  constructor(private readonly crmService: CrmService, private readonly mallAccess: MallAccessService) {}
 
   @Get('leads')
   @ApiOperation({ summary: 'List leads with filters and pagination' })
@@ -170,8 +171,11 @@ export class CrmController {
 
   @Get('pipeline/stats')
   @ApiOperation({ summary: 'Get pipeline analytics (conversion rates, win/loss, etc.)' })
-  getPipelineStats() {
-    return this.crmService.getPipelineStats();
+  @ApiQuery({ name: 'mallId', required: false })
+  async getPipelineStats(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.crmService.getPipelineStats({ userId: user.id, role: user.role, mallIds: mallIds ?? undefined });
   }
 
   // ── Stale Leads ────────────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ export default function CrmOverviewPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const canViewTeam = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(user?.role ?? '');
-  const statsQuery = useQuery({ queryKey: ['crm-pipeline-stats'], queryFn: crmApi.pipelineStats });
+  const statsQuery = useQuery({ queryKey: ['crm-pipeline-stats'], queryFn: () => crmApi.pipelineStats() });
   const staleQuery = useQuery({ queryKey: ['crm-stale-leads', 14], queryFn: () => crmApi.staleLeads(14) });
   const followUpsQuery = useQuery({
     queryKey: ['follow-ups-upcoming', 7, canViewTeam ? 'team' : 'mine'],

@@ -15,7 +15,7 @@ export const contractsApi = {
       })
       .then((r) => r.data);
   },
-  expiring: () => api.get('/contracts/expiring').then((r) => r.data),
+  expiring: (mallId?: string) => api.get('/contracts/expiring', { params: { mallId } }).then((r) => r.data),
   listTemplates: () => api.get('/contracts/templates').then((r) => r.data),
   getTemplate: (id: string) => api.get(`/contracts/templates/${id}`).then((r) => r.data),
   renderTemplate: (contractId: string, templateId: string) =>

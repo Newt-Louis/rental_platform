@@ -1761,7 +1761,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
 function PipelineAnalytics() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['crm-pipeline-stats'],
-    queryFn: crmApi.pipelineStats,
+    queryFn: () => crmApi.pipelineStats(),
   });
 
   const { data: staleLeads, isLoading: staleLoading } = useQuery({
