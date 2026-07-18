@@ -7,7 +7,7 @@ export const approvalsApi = {
     api.get('/approvals/history', { params }).then((r) => r.data.data ?? r.data),
   approve: (id: string, comment?: string) =>
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
-  reject: (id: string, comment?: string) =>
+  reject: (id: string, comment: string = '') =>
     api.post(`/approvals/${id}/reject`, { comment }).then((r) => r.data),
   listPolicyRules: () => api.get('/approvals/policy/rules').then((r) => r.data),
   createPolicyRule: (data: Record<string, unknown>) =>

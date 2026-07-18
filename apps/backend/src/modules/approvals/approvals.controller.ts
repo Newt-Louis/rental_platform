@@ -8,6 +8,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
+import { ApproveDecisionDto, RejectDecisionDto } from './dto/approval-decision.dto';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('Approvals')
 @ApiBearerAuth('JWT-auth')
@@ -15,14 +17,18 @@ import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.d
 @Roles(...MODULE_ROLES.approvals)
 @Controller('approvals')
 export class ApprovalsController {
-  constructor(private readonly approvalsService: ApprovalsService) {}
+  constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
+
+  private async mallIds(user: any) {
+    return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
+  }
 
   @Get('pending')
   @ApiOperation({ summary: 'Get pending approval steps for current user' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  getPending(@CurrentUser() user: any, @Query() query: any) {
-    return this.approvalsService.getPending(user.id, user.role, query);
+  async getPending(@CurrentUser() user: any, @Query() query: any) {
+    return this.approvalsService.getPending(user.id, user.role, query, await this.mallIds(user));
   }
 
   @Get('history')
@@ -30,8 +36,8 @@ export class ApprovalsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false, enum: ['APPROVED', 'REJECTED'] })
-  getHistory(@CurrentUser() user: any, @Query() query: any) {
-    return this.approvalsService.getHistory(user.id, user.role, query);
+  async getHistory(@CurrentUser() user: any, @Query() query: any) {
+    return this.approvalsService.getHistory(user.id, user.role, query, await this.mallIds(user));
   }
 
   @Get()
@@ -39,8 +45,8 @@ export class ApprovalsController {
   @ApiQuery({ name: 'status', required: false, enum: WorkflowStatus })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  getAll(@Query() query: any) {
-    return this.approvalsService.getAllWorkflows(query);
+  async getAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.approvalsService.getAllWorkflows(query, await this.mallIds(user));
   }
 
   @Get('policy/rules')
@@ -66,27 +72,30 @@ export class ApprovalsController {
 
   @Post(':id/approve')
   @ApiOperation({ summary: 'Approve a step' })
-  approve(
+  async approve(
     @Param('id') id: string,
-    @Body('comment') comment: string,
+    @Body() dto: ApproveDecisionDto,
     @CurrentUser() user: any,
   ) {
-    return this.approvalsService.approve(id, user.id, user.role, comment);
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id });
+    return this.approvalsService.approve(id, user.id, user.role, dto.comment);
   }
 
   @Post(':id/reject')
   @ApiOperation({ summary: 'Reject a step' })
-  reject(
+  async reject(
     @Param('id') id: string,
-    @Body('comment') comment: string,
+    @Body() dto: RejectDecisionDto,
     @CurrentUser() user: any,
   ) {
-    return this.approvalsService.reject(id, user.id, user.role, comment);
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id });
+    return this.approvalsService.reject(id, user.id, user.role, dto.comment);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get workflow details' })
-  getWorkflow(@Param('id') id: string) {
+  async getWorkflow(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalWorkflowId: id });
     return this.approvalsService.getWorkflow(id);
   }
 }

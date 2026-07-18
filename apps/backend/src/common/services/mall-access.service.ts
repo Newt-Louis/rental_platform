@@ -65,6 +65,8 @@ export class MallAccessService {
       slotBookingId?: string;
       slotPricingRuleId?: string;
       proposalId?: string;
+      approvalStepId?: string;
+      approvalWorkflowId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -161,6 +163,23 @@ export class MallAccessService {
         select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
       });
       mallId = proposal?.unit?.mallId ?? proposal?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && (sources.approvalStepId || sources.approvalWorkflowId)) {
+      const workflowId = sources.approvalWorkflowId ?? (await this.prisma.approvalStep.findUnique({
+        where: { id: sources.approvalStepId }, select: { workflowId: true },
+      }))?.workflowId;
+      if (workflowId) {
+        const workflow = await this.prisma.approvalWorkflow.findUnique({
+          where: { id: workflowId },
+          select: {
+            proposal: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+            fitoutSubmittal: { select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } } },
+          },
+        });
+        mallId = workflow?.proposal?.unit?.mallId ?? workflow?.proposal?.unit?.floor?.mallId
+          ?? workflow?.fitoutSubmittal?.project?.unit?.mallId ?? workflow?.fitoutSubmittal?.project?.unit?.floor?.mallId;
+      }
     }
 
     if (mallId) {

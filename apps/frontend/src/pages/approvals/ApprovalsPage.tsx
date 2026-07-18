@@ -15,6 +15,7 @@ import {
   CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
   Building2, Loader2, History, ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { usePermission } from '@/hooks/usePermission';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
@@ -27,6 +28,8 @@ function fmtPrice(n: number | null | undefined) {
 export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { role } = usePermission();
+  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
   const [view, setView] = useState<'proposals' | 'prices' | 'history'>('proposals');
   const [proposalPage, setProposalPage] = useState(1);
   const [pricePage, setPricePage] = useState(1);
@@ -75,6 +78,7 @@ export default function ApprovalsPage() {
     queryKey: ['pending-price-approvals', pricePage],
     queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25 }),
     refetchInterval: 30_000,
+    enabled: canApprovePrices,
   });
 
   const steps: any[] = data?.data ?? [];
@@ -90,22 +94,22 @@ export default function ApprovalsPage() {
   // ── Mutations — single ──
   const approveMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.approve(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const rejectMutation = useMutation({
-    mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.reject(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
+    mutationFn: ({ id, comment }: { id: string; comment: string }) => approvalsApi.reject(id, comment),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const approvePriceMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => bookingApi.approvePrice(id, note),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); toast({ title: 'Đã phê duyệt giá' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã phê duyệt giá' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const rejectPriceMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingApi.rejectPrice(id, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); toast({ title: 'Đã từ chối giá', variant: 'destructive' }); closeRejectDialog(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã từ chối giá', variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
@@ -180,7 +184,8 @@ export default function ApprovalsPage() {
 
   function handleRejectConfirm() {
     if (!rejectDialog) return;
-    const reason = rejectReason || 'Không phê duyệt';
+    const reason = rejectReason.trim();
+    if (reason.length < 5) return;
     if (rejectDialog.type === 'price') {
       if (rejectDialog.bulk) bulkRejectPriceMutation.mutate({ ids: rejectDialog.ids, reason });
       else rejectPriceMutation.mutate({ id: rejectDialog.ids[0], reason });
@@ -243,7 +248,7 @@ export default function ApprovalsPage() {
         </div>
         <div className="flex gap-2">
           <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{proposalTotal} deal</Badge>
-          <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceApprovals.length} giá</Badge>
+          {canApprovePrices && <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceTotal} giá</Badge>}
         </div>
       </div>
 
@@ -256,13 +261,13 @@ export default function ApprovalsPage() {
           <CheckSquare size={14} className="inline mr-1.5" />
           Proposal ({proposalTotal})
         </button>
-        <button
+        {canApprovePrices && <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'prices' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <DollarSign size={14} className="inline mr-1.5" />
-          Giá Booking ({priceApprovals.length})
-        </button>
+          Giá Booking ({priceTotal})
+        </button>}
         <button
           onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
@@ -297,7 +302,7 @@ export default function ApprovalsPage() {
           ) : (
             <>
               {!rejectDialog && <Selecto ref={proposalSelectoRef} container={proposalGridRef.current} {...proposalSelectoProps} />}
-              <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
+              <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-blue-50/40">
@@ -450,7 +455,7 @@ export default function ApprovalsPage() {
           ) : (
             <>
               {!rejectDialog && <Selecto ref={priceSelectoRef} container={priceGridRef.current} {...priceSelectoProps} />}
-              <div ref={priceGridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none" key={pricePage}>
+              <div ref={priceGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none" key={pricePage}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-amber-50/40">
@@ -749,7 +754,7 @@ export default function ApprovalsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={closeRejectDialog}>Hủy</Button>
             <Button variant="destructive" onClick={handleRejectConfirm}
-              disabled={rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
+              disabled={rejectReason.trim().length < 5 || rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
               Xác nhận từ chối
             </Button>
           </DialogFooter>
