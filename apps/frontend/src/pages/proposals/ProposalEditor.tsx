@@ -248,8 +248,8 @@ function EditableCell({ value, onChange, multiline = true, className = '' }: {
       className={`cursor-text hover:bg-blue-50 hover:ring-1 hover:ring-blue-200 rounded px-1 min-h-[20px] whitespace-pre-wrap text-sm group relative ${className}`}
       title="Click để chỉnh sửa"
     >
-      {value || <span className="text-gray-300 italic text-xs">[trống — click để nhập]</span>}
-      <span className="absolute top-0 right-0 text-[9px] text-blue-300 opacity-0 group-hover:opacity-100 px-1">✎</span>
+      {value || <span data-editor-only className="text-gray-300 italic text-xs">[trống — click để nhập]</span>}
+      <span data-editor-only className="absolute top-0 right-0 text-[9px] text-blue-300 opacity-0 group-hover:opacity-100 px-1">✎</span>
     </div>
   );
 }
@@ -408,7 +408,7 @@ export function ProposalEditorDialog({ proposal, onClose }: {
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; background: white; }
       body { font-family: ${JSON.stringify(doc.font)}; color: #111; }
-      .no-print { display: none !important; }
+      .no-print, [data-editor-only] { display: none !important; }
       #proposal-print-area { width: 210mm; margin: 0 auto; box-shadow: none !important; }
       textarea, input { border: 0; resize: none; font: inherit; color: inherit; background: transparent; }
       @page { size: A4; margin: 0; }
