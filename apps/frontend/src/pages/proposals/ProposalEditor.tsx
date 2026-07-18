@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { proposalsApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -261,6 +261,7 @@ export function ProposalEditorDialog({ proposal, onClose }: {
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [doc, setDoc] = useState<EditorContent>(() => initEditorContent(proposal));
   const [sidebar, setSidebar] = useState<'settings' | 'signatories' | 'style'>('settings');
   const [showLockedItems, setShowLockedItems] = useState(true);
@@ -278,8 +279,7 @@ export function ProposalEditorDialog({ proposal, onClose }: {
   const setEF = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setExtraFields((f) => ({ ...f, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
 
-  const saveExtraMutation = useMutation({
-    mutationFn: () => proposalsApi.updateDocFields(proposal.id, {
+  const extraFieldsPayload = () => ({
       utilityFee:      extraFields.utilityFee,
       operatingHours:  extraFields.operatingHours || undefined,
       afterHoursFee:   extraFields.afterHoursFee,
@@ -288,9 +288,18 @@ export function ProposalEditorDialog({ proposal, onClose }: {
       depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : null,
       depositFitout:   extraFields.depositFitout,
       fitoutFee:       extraFields.fitoutFee,
-    }),
-    onSuccess: () => toast({ title: 'Đã lưu phí & điều khoản' }),
-    onError: () => toast({ title: 'Lỗi khi lưu', variant: 'destructive' }),
+  });
+
+  const refreshProposal = () => {
+    qc.invalidateQueries({ queryKey: ['proposal-detail', proposal.id] });
+    qc.invalidateQueries({ queryKey: ['proposal-versions', proposal.id] });
+    qc.invalidateQueries({ queryKey: ['proposals'] });
+  };
+
+  const saveExtraMutation = useMutation({
+    mutationFn: () => proposalsApi.updateDocFields(proposal.id, extraFieldsPayload()),
+    onSuccess: () => { refreshProposal(); toast({ title: 'Đã lưu phí & điều khoản' }); },
+    onError: (error: any) => toast({ title: error?.response?.data?.message ?? 'Lỗi khi lưu', variant: 'destructive' }),
   });
   const printAreaRef = useRef<HTMLDivElement>(null);
 
@@ -374,26 +383,42 @@ export function ProposalEditorDialog({ proposal, onClose }: {
 
   // Save to DB
   const saveMutation = useMutation({
-    mutationFn: () => proposalsApi.saveEditorContent(proposal.id, doc),
-    onSuccess: () => toast({ title: 'Đã lưu nội dung tờ trình' }),
-    onError: () => toast({ title: 'Lỗi khi lưu', variant: 'destructive' }),
+    mutationFn: () => Promise.all([
+      proposalsApi.saveEditorContent(proposal.id, doc),
+      proposalsApi.updateDocFields(proposal.id, extraFieldsPayload()),
+    ]),
+    onSuccess: () => { refreshProposal(); toast({ title: 'Đã lưu toàn bộ nội dung Proposal' }); },
+    onError: (error: any) => toast({ title: error?.response?.data?.message ?? 'Lỗi khi lưu Proposal', variant: 'destructive' }),
   });
 
   // Print
   const handlePrint = () => {
-    const style = document.createElement('style');
-    style.id = '__proposal-print-style';
-    style.innerHTML = `
-      @media print {
-        body > * { display: none !important; }
-        #proposal-print-area { display: block !important; position: fixed; top: 0; left: 0; width: 100%; height: auto; }
-        #proposal-print-area .no-print { display: none !important; }
-        @page { size: A4; margin: 15mm 12mm 15mm 20mm; }
-      }
-    `;
-    document.head.appendChild(style);
-    window.print();
-    setTimeout(() => document.getElementById('__proposal-print-style')?.remove(), 500);
+    if (!printAreaRef.current) {
+      toast({ title: 'Không tìm thấy nội dung để in', variant: 'destructive' });
+      return;
+    }
+    const printWindow = window.open('', '_blank', 'width=1000,height=800');
+    if (!printWindow) {
+      toast({ title: 'Trình duyệt đang chặn cửa sổ in. Vui lòng cho phép popup.', variant: 'destructive' });
+      return;
+    }
+    printWindow.opener = null;
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${proposal.proposalNumber}</title><style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: white; }
+      body { font-family: ${JSON.stringify(doc.font)}; color: #111; }
+      .no-print { display: none !important; }
+      #proposal-print-area { width: 210mm; margin: 0 auto; box-shadow: none !important; }
+      textarea, input { border: 0; resize: none; font: inherit; color: inherit; background: transparent; }
+      @page { size: A4; margin: 0; }
+      @media print { #proposal-print-area { margin: 0; } }
+    </style></head><body>${printAreaRef.current.outerHTML}</body></html>`);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
   };
 
   const addSignatory = () => {
