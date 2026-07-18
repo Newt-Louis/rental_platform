@@ -60,6 +60,10 @@ export class MallAccessService {
       fitoutSubmittalId?: string;
       fitoutIssueId?: string;
       invoiceId?: string;
+      bookingId?: string;
+      slotId?: string;
+      slotBookingId?: string;
+      slotPricingRuleId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -116,6 +120,38 @@ export class MallAccessService {
         select: { contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
       });
       mallId = invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.bookingId) {
+      const booking = await this.prisma.unitBooking.findUnique({
+        where: { id: sources.bookingId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = booking?.unit?.mallId ?? booking?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotId) {
+      const slot = await this.prisma.unitSlot.findUnique({
+        where: { id: sources.slotId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = slot?.unit?.mallId ?? slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotBookingId) {
+      const booking = await this.prisma.slotBooking.findUnique({
+        where: { id: sources.slotBookingId },
+        select: { slot: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = booking?.slot?.unit?.mallId ?? booking?.slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotPricingRuleId) {
+      const rule = await this.prisma.slotPricingRule.findUnique({
+        where: { id: sources.slotPricingRuleId },
+        select: { slot: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = rule?.slot?.unit?.mallId ?? rule?.slot?.unit?.floor?.mallId;
     }
 
     if (mallId) {

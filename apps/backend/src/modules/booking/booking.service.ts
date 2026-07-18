@@ -168,6 +168,7 @@ export class BookingService {
     status?: BookingStatus;
     assignedToId?: string;
     mallId?: string;
+    mallIds?: string[];
     expiringSoon?: boolean;
     search?: string;
     createdFrom?: string;
@@ -186,7 +187,13 @@ export class BookingService {
     if (filters.customerId) where.customerId = filters.customerId;
     if (filters.status) where.status = filters.status;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
-    if (filters.mallId) where.unit = { mallId: filters.mallId };
+    const scopedMallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
+    if (scopedMallIds) where.unit = {
+      OR: [
+        { mallId: { in: scopedMallIds } },
+        { floor: { mallId: { in: scopedMallIds } } },
+      ],
+    };
     if (expiringSoon) {
       const in7days = new Date();
       in7days.setDate(in7days.getDate() + 7);
@@ -424,10 +431,11 @@ export class BookingService {
 
   async getBookingsPendingPriceApproval(query: {
     mallId?: string;
+    mallIds?: string[];
     page?: number;
     limit?: number;
   }) {
-    const { mallId } = query;
+    const mallIds = query.mallId ? [query.mallId] : query.mallIds;
     const p = Math.max(1, parseInt(String(query.page)) || 1);
     const l = Math.max(1, parseInt(String(query.limit)) || 20);
     const skip = (p - 1) * l;
@@ -436,7 +444,12 @@ export class BookingService {
       isActive: true,
       priceApprovalStatus: PriceApprovalStatus.PENDING,
     };
-    if (mallId) where.unit = { mallId };
+    if (mallIds) where.unit = {
+      OR: [
+        { mallId: { in: mallIds } },
+        { floor: { mallId: { in: mallIds } } },
+      ],
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.unitBooking.findMany({
@@ -795,9 +808,15 @@ export class BookingService {
 
   // ─── Stats tổng hợp ───────────────────────────────────────────────────────
 
-  async getStats(mallId?: string) {
+  async getStats(mallId?: string, allowedMallIds?: string[]) {
     const where: any = { isActive: true };
-    if (mallId) where.unit = { mallId };
+    const mallIds = mallId ? [mallId] : allowedMallIds;
+    if (mallIds) where.unit = {
+      OR: [
+        { mallId: { in: mallIds } },
+        { floor: { mallId: { in: mallIds } } },
+      ],
+    };
 
     const [total, active, pending, expiringSoon, converted] = await Promise.all([
       this.prisma.unitBooking.count({ where }),
@@ -807,7 +826,7 @@ export class BookingService {
         where: {
           ...where,
           status: BookingStatus.ACTIVE,
-          expiresAt: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+          expiresAt: { gte: new Date(), lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
         },
       }),
       this.prisma.unitBooking.count({ where: { ...where, status: BookingStatus.CONVERTED } }),

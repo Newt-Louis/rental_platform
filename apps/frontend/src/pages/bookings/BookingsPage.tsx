@@ -537,6 +537,8 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
   const [convertOpen, setConvertOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [leadEditOpen, setLeadEditOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [ef, setEf] = useState(EMPTY_EF);
   const [leadSearch, setLeadSearch] = useState('');
@@ -608,11 +610,13 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
   const users: any[] = Array.isArray(usersData) ? usersData : (usersData?.data ?? []);
 
   const cancelMutation = useMutation({
-    mutationFn: () => bookingApi.cancel(activeId!, 'Hủy từ trang Booking'),
+    mutationFn: () => bookingApi.cancel(activeId!, cancelReason.trim()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       toast({ title: 'Đã hủy booking' });
+      setCancelOpen(false);
+      setCancelReason('');
       onClose();
     },
     onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
@@ -912,7 +916,7 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
                     <Clock size={14} /> Gia hạn
                   </Button>
                   <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                    onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                    onClick={() => setCancelOpen(true)} disabled={cancelMutation.isPending}>
                     <X size={14} /> Hủy booking
                   </Button>
                 </div>
@@ -953,6 +957,21 @@ function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: { bo
 
       {d && <ConvertToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />}
       {d && <ExtendDialog bookingId={d.id} open={extendOpen} onClose={() => setExtendOpen(false)} />}
+      <Dialog open={cancelOpen} onOpenChange={(open) => { setCancelOpen(open); if (!open) setCancelReason(''); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="text-red-600">Hủy booking</DialogTitle></DialogHeader>
+          <div className="space-y-1.5">
+            <label htmlFor="detail-cancel-reason" className="text-sm font-medium">Lý do hủy <span className="text-red-500">*</span></label>
+            <Textarea id="detail-cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3}
+              placeholder="Nhập lý do để lưu vào lịch sử booking..." />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelOpen(false)}>Không hủy</Button>
+            <Button variant="destructive" disabled={cancelMutation.isPending || cancelReason.trim().length < 5}
+              onClick={() => cancelMutation.mutate()}>Xác nhận hủy</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {d?.lead && (
         <LeadEditDialog
           lead={d.lead}
@@ -1558,6 +1577,7 @@ export default function BookingsPage() {
   // ── Bulk selection ──
   const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set());
   const [confirmCancelIds, setConfirmCancelIds] = useState<string[] | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [confirmReinstateId, setConfirmReinstateId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmDeleteSlotId, setConfirmDeleteSlotId] = useState<string | null>(null);
@@ -1610,7 +1630,7 @@ export default function BookingsPage() {
 
   const bulkCancelMutation = useMutation({
     mutationFn: (ids: string[]) =>
-      Promise.allSettled(ids.map((id) => bookingApi.cancel(id))).then((results) => {
+      Promise.allSettled(ids.map((id) => bookingApi.cancel(id, cancelReason.trim()))).then((results) => {
         const ok = results.filter((r) => r.status === 'fulfilled').length;
         const fail = results.length - ok;
         return { ok, fail };
@@ -1620,6 +1640,7 @@ export default function BookingsPage() {
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       setSelectedUnitIds(new Set());
       setConfirmCancelIds(null);
+      setCancelReason('');
       if (fail > 0) {
         toast({ title: `Đã hủy ${ok} booking, ${fail} booking không thể hủy (sai trạng thái)`, variant: 'destructive' });
       } else {
@@ -1645,6 +1666,12 @@ export default function BookingsPage() {
   const unitIsDirty = JSON.stringify(unitDraft) !== JSON.stringify(unitApplied);
   function applyUnit() { setUnitApplied({ ...unitDraft }); setPage(1); }
   function clearUnit() { setUnitDraft(UNIT_EMPTY); setUnitApplied(UNIT_EMPTY); setPage(1); }
+  function filterUnit(status = '', expiringSoon = false) {
+    const next = { ...UNIT_EMPTY, status, expiringSoon };
+    setUnitDraft(next);
+    setUnitApplied(next);
+    setPage(1);
+  }
 
   // ── SlotBooking state ──
   const SLOT_EMPTY = { search: '', status: '', type: '' };
@@ -1661,9 +1688,16 @@ export default function BookingsPage() {
   const slotIsDirty = JSON.stringify(slotDraft) !== JSON.stringify(slotApplied);
   function applySlot() { setSlotApplied({ ...slotDraft }); }
   function clearSlot() { setSlotDraft(SLOT_EMPTY); setSlotApplied(SLOT_EMPTY); }
+  function filterSlot(status = '') {
+    const next = { ...SLOT_EMPTY, status };
+    setSlotDraft(next);
+    setSlotApplied(next);
+  }
+
+  useEffect(() => setSelectedUnitIds(new Set()), [unitApplied, page]);
 
   // ── UnitBooking data ──
-  const { data: stats } = useQuery({
+  const { data: stats, isError: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['booking-stats', selectedMallId],
     queryFn: () => bookingApi.stats(selectedMallId ?? undefined),
     refetchInterval: 60_000,
@@ -1773,25 +1807,30 @@ export default function BookingsPage() {
           </Select>
         }
       />
-      <div className="hidden">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Booking</h1>
-          <p className="text-sm text-gray-500 mt-1">Theo dõi đặt chỗ lô thuê và slot sự kiện ngắn hạn</p>
-        </div>
-        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
-          <SelectTrigger className="h-9 w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ lô dài hạn</span></SelectItem>
-            <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt slot ngắn hạn</span></SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* ══════════ UNIT BOOKING ══════════ */}
       {typeFilter === 'unit' && (
         <>
+          {statsError && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <span>Không thể tải thống kê booking.</span>
+              <Button variant="outline" size="sm" onClick={() => refetchStats()}>Thử lại</Button>
+            </div>
+          )}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label="Thống kê booking mặt bằng">
+            {[
+              { label: 'Tất cả', value: s?.total ?? 0, status: '', urgent: false },
+              { label: 'Đang giữ', value: s?.active ?? 0, status: 'ACTIVE', urgent: false },
+              { label: 'Chờ duyệt', value: s?.pending ?? 0, status: 'PENDING', urgent: false },
+              { label: 'Sắp hết hạn', value: s?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
+              { label: 'Đã lập đề xuất', value: s?.converted ?? 0, status: 'CONVERTED', urgent: false },
+            ].map((item) => (
+              <button key={item.label} type="button" onClick={() => filterUnit(item.status, !!item.expiring)}
+                className={`rounded-xl border bg-white p-3 text-left transition-colors hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${item.urgent && item.value > 0 ? 'border-red-200' : 'border-gray-200'}`}>
+                <div className="text-xs text-gray-500">{item.label}</div>
+                <div className={`mt-1 text-xl font-bold ${item.urgent && item.value > 0 ? 'text-red-600' : 'text-gray-900'}`}>{item.value}</div>
+              </button>
+            ))}
+          </div>
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
@@ -1844,7 +1883,7 @@ export default function BookingsPage() {
 
           {/* Table */}
           {!selectedBooking && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
-          <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
+          <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
             {unitError ? (
               <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle="Không thể tải danh sách giữ chỗ"><div /></AsyncState>
             ) : unitLoading ? (
@@ -2009,6 +2048,20 @@ export default function BookingsPage() {
       {/* ══════════ SLOT BOOKING ══════════ */}
       {typeFilter === 'slot' && (
         <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label="Thống kê booking ngắn hạn">
+            {[
+              { label: 'Chờ xác nhận', value: slotStats.pending, status: 'PENDING' },
+              { label: 'Đã xác nhận', value: slotStats.confirmed, status: 'CONFIRMED' },
+              { label: 'Hoàn thành', value: slotStats.completed, status: 'COMPLETED' },
+              { label: 'Doanh thu', value: fmtMoney(slotStats.revenue), status: '' },
+            ].map((item) => (
+              <button key={item.label} type="button" onClick={() => filterSlot(item.status)}
+                className="rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                <div className="text-xs text-gray-500">{item.label}</div>
+                <div className="mt-1 text-xl font-bold text-gray-900">{item.value}</div>
+              </button>
+            ))}
+          </div>
           {/* Filters + Create */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
@@ -2058,7 +2111,7 @@ export default function BookingsPage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             {slotError ? (
               <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle="Không thể tải danh sách đặt không gian"><div /></AsyncState>
             ) : slotLoading ? (
@@ -2175,6 +2228,12 @@ export default function BookingsPage() {
           <p className="text-sm text-gray-600">
             Booking sẽ được đưa vào cuối hàng đợi của mặt bằng và được gia hạn thêm từ hôm nay.
           </p>
+          <div className="space-y-1.5">
+            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">Lý do hủy <span className="text-red-500">*</span></label>
+            <Textarea id="booking-cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Nhập lý do để lưu vào lịch sử booking..." rows={3} />
+            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && <p className="text-xs text-red-500">Lý do cần ít nhất 5 ký tự.</p>}
+          </div>
           <DialogFooter className="gap-2 mt-2">
             <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>
               Hủy
@@ -2263,12 +2322,12 @@ export default function BookingsPage() {
             )}
           </p>
           <DialogFooter className="gap-2 mt-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirmCancelIds(null)} disabled={bulkCancelMutation.isPending}>
+            <Button variant="outline" size="sm" onClick={() => { setConfirmCancelIds(null); setCancelReason(''); }} disabled={bulkCancelMutation.isPending}>
               Không
             </Button>
             <Button
               variant="destructive" size="sm"
-              disabled={bulkCancelMutation.isPending}
+              disabled={bulkCancelMutation.isPending || cancelReason.trim().length < 5}
               onClick={() => confirmCancelIds && bulkCancelMutation.mutate(confirmCancelIds)}
             >
               {bulkCancelMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}

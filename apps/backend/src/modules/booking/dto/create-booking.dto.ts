@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsInt, Min, IsDateString, IsEnum, ValidateIf } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsInt, Min, MinLength, IsDateString, IsEnum, ValidateIf } from 'class-validator';
 import { BusinessModelEnum } from '@prisma/client';
 
 export class CreateBookingDto {
@@ -134,10 +134,10 @@ export class ExtendBookingDto {
 }
 
 export class CancelBookingDto {
-  @ApiPropertyOptional({ description: 'Lý do hủy booking' })
-  @IsOptional()
+  @ApiProperty({ description: 'Lý do hủy booking', minLength: 5 })
   @IsString()
-  reason?: string;
+  @MinLength(5)
+  reason: string;
 }
 
 export class ConvertToProposalDto {

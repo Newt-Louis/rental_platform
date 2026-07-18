@@ -82,7 +82,7 @@ export function UnitDetailSheet({
   });
 
   const cancelBookingMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       bookingApi.cancel(id, reason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
@@ -423,6 +423,7 @@ export function UnitDetailSheet({
             description="Booking sẽ rời hàng đợi và lý do được lưu vào lịch sử để các bộ phận liên quan tra cứu."
             confirmLabel="Hủy booking"
             loading={cancelBookingMutation.isPending}
+            minLength={5}
             onConfirm={(reason) => {
               if (cancelBookingId) cancelBookingMutation.mutate({ id: cancelBookingId, reason });
             }}

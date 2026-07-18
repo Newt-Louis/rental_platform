@@ -280,7 +280,7 @@ export class SlotsService {
 
   async listAllBookings(params: {
     unitId?: string;
-    mallId?: string;
+    mallIds?: string[];
     status?: string;
     type?: string;
     from?: string;
@@ -295,6 +295,14 @@ export class SlotsService {
       if (params.to) where.startDatetime.lte = new Date(params.to);
     }
     if (params.unitId) where.slot = { unitId: params.unitId };
+    else if (params.mallIds) where.slot = {
+      unit: {
+        OR: [
+          { mallId: { in: params.mallIds } },
+          { floor: { mallId: { in: params.mallIds } } },
+        ],
+      },
+    };
 
     return this.prisma.slotBooking.findMany({
       where,
