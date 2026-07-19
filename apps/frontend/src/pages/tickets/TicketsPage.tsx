@@ -405,9 +405,14 @@ const FREQUENCY_MAP: Record<string, string> = {
 function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { selectedMallId } = useMallStore();
   const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
     defaultValues: { mallId: '', title: '', description: '', frequency: 'MONTHLY', nextDueDate: '', estimatedHours: '', assignedToId: '', reminderDays: '3', checklistText: '' },
   });
+
+  useEffect(() => {
+    if (open && selectedMallId) setValue('mallId', selectedMallId, { shouldValidate: true });
+  }, [open, selectedMallId, setValue]);
 
   const { data: mallsData } = useQuery({
     queryKey: ['malls-lite'],
@@ -419,7 +424,7 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
   const staff: any[] = (usersData?.data ?? usersData ?? []).filter((user: any) => user.isActive && user.role !== 'TENANT');
 
   const mutation = useMutation({
-    mutationFn: (data: any) => maintenanceApi.create({ ...data, estimatedHours: data.estimatedHours ? +data.estimatedHours : undefined, reminderDays: +(data.reminderDays || 3), checklist: data.checklistText.split('\n').map((item: string) => item.trim()).filter(Boolean), checklistText: undefined }),
+    mutationFn: (data: any) => maintenanceApi.create({ ...data, title: data.title.trim(), description: data.description?.trim() || undefined, estimatedHours: data.estimatedHours ? +data.estimatedHours : undefined, reminderDays: +(data.reminderDays || 3), checklist: data.checklistText.split('\n').map((item: string) => item.trim()).filter(Boolean), checklistText: undefined }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['maintenance-schedules'] });
       toast({ title: 'Đã tạo lịch bảo trì định kỳ' });
@@ -436,17 +441,19 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div>
             <Label>Mall *</Label>
-            <Select onValueChange={(v) => setValue('mallId', v)}>
+            <Select defaultValue={selectedMallId || undefined} onValueChange={(v) => setValue('mallId', v, { shouldValidate: true })}>
               <SelectTrigger className={errors.mallId ? 'border-red-400' : ''}><SelectValue placeholder="Chọn mall..." /></SelectTrigger>
               <SelectContent>
                 {malls.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('mallId', { required: true })} />
+            <input type="hidden" {...register('mallId', { required: 'Vui lòng chọn trung tâm thương mại' })} />
+            {errors.mallId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.mallId.message)}</p>}
           </div>
           <div>
             <Label>Tiêu đề *</Label>
-            <Input {...register('title', { required: true })} placeholder="VD: Bảo trì thang máy khu A" className={errors.title ? 'border-red-400' : ''} />
+            <Input {...register('title', { required: 'Vui lòng nhập tên kế hoạch', validate: (value) => value.trim().length >= 3 || 'Tên kế hoạch cần ít nhất 3 ký tự' })} placeholder="VD: Bảo trì thang máy khu A" className={errors.title ? 'border-red-400' : ''} />
+            {errors.title && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.title.message)}</p>}
           </div>
           <div>
             <Label>Mô tả</Label>
@@ -464,7 +471,8 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <div>
               <Label>Ngày đến hạn đầu *</Label>
-              <Input type="date" {...register('nextDueDate', { required: true })} />
+              <Input type="date" min={new Date().toISOString().slice(0, 10)} {...register('nextDueDate', { required: 'Vui lòng chọn ngày đến hạn' })} className={errors.nextDueDate ? 'border-red-400' : ''} />
+              {errors.nextDueDate && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.nextDueDate.message)}</p>}
             </div>
             <div>
               <Label>Số giờ ước tính</Label>
@@ -474,18 +482,19 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Người chịu trách nhiệm *</Label>
-              <Select onValueChange={(v) => setValue('assignedToId', v)}>
+              <Select onValueChange={(v) => setValue('assignedToId', v, { shouldValidate: true })}>
                 <SelectTrigger><SelectValue placeholder="Chọn nhân viên..." /></SelectTrigger>
                 <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · {user.role}</SelectItem>)}</SelectContent>
               </Select>
-              <input type="hidden" {...register('assignedToId', { required: true })} />
+              <input type="hidden" {...register('assignedToId', { required: 'Vui lòng chọn người chịu trách nhiệm' })} />
+              {errors.assignedToId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.assignedToId.message)}</p>}
             </div>
             <div><Label>Nhắc trước (ngày)</Label><Input type="number" min="0" max="30" {...register('reminderDays')} /></div>
           </div>
           <div><Label>Checklist thực hiện</Label><Textarea {...register('checklistText')} rows={4} placeholder={'Mỗi dòng là một hạng mục\nKiểm tra nguồn điện\nVệ sinh thiết bị\nChạy thử an toàn'} /></div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>Tạo lịch</Button>
+            <Button type="submit" disabled={mutation.isPending} className="min-w-32 bg-blue-700 font-semibold text-white shadow-sm hover:bg-blue-800 disabled:bg-slate-300 disabled:text-slate-600">{mutation.isPending ? 'Đang tạo...' : 'Tạo kế hoạch'}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -500,6 +509,12 @@ function CompleteMaintenanceDialog({ schedule, onClose }: { schedule: any | null
   const [files, setFiles] = useState<File[]>([]);
   const checklist: string[] = Array.isArray(schedule?.checklist) ? schedule.checklist : [];
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const missingChecklist = checklist.filter((item) => !checked[item]).length;
+  const cannotCompleteReason = files.length === 0
+    ? 'Cần tải lên ít nhất 1 ảnh hoặc tài liệu bằng chứng.'
+    : missingChecklist > 0
+      ? `Cần xác nhận thêm ${missingChecklist} mục checklist.`
+      : '';
   useEffect(() => { setNotes(''); setFiles([]); setChecked({}); }, [schedule?.id]);
   const mutation = useMutation({
     mutationFn: () => maintenanceApi.complete(schedule.id, { notes, evidence: files, checklistResult: Object.fromEntries(checklist.map((item) => [item, !!checked[item]])) }),
@@ -510,7 +525,8 @@ function CompleteMaintenanceDialog({ schedule, onClose }: { schedule: any | null
     {checklist.length > 0 && <div><Label>Checklist công việc</Label><div className="mt-2 space-y-2 rounded-xl border p-3">{checklist.map((item) => <label key={item} className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={!!checked[item]} onChange={(e) => setChecked((current) => ({ ...current, [item]: e.target.checked }))} />{item}</label>)}</div></div>}
     <div><Label>Ghi chú kết quả</Label><Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Tình trạng thiết bị, số đo, vấn đề phát hiện..." /></div>
     <div><Label>Ảnh / tài liệu bằng chứng *</Label><label className="mt-2 flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 p-5 text-center text-sm text-blue-700"><UploadCloud size={24} className="mb-2" /><span>{files.length ? `${files.length} tệp đã chọn` : 'Chọn ảnh hoặc tài liệu hiện trường'}</span><input type="file" multiple accept="image/*,.pdf" className="hidden" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} /></label></div>
-  </div><DialogFooter><Button variant="outline" onClick={onClose}>Hủy</Button><Button disabled={files.length === 0 || mutation.isPending || checklist.some((item) => !checked[item])} onClick={() => mutation.mutate()} className="gap-2"><CheckCircle2 size={14} /> Hoàn tất và lưu evidence</Button></DialogFooter></DialogContent></Dialog>;
+    {cannotCompleteReason && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900"><AlertTriangle size={15} className="mr-2 inline" />{cannotCompleteReason}</div>}
+  </div><DialogFooter><Button variant="outline" onClick={onClose}>Hủy</Button><Button disabled={!!cannotCompleteReason || mutation.isPending} onClick={() => mutation.mutate()} title={cannotCompleteReason || 'Hoàn thành kỳ bảo trì'} className="min-w-48 gap-2 bg-emerald-700 font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-600"><CheckCircle2 size={15} /> {mutation.isPending ? 'Đang lưu...' : 'Hoàn thành & lưu bằng chứng'}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
 function MaintenanceTab() {
@@ -537,6 +553,7 @@ function MaintenanceTab() {
       qc.invalidateQueries({ queryKey: ['maintenance-schedules'] });
       toast({ title: 'Đã bắt đầu công việc bảo trì' });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể bắt đầu kế hoạch', variant: 'destructive' }),
   });
 
   const toggleActiveMutation = useMutation({
@@ -606,7 +623,7 @@ function MaintenanceTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
-                        {currentExecution?.status === 'IN_PROGRESS' ? <Button size="sm" className="h-7 gap-1 bg-emerald-600 text-xs hover:bg-emerald-700" onClick={() => setCompleting(s)}><CheckCircle2 size={12} /> Hoàn tất</Button> : <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => executeMutation.mutate(s.id)} disabled={executeMutation.isPending || !s.isActive}><Play size={12} /> Bắt đầu</Button>}
+                        {currentExecution?.status === 'IN_PROGRESS' ? <Button size="sm" className="h-8 gap-1 bg-emerald-700 px-3 font-semibold text-white shadow-sm hover:bg-emerald-800" onClick={() => setCompleting(s)}><CheckCircle2 size={13} /> Hoàn tất</Button> : <Button size="sm" variant="outline" className="h-8 gap-1 border-blue-300 px-3 font-semibold text-blue-800 hover:bg-blue-50" onClick={() => executeMutation.mutate(s.id)} disabled={executeMutation.isPending || !s.isActive}><Play size={13} /> Bắt đầu</Button>}
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400"
                           title={s.isActive ? 'Tạm dừng' : 'Kích hoạt lại'}
                           onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}>

@@ -37,4 +37,16 @@ describe('maintenance workflow', () => {
     await expect(service.completeMaintenance('schedule-1', 'user-1', {}, [])).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.maintenanceExecution.update).not.toHaveBeenCalled();
   });
+
+  it('refuses an incomplete maintenance plan before writing to the database', async () => {
+    await expect(service.createMaintenance({
+      mallId: '', title: '', frequency: 'MONTHLY', nextDueDate: '2026-07-20', assignedToId: '',
+    }, 'user-1')).rejects.toThrow('Vui lòng nhập đủ trung tâm, tên kế hoạch và người chịu trách nhiệm');
+  });
+
+  it('refuses an invalid due date', async () => {
+    await expect(service.createMaintenance({
+      mallId: 'mall-1', title: 'Bảo trì thang máy', frequency: 'MONTHLY', nextDueDate: 'invalid', assignedToId: 'user-2',
+    }, 'user-1')).rejects.toThrow('Ngày đến hạn không hợp lệ');
+  });
 });

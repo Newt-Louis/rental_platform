@@ -405,11 +405,21 @@ export class TicketsService {
     estimatedHours?: number;
   }, createdById: string) {
     const dueDate = new Date(dto.nextDueDate);
+    if (!dto.mallId || !dto.title?.trim() || !dto.assignedToId) {
+      throw new BadRequestException('Vui lòng nhập đủ trung tâm, tên kế hoạch và người chịu trách nhiệm');
+    }
+    if (Number.isNaN(dueDate.getTime())) throw new BadRequestException('Ngày đến hạn không hợp lệ');
+    if (!['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY'].includes(dto.frequency)) {
+      throw new BadRequestException('Tần suất bảo trì không hợp lệ');
+    }
+    if ((dto.reminderDays ?? 3) < 0 || (dto.reminderDays ?? 3) > 30) {
+      throw new BadRequestException('Số ngày nhắc trước phải từ 0 đến 30');
+    }
     const schedule = await this.prisma.maintenanceSchedule.create({
       data: {
         mallId: dto.mallId,
         unitId: dto.unitId,
-        title: dto.title,
+        title: dto.title.trim(),
         description: dto.description,
         frequency: dto.frequency,
         nextDueDate: new Date(dto.nextDueDate),
