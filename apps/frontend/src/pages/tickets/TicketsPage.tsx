@@ -72,6 +72,9 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
     defaultValues: { tenantId: '', unitId: '', type: '', priority: 'MEDIUM', subject: '', description: '' },
   });
   const selectedTenantId = watch('tenantId');
+  const selectedUnitId = watch('unitId');
+  const selectedType = watch('type');
+  const selectedPriority = watch('priority');
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants-all'],
@@ -107,7 +110,7 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Khách thuê *</label>
-            <Select onValueChange={(v) => { setValue('tenantId', v); setValue('unitId', ''); }}>
+            <Select value={selectedTenantId || undefined} onValueChange={(v) => { setValue('tenantId', v, { shouldValidate: true }); setValue('unitId', '', { shouldValidate: true }); }}>
               <SelectTrigger className={errors.tenantId ? 'border-red-400' : ''}>
                 <SelectValue placeholder="Chọn khách thuê..." />
               </SelectTrigger>
@@ -117,12 +120,13 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
                 ))}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('tenantId', { required: true })} />
+            <input type="hidden" {...register('tenantId', { required: 'Vui lòng chọn khách thuê' })} />
+            {errors.tenantId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.tenantId.message)}</p>}
           </div>
 
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng *</label>
-            <Select onValueChange={(v) => setValue('unitId', v)} disabled={!selectedTenantId}>
+            <Select value={selectedUnitId || undefined} onValueChange={(v) => setValue('unitId', v, { shouldValidate: true })} disabled={!selectedTenantId}>
               <SelectTrigger className={errors.unitId ? 'border-red-400' : ''}>
                 <SelectValue placeholder={selectedTenantId ? 'Chọn mặt bằng...' : 'Chọn khách thuê trước'} />
               </SelectTrigger>
@@ -132,13 +136,14 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
                 ))}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('unitId', { required: true })} />
+            <input type="hidden" {...register('unitId', { required: 'Vui lòng chọn mặt bằng' })} />
+            {errors.unitId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.unitId.message)}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Loại *</label>
-              <Select onValueChange={(v) => setValue('type', v)}>
+              <Select value={selectedType || undefined} onValueChange={(v) => setValue('type', v, { shouldValidate: true })}>
                 <SelectTrigger className={errors.type ? 'border-red-400' : ''}>
                   <SelectValue placeholder="Loại..." />
                 </SelectTrigger>
@@ -146,11 +151,12 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
                   {TICKET_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <input type="hidden" {...register('type', { required: true })} />
+              <input type="hidden" {...register('type', { required: 'Vui lòng chọn loại yêu cầu' })} />
+              {errors.type && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.type.message)}</p>}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Mức độ ưu tiên</label>
-              <Select defaultValue="MEDIUM" onValueChange={(v) => setValue('priority', v)}>
+              <Select value={selectedPriority} onValueChange={(v) => setValue('priority', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(PRIORITY_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
