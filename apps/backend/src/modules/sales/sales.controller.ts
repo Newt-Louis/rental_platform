@@ -55,6 +55,12 @@ export class SalesController {
     return this.salesService.getDeadlineStatus(period);
   }
 
+  @Get('submission-units')
+  @ApiOperation({ summary: 'Get tenant-scoped units available for sales submission' })
+  getSubmissionUnits(@CurrentUser() user: any) {
+    return this.salesService.getSubmissionUnits(user);
+  }
+
   @Get(':id/audit')
   @ApiOperation({ summary: 'Get audit trail for a sales record' })
   @Roles(...MODULE_ROLES.salesStaff)

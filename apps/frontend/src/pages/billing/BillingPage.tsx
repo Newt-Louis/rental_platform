@@ -16,6 +16,7 @@ import {
   Search, Download, Receipt, ChevronRight, Plus, Trash2, Send,
   CheckCircle2, Banknote, FileText, Zap, Droplets, Settings, Package,
   AlertTriangle, Clock, X, Edit2, ChevronDown, ArrowRight, Ban, Undo2,
+  Sparkles, Activity, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import api from '@/lib/axios';
 import type { Invoice, ArAgingRow } from '@/types';
@@ -971,21 +972,29 @@ function ArAgingTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
+  const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi'], queryFn: () => billingApi.getCollectionKpi(6) });
+  const kpi = executiveKpi?.data ?? executiveKpi ?? {};
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Hóa đơn và thu tiền</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Quản lý hóa đơn theo quy trình: hệ thống tạo draft → vận hành bổ sung chi phí → gửi khách → kế toán thu tiền
-        </p>
-      </div>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-6 text-white shadow-[0_25px_65px_-35px_rgba(6,78,59,0.8)]">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-emerald-200/10 bg-emerald-200/5" />
+        <div className="relative grid gap-6 xl:grid-cols-[1.4fr_1fr] xl:items-end">
+          <div><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200"><Sparkles size={13} /> Revenue operations</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hóa đơn và thu tiền</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Kiểm soát trọn vòng đời doanh thu: lập lịch → phát hành → thu tiền → nhắc nợ → đối soát hiệu quả.</p></div>
+          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07]">
+            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tỷ lệ thu</div><div className="mt-2 text-2xl font-semibold text-emerald-300">{kpi.collectionRate ?? 0}%</div></div>
+            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">DSO</div><div className="mt-2 text-2xl font-semibold">{kpi.dso ?? 0}<span className="ml-1 text-xs text-slate-400">ngày</span></div></div>
+            <div className="p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AR còn lại</div><div className="mt-2 text-lg font-semibold text-amber-300">{fmtCompact(kpi.outstandingAr ?? 0)}</div></div>
+          </div>
+        </div>
+      </section>
+      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-700" /><div><h2 className="text-lg font-semibold text-slate-950">Trung tâm điều hành Billing</h2><p className="text-xs text-slate-500">Chọn một bước để tiếp tục xử lý</p></div></div>
       <Tabs defaultValue="invoices">
-        <TabsList className="mb-4">
-          <TabsTrigger value="invoices">Hóa đơn</TabsTrigger>
-          <TabsTrigger value="ar-aging">Tuổi nợ</TabsTrigger>
-          <TabsTrigger value="schedule">Lịch lập hóa đơn</TabsTrigger>
-          <TabsTrigger value="dunning">Nhắc nợ</TabsTrigger>
-          <TabsTrigger value="kpi">Hiệu quả thu hồi</TabsTrigger>
+        <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
+          <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-lg"><Receipt size={13} /> Hóa đơn</TabsTrigger>
+          <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> Tuổi nợ</TabsTrigger>
+          <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> Lịch lập hóa đơn</TabsTrigger>
+          <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> Nhắc nợ</TabsTrigger>
+          <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> Hiệu quả thu hồi</TabsTrigger>
         </TabsList>
         <TabsContent value="invoices"><InvoicesTab /></TabsContent>
         <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>

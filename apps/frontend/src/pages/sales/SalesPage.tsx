@@ -6,10 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
-import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle } from 'lucide-react';
+import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle, Sparkles, Store, ReceiptText } from 'lucide-react';
 
 const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Chờ duyệt', color: 'bg-gray-100 text-gray-600' },
@@ -66,12 +69,20 @@ export default function SalesPage() {
   const [period, setPeriod] = useState(getPeriod(0));
   const [auditSalesId, setAuditSalesId] = useState<string | null>(null);
   const [disputeSalesId, setDisputeSalesId] = useState<string | null>(null);
+  const [salesForm, setSalesForm] = useState({ unitId: '', grossSales: '', netSales: '', transactions: '', notes: '' });
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
   // Xếp hạng theo tenant + tình trạng tuân thủ nộp báo cáo lộ tên/doanh thu của các khách thuê khác —
   // chỉ dành cho nhân viên, không hiển thị cho khách thuê xem trang Doanh thu của chính mình.
   const isStaff = user?.role !== 'TENANT';
+
+  const { data: tenantUnitsData } = useQuery({
+    queryKey: ['sales-tenant-units', user?.tenantId],
+    queryFn: () => salesApi.getSubmissionUnits(),
+    enabled: !isStaff && !!user?.tenantId,
+  });
+  const tenantUnits: any[] = tenantUnitsData?.data ?? tenantUnitsData ?? [];
 
   const periods = [getPeriod(-2), getPeriod(-1), getPeriod(0)];
 
@@ -112,6 +123,25 @@ export default function SalesPage() {
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
   });
 
+  const submitSalesMutation = useMutation({
+    mutationFn: () => salesApi.createSales({
+      tenantId: user?.tenantId,
+      unitId: salesForm.unitId,
+      date: `${period}-01`,
+      period,
+      grossSales: Number(salesForm.grossSales),
+      netSales: Number(salesForm.netSales),
+      transactions: Number(salesForm.transactions || 0),
+      notes: salesForm.notes.trim() || undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sales-summary', period] });
+      setSalesForm({ unitId: '', grossSales: '', netSales: '', transactions: '', notes: '' });
+      toast({ title: 'Đã gửi báo cáo doanh thu', description: 'Số liệu được chuyển về trạng thái chờ kiểm tra.' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể gửi báo cáo doanh thu', variant: 'destructive' }),
+  });
+
   const handleDispute = (id: string) => {
     setDisputeSalesId(id);
   };
@@ -121,27 +151,46 @@ export default function SalesPage() {
   const deadline = deadlineData?.data ?? deadlineData;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-6 text-white shadow-[0_25px_65px_-35px_rgba(49,46,129,0.8)]">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full border border-white/10 bg-white/5" />
+        <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Doanh thu khách thuê</h1>
-          <p className="text-sm text-gray-500 mt-1">Doanh thu khách thuê hàng tháng</p>
-          {dataUpdatedAt > 0 && <p className="text-xs text-gray-400 mt-1">Cập nhật gần nhất: {new Date(dataUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
+          <div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-200"><Sparkles size={13} /> Sales intelligence</div>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Doanh thu khách thuê</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Theo dõi sức bán, mức độ tuân thủ báo cáo và các số liệu cần kiểm tra trước khi chuyển sang Billing.</p>
+          {dataUpdatedAt > 0 && <p className="mt-2 text-xs text-slate-400">Cập nhật {new Date(dataUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
         </div>
-        <div className="flex gap-1 rounded-lg border overflow-hidden">
+        <div className="flex gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
           {periods.map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
               className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                period === p ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+                period === p ? 'rounded-lg bg-white text-slate-950 shadow-sm' : 'rounded-lg text-slate-300 hover:bg-white/10'
               }`}
             >
               {p}
             </button>
           ))}
         </div>
-      </div>
+        </div>
+      </section>
+
+      {!isStaff && (
+        <Card className="rounded-2xl border-indigo-100 bg-gradient-to-r from-indigo-50/80 to-white shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><ReceiptText size={18} className="text-indigo-700" /> Nộp doanh thu kỳ {period}</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div><Label>Mặt bằng *</Label><select value={salesForm.unitId} onChange={(e) => setSalesForm((f) => ({ ...f, unitId: e.target.value }))} className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Chọn mặt bằng...</option>{tenantUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select></div>
+              <div><Label>Doanh thu gộp *</Label><Input className="mt-1" type="number" min="0" value={salesForm.grossSales} onChange={(e) => setSalesForm((f) => ({ ...f, grossSales: e.target.value }))} /></div>
+              <div><Label>Doanh thu ròng *</Label><Input className="mt-1" type="number" min="0" value={salesForm.netSales} onChange={(e) => setSalesForm((f) => ({ ...f, netSales: e.target.value }))} /></div>
+              <div><Label>Số giao dịch</Label><Input className="mt-1" type="number" min="0" value={salesForm.transactions} onChange={(e) => setSalesForm((f) => ({ ...f, transactions: e.target.value }))} /></div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end"><div><Label>Ghi chú đối soát</Label><Textarea rows={2} value={salesForm.notes} onChange={(e) => setSalesForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Giải thích điều chỉnh, chương trình khuyến mãi hoặc số liệu bất thường..." /></div><Button className="gap-2 bg-indigo-700 text-white hover:bg-indigo-800" disabled={!salesForm.unitId || !salesForm.grossSales || !salesForm.netSales || submitSalesMutation.isPending} onClick={() => submitSalesMutation.mutate()}><Store size={15} /> {submitSalesMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}</Button></div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       {summaryError ? (
