@@ -477,6 +477,7 @@ export interface Ticket {
   subject: string;
   assignedTo?: User;
   createdAt: string;
+  slaDueAt?: string;
 }
 
 export interface SalesTurnover {

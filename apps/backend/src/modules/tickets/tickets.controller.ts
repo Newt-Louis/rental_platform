@@ -9,6 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TicketStatus, TicketPriority, TicketType, Role } from '@prisma/client';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('Tickets')
 @ApiBearerAuth('JWT-auth')
@@ -19,7 +20,12 @@ export class TicketsController {
   constructor(
     private readonly ticketsService: TicketsService,
     private readonly slaService: TicketSlaService,
+    private readonly mallAccess: MallAccessService,
   ) {}
+
+  private validateTicket(user: any, ticketId: string) {
+    return this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { ticketId });
+  }
 
   @Get()
   @ApiOperation({ summary: 'List operation tickets' })
@@ -30,14 +36,21 @@ export class TicketsController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.ticketsService.findAll(query, user);
+  @ApiQuery({ name: 'mallId', required: false })
+  @ApiQuery({ name: 'queue', required: false, enum: ['open', 'unassigned', 'overdue', 'mine'] })
+  async findAll(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.ticketsService.findAll({ ...query, mallIds: mallIds ?? undefined }, user);
   }
 
   @Get('stats')
   @ApiOperation({ summary: 'Get ticket statistics' })
-  getStats() {
-    return this.ticketsService.getStats();
+  @ApiQuery({ name: 'mallId', required: false })
+  async getStats(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.ticketsService.getStats(mallIds ?? undefined, user);
   }
 
   // Route đơn segment ('maintenance') PHẢI khai báo trước ':id' — nếu không Nest/Express sẽ khớp
@@ -45,54 +58,63 @@ export class TicketsController {
   @Get('maintenance')
   @ApiOperation({ summary: 'List maintenance schedules' })
   @ApiQuery({ name: 'mallId', required: false })
-  listMaintenance(@Query() query: any) {
-    return this.ticketsService.listMaintenance(query);
+  async listMaintenance(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.ticketsService.listMaintenance({ ...query, mallIds: mallIds ?? undefined });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get ticket details' })
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.findOne(id, user);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create ticket (staff tạo phiếu kiểm tra, hoặc tenant tự gửi yêu cầu)' })
-  create(@Body() dto: CreateTicketDto, @CurrentUser() user: any) {
+  async create(@Body() dto: CreateTicketDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: dto.unitId });
     return this.ticketsService.create(dto, user);
   }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update ticket fields (không đổi status — dùng PATCH :id/status)' })
-  update(@Param('id') id: string, @Body() data: any, @CurrentUser() user: any) {
+  async update(@Param('id') id: string, @Body() data: any, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.update(id, data, user);
   }
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Transition ticket status theo state machine' })
-  transition(@Param('id') id: string, @Body('status') status: TicketStatus, @CurrentUser() user: any) {
+  async transition(@Param('id') id: string, @Body('status') status: TicketStatus, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.transition(id, status, user);
   }
 
   @Put(':id/assign')
   @ApiOperation({ summary: 'Assign ticket to user' })
-  assign(@Param('id') id: string, @Body('userId') userId: string, @CurrentUser() user: any) {
+  async assign(@Param('id') id: string, @Body('userId') userId: string, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.assign(id, userId, user);
   }
 
   @Post(':id/comments')
   @ApiOperation({ summary: 'Add comment to ticket' })
-  addComment(
+  async addComment(
     @Param('id') id: string,
     @Body('text') text: string,
     @Body('isInternal') isInternal: boolean,
     @CurrentUser() user: any,
   ) {
+    await this.validateTicket(user, id);
     return this.ticketsService.addComment(id, user.id, text, isInternal, user);
   }
 
   @Get(':id/photos')
   @ApiOperation({ summary: 'List inspection photos of a ticket' })
-  listPhotos(@Param('id') id: string, @CurrentUser() user: any) {
+  async listPhotos(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.listPhotos(id, user);
   }
 
@@ -101,7 +123,8 @@ export class TicketsController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file'))
-  uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser() user: any) {
+  async uploadPhoto(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
     return this.ticketsService.uploadPhoto(id, file, user.id, user);
   }
 

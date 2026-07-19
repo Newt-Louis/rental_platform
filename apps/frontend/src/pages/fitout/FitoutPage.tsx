@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fitoutApi, fitoutSubmittalApi, fitoutIssueApi, approvalsApi, usersApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
+import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
-  Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3,
+  Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3, Compass, Sparkles, HardHat, FolderCheck,
 } from 'lucide-react';
 
 interface StageConfig {
@@ -293,6 +294,14 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const ckList: any[] = checklists as any[];
   const doneCount = ckList.filter((c) => c.isCompleted).length;
   const totalCount = ckList.length;
+  const pendingSubmittals = (submittals as any[]).filter((item) => !['APPROVED', 'OBSOLETED'].includes(item.status)).length;
+  const openIssues = (issues as any[]).filter((item) => !['RESOLVED', 'CLOSED'].includes(item.status)).length;
+  const nextActions = [
+    !p?.operationManager && 'Phân công người phụ trách vận hành',
+    totalCount > doneCount && `Hoàn tất ${totalCount - doneCount} việc trong checklist`,
+    pendingSubmittals > 0 && `Xử lý ${pendingSubmittals} hồ sơ đang chờ`,
+    openIssues > 0 && `Đóng ${openIssues} vấn đề còn tồn đọng`,
+  ].filter(Boolean) as string[];
 
   return (
     <Sheet
@@ -307,6 +316,24 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
         </div>
       ) : p && (
         <div className="px-6 pb-8 space-y-5 pt-4">
+
+          <section className="rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-orange-600 p-2 text-white"><Sparkles size={17} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">Việc nên làm tiếp theo</p>
+                {nextActions.length > 0 ? (
+                  <ol className="mt-2 space-y-2">
+                    {nextActions.slice(0, 4).map((action, index) => (
+                      <li key={action} className="flex gap-2 text-sm text-slate-700"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-700 shadow-sm">{index + 1}</span><span>{action}</span></li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-2 text-sm text-emerald-700">Không còn tồn đọng. Hồ sơ đã sẵn sàng để chuyển sang {nextStep?.name ?? 'giai đoạn hoàn tất'}.</p>
+                )}
+              </div>
+            </div>
+          </section>
 
           {/* Progress bar */}
           <div>
@@ -460,12 +487,12 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           <Tabs defaultValue="checklist" className="mt-4">
             <div className="overflow-x-auto pb-1" aria-label="Không gian làm việc dự án">
               <TabsList className="inline-flex h-10 w-max min-w-full justify-start">
-                <TabsTrigger value="checklist" className="text-xs">Checklist</TabsTrigger>
-                <TabsTrigger value="documents" className="text-xs">Submittals</TabsTrigger>
+                <TabsTrigger value="checklist" className="text-xs">Việc cần làm</TabsTrigger>
+                <TabsTrigger value="documents" className="text-xs">Hồ sơ duyệt</TabsTrigger>
                 <TabsTrigger value="issues" className="text-xs">Vấn đề</TabsTrigger>
                 <TabsTrigger value="risks" className="text-xs">Rủi ro</TabsTrigger>
-                <TabsTrigger value="changes" className="text-xs">Change Order</TabsTrigger>
-                <TabsTrigger value="milestones" className="text-xs">SLA</TabsTrigger>
+                <TabsTrigger value="changes" className="text-xs">Phát sinh</TabsTrigger>
+                <TabsTrigger value="milestones" className="text-xs">Mốc tiến độ</TabsTrigger>
                 <TabsTrigger value="contractors" className="text-xs">Nhà thầu</TabsTrigger>
               </TabsList>
             </div>
@@ -930,6 +957,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 }
 
 export default function FitoutPage() {
+  const { selectedMallId } = useMallStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
   const stages = useStageConfigs();
@@ -938,19 +966,22 @@ export default function FitoutPage() {
   const canManageConfig = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['fitouts'],
-    queryFn: () => fitoutApi.listFitouts({ limit: 100 }),
+    queryKey: ['fitouts', selectedMallId],
+    queryFn: () => fitoutApi.listFitouts({ limit: 100, mallId: selectedMallId ?? undefined }),
   });
 
   const allProjects: any[] = data?.data ?? [];
   const projects = filterStatus ? allProjects.filter((p) => p.status === filterStatus) : allProjects;
+  const withoutManager = allProjects.filter((project) => !project.operationManager).length;
+  const openingSoon = allProjects.filter((project) => project.expectedOpenDate && new Date(project.expectedOpenDate).getTime() - Date.now() <= 14 * 86400000 && new Date(project.expectedOpenDate).getTime() >= Date.now()).length;
+  const completed = allProjects.filter((project) => ['OPENED', 'COMPLETED'].includes(project.status)).length;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Fitout Management</h1>
-          <p className="text-sm text-gray-500 mt-1">Theo dõi tiến độ thi công nội thất</p>
+          <h1 className="text-2xl font-bold text-gray-900">Điều hành Fitout</h1>
+          <p className="text-sm text-gray-500 mt-1">Đi từ bàn giao mặt bằng đến khai trương theo một quy trình rõ ràng</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
@@ -965,6 +996,24 @@ export default function FitoutPage() {
             {allProjects.length} dự án
           </Badge>
         </div>
+      </div>
+
+      <section className="mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-orange-950 to-amber-900 p-5 text-white sm:p-6">
+        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+          <div className="max-w-2xl"><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200"><Compass size={14} /> Bản đồ vận hành Fitout</div><h2 className="text-xl font-semibold sm:text-2xl">{withoutManager ? `${withoutManager} dự án cần phân công người phụ trách` : 'Mỗi dự án đều đã có người chịu trách nhiệm'}</h2><p className="mt-2 text-sm leading-6 text-amber-100/75">Mở một dự án để xem “việc tiếp theo”, hoàn thành checklist và hồ sơ bắt buộc trước khi chuyển giai đoạn.</p></div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:flex">
+            {[['1', 'Chọn dự án'], ['2', 'Xử lý checklist'], ['3', 'Duyệt hồ sơ'], ['4', 'Chuyển giai đoạn']].map(([step, label]) => <div key={step} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2"><span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white font-bold text-slate-900">{step}</span>{label}</div>)}
+          </div>
+        </div>
+      </section>
+
+      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: 'Dự án đang theo dõi', value: allProjects.length - completed, hint: 'Mở danh sách công việc', icon: HardHat, tone: 'border-orange-100 bg-orange-50 text-orange-700', action: () => setFilterStatus('') },
+          { label: 'Chưa có phụ trách', value: withoutManager, hint: 'Cần phân công vận hành', icon: User, tone: 'border-red-100 bg-red-50 text-red-700', action: () => setFilterStatus('') },
+          { label: 'Khai trương trong 14 ngày', value: openingSoon, hint: 'Kiểm tra gate và tồn đọng', icon: Rocket, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => setFilterStatus('') },
+          { label: 'Đã hoàn tất', value: completed, hint: 'Dự án đã bàn giao', icon: FolderCheck, tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', action: () => setFilterStatus(stages.find((stage) => ['OPENED', 'COMPLETED'].includes(stage.code))?.code ?? '') },
+        ].map(({ label, value, hint, icon: Icon, tone, action }) => <button key={label} onClick={action} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}><div className="flex items-center justify-between"><Icon size={18} /><span className="text-2xl font-bold">{value}</span></div><div className="mt-2 text-sm font-semibold">{label}</div><div className="text-[11px] opacity-70">{hint}</div></button>)}
       </div>
 
       {/* Filter chips */}

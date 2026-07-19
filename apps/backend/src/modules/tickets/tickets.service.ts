@@ -47,14 +47,29 @@ export class TicketsService {
     search?: string;
     page?: number;
     limit?: number;
+    mallIds?: string[];
+    queue?: 'open' | 'unassigned' | 'overdue' | 'mine';
   }, currentUser?: CurrentUser) {
-    const { page = 1, limit = 20, search, ...filters } = query;
+    const { page = 1, limit = 20, search, queue, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = { isActive: true };
+    if (query.mallIds && currentUser?.role !== 'TENANT') {
+      where.AND = [{ unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } }];
+    }
     if (filters.status) where.status = filters.status;
     if (filters.priority) where.priority = filters.priority;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+    if (queue === 'open') where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    if (queue === 'unassigned') {
+      where.assignedToId = null;
+      where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    }
+    if (queue === 'overdue') {
+      where.slaDueAt = { lt: new Date() };
+      where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    }
+    if (queue === 'mine') where.assignedToId = currentUser?.id ?? '__none__';
 
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
@@ -289,14 +304,19 @@ export class TicketsService {
     });
   }
 
-  async getStats() {
-    const [total, byStatus, byPriority] = await Promise.all([
-      this.prisma.ticket.count({ where: { isActive: true } }),
-      this.prisma.ticket.groupBy({ by: ['status'], where: { isActive: true }, _count: true }),
-      this.prisma.ticket.groupBy({ by: ['priority'], where: { isActive: true }, _count: true }),
+  async getStats(mallIds?: string[], currentUser?: CurrentUser) {
+    const where: any = { isActive: true };
+    if (currentUser?.role === 'TENANT') where.tenantId = currentUser.tenantId ?? '__none__';
+    else if (mallIds) where.unit = { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] };
+    const [total, byStatus, byPriority, unassigned, overdue] = await Promise.all([
+      this.prisma.ticket.count({ where }),
+      this.prisma.ticket.groupBy({ by: ['status'], where, _count: true }),
+      this.prisma.ticket.groupBy({ by: ['priority'], where, _count: true }),
+      this.prisma.ticket.count({ where: { AND: [where, { assignedToId: null, status: { notIn: ['RESOLVED', 'CLOSED'] } }] } }),
+      this.prisma.ticket.count({ where: { AND: [where, { slaDueAt: { lt: new Date() }, status: { notIn: ['RESOLVED', 'CLOSED'] } }] } }),
     ]);
 
-    return { total, byStatus, byPriority };
+    return { total, byStatus, byPriority, unassigned, overdue };
   }
 
   async getEscalations(ticketId: string) {
@@ -341,11 +361,12 @@ export class TicketsService {
     return { totalRated, avgRating: +avgRating.toFixed(2), csatScore, byRating: ratings };
   }
 
-  async listMaintenance(query: { mallId?: string; page?: number; limit?: number }) {
+  async listMaintenance(query: { mallId?: string; mallIds?: string[]; page?: number; limit?: number }) {
     const { page = 1, limit = 20, mallId } = query;
     const skip = (page - 1) * +limit;
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (query.mallIds) where.mallId = { in: query.mallIds };
 
     const [data, total] = await Promise.all([
       this.prisma.maintenanceSchedule.findMany({

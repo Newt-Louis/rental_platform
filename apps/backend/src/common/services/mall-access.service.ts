@@ -68,6 +68,7 @@ export class MallAccessService {
       approvalStepId?: string;
       approvalWorkflowId?: string;
       tenantId?: string;
+      ticketId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -193,6 +194,14 @@ export class MallAccessService {
       });
       const unit = tenant?.contracts[0]?.unit ?? tenant?.proposals[0]?.unit;
       mallId = unit?.mallId ?? unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.ticketId) {
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { id: sources.ticketId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = ticket?.unit?.mallId ?? ticket?.unit?.floor?.mallId;
     }
 
     if (mallId) {

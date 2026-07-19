@@ -15,6 +15,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('Fitout')
 @ApiBearerAuth('JWT-auth')
@@ -32,7 +33,12 @@ export class FitoutController {
     private readonly issueService: FitoutIssueService,
     private readonly dashboardService: FitoutDashboardService,
     private readonly storageService: StorageService,
+    private readonly mallAccess: MallAccessService,
   ) {}
+
+  private validateProject(user: any, fitoutProjectId: string) {
+    return this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId });
+  }
 
   @Get()
   @ApiOperation({ summary: 'List fitout projects' })
@@ -41,8 +47,11 @@ export class FitoutController {
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.fitoutService.findAll(query, user);
+  @ApiQuery({ name: 'mallId', required: false })
+  async findAll(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.fitoutService.findAll({ ...query, mallIds: mallIds ?? undefined }, user);
   }
 
   // ── Static top-level routes MUST be declared before ':id' — Nest/Express match
@@ -137,17 +146,19 @@ export class FitoutController {
   @Get(':id')
   @ApiOperation({ summary: 'Get fitout project details' })
   @Roles(...MODULE_ROLES.fitout, Role.TENANT)
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.fitoutService.findOne(id, user);
   }
 
   @Put(':id/status')
   @ApiOperation({ summary: 'Advance fitout status' })
-  advanceStatus(
+  async advanceStatus(
     @Param('id') id: string,
     @Body() body: { status: string; override?: boolean; overrideReason?: string },
     @CurrentUser() user: any,
   ) {
+    await this.validateProject(user, id);
     return this.fitoutService.advanceStatus(id, body.status, {
       userId: user?.id,
       override: body.override,
@@ -157,42 +168,48 @@ export class FitoutController {
 
   @Get(':id/checklists')
   @ApiOperation({ summary: 'Get fitout checklists' })
-  getChecklists(@Param('id') id: string) {
+  async getChecklists(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.fitoutService.getChecklists(id);
   }
 
   @Post(':id/checklists')
   @ApiOperation({ summary: 'Create checklist item' })
-  createChecklist(@Param('id') id: string, @Body() body: { title: string; description?: string }) {
+  async createChecklist(@Param('id') id: string, @Body() body: { title: string; description?: string }, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.fitoutService.createChecklist(id, body);
   }
 
   @Patch(':id/checklists/:checklistId')
   @ApiOperation({ summary: 'Update checklist item (toggle complete)' })
-  updateChecklist(
+  async updateChecklist(
     @Param('id') id: string,
     @Param('checklistId') checklistId: string,
     @Body('isCompleted') isCompleted: boolean,
     @CurrentUser() user: any,
   ) {
+    await this.validateProject(user, id);
     return this.fitoutService.updateChecklist(id, checklistId, isCompleted, user.id);
   }
 
   @Delete(':id/checklists/:checklistId')
   @ApiOperation({ summary: 'Delete checklist item' })
-  deleteChecklist(@Param('id') id: string, @Param('checklistId') checklistId: string) {
+  async deleteChecklist(@Param('id') id: string, @Param('checklistId') checklistId: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.fitoutService.deleteChecklist(id, checklistId);
   }
 
   @Patch(':id/assign')
   @ApiOperation({ summary: 'Assign operation manager' })
-  assign(@Param('id') id: string, @Body('operationManagerId') operationManagerId: string) {
+  async assign(@Param('id') id: string, @Body('operationManagerId') operationManagerId: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.fitoutService.assign(id, operationManagerId);
   }
 
   @Get(':id/documents')
   @ApiOperation({ summary: 'List fitout documents' })
-  listDocuments(@Param('id') id: string) {
+  async listDocuments(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.documentsService.listDocuments(id);
   }
 
@@ -215,6 +232,7 @@ export class FitoutController {
     @Body('documentType') documentType: string,
     @CurrentUser() user: any,
   ) {
+    await this.validateProject(user, id);
     const saved = await this.storageService.saveFile(file, `fitout/${id}`);
     return this.documentsService.uploadDocument({
       projectId: id,
@@ -228,80 +246,92 @@ export class FitoutController {
 
   @Put(':id/documents/:docId/review')
   @ApiOperation({ summary: 'Review fitout document' })
-  reviewDocument(
+  async reviewDocument(
     @Param('id') id: string,
     @Param('docId') docId: string,
     @Body() body: { decision: 'APPROVED' | 'REJECTED'; note?: string },
     @CurrentUser() user: any,
   ) {
+    await this.validateProject(user, id);
     return this.documentsService.reviewDocument(docId, body.decision, body.note, user?.id);
   }
 
   @Get(':id/gate-check/:targetStatus')
   @ApiOperation({ summary: 'Check gate requirements before advancing' })
-  checkGate(@Param('id') id: string, @Param('targetStatus') targetStatus: string) {
+  async checkGate(@Param('id') id: string, @Param('targetStatus') targetStatus: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.documentsService.checkGateRequirements(id, targetStatus);
   }
 
   @Get(':id/milestones')
   @ApiOperation({ summary: 'Get fitout milestones with SLA status' })
-  getMilestones(@Param('id') id: string) {
+  async getMilestones(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.slaService.getProjectMilestones(id);
   }
 
   @Get(':id/dmap')
   @ApiOperation({ summary: 'Get D-Map data (unit floor plan + open issue pins)' })
-  getDMap(@Param('id') id: string) {
+  async getDMap(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.issueService.getDMap(id);
   }
 
   @Get(':id/dashboard')
   @ApiOperation({ summary: 'Get aggregated dashboard for a single fitout project' })
-  getProjectDashboard(@Param('id') id: string) {
+  async getProjectDashboard(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.dashboardService.getProjectDashboard(id);
   }
 
   // ── Contractors ─────────────────────────────────────────────────────────────
   @Get(':id/contractors')
   @ApiOperation({ summary: 'List contractors for a fitout project' })
-  listContractors(@Param('id') id: string) {
+  async listContractors(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.listContractors(id);
   }
 
   @Post(':id/contractors')
   @ApiOperation({ summary: 'Add contractor to a fitout project' })
-  createContractor(@Param('id') id: string, @Body() dto: any) {
+  async createContractor(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.createContractor(id, dto);
   }
 
   @Patch(':id/contractors/:contractorId')
   @ApiOperation({ summary: 'Update contractor' })
-  updateContractor(@Param('contractorId') contractorId: string, @Body() dto: any) {
+  async updateContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.updateContractor(contractorId, dto);
   }
 
   @Delete(':id/contractors/:contractorId')
   @ApiOperation({ summary: 'Deactivate contractor' })
-  deleteContractor(@Param('contractorId') contractorId: string) {
+  async deleteContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.deleteContractor(contractorId);
   }
 
   // ── Worker Access Logs ───────────────────────────────────────────────────────
   @Get(':id/workers')
   @ApiOperation({ summary: 'List worker access logs for a fitout project' })
-  listWorkerLogs(@Param('id') id: string) {
+  async listWorkerLogs(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.listWorkerLogs(id);
   }
 
   @Post(':id/workers')
   @ApiOperation({ summary: 'Log worker entry' })
-  logWorkerEntry(@Param('id') id: string, @Body() dto: any) {
+  async logWorkerEntry(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.logWorkerEntry(id, dto);
   }
 
   @Patch(':id/workers/:logId/exit')
   @ApiOperation({ summary: 'Log worker exit' })
-  logWorkerExit(@Param('logId') logId: string) {
+  async logWorkerExit(@Param('id') id: string, @Param('logId') logId: string, @CurrentUser() user: any) {
+    await this.validateProject(user, id);
     return this.contractorService.logWorkerExit(logId);
   }
 }

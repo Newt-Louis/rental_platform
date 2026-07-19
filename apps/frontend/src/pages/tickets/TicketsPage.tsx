@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { ticketsApi, tenantsApi, spacesApi, usersApi, maintenanceApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
+import { useMallStore } from '@/store/mall.store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/use-toast';
-import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power } from 'lucide-react';
+import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Compass, Inbox, UserRoundCheck } from 'lucide-react';
 import type { Ticket as TicketType } from '@/types';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -481,10 +482,11 @@ function MaintenanceTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
+  const { selectedMallId } = useMallStore();
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['maintenance-schedules'],
-    queryFn: () => maintenanceApi.list(),
+    queryKey: ['maintenance-schedules', selectedMallId],
+    queryFn: () => maintenanceApi.list(selectedMallId ?? undefined),
   });
   const schedules: any[] = data?.data ?? [];
 
@@ -586,22 +588,42 @@ function MaintenanceTab() {
 export default function TicketsPage() {
   const { user } = useAuthStore();
   const isStaff = user?.role !== 'TENANT';
+  const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [priority, setPriority] = useState('');
+  const [queue, setQueue] = useState('open');
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['tickets', { search, status, priority }],
+    queryKey: ['tickets', { search, status, priority, queue, page, selectedMallId }],
     queryFn: () => ticketsApi.listTickets({
       search: search || undefined,
       status: status || undefined,
       priority: priority || undefined,
+      queue: queue || undefined,
+      mallId: selectedMallId ?? undefined,
+      page,
+      limit: 25,
     }),
+  });
+  const { data: statsData } = useQuery({
+    queryKey: ['ticket-stats', selectedMallId],
+    queryFn: () => ticketsApi.getStats(selectedMallId ?? undefined),
   });
 
   const tickets: TicketType[] = data?.data ?? [];
+  const stats = statsData?.data ?? statsData ?? {};
+  const byStatus = Object.fromEntries((stats.byStatus ?? []).map((row: any) => [row.status, row._count]));
+  const openCount = (stats.total ?? 0) - (byStatus.CLOSED ?? 0) - (byStatus.RESOLVED ?? 0);
+  const urgentCount = (stats.byPriority ?? []).find((row: any) => row.priority === 'URGENT')?._count ?? 0;
+  const unassignedCount = stats.unassigned ?? 0;
+  const overdueCount = stats.overdue ?? 0;
+  const totalPages = data?.totalPages ?? 1;
+
+  useEffect(() => setPage(1), [search, status, priority, queue, selectedMallId]);
 
   return (
     <div>
@@ -613,6 +635,23 @@ export default function TicketsPage() {
         <Button onClick={() => setShowCreate(true)} className="gap-2">
           <ClipboardList size={15} /> Tạo phiếu kiểm tra
         </Button>
+      </div>
+
+      <section className="mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-cyan-950 to-blue-900 p-5 text-white sm:p-6">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200"><Compass size={14} /> Trung tâm điều phối vận hành</div><h2 className="text-xl font-semibold">{overdueCount ? `${overdueCount} yêu cầu đã quá SLA` : 'Hàng đợi đang trong SLA'}</h2><p className="mt-1 text-sm text-cyan-100/75">Chọn nhóm việc cần xử lý, mở phiếu, phân công và chuyển trạng thái theo gợi ý trong hồ sơ.</p></div>
+          <Button className="gap-2 bg-white text-slate-900 hover:bg-cyan-50" onClick={() => setShowCreate(true)}><Plus size={15} /> Ghi nhận yêu cầu mới</Button>
+        </div>
+      </section>
+
+      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          { label: 'Đang mở', value: openCount, hint: 'Tổng việc cần hoàn tất', icon: Inbox, tone: 'border-blue-100 bg-blue-50 text-blue-700', action: () => { setQueue('open'); setStatus(''); setPriority(''); } },
+          { label: 'Mới tiếp nhận', value: byStatus.NEW ?? 0, hint: 'Cần phân loại và giao việc', icon: Ticket, tone: 'border-slate-200 bg-slate-50 text-slate-700', action: () => { setQueue(''); setStatus('NEW'); } },
+          { label: 'Chưa phân công', value: unassignedCount, hint: 'Cần người chịu trách nhiệm', icon: UserRoundCheck, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => { setQueue('unassigned'); setStatus(''); setPriority(''); } },
+          { label: 'Quá SLA', value: overdueCount, hint: 'Ưu tiên xử lý ngay', icon: Clock3, tone: 'border-amber-100 bg-amber-50 text-amber-700', action: () => { setQueue('overdue'); setStatus(''); setPriority(''); } },
+          { label: 'Khẩn cấp', value: urgentCount, hint: 'Mức ưu tiên cao nhất', icon: AlertTriangle, tone: 'border-red-100 bg-red-50 text-red-700', action: () => { setQueue(''); setPriority('URGENT'); setStatus(''); } },
+        ].map(({ label, value, hint, icon: Icon, tone, action }) => <button key={label} onClick={() => { action(); setPage(1); }} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}><div className="flex items-center justify-between"><Icon size={17} /><span className="text-xl font-bold">{value}</span></div><div className="mt-2 text-sm font-semibold">{label}</div><div className="text-[11px] opacity-70">{hint}</div></button>)}
       </div>
 
       <Tabs defaultValue="tickets">
@@ -673,7 +712,7 @@ export default function TicketsPage() {
           <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border overflow-hidden">
+        <div className="bg-white rounded-lg border overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -730,6 +769,7 @@ export default function TicketsPage() {
               )}
             </div>
           )}
+          {totalPages > 1 && <div className="flex min-w-[760px] items-center justify-between border-t px-4 py-3 text-xs text-gray-500"><span>Trang {page} / {totalPages} · {data?.total ?? 0} phiếu</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Trước</Button><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Sau</Button></div></div>}
         </div>
       )}
         </TabsContent>

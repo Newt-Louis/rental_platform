@@ -12,7 +12,7 @@ export const ticketsApi = {
     api.post(`/tickets/${id}/comments`, { text, isInternal }).then((r) => r.data),
   assignTicket: (id: string, userId: string) =>
     api.put(`/tickets/${id}/assign`, { userId }).then((r) => r.data),
-  getStats: () => api.get('/tickets/stats').then((r) => r.data),
+  getStats: (mallId?: string) => api.get('/tickets/stats', { params: { mallId } }).then((r) => r.data),
   listSlaPolicies: () => api.get('/tickets/sla/policies').then((r) => r.data),
   upsertSlaPolicy: (data: Record<string, unknown>) => api.post('/tickets/sla/policies', data).then((r) => r.data),
   getSlaStats: () => api.get('/tickets/sla/stats').then((r) => r.data),
