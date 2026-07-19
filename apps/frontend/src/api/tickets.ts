@@ -1,6 +1,7 @@
 import api from '@/lib/axios';
 
 export const ticketsApi = {
+  listMyUnits: () => api.get('/tickets/my-units').then((r) => r.data),
   listTickets: (params?: Record<string, unknown>) =>
     api.get('/tickets', { params }).then((r) => r.data),
   createTicket: (data: Record<string, unknown>) =>

@@ -1235,6 +1235,17 @@ const TABS = [
   { id: 'system',      label: 'Hệ thống',           icon: Settings },
 ];
 
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  users: 'Quản lý vòng đời tài khoản và trạng thái truy cập hệ thống.',
+  malls: 'Thiết lập danh mục Mall và thông tin vận hành nền tảng.',
+  'mall-access': 'Kiểm soát phạm vi dữ liệu Mall theo từng người dùng.',
+  structure: 'Chuẩn hóa Block, tầng và cấu trúc mặt bằng cho toàn hệ thống.',
+  categories: 'Quản trị ngành hàng, đơn giá và danh mục kinh doanh dùng chung.',
+  permissions: 'Thiết kế quyền theo vai trò và nguyên tắc kiểm soát tối thiểu.',
+  approval: 'Cấu hình luồng phê duyệt, cấp duyệt và ngưỡng nghiệp vụ.',
+  system: 'Quản lý nhận diện thương hiệu và cấu hình vận hành nền tảng.',
+};
+
 const TAB_GROUPS = [
   { label: 'Người dùng & truy cập', ids: ['users', 'mall-access', 'permissions'] },
   { label: 'Tổ chức & Mall', ids: ['malls', 'structure'] },
@@ -1256,18 +1267,16 @@ export default function AdminPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-slate-900 p-2.5 rounded-xl">
-          <Settings size={20} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cấu hình Hệ thống</h1>
-          <p className="text-sm text-gray-500">Quản lý tài khoản, mall, không gian và phân quyền</p>
-        </div>
-        <div className="ml-auto">
-          <Badge className="bg-red-100 text-red-700 border-0 px-3 py-1">
-            <Shield size={12} className="mr-1.5" /> Super Admin
-          </Badge>
+      <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-xl">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="relative flex items-center gap-3">
+          <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/15"><Settings size={22} /></div>
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200">ERP Control Center</div>
+            <h1 className="text-2xl font-bold">Cấu hình Hệ thống</h1>
+            <p className="mt-1 text-sm text-slate-300">Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.</p>
+          </div>
+          <div className="ml-auto hidden sm:block"><Badge className="border border-rose-300/20 bg-rose-400/15 px-3 py-1 text-rose-100"><Shield size={12} className="mr-1.5" /> Super Admin · Toàn quyền</Badge></div>
         </div>
       </div>
 
@@ -1307,6 +1316,11 @@ export default function AdminPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</p>
+        <p className="mt-0.5 text-xs text-slate-600">{TAB_DESCRIPTIONS[activeTab]}</p>
       </div>
 
       {/* Tab content */}

@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Role } from '@prisma/client';
 
 @ApiTags('Announcements')
 @ApiBearerAuth('JWT-auth')
@@ -21,11 +22,12 @@ export class AnnouncementsController {
   @ApiQuery({ name: 'priority', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any) {
-    return this.service.findAll(query);
+  findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.service.findAll(query, user);
   }
 
   @Get('admin')
+  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER)
   @ApiOperation({ summary: 'List all announcements (staff/admin view)' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'page', required: false })
@@ -36,23 +38,26 @@ export class AnnouncementsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get announcement details' })
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.service.findOneForUser(id, user);
   }
 
   @Post()
+  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER)
   @ApiOperation({ summary: 'Create announcement' })
   create(@Body() dto: any, @CurrentUser() user: any) {
     return this.service.create(dto, user.id);
   }
 
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER)
   @ApiOperation({ summary: 'Update announcement' })
   update(@Param('id') id: string, @Body() dto: any) {
     return this.service.update(id, dto);
   }
 
   @Delete(':id')
+  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER)
   @ApiOperation({ summary: 'Soft-delete announcement' })
   remove(@Param('id') id: string) {
     return this.service.remove(id);

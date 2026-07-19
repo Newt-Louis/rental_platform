@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { contractsApi, billingApi, ticketsApi, spacesApi, fitoutApi } from '@/api';
+import { contractsApi, billingApi, ticketsApi, fitoutApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -57,7 +57,7 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
   ISSUED:  { label: 'Đã phát', color: 'bg-blue-100 text-gray-700' },
   PAID:    { label: 'Đã TT',   color: 'bg-green-100 text-green-700' },
   OVERDUE: { label: 'Quá hạn', color: 'bg-red-100 text-red-700' },
-  PARTIAL: { label: 'TT 1 phần', color: 'bg-yellow-100 text-yellow-700' },
+  PARTIALLY_PAID: { label: 'TT 1 phần', color: 'bg-yellow-100 text-yellow-700' },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -98,17 +98,20 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
-  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm({
     defaultValues: { unitId: '', type: '', priority: 'MEDIUM', subject: '', description: '' },
   });
 
   const { data: unitsData } = useQuery({
     queryKey: ['units-my-tenant', user?.tenantId],
-    queryFn: () => spacesApi.listUnits({ tenantId: user!.tenantId, limit: 500 }),
+    queryFn: () => ticketsApi.listMyUnits(),
     enabled: open && !!user?.tenantId,
   });
 
-  const myUnits: any[] = unitsData?.data ?? [];
+  const myUnits: any[] = Array.isArray(unitsData) ? unitsData : unitsData?.data ?? [];
+  const unitId = watch('unitId');
+  const type = watch('type');
+  const priority = watch('priority');
 
   const mutation = useMutation({
     mutationFn: (data: any) => ticketsApi.createTicket({ ...data, tenantId: user!.tenantId }),
@@ -136,7 +139,7 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
           {/* Unit */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng *</label>
-            <Select onValueChange={(v) => setValue('unitId', v)}>
+            <Select value={unitId} onValueChange={(v) => setValue('unitId', v, { shouldValidate: true })}>
               <SelectTrigger className={errors.unitId ? 'border-red-400' : ''}>
                 <SelectValue placeholder="Chọn mặt bằng..." />
               </SelectTrigger>
@@ -149,13 +152,14 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
               </SelectContent>
             </Select>
             <input type="hidden" {...register('unitId', { required: true })} />
+            {errors.unitId && <p className="mt-1 text-xs text-red-600">Vui lòng chọn mặt bằng cần hỗ trợ</p>}
           </div>
 
           {/* Type + Priority row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Loại yêu cầu *</label>
-              <Select onValueChange={(v) => setValue('type', v)}>
+              <Select value={type} onValueChange={(v) => setValue('type', v, { shouldValidate: true })}>
                 <SelectTrigger className={errors.type ? 'border-red-400' : ''}>
                   <SelectValue placeholder="Loại..." />
                 </SelectTrigger>
@@ -166,10 +170,11 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
                 </SelectContent>
               </Select>
               <input type="hidden" {...register('type', { required: true })} />
+              {errors.type && <p className="mt-1 text-xs text-red-600">Vui lòng chọn loại yêu cầu</p>}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Mức độ ưu tiên</label>
-              <Select defaultValue="MEDIUM" onValueChange={(v) => setValue('priority', v)}>
+              <Select value={priority} onValueChange={(v) => setValue('priority', v, { shouldValidate: true })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -186,10 +191,11 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Tiêu đề *</label>
             <Input
-              {...register('subject', { required: true })}
+              {...register('subject', { required: true, minLength: 5 })}
               placeholder="Mô tả ngắn gọn vấn đề..."
               className={errors.subject ? 'border-red-400' : ''}
             />
+            {errors.subject && <p className="mt-1 text-xs text-red-600">Tiêu đề cần ít nhất 5 ký tự</p>}
           </div>
 
           {/* Description */}
@@ -535,20 +541,22 @@ export default function TenantPortalPage() {
   const activeFitouts = fitouts.filter((f) => f.status !== 'OPENED');
 
   return (
-    <div>
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-teal-600 p-2.5 rounded-xl">
-          <ShoppingBag size={20} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cổng thông tin khách thuê</h1>
-          <p className="text-sm text-gray-500">Quản lý hợp đồng, hóa đơn và yêu cầu vận hành</p>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-950 via-slate-900 to-slate-950 p-6 text-white shadow-xl">
+        <div className="absolute -right-12 -top-16 h-48 w-48 rounded-full bg-teal-400/20 blur-3xl" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-teal-200"><ShoppingBag size={15} /> Tenant workspace</div>
+            <h1 className="text-2xl font-bold">Cổng thông tin khách thuê</h1>
+            <p className="mt-1 text-sm text-slate-300">Hợp đồng, tài chính, vận hành và Fitout trong một không gian tự phục vụ.</p>
+          </div>
+          <Button onClick={() => setCreateTicketOpen(true)} className="gap-2 bg-white text-slate-900 hover:bg-teal-50"><Plus size={15} /> Gửi yêu cầu hỗ trợ</Button>
         </div>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="border-0 bg-gray-50">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">

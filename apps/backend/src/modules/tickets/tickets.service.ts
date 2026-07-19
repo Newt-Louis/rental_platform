@@ -40,6 +40,17 @@ export class TicketsService {
     private emailService: EmailService,
   ) {}
 
+  async listMyUnits(currentUser: CurrentUser) {
+    if (!currentUser.tenantId) {
+      throw new BadRequestException('Tài khoản chưa được liên kết với khách thuê');
+    }
+    return this.prisma.unit.findMany({
+      where: { tenantId: currentUser.tenantId, isActive: true },
+      select: { id: true, code: true, name: true, floor: { select: { name: true } }, mall: { select: { name: true } } },
+      orderBy: { code: 'asc' },
+    });
+  }
+
   async findAll(query: {
     status?: TicketStatus;
     priority?: TicketPriority;
@@ -157,6 +168,12 @@ export class TicketsService {
 
     if (isTenantCaller && !currentUser.tenantId) {
       throw new BadRequestException('Tài khoản của bạn chưa được liên kết với khách thuê nào — liên hệ quản trị viên.');
+    }
+    if (isTenantCaller) {
+      const ownedUnit = await this.prisma.unit.count({
+        where: { id: dto.unitId, tenantId: currentUser.tenantId!, isActive: true },
+      });
+      if (!ownedUnit) throw new ForbiddenException('Mặt bằng không thuộc phạm vi khách thuê của bạn');
     }
 
     const ticket = await this.prisma.ticket.create({

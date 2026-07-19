@@ -44,6 +44,13 @@ export class TicketsController {
     return this.ticketsService.findAll({ ...query, mallIds: mallIds ?? undefined }, user);
   }
 
+  @Get('my-units')
+  @Roles(Role.TENANT)
+  @ApiOperation({ summary: 'List occupied units of the authenticated tenant' })
+  listMyUnits(@CurrentUser() user: any) {
+    return this.ticketsService.listMyUnits(user);
+  }
+
   @Get('stats')
   @ApiOperation({ summary: 'Get ticket statistics' })
   @ApiQuery({ name: 'mallId', required: false })
