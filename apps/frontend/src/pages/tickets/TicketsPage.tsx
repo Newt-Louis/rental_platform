@@ -15,8 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/use-toast';
-import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Compass, Inbox, UserRoundCheck } from 'lucide-react';
+import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Compass, Inbox, UserRoundCheck, Play, UploadCloud, BellRing, ListChecks, History } from 'lucide-react';
 import type { Ticket as TicketType } from '@/types';
+import { useSearchParams } from 'react-router-dom';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   NEW: { label: 'Mới', color: 'bg-gray-100 text-gray-700' },
@@ -405,7 +406,7 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
   const qc = useQueryClient();
   const { toast } = useToast();
   const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
-    defaultValues: { mallId: '', title: '', description: '', frequency: 'MONTHLY', nextDueDate: '', estimatedHours: '' },
+    defaultValues: { mallId: '', title: '', description: '', frequency: 'MONTHLY', nextDueDate: '', estimatedHours: '', assignedToId: '', reminderDays: '3', checklistText: '' },
   });
 
   const { data: mallsData } = useQuery({
@@ -414,9 +415,11 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
     enabled: open,
   });
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
+  const { data: usersData } = useQuery({ queryKey: ['maintenance-assignees'], queryFn: () => usersApi.listUsers({ limit: 200 }), enabled: open });
+  const staff: any[] = (usersData?.data ?? usersData ?? []).filter((user: any) => user.isActive && user.role !== 'TENANT');
 
   const mutation = useMutation({
-    mutationFn: (data: any) => maintenanceApi.create({ ...data, estimatedHours: data.estimatedHours ? +data.estimatedHours : undefined }),
+    mutationFn: (data: any) => maintenanceApi.create({ ...data, estimatedHours: data.estimatedHours ? +data.estimatedHours : undefined, reminderDays: +(data.reminderDays || 3), checklist: data.checklistText.split('\n').map((item: string) => item.trim()).filter(Boolean), checklistText: undefined }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['maintenance-schedules'] });
       toast({ title: 'Đã tạo lịch bảo trì định kỳ' });
@@ -468,6 +471,18 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
               <Input type="number" {...register('estimatedHours')} />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Người chịu trách nhiệm *</Label>
+              <Select onValueChange={(v) => setValue('assignedToId', v)}>
+                <SelectTrigger><SelectValue placeholder="Chọn nhân viên..." /></SelectTrigger>
+                <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · {user.role}</SelectItem>)}</SelectContent>
+              </Select>
+              <input type="hidden" {...register('assignedToId', { required: true })} />
+            </div>
+            <div><Label>Nhắc trước (ngày)</Label><Input type="number" min="0" max="30" {...register('reminderDays')} /></div>
+          </div>
+          <div><Label>Checklist thực hiện</Label><Textarea {...register('checklistText')} rows={4} placeholder={'Mỗi dòng là một hạng mục\nKiểm tra nguồn điện\nVệ sinh thiết bị\nChạy thử an toàn'} /></div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
             <Button type="submit" disabled={mutation.isPending}>Tạo lịch</Button>
@@ -478,10 +493,31 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
   );
 }
 
+function CompleteMaintenanceDialog({ schedule, onClose }: { schedule: any | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [notes, setNotes] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const checklist: string[] = Array.isArray(schedule?.checklist) ? schedule.checklist : [];
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  useEffect(() => { setNotes(''); setFiles([]); setChecked({}); }, [schedule?.id]);
+  const mutation = useMutation({
+    mutationFn: () => maintenanceApi.complete(schedule.id, { notes, evidence: files, checklistResult: Object.fromEntries(checklist.map((item) => [item, !!checked[item]])) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['maintenance-schedules'] }); toast({ title: 'Đã hoàn tất và lưu bằng chứng thực hiện' }); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể hoàn tất bảo trì', variant: 'destructive' }),
+  });
+  return <Dialog open={!!schedule} onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Hoàn tất · {schedule?.title}</DialogTitle></DialogHeader><div className="space-y-4">
+    {checklist.length > 0 && <div><Label>Checklist công việc</Label><div className="mt-2 space-y-2 rounded-xl border p-3">{checklist.map((item) => <label key={item} className="flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={!!checked[item]} onChange={(e) => setChecked((current) => ({ ...current, [item]: e.target.checked }))} />{item}</label>)}</div></div>}
+    <div><Label>Ghi chú kết quả</Label><Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Tình trạng thiết bị, số đo, vấn đề phát hiện..." /></div>
+    <div><Label>Ảnh / tài liệu bằng chứng *</Label><label className="mt-2 flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 p-5 text-center text-sm text-blue-700"><UploadCloud size={24} className="mb-2" /><span>{files.length ? `${files.length} tệp đã chọn` : 'Chọn ảnh hoặc tài liệu hiện trường'}</span><input type="file" multiple accept="image/*,.pdf" className="hidden" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} /></label></div>
+  </div><DialogFooter><Button variant="outline" onClick={onClose}>Hủy</Button><Button disabled={files.length === 0 || mutation.isPending || checklist.some((item) => !checked[item])} onClick={() => mutation.mutate()} className="gap-2"><CheckCircle2 size={14} /> Hoàn tất và lưu evidence</Button></DialogFooter></DialogContent></Dialog>;
+}
+
 function MaintenanceTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
+  const [completing, setCompleting] = useState<any | null>(null);
   const { selectedMallId } = useMallStore();
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -489,12 +525,17 @@ function MaintenanceTab() {
     queryFn: () => maintenanceApi.list(selectedMallId ?? undefined),
   });
   const schedules: any[] = data?.data ?? [];
+  const now = Date.now();
+  const overdueCount = schedules.filter((s) => s.isActive && new Date(s.nextDueDate).getTime() < now).length;
+  const dueSoonCount = schedules.filter((s) => { const due = new Date(s.nextDueDate).getTime(); return s.isActive && due >= now && due <= now + 7 * 86400000; }).length;
+  const inProgressCount = schedules.filter((s) => s.executions?.some((e: any) => e.status === 'IN_PROGRESS')).length;
+  const completedCount = schedules.reduce((sum, s) => sum + (s.executions?.filter((e: any) => e.status === 'COMPLETED').length ?? 0), 0);
 
   const executeMutation = useMutation({
-    mutationFn: (id: string) => maintenanceApi.execute(id),
+    mutationFn: (id: string) => maintenanceApi.start(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['maintenance-schedules'] });
-      toast({ title: 'Đã ghi nhận thực hiện — hạn tiếp theo đã cập nhật' });
+      toast({ title: 'Đã bắt đầu công việc bảo trì' });
     },
   });
 
@@ -502,14 +543,22 @@ function MaintenanceTab() {
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => maintenanceApi.update(id, { isActive }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['maintenance-schedules'] }),
   });
+  const reminderMutation = useMutation({
+    mutationFn: maintenanceApi.sendReminders,
+    onSuccess: (result: any) => toast({ title: `Đã gửi ${result?.sent ?? 0} nhắc việc bảo trì` }),
+  });
 
   return (
     <div>
-      <div className="flex justify-end mb-4">
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Wrench size={15} /> Tạo lịch bảo trì
-        </Button>
-      </div>
+      <section className="mb-4 rounded-2xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-5 text-white">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200"><Compass size={14} /> Điều phối bảo trì chủ động</div><h3 className="text-xl font-semibold">{overdueCount ? `${overdueCount} kế hoạch đang quá hạn` : 'Mọi kế hoạch đang trong hạn'}</h3><p className="mt-1 text-sm text-emerald-100/70">Lập lịch · giao việc · nhắc hạn · thực hiện checklist · lưu evidence hiện trường.</p></div><div className="flex gap-2"><Button variant="outline" className="gap-2 border-white/20 bg-white/10 text-white hover:bg-white/20" onClick={() => reminderMutation.mutate()}><BellRing size={14} /> Gửi nhắc việc</Button><Button onClick={() => setShowCreate(true)} className="gap-2 bg-white text-slate-900 hover:bg-emerald-50"><Plus size={15} /> Lập kế hoạch</Button></div></div>
+      </section>
+      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{[
+        ['Quá hạn', overdueCount, AlertTriangle, 'border-red-100 bg-red-50 text-red-700'],
+        ['Đến hạn trong 7 ngày', dueSoonCount, Clock3, 'border-amber-100 bg-amber-50 text-amber-700'],
+        ['Đang thực hiện', inProgressCount, Play, 'border-blue-100 bg-blue-50 text-blue-700'],
+        ['Lần hoàn tất gần đây', completedCount, CheckCircle2, 'border-emerald-100 bg-emerald-50 text-emerald-700'],
+      ].map(([label, value, Icon, tone]: any) => <div key={label} className={`rounded-xl border p-3 ${tone}`}><div className="flex items-center justify-between"><Icon size={17} /><span className="text-2xl font-bold">{value}</span></div><p className="mt-2 text-sm font-semibold">{label}</p></div>)}</div>
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 rounded" />)}</div>
       ) : isError ? (
@@ -528,14 +577,16 @@ function MaintenanceTab() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Mall</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Tần suất</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Đến hạn kế tiếp</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Lần cuối thực hiện</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Người phụ trách</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Kỳ hiện tại</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {schedules.map((s) => {
                 const overdue = new Date(s.nextDueDate) < new Date();
+                const currentExecution = s.executions?.find((execution: any) => ['PLANNED', 'IN_PROGRESS'].includes(execution.status));
+                const lastCompleted = s.executions?.find((execution: any) => execution.status === 'COMPLETED');
                 return (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{s.title}</td>
@@ -546,20 +597,16 @@ function MaintenanceTab() {
                         {new Date(s.nextDueDate).toLocaleDateString('vi-VN')}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">
-                      {s.lastExecutedAt ? new Date(s.lastExecutedAt).toLocaleDateString('vi-VN') : '—'}
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-medium">{s.assignedTo?.fullName ?? 'Chưa phân công'}</div><div className="text-xs text-gray-400">Nhắc trước {s.reminderDays ?? 3} ngày</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={`${s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'} border-0 text-xs`}>
-                        {s.isActive ? 'Đang hoạt động' : 'Tạm dừng'}
-                      </Badge>
+                      <Badge className={`border-0 text-xs ${currentExecution?.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : overdue ? 'bg-red-100 text-red-700' : s.isActive ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{!s.isActive ? 'Tạm dừng' : currentExecution?.status === 'IN_PROGRESS' ? 'Đang thực hiện' : overdue ? 'Quá hạn' : 'Đã lên kế hoạch'}</Badge>
+                      {lastCompleted && <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400"><History size={11} /> {new Date(lastCompleted.completedAt).toLocaleDateString('vi-VN')} · {lastCompleted.evidenceUrls?.length ?? 0} evidence</div>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
-                          onClick={() => executeMutation.mutate(s.id)} disabled={executeMutation.isPending}>
-                          <CheckCircle2 size={12} /> Đã thực hiện
-                        </Button>
+                        {currentExecution?.status === 'IN_PROGRESS' ? <Button size="sm" className="h-7 gap-1 bg-emerald-600 text-xs hover:bg-emerald-700" onClick={() => setCompleting(s)}><CheckCircle2 size={12} /> Hoàn tất</Button> : <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => executeMutation.mutate(s.id)} disabled={executeMutation.isPending || !s.isActive}><Play size={12} /> Bắt đầu</Button>}
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400"
                           title={s.isActive ? 'Tạm dừng' : 'Kích hoạt lại'}
                           onClick={() => toggleActiveMutation.mutate({ id: s.id, isActive: !s.isActive })}>
@@ -581,11 +628,13 @@ function MaintenanceTab() {
         </div>
       )}
       <CreateMaintenanceDialog open={showCreate} onClose={() => setShowCreate(false)} />
+      <CompleteMaintenanceDialog schedule={completing} onClose={() => setCompleting(null)} />
     </div>
   );
 }
 
 export default function TicketsPage() {
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const isStaff = user?.role !== 'TENANT';
   const { selectedMallId } = useMallStore();
@@ -654,7 +703,7 @@ export default function TicketsPage() {
         ].map(({ label, value, hint, icon: Icon, tone, action }) => <button key={label} onClick={() => { action(); setPage(1); }} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}><div className="flex items-center justify-between"><Icon size={17} /><span className="text-xl font-bold">{value}</span></div><div className="mt-2 text-sm font-semibold">{label}</div><div className="text-[11px] opacity-70">{hint}</div></button>)}
       </div>
 
-      <Tabs defaultValue="tickets">
+      <Tabs defaultValue={searchParams.get('tab') === 'maintenance' ? 'maintenance' : 'tickets'}>
         {isStaff && (
           <TabsList className="mb-4">
             <TabsTrigger value="tickets">Tickets</TabsTrigger>

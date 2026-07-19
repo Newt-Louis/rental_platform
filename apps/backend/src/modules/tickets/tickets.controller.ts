@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Get, Post, Put, Patch, Param, Body, Query, UseGuards, UploadedFile, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
 import { TicketSlaService } from './ticket-sla.service';
@@ -180,19 +180,46 @@ export class TicketsController {
 
   @Post('maintenance')
   @ApiOperation({ summary: 'Create maintenance schedule' })
-  createMaintenance(@Body() dto: any, @CurrentUser() user: any) {
+  async createMaintenance(@Body() dto: any, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { mallId: dto.mallId, unitId: dto.unitId });
     return this.ticketsService.createMaintenance(dto, user.id);
   }
 
   @Put('maintenance/:id')
   @ApiOperation({ summary: 'Update maintenance schedule' })
-  updateMaintenance(@Param('id') id: string, @Body() dto: any) {
+  async updateMaintenance(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { maintenanceScheduleId: id });
     return this.ticketsService.updateMaintenance(id, dto);
   }
 
   @Put('maintenance/:id/execute')
-  @ApiOperation({ summary: 'Mark maintenance as executed (updates nextDueDate)' })
-  executeMaintenance(@Param('id') id: string) {
-    return this.ticketsService.executeMaintenance(id);
+  @ApiOperation({ summary: 'Legacy route: start maintenance execution' })
+  async executeMaintenance(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { maintenanceScheduleId: id });
+    return this.ticketsService.startMaintenance(id, user.id);
+  }
+
+  @Post('maintenance/:id/start')
+  @ApiOperation({ summary: 'Start current maintenance cycle' })
+  async startMaintenance(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { maintenanceScheduleId: id });
+    return this.ticketsService.startMaintenance(id, user.id);
+  }
+
+  @Post('maintenance/:id/complete')
+  @UseInterceptors(FilesInterceptor('evidence', 10, { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Complete current maintenance cycle with evidence' })
+  async completeMaintenance(@Param('id') id: string, @Body() body: any, @UploadedFiles() files: Express.Multer.File[], @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { maintenanceScheduleId: id });
+    const checklistResult = body.checklistResult ? JSON.parse(body.checklistResult) : undefined;
+    return this.ticketsService.completeMaintenance(id, user.id, { notes: body.notes, checklistResult }, files);
+  }
+
+  @Post('maintenance/reminders/run')
+  @Roles(Role.ADMIN, Role.OPERATION, Role.MALL_DIRECTOR)
+  @ApiOperation({ summary: 'Send due maintenance reminders' })
+  sendMaintenanceReminders() {
+    return this.ticketsService.sendMaintenanceReminders();
   }
 }

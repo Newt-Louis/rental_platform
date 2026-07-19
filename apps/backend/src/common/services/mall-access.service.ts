@@ -69,6 +69,7 @@ export class MallAccessService {
       approvalWorkflowId?: string;
       tenantId?: string;
       ticketId?: string;
+      maintenanceScheduleId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -93,6 +94,11 @@ export class MallAccessService {
         select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
       });
       mallId = contract?.unit?.mallId ?? contract?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.maintenanceScheduleId) {
+      const schedule = await this.prisma.maintenanceSchedule.findUnique({ where: { id: sources.maintenanceScheduleId }, select: { mallId: true } });
+      mallId = schedule?.mallId;
     }
 
     if (!mallId && sources.fitoutProjectId) {

@@ -34,4 +34,13 @@ export const maintenanceApi = {
   update: (id: string, data: Record<string, unknown>) =>
     api.put(`/tickets/maintenance/${id}`, data).then((r) => r.data),
   execute: (id: string) => api.put(`/tickets/maintenance/${id}/execute`).then((r) => r.data),
+  start: (id: string) => api.post(`/tickets/maintenance/${id}/start`).then((r) => r.data),
+  complete: (id: string, data: { notes?: string; checklistResult?: Record<string, boolean>; evidence: File[] }) => {
+    const form = new FormData();
+    if (data.notes) form.append('notes', data.notes);
+    if (data.checklistResult) form.append('checklistResult', JSON.stringify(data.checklistResult));
+    data.evidence.forEach((file) => form.append('evidence', file));
+    return api.post(`/tickets/maintenance/${id}/complete`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data);
+  },
+  sendReminders: () => api.post('/tickets/maintenance/reminders/run').then((r) => r.data),
 };

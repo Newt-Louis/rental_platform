@@ -6,6 +6,7 @@ import { EmailService } from '../notifications/email.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
+import { Cron } from '@nestjs/schedule';
 
 const ENTITY_TYPE = 'TICKET';
 
@@ -373,7 +374,16 @@ export class TicketsService {
         where,
         skip,
         take: +limit,
-        include: { mall: { select: { id: true, name: true } } },
+        include: {
+          mall: { select: { id: true, name: true } },
+          unit: { select: { id: true, code: true, name: true } },
+          assignedTo: { select: { id: true, fullName: true, email: true, role: true } },
+          executions: {
+            orderBy: { dueDate: 'desc' },
+            take: 5,
+            include: { performedBy: { select: { id: true, fullName: true } } },
+          },
+        },
         orderBy: { nextDueDate: 'asc' },
       }),
       this.prisma.maintenanceSchedule.count({ where }),
@@ -388,44 +398,104 @@ export class TicketsService {
     frequency: string;
     nextDueDate: string;
     assignedRole?: string;
+    assignedToId?: string;
+    reminderDays?: number;
+    checklist?: string[];
+    unitId?: string;
     estimatedHours?: number;
   }, createdById: string) {
-    return this.prisma.maintenanceSchedule.create({
+    const dueDate = new Date(dto.nextDueDate);
+    const schedule = await this.prisma.maintenanceSchedule.create({
       data: {
         mallId: dto.mallId,
+        unitId: dto.unitId,
         title: dto.title,
         description: dto.description,
         frequency: dto.frequency,
         nextDueDate: new Date(dto.nextDueDate),
         assignedRole: (dto.assignedRole as any) ?? 'OPERATION',
+        assignedToId: dto.assignedToId,
+        reminderDays: dto.reminderDays ?? 3,
+        checklist: dto.checklist ?? undefined,
         estimatedHours: dto.estimatedHours,
         createdById,
+        executions: { create: { dueDate } },
       },
+      include: { assignedTo: { select: { id: true, fullName: true } }, executions: true },
     });
+    if (schedule.assignedToId) {
+      await this.notifications.create({
+        userId: schedule.assignedToId,
+        title: 'Kế hoạch bảo trì mới được giao',
+        body: `${schedule.title} · hạn ${dueDate.toLocaleDateString('vi-VN')}`,
+        type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: schedule.id,
+      });
+    }
+    return schedule;
   }
 
-  async updateMaintenance(id: string, dto: Partial<{ title: string; description: string; frequency: string; nextDueDate: string; estimatedHours: number; isActive: boolean }>) {
+  async updateMaintenance(id: string, dto: Partial<{ title: string; description: string; frequency: string; nextDueDate: string; estimatedHours: number; isActive: boolean; assignedToId: string; reminderDays: number; checklist: string[]; unitId: string }>) {
+    const previous = await this.prisma.maintenanceSchedule.findUnique({ where: { id } });
+    if (!previous) throw new NotFoundException('Maintenance schedule not found');
     const data: any = { ...dto };
     if (dto.nextDueDate) data.nextDueDate = new Date(dto.nextDueDate);
-    return this.prisma.maintenanceSchedule.update({ where: { id }, data });
+    const schedule = await this.prisma.maintenanceSchedule.update({ where: { id }, data });
+    if (dto.assignedToId && dto.assignedToId !== previous.assignedToId) {
+      await this.notifications.create({ userId: dto.assignedToId, title: 'Bạn được giao kế hoạch bảo trì', body: `${schedule.title} · hạn ${schedule.nextDueDate.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: id });
+    }
+    return schedule;
   }
 
-  async executeMaintenance(id: string) {
-    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id } });
-    if (!sched) throw new NotFoundException('Maintenance schedule not found');
-
-    const next = new Date(sched.nextDueDate);
-    switch (sched.frequency) {
+  private nextMaintenanceDate(dueDate: Date, frequency: string) {
+    const next = new Date(dueDate);
+    switch (frequency) {
       case 'DAILY': next.setDate(next.getDate() + 1); break;
       case 'WEEKLY': next.setDate(next.getDate() + 7); break;
       case 'MONTHLY': next.setMonth(next.getMonth() + 1); break;
       case 'QUARTERLY': next.setMonth(next.getMonth() + 3); break;
       case 'ANNUALLY': next.setFullYear(next.getFullYear() + 1); break;
     }
+    return next;
+  }
 
-    return this.prisma.maintenanceSchedule.update({
-      where: { id },
-      data: { lastExecutedAt: new Date(), nextDueDate: next },
+  async startMaintenance(id: string, userId: string) {
+    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id }, include: { executions: { where: { status: { in: ['PLANNED', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 1 } } });
+    if (!sched) throw new NotFoundException('Maintenance schedule not found');
+    const execution = sched.executions[0] ?? await this.prisma.maintenanceExecution.create({ data: { scheduleId: id, dueDate: sched.nextDueDate } });
+    return this.prisma.maintenanceExecution.update({ where: { id: execution.id }, data: { status: 'IN_PROGRESS', startedAt: execution.startedAt ?? new Date(), performedById: userId } });
+  }
+
+  async completeMaintenance(id: string, userId: string, body: { notes?: string; checklistResult?: any }, files: Express.Multer.File[]) {
+    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id }, include: { executions: { where: { status: { in: ['PLANNED', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 1 } } });
+    if (!sched) throw new NotFoundException('Maintenance schedule not found');
+    if (!files?.length) throw new BadRequestException('Cần ít nhất một ảnh hoặc tài liệu bằng chứng để hoàn tất');
+    const execution = sched.executions[0] ?? await this.prisma.maintenanceExecution.create({ data: { scheduleId: id, dueDate: sched.nextDueDate } });
+    const saved = await Promise.all(files.map((file) => this.storageService.saveFile(file, `maintenance/${id}`)));
+    const next = this.nextMaintenanceDate(sched.nextDueDate, sched.frequency);
+
+    return this.prisma.$transaction(async (tx) => {
+      const completedAt = new Date();
+      const result = await tx.maintenanceExecution.update({ where: { id: execution.id }, data: { status: 'COMPLETED', startedAt: execution.startedAt ?? completedAt, completedAt, performedById: userId, notes: body.notes, checklistResult: body.checklistResult ?? undefined, evidenceUrls: saved.map((item) => item.fileUrl) } });
+      await tx.maintenanceSchedule.update({ where: { id }, data: { lastExecutedAt: completedAt, nextDueDate: next }, });
+      await tx.maintenanceExecution.upsert({ where: { scheduleId_dueDate: { scheduleId: id, dueDate: next } }, create: { scheduleId: id, dueDate: next }, update: {} });
+      if (sched.assignedToId) await this.notifications.create({ userId: sched.assignedToId, title: 'Đã hoàn tất công việc bảo trì', body: `${sched.title} · kỳ tiếp theo ${next.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: id });
+      return result;
     });
+  }
+
+  /** Tạo nhắc việc cho các kế hoạch sắp đến hạn; idempotent theo ngày qua kiểm tra thông báo đã tồn tại. */
+  @Cron('0 7 * * *', { name: 'maintenance-due-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
+  async sendMaintenanceReminders() {
+    const now = new Date();
+    const schedules = await this.prisma.maintenanceSchedule.findMany({ where: { isActive: true, assignedToId: { not: null } } });
+    let sent = 0;
+    for (const schedule of schedules) {
+      const remindAt = new Date(schedule.nextDueDate); remindAt.setDate(remindAt.getDate() - schedule.reminderDays);
+      if (remindAt > now) continue;
+      const since = new Date(now); since.setHours(0, 0, 0, 0);
+      const exists = await this.prisma.notification.findFirst({ where: { userId: schedule.assignedToId!, entityType: 'MAINTENANCE_REMINDER', entityId: schedule.id, createdAt: { gte: since } } });
+      if (!exists) { await this.notifications.create({ userId: schedule.assignedToId!, title: schedule.nextDueDate < now ? 'Bảo trì đã quá hạn' : 'Bảo trì sắp đến hạn', body: `${schedule.title} · hạn ${schedule.nextDueDate.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_REMINDER', entityId: schedule.id }); sent++; }
+    }
+    return { sent };
   }
 }

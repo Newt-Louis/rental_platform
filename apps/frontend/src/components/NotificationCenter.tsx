@@ -27,6 +27,8 @@ function entityLink(entityType?: string, entityId?: string): string | null {
     CONTRACT: `/contracts?id=${entityId}`,
     INVOICE: '/billing',
     TICKET: `/tickets?id=${entityId}`,
+    MAINTENANCE_SCHEDULE: '/tickets?tab=maintenance',
+    MAINTENANCE_REMINDER: '/tickets?tab=maintenance',
     BOOKING: '/bookings',
     LEAD: '/crm',
   };
