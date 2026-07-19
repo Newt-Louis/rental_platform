@@ -12,6 +12,8 @@ export function usePermission() {
     isManager: role === 'LEASING_MANAGER',
     isStaff: !!role && role !== 'TENANT',
     isTenant: role === 'TENANT',
-    hasRole: (roles: Role[]) => !!role && roles.includes(role),
+    // Giữ giao diện đồng bộ với backend: Super Admin không bị ẩn thao tác chỉ
+    // vì một component khai báo danh sách vai trò cục bộ chưa có ADMIN.
+    hasRole: (roles: Role[]) => role === 'ADMIN' || (!!role && roles.includes(role)),
   };
 }
