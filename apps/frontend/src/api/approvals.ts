@@ -2,9 +2,11 @@ import api from '@/lib/axios';
 
 export const approvalsApi = {
   pending: (params?: { page?: number; limit?: number }) =>
-    api.get('/approvals/pending', { params }).then((r) => r.data.data ?? r.data),
+    // Response interceptor đã đưa `data`, `total`, `page` lên cùng một object.
+    // Giữ nguyên envelope phân trang để trang danh sách và badge dùng chung nguồn.
+    api.get('/approvals/pending', { params }).then((r) => r.data),
   history: (params?: { page?: number; limit?: number; status?: string }) =>
-    api.get('/approvals/history', { params }).then((r) => r.data.data ?? r.data),
+    api.get('/approvals/history', { params }).then((r) => r.data),
   approve: (id: string, comment?: string) =>
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
   reject: (id: string, comment: string = '') =>

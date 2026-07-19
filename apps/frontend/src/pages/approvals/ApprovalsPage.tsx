@@ -94,12 +94,12 @@ export default function ApprovalsPage() {
   // ── Mutations — single ──
   const approveMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.approve(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const rejectMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment: string }) => approvalsApi.reject(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const approvePriceMutation = useMutation({
@@ -126,6 +126,8 @@ export default function ApprovalsPage() {
     },
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
       if (fail > 0) toast({ title: `Đã duyệt ${ok}, ${fail} lỗi`, variant: 'destructive' });
       else toast({ title: `Đã phê duyệt ${ok} bước` });
@@ -143,6 +145,8 @@ export default function ApprovalsPage() {
     },
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
       closeRejectDialog();
       if (fail > 0) toast({ title: `Đã từ chối ${ok}, ${fail} lỗi`, variant: 'destructive' });
