@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import {
   Building2, Users, TrendingUp, AlertTriangle, Clock, Ticket,
   CheckSquare, DollarSign, BookmarkCheck, ArrowUpRight, RefreshCw,
+  Sparkles, ChevronRight, Activity, ShieldCheck,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -38,11 +39,11 @@ function fmtArea(n: number) {
 }
 
 const COLOR_MAP = {
-  blue:   { iconBg: 'bg-blue-100',    iconText: 'text-blue-600'   },
-  green:  { iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' },
-  yellow: { iconBg: 'bg-amber-100',   iconText: 'text-amber-600'  },
-  red:    { iconBg: 'bg-red-100',     iconText: 'text-red-600'    },
-  purple: { iconBg: 'bg-violet-100',  iconText: 'text-violet-600' },
+  blue:   { iconBg: 'bg-blue-50',    iconText: 'text-blue-700', accent: 'from-blue-600 to-cyan-400' },
+  green:  { iconBg: 'bg-emerald-50', iconText: 'text-emerald-700', accent: 'from-emerald-600 to-teal-400' },
+  yellow: { iconBg: 'bg-amber-50',   iconText: 'text-amber-700', accent: 'from-amber-500 to-orange-400' },
+  red:    { iconBg: 'bg-rose-50',    iconText: 'text-rose-700', accent: 'from-rose-600 to-orange-400' },
+  purple: { iconBg: 'bg-violet-50',  iconText: 'text-violet-700', accent: 'from-violet-600 to-fuchsia-400' },
 };
 
 function StatCard({
@@ -60,7 +61,7 @@ function StatCard({
   const c = COLOR_MAP[color];
   return (
     <Card
-      className={`relative overflow-hidden border border-gray-100 shadow-sm ${to ? 'cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5' : ''}`}
+      className={`group relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_10px_35px_-24px_rgba(15,23,42,0.45)] ${to ? 'cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_45px_-22px_rgba(15,23,42,0.4)]' : ''}`}
       onClick={to ? () => navigate(to) : undefined}
       onKeyDown={to ? (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -72,14 +73,15 @@ function StatCard({
       tabIndex={to ? 0 : undefined}
       aria-label={to ? `${title}: ${value}` : undefined}
     >
-      <CardContent className="pt-5 pb-4 px-5">
+      <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${c.accent} opacity-80`} />
+      <CardContent className="px-5 pb-5 pt-6">
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wider truncate">{title}</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1.5 leading-none">{value}</p>
-            {sub && <p className="text-xs text-gray-400 mt-1.5">{sub}</p>}
+            <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{title}</p>
+            <p className="mt-2 text-[1.7rem] font-semibold leading-none tracking-tight text-slate-950">{value}</p>
+            {sub && <p className="mt-2 text-xs leading-5 text-slate-500">{sub}</p>}
           </div>
-          <div className={`ml-3 shrink-0 flex h-10 w-10 items-center justify-center rounded-xl ${c.iconBg}`}>
+          <div className={`ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${c.iconBg}`}>
             <Icon size={18} className={c.iconText} />
           </div>
         </div>
@@ -91,7 +93,7 @@ function StatCard({
           </div>
         )}
         {to && (
-          <ArrowUpRight size={13} className="absolute top-3 right-3 text-gray-200" />
+          <ArrowUpRight size={14} className="absolute bottom-4 right-4 text-slate-300 transition-all group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-slate-700" />
         )}
       </CardContent>
     </Card>
@@ -304,6 +306,12 @@ export default function DashboardPage() {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
   });
+  const collectionRate = (d?.monthlyRevenue ?? 0) > 0
+    ? Math.min(100, ((d?.collectedRevenue ?? 0) / d.monthlyRevenue) * 100)
+    : 0;
+  const attentionTotal = (d?.overdueCount ?? 0) + (d?.pendingApprovals ?? 0) + (d?.expiringIn30 ?? 0) + (bookingStats?.expiringSoon ?? 0) + (d?.openTickets ?? 0);
+  const healthScore = Math.round(((d?.occupancyRate ?? 0) * 0.55) + (collectionRate * 0.45));
+  const healthLabel = healthScore >= 85 ? 'Vận hành tích cực' : healthScore >= 70 ? 'Ổn định, còn dư địa' : 'Cần ưu tiên cải thiện';
 
   const actionItems = [
     showApprovals && { label: 'Deal chờ phê duyệt', value: d?.pendingApprovals ?? 0, urgent: false, to: '/approvals' },
@@ -315,29 +323,55 @@ export default function DashboardPage() {
   ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="-m-4 min-h-full space-y-6 bg-[radial-gradient(circle_at_top_right,_rgba(219,234,254,0.55),_transparent_32%),linear-gradient(to_bottom,_#f8fafc,_#ffffff_26rem)] p-4 sm:-m-6 sm:p-6">
+      <section className="relative overflow-hidden rounded-[28px] bg-[linear-gradient(125deg,#071426_0%,#0b2441_48%,#0d4f55_100%)] px-5 py-6 text-white shadow-[0_30px_80px_-35px_rgba(2,20,35,0.75)] sm:px-7 sm:py-7">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full border border-cyan-200/10 bg-cyan-300/5" />
+        <div className="pointer-events-none absolute right-16 top-8 h-40 w-40 rounded-full border border-white/5" />
+        <div className="relative grid gap-7 xl:grid-cols-[1.35fr_1fr] xl:items-end">
+          <div>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100"><Sparkles size={12} /> Executive intelligence</span>
+              <span className="text-xs text-slate-300">{today}</span>
+            </div>
+            <p className="text-sm font-medium text-cyan-100/80">Toàn cảnh điều hành · {selectedMallName}</p>
+            <h1 className="mt-2 max-w-3xl text-2xl font-semibold leading-tight tracking-tight sm:text-4xl">Một góc nhìn để ra quyết định<br className="hidden sm:block" /> nhanh hơn mỗi ngày.</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Tập trung vào hiệu suất tài sản, dòng tiền và những điểm cần can thiệp — cập nhật theo dữ liệu vận hành thực tế.</p>
+          </div>
+          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] backdrop-blur-sm">
+            <div className="border-r border-white/10 p-4 sm:p-5">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Activity size={12} /> Sức khỏe</div>
+              <div className="mt-2 text-2xl font-semibold sm:text-3xl">{healthScore}<span className="text-sm text-slate-400">/100</span></div>
+              <p className="mt-1 text-[11px] text-cyan-100">{healthLabel}</p>
+            </div>
+            <div className="border-r border-white/10 p-4 sm:p-5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Lấp đầy</div>
+              <div className="mt-2 text-2xl font-semibold sm:text-3xl">{d?.occupancyRate ?? 0}<span className="text-sm text-slate-400">%</span></div>
+              <p className="mt-1 text-[11px] text-slate-300">{fmtArea(d?.leasedArea ?? 0)}</p>
+            </div>
+            <button type="button" onClick={() => document.getElementById('executive-actions')?.scrollIntoView({ behavior: 'smooth' })} className="group p-4 text-left transition-colors hover:bg-white/10 sm:p-5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cần chú ý</div>
+              <div className="mt-2 flex items-center gap-1 text-2xl font-semibold text-amber-300 sm:text-3xl">{attentionTotal}<ChevronRight size={17} className="transition-transform group-hover:translate-x-1" /></div>
+              <p className="mt-1 text-[11px] text-slate-300">Mở danh sách ưu tiên</p>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-400 mt-1 flex flex-wrap items-center gap-1.5">
-            <span className="font-medium text-gray-600">{selectedMallName}</span>
-            <span className="text-gray-300">·</span>
-            <span>{user?.role?.replace(/_/g, ' ')}</span>
-            <span className="text-gray-300">·</span>
-            <span>{today}</span>
-          </p>
+          <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-600" /><h2 className="text-lg font-semibold tracking-tight text-slate-950">Chỉ số điều hành trọng yếu</h2></div>
+          <p className="mt-1 text-xs text-slate-500">Vai trò {user?.role?.replace(/_/g, ' ')} · dữ liệu tự động làm mới mỗi 60 giây</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {focusAreas.filter((f) => f !== 'overview').slice(0, 3).map((f) => (
-            <Badge key={f} variant="outline" className="text-xs bg-white border-gray-200 text-gray-600">
+            <Badge key={f} variant="outline" className="border-slate-200 bg-white text-xs text-slate-600">
               {FOCUS_LABELS[f] ?? f}
             </Badge>
           ))}
           <span className="text-xs text-gray-400">
             {dataUpdatedAt ? `Cập nhật ${new Date(dataUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
           </span>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5 rounded-xl border-slate-200 bg-white shadow-sm">
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
             Làm mới
           </Button>
@@ -451,9 +485,9 @@ export default function DashboardPage() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {showOccupancy && (
-          <Card className="border border-gray-100 shadow-sm">
+          <Card className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
             <CardHeader className="pb-0">
-              <CardTitle className="text-sm font-semibold text-gray-800">Phân bổ diện tích</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-900">Phân bổ diện tích</CardTitle>
               <p className="text-xs text-gray-400 mt-0.5">Tổng NLA: {fmtArea(d?.totalArea ?? 0)}</p>
             </CardHeader>
             <CardContent className="pt-2">
@@ -473,9 +507,9 @@ export default function DashboardPage() {
         )}
 
         {showFinance && (
-          <Card className="border border-gray-100 shadow-sm">
+          <Card className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
             <CardHeader className="pb-0">
-              <CardTitle className="text-sm font-semibold text-gray-800">Tình hình billing</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-900">Hiệu suất dòng tiền</CardTitle>
               <p className="text-xs text-gray-400 mt-0.5">Tháng hiện tại</p>
             </CardHeader>
             <CardContent className="pt-2">
@@ -488,10 +522,10 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        <Card className="border border-gray-100 shadow-sm">
+        <Card id="executive-actions" className="scroll-mt-6 rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
           <CardHeader className="pb-0">
-            <CardTitle className="text-sm font-semibold text-gray-800">Cần xử lý</CardTitle>
-            <p className="text-xs text-gray-400 mt-0.5">Sắp xếp theo mức độ ưu tiên</p>
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-900"><AlertTriangle size={15} className="text-amber-500" /> Ưu tiên điều hành</CardTitle>
+            <p className="text-xs text-gray-400 mt-0.5">Những điểm BLD nên xem trước</p>
           </CardHeader>
           <CardContent className="pt-2">
             <ActionItems items={actionItems} />

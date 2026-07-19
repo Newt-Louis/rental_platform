@@ -56,7 +56,7 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     expect(await screen.findByText('Booking đang giữ')).toBeInTheDocument();
-    expect(screen.getByText('6')).toBeInTheDocument();
+    expect(screen.getAllByText('6').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /Hóa đơn quá hạn/i }));
     expect(screen.getByTestId('location')).toHaveTextContent('/billing?status=OVERDUE');
     expect(dashboardApi.getDashboard).toHaveBeenCalledTimes(1);
