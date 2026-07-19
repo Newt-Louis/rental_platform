@@ -7,6 +7,7 @@ export const approvalsApi = {
     api.get('/approvals/pending', { params }).then((r) => r.data),
   history: (params?: { page?: number; limit?: number; status?: string }) =>
     api.get('/approvals/history', { params }).then((r) => r.data),
+  getWorkflow: (id: string) => api.get(`/approvals/${id}`).then((r) => r.data),
   approve: (id: string, comment?: string) =>
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
   reject: (id: string, comment: string = '') =>

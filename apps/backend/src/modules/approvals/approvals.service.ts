@@ -104,7 +104,7 @@ export class ApprovalsService {
       include: {
         steps: {
           include: {
-            approver: { select: { id: true, fullName: true, role: true } },
+            approver: { select: { id: true, fullName: true, role: true, email: true, department: true } },
           },
           orderBy: { stepOrder: 'asc' },
         },
