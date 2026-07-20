@@ -10,7 +10,7 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: ListUsersDto) {
+  async findAll(query: ListUsersDto, activeMallId?: string | null) {
     const { page = 1, limit = 20, search, role, isActive } = query;
     const skip = (page - 1) * limit;
 
@@ -20,6 +20,9 @@ export class UsersService {
 
     if (role) where.role = role;
     if (isActive !== undefined) where.isActive = isActive === 'true';
+    if (activeMallId) {
+      where.mallAccess = { some: { mallId: activeMallId, isActive: true } };
+    }
 
     if (search) {
       where.OR = [

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Headers } from '@nestjs/common';
+import { Controller, Post, Patch, Body, Get, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -42,5 +42,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user profile' })
   async getMe(@CurrentUser() user: any) {
     return this.authService.getMe(user.id);
+  }
+
+  @Patch('me/active-mall')
+  @Roles(...MODULE_ROLES.notifications)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Set active mall context for current user session' })
+  async setActiveMall(@CurrentUser() user: any, @Body() body: { mallId: string | null }) {
+    return this.authService.setActiveMall(user.id, body.mallId);
   }
 }

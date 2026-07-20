@@ -19,7 +19,9 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 export class ApprovalsController {
   constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
 
-  private async mallIds(user: any) {
+  private async mallIds(user: any): Promise<string[] | undefined> {
+    const mallId: string | undefined = user.activeMallId ?? undefined;
+    if (mallId) return [mallId];
     return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
   }
 

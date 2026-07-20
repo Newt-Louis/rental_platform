@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MallSelector } from '@/components/MallSelector';
+import { MallContextModal } from '@/components/MallContextModal';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import { TenantBottomNav } from '@/components/TenantBottomNav';
 import { ErpProcessGuide } from '@/components/ErpProcessGuide';
@@ -369,6 +370,7 @@ export default function Layout() {
 
       {isTenant && <TenantBottomNav />}
       <NotificationCenter open={notifOpen} onOpenChange={setNotifOpen} />
+      {!isTenant && <MallContextModal />}
     </div>
   );
 }

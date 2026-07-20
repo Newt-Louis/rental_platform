@@ -5,6 +5,9 @@ interface MallStore {
   selectedMallId: string | null;
   selectedMallName: string;
   setSelectedMall: (id: string | null, name?: string) => void;
+  isMallContextModalOpen: boolean;
+  openMallContextModal: () => void;
+  closeMallContextModal: () => void;
 }
 
 export const useMallStore = create<MallStore>()(
@@ -14,6 +17,9 @@ export const useMallStore = create<MallStore>()(
       selectedMallName: 'Tất cả Mall',
       setSelectedMall: (id, name = 'Tất cả Mall') =>
         set({ selectedMallId: id, selectedMallName: name }),
+      isMallContextModalOpen: false,
+      openMallContextModal: () => set({ isMallContextModalOpen: true }),
+      closeMallContextModal: () => set({ isMallContextModalOpen: false }),
     }),
     {
       name: 'thiso-selected-mall',

@@ -3,7 +3,7 @@ import api from '@/lib/axios';
 export const proposalsApi = {
   listProposals: (params?: Record<string, unknown>) =>
     api.get('/proposals', { params }).then((r) => r.data),
-  getStats: () => api.get('/proposals/stats/overview').then((r) => r.data),
+  getStats: (mallId?: string) => api.get('/proposals/stats/overview', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
   createProposal: (data: Record<string, unknown>) =>
     api.post('/proposals', data).then((r) => r.data),
   getProposal: (id: string) => api.get(`/proposals/${id}`).then((r) => r.data),

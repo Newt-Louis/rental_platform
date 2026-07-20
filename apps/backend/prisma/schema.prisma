@@ -347,6 +347,10 @@ model User {
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
+  // Active mall selected by user -- null means view all (only meaningful for ADMIN/CEO).
+  activeMallId String?
+  activeMall   Mall?   @relation("UserActiveMall", fields: [activeMallId], references: [id])
+
   assignedLeads          Lead[]                   @relation("AssignedLeads")
   approvalSteps          ApprovalStep[]
   ticketsAssigned        Ticket[]                 @relation("AssignedTickets")
@@ -418,6 +422,7 @@ model Mall {
   unifiedDocuments     UnifiedDocument[]
   categoryPricings     CategoryMallPricing[]
   servicePriceCatalog  ServicePriceCatalog[]
+  activeUsers          User[]               @relation("UserActiveMall")
 }
 
 model Building {

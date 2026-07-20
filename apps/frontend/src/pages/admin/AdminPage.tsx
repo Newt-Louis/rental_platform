@@ -1,7 +1,7 @@
 import { useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
 import {
   Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
-  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin,
+  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, X,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
   SquareStack, Info, GitBranch, ExternalLink,
 } from 'lucide-react';
@@ -76,14 +76,34 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 
 // ─── Tab 1: Users ─────────────────────────────────────────────────────────────
 
-function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => void }) {
+function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null; onClose: () => void }) {
+  const isEdit = !!user;
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
   const { register, handleSubmit, reset, watch } = useForm();
-  const [showResetPwd, setShowResetPwd] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const selectedRole = watch('role', user?.role);
+  const selectedRole = watch('role', user?.role ?? ROLE_KEYS[4]); // default LEASING_EXECUTIVE
+  const [selectedMallIds, setSelectedMallIds] = useState<string[]>([]);
+  const [mallRole, setMallRole] = useState('LEASING_EXECUTIVE');
+  const [addMallId, setAddMallId] = useState('');
+  const [addMallRole, setAddMallRole] = useState('LEASING_EXECUTIVE');
+
+  const needsMallAccess = MALL_ACCESS_ROLES.includes(selectedRole);
+
+  useEffect(() => {
+    if (open) {
+      reset(user ? {
+        fullName: user.fullName,
+        phone: (user as any).phone ?? '',
+        department: (user as any).department ?? '',
+        role: user.role,
+        tenantId: (user as any).tenantId ?? '',
+      } : { role: ROLE_KEYS[4] });
+      setSelectedMallIds([]);
+      setMallRole('LEASING_EXECUTIVE');
+      setAddMallId('');
+    }
+  }, [open, user?.id]);
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants-lite'],
@@ -92,187 +112,226 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
   });
   const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
 
-  const updateMutation = useMutation({
-    mutationFn: (data: any) => usersApi.updateUser(user!.id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.updated') }); onClose(); },
+  const { data: mallsData } = useQuery({
+    queryKey: ['malls'],
+    queryFn: spacesApi.listMalls,
+    enabled: needsMallAccess,
+  });
+  const malls: any[] = mallsData?.data ?? mallsData ?? [];
+
+  const { data: userMallsData, refetch: refetchUserMalls } = useQuery({
+    queryKey: ['user-mall-access', user?.id],
+    queryFn: () => mallAccessApi.listForUser(user!.id),
+    enabled: isEdit && !!user?.id && needsMallAccess,
+  });
+  const userMalls: any[] = Array.isArray(userMallsData) ? userMallsData : userMallsData?.data ?? [];
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (isEdit) return usersApi.updateUser(user!.id, data);
+      const newUser = await usersApi.createUser(data);
+      const userId = newUser?.data?.id ?? newUser?.id;
+      if (userId && selectedMallIds.length > 0) {
+        await Promise.allSettled(
+          selectedMallIds.map((mallId) => mallAccessApi.grant({ userId, mallId, role: mallRole })),
+        );
+      }
+      return newUser;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['mall-access'] });
+      toast({ title: isEdit ? t('users.toast.updated') : t('users.toast.created') });
+      reset(); setSelectedMallIds([]); onClose();
+    },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: () => usersApi.updateUser(user!.id, { isActive: !user!.isActive }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: user?.isActive ? t('users.toast.locked') : t('users.toast.unlocked') }); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('users.toast.cannotToggle'), variant: 'destructive' }),
-  });
-
-  const resetPwdMutation = useMutation({
-    mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
-    onSuccess: () => { toast({ title: t('users.toast.passwordReset') }); setShowResetPwd(false); reset(); },
+  const grantMutation = useMutation({
+    mutationFn: ({ mallId, role }: { mallId: string; role: string }) => mallAccessApi.grant({ userId: user!.id, mallId, role }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); setAddMallId(''); toast({ title: 'Đã cấp quyền Mall' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: () => usersApi.deleteUser(user!.id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.deleted') }); setConfirmDelete(false); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('users.toast.cannotDelete'), variant: 'destructive' }),
+  const revokeMutation = useMutation({
+    mutationFn: (mallId: string) => mallAccessApi.revoke(user!.id, mallId),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); toast({ title: 'Đã thu hồi quyền' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
-  const role = user ? ROLE_MAP[user.role] : null;
+  const roleInfo = user ? ROLE_MAP[user.role] : null;
 
   return (
     <>
-      <Sheet open={!!user} onClose={onClose} title={user?.fullName ?? ''} subtitle={role?.label}>
-        {user && (
-          <div className="px-6 pb-8 space-y-4 pt-4">
-            <div className="flex items-center gap-2">
-              {role && <Badge className={`${role.color} border-0`}>{role.label}</Badge>}
-              <Badge className={user.isActive ? 'bg-green-100 text-green-700 border-0' : 'bg-gray-100 text-gray-500 border-0'}>
-                {user.isActive ? t('users.active') : t('users.locked')}
-              </Badge>
-            </div>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              {isEdit ? (
+                <>
+                  {user!.fullName}
+                  {roleInfo && <Badge className={`${roleInfo.color} border-0 text-xs font-normal`}>{roleInfo.label}</Badge>}
+                  <Badge className={`border-0 text-xs font-normal ${user!.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {user!.isActive ? t('users.active') : t('users.locked')}
+                  </Badge>
+                </>
+              ) : t('users.createNew')}
+            </DialogTitle>
+          </DialogHeader>
 
-            <SheetSection label={t('users.info')} className="bg-gray-50">
-              <SheetRow label="Email" value={user.email} icon={Mail} />
-              <SheetRow label={t('users.fields.phone')} value={user.phone} icon={Phone} />
-              <SheetRow label={t('users.fields.department')} value={user.department} icon={Briefcase} />
-            </SheetSection>
-
-            {/* Edit form */}
-            <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-3 bg-gray-50 rounded-xl p-4">
-              <div className="text-xs font-semibold tracking-wider text-gray-500 mb-2">{t('users.editSection')}</div>
-              <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{t('users.fields.fullNameRequired')}</Label>
+                <Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" />
+              </div>
+              <div>
+                <Label>Email{!isEdit && ' *'}</Label>
+                {isEdit
+                  ? <Input value={user!.email} disabled className="mt-1 bg-gray-50 text-gray-500" />
+                  : <Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" />}
+              </div>
+              {!isEdit && (
                 <div>
-                  <Label className="text-xs">{t('users.fields.fullName')}</Label>
-                  <Input defaultValue={user.fullName} {...register('fullName')} className="mt-1" />
+                  <Label>{t('users.fields.password')}</Label>
+                  <Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1" />
                 </div>
-                <div>
-                  <Label className="text-xs">{t('users.fields.phone')}</Label>
-                  <Input defaultValue={user.phone ?? ''} {...register('phone')} className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">{t('users.fields.department')}</Label>
-                  <Input defaultValue={user.department ?? ''} {...register('department')} className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">{t('users.fields.role')}</Label>
-                  <select defaultValue={user.role} {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                    {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+              )}
+              <div>
+                <Label>{t('users.fields.role')}</Label>
+                <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                  {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>{t('users.fields.phone')}</Label>
+                <Input {...register('phone')} placeholder="0901234567" className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('users.fields.department')}</Label>
+                <Input {...register('department')} placeholder="Leasing" className="mt-1" />
+              </div>
+              {selectedRole === 'TENANT' && (
+                <div className="col-span-2">
+                  <Label>{t('users.linkedTenant')}</Label>
+                  <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="">{t('users.noLinked')}</option>
+                    {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
                   </select>
                 </div>
-                {selectedRole === 'TENANT' && (
-                  <div className="col-span-2">
-                    <Label className="text-xs">{t('users.linkedTenant')}</Label>
-                    <select defaultValue={user.tenantId ?? ''} {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                      <option value="">{t('users.noLinked')}</option>
-                      {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
+              )}
+            </div>
+
+            {/* Mall access */}
+            {needsMallAccess && (
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    <Building2 size={12} /> Quyền truy cập Mall
+                  </Label>
+                  {!isEdit && (
+                    <select value={mallRole} onChange={(e) => setMallRole(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white">
+                      {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
+                  )}
+                </div>
+
+                {!isEdit ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {malls.map((m) => {
+                        const selected = selectedMallIds.includes(m.id);
+                        return (
+                          <button key={m.id} type="button"
+                            onClick={() => setSelectedMallIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${selected ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'}`}>
+                            <Building2 size={11} />{m.name}
+                          </button>
+                        );
+                      })}
+                      {malls.length === 0 && <span className="text-xs text-gray-400">Chưa có Mall nào</span>}
+                    </div>
+                    {selectedMallIds.length > 0 && (
+                      <p className="text-xs text-blue-600">Sẽ gán <strong>{mallRole}</strong> cho {selectedMallIds.length} mall</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2 min-h-[28px]">
+                      {userMalls.map((m: any) => {
+                        const mallId = m.mallId ?? m.mall?.id ?? m.id;
+                        return (
+                          <div key={mallId} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-100 text-blue-700 text-xs font-medium">
+                            <Building2 size={11} />{m.mall?.name ?? m.name}
+                            <span className="text-blue-400 text-[10px]">· {m.role}</span>
+                            <button type="button" onClick={() => revokeMutation.mutate(mallId)} disabled={revokeMutation.isPending} className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors">
+                              <X size={11} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {userMalls.length === 0 && <span className="text-xs text-gray-400 py-1">Chưa được gán mall nào</span>}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <select value={addMallId} onChange={(e) => setAddMallId(e.target.value)} className="flex-1 border rounded px-2 py-1.5 text-xs bg-white">
+                        <option value="">Thêm mall...</option>
+                        {malls.filter((m) => !userMalls.some((um: any) => (um.mallId ?? um.mall?.id) === m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <select value={addMallRole} onChange={(e) => setAddMallRole(e.target.value)} className="w-36 border rounded px-2 py-1.5 text-xs bg-white">
+                        {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0"
+                        disabled={!addMallId || grantMutation.isPending}
+                        onClick={() => grantMutation.mutate({ mallId: addMallId, role: addMallRole })}>
+                        <Plus size={11} /> Thêm
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
-              <Button type="submit" size="sm" className="w-full" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? t('users.saving') : t('users.saveChanges')}
-              </Button>
-            </form>
-
-            {/* Password reset */}
-            {showResetPwd ? (
-              <form onSubmit={handleSubmit((d) => resetPwdMutation.mutate(d))} className="space-y-2 bg-amber-50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-amber-600 mb-2">{t('users.resetPassword')}</div>
-                <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder={t('users.newPasswordPlaceholder')} />
-                <div className="flex gap-2">
-                  <Button size="sm" type="submit" disabled={resetPwdMutation.isPending} className="flex-1">{t('users.resetBtn')}</Button>
-                  <Button size="sm" type="button" variant="outline" onClick={() => { setShowResetPwd(false); reset(); }}>{t('confirm.cancel')}</Button>
-                </div>
-              </form>
-            ) : (
-              <Button variant="outline" className="w-full gap-2" size="sm" onClick={() => setShowResetPwd(true)}>
-                <KeyRound size={14} /> {t('users.resetPasswordBtn')}
-              </Button>
             )}
 
-            {/* Actions */}
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className={`w-full gap-2 ${user.isActive ? 'text-orange-500 border-orange-200 hover:bg-orange-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
-                onClick={() => toggleMutation.mutate()}
-                disabled={toggleMutation.isPending}
-              >
-                {user.isActive ? <><Lock size={14} /> {t('users.lockAccount')}</> : <><Unlock size={14} /> {t('users.unlockAccount')}</>}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-red-500 border-red-200 hover:bg-red-50"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 size={14} /> {t('users.deleteAccount')}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>{t('confirm.cancel')}</Button>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending
+                  ? (isEdit ? t('users.saving') : 'Đang tạo...')
+                  : (isEdit ? t('users.saveChanges') : t('users.create'))}
               </Button>
             </div>
-          </div>
-        )}
-      </Sheet>
+          </form>
 
-      <ConfirmDialog
-        open={confirmDelete}
-        title={t('users.confirmDelete')}
-        message={t('users.confirmDeleteMessage', { name: user?.fullName })}
-        onConfirm={() => deleteMutation.mutate()}
-        onCancel={() => setConfirmDelete(false)}
-        loading={deleteMutation.isPending}
-      />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
+function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
   const { toast } = useToast();
   const { t } = useTranslation('admin');
-  const { register, handleSubmit, reset, watch } = useForm();
-  const selectedRole = watch('role', ROLE_KEYS[0]);
-
-  const { data: tenantsData } = useQuery({
-    queryKey: ['tenants-lite'],
-    queryFn: () => tenantsApi.listTenants({ limit: 200 }),
-    enabled: selectedRole === 'TENANT',
-  });
-  const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
+  const { register, handleSubmit, reset } = useForm();
 
   const mutation = useMutation({
-    mutationFn: (data: any) => usersApi.createUser(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.created') }); reset(); onClose(); },
+    mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
+    onSuccess: () => { toast({ title: t('users.toast.passwordReset') }); reset(); onClose(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{t('users.createNew')}</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>{t('users.fields.fullNameRequired')}</Label><Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" /></div>
-            <div><Label>{t('users.fields.emailRequired')}</Label><Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" /></div>
-            <div><Label>{t('users.fields.password')}</Label><Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1" /></div>
-            <div>
-              <Label>{t('users.fields.role')}</Label>
-              <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
-              </select>
-            </div>
-            <div><Label>{t('users.fields.phone')}</Label><Input {...register('phone')} placeholder="0901234567" className="mt-1" /></div>
-            <div><Label>{t('users.fields.department')}</Label><Input {...register('department')} placeholder="Leasing" className="mt-1" /></div>
-            {selectedRole === 'TENANT' && (
-              <div className="col-span-2">
-                <Label>{t('users.linkedTenant')}</Label>
-                <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                  <option value="">{t('users.noLinked')}</option>
-                  {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>{t('confirm.cancel')}</Button>
-            <Button type="submit" disabled={mutation.isPending}>{t('users.create')}</Button>
+    <Dialog open={!!user} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound size={16} /> Đặt lại mật khẩu
+          </DialogTitle>
+        </DialogHeader>
+        {user && <p className="text-sm text-gray-500 -mt-1">Tài khoản: <strong>{user.fullName}</strong></p>}
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-3 mt-1">
+          <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder={t('users.newPasswordPlaceholder')} />
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose(); }}>{t('confirm.cancel')}</Button>
+            <Button type="submit" disabled={mutation.isPending}>{t('users.resetBtn')}</Button>
           </div>
         </form>
       </DialogContent>
@@ -280,14 +339,38 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
+const MALL_ACCESS_ROLES = ['MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'];
+
 function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [resetPwdUser, setResetPwdUser] = useState<User | null>(null);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const deferredSearch = useDeferredValue(search.trim());
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { t } = useTranslation('admin');
+
+  const toggleMutation = useMutation({
+    mutationFn: (u: User) => usersApi.updateUser(u.id, { isActive: !u.isActive }),
+    onSuccess: (_, u) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setTogglingId(null);
+      toast({ title: u.isActive ? t('users.toast.locked') : t('users.toast.unlocked') });
+    },
+    onError: (e: any) => { setTogglingId(null); toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => usersApi.deleteUser(confirmDeleteUser!.id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.deleted') }); setConfirmDeleteUser(null); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
 
   useEffect(() => setPage(1), [deferredSearch, roleFilter, statusFilter]);
   const queryParams = {
@@ -360,7 +443,7 @@ function UsersTab() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Phòng ban</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Vai trò</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                <th className="px-4 py-3 w-10" />
+                <th className="px-4 py-3 w-36" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -378,9 +461,26 @@ function UsersTab() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setSelectedUser(u); }}>
-                        <Pencil size={13} className="text-gray-400" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Chỉnh sửa thông tin" onClick={(e) => { e.stopPropagation(); setSelectedUser(u); }}>
+                          <Pencil size={13} className="text-gray-400" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Đặt lại mật khẩu" onClick={(e) => { e.stopPropagation(); setResetPwdUser(u); }}>
+                          <KeyRound size={13} className="text-gray-400" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                          title={u.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                          disabled={togglingId === u.id}
+                          onClick={(e) => { e.stopPropagation(); setTogglingId(u.id); toggleMutation.mutate(u); }}>
+                          {togglingId === u.id
+                            ? <RefreshCw size={13} className="animate-spin text-gray-400" />
+                            : u.isActive ? <Lock size={13} className="text-orange-400" /> : <Unlock size={13} className="text-green-500" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Xóa tài khoản"
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteUser(u); }}>
+                          <Trash2 size={13} className="text-red-400" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -406,8 +506,20 @@ function UsersTab() {
         </div>
       )}
 
-      <CreateUserDialog open={showCreate} onClose={() => setShowCreate(false)} />
-      <UserDetailSheet user={selectedUser} onClose={() => setSelectedUser(null)} />
+      <ResetPasswordDialog user={resetPwdUser} onClose={() => setResetPwdUser(null)} />
+      <ConfirmDialog
+        open={!!confirmDeleteUser}
+        title={t('users.confirmDelete')}
+        message={t('users.confirmDeleteMessage', { name: confirmDeleteUser?.fullName })}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setConfirmDeleteUser(null)}
+        loading={deleteMutation.isPending}
+      />
+      <UserDialog
+        open={showCreate || !!selectedUser}
+        user={selectedUser}
+        onClose={() => { setShowCreate(false); setSelectedUser(null); }}
+      />
     </div>
   );
 }
@@ -1284,7 +1396,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Responsive navigation */}
+      {/* Mobile select */}
       <label htmlFor="admin-section" className="sr-only">Chọn khu vực cấu hình</label>
       <select
         id="admin-section"
@@ -1294,49 +1406,56 @@ export default function AdminPage() {
       >
         {TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
       </select>
-      <div className="mb-6 hidden gap-2 overflow-x-auto rounded-xl border bg-white p-2 sm:flex">
-        {TAB_GROUPS.map((group) => (
-          <div key={group.label} className="min-w-max border-r border-gray-100 pr-2 last:border-r-0 last:pr-0">
-            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</div>
-            <div className="flex gap-1">
-              {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => selectTab(tab.id)}
-                    aria-current={activeTab === tab.id ? 'page' : undefined}
-                    className={`flex min-w-max items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-                      activeTab === tab.id
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
-                    }`}
-                  >
-                    <Icon size={15} />
-                    <span>{tab.label}</span>
-                  </button>
-                );
-              })}
+
+      {/* Sidebar + content */}
+      <div className="flex flex-1 gap-6 overflow-hidden">
+        {/* Sidebar */}
+        <nav className="hidden sm:flex flex-col w-52 shrink-0 overflow-y-auto">
+          {TAB_GROUPS.map((group) => (
+            <div key={group.label} className="mb-4">
+              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</div>
+              <div className="flex flex-col gap-0.5">
+                {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => selectTab(tab.id)}
+                      aria-current={activeTab === tab.id ? 'page' : undefined}
+                      className={`flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-sm font-medium transition-all text-left ${
+                        activeTab === tab.id
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+          ))}
+        </nav>
+
+        {/* Content */}
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</p>
+            <p className="mt-0.5 text-xs text-slate-600">{TAB_DESCRIPTIONS[activeTab]}</p>
           </div>
-        ))}
-      </div>
 
-      <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
-        <p className="text-sm font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</p>
-        <p className="mt-0.5 text-xs text-slate-600">{TAB_DESCRIPTIONS[activeTab]}</p>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === 'users'       && <UsersTab />}
-        {activeTab === 'malls'       && <MallsTab />}
-        {activeTab === 'mall-access' && <MallAccessTab />}
-        {activeTab === 'structure'   && <SpaceStructureTab />}
-        {activeTab === 'categories'  && <CategoriesTab />}
-        {activeTab === 'permissions' && <PermissionsTab />}
-        {activeTab === 'approval'    && <ApprovalPolicyTab />}
-        {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><OperationalSystemTab /></div>}
+          <div className="flex-1 overflow-auto">
+            {activeTab === 'users'       && <UsersTab />}
+            {activeTab === 'malls'       && <MallsTab />}
+            {activeTab === 'mall-access' && <MallAccessTab />}
+            {activeTab === 'structure'   && <SpaceStructureTab />}
+            {activeTab === 'categories'  && <CategoriesTab />}
+            {activeTab === 'permissions' && <PermissionsTab />}
+            {activeTab === 'approval'    && <ApprovalPolicyTab />}
+            {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><OperationalSystemTab /></div>}
+          </div>
+        </div>
       </div>
     </div>
   );

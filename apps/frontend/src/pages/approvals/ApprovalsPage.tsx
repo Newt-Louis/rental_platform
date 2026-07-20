@@ -19,6 +19,7 @@ import {
   FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck,
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
+import { useMallStore } from '@/store/mall.store';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
@@ -123,6 +124,7 @@ export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
+  const { selectedMallId } = useMallStore();
   const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
   const [view, setView] = useState<'proposals' | 'prices' | 'history'>('proposals');
   const [proposalPage, setProposalPage] = useState(1);
@@ -155,23 +157,24 @@ export default function ApprovalsPage() {
 
   // ── Queries ──
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['pending-approvals', proposalPage],
-    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15 }),
+    queryKey: ['pending-approvals', proposalPage, selectedMallId],
+    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined }),
     refetchInterval: 30_000,
   });
   const { data: historyData, isLoading: loadingHistory, isError: historyError, refetch: refetchHistory } = useQuery({
-    queryKey: ['approvals-history', historyPage, historyStatus],
+    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId],
     queryFn: () => approvalsApi.history({
       page: historyPage,
       limit: 25,
       status: historyStatus === 'ALL' ? undefined : historyStatus,
+      mallId: selectedMallId || undefined,
     }),
     enabled: view === 'history',
   });
 
   const { data: priceApprovalsData, isLoading: loadingPriceApprovals, isError: priceError, refetch: refetchPrices } = useQuery({
-    queryKey: ['pending-price-approvals', pricePage],
-    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25 }),
+    queryKey: ['pending-price-approvals', pricePage, selectedMallId],
+    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25, mallId: selectedMallId || undefined }),
     refetchInterval: 30_000,
     enabled: canApprovePrices,
   });

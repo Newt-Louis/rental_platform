@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { User } from '@/types';
 import api from '@/lib/axios';
+import { useMallStore } from './mall.store';
 
 interface AuthStore {
   user: User | null;
@@ -42,7 +43,21 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
     try {
       const res = await api.get('/auth/me');
-      set({ user: res.data, isHydrated: true });
+      const userData = res.data;
+      set({ user: userData, isHydrated: true });
+      const { activeMallId, activeMall } = userData;
+      const { selectedMallId, setSelectedMall, openMallContextModal } = useMallStore.getState();
+      if (selectedMallId !== (activeMallId ?? null)) {
+        // localStorage differs from DB — sync DB to current browser selection
+        api.patch('/auth/me/active-mall', { mallId: selectedMallId });
+      } else {
+        // In sync — update mall name from DB in case it changed
+        setSelectedMall(activeMallId ?? null, activeMall?.name);
+      }
+      // Regular users must always have an active mall — open picker if missing
+      if (userData.role !== 'ADMIN' && !activeMallId && !selectedMallId) {
+        openMallContextModal();
+      }
     } catch {
       localStorage.removeItem('token');
       set({ token: null, user: null, isHydrated: true });

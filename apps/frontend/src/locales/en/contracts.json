@@ -153,7 +153,8 @@
   },
   "amendments": {
     "createBtn": "Create amendment (rent +5%)",
-    "createSuccess": "Amendment draft created"
+    "createSuccess": "Amendment draft created",
+    "reason": "Rent adjustment +5%"
   },
   "template": {
     "select": "Select template...",

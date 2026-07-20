@@ -26,6 +26,7 @@ import {
 import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
 import { usePermission } from '@/hooks/usePermission';
+import { useMallStore } from '@/store/mall.store';
 
 const STATUS_COLOR: Record<string, string> = {
   DRAFT:        'bg-gray-100 text-gray-700',
@@ -666,6 +667,7 @@ export default function ProposalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
+  const { selectedMallId } = useMallStore();
   const canEdit = !!role && ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'].includes(role);
   const canConvert = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
 
@@ -702,20 +704,21 @@ export default function ProposalsPage() {
   function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['proposals', applied, page],
+    queryKey: ['proposals', applied, page, selectedMallId],
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
       status: applied.status || undefined,
       dateFrom: applied.dateFrom || undefined,
       dateTo: applied.dateTo || undefined,
+      mallId: selectedMallId || undefined,
       page,
       limit: 15,
     }),
   });
 
   const { data: statsResponse, isError: statsError, refetch: refetchStats } = useQuery({
-    queryKey: ['proposal-stats'],
-    queryFn: proposalsApi.getStats,
+    queryKey: ['proposal-stats', selectedMallId],
+    queryFn: () => proposalsApi.getStats(selectedMallId || undefined),
   });
   const stats = statsResponse?.data ?? statsResponse ?? {};
 

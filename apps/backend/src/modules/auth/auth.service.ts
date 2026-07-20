@@ -109,6 +109,8 @@ export class AuthService {
         isActive: true,
         createdAt: true,
         tenantId: true,
+        activeMallId: true,
+        activeMall: { select: { name: true } },
       },
     });
 
@@ -117,6 +119,14 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async setActiveMall(userId: string, mallId: string | null) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { activeMallId: mallId },
+    });
+    return { activeMallId: mallId };
   }
 
   async logout(token: string) {

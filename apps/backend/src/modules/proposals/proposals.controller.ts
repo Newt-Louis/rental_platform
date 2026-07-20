@@ -35,9 +35,9 @@ export class ProposalsController {
   }
 
   private async scopedQuery(user: any, query: any) {
-    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
-    const mallIds = query.mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
-    return { ...query, mallIds: mallIds ?? undefined };
+    const mallId: string | undefined = user.activeMallId ?? undefined;
+    const mallIds = mallId ? undefined : (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
+    return { ...query, mallId, mallIds };
   }
 
   @Get()
@@ -54,8 +54,11 @@ export class ProposalsController {
   @Get('stats/overview')
   @ApiOperation({ summary: 'Proposal KPI by status' })
   async stats(@CurrentUser() user: any) {
-    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
-    return this.proposalsService.getStats(mallIds ?? undefined);
+    const mallId: string | undefined = user.activeMallId ?? undefined;
+    const mallIds = mallId
+      ? [mallId]
+      : (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
+    return this.proposalsService.getStats(mallIds);
   }
 
   @Get(':id')

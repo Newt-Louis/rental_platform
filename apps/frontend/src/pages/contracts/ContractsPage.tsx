@@ -494,7 +494,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
       type: 'RENT_CHANGE',
       effectiveDate: new Date().toISOString(),
       changes: { rent: (detail?.rent ?? 0) * 1.05 },
-      reason: 'Điều chỉnh tiền thuê +5%',
+      reason: t('amendments.reason'),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });

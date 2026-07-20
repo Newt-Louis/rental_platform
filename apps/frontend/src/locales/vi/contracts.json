@@ -2,7 +2,7 @@
   "title": "Hợp đồng",
   "subtitle": "Quản lý hợp đồng cho thuê — upload scan & ký điện tử",
   "status": {
-    "DRAFT": "Draft",
+    "DRAFT": "Bản nháp",
     "PENDING_LEGAL": "Chờ Legal",
     "PENDING_SIGNATURE": "Chờ ký",
     "ACTIVE": "Hiệu lực",
@@ -152,13 +152,14 @@
     "deleteConfirm": "Xóa tài liệu"
   },
   "amendments": {
-    "createBtn": "Tạo phụ lục (rent +5%)",
-    "createSuccess": "Đã tạo amendment draft"
+    "createBtn": "Tạo phụ lục (+5% tiền thuê)",
+    "createSuccess": "Đã tạo phụ lục bản nháp",
+    "reason": "Điều chỉnh tiền thuê +5%"
   },
   "template": {
-    "select": "Chọn template...",
-    "render": "Render hợp đồng",
-    "renderSuccess": "Đã render template"
+    "select": "Chọn mẫu hợp đồng...",
+    "render": "Xuất hợp đồng",
+    "renderSuccess": "Đã xuất mẫu hợp đồng"
   },
   "termination": {
     "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",

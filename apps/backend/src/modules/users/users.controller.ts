@@ -23,8 +23,8 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: 'List all users' })
-  findAll(@Query() query: ListUsersDto) {
-    return this.usersService.findAll(query);
+  findAll(@Query() query: ListUsersDto, @CurrentUser() user: any) {
+    return this.usersService.findAll(query, user.activeMallId);
   }
 
   @Get('stats')
