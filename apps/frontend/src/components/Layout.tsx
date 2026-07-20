@@ -356,7 +356,7 @@ export default function Layout() {
 
         {/* Main content */}
         <main className={cn('flex-1 overflow-auto rounded-xl bg-card', isTenant && 'pb-20 md:pb-6')}>
-          {!isTenant && <div className="px-4 pt-4 lg:px-6"><ErpProcessGuide /></div>}
+          {!isTenant && <div className="px-4 lg:px-6"><ErpProcessGuide /></div>}
           <Outlet />
         </main>
 

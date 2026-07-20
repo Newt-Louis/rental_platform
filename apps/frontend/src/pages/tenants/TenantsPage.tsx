@@ -68,7 +68,40 @@ const EMPTY_FORM = {
   isPortalUser: false,
 };
 
-function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: () => void; tenant?: any }) {
+const PHONE_RE = /^(0|\+84)[0-9]{8,10}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TAX_RE = /^\d{10}(-\d{3})?$/;
+
+function validateField(k: string, v: string): string {
+  switch (k) {
+    case 'brandName':
+      if (!v.trim()) return 'Bắt buộc nhập';
+      if (v.length > 100) return 'Tối đa 100 ký tự';
+      return '';
+    case 'companyName':
+      if (v.length > 200) return 'Tối đa 200 ký tự';
+      return '';
+    case 'taxCode':
+      if (v && !TAX_RE.test(v.trim())) return 'Không hợp lệ (VD: 0123456789)';
+      return '';
+    case 'contactEmail':
+      if (v && !EMAIL_RE.test(v.trim())) return 'Email không đúng định dạng';
+      return '';
+    case 'contactPhone':
+      if (v && !PHONE_RE.test(v.trim())) return 'SĐT không hợp lệ (VD: 0912345678)';
+      return '';
+    case 'contactName':
+      if (v.length > 100) return 'Tối đa 100 ký tự';
+      return '';
+    case 'address':
+      if (v.length > 500) return 'Tối đa 500 ký tự';
+      return '';
+    default:
+      return '';
+  }
+}
+
+function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean; onClose: () => void; onCreated?: () => void; tenant?: any }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState(tenant ? {
@@ -83,7 +116,31 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
     isPortalUser: tenant.isPortalUser ?? false,
   } : { ...EMPTY_FORM });
 
-  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const set = (k: string, v: any) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    // Re-validate live only for fields that already show an error
+    if (typeof v === 'string' && k in fieldErrors) {
+      const err = validateField(k, v);
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        if (err) next[k] = err; else delete next[k];
+        return next;
+      });
+    }
+  };
+
+  const blur = (k: string) => {
+    const v = (form as any)[k];
+    if (typeof v !== 'string') return;
+    const err = validateField(k, v);
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      if (err) next[k] = err; else delete next[k];
+      return next;
+    });
+  };
 
   const mutation = useMutation({
     mutationFn: () => tenant
@@ -93,10 +150,26 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
       qc.invalidateQueries({ queryKey: ['tenants'] });
       if (tenant) qc.invalidateQueries({ queryKey: ['tenant', tenant.id] });
       toast({ title: tenant ? 'Đã cập nhật khách thuê' : 'Đã tạo khách thuê mới' });
+      if (!tenant) onCreated?.();
       onClose();
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
+
+  const handleSubmit = () => {
+    const allErrors: Record<string, string> = {};
+    for (const k of Object.keys(form)) {
+      const v = (form as any)[k];
+      if (typeof v !== 'string') continue;
+      const err = validateField(k, v);
+      if (err) allErrors[k] = err;
+    }
+    setFieldErrors(allErrors);
+    if (Object.keys(allErrors).length > 0) return;
+    mutation.mutate();
+  };
+
+  const fe = fieldErrors;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -108,15 +181,39 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Thương hiệu *</label>
-              <Input value={form.brandName} onChange={(e) => set('brandName', e.target.value)} placeholder="VD: Highlands Coffee" />
+              <Input
+                value={form.brandName}
+                onChange={(e) => set('brandName', e.target.value)}
+                onBlur={() => blur('brandName')}
+                maxLength={100}
+                placeholder="VD: Highlands Coffee"
+                error={!!fe.brandName}
+              />
+              {fe.brandName && <p className="text-xs text-red-500 mt-1">{fe.brandName}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Tên công ty</label>
-              <Input value={form.companyName} onChange={(e) => set('companyName', e.target.value)} placeholder="Công ty TNHH..." />
+              <Input
+                value={form.companyName}
+                onChange={(e) => set('companyName', e.target.value)}
+                onBlur={() => blur('companyName')}
+                maxLength={200}
+                placeholder="Công ty TNHH..."
+                error={!!fe.companyName}
+              />
+              {fe.companyName && <p className="text-xs text-red-500 mt-1">{fe.companyName}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Mã số thuế</label>
-              <Input value={form.taxCode} onChange={(e) => set('taxCode', e.target.value)} placeholder="0123456789" />
+              <Input
+                value={form.taxCode}
+                onChange={(e) => set('taxCode', e.target.value)}
+                onBlur={() => blur('taxCode')}
+                maxLength={14}
+                placeholder="0123456789"
+                error={!!fe.taxCode}
+              />
+              {fe.taxCode && <p className="text-xs text-red-500 mt-1">{fe.taxCode}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Ngành</label>
@@ -130,19 +227,50 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Người liên hệ</label>
-              <Input value={form.contactName} onChange={(e) => set('contactName', e.target.value)} />
+              <Input
+                value={form.contactName}
+                onChange={(e) => set('contactName', e.target.value)}
+                onBlur={() => blur('contactName')}
+                maxLength={100}
+                error={!!fe.contactName}
+              />
+              {fe.contactName && <p className="text-xs text-red-500 mt-1">{fe.contactName}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Email liên hệ</label>
-              <Input type="email" value={form.contactEmail} onChange={(e) => set('contactEmail', e.target.value)} />
+              <Input
+                type="email"
+                value={form.contactEmail}
+                onChange={(e) => set('contactEmail', e.target.value)}
+                onBlur={() => blur('contactEmail')}
+                maxLength={255}
+                placeholder="example@company.com"
+                error={!!fe.contactEmail}
+              />
+              {fe.contactEmail && <p className="text-xs text-red-500 mt-1">{fe.contactEmail}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Điện thoại</label>
-              <Input value={form.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} />
+              <Input
+                value={form.contactPhone}
+                onChange={(e) => set('contactPhone', e.target.value)}
+                onBlur={() => blur('contactPhone')}
+                maxLength={15}
+                placeholder="0912345678"
+                error={!!fe.contactPhone}
+              />
+              {fe.contactPhone && <p className="text-xs text-red-500 mt-1">{fe.contactPhone}</p>}
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">Địa chỉ</label>
-              <Input value={form.address} onChange={(e) => set('address', e.target.value)} />
+              <Input
+                value={form.address}
+                onChange={(e) => set('address', e.target.value)}
+                onBlur={() => blur('address')}
+                maxLength={500}
+                error={!!fe.address}
+              />
+              {fe.address && <p className="text-xs text-red-500 mt-1">{fe.address}</p>}
             </div>
           </div>
           <div className="border-t pt-3">
@@ -158,7 +286,7 @@ function TenantFormDialog({ open, onClose, tenant }: { open: boolean; onClose: (
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={onClose}>Hủy</Button>
-            <Button disabled={!form.brandName || mutation.isPending} onClick={() => mutation.mutate()}>
+            <Button disabled={mutation.isPending} onClick={handleSubmit}>
               {mutation.isPending ? 'Đang lưu...' : (tenant ? 'Cập nhật' : 'Tạo khách thuê')}
             </Button>
           </div>
@@ -666,16 +794,14 @@ export default function TenantsPage() {
               onEdit={(e) => openEdit(t, e)} />
           ))}
         </div>
-        {totalPages > 1 && (
-          <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-            <span>{total} khách thuê</span>
-            <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
-              <span className="px-1">Trang {page} / {totalPages}</span>
-              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
-            </div>
+        <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+          <span>{total} khách thuê</span>
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
+            <span className="px-1">Trang {page} / {totalPages || 1}</span>
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── RIGHT: Detail panel ── */}
@@ -700,7 +826,7 @@ export default function TenantsPage() {
         </div>
       )}
 
-      <TenantFormDialog key={editTenant?.id ?? 'new'} open={showForm} onClose={closeForm} tenant={editTenant} />
+      <TenantFormDialog key={editTenant?.id ?? 'new'} open={showForm} onClose={closeForm} onCreated={() => setPage(1)} tenant={editTenant} />
     </div>
   );
 }

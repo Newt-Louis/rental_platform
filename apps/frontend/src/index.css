@@ -54,5 +54,5 @@
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
-  main > div:first-child { @apply p-6; }
+  main > div { @apply px-6; }
 }
