@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/ui/page-header';
 import { AsyncState } from '@/components/ui/async-state';
@@ -202,6 +203,13 @@ export default function BookingsPage() {
   const allSlotBookings = selectedMallId
     ? rawSlotBookings.filter((b) => b.slot?.unit?.mallId === selectedMallId)
     : rawSlotBookings;
+  const slotStats = {
+    pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
+    confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
+    completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
+    revenue: allSlotBookings.filter((b) => b.status === 'COMPLETED').reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
+  };
+
   const slotBookings = slotApplied.search
     ? allSlotBookings.filter((b) => {
         const q = slotApplied.search.toLowerCase();
@@ -271,11 +279,11 @@ export default function BookingsPage() {
           )}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label="Thống kê booking mặt bằng">
             {[
-              { label: 'Tất cả', value: s?.total ?? 0, status: '', urgent: false },
-              { label: 'Đang giữ', value: s?.active ?? 0, status: 'ACTIVE', urgent: false },
-              { label: 'Chờ duyệt', value: s?.pending ?? 0, status: 'PENDING', urgent: false },
-              { label: 'Sắp hết hạn', value: s?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
-              { label: 'Đã lập đề xuất', value: s?.converted ?? 0, status: 'CONVERTED', urgent: false },
+              { label: 'Tất cả', value: stats?.total ?? 0, status: '', urgent: false },
+              { label: 'Đang giữ', value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
+              { label: 'Chờ duyệt', value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
+              { label: 'Sắp hết hạn', value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
+              { label: 'Đã lập đề xuất', value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
             ].map((item) => (
               <button key={item.label} type="button" onClick={() => filterUnit(item.status, !!item.expiring)}
                 className={`rounded-xl border bg-white p-3 text-left transition-colors hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${item.urgent && item.value > 0 ? 'border-red-200' : 'border-gray-200'}`}>
