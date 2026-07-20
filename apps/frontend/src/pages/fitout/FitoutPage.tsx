@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { fitoutApi, fitoutSubmittalApi, fitoutIssueApi, approvalsApi, usersApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
@@ -63,6 +64,7 @@ function fmtDate(d?: string | null) {
 }
 
 function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; onClose: () => void }) {
+  const { t } = useTranslation('fitout');
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -146,7 +148,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fitout-contractors', projectId] });
       setContractorForm({ companyName: '', contactName: '', phone: '', licenseNo: '', startDate: '' });
-      toast({ title: 'Đã thêm nhà thầu' });
+      toast({ title: t('contractor.toast.added') });
     },
   });
 
@@ -155,7 +157,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fitout-workers', projectId] });
       setWorkerForm({ contractorId: '', workerName: '', idNumber: '', entryDate: new Date().toISOString().slice(0, 10), purpose: '' });
-      toast({ title: 'Đã ghi nhận vào công trường' });
+      toast({ title: t('contractor.toast.workerLogged') });
     },
   });
 
@@ -174,9 +176,9 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       setGateWarning(null);
       setPendingAdvanceStatus(null);
       setOverrideReason('');
-      toast({ title: 'Đã cập nhật trạng thái' });
+      toast({ title: t('status.advanceSuccess') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common.error'), variant: 'destructive' }),
   });
 
   const handleAdvance = async (status: string) => {
@@ -188,7 +190,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
         return;
       }
     } catch {
-      toast({ title: 'Không thể kiểm tra điều kiện chuyển giai đoạn — vui lòng thử lại', variant: 'destructive' });
+      toast({ title: t('status.advanceError'), variant: 'destructive' });
       return;
     }
     advanceMutation.mutate({ status });
@@ -198,7 +200,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     mutationFn: ({ checklistId, isCompleted }: { checklistId: string; isCompleted: boolean }) =>
       fitoutApi.updateChecklist(projectId!, checklistId, isCompleted),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fitout-checklists', projectId] }),
-    onError: () => toast({ title: 'Lỗi cập nhật checklist', variant: 'destructive' }),
+    onError: () => toast({ title: t('status.toast.checklistError'), variant: 'destructive' }),
   });
 
   const createCkMutation = useMutation({
@@ -206,15 +208,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fitout-checklists', projectId] });
       setNewCkTitle('');
-      toast({ title: 'Đã thêm checklist item' });
+      toast({ title: t('status.checklistAdded') });
     },
-    onError: () => toast({ title: 'Lỗi tạo checklist', variant: 'destructive' }),
+    onError: () => toast({ title: t('status.toast.checklistCreateError'), variant: 'destructive' }),
   });
 
   const deleteCkMutation = useMutation({
     mutationFn: (checklistId: string) => fitoutApi.deleteChecklist(projectId!, checklistId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fitout-checklists', projectId] }),
-    onError: () => toast({ title: 'Lỗi xóa checklist', variant: 'destructive' }),
+    onError: () => toast({ title: t('status.toast.checklistDeleteError'), variant: 'destructive' }),
   });
 
   const assignMutation = useMutation({
@@ -222,9 +224,9 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['fitout-detail', projectId] });
       qc.invalidateQueries({ queryKey: ['fitouts'] });
-      toast({ title: 'Đã phân công OP Manager' });
+      toast({ title: t('status.assignSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi phân công', variant: 'destructive' }),
+    onError: () => toast({ title: t('status.toast.assignError'), variant: 'destructive' }),
   });
 
   const [newSubmittal, setNewSubmittal] = useState({ formTypeId: '', title: '' });
@@ -239,33 +241,33 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       invalidateSubmittals();
       setNewSubmittal({ formTypeId: '', title: '' });
-      toast({ title: 'Đã nộp đệ trình' });
+      toast({ title: t('submittal.toast.submitted') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi nộp đệ trình', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorSubmit'), variant: 'destructive' }),
   });
 
   const approveStepMutation = useMutation({
     mutationFn: (stepId: string) => approvalsApi.approve(stepId),
-    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã duyệt' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi duyệt', variant: 'destructive' }),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.approved') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorApprove'), variant: 'destructive' }),
   });
 
   const rejectStepMutation = useMutation({
     mutationFn: ({ stepId, comment }: { stepId: string; comment?: string }) => approvalsApi.reject(stepId, comment),
-    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã từ chối' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi từ chối', variant: 'destructive' }),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.rejected') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorReject'), variant: 'destructive' }),
   });
 
   const resubmitMutation = useMutation({
     mutationFn: (id: string) => fitoutSubmittalApi.resubmit(id, {}),
-    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã nộp lại' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi nộp lại', variant: 'destructive' }),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.resubmitted') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorResubmit'), variant: 'destructive' }),
   });
 
   const publishSubmittalMutation = useMutation({
     mutationFn: (id: string) => fitoutSubmittalApi.publish(id),
-    onSuccess: () => { invalidateSubmittals(); toast({ title: 'Đã publish' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi publish', variant: 'destructive' }),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.published') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorPublish'), variant: 'destructive' }),
   });
 
   const [newIssue, setNewIssue] = useState({ title: '', category: 'DEFECT', severity: 'MEDIUM' });
@@ -277,15 +279,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onSuccess: () => {
       invalidateIssues();
       setNewIssue({ title: '', category: 'DEFECT', severity: 'MEDIUM' });
-      toast({ title: 'Đã tạo vấn đề' });
+      toast({ title: t('issue.toast.created') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo vấn đề', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('issue.toast.errorCreate'), variant: 'destructive' }),
   });
 
   const transitionIssueMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => fitoutIssueApi.transition(id, status),
-    onSuccess: () => { invalidateIssues(); toast({ title: 'Đã cập nhật vấn đề' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
+    onSuccess: () => { invalidateIssues(); toast({ title: t('issue.toast.updated') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('issue.toast.errorUpdate'), variant: 'destructive' }),
   });
 
   const p: any = project;
@@ -297,17 +299,17 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const pendingSubmittals = (submittals as any[]).filter((item) => !['APPROVED', 'OBSOLETED'].includes(item.status)).length;
   const openIssues = (issues as any[]).filter((item) => !['RESOLVED', 'CLOSED'].includes(item.status)).length;
   const nextActions = [
-    !p?.operationManager && 'Phân công người phụ trách vận hành',
-    totalCount > doneCount && `Hoàn tất ${totalCount - doneCount} việc trong checklist`,
-    pendingSubmittals > 0 && `Xử lý ${pendingSubmittals} hồ sơ đang chờ`,
-    openIssues > 0 && `Đóng ${openIssues} vấn đề còn tồn đọng`,
+    !p?.operationManager && t('detail.nextActions.assignManager'),
+    totalCount > doneCount && t('detail.nextActions.completeChecklist', { count: totalCount - doneCount }),
+    pendingSubmittals > 0 && t('detail.nextActions.processDocs', { count: pendingSubmittals }),
+    openIssues > 0 && t('detail.nextActions.closeIssues', { count: openIssues }),
   ].filter(Boolean) as string[];
 
   return (
     <Sheet
       open={!!projectId}
       onClose={onClose}
-      title={p ? `${p.tenant?.brandName} — ${p.unit?.code}` : 'Đang tải...'}
+      title={p ? `${p.tenant?.brandName} — ${p.unit?.code}` : t('project.loading')}
       subtitle={currentStage?.name}
     >
       {isLoading ? (
@@ -321,7 +323,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
             <div className="flex items-start gap-3">
               <span className="rounded-xl bg-orange-600 p-2 text-white"><Sparkles size={17} /></span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">Việc nên làm tiếp theo</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">{t('detail.nextActions')}</p>
                 {nextActions.length > 0 ? (
                   <ol className="mt-2 space-y-2">
                     {nextActions.slice(0, 4).map((action, index) => (
@@ -329,7 +331,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                     ))}
                   </ol>
                 ) : (
-                  <p className="mt-2 text-sm text-emerald-700">Không còn tồn đọng. Hồ sơ đã sẵn sàng để chuyển sang {nextStep?.name ?? 'giai đoạn hoàn tất'}.</p>
+                  <p className="mt-2 text-sm text-emerald-700">{t('detail.noBacklog', { nextStep: nextStep?.name ?? t('detail.noBacklogFallback') })}</p>
                 )}
               </div>
             </div>
@@ -341,7 +343,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <Badge className="border-0" style={stageBadgeStyle(currentStage?.colorHex)}>
                 {currentStage?.name ?? p.status}
               </Badge>
-              <span className="text-xs text-gray-500">{Math.round(getProgress(stages, p.status))}% hoàn thành</span>
+              <span className="text-xs text-gray-500">{Math.round(getProgress(stages, p.status))}{t('detail.progressComplete')}</span>
             </div>
             <Progress value={getProgress(stages, p.status)} className="h-2.5" />
           </div>
@@ -365,21 +367,21 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           </div>
 
           {/* Dates */}
-          <SheetSection label="TIẾN ĐỘ NGÀY">
-            <SheetRow label="Bàn giao mặt bằng"    value={fmtDate(p.handoverDate)}     icon={Calendar} />
-            <SheetRow label="Bắt đầu thi công"      value={fmtDate(p.startDate)}        icon={Calendar} />
-            <SheetRow label="Dự kiến khai trương"   value={fmtDate(p.expectedOpenDate)} icon={Calendar} />
+          <SheetSection label={t('detail.dates')}>
+            <SheetRow label={t('detail.handoverDate')}    value={fmtDate(p.handoverDate)}     icon={Calendar} />
+            <SheetRow label={t('detail.startDate')}       value={fmtDate(p.startDate)}        icon={Calendar} />
+            <SheetRow label={t('detail.expectedOpenDate')} value={fmtDate(p.expectedOpenDate)} icon={Calendar} />
             {p.actualOpenDate && (
-              <SheetRow label="Khai trương thực tế" value={fmtDate(p.actualOpenDate)}   icon={Calendar} />
+              <SheetRow label={t('detail.actualOpenDate')} value={fmtDate(p.actualOpenDate)}   icon={Calendar} />
             )}
             {p.contract && (
-              <SheetRow label="Hợp đồng" value={p.contract.contractNumber} icon={ClipboardList} />
+              <SheetRow label={t('detail.contract')} value={p.contract.contractNumber} icon={ClipboardList} />
             )}
           </SheetSection>
 
           {/* Assign OP */}
           <div>
-            <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">PHỤ TRÁCH VẬN HÀNH</div>
+            <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">{t('detail.opManager')}</div>
             <Select
               value={p.operationManager?.id ?? ''}
               onValueChange={(val) => val && assignMutation.mutate(val)}
@@ -388,8 +390,8 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <SelectTrigger className="h-9 text-sm">
                 <div className="flex items-center gap-2">
                   <User size={14} className="text-gray-400 shrink-0" />
-                  <SelectValue placeholder="Chọn OP Manager">
-                    {p.operationManager?.fullName ?? 'Chưa phân công'}
+                  <SelectValue placeholder={t('detail.selectOpManager')}>
+                    {p.operationManager?.fullName ?? t('detail.noOpManager')}
                   </SelectValue>
                 </div>
               </SelectTrigger>
@@ -398,7 +400,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
                 ))}
                 {opUsers.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-400">Không tìm thấy OPERATION user</div>
+                  <div className="px-3 py-2 text-sm text-gray-400">{t('detail.noOpUsers')}</div>
                 )}
               </SelectContent>
             </Select>
@@ -410,11 +412,11 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 text-amber-600">
-                    <ShieldAlert size={18} /> Cần hoàn thành trước khi chuyển giai đoạn
+                    <ShieldAlert size={18} /> {t('detail.gate.title')}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-3 py-2">
-                  <p className="text-sm text-gray-600">Các tài liệu sau chưa được phê duyệt:</p>
+                  <p className="text-sm text-gray-600">{t('detail.gate.description')}</p>
                   <div className="space-y-2">
                     {gateWarning.missing.map((m) => (
                       <div key={m.documentType} className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
@@ -428,7 +430,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   </div>
                   {canOverrideGate && (
                     <Input
-                      placeholder="Lý do bỏ qua (bắt buộc)..."
+                      placeholder={t('detail.gate.overridePlaceholder')}
                       value={overrideReason}
                       onChange={(e) => setOverrideReason(e.target.value)}
                       className="text-sm"
@@ -436,7 +438,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   )}
                   <div className="flex gap-2 pt-2">
                     <Button variant="outline" className="flex-1" onClick={() => { setGateWarning(null); setPendingAdvanceStatus(null); setOverrideReason(''); }}>
-                      Quay lại upload tài liệu
+                      {t('detail.gate.backToUpload')}
                     </Button>
                     {canOverrideGate && (
                       <Button
@@ -445,7 +447,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                         onClick={() => { if (pendingAdvanceStatus) advanceMutation.mutate({ status: pendingAdvanceStatus, override: true, overrideReason }); }}
                         disabled={advanceMutation.isPending || !overrideReason.trim()}
                       >
-                        Bỏ qua & Tiếp tục
+                        {t('detail.gate.skipAndContinue')}
                       </Button>
                     )}
                   </div>
@@ -462,12 +464,12 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               disabled={advanceMutation.isPending}
             >
               <ArrowRight size={16} />
-              Chuyển sang: <strong className="ml-1">{nextStep.name}</strong>
+              {t('detail.advanceTo')} <strong className="ml-1">{nextStep.name}</strong>
             </Button>
           ) : (
             <div className="flex items-center justify-center gap-2 py-2 text-green-600 font-medium text-sm bg-green-50 rounded-lg">
               <CheckCircle2 size={18} />
-              Đã khai trương — hoàn thành quy trình
+              {t('detail.completed')}
             </div>
           )}
 
@@ -475,32 +477,32 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           <div className="flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 text-xs gap-1"
               onClick={() => navigate(`/fitout/${projectId}/daily-report`)}>
-              <ClipboardList size={13} /> Nhật ký công trường
+              <ClipboardList size={13} /> {t('detail.navDailyReport')}
             </Button>
             <Button variant="outline" size="sm" className="flex-1 text-xs gap-1"
               onClick={() => navigate(`/fitout/${projectId}/gantt`)}>
-              <Clock size={13} /> Tiến độ Gantt
+              <Clock size={13} /> {t('detail.navGantt')}
             </Button>
           </div>
 
           {/* Tabs for Checklist, Documents & Milestones */}
           <Tabs defaultValue="checklist" className="mt-4">
-            <div className="overflow-x-auto pb-1" aria-label="Không gian làm việc dự án">
+            <div className="overflow-x-auto pb-1" aria-label={t('detail.tabs.ariaLabel')}>
               <TabsList className="inline-flex h-10 w-max min-w-full justify-start">
-                <TabsTrigger value="checklist" className="text-xs">Việc cần làm</TabsTrigger>
-                <TabsTrigger value="documents" className="text-xs">Hồ sơ duyệt</TabsTrigger>
-                <TabsTrigger value="issues" className="text-xs">Vấn đề</TabsTrigger>
-                <TabsTrigger value="risks" className="text-xs">Rủi ro</TabsTrigger>
-                <TabsTrigger value="changes" className="text-xs">Phát sinh</TabsTrigger>
-                <TabsTrigger value="milestones" className="text-xs">Mốc tiến độ</TabsTrigger>
-                <TabsTrigger value="contractors" className="text-xs">Nhà thầu</TabsTrigger>
+                <TabsTrigger value="checklist" className="text-xs">{t('detail.tabs.checklist')}</TabsTrigger>
+                <TabsTrigger value="documents" className="text-xs">{t('detail.tabs.documents')}</TabsTrigger>
+                <TabsTrigger value="issues" className="text-xs">{t('detail.tabs.issues')}</TabsTrigger>
+                <TabsTrigger value="risks" className="text-xs">{t('detail.tabs.risks')}</TabsTrigger>
+                <TabsTrigger value="changes" className="text-xs">{t('detail.tabs.changes')}</TabsTrigger>
+                <TabsTrigger value="milestones" className="text-xs">{t('detail.tabs.milestones')}</TabsTrigger>
+                <TabsTrigger value="contractors" className="text-xs">{t('detail.tabs.contractors')}</TabsTrigger>
               </TabsList>
             </div>
 
             <TabsContent value="checklist" className="mt-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold tracking-wider text-gray-400">
-                  CHECKLIST {totalCount > 0 && `(${doneCount}/${totalCount})`}
+                  {t('checklist.title')} {totalCount > 0 && `(${doneCount}/${totalCount})`}
                 </div>
                 {totalCount > 0 && (
                   <span className="text-xs text-gray-400">{Math.round((doneCount / totalCount) * 100)}%</span>
@@ -513,7 +515,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               {/* Add new checklist item */}
               <div className="flex gap-2 mb-3">
                 <Input
-                  placeholder="Thêm checklist item..."
+                  placeholder={t('checklist.addPlaceholder')}
                   value={newCkTitle}
                   onChange={(e) => setNewCkTitle(e.target.value)}
                   className="text-sm h-8"
@@ -535,7 +537,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 </div>
               ) : ckList.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                  Chưa có checklist items — thêm bên trên
+                  {t('checklist.empty')}
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -565,7 +567,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                           <p className="text-xs text-gray-400 mt-0.5">{item.description}</p>
                         )}
                         {item.isCompleted && item.completedAt && (
-                          <p className="text-xs text-green-500 mt-0.5">Hoàn thành: {fmtDate(item.completedAt)}</p>
+                          <p className="text-xs text-green-500 mt-0.5">{t('checklist.completedAt', { date: fmtDate(item.completedAt) })}</p>
                         )}
                       </div>
                       <button
@@ -584,20 +586,20 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
             <TabsContent value="documents" className="mt-3 space-y-4">
               {/* New submittal form */}
               <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
-                <p className="text-xs font-semibold text-gray-500">Nộp đệ trình mới</p>
+                <p className="text-xs font-semibold text-gray-500">{t('submittal.newTitle')}</p>
                 <select
                   className="text-xs h-8 border border-input rounded-md px-2 bg-white w-full"
                   value={newSubmittal.formTypeId}
                   onChange={(e) => setNewSubmittal((f) => ({ ...f, formTypeId: e.target.value }))}
                 >
-                  <option value="">Chọn loại hồ sơ (Form)</option>
+                  <option value="">{t('submittal.selectFormType')}</option>
                   {(formTypes as any[]).map((ft: any) => (
-                    <option key={ft.id} value={ft.id}>{ft.name} — {ft.approvalLevels} cấp duyệt</option>
+                    <option key={ft.id} value={ft.id}>{ft.name} — {t('submittal.approvalLevels', { count: ft.approvalLevels })}</option>
                   ))}
                 </select>
                 <Input
                   className="text-xs h-8"
-                  placeholder="Tiêu đề đệ trình"
+                  placeholder={t('submittal.titlePlaceholder')}
                   value={newSubmittal.title}
                   onChange={(e) => setNewSubmittal((f) => ({ ...f, title: e.target.value }))}
                 />
@@ -607,7 +609,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   disabled={!newSubmittal.formTypeId || !newSubmittal.title.trim() || createSubmittalMutation.isPending}
                   onClick={() => createSubmittalMutation.mutate()}
                 >
-                  <Send size={12} /> Nộp
+                  <Send size={12} /> {t('submittal.submit')}
                 </Button>
               </div>
 
@@ -615,7 +617,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <div className="space-y-2">
                 {(submittals as any[]).length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                    Chưa có đệ trình nào
+                    {t('submittal.empty')}
                   </p>
                 ) : (
                   (submittals as any[]).map((sub: any) => {
@@ -665,24 +667,24 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                             <>
                               <Button size="sm" variant="outline" className="h-7 text-xs"
                                 onClick={() => approveStepMutation.mutate(pendingStep.id)}>
-                                Duyệt
+                                {t('submittal.approve')}
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-xs text-red-500"
                                 onClick={() => setRejectStepId(pendingStep.id)}>
-                                Từ chối
+                                {t('submittal.reject')}
                               </Button>
                             </>
                           )}
                           {sub.status === 'REJECTED' && (
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
                               onClick={() => resubmitMutation.mutate(sub.id)}>
-                              <RotateCcw size={12} /> Nộp lại
+                              <RotateCcw size={12} /> {t('submittal.resubmit')}
                             </Button>
                           )}
                           {sub.status === 'APPROVED' && (
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
                               onClick={() => publishSubmittalMutation.mutate(sub.id)}>
-                              <Rocket size={12} /> Publish
+                              <Rocket size={12} /> {t('submittal.publish')}
                             </Button>
                           )}
                         </div>
@@ -696,7 +698,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
             <TabsContent value="issues" className="mt-3 space-y-4">
               {dmap?.floor?.floorPlanUrl ? (
                 <div>
-                  <p className="text-xs font-semibold tracking-wider text-gray-400 mb-2">D-MAP — GHIM VỊ TRÍ VẤN ĐỀ</p>
+                  <p className="text-xs font-semibold tracking-wider text-gray-400 mb-2">{t('issue.dmapTitle')}</p>
                   <MallMapViewer
                     floors={[dmap.floor]}
                     initialFloorId={dmap.floor.id}
@@ -705,15 +707,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 </div>
               ) : (
                 <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-3 text-center">
-                  Tầng này chưa có sơ đồ mặt bằng số — vào Mặt bằng → Bản đồ số để thiết lập.
+                  {t('issue.dmapEmpty')}
                 </p>
               )}
 
               <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
-                <p className="text-xs font-semibold text-gray-500">Tạo vấn đề mới</p>
+                <p className="text-xs font-semibold text-gray-500">{t('issue.newTitle')}</p>
                 <Input
                   className="text-xs h-8"
-                  placeholder="Mô tả vấn đề..."
+                  placeholder={t('issue.descriptionPlaceholder')}
                   value={newIssue.title}
                   onChange={(e) => setNewIssue((f) => ({ ...f, title: e.target.value }))}
                 />
@@ -721,30 +723,30 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   <select className="text-xs h-8 border border-input rounded-md px-2 bg-white"
                     value={newIssue.category}
                     onChange={(e) => setNewIssue((f) => ({ ...f, category: e.target.value }))}>
-                    <option value="DEFECT">Khiếm khuyết (Defect)</option>
-                    <option value="NCR">NCR</option>
-                    <option value="SAFETY">An toàn</option>
-                    <option value="GENERAL">Chung</option>
+                    <option value="DEFECT">{t('issue.category.DEFECT')}</option>
+                    <option value="NCR">{t('issue.category.NCR')}</option>
+                    <option value="SAFETY">{t('issue.category.SAFETY')}</option>
+                    <option value="GENERAL">{t('issue.category.GENERAL')}</option>
                   </select>
                   <select className="text-xs h-8 border border-input rounded-md px-2 bg-white"
                     value={newIssue.severity}
                     onChange={(e) => setNewIssue((f) => ({ ...f, severity: e.target.value }))}>
-                    <option value="LOW">Thấp</option>
-                    <option value="MEDIUM">Trung bình</option>
-                    <option value="HIGH">Cao</option>
-                    <option value="CRITICAL">Nghiêm trọng</option>
+                    <option value="LOW">{t('issue.severity.LOW')}</option>
+                    <option value="MEDIUM">{t('issue.severity.MEDIUM')}</option>
+                    <option value="HIGH">{t('issue.severity.HIGH')}</option>
+                    <option value="CRITICAL">{t('issue.severity.CRITICAL')}</option>
                   </select>
                 </div>
                 <Button size="sm" className="h-7 text-xs gap-1"
                   disabled={!newIssue.title.trim() || createIssueMutation.isPending}
                   onClick={() => createIssueMutation.mutate()}>
-                  <Plus size={12} /> Tạo vấn đề
+                  <Plus size={12} /> {t('issue.create')}
                 </Button>
               </div>
 
               <div className="space-y-2">
                 {(issues as any[]).length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">Chưa có vấn đề nào</p>
+                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">{t('issue.empty')}</p>
                 ) : (
                   (issues as any[]).map((iss: any) => {
                     const severityColor: Record<string, string> = {
@@ -770,8 +772,8 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{iss.title}</p>
                             <p className="text-xs text-gray-400">
-                              {iss.unit?.code}{iss.assignee ? ` · Giao: ${iss.assignee.fullName}` : ''}
-                              {iss.isOverdue && <span className="text-red-500 font-medium"> · Quá hạn</span>}
+                              {iss.unit?.code}{iss.assignee ? ` · ${t('issue.assignee', { name: iss.assignee.fullName })}` : ''}
+                              {iss.isOverdue && <span className="text-red-500 font-medium"> · {t('issue.overdue')}</span>}
                             </p>
                           </div>
                           <div className="flex gap-1 shrink-0">
@@ -806,7 +808,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <div className="space-y-2">
                 {(milestones as any[]).length === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                    Chưa có milestone SLA nào
+                    {t('milestone.empty')}
                   </p>
                 ) : (
                   (milestones as any[]).map((m: any) => (
@@ -819,20 +821,20 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                          <Clock size={16} className="text-gray-400" />}
                         <div>
                           <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? m.stage}</p>
-                          <p className="text-xs text-gray-400">SLA: {m.slaDays ?? '—'} ngày</p>
+                          <p className="text-xs text-gray-400">{t('milestone.slaDays', { count: m.slaDays ?? '—' })}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         {m.targetDate && (
                           <p className={`text-xs ${m.isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                            Hạn: {fmtDate(m.targetDate)}
+                            {t('milestone.deadline', { date: fmtDate(m.targetDate) })}
                           </p>
                         )}
                         {m.completedAt && (
-                          <p className="text-xs text-green-500">Xong: {fmtDate(m.completedAt)}</p>
+                          <p className="text-xs text-green-500">{t('milestone.done', { date: fmtDate(m.completedAt) })}</p>
                         )}
                         {m.isOverdue && !m.completedAt && (
-                          <Badge className="bg-red-100 text-red-700 text-xs">Quá hạn</Badge>
+                          <Badge className="bg-red-100 text-red-700 text-xs">{t('milestone.overdue')}</Badge>
                         )}
                       </div>
                     </div>
@@ -844,15 +846,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
             <TabsContent value="contractors" className="mt-3 space-y-4">
               {/* Add contractor form */}
               <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
-                <p className="text-xs font-semibold text-gray-500">Thêm nhà thầu mới</p>
+                <p className="text-xs font-semibold text-gray-500">{t('contractor.addTitle')}</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input className="text-xs h-8" placeholder="Tên công ty *" value={contractorForm.companyName}
+                  <Input className="text-xs h-8" placeholder={t('contractor.companyName')} value={contractorForm.companyName}
                     onChange={(e) => setContractorForm((f) => ({ ...f, companyName: e.target.value }))} />
-                  <Input className="text-xs h-8" placeholder="Người liên hệ *" value={contractorForm.contactName}
+                  <Input className="text-xs h-8" placeholder={t('contractor.contactName')} value={contractorForm.contactName}
                     onChange={(e) => setContractorForm((f) => ({ ...f, contactName: e.target.value }))} />
-                  <Input className="text-xs h-8" placeholder="Điện thoại *" value={contractorForm.phone}
+                  <Input className="text-xs h-8" placeholder={t('contractor.phone')} value={contractorForm.phone}
                     onChange={(e) => setContractorForm((f) => ({ ...f, phone: e.target.value }))} />
-                  <Input className="text-xs h-8" placeholder="Số GPXD" value={contractorForm.licenseNo}
+                  <Input className="text-xs h-8" placeholder={t('contractor.licenseNo')} value={contractorForm.licenseNo}
                     onChange={(e) => setContractorForm((f) => ({ ...f, licenseNo: e.target.value }))} />
                   <Input type="date" className="text-xs h-8" value={contractorForm.startDate}
                     onChange={(e) => setContractorForm((f) => ({ ...f, startDate: e.target.value }))} />
@@ -860,7 +862,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 <Button size="sm" className="h-7 text-xs gap-1"
                   disabled={!contractorForm.companyName || !contractorForm.contactName || !contractorForm.phone || createContractorMutation.isPending}
                   onClick={() => createContractorMutation.mutate(contractorForm)}>
-                  <Plus size={12} /> Thêm nhà thầu
+                  <Plus size={12} /> {t('contractor.add')}
                 </Button>
               </div>
 
@@ -872,45 +874,45 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                       <div>
                         <div className="font-medium text-sm">{c.companyName}</div>
                         <div className="text-xs text-gray-500">{c.contactName} · {c.phone}</div>
-                        {c.licenseNo && <div className="text-xs text-gray-400">GPXD: {c.licenseNo}</div>}
+                        {c.licenseNo && <div className="text-xs text-gray-400">{t('contractor.gpxd', { no: c.licenseNo })}</div>}
                       </div>
-                      <Badge className="bg-green-100 text-green-700 text-xs border-0">{c.workers?.length ?? 0} công nhân</Badge>
+                      <Badge className="bg-green-100 text-green-700 text-xs border-0">{t('contractor.workerCount', { count: c.workers?.length ?? 0 })}</Badge>
                     </div>
                   </div>
                 ))}
-                {contractors.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Chưa có nhà thầu</p>}
+                {contractors.length === 0 && <p className="text-sm text-gray-400 text-center py-4">{t('contractor.empty')}</p>}
               </div>
 
               {/* Worker entry log */}
               {contractors.length > 0 && (
                 <>
                   <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
-                    <p className="text-xs font-semibold text-gray-700">Ghi nhận công nhân vào công trường</p>
+                    <p className="text-xs font-semibold text-gray-700">{t('contractor.workerLogTitle')}</p>
                     <div className="grid grid-cols-2 gap-2">
                       <select className="text-xs h-8 border border-input rounded-md px-2 bg-white col-span-2"
                         value={workerForm.contractorId}
                         onChange={(e) => setWorkerForm((f) => ({ ...f, contractorId: e.target.value }))}>
-                        <option value="">Chọn nhà thầu</option>
+                        <option value="">{t('contractor.selectContractor')}</option>
                         {contractors.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
                       </select>
-                      <Input className="text-xs h-8" placeholder="Họ tên công nhân" value={workerForm.workerName}
+                      <Input className="text-xs h-8" placeholder={t('contractor.workerName')} value={workerForm.workerName}
                         onChange={(e) => setWorkerForm((f) => ({ ...f, workerName: e.target.value }))} />
-                      <Input className="text-xs h-8" placeholder="CCCD/CMND" value={workerForm.idNumber}
+                      <Input className="text-xs h-8" placeholder={t('contractor.idNumber')} value={workerForm.idNumber}
                         onChange={(e) => setWorkerForm((f) => ({ ...f, idNumber: e.target.value }))} />
                       <Input type="datetime-local" className="text-xs h-8" value={workerForm.entryDate}
                         onChange={(e) => setWorkerForm((f) => ({ ...f, entryDate: e.target.value }))} />
-                      <Input className="text-xs h-8" placeholder="Mục đích" value={workerForm.purpose}
+                      <Input className="text-xs h-8" placeholder={t('contractor.purpose')} value={workerForm.purpose}
                         onChange={(e) => setWorkerForm((f) => ({ ...f, purpose: e.target.value }))} />
                     </div>
                     <Button size="sm" className="h-7 text-xs gap-1 bg-gray-900 hover:bg-gray-800"
                       disabled={!workerForm.contractorId || !workerForm.workerName || !workerForm.idNumber || logWorkerMutation.isPending}
                       onClick={() => logWorkerMutation.mutate(workerForm)}>
-                      <Plus size={12} /> Ghi nhận vào
+                      <Plus size={12} /> {t('contractor.logEntry')}
                     </Button>
                   </div>
 
                   <div className="space-y-1">
-                    <p className="text-xs font-semibold text-gray-500">Log công nhân gần đây</p>
+                    <p className="text-xs font-semibold text-gray-500">{t('contractor.recentLogs')}</p>
                     {workerLogs.slice(0, 20).map((l: any) => (
                       <div key={l.id} className="flex items-center justify-between text-xs p-2 bg-gray-50 rounded-lg">
                         <div>
@@ -919,16 +921,16 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                           <div className="text-gray-400">{l.idNumber} · {new Date(l.entryDate).toLocaleString('vi-VN')}</div>
                         </div>
                         {l.exitDate ? (
-                          <Badge className="bg-gray-100 text-gray-500 border-0 text-xs">Ra: {new Date(l.exitDate).toLocaleTimeString('vi-VN')}</Badge>
+                          <Badge className="bg-gray-100 text-gray-500 border-0 text-xs">{t('contractor.exitTime', { time: new Date(l.exitDate).toLocaleTimeString('vi-VN') })}</Badge>
                         ) : (
                           <Button size="sm" variant="outline" className="h-6 text-xs px-2"
                             onClick={() => exitWorkerMutation.mutate(l.id)} disabled={exitWorkerMutation.isPending}>
-                            Ra
+                            {t('contractor.exit')}
                           </Button>
                         )}
                       </div>
                     ))}
-                    {workerLogs.length === 0 && <p className="text-xs text-gray-400 text-center py-3">Chưa có log</p>}
+                    {workerLogs.length === 0 && <p className="text-xs text-gray-400 text-center py-3">{t('contractor.noLogs')}</p>}
                   </div>
                 </>
               )}
@@ -937,7 +939,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 
           {p.notes && (
             <div className="mt-4">
-              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">GHI CHÚ</div>
+              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">{t('detail.notes')}</div>
               <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 leading-relaxed">{p.notes}</p>
             </div>
           )}
@@ -946,9 +948,9 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       <ReasonActionDialog
         open={!!rejectStepId}
         onOpenChange={(open) => !open && setRejectStepId(null)}
-        title="Từ chối hồ sơ"
-        description="Lý do sẽ được gửi cho người nộp và lưu trong lịch sử phê duyệt."
-        confirmLabel="Từ chối"
+        title={t('submittal.rejectDialog.title')}
+        description={t('submittal.rejectDialog.description')}
+        confirmLabel={t('submittal.rejectDialog.confirmLabel')}
         loading={rejectStepMutation.isPending}
         onConfirm={(reason) => rejectStepId && rejectStepMutation.mutate({ stepId: rejectStepId, comment: reason }, { onSuccess: () => setRejectStepId(null) })}
       />
@@ -957,6 +959,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 }
 
 export default function FitoutPage() {
+  const { t } = useTranslation('fitout');
   const { selectedMallId } = useMallStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
@@ -980,8 +983,8 @@ export default function FitoutPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Điều hành Fitout</h1>
-          <p className="text-sm text-gray-500 mt-1">Đi từ bàn giao mặt bằng đến khai trương theo một quy trình rõ ràng</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('page.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('page.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
@@ -989,31 +992,45 @@ export default function FitoutPage() {
           </Button>
           {canManageConfig && (
             <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/settings')}>
-              <Settings size={14} /> Cấu hình
+              <Settings size={14} /> {t('page.config')}
             </Button>
           )}
           <Badge className="bg-orange-100 text-orange-700 border-0 text-sm px-3 py-1">
-            {allProjects.length} dự án
+            {t('page.projectCount', { count: allProjects.length })}
           </Badge>
         </div>
       </div>
 
       <section className="mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-orange-950 to-amber-900 p-5 text-white sm:p-6">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div className="max-w-2xl"><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200"><Compass size={14} /> Bản đồ vận hành Fitout</div><h2 className="text-xl font-semibold sm:text-2xl">{withoutManager ? `${withoutManager} dự án cần phân công người phụ trách` : 'Theo dõi tiến độ dự án Fitout'}</h2><p className="mt-2 text-sm leading-6 text-amber-100/75">Mở một dự án để xem “việc tiếp theo”, hoàn thành checklist và hồ sơ bắt buộc trước khi chuyển giai đoạn.</p></div>
+          <div className="max-w-2xl">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200"><Compass size={14} /> {t('page.operationMap')}</div>
+            <h2 className="text-xl font-semibold sm:text-2xl">{withoutManager ? t('page.bannerTitle_withoutManager', { count: withoutManager }) : t('page.bannerTitle_default')}</h2>
+            <p className="mt-2 text-sm leading-6 text-amber-100/75">{t('page.bannerSubtitle')}</p>
+          </div>
           <div className="grid grid-cols-2 gap-2 text-xs sm:flex">
-            {[['1', 'Chọn dự án'], ['2', 'Xử lý checklist'], ['3', 'Duyệt hồ sơ'], ['4', 'Chuyển giai đoạn']].map(([step, label]) => <div key={step} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2"><span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white font-bold text-slate-900">{step}</span>{label}</div>)}
+            {([['1', t('page.step1')], ['2', t('page.step2')], ['3', t('page.step3')], ['4', t('page.step4')]] as [string, string][]).map(([step, label]) => (
+              <div key={step} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2">
+                <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white font-bold text-slate-900">{step}</span>{label}
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: 'Dự án đang theo dõi', value: allProjects.length - completed, hint: 'Mở danh sách công việc', icon: HardHat, tone: 'border-orange-100 bg-orange-50 text-orange-700', action: () => setFilterStatus('') },
-          { label: 'Chưa có phụ trách', value: withoutManager, hint: 'Cần phân công vận hành', icon: User, tone: 'border-red-100 bg-red-50 text-red-700', action: () => setFilterStatus('') },
-          { label: 'Khai trương trong 14 ngày', value: openingSoon, hint: 'Kiểm tra gate và tồn đọng', icon: Rocket, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => setFilterStatus('') },
-          { label: 'Đã hoàn tất', value: completed, hint: 'Dự án đã bàn giao', icon: FolderCheck, tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', action: () => setFilterStatus(stages.find((stage) => ['OPENED', 'COMPLETED'].includes(stage.code))?.code ?? '') },
-        ].map(({ label, value, hint, icon: Icon, tone, action }) => <button key={label} onClick={action} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}><div className="flex items-center justify-between"><Icon size={18} /><span className="text-2xl font-bold">{value}</span></div><div className="mt-2 text-sm font-semibold">{label}</div><div className="text-[11px] opacity-70">{hint}</div></button>)}
+          { label: t('page.stats.activeProjects'), value: allProjects.length - completed, hint: t('page.stats.activeHint'), icon: HardHat, tone: 'border-orange-100 bg-orange-50 text-orange-700', action: () => setFilterStatus('') },
+          { label: t('page.stats.noManager'), value: withoutManager, hint: t('page.stats.noManagerHint'), icon: User, tone: 'border-red-100 bg-red-50 text-red-700', action: () => setFilterStatus('') },
+          { label: t('page.stats.openingSoon'), value: openingSoon, hint: t('page.stats.openingSoonHint'), icon: Rocket, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => setFilterStatus('') },
+          { label: t('page.stats.completed'), value: completed, hint: t('page.stats.completedHint'), icon: FolderCheck, tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', action: () => setFilterStatus(stages.find((stage) => ['OPENED', 'COMPLETED'].includes(stage.code))?.code ?? '') },
+        ].map(({ label, value, hint, icon: Icon, tone, action }) => (
+          <button key={label} onClick={action} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}>
+            <div className="flex items-center justify-between"><Icon size={18} /><span className="text-2xl font-bold">{value}</span></div>
+            <div className="mt-2 text-sm font-semibold">{label}</div>
+            <div className="text-[11px] opacity-70">{hint}</div>
+          </button>
+        ))}
       </div>
 
       {/* Filter chips */}
@@ -1023,7 +1040,7 @@ export default function FitoutPage() {
           className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
             ${!filterStatus ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
         >
-          Tất cả ({allProjects.length})
+          {t('page.filterAll', { count: allProjects.length })}
         </button>
         {stages.map((s) => {
           const count = allProjects.filter((p: any) => p.status === s.code).length;
@@ -1051,15 +1068,15 @@ export default function FitoutPage() {
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 py-14 text-center">
           <Hammer size={44} className="mx-auto mb-3 text-red-400" />
-          <p className="font-medium text-red-700">Không thể tải danh sách dự án fitout</p>
-          <p className="mt-1 text-sm text-red-600">Dữ liệu tiến độ chưa sẵn sàng. Vui lòng thử lại.</p>
-          <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+          <p className="font-medium text-red-700">{t('page.errorTitle')}</p>
+          <p className="mt-1 text-sm text-red-600">{t('page.errorSubtitle')}</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>{t('page.retry')}</Button>
         </div>
       ) : projects.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <Hammer size={48} className="mx-auto mb-3 opacity-30" />
-          <p>{filterStatus ? 'Không có dự án ở trạng thái này' : 'Chưa có dự án fitout nào'}</p>
-          {filterStatus && <Button variant="outline" size="sm" className="mt-4" onClick={() => setFilterStatus('')}>Xem tất cả dự án</Button>}
+          <p>{filterStatus ? t('page.noProjectsInStatus') : t('page.noProjects')}</p>
+          {filterStatus && <Button variant="outline" size="sm" className="mt-4" onClick={() => setFilterStatus('')}>{t('page.viewAll')}</Button>}
         </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
@@ -1090,7 +1107,7 @@ export default function FitoutPage() {
                 <CardContent className="pt-0">
                   <div className="mb-3">
                     <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                      <span>Tiến độ quy trình</span>
+                      <span>{t('page.processProgress')}</span>
                       <span className="font-medium">{Math.round(progress)}%</span>
                     </div>
                     <Progress value={progress} className="h-2" />

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/auth.store';
 import { authApi, brandingApi } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Building2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { getDefaultHomePath } from '@/lib/permissions';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 interface LoginForm {
   email: string;
@@ -21,6 +23,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const { toast } = useToast();
+  const { t } = useTranslation('auth');
   const [loading, setLoading] = useState(false);
 
   const { data: branding } = useQuery({
@@ -40,8 +43,8 @@ export default function LoginPage() {
       navigate(getDefaultHomePath(res.user.role), { replace: true });
     } catch (err: any) {
       toast({
-        title: 'Đăng nhập thất bại',
-        description: err?.response?.data?.message ?? 'Email hoặc mật khẩu không đúng',
+        title: t('login.loginFailed'),
+        description: err?.response?.data?.message ?? t('login.invalidCredentials'),
         variant: 'destructive',
       });
     } finally {
@@ -54,8 +57,11 @@ export default function LoginPage() {
       className="min-h-screen bg-gray-900 flex items-center justify-center p-4 relative bg-cover bg-center"
       style={branding?.backgroundUrl ? { backgroundImage: `url(${branding.backgroundUrl})` } : undefined}
     >
-      {/* Lớp phủ tối để chữ/form luôn đọc rõ trên mọi ảnh nền */}
       {branding?.backgroundUrl && <div className="absolute inset-0 bg-black/60" />}
+
+      <div className="absolute top-4 right-4 z-10">
+        <LanguageSwitcher />
+      </div>
 
       <div className="w-full max-w-md relative">
         <div className="flex items-center justify-center gap-3 mb-8">
@@ -76,38 +82,37 @@ export default function LoginPage() {
 
         <Card className="shadow-2xl border-0">
           <CardHeader>
-            <CardTitle>Đăng nhập</CardTitle>
-            <CardDescription>Nhập thông tin tài khoản để tiếp tục</CardDescription>
+            <CardTitle>{t('login.title')}</CardTitle>
+            <CardDescription>{t('login.subtitle')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t('login.emailLabel')}</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@thiso.com"
-                  {...register('email', { required: 'Email là bắt buộc' })}
+                  placeholder={t('login.emailPlaceholder')}
+                  {...register('email', { required: t('login.emailRequired') })}
                 />
                 {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Mật khẩu</Label>
+                <Label htmlFor="password">{t('login.passwordLabel')}</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
-                  {...register('password', { required: 'Mật khẩu là bắt buộc' })}
+                  placeholder={t('login.passwordPlaceholder')}
+                  {...register('password', { required: t('login.passwordRequired') })}
                 />
                 {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+                {loading ? t('login.loginLoading') : t('login.loginButton')}
               </Button>
             </form>
-
           </CardContent>
         </Card>
       </div>

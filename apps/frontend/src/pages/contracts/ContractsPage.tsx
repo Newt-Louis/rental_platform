@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { contractsApi, terminationApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,24 +26,18 @@ import type { Contract } from '@/types';
 
 // ── Status maps ───────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  DRAFT:             { label: 'Draft',          color: 'bg-gray-100 text-gray-700' },
-  PENDING_LEGAL:     { label: 'Chờ Legal',      color: 'bg-blue-100 text-blue-700' },
-  PENDING_SIGNATURE: { label: 'Chờ ký',         color: 'bg-yellow-100 text-yellow-700' },
-  ACTIVE:            { label: 'Hiệu lực',        color: 'bg-green-100 text-green-700' },
-  EXPIRING:          { label: 'Sắp hết hạn',    color: 'bg-orange-100 text-orange-700' },
-  EXPIRED:           { label: 'Hết hạn',         color: 'bg-red-100 text-red-700' },
-  TERMINATING:       { label: 'Đang chấm dứt',   color: 'bg-orange-100 text-orange-700' },
-  TERMINATED:        { label: 'Đã chấm dứt',    color: 'bg-gray-200 text-gray-600' },
+const STATUS_MAP: Record<string, { color: string }> = {
+  DRAFT:             { color: 'bg-gray-100 text-gray-700' },
+  PENDING_LEGAL:     { color: 'bg-blue-100 text-blue-700' },
+  PENDING_SIGNATURE: { color: 'bg-yellow-100 text-yellow-700' },
+  ACTIVE:            { color: 'bg-green-100 text-green-700' },
+  EXPIRING:          { color: 'bg-orange-100 text-orange-700' },
+  EXPIRED:           { color: 'bg-red-100 text-red-700' },
+  TERMINATING:       { color: 'bg-orange-100 text-orange-700' },
+  TERMINATED:        { color: 'bg-gray-200 text-gray-600' },
 };
 
-const TYPE_MAP: Record<string, string> = {
-  LOI:              'LOI',
-  LEASE_AGREEMENT:  'Hợp đồng thuê',
-  APPENDIX:         'Phụ lục',
-  RENEWAL:          'Gia hạn',
-  TERMINATION:      'Chấm dứt HĐ',
-};
+const TYPE_KEYS = ['LOI', 'LEASE_AGREEMENT', 'APPENDIX', 'RENEWAL', 'TERMINATION'] as const;
 
 function daysUntil(date: string) {
   return Math.floor((new Date(date).getTime() - Date.now()) / 86400000);
@@ -62,6 +57,7 @@ function fmtBytes(b?: number | null) {
 function SignFileDialog({ contractId, file, open, onClose }: {
   contractId: string; file: any; open: boolean; onClose: () => void;
 }) {
+  const { t } = useTranslation(['contracts', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ signerName: '', signerRole: 'TENANT' });
@@ -74,10 +70,10 @@ function SignFileDialog({ contractId, file, open, onClose }: {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-files', contractId] });
       qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
-      toast({ title: 'Đã ký điện tử thành công' });
+      toast({ title: t('sign.success') });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   return (
@@ -85,44 +81,44 @@ function SignFileDialog({ contractId, file, open, onClose }: {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <PenLine size={16} className="text-blue-600" /> Ký điện tử tài liệu
+            <PenLine size={16} className="text-blue-600" /> {t('sign.title')}
           </DialogTitle>
           {file && <p className="text-sm text-gray-500 mt-1">{file.fileName}</p>}
         </DialogHeader>
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            Hệ thống sẽ tạo mã hash SHA-256 từ tài liệu + thông tin người ký + thời gian, tạo mã xác thực độc lập.
+            {t('sign.infoBox')}
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
-            <strong>Lưu ý:</strong> đây là xác thực toàn vẹn nội bộ (hash), không phải chữ ký số có giá trị pháp lý theo Nghị định 130/2018. Dùng cho biên bản/phụ lục nội bộ; hợp đồng cần giá trị pháp lý cao nên ký qua nhà cung cấp chữ ký số hợp pháp.
+            <strong>{t('sign.warningNote')}</strong> {t('sign.warningBox')}
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Tên người ký *</label>
+            <label className="text-sm font-medium mb-1 block">{t('sign.signerName')}</label>
             <Input value={form.signerName}
               onChange={(e) => setForm(p => ({ ...p, signerName: e.target.value }))}
-              placeholder="Nguyễn Văn A" />
+              placeholder={t('sign.signerNamePlaceholder')} />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Vai trò</label>
+            <label className="text-sm font-medium mb-1 block">{t('sign.signerRole')}</label>
             <Select value={form.signerRole} onValueChange={(v) => setForm(p => ({ ...p, signerRole: v }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="TENANT">Khách thuê</SelectItem>
-                <SelectItem value="LANDLORD">Chủ đầu tư (BQL)</SelectItem>
-                <SelectItem value="LEGAL">Pháp chế</SelectItem>
-                <SelectItem value="CEO">Tổng giám đốc</SelectItem>
-                <SelectItem value="WITNESS">Người chứng kiến</SelectItem>
+                <SelectItem value="TENANT">{t('sign.roles.TENANT')}</SelectItem>
+                <SelectItem value="LANDLORD">{t('sign.roles.LANDLORD')}</SelectItem>
+                <SelectItem value="LEGAL">{t('sign.roles.LEGAL')}</SelectItem>
+                <SelectItem value="CEO">{t('sign.roles.CEO')}</SelectItem>
+                <SelectItem value="WITNESS">{t('sign.roles.WITNESS')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
+          <Button variant="outline" onClick={onClose}>{t('sign.cancel')}</Button>
           <Button disabled={!form.signerName || mutation.isPending}
             onClick={() => mutation.mutate()}
             className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
             <PenLine size={13} />
-            {mutation.isPending ? 'Đang ký...' : 'Xác nhận ký'}
+            {mutation.isPending ? t('sign.signing') : t('sign.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -135,6 +131,7 @@ function SignFileDialog({ contractId, file, open, onClose }: {
 function VerifyDialog({ verifyCode, open, onClose }: {
   verifyCode: string; open: boolean; onClose: () => void;
 }) {
+  const { t } = useTranslation('contracts');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['verify-signature', verifyCode],
     queryFn: () => contractsApi.verifyFile(verifyCode),
@@ -146,7 +143,7 @@ function VerifyDialog({ verifyCode, open, onClose }: {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck size={16} className="text-green-600" /> Xác thực chữ ký điện tử
+            <ShieldCheck size={16} className="text-green-600" /> {t('verify.title')}
           </DialogTitle>
         </DialogHeader>
         {isLoading ? (
@@ -156,33 +153,33 @@ function VerifyDialog({ verifyCode, open, onClose }: {
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
               <CheckCircle2 size={18} className="text-green-600 shrink-0" />
               <div>
-                <div className="text-sm font-semibold text-green-800">Tài liệu hợp lệ</div>
-                <div className="text-xs text-green-600">Chữ ký điện tử đã được xác thực</div>
+                <div className="text-sm font-semibold text-green-800">{t('verify.valid')}</div>
+                <div className="text-xs text-green-600">{t('verify.validDesc')}</div>
               </div>
             </div>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between border-b pb-1.5">
-                <span className="text-gray-500">Tài liệu</span>
+                <span className="text-gray-500">{t('verify.fileName')}</span>
                 <span className="font-medium text-right max-w-48 truncate">{data.fileName}</span>
               </div>
               <div className="flex justify-between border-b pb-1.5">
-                <span className="text-gray-500">Số HĐ</span>
+                <span className="text-gray-500">{t('verify.contractNo')}</span>
                 <span className="font-medium font-mono">{data.contractNumber}</span>
               </div>
               <div className="flex justify-between border-b pb-1.5">
-                <span className="text-gray-500">Người ký</span>
+                <span className="text-gray-500">{t('verify.signerName')}</span>
                 <span className="font-medium">{data.signerName}</span>
               </div>
               <div className="flex justify-between border-b pb-1.5">
-                <span className="text-gray-500">Vai trò</span>
+                <span className="text-gray-500">{t('verify.signerRole')}</span>
                 <span className="font-medium">{data.signerRole}</span>
               </div>
               <div className="flex justify-between border-b pb-1.5">
-                <span className="text-gray-500">Thời gian ký</span>
+                <span className="text-gray-500">{t('verify.signedAt')}</span>
                 <span className="font-medium">{fmtDate(data.signedAt)}</span>
               </div>
               <div>
-                <div className="text-xs text-gray-400 mb-1">SHA-256 Hash</div>
+                <div className="text-xs text-gray-400 mb-1">{t('verify.hash')}</div>
                 <div className="font-mono text-xs bg-gray-50 border rounded p-2 break-all text-gray-600">{data.sha256Hash}</div>
               </div>
             </div>
@@ -190,11 +187,11 @@ function VerifyDialog({ verifyCode, open, onClose }: {
         ) : (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
             <AlertCircle size={18} className="text-red-600 shrink-0" />
-            <div className="text-sm text-red-700">{data?.message ?? 'Mã xác thực không hợp lệ'}</div>
+            <div className="text-sm text-red-700">{data?.message ?? t('verify.invalidCode')}</div>
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Đóng</Button>
+          <Button variant="outline" onClick={onClose}>{t('verify.close')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -204,6 +201,7 @@ function VerifyDialog({ verifyCode, open, onClose }: {
 // ── Documents Tab ─────────────────────────────────────────────────────────────
 
 function DocumentsTab({ contractId }: { contractId: string }) {
+  const { t } = useTranslation('contracts');
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -223,9 +221,9 @@ function DocumentsTab({ contractId }: { contractId: string }) {
     mutationFn: (fileId: string) => contractsApi.deleteFile(contractId, fileId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-files', contractId] });
-      toast({ title: 'Đã xóa tài liệu' });
+      toast({ title: t('documents.deleteSuccess') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('documents.uploadError'), variant: 'destructive' }),
   });
 
   const handleUpload = useCallback(async (file: File) => {
@@ -234,14 +232,14 @@ function DocumentsTab({ contractId }: { contractId: string }) {
     try {
       await contractsApi.uploadFile(contractId, file);
       qc.invalidateQueries({ queryKey: ['contract-files', contractId] });
-      toast({ title: `Đã upload: ${file.name}` });
+      toast({ title: t('documents.uploadSuccess', { name: file.name }) });
     } catch (e: any) {
-      toast({ title: e?.response?.data?.message ?? 'Upload thất bại', variant: 'destructive' });
+      toast({ title: e?.response?.data?.message ?? t('documents.uploadError'), variant: 'destructive' });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }, [contractId, qc, toast]);
+  }, [contractId, qc, toast, t]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -277,13 +275,13 @@ function DocumentsTab({ contractId }: { contractId: string }) {
         {uploading ? (
           <div className="flex flex-col items-center gap-2">
             <Loader2 size={28} className="animate-spin text-blue-500" />
-            <p className="text-sm text-blue-600 font-medium">Đang tải lên...</p>
+            <p className="text-sm text-blue-600 font-medium">{t('documents.uploading')}</p>
           </div>
         ) : (
           <>
             <Upload size={28} className={`mx-auto mb-2 ${dragging ? 'text-blue-500' : 'text-gray-300'}`} />
-            <p className="text-sm font-medium text-gray-600">Kéo & thả hoặc bấm để chọn file</p>
-            <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG, DOCX, XLSX · Tối đa 30 MB</p>
+            <p className="text-sm font-medium text-gray-600">{t('documents.uploadDrag')}</p>
+            <p className="text-xs text-gray-400 mt-1">{t('documents.uploadTypes')}</p>
           </>
         )}
       </div>
@@ -294,7 +292,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
       ) : (files as any[]).length === 0 ? (
         <div className="text-center py-8 text-gray-400">
           <FileText size={32} className="mx-auto mb-2 opacity-20" />
-          <p className="text-sm">Chưa có tài liệu nào — upload bản scan hợp đồng</p>
+          <p className="text-sm">{t('documents.empty')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -309,9 +307,9 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                     <span className="text-sm font-medium text-gray-800 truncate">{f.fileName}</span>
                     {f.signedAt && (
                       <span
-                        title="Xác thực toàn vẹn nội bộ (hash) — không phải chữ ký số có giá trị pháp lý"
+                        title={t('documents.signedBadgeTitle')}
                         className="flex items-center gap-1 text-xs bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded-full">
-                        <ShieldCheck size={10} /> Đã ký (nội bộ)
+                        <ShieldCheck size={10} /> {t('documents.signedBadge')}
                       </span>
                     )}
                   </div>
@@ -334,7 +332,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   <a href={f.filePath?.startsWith('http') ? f.filePath : f.filePath}
                     target="_blank" rel="noopener noreferrer"
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                    title="Tải xuống">
+                    title={t('documents.download')}>
                     <Download size={14} />
                   </a>
 
@@ -342,7 +340,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   {!f.signedAt && (
                     <button onClick={() => setSignFile(f)}
                       className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600"
-                      title="Ký điện tử">
+                      title={t('documents.sign')}>
                       <PenLine size={14} />
                     </button>
                   )}
@@ -351,7 +349,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   {f.verifyCode && (
                     <button onClick={() => setVerifyCode(f.verifyCode)}
                       className="p-1.5 rounded-lg hover:bg-green-50 text-green-500 hover:text-green-700"
-                      title="Xác thực chữ ký">
+                      title={t('documents.verifyBtn')}>
                       <ShieldCheck size={14} />
                     </button>
                   )}
@@ -359,7 +357,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   {/* Delete */}
                   <button onClick={() => setDeleteFile(f)}
                     className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500"
-                    title="Xóa">
+                    title={t('documents.delete')}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -372,7 +370,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   <div className="font-mono text-xs text-gray-500 truncate mt-0.5">{f.sha256Hash}</div>
                   {f.verifyCode && (
                     <div className="mt-1 text-xs">
-                      <span className="text-gray-400">Mã xác thực: </span>
+                      <span className="text-gray-400">{t('documents.verifyCode')}</span>
                       <span className="font-mono font-medium text-blue-600">{f.verifyCode}</span>
                     </div>
                   )}
@@ -387,9 +385,9 @@ function DocumentsTab({ contractId }: { contractId: string }) {
       <ConfirmActionDialog
         open={!!deleteFile}
         onOpenChange={(open) => !open && setDeleteFile(null)}
-        title="Xóa tài liệu hợp đồng"
-        description={`Tài liệu "${deleteFile?.fileName ?? ''}" sẽ bị xóa khỏi hợp đồng.`}
-        confirmLabel="Xóa tài liệu"
+        title={t('documents.deleteTitle')}
+        description={t('documents.deleteDesc', { name: deleteFile?.fileName ?? '' })}
+        confirmLabel={t('documents.deleteConfirm')}
         destructive
         loading={deleteMutation.isPending}
         onConfirm={() => deleteFile && deleteMutation.mutate(deleteFile.id, { onSuccess: () => setDeleteFile(null) })}
@@ -408,6 +406,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
 // ── Contract Detail Sheet ─────────────────────────────────────────────────────
 
 function ContractDetailSheet({ contractId, onClose }: { contractId: string | null; onClose: () => void }) {
+  const { t } = useTranslation('contracts');
   const { toast } = useToast();
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -463,31 +462,31 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
       depositRefund: termForm.depositRefund ? +termForm.depositRefund : undefined,
       penaltyAmount: termForm.penaltyAmount ? +termForm.penaltyAmount : undefined,
     }),
-    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã khởi tạo quy trình chấm dứt hợp đồng' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { invalidateTermination(); toast({ title: t('termination.initiateSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const updateChecklistMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => terminationApi.update(contractId!, data),
-    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã cập nhật' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { invalidateTermination(); toast({ title: t('termination.updateSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const completeTerminationMutation = useMutation({
     mutationFn: () => terminationApi.complete(contractId!),
-    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã hoàn tất chấm dứt hợp đồng — mặt bằng chuyển về trống' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { invalidateTermination(); toast({ title: t('termination.completeSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const cancelTerminationMutation = useMutation({
     mutationFn: () => terminationApi.cancel(contractId!),
-    onSuccess: () => { invalidateTermination(); toast({ title: 'Đã hủy quy trình chấm dứt' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { invalidateTermination(); toast({ title: t('termination.cancelSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const renderMutation = useMutation({
     mutationFn: () => contractsApi.renderTemplate(contractId!, templateId),
-    onSuccess: () => toast({ title: 'Đã render template' }),
+    onSuccess: () => toast({ title: t('template.renderSuccess') }),
   });
 
   const createAmendmentMutation = useMutation({
@@ -499,7 +498,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
-      toast({ title: 'Đã tạo amendment draft' });
+      toast({ title: t('amendments.createSuccess') });
     },
   });
 
@@ -509,7 +508,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
   return (
     <Sheet open={!!contractId} onClose={onClose}
-      title={detail?.contractNumber ?? 'Hợp đồng'}
+      title={detail?.contractNumber ?? t('sheet.defaultTitle')}
       subtitle={detail?.tenant?.brandName}>
       {isLoading && (
         <div className="px-6 pt-6 space-y-3">
@@ -520,18 +519,18 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
         <div className="px-6 pb-8 pt-4">
           <Tabs defaultValue="detail">
             <TabsList className="mb-4">
-              <TabsTrigger value="detail">Chi tiết</TabsTrigger>
+              <TabsTrigger value="detail">{t('sheet.tabs.detail')}</TabsTrigger>
               <TabsTrigger value="documents" className="gap-1.5">
-                <FileText size={13} /> Tài liệu
+                <FileText size={13} /> {t('sheet.tabs.documents')}
                 {detail.files?.length > 0 && (
                   <span className="bg-blue-100 text-blue-700 text-xs px-1.5 rounded-full">{detail.files.length}</span>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="events">Timeline</TabsTrigger>
-              <TabsTrigger value="amendments">Phụ lục</TabsTrigger>
-              <TabsTrigger value="template">Template</TabsTrigger>
+              <TabsTrigger value="events">{t('sheet.tabs.events')}</TabsTrigger>
+              <TabsTrigger value="amendments">{t('sheet.tabs.amendments')}</TabsTrigger>
+              <TabsTrigger value="template">{t('sheet.tabs.template')}</TabsTrigger>
               <TabsTrigger value="termination" className="gap-1.5">
-                <LogOut size={13} /> Chấm dứt
+                <LogOut size={13} /> {t('sheet.tabs.termination')}
                 {term && term.status !== 'CANCELLED' && (
                   <span className="bg-orange-100 text-orange-700 text-xs px-1.5 rounded-full">•</span>
                 )}
@@ -542,11 +541,11 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             <TabsContent value="detail" className="space-y-4">
               {/* Status */}
               <div className="flex items-center gap-2 flex-wrap">
-                {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{st.label}</Badge>}
+                {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{t('status.' + detail.status)}</Badge>}
                 {detail.type && <Badge variant="outline">{detail.type}</Badge>}
                 {days !== null && days <= 90 && (
                   <Badge className={`${days <= 30 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'} border-0`}>
-                    Còn {days} ngày
+                    {t('sheet.daysLeft', { count: days })}
                   </Badge>
                 )}
               </div>
@@ -555,12 +554,12 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               {detail.proposal && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                    <Link2 size={11} /> NGUỒN GỐC
+                    <Link2 size={11} /> {t('sheet.source.label')}
                   </div>
                   <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
                     onClick={() => { onClose(); navigate('/proposals'); }}>
                     <div>
-                      <span className="text-xs text-gray-500 font-medium">Đề xuất: </span>
+                      <span className="text-xs text-gray-500 font-medium">{t('sheet.source.proposal')}</span>
                       <span className="font-medium text-gray-900">{detail.proposal.proposalNumber}</span>
                     </div>
                     <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
@@ -569,7 +568,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
                       onClick={() => { onClose(); navigate('/crm'); }}>
                       <div>
-                        <span className="text-xs text-gray-500 font-medium">Lead: </span>
+                        <span className="text-xs text-gray-500 font-medium">{t('sheet.source.lead')}</span>
                         <span className="font-medium text-gray-900">{detail.proposal.lead.brandName}</span>
                         <span className="text-xs text-gray-500 ml-1">({detail.proposal.lead.contactName})</span>
                       </div>
@@ -579,44 +578,44 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 </div>
               )}
 
-              <SheetSection label="CÁC BÊN" className="bg-gray-50">
-                <SheetRow label="Khách thuê"
+              <SheetSection label={t('sheet.sections.parties')} className="bg-gray-50">
+                <SheetRow label={t('sheet.fields.tenant')}
                   value={
                     <button className="text-gray-700 hover:underline flex items-center gap-1"
                       onClick={() => { onClose(); navigate('/tenants'); }}>
                       {detail.tenant?.brandName} <ArrowRight size={11} />
                     </button>
                   } icon={User} />
-                <SheetRow label="Công ty" value={detail.tenant?.companyName} icon={Building2} />
-                <SheetRow label="Mặt bằng" value={detail.unit?.code} icon={Building2} />
+                <SheetRow label={t('sheet.fields.company')} value={detail.tenant?.companyName} icon={Building2} />
+                <SheetRow label={t('sheet.fields.unit')} value={detail.unit?.code} icon={Building2} />
               </SheetSection>
 
-              <SheetSection label="ĐIỀU KHOẢN TÀI CHÍNH" className="bg-green-50">
-                <SheetRow label="Tiền thuê"
-                  value={`${new Intl.NumberFormat('vi-VN').format(detail.rent)} ₫/tháng`} icon={DollarSign} />
+              <SheetSection label={t('sheet.sections.financial')} className="bg-green-50">
+                <SheetRow label={t('sheet.fields.rent')}
+                  value={`${new Intl.NumberFormat('vi-VN').format(detail.rent)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
                 {detail.cam > 0 && (
-                  <SheetRow label="Phí CAM"
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.cam)} ₫/tháng`} icon={DollarSign} />
+                  <SheetRow label={t('sheet.fields.cam')}
+                    value={`${new Intl.NumberFormat('vi-VN').format(detail.cam)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
                 )}
                 {detail.serviceCharge > 0 && (
-                  <SheetRow label="Phí dịch vụ"
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.serviceCharge)} ₫/tháng`} icon={DollarSign} />
+                  <SheetRow label={t('sheet.fields.serviceCharge')}
+                    value={`${new Intl.NumberFormat('vi-VN').format(detail.serviceCharge)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
                 )}
-                <SheetRow label="Tổng / tháng"
+                <SheetRow label={t('sheet.fields.totalMonthly')}
                   value={<span className="text-green-700 font-bold">{new Intl.NumberFormat('vi-VN').format(monthlyRent)} ₫</span>}
                   icon={DollarSign} />
                 {detail.deposit > 0 && (
-                  <SheetRow label="Tiền đặt cọc"
+                  <SheetRow label={t('sheet.fields.deposit')}
                     value={`${new Intl.NumberFormat('vi-VN').format(detail.deposit)} ₫`} icon={DollarSign} />
                 )}
               </SheetSection>
 
-              <SheetSection label="THỜI HẠN HỢP ĐỒNG" className="bg-gray-50">
-                <SheetRow label="Ngày bắt đầu" value={fmtDate(detail.startDate)} icon={Calendar} />
-                <SheetRow label="Ngày kết thúc" value={fmtDate(detail.endDate)} icon={Calendar} />
-                <SheetRow label="Ngày ký" value={fmtDate(detail.signedDate)} icon={Calendar} />
-                <SheetRow label="Thời hạn"
-                  value={detail.durationMonths ? `${detail.durationMonths} tháng` : null} icon={Calendar} />
+              <SheetSection label={t('sheet.sections.period')} className="bg-gray-50">
+                <SheetRow label={t('sheet.fields.startDate')} value={fmtDate(detail.startDate)} icon={Calendar} />
+                <SheetRow label={t('sheet.fields.endDate')} value={fmtDate(detail.endDate)} icon={Calendar} />
+                <SheetRow label={t('sheet.fields.signedDate')} value={fmtDate(detail.signedDate)} icon={Calendar} />
+                <SheetRow label={t('sheet.fields.duration')}
+                  value={detail.durationMonths ? t('sheet.fields.durationMonths', { count: detail.durationMonths }) : null} icon={Calendar} />
               </SheetSection>
             </TabsContent>
 
@@ -645,7 +644,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             {/* ── Tab: Phụ lục ── */}
             <TabsContent value="amendments">
               <Button size="sm" className="mb-3" onClick={() => createAmendmentMutation.mutate()}>
-                <GitBranch size={14} className="mr-1" /> Tạo phụ lục (rent +5%)
+                <GitBranch size={14} className="mr-1" /> {t('amendments.createBtn')}
               </Button>
               {(amendments?.data ?? amendments ?? []).map((a: any) => (
                 <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm">
@@ -659,13 +658,13 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             <TabsContent value="template">
               <select className="border rounded px-2 py-1 text-sm w-full mb-2"
                 value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-                <option value="">Chọn template...</option>
-                {(templates?.data ?? templates ?? []).map((t: any) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                <option value="">{t('template.select')}</option>
+                {(templates?.data ?? templates ?? []).map((tmpl: any) => (
+                  <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
                 ))}
               </select>
               <Button size="sm" disabled={!templateId} onClick={() => renderMutation.mutate()}>
-                Render hợp đồng
+                {t('template.render')}
               </Button>
             </TabsContent>
 
@@ -673,26 +672,26 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             <TabsContent value="termination" className="space-y-4">
               {!term || term.status === 'CANCELLED' ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-gray-500">Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.</p>
+                  <p className="text-sm text-gray-500">{t('termination.noRequest')}</p>
                   <div>
-                    <label className="text-xs text-gray-500 mb-1 block">Lý do chấm dứt *</label>
-                    <Textarea rows={2} value={termForm.reason} onChange={(e) => setTermForm((f) => ({ ...f, reason: e.target.value }))} placeholder="VD: Khách thuê ngừng kinh doanh, vi phạm hợp đồng..." />
+                    <label className="text-xs text-gray-500 mb-1 block">{t('termination.reasonLabel')}</label>
+                    <Textarea rows={2} value={termForm.reason} onChange={(e) => setTermForm((f) => ({ ...f, reason: e.target.value }))} placeholder={t('termination.reasonPlaceholder')} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Ngày hiệu lực *</label>
+                      <label className="text-xs text-gray-500 mb-1 block">{t('termination.effectiveDateLabel')}</label>
                       <Input type="date" value={termForm.effectiveDate} onChange={(e) => setTermForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Số ngày báo trước</label>
+                      <label className="text-xs text-gray-500 mb-1 block">{t('termination.noticePeriodLabel')}</label>
                       <Input type="number" value={termForm.noticePeriodDays} onChange={(e) => setTermForm((f) => ({ ...f, noticePeriodDays: e.target.value }))} />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Hoàn cọc (nếu có)</label>
+                      <label className="text-xs text-gray-500 mb-1 block">{t('termination.depositRefundLabel')}</label>
                       <Input type="number" value={termForm.depositRefund} onChange={(e) => setTermForm((f) => ({ ...f, depositRefund: e.target.value }))} />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-1 block">Phạt vi phạm (nếu có)</label>
+                      <label className="text-xs text-gray-500 mb-1 block">{t('termination.penaltyLabel')}</label>
                       <Input type="number" value={termForm.penaltyAmount} onChange={(e) => setTermForm((f) => ({ ...f, penaltyAmount: e.target.value }))} />
                     </div>
                   </div>
@@ -701,41 +700,41 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     disabled={!termForm.reason || !termForm.effectiveDate || initiateTerminationMutation.isPending}
                     onClick={() => initiateTerminationMutation.mutate()}
                   >
-                    <LogOut size={14} /> Khởi tạo chấm dứt hợp đồng
+                    <LogOut size={14} /> {t('termination.initiateBtn')}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`border-0 ${term.status === 'COMPLETED' ? 'bg-gray-200 text-gray-600' : 'bg-orange-100 text-orange-700'}`}>
-                      {term.status === 'INITIATED' ? 'Đã khởi tạo' : term.status === 'IN_PROGRESS' ? 'Đang xử lý' : term.status === 'COMPLETED' ? 'Đã hoàn tất' : term.status}
+                      {t('termination.statuses.' + term.status, { defaultValue: term.status })}
                     </Badge>
-                    <span className="text-xs text-gray-500">Hiệu lực từ {fmtDate(term.effectiveDate)}</span>
+                    <span className="text-xs text-gray-500">{t('termination.effectiveFrom', { date: fmtDate(term.effectiveDate) })}</span>
                   </div>
-                  <SheetSection label="THÔNG TIN CHẤM DỨT">
-                    <SheetRow label="Lý do" value={term.reason} icon={AlertTriangle} />
-                    <SheetRow label="Khởi tạo bởi" value={term.initiatedBy === 'THISO' ? 'THISO (BQL)' : 'Khách thuê'} icon={User} />
-                    <SheetRow label="Báo trước" value={`${term.noticePeriodDays} ngày`} icon={Clock} />
-                    {term.depositRefund != null && <SheetRow label="Hoàn cọc" value={term.depositRefund.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
-                    {term.penaltyAmount != null && <SheetRow label="Phạt vi phạm" value={term.penaltyAmount.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                  <SheetSection label={t('sheet.sections.terminationInfo')}>
+                    <SheetRow label={t('sheet.fields.reason')} value={term.reason} icon={AlertTriangle} />
+                    <SheetRow label={t('sheet.fields.initiatedBy')} value={term.initiatedBy === 'THISO' ? t('sheet.fields.initiatedByThiso') : t('sheet.fields.initiatedByTenant')} icon={User} />
+                    <SheetRow label={t('sheet.fields.noticePeriod')} value={t('sheet.fields.noticePeriodDays', { count: term.noticePeriodDays })} icon={Clock} />
+                    {term.depositRefund != null && <SheetRow label={t('sheet.fields.depositRefund')} value={term.depositRefund.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                    {term.penaltyAmount != null && <SheetRow label={t('sheet.fields.penalty')} value={term.penaltyAmount.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
                   </SheetSection>
 
                   {term.status !== 'COMPLETED' && (
                     <>
                       <div>
-                        <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 uppercase">Checklist bàn giao</div>
+                        <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 uppercase">{t('termination.checklist.title')}</div>
                         <div className="space-y-2">
                           <label className="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" checked={term.accessCardReturn} onChange={(e) => updateChecklistMutation.mutate({ accessCardReturn: e.target.checked })} />
-                            Đã thu hồi thẻ ra vào
+                            {t('termination.checklist.accessCard')}
                           </label>
                           <label className="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" checked={term.signageRemoved} onChange={(e) => updateChecklistMutation.mutate({ signageRemoved: e.target.checked })} />
-                            Đã tháo dỡ biển hiệu
+                            {t('termination.checklist.signage')}
                           </label>
                           <label className="flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" checked={term.keysReturned} onChange={(e) => updateChecklistMutation.mutate({ keysReturned: e.target.checked })} />
-                            Đã bàn giao chìa khóa
+                            {t('termination.checklist.keys')}
                           </label>
                         </div>
                       </div>
@@ -745,7 +744,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                           disabled={!term.accessCardReturn || !term.signageRemoved || !term.keysReturned || completeTerminationMutation.isPending}
                           onClick={() => completeTerminationMutation.mutate()}
                         >
-                          <CheckCircle2 size={14} /> Hoàn tất chấm dứt
+                          <CheckCircle2 size={14} /> {t('termination.completeBtn')}
                         </Button>
                         <Button
                           variant="outline"
@@ -753,14 +752,14 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                           disabled={cancelTerminationMutation.isPending}
                           onClick={() => cancelTerminationMutation.mutate()}
                         >
-                          Hủy quy trình
+                          {t('termination.cancelBtn')}
                         </Button>
                       </div>
                     </>
                   )}
                   {term.status === 'COMPLETED' && (
                     <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
-                      <CheckCircle2 size={16} /> Hoàn tất ngày {fmtDate(term.completedAt)} — mặt bằng đã chuyển về trống
+                      <CheckCircle2 size={16} /> {t('termination.completedAt', { date: fmtDate(term.completedAt) })}
                     </div>
                   )}
                 </div>
@@ -776,6 +775,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ContractsPage() {
+  const { t } = useTranslation('contracts');
   const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -825,13 +825,13 @@ export default function ContractsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Hợp đồng</h1>
-          <p className="text-sm text-gray-500 mt-1">Quản lý hợp đồng cho thuê — upload scan & ký điện tử</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <Button variant={showExpiring ? 'default' : 'outline'} className="gap-2"
           onClick={() => setShowExpiring(!showExpiring)}>
           <AlertTriangle size={16} />
-          {showExpiring ? 'Tất cả HĐ' : 'Sắp hết hạn'}
+          {showExpiring ? t('actions.showAll') : t('actions.showExpiring')}
         </Button>
       </div>
 
@@ -840,7 +840,7 @@ export default function ContractsPage() {
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="Số HĐ / khách thuê / mặt bằng..."
+              placeholder={t('filters.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -848,23 +848,23 @@ export default function ContractsPage() {
           </div>
           <Select value={type} onValueChange={setType}>
             <SelectTrigger className="w-44">
-              <SelectValue placeholder="Loại HĐ" />
+              <SelectValue placeholder={t('filters.typeLabel')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tất cả loại</SelectItem>
-              {Object.entries(TYPE_MAP).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
+              <SelectItem value="">{t('filters.allTypes')}</SelectItem>
+              {TYPE_KEYS.map((k) => (
+                <SelectItem key={k} value={k}>{t('type.' + k)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger className="w-44">
-              <SelectValue placeholder="Trạng thái" />
+              <SelectValue placeholder={t('filters.statusLabel')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Tất cả TT</SelectItem>
-              {Object.entries(STATUS_MAP).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+              <SelectItem value="">{t('filters.allStatuses')}</SelectItem>
+              {Object.keys(STATUS_MAP).map((k) => (
+                <SelectItem key={k} value={k}>{t('status.' + k)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -873,11 +873,11 @@ export default function ContractsPage() {
             to={dateTo}
             onFromChange={setDateFrom}
             onToChange={setDateTo}
-            placeholder="Ngày bắt đầu HĐ"
+            placeholder={t('filters.datePlaceholder')}
           />
           {hasFilter && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5 text-gray-500 h-9">
-              <X size={14} /> Xóa lọc
+              <X size={14} /> {t('filters.clearFilters')}
             </Button>
           )}
         </div>
@@ -886,7 +886,7 @@ export default function ContractsPage() {
       {(showExpiring ? expiringError : isError) ? (
         <AsyncState isLoading={false} isError
           onRetry={showExpiring ? refetchExpiring : refetch}
-          errorTitle="Không thể tải danh sách hợp đồng">
+          errorTitle={t('errorLoad')}>
           <div />
         </AsyncState>
       ) : (isLoading || loadingExpiring) ? (
@@ -898,16 +898,16 @@ export default function ContractsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Số HĐ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Khách thuê</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Mặt bằng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Loại</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Thuê/tháng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Bắt đầu</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Kết thúc</th>
-                {showExpiring && <th className="text-right px-4 py-3 font-medium text-gray-600">Còn lại</th>}
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                <th className="px-4 py-3 text-gray-400 text-xs">Tài liệu</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.contractNo')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.tenant')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.unit')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.type')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.monthlyRent')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.startDate')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.endDate')}</th>
+                {showExpiring && <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.remaining')}</th>}
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.status')}</th>
+                <th className="px-4 py-3 text-gray-400 text-xs">{t('table.documents')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -933,11 +933,11 @@ export default function ContractsPage() {
                     <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString('vi-VN')}</td>
                     {showExpiring && (
                       <td className={`px-4 py-3 text-right font-medium ${days <= 30 ? 'text-red-600' : days <= 90 ? 'text-orange-500' : 'text-gray-500'}`}>
-                        {days} ngày
+                        {t('table.daysRemaining', { count: days })}
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                      <Badge className={`${st.color} border-0 text-xs`}>{t('status.' + c.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {fileCount > 0 ? (
@@ -957,7 +957,7 @@ export default function ContractsPage() {
           {contracts.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <File size={40} className="mx-auto mb-2 opacity-20" />
-              <p>Không có hợp đồng nào</p>
+              <p>{t('empty')}</p>
             </div>
           )}
         </div>
@@ -965,11 +965,11 @@ export default function ContractsPage() {
 
       {!showExpiring && totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-          <span>{total} hợp đồng</span>
+          <span>{t('total', { count: total })}</span>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
-            <span className="px-2 py-1">Trang {page} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('pagination.prev')}</Button>
+            <span className="px-2 py-1">{t('pagination.page', { current: page, total: totalPages })}</span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>{t('pagination.next')}</Button>
           </div>
         </div>
       )}

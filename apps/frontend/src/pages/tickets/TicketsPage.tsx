@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { ticketsApi, tenantsApi, spacesApi, usersApi, maintenanceApi } from '@/api';
@@ -19,33 +20,33 @@ import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, Im
 import type { Ticket as TicketType } from '@/types';
 import { useSearchParams } from 'react-router-dom';
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  NEW: { label: 'Mới', color: 'bg-gray-100 text-gray-700' },
-  ASSIGNED: { label: 'Đã giao', color: 'bg-gray-100 text-gray-700' },
-  IN_PROGRESS: { label: 'Đang xử lý', color: 'bg-yellow-100 text-yellow-700' },
-  WAITING_TENANT: { label: 'Chờ KH', color: 'bg-purple-100 text-purple-700' },
-  RESOLVED: { label: 'Đã giải quyết', color: 'bg-green-100 text-green-700' },
-  CLOSED: { label: 'Đóng', color: 'bg-gray-200 text-gray-600' },
+const STATUS_MAP: Record<string, { color: string }> = {
+  NEW: { color: 'bg-gray-100 text-gray-700' },
+  ASSIGNED: { color: 'bg-gray-100 text-gray-700' },
+  IN_PROGRESS: { color: 'bg-yellow-100 text-yellow-700' },
+  WAITING_TENANT: { color: 'bg-purple-100 text-purple-700' },
+  RESOLVED: { color: 'bg-green-100 text-green-700' },
+  CLOSED: { color: 'bg-gray-200 text-gray-600' },
 };
 
-const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
-  LOW: { label: 'Thấp', color: 'bg-gray-100 text-gray-600' },
-  MEDIUM: { label: 'Trung bình', color: 'bg-gray-100 text-gray-700' },
-  HIGH: { label: 'Cao', color: 'bg-orange-100 text-orange-700' },
-  URGENT: { label: 'Khẩn cấp', color: 'bg-red-100 text-red-700' },
+const PRIORITY_MAP: Record<string, { color: string }> = {
+  LOW: { color: 'bg-gray-100 text-gray-600' },
+  MEDIUM: { color: 'bg-gray-100 text-gray-700' },
+  HIGH: { color: 'bg-orange-100 text-orange-700' },
+  URGENT: { color: 'bg-red-100 text-red-700' },
 };
 
 const TICKET_TYPES = [
-  { value: 'ELECTRICAL', label: 'Điện' },
-  { value: 'WATER', label: 'Nước' },
-  { value: 'HVAC', label: 'Điều hòa / thông gió' },
-  { value: 'CLEANING', label: 'Vệ sinh' },
-  { value: 'SECURITY', label: 'An ninh' },
-  { value: 'PARKING', label: 'Bãi đỗ xe' },
-  { value: 'INTERNET', label: 'Internet / mạng' },
-  { value: 'DELIVERY', label: 'Giao hàng / logistics' },
-  { value: 'MARKETING_EVENT', label: 'Marketing / sự kiện' },
-  { value: 'OTHER', label: 'Khác' },
+  { value: 'ELECTRICAL' },
+  { value: 'WATER' },
+  { value: 'HVAC' },
+  { value: 'CLEANING' },
+  { value: 'SECURITY' },
+  { value: 'PARKING' },
+  { value: 'INTERNET' },
+  { value: 'DELIVERY' },
+  { value: 'MARKETING_EVENT' },
+  { value: 'OTHER' },
 ];
 
 // Bảng chuyển trạng thái hợp lệ cho nhân viên (khớp state machine backend).
@@ -66,6 +67,7 @@ function fmtDate(d?: string | null) {
 // ─── Create Inspection Ticket Dialog ─────────────────────────────────────────
 
 function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation(['tickets', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm({
@@ -94,41 +96,41 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
     mutationFn: (data: any) => ticketsApi.createTicket(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tickets'] });
-      toast({ title: 'Đã tạo phiếu kiểm tra' });
+      toast({ title: t('createSuccess') });
       reset();
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo phiếu', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('errors.create'), variant: 'destructive' }),
   });
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Tạo phiếu kiểm tra hiện trường</DialogTitle>
+          <DialogTitle>{t('inspection.createTitle')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Khách thuê *</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.tenantLabel')}</label>
             <Select value={selectedTenantId || undefined} onValueChange={(v) => { setValue('tenantId', v, { shouldValidate: true }); setValue('unitId', '', { shouldValidate: true }); }}>
               <SelectTrigger className={errors.tenantId ? 'border-red-400' : ''}>
-                <SelectValue placeholder="Chọn khách thuê..." />
+                <SelectValue placeholder={t('inspection.tenantPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                {tenants.map((t: any) => (
-                  <SelectItem key={t.id} value={t.id}>{t.brandName} — {t.companyName}</SelectItem>
+                {tenants.map((tn: any) => (
+                  <SelectItem key={tn.id} value={tn.id}>{tn.brandName} — {tn.companyName}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('tenantId', { required: 'Vui lòng chọn khách thuê' })} />
+            <input type="hidden" {...register('tenantId', { required: t('inspection.tenantRequired') })} />
             {errors.tenantId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.tenantId.message)}</p>}
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng *</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.unitLabel')}</label>
             <Select value={selectedUnitId || undefined} onValueChange={(v) => setValue('unitId', v, { shouldValidate: true })} disabled={!selectedTenantId}>
               <SelectTrigger className={errors.unitId ? 'border-red-400' : ''}>
-                <SelectValue placeholder={selectedTenantId ? 'Chọn mặt bằng...' : 'Chọn khách thuê trước'} />
+                <SelectValue placeholder={selectedTenantId ? t('inspection.unitPlaceholder') : t('inspection.unitDisabled')} />
               </SelectTrigger>
               <SelectContent>
                 {units.map((u: any) => (
@@ -136,49 +138,49 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
                 ))}
               </SelectContent>
             </Select>
-            <input type="hidden" {...register('unitId', { required: 'Vui lòng chọn mặt bằng' })} />
+            <input type="hidden" {...register('unitId', { required: t('inspection.unitRequired') })} />
             {errors.unitId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.unitId.message)}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Loại *</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.typeLabel')}</label>
               <Select value={selectedType || undefined} onValueChange={(v) => setValue('type', v, { shouldValidate: true })}>
                 <SelectTrigger className={errors.type ? 'border-red-400' : ''}>
-                  <SelectValue placeholder="Loại..." />
+                  <SelectValue placeholder={t('inspection.typePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {TICKET_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                  {TICKET_TYPES.map((tt) => <SelectItem key={tt.value} value={tt.value}>{t('types.' + tt.value)}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <input type="hidden" {...register('type', { required: 'Vui lòng chọn loại yêu cầu' })} />
+              <input type="hidden" {...register('type', { required: t('inspection.typeRequired') })} />
               {errors.type && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.type.message)}</p>}
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Mức độ ưu tiên</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.priorityLabel')}</label>
               <Select value={selectedPriority} onValueChange={(v) => setValue('priority', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(PRIORITY_MAP).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                  {Object.entries(PRIORITY_MAP).map(([k]) => <SelectItem key={k} value={k}>{t('priority.' + k)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Tiêu đề *</label>
-            <Input {...register('subject', { required: true })} placeholder="Mô tả ngắn gọn phát hiện..." className={errors.subject ? 'border-red-400' : ''} />
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.subjectLabel')}</label>
+            <Input {...register('subject', { required: true })} placeholder={t('inspection.subjectPlaceholder')} className={errors.subject ? 'border-red-400' : ''} />
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Chi tiết kiểm tra</label>
-            <Textarea {...register('description')} placeholder="Mô tả chi tiết những gì phát hiện được khi kiểm tra hiện trường..." rows={3} />
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('inspection.descLabel')}</label>
+            <Textarea {...register('description')} placeholder={t('inspection.descPlaceholder')} rows={3} />
           </div>
 
           <DialogFooter>
-            <Button variant="outline" type="button" onClick={onClose}>Hủy</Button>
+            <Button variant="outline" type="button" onClick={onClose}>{t('common:actions.cancel')}</Button>
             <Button type="submit" disabled={mutation.isPending} className="gap-2">
-              <Send size={14} /> Tạo phiếu &amp; gửi cho khách thuê
+              <Send size={14} /> {t('inspection.submitBtn')}
             </Button>
           </DialogFooter>
         </form>
@@ -190,6 +192,7 @@ function CreateInspectionTicketDialog({ open, onClose }: { open: boolean; onClos
 // ─── Staff Ticket Detail Sheet ────────────────────────────────────────────────
 
 function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onClose: () => void }) {
+  const { t: tl } = useTranslation('tickets');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [comment, setComment] = useState('');
@@ -227,14 +230,14 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
 
   const assignMutation = useMutation({
     mutationFn: (userId: string) => ticketsApi.assignTicket(ticketId!, userId),
-    onSuccess: () => { invalidateAll(); toast({ title: 'Đã phân công xử lý' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi phân công', variant: 'destructive' }),
+    onSuccess: () => { invalidateAll(); toast({ title: tl('assignSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? tl('errors.assign'), variant: 'destructive' }),
   });
 
   const transitionMutation = useMutation({
     mutationFn: (status: string) => ticketsApi.transitionStatus(ticketId!, status),
-    onSuccess: () => { invalidateAll(); toast({ title: 'Đã chuyển trạng thái' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi chuyển trạng thái', variant: 'destructive' }),
+    onSuccess: () => { invalidateAll(); toast({ title: tl('updateSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? tl('errors.transition'), variant: 'destructive' }),
   });
 
   const commentMutation = useMutation({
@@ -243,18 +246,18 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
       invalidateAll();
       setComment('');
       setIsInternal(false);
-      toast({ title: 'Đã thêm bình luận' });
+      toast({ title: tl('commentSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi thêm bình luận', variant: 'destructive' }),
+    onError: () => toast({ title: tl('errors.comment'), variant: 'destructive' }),
   });
 
   const uploadPhotoMutation = useMutation({
     mutationFn: (file: File) => ticketsApi.uploadPhoto(ticketId!, file),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ticket-photos', ticketId] });
-      toast({ title: 'Đã tải ảnh lên' });
+      toast({ title: tl('photoSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi tải ảnh lên', variant: 'destructive' }),
+    onError: () => toast({ title: tl('errors.photo'), variant: 'destructive' }),
   });
 
   return (
@@ -266,17 +269,17 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
       ) : t && (
         <div className="px-6 pb-8 space-y-4 pt-4">
           <div className="flex items-center gap-2">
-            {statusInfo && <Badge className={`${statusInfo.color} border-0`}>{statusInfo.label}</Badge>}
-            {priorityInfo && <Badge className={`${priorityInfo.color} border-0`}>{priorityInfo.label}</Badge>}
-            <Badge variant="outline" className="text-xs">{t.source === 'STAFF_INSPECTION' ? 'Phiếu kiểm tra' : 'Yêu cầu từ KH'}</Badge>
+            {statusInfo && <Badge className={`${statusInfo.color} border-0`}>{tl('status.' + t.status)}</Badge>}
+            {priorityInfo && <Badge className={`${priorityInfo.color} border-0`}>{tl('priority.' + t.priority)}</Badge>}
+            <Badge variant="outline" className="text-xs">{t.source === 'STAFF_INSPECTION' ? tl('source.STAFF_INSPECTION') : tl('source.TENANT_REQUEST')}</Badge>
           </div>
 
-          <SheetSection label="CHI TIẾT">
-            <SheetRow label="Khách thuê" value={t.tenant?.brandName} icon={Building2} />
-            <SheetRow label="Mặt bằng" value={t.unit?.code} icon={Building2} />
-            <SheetRow label="Loại" value={TICKET_TYPES.find((x) => x.value === t.type)?.label ?? t.type} icon={Ticket} />
-            <SheetRow label="Người tạo" value={t.createdBy?.fullName} icon={User} />
-            <SheetRow label="Ngày tạo" value={fmtDate(t.createdAt)} icon={Calendar} />
+          <SheetSection label={tl('sheet.sectionDetail')}>
+            <SheetRow label={tl('fields.tenant')} value={t.tenant?.brandName} icon={Building2} />
+            <SheetRow label={tl('fields.unit')} value={t.unit?.code} icon={Building2} />
+            <SheetRow label={tl('fields.type')} value={tl('types.' + t.type)} icon={Ticket} />
+            <SheetRow label={tl('fields.creator')} value={t.createdBy?.fullName} icon={User} />
+            <SheetRow label={tl('fields.createdAt')} value={fmtDate(t.createdAt)} icon={Calendar} />
             {t.resolvedAt && <SheetRow label="Ngày giải quyết" value={fmtDate(t.resolvedAt)} icon={CheckCircle2} />}
           </SheetSection>
 
@@ -313,7 +316,7 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
                     disabled={transitionMutation.isPending}
                     onClick={() => transitionMutation.mutate(s)}
                   >
-                    → {STATUS_MAP[s]?.label ?? s}
+                    → {tl('status.' + s)}
                   </Button>
                 ))}
               </div>
@@ -657,6 +660,7 @@ function MaintenanceTab() {
 }
 
 export default function TicketsPage() {
+  const { t: tl } = useTranslation('tickets');
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const isStaff = user?.role !== 'TENANT';
@@ -701,8 +705,8 @@ export default function TicketsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Operation Tickets</h1>
-          <p className="text-sm text-gray-500 mt-1">Yêu cầu vận hành, hỗ trợ và phiếu kiểm tra hiện trường</p>
+          <h1 className="text-2xl font-bold text-gray-900">{tl('page.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{tl('page.subtitle')}</p>
         </div>
         <Button onClick={() => setShowCreate(true)} className="gap-2">
           <ClipboardList size={15} /> Tạo phiếu kiểm tra
@@ -730,7 +734,7 @@ export default function TicketsPage() {
         {isStaff && (
           <TabsList className="mb-4">
             <TabsTrigger value="tickets">Tickets</TabsTrigger>
-            <TabsTrigger value="maintenance" className="gap-1.5"><Wrench size={13} /> Bảo trì định kỳ</TabsTrigger>
+            <TabsTrigger value="maintenance" className="gap-1.5"><Wrench size={13} /> {tl('tabs.maintenance')}</TabsTrigger>
           </TabsList>
         )}
         <TabsContent value="tickets">
@@ -744,7 +748,7 @@ export default function TicketsPage() {
             className={`text-xs px-3 py-1.5 rounded-full border transition-colors font-medium
               ${status === key ? 'border-blue-500 bg-gray-100 text-gray-700' : `${val.color} border-transparent`}`}
           >
-            {val.label}
+            {tl('status.' + key)}
           </button>
         ))}
       </div>
@@ -765,8 +769,8 @@ export default function TicketsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Tất cả</SelectItem>
-            {Object.entries(PRIORITY_MAP).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+            {Object.entries(PRIORITY_MAP).map(([k]) => (
+              <SelectItem key={k} value={k}>{tl('priority.' + k)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -811,10 +815,10 @@ export default function TicketsPage() {
                       <Badge variant="outline" className="text-xs">{t.type}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={`${pr?.color} border-0 text-xs`}>{pr?.label}</Badge>
+                      <Badge className={`${pr?.color} border-0 text-xs`}>{tl('priority.' + t.priority)}</Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={`${st?.color} border-0 text-xs`}>{st?.label}</Badge>
+                      <Badge className={`${st?.color} border-0 text-xs`}>{tl('status.' + t.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-gray-500">{t.assignedTo?.fullName ?? '-'}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">

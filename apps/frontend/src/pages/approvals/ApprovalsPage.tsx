@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
@@ -35,6 +36,7 @@ function fmtDateTime(value?: string | null) {
 }
 
 function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | null; onClose: () => void }) {
+  const { t } = useTranslation(['deals', 'common']);
   const { toast } = useToast();
   const { data: workflow, isLoading, isError, refetch } = useQuery({
     queryKey: ['approval-workflow', workflowId],
@@ -62,54 +64,54 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
         URL.revokeObjectURL(url);
       }
     } catch {
-      toast({ title: 'Không thể tạo bản đề xuất PDF', variant: 'destructive' });
+      toast({ title: t('approvals.workflow.errorPdf'), variant: 'destructive' });
     }
   };
 
   return (
-    <Sheet open={!!workflowId} onClose={onClose} title={p?.proposalNumber ?? 'Hồ sơ phê duyệt'} subtitle={p?.tenant?.brandName ?? p?.lead?.brandName} className="w-[720px] max-w-[96vw]">
+    <Sheet open={!!workflowId} onClose={onClose} title={p?.proposalNumber ?? t('approvals.workflow.title')} subtitle={p?.tenant?.brandName ?? p?.lead?.brandName} className="w-[720px] max-w-[96vw]">
       {isLoading ? <div className="space-y-3 p-6">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}</div>
-      : isError ? <div className="p-6"><AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải hồ sơ phê duyệt"><div /></AsyncState></div>
+      : isError ? <div className="p-6"><AsyncState isLoading={false} isError onRetry={refetch} errorTitle={t('approvals.workflow.errorLoad')}><div /></AsyncState></div>
       : w && p ? (
         <div className="space-y-5 p-6">
           <div className={`rounded-2xl border p-4 ${completed ? 'border-emerald-200 bg-emerald-50' : w.status === 'REJECTED' ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-semibold uppercase tracking-wider opacity-60">Trạng thái hồ sơ</p><p className="mt-1 text-lg font-bold">{completed ? 'Đã hoàn tất toàn bộ phê duyệt' : w.status === 'REJECTED' ? 'Hồ sơ đã bị từ chối' : 'Đang trong quy trình phê duyệt'}</p><p className="mt-1 text-xs opacity-70">Khởi tạo {fmtDateTime(w.createdAt)} · Cập nhật {fmtDateTime(w.updatedAt)}</p></div>
-              <Badge className="border-0 bg-white/80 text-slate-700">{steps.filter((s) => s.status === 'APPROVED').length}/{steps.length} bước</Badge>
+              <div><p className="text-xs font-semibold uppercase tracking-wider opacity-60">{t('approvals.workflow.status')}</p><p className="mt-1 text-lg font-bold">{completed ? t('approvals.workflow.completed') : w.status === 'REJECTED' ? t('approvals.workflow.rejected') : t('approvals.workflow.inProgress')}</p><p className="mt-1 text-xs opacity-70">{t('approvals.workflow.timestamps', { created: fmtDateTime(w.createdAt), updated: fmtDateTime(w.updatedAt) })}</p></div>
+              <Badge className="border-0 bg-white/80 text-slate-700">{t('approvals.workflow.steps', { done: steps.filter((s) => s.status === 'APPROVED').length, total: steps.length })}</Badge>
             </div>
           </div>
 
-          <SheetSection label="THÔNG TIN ĐỀ XUẤT" className="bg-slate-50">
+          <SheetSection label={t('approvals.workflow.section.proposalInfo')} className="bg-slate-50">
             <div className="grid grid-cols-2 gap-x-4">
-              <SheetRow label="Khách thuê / thương hiệu" value={p.tenant?.brandName ?? p.lead?.brandName} icon={User} />
-              <SheetRow label="Công ty" value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
-              <SheetRow label="Mặt bằng" value={`${p.unit?.code ?? '—'}${p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}`} icon={Building2} />
-              <SheetRow label="Diện tích" value={p.area ? `${Number(p.area).toLocaleString('vi-VN')} m²` : null} icon={Building2} />
-              <SheetRow label="Thời hạn thuê" value={p.term ? `${p.term} tháng` : null} icon={CalendarDays} />
-              <SheetRow label="Từ ngày – đến ngày" value={`${p.startDate ? new Date(p.startDate).toLocaleDateString('vi-VN') : '—'} – ${p.endDate ? new Date(p.endDate).toLocaleDateString('vi-VN') : '—'}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.tenantBrand')} value={p.tenant?.brandName ?? p.lead?.brandName} icon={User} />
+              <SheetRow label={t('approvals.workflow.fields.company')} value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.unit')} value={`${p.unit?.code ?? '—'}${p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}`} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.area')} value={p.area ? `${Number(p.area).toLocaleString('vi-VN')} m²` : null} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.term')} value={p.term ? `${p.term} tháng` : null} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.dateRange')} value={`${p.startDate ? new Date(p.startDate).toLocaleDateString('vi-VN') : '—'} – ${p.endDate ? new Date(p.endDate).toLocaleDateString('vi-VN') : '—'}`} icon={CalendarDays} />
             </div>
           </SheetSection>
 
-          <SheetSection label="ĐIỀU KIỆN TÀI CHÍNH" className="bg-slate-50">
+          <SheetSection label={t('approvals.workflow.section.financial')} className="bg-slate-50">
             <div className="grid grid-cols-2 gap-x-4">
-              <SheetRow label="Đơn giá thuê / m²" value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
-              <SheetRow label="Tiền thuê / tháng" value={p.monthlyRent ? fmt(p.monthlyRent) : null} icon={DollarSign} />
-              <SheetRow label="Phí CAM / tháng" value={p.monthlyCAM ? fmt(p.monthlyCAM) : null} icon={DollarSign} />
-              <SheetRow label="Chiết khấu" value={`${p.discount ?? 0}%`} icon={DollarSign} />
-              <SheetRow label="Miễn tiền thuê" value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
-              <SheetRow label="Tổng giá trị hợp đồng" value={p.totalContractValue ? fmt(p.totalContractValue) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? fmt(p.monthlyRent) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? fmt(p.monthlyCAM) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? fmt(p.totalContractValue) : null} icon={DollarSign} />
             </div>
-            {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">Điều kiện/Ghi chú: </span>{p.specialConditions ?? p.notes}</div>}
+            {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
           </SheetSection>
 
           <section>
-            <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-slate-500"><ShieldCheck size={15} /> NHẬT KÝ PHÊ DUYỆT</div>
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-slate-500"><ShieldCheck size={15} /> {t('approvals.workflow.section.log')}</div>
             <div className="space-y-0">
-              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-5 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">Bước {step.stepOrder}: {step.stepName}</p><p className="mt-0.5 text-xs text-slate-500">Vai trò: {step.approverRole}</p></div><Badge className={`border-0 ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{step.status === 'APPROVED' ? 'Đã duyệt' : step.status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt'}</Badge></div>{step.approver && <div className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.department ?? step.approver.role}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
+              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-5 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepLabel', { order: step.stepOrder, name: step.stepName })}</p><p className="mt-0.5 text-xs text-slate-500">{t('approvals.workflow.step.role', { role: step.approverRole })}</p></div><Badge className={`border-0 ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : t('approvals.workflow.step.pending')}</Badge></div>{step.approver && <div className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.department ?? step.approver.role}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
             </div>
           </section>
 
-          {completed ? <div className="sticky bottom-0 flex gap-2 border-t bg-white pt-4"><Button className="flex-1 gap-2" onClick={() => getPdf('open')}><Eye size={15} /> Xem / In bản hoàn chỉnh</Button><Button variant="outline" className="flex-1 gap-2" onClick={() => getPdf('download')}><Download size={15} /> Lưu PDF</Button></div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><FileText size={15} className="mr-2 inline" />Bản đề xuất hoàn chỉnh để in và lưu sẽ mở khi tất cả các bước đã được phê duyệt.</div>}
+          {completed ? <div className="sticky bottom-0 flex gap-2 border-t bg-white pt-4"><Button className="flex-1 gap-2" onClick={() => getPdf('open')}><Eye size={15} /> {t('approvals.workflow.printReady')}</Button><Button variant="outline" className="flex-1 gap-2" onClick={() => getPdf('download')}><Download size={15} /> {t('approvals.workflow.savePdf')}</Button></div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><FileText size={15} className="mr-2 inline" />{t('approvals.workflow.printPending')}</div>}
         </div>
       ) : null}
     </Sheet>
@@ -117,6 +119,7 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
 }
 
 export default function ApprovalsPage() {
+  const { t } = useTranslation(['deals', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
@@ -186,23 +189,23 @@ export default function ApprovalsPage() {
   // ── Mutations — single ──
   const approveMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.approve(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: t('approvals.approveSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
   const rejectMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment: string }) => approvalsApi.reject(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: t('approvals.rejectSuccess'), variant: 'destructive' }); closeRejectDialog(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
   const approvePriceMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => bookingApi.approvePrice(id, note),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã phê duyệt giá' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.approvePriceSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
   const rejectPriceMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingApi.rejectPrice(id, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã từ chối giá', variant: 'destructive' }); closeRejectDialog(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.rejectPriceSuccess'), variant: 'destructive' }); closeRejectDialog(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   // ── Bulk mutations ──
@@ -221,10 +224,10 @@ export default function ApprovalsPage() {
       qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
       qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
-      if (fail > 0) toast({ title: `Đã duyệt ${ok}, ${fail} lỗi`, variant: 'destructive' });
-      else toast({ title: `Đã phê duyệt ${ok} bước` });
+      if (fail > 0) toast({ title: t('approvals.bulk.approvePartial', { ok, fail }), variant: 'destructive' });
+      else toast({ title: t('approvals.bulk.approveSuccess', { ok }) });
     },
-    onError: () => toast({ title: 'Lỗi phê duyệt', variant: 'destructive' }),
+    onError: () => toast({ title: t('approvals.bulk.errorApprove'), variant: 'destructive' }),
   });
   const bulkRejectMutation = useMutation({
     mutationFn: async ({ ids, comment }: { ids: string[]; comment: string }) => {
@@ -241,10 +244,10 @@ export default function ApprovalsPage() {
       qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
       closeRejectDialog();
-      if (fail > 0) toast({ title: `Đã từ chối ${ok}, ${fail} lỗi`, variant: 'destructive' });
-      else toast({ title: `Đã từ chối ${ok} bước`, variant: 'destructive' });
+      if (fail > 0) toast({ title: t('approvals.bulk.rejectPartial', { ok, fail }), variant: 'destructive' });
+      else toast({ title: t('approvals.bulk.rejectSuccess', { ok }), variant: 'destructive' });
     },
-    onError: () => toast({ title: 'Lỗi từ chối', variant: 'destructive' }),
+    onError: () => toast({ title: t('approvals.bulk.errorReject'), variant: 'destructive' }),
   });
   const bulkApprovePriceMutation = useMutation({
     mutationFn: (ids: string[]) =>
@@ -255,10 +258,10 @@ export default function ApprovalsPage() {
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['pending-price-approvals'] });
       setSelectedPriceIds(new Set());
-      if (fail > 0) toast({ title: `Đã duyệt ${ok}, ${fail} lỗi`, variant: 'destructive' });
-      else toast({ title: `Đã phê duyệt giá ${ok} booking` });
+      if (fail > 0) toast({ title: t('approvals.bulk.approvePartial', { ok, fail }), variant: 'destructive' });
+      else toast({ title: t('approvals.bulk.approvePriceSuccess', { ok }) });
     },
-    onError: () => toast({ title: 'Lỗi phê duyệt giá', variant: 'destructive' }),
+    onError: () => toast({ title: t('approvals.bulk.errorApprovePrice'), variant: 'destructive' }),
   });
   const bulkRejectPriceMutation = useMutation({
     mutationFn: ({ ids, reason }: { ids: string[]; reason: string }) =>
@@ -270,10 +273,10 @@ export default function ApprovalsPage() {
       qc.invalidateQueries({ queryKey: ['pending-price-approvals'] });
       setSelectedPriceIds(new Set());
       closeRejectDialog();
-      if (fail > 0) toast({ title: `Đã từ chối ${ok}, ${fail} lỗi`, variant: 'destructive' });
-      else toast({ title: `Đã từ chối giá ${ok} booking`, variant: 'destructive' });
+      if (fail > 0) toast({ title: t('approvals.bulk.rejectPartial', { ok, fail }), variant: 'destructive' });
+      else toast({ title: t('approvals.bulk.rejectPriceSuccess', { ok }), variant: 'destructive' });
     },
-    onError: () => toast({ title: 'Lỗi từ chối giá', variant: 'destructive' }),
+    onError: () => toast({ title: t('approvals.bulk.errorRejectPrice'), variant: 'destructive' }),
   });
 
   function closeRejectDialog() { setRejectDialog(null); setRejectReason(''); }
@@ -309,11 +312,11 @@ export default function ApprovalsPage() {
           disabled={bulkApproveMutation.isPending}
           onClick={() => bulkApproveMutation.mutate(Array.from(selectedProposalIds))}>
           {bulkApproveMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-          Phê duyệt tất cả
+          {t('approvals.actions.approveAll')}
         </Button>
         <Button size="sm" variant="ghost" className="text-red-400 gap-1.5 shrink-0"
           onClick={() => setRejectDialog({ ids: Array.from(selectedProposalIds), type: 'proposal', bulk: true })}>
-          <XCircle size={14} /> Từ chối tất cả
+          <XCircle size={14} /> {t('approvals.actions.rejectAll')}
         </Button>
       </BulkSelectionBar>
 
@@ -328,23 +331,23 @@ export default function ApprovalsPage() {
           disabled={bulkApprovePriceMutation.isPending}
           onClick={() => bulkApprovePriceMutation.mutate(Array.from(selectedPriceIds))}>
           {bulkApprovePriceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-          Phê duyệt giá
+          {t('approvals.actions.approvePrice')}
         </Button>
         <Button size="sm" variant="ghost" className="text-red-400 gap-1.5 shrink-0"
           onClick={() => setRejectDialog({ ids: Array.from(selectedPriceIds), type: 'price', bulk: true })}>
-          <XCircle size={14} /> Từ chối giá
+          <XCircle size={14} /> {t('approvals.actions.rejectPrice')}
         </Button>
       </BulkSelectionBar>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Phê duyệt</h1>
-          <p className="text-sm text-gray-500 mt-1">Các yêu cầu phê duyệt đang chờ xử lý</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('approvals.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('approvals.subtitle')}</p>
         </div>
         <div className="flex gap-2">
-          <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{proposalTotal} deal</Badge>
-          {canApprovePrices && <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceTotal} giá</Badge>}
+          <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{t('approvals.pendingCount', { count: proposalTotal })}</Badge>
+          {canApprovePrices && <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{t('approvals.pendingPriceCount', { count: priceTotal })}</Badge>}
         </div>
       </div>
 
@@ -355,21 +358,21 @@ export default function ApprovalsPage() {
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'proposals' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <CheckSquare size={14} className="inline mr-1.5" />
-          Proposal ({proposalTotal})
+          {t('approvals.views.proposals')} ({proposalTotal})
         </button>
         {canApprovePrices && <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'prices' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <DollarSign size={14} className="inline mr-1.5" />
-          Giá Booking ({priceTotal})
+          {t('approvals.views.prices')} ({priceTotal})
         </button>}
         <button
           onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <History size={14} className="inline mr-1.5" />
-          Lịch sử
+          {t('approvals.views.history')}
         </button>
       </div>
 
@@ -392,8 +395,8 @@ export default function ApprovalsPage() {
           ) : steps.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <CheckSquare size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="text-lg font-medium">Không có gì cần duyệt</p>
-              <p className="text-sm mt-1">Các deal chờ duyệt sẽ hiện ở đây</p>
+              <p className="text-lg font-medium">{t('approvals.empty')}</p>
+              <p className="text-sm mt-1">{t('approvals.emptyDesc')}</p>
             </div>
           ) : (
             <>
@@ -412,13 +415,13 @@ export default function ApprovalsPage() {
                             : <Square size={15} className="text-gray-300" />}
                         </div>
                       </th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Proposal</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Bước duyệt</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Vai trò</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách thuê</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thuê/tháng</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Discount</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Giá trị HĐ</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposal')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.approvalStep')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.role')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.tenant')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.monthlyRent')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.discount')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.contractValue')}</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -453,7 +456,7 @@ export default function ApprovalsPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-800 text-sm">{step.stepName}</div>
-                            <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">Bước {step.stepOrder}</Badge>
+                            <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">{t('approvals.table.step', { order: step.stepOrder })}</Badge>
                           </td>
                           <td className="px-4 py-3">
                             <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{step.approverRole}</Badge>
@@ -482,27 +485,27 @@ export default function ApprovalsPage() {
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
-                                title="Xem toàn bộ hồ sơ"
+                                title={t('approvals.actions.detail')}
                                 onClick={(e) => { e.stopPropagation(); setSelectedWorkflowId(step.workflowId); }}
                               >
-                                <Eye size={13} /> Chi tiết
+                                <Eye size={13} /> {t('approvals.actions.detail')}
                               </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
-                                title="Từ chối"
+                                title={t('approvals.actions.reject')}
                                 disabled={anyPending}
                                 onClick={(e) => { e.stopPropagation(); setRejectDialog({ ids: [step.id], type: 'proposal' }); }}
                               >
-                                <XCircle size={13} /> Từ chối
+                                <XCircle size={13} /> {t('approvals.actions.reject')}
                               </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
-                                title="Phê duyệt"
+                                title={t('approvals.actions.approve')}
                                 disabled={anyPending}
                                 onClick={(e) => { e.stopPropagation(); approveMutation.mutate({ id: step.id }); }}
                               >
                                 {approveMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                                Duyệt
+                                {t('approvals.actions.approve')}
                               </button>
                             </div>
                           </td>
@@ -516,13 +519,13 @@ export default function ApprovalsPage() {
           )}
           {!isLoading && proposalTotalPages > 1 && (
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <span>{proposalTotal} deal chờ duyệt</span>
+              <span>{t('approvals.dealsPending', { count: proposalTotal })}</span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" disabled={proposalPage === 1}
                   onClick={() => { setProposalPage(p => p - 1); setSelectedProposalIds(new Set()); }}>
                   <ChevronLeft size={14} />
                 </Button>
-                <span className="px-2 py-1 text-xs">Trang {proposalPage} / {proposalTotalPages}</span>
+                <span className="px-2 py-1 text-xs">{t('proposals.page', { current: proposalPage, total: proposalTotalPages })}</span>
                 <Button variant="outline" size="sm" disabled={proposalPage >= proposalTotalPages}
                   onClick={() => { setProposalPage(p => p + 1); setSelectedProposalIds(new Set()); }}>
                   <ChevronRight size={14} />
@@ -553,8 +556,8 @@ export default function ApprovalsPage() {
           ) : priceApprovals.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <DollarSign size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="text-lg font-medium">Không có giá cần duyệt</p>
-              <p className="text-sm mt-1">Các booking với giá đề xuất thấp hơn sàn sẽ hiện ở đây</p>
+              <p className="text-lg font-medium">{t('approvals.emptyPrices')}</p>
+              <p className="text-sm mt-1">{t('approvals.emptyPricesDesc')}</p>
             </div>
           ) : (
             <>
@@ -573,14 +576,14 @@ export default function ApprovalsPage() {
                             : <Square size={15} className="text-gray-300" />}
                         </div>
                       </th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Booking #</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Unit</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách hàng</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ngành hàng</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Giá sàn (₫/m²)</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Đề xuất (₫/m²)</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Giá trần (₫/m²)</th>
-                      <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Lệch %</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.bookingNo')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.unit')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.customer')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.category')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.floorPrice')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposed')}</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.ceiling')}</th>
+                      <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.deviation')}</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -646,20 +649,20 @@ export default function ApprovalsPage() {
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
-                                title="Từ chối giá"
+                                title={t('approvals.actions.rejectPrice')}
                                 disabled={anyPending}
                                 onClick={(e) => { e.stopPropagation(); setRejectDialog({ ids: [booking.id], type: 'price' }); }}
                               >
-                                <XCircle size={13} /> Từ chối
+                                <XCircle size={13} /> {t('approvals.actions.reject')}
                               </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
-                                title="Phê duyệt giá"
+                                title={t('approvals.actions.approvePrice')}
                                 disabled={anyPending}
                                 onClick={(e) => { e.stopPropagation(); approvePriceMutation.mutate({ id: booking.id }); }}
                               >
                                 {approvePriceMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                                Duyệt
+                                {t('approvals.actions.approve')}
                               </button>
                             </div>
                           </td>
@@ -673,11 +676,11 @@ export default function ApprovalsPage() {
           )}
           {!loadingPriceApprovals && priceTotalPages > 1 && (
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <span>{priceTotal} booking chờ duyệt giá</span>
+              <span>{t('approvals.pricesPending', { count: priceTotal })}</span>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={pricePage === 1} onClick={() => { setPricePage(p => p - 1); setSelectedPriceIds(new Set()); }}>Trước</Button>
-                <span className="px-2 py-1">Trang {pricePage} / {priceTotalPages}</span>
-                <Button variant="outline" size="sm" disabled={pricePage >= priceTotalPages} onClick={() => { setPricePage(p => p + 1); setSelectedPriceIds(new Set()); }}>Sau</Button>
+                <Button variant="outline" size="sm" disabled={pricePage === 1} onClick={() => { setPricePage(p => p - 1); setSelectedPriceIds(new Set()); }}>{t('proposals.prev')}</Button>
+                <span className="px-2 py-1">{t('proposals.page', { current: pricePage, total: priceTotalPages })}</span>
+                <Button variant="outline" size="sm" disabled={pricePage >= priceTotalPages} onClick={() => { setPricePage(p => p + 1); setSelectedPriceIds(new Set()); }}>{t('proposals.next')}</Button>
               </div>
             </div>
           )}
@@ -701,11 +704,11 @@ export default function ApprovalsPage() {
                     : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                 }`}
               >
-                {s === 'ALL' ? 'Tất cả' : s === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}
+                {s === 'ALL' ? t('approvals.history.all') : s === 'APPROVED' ? t('approvals.workflow.step.approved') : t('approvals.workflow.step.rejected')}
               </button>
             ))}
             {!loadingHistory && (
-              <span className="text-xs text-gray-400 ml-auto">{historyTotal} bản ghi</span>
+              <span className="text-xs text-gray-400 ml-auto">{t('approvals.history.records', { count: historyTotal })}</span>
             )}
           </div>
 
@@ -726,21 +729,21 @@ export default function ApprovalsPage() {
           ) : historySteps.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <History size={48} className="mx-auto mb-3 opacity-30" />
-              <p className="text-lg font-medium">Chưa có lịch sử</p>
-              <p className="text-sm mt-1">Các quyết định duyệt/từ chối sẽ hiện ở đây</p>
+              <p className="text-lg font-medium">{t('approvals.history.empty')}</p>
+              <p className="text-sm mt-1">{t('approvals.history.emptyDesc')}</p>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Proposal</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách thuê</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Bước duyệt</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Người duyệt</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Lý do / Ghi chú</th>
-                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Kết quả</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.proposal')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.tenant')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.step')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.approver')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.time')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.comment')}</th>
+                    <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.history.table.result')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -765,7 +768,7 @@ export default function ApprovalsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm font-medium text-gray-800">{step.stepName}</div>
-                          <span className="text-xs text-gray-400">Bước {step.stepOrder}</span>
+                          <span className="text-xs text-gray-400">{t('approvals.table.step', { order: step.stepOrder })}</span>
                         </td>
                         <td className="px-4 py-3">
                           {step.approver ? (
@@ -799,11 +802,11 @@ export default function ApprovalsPage() {
                         <td className="px-4 py-3 text-center">
                           {step.status === 'APPROVED' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                              <CheckCircle size={12} /> Đã duyệt
+                              <CheckCircle size={12} /> {t('approvals.workflow.step.approved')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                              <XCircle size={12} /> Từ chối
+                              <XCircle size={12} /> {t('approvals.workflow.step.rejected')}
                             </span>
                           )}
                         </td>
@@ -817,13 +820,13 @@ export default function ApprovalsPage() {
 
           {!loadingHistory && historyTotalPages > 1 && (
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <span>{historyTotal} bản ghi</span>
+              <span>{t('approvals.history.records', { count: historyTotal })}</span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" disabled={historyPage === 1}
                   onClick={() => setHistoryPage(p => p - 1)}>
                   <ChevronLeft size={14} />
                 </Button>
-                <span className="px-2 py-1 text-xs">Trang {historyPage} / {historyTotalPages}</span>
+                <span className="px-2 py-1 text-xs">{t('proposals.page', { current: historyPage, total: historyTotalPages })}</span>
                 <Button variant="outline" size="sm" disabled={historyPage >= historyTotalPages}
                   onClick={() => setHistoryPage(p => p + 1)}>
                   <ChevronRight size={14} />
@@ -842,26 +845,26 @@ export default function ApprovalsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle size={18} className="text-red-500" />
-              Từ chối {rejectDialog?.type === 'price' ? 'giá đề xuất' : 'phê duyệt'}
+              {t('approvals.rejectDialog.title', { type: rejectDialog?.type === 'price' ? t('approvals.rejectDialog.typePrice') : t('approvals.rejectDialog.typeProposal') })}
               {rejectDialog?.bulk && rejectDialog.ids.length > 1 && (
-                <Badge className="bg-red-100 text-red-700 border-0 text-xs ml-1">{rejectDialog.ids.length} mục</Badge>
+                <Badge className="bg-red-100 text-red-700 border-0 text-xs ml-1">{t('approvals.rejectDialog.items', { count: rejectDialog.ids.length })}</Badge>
               )}
             </DialogTitle>
           </DialogHeader>
           <div className="py-2">
-            <p className="text-sm text-gray-600 mb-3">Vui lòng nhập lý do từ chối:</p>
+            <p className="text-sm text-gray-600 mb-3">{t('approvals.rejectDialog.prompt')}</p>
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Lý do từ chối..."
+              placeholder={t('approvals.rejectDialog.placeholder')}
               onKeyDown={(e) => e.key === 'Enter' && handleRejectConfirm()}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeRejectDialog}>Hủy</Button>
+            <Button variant="outline" onClick={closeRejectDialog}>{t('common:actions.cancel')}</Button>
             <Button variant="destructive" onClick={handleRejectConfirm}
               disabled={rejectReason.trim().length < 5 || rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
-              Xác nhận từ chối
+              {t('approvals.rejectDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

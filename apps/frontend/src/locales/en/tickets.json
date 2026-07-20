@@ -1,0 +1,175 @@
+{
+  "title": "Ticket Management",
+  "create": "Create ticket",
+  "edit": "Edit",
+  "detail": "Ticket details",
+  "status": {
+    "NEW": "New",
+    "ASSIGNED": "Assigned",
+    "OPEN": "Open",
+    "IN_PROGRESS": "In progress",
+    "WAITING_TENANT": "Waiting tenant",
+    "RESOLVED": "Resolved",
+    "CLOSED": "Closed",
+    "CANCELLED": "Cancelled"
+  },
+  "priority": {
+    "LOW": "Low",
+    "MEDIUM": "Medium",
+    "HIGH": "High",
+    "URGENT": "Urgent"
+  },
+  "category": {
+    "MAINTENANCE": "Maintenance",
+    "UTILITIES": "Utilities",
+    "SECURITY": "Security",
+    "CLEANING": "Cleaning",
+    "OTHER": "Other"
+  },
+  "types": {
+    "ELECTRICAL": "Electrical",
+    "WATER": "Water",
+    "HVAC": "HVAC / Ventilation",
+    "CLEANING": "Cleaning",
+    "SECURITY": "Security",
+    "PARKING": "Parking",
+    "INTERNET": "Internet / Network",
+    "DELIVERY": "Delivery / Logistics",
+    "MARKETING_EVENT": "Marketing / Event",
+    "OTHER": "Other"
+  },
+  "source": {
+    "STAFF_INSPECTION": "Inspection ticket",
+    "TENANT_REQUEST": "Tenant request"
+  },
+  "tabs": {
+    "active": "Active",
+    "history": "History",
+    "maintenance": "Scheduled maintenance",
+    "power": "Power outage",
+    "inspection": "Site inspection"
+  },
+  "fields": {
+    "title": "Title",
+    "subject": "Subject",
+    "description": "Issue description",
+    "unit": "Space",
+    "tenant": "Tenant",
+    "category": "Category",
+    "type": "Type",
+    "priority": "Priority",
+    "assignee": "Assignee",
+    "dueDate": "Due date",
+    "resolution": "Resolution",
+    "creator": "Created by",
+    "createdAt": "Created at",
+    "updatedAt": "Updated"
+  },
+  "filters": {
+    "search": "Search tickets...",
+    "status": "Status",
+    "priority": "Priority",
+    "category": "Category",
+    "assignee": "Assignee",
+    "allStatuses": "All statuses",
+    "allPriorities": "All priorities"
+  },
+  "actions": {
+    "assign": "Assign",
+    "changeStatus": "Change status",
+    "resolve": "Mark as resolved",
+    "close": "Close ticket",
+    "reopen": "Reopen",
+    "addComment": "Add comment",
+    "sendComment": "Send",
+    "uploadPhoto": "Upload photo",
+    "createInspection": "Create inspection ticket"
+  },
+  "sheet": {
+    "sectionDetail": "DETAILS",
+    "sectionComments": "COMMENTS",
+    "sectionPhotos": "SITE PHOTOS",
+    "sectionAssign": "ASSIGNMENT",
+    "sectionTransition": "CHANGE STATUS",
+    "sectionChecklist": "MAINTENANCE CHECKLIST",
+    "commentPlaceholder": "Enter comment or note...",
+    "internalNote": "Internal note (hidden from tenant)",
+    "noComments": "No comments yet",
+    "noPhotos": "No photos yet",
+    "loading": "Loading..."
+  },
+  "inspection": {
+    "createTitle": "Create Site Inspection Ticket",
+    "tenantLabel": "Tenant *",
+    "tenantPlaceholder": "Select tenant...",
+    "unitLabel": "Space *",
+    "unitPlaceholder": "Select space...",
+    "unitDisabled": "Select tenant first",
+    "typeLabel": "Type *",
+    "typePlaceholder": "Type...",
+    "priorityLabel": "Priority",
+    "subjectLabel": "Subject *",
+    "subjectPlaceholder": "Brief description of finding...",
+    "descLabel": "Inspection details",
+    "descPlaceholder": "Describe in detail what was found during the site inspection...",
+    "submitBtn": "Create ticket & notify tenant",
+    "tenantRequired": "Please select a tenant",
+    "unitRequired": "Please select a space",
+    "typeRequired": "Please select a type"
+  },
+  "maintenance": {
+    "title": "Scheduled Maintenance",
+    "schedule": "Maintenance schedule",
+    "noSchedules": "No maintenance schedules yet",
+    "complete": "Complete",
+    "completeTitle": "Mark maintenance as complete",
+    "note": "Note",
+    "notePlaceholder": "Maintenance completion notes...",
+    "confirmComplete": "Confirm completion"
+  },
+  "power": {
+    "title": "Power Outage Notice",
+    "createTitle": "Create Power Outage Notice",
+    "noSchedules": "No power outage schedules",
+    "fields": {
+      "affectedArea": "Affected area",
+      "startTime": "Start",
+      "endTime": "End",
+      "reason": "Reason",
+      "notify": "Notify tenants"
+    }
+  },
+  "noTickets": "No tickets found",
+  "noHistory": "No history yet",
+  "createSuccess": "Inspection ticket created",
+  "updateSuccess": "Status updated",
+  "assignSuccess": "Assignee set",
+  "commentSuccess": "Comment added",
+  "photoSuccess": "Photo uploaded",
+  "maintenanceCompleteSuccess": "Marked as completed",
+  "errors": {
+    "create": "Error creating ticket",
+    "assign": "Error assigning ticket",
+    "transition": "Error changing status",
+    "comment": "Error adding comment",
+    "photo": "Error uploading photo",
+    "maintenanceComplete": "Error completing maintenance"
+  },
+  "table": {
+    "ticketNo": "Ticket #",
+    "subject": "Subject",
+    "tenant": "Tenant",
+    "type": "Type",
+    "priority": "Priority",
+    "status": "Status",
+    "assignee": "Assignee",
+    "createdAt": "Created",
+    "updatedAt": "Updated"
+  },
+  "page": {
+    "title": "Requests & Tickets",
+    "subtitle": "Manage maintenance tickets, support requests and site inspections",
+    "totalActive": "{{count}} active tickets",
+    "totalHistory": "{{count}} history records"
+  }
+}

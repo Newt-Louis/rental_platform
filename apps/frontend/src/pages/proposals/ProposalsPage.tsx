@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import Selecto from 'react-selecto';
@@ -26,13 +27,13 @@ import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
 import { usePermission } from '@/hooks/usePermission';
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  DRAFT:        { label: 'Draft',         color: 'bg-gray-100 text-gray-700' },
-  SUBMITTED:    { label: 'Chờ duyệt',    color: 'bg-yellow-100 text-yellow-700' },
-  UNDER_REVIEW: { label: 'Đang xem',     color: 'bg-blue-100 text-gray-700' },
-  APPROVED:     { label: 'Đã duyệt',     color: 'bg-green-100 text-green-700' },
-  REJECTED:     { label: 'Từ chối',      color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã ký HĐ',    color: 'bg-purple-100 text-purple-700' },
+const STATUS_COLOR: Record<string, string> = {
+  DRAFT:        'bg-gray-100 text-gray-700',
+  SUBMITTED:    'bg-yellow-100 text-yellow-700',
+  UNDER_REVIEW: 'bg-blue-100 text-gray-700',
+  APPROVED:     'bg-green-100 text-green-700',
+  REJECTED:     'bg-red-100 text-red-700',
+  CONVERTED:    'bg-purple-100 text-purple-700',
 };
 
 function fmt(n: number) {
@@ -49,6 +50,7 @@ function fmtDate(d?: string | null) {
 }
 
 function ProposalVersionsPanel({ proposalId }: { proposalId: string }) {
+  const { t } = useTranslation('deals');
   const [fromV, setFromV] = useState(1);
   const [toV, setToV] = useState(2);
 
@@ -68,7 +70,7 @@ function ProposalVersionsPanel({ proposalId }: { proposalId: string }) {
 
   return (
     <div className="space-y-3">
-      <div className="text-xs font-semibold text-gray-400 flex items-center gap-1"><History size={12} /> LỊCH SỬ PHIÊN BẢN</div>
+      <div className="text-xs font-semibold text-gray-400 flex items-center gap-1"><History size={12} /> {t('proposals.versions.title')}</div>
       {list.map((v) => (
         <div key={v.id} className="flex justify-between text-sm p-2 bg-gray-50 rounded-lg">
           <span>v{v.version} — {v.changeReason ?? '—'}</span>
@@ -77,7 +79,7 @@ function ProposalVersionsPanel({ proposalId }: { proposalId: string }) {
       ))}
       {list.length >= 2 && (
         <div className="border-t pt-3">
-          <p className="text-xs font-medium mb-2">So sánh version</p>
+          <p className="text-xs font-medium mb-2">{t('proposals.versions.compare')}</p>
           <div className="flex gap-2 mb-2">
             <Input type="number" className="h-8" value={fromV} onChange={(e) => setFromV(+e.target.value)} />
             <Input type="number" className="h-8" value={toV} onChange={(e) => setToV(+e.target.value)} />
@@ -96,6 +98,7 @@ function ProposalVersionsPanel({ proposalId }: { proposalId: string }) {
 function AddScenarioDialog({
   open, onClose, proposalId,
 }: { open: boolean; onClose: () => void; proposalId: string }) {
+  const { t } = useTranslation('deals');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({
@@ -116,58 +119,58 @@ function AddScenarioDialog({
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposal-scenarios', proposalId] });
-      toast({ title: 'Đã thêm kịch bản' });
+      toast({ title: t('proposals.scenarios.addSuccess') });
       onClose();
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Thêm kịch bản tài chính</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('proposals.scenarios.addTitle')}</DialogTitle></DialogHeader>
         <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2">
-              <label className="text-xs text-gray-500 mb-1 block">Tên kịch bản *</label>
-              <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="VD: Kịch bản A" />
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.name')}</label>
+              <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('proposals.scenarios.namePlaceholder')} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Diện tích (m²)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.area')}</label>
               <Input type="number" value={form.area} onChange={(e) => set('area', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Thuê / m² (₫)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.rentPerSqm')}</label>
               <Input type="number" value={form.rentPerSqm} onChange={(e) => set('rentPerSqm', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">CAM / m² (₫)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.camPerSqm')}</label>
               <Input type="number" value={form.camPerSqm} onChange={(e) => set('camPerSqm', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Thời hạn (tháng)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.term')}</label>
               <Input type="number" value={form.term} onChange={(e) => set('term', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Đặt cọc (tháng)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.deposit')}</label>
               <Input type="number" value={form.deposit} onChange={(e) => set('deposit', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Miễn thuê (tháng)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.rentFree')}</label>
               <Input type="number" value={form.rentFree} onChange={(e) => set('rentFree', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Chiết khấu (%)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.discount')}</label>
               <Input type="number" value={form.discount} onChange={(e) => set('discount', e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Tăng giá hàng năm (%)</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('proposals.scenarios.fields.escalation')}</label>
               <Input type="number" value={form.escalation} onChange={(e) => set('escalation', e.target.value)} />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose}>Hủy</Button>
-            <Button disabled={!form.name || mutation.isPending} onClick={() => mutation.mutate()}>Lưu</Button>
+            <Button variant="outline" onClick={onClose}>{t('common:actions.cancel', 'Hủy')}</Button>
+            <Button disabled={!form.name || mutation.isPending} onClick={() => mutation.mutate()}>{t('common:actions.save', 'Lưu')}</Button>
           </div>
         </div>
       </DialogContent>
@@ -176,6 +179,7 @@ function AddScenarioDialog({
 }
 
 function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
+  const { t } = useTranslation('deals');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showAdd, setShowAdd] = useState(false);
@@ -192,7 +196,7 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
     mutationFn: (sid: string) => proposalScenariosApi.select(proposalId, sid),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposal-scenarios', proposalId] });
-      toast({ title: 'Đã chọn kịch bản' });
+      toast({ title: t('proposals.scenarios.selectSuccess') });
     },
   });
 
@@ -201,7 +205,7 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposal-scenarios', proposalId] });
       setDeletingScenario(null);
-      toast({ title: 'Đã xóa kịch bản' });
+      toast({ title: t('proposals.scenarios.deleteSuccess') });
     },
   });
 
@@ -212,27 +216,27 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
       <AddScenarioDialog open={showAdd} onClose={() => setShowAdd(false)} proposalId={proposalId} />
       <ConfirmDialog
         open={!!deletingScenario}
-        title="Xóa kịch bản tài chính?"
-        description={`Kịch bản “${deletingScenario?.name ?? ''}” sẽ bị xóa khỏi đề xuất. Các số liệu so sánh của kịch bản này sẽ không còn hiển thị.`}
+        title={t('proposals.scenarios.deleteTitle')}
+        description={t('proposals.scenarios.deleteDesc', { name: deletingScenario?.name ?? '' })}
         onCancel={() => setDeletingScenario(null)}
         onConfirm={() => deletingScenario && deleteMutation.mutate(deletingScenario.id)}
         loading={deleteMutation.isPending}
-        confirmLabel="Xóa kịch bản"
-        loadingLabel="Đang xóa..."
+        confirmLabel={t('proposals.scenarios.deleteConfirm')}
+        loadingLabel={t('common:actions.deleting', 'Đang xóa...')}
       />
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Kịch bản tài chính ({scenarios.length})</span>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('proposals.scenarios.title')} ({scenarios.length})</span>
         <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowAdd(true)}>
-          <Plus size={12} /> Thêm
+          <Plus size={12} /> {t('proposals.scenarios.add')}
         </Button>
       </div>
 
       {scenarios.length === 0 ? (
-        <div className="text-center py-6 text-gray-400 text-sm">Chưa có kịch bản nào</div>
+        <div className="text-center py-6 text-gray-400 text-sm">{t('proposals.scenarios.empty')}</div>
       ) : (
         <div className="space-y-2">
           {scenarios.map((s: any) => {
-            const t = s.terms ?? {};
+            const terms = s.terms ?? {};
             return (
               <div key={s.id} className={`rounded-xl border p-3 transition-all ${s.isSelected ? 'border-blue-400 bg-gray-50' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-start justify-between mb-2">
@@ -248,24 +252,24 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
                   <div className="flex gap-1">
                     {!s.isSelected && (
                       <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => selectMutation.mutate(s.id)} disabled={selectMutation.isPending}>
-                        Chọn
+                        {t('proposals.scenarios.select')}
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-400 hover:text-red-500" onClick={() => setDeletingScenario({ id: s.id, name: s.name })} aria-label={`Xóa kịch bản ${s.name}`}>
+                    <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-400 hover:text-red-500" onClick={() => setDeletingScenario({ id: s.id, name: s.name })} aria-label={`${t('proposals.scenarios.deleteConfirm')} ${s.name}`}>
                       <Trash2 size={12} />
                     </Button>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600">
-                  <div><span className="text-gray-400">DT:</span> {t.area?.toLocaleString()} m²</div>
-                  <div><span className="text-gray-400">Thuê/m²:</span> {t.rentPerSqm?.toLocaleString()}</div>
-                  <div><span className="text-gray-400">Thời hạn:</span> {t.term} th</div>
-                  <div><span className="text-gray-400">Thuê/tháng:</span> <span className="font-medium text-gray-700">{t.monthlyRent?.toLocaleString()}</span></div>
-                  <div><span className="text-gray-400">Đặt cọc:</span> {t.depositAmount?.toLocaleString()}</div>
-                  <div><span className="text-gray-400">Tổng HĐ:</span> <span className="font-medium text-green-700">{t.totalValue?.toLocaleString()}</span></div>
-                  {t.discount > 0 && <div><span className="text-gray-400">CK:</span> {t.discount}%</div>}
-                  {t.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {t.rentFree} th</div>}
-                  {t.escalation > 0 && <div><span className="text-gray-400">Tăng:</span> {t.escalation}%/năm</div>}
+                  <div><span className="text-gray-400">DT:</span> {terms.area?.toLocaleString()} m²</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.rentPerSqm')}:</span> {terms.rentPerSqm?.toLocaleString()}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.term')}:</span> {terms.term} th</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.monthlyRent')}:</span> <span className="font-medium text-gray-700">{terms.monthlyRent?.toLocaleString()}</span></div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount?.toLocaleString()}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue?.toLocaleString()}</span></div>
+                  {terms.discount > 0 && <div><span className="text-gray-400">CK:</span> {terms.discount}%</div>}
+                  {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} th</div>}
+                  {terms.escalation > 0 && <div><span className="text-gray-400">{t('proposals.scenarios.fields.escalation')}:</span> {terms.escalation}%/năm</div>}
                 </div>
               </div>
             );
@@ -279,9 +283,9 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
           <table className="text-xs w-full">
             <thead>
               <tr className="bg-gray-50">
-                <th className="text-left px-3 py-2 text-gray-400 font-medium w-28">Chỉ số</th>
+                <th className="text-left px-3 py-2 text-gray-400 font-medium w-28">{t('proposals.scenarios.compare.metric')}</th>
                 {scenarios.map((s: any) => (
-                  <th key={s.id} className={`px-3 py-2 text-center font-medium ${s.isSelected ? 'text-gray-700' : 'text-gray-700'}`}>
+                  <th key={s.id} className="px-3 py-2 text-center font-medium text-gray-700">
                     {s.name} {s.isSelected && '★'}
                   </th>
                 ))}
@@ -289,19 +293,19 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
             </thead>
             <tbody>
               {[
-                { label: 'Diện tích (m²)', key: 'area', fmt: (v: number) => v?.toLocaleString() },
-                { label: 'Thuê/m²', key: 'rentPerSqm', fmt: (v: number) => v?.toLocaleString() },
-                { label: 'CAM/m²', key: 'camPerSqm', fmt: (v: number) => v?.toLocaleString() },
-                { label: 'Thời hạn', key: 'term', fmt: (v: number) => `${v} th` },
-                { label: 'Chiết khấu', key: 'discount', fmt: (v: number) => `${v}%` },
-                { label: 'Miễn thuê', key: 'rentFree', fmt: (v: number) => `${v} th` },
-                { label: 'Thuê/tháng', key: 'monthlyRent', fmt: (v: number) => v?.toLocaleString(), highlight: true },
-                { label: 'Đặt cọc', key: 'depositAmount', fmt: (v: number) => v?.toLocaleString() },
-                { label: 'Tổng HĐ', key: 'totalValue', fmt: (v: number) => v?.toLocaleString(), highlight: true },
-                { label: 'Điểm', key: '_score', fmt: (_v: number, s: any) => s.score?.toFixed(1) },
-              ].map(({ label, key, fmt: f, highlight }) => (
+                { labelKey: 'proposals.scenarios.compare.area', key: 'area', fmt: (v: number) => v?.toLocaleString() },
+                { labelKey: 'proposals.scenarios.compare.rentPerSqm', key: 'rentPerSqm', fmt: (v: number) => v?.toLocaleString() },
+                { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v?.toLocaleString() },
+                { labelKey: 'proposals.scenarios.compare.term', key: 'term', fmt: (v: number) => `${v} th` },
+                { labelKey: 'proposals.scenarios.compare.discount', key: 'discount', fmt: (v: number) => `${v}%` },
+                { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} th` },
+                { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v?.toLocaleString(), highlight: true },
+                { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v?.toLocaleString() },
+                { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v?.toLocaleString(), highlight: true },
+                { labelKey: 'proposals.scenarios.compare.score', key: '_score', fmt: (_v: number, s: any) => s.score?.toFixed(1) },
+              ].map(({ labelKey, key, fmt: f, highlight }) => (
                 <tr key={key} className={`border-t ${highlight ? 'bg-gray-50/40' : ''}`}>
-                  <td className="px-3 py-1.5 text-gray-500">{label}</td>
+                  <td className="px-3 py-1.5 text-gray-500">{t(labelKey)}</td>
                   {scenarios.map((s: any) => (
                     <td key={s.id} className={`px-3 py-1.5 text-center ${highlight ? 'font-semibold' : ''}`}>
                       {key === '_score' ? s.score?.toFixed(1) : f?.(s.terms?.[key], s) ?? '—'}
@@ -324,6 +328,7 @@ function ProposalDetailSheet({
   proposal: Proposal | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(['deals', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -334,7 +339,8 @@ function ProposalDetailSheet({
   });
 
   const p: any = detail?.data ?? detail ?? proposal;
-  const st = p ? STATUS_MAP[p.status] : null;
+  const statusColor = p ? STATUS_COLOR[p.status] ?? STATUS_COLOR.DRAFT : null;
+  const statusLabel = p ? t(`proposals.status.${p.status}`, p.status) : null;
 
   const navigate = useNavigate();
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -345,31 +351,31 @@ function ProposalDetailSheet({
     mutationFn: () => proposalsApi.submitProposal(p!.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
-      toast({ title: 'Đã gửi phê duyệt' });
+      toast({ title: t('proposals.actions.submitSuccess') });
       onClose();
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const convertMutation = useMutation({
     mutationFn: () => proposalsApi.convertProposal(p!.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
-      toast({ title: 'Đã chuyển thành hợp đồng' });
+      toast({ title: t('proposals.actions.convertSuccess') });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const rejectMutation = useMutation({
     mutationFn: () => proposalsApi.rejectProposal(p!.id, rejectReason),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
-      toast({ title: 'Đã từ chối đề xuất' });
+      toast({ title: t('proposals.actions.rejectSuccess') });
       setShowRejectDialog(false);
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const scoreMutation = useMutation({
@@ -399,22 +405,22 @@ function ProposalDetailSheet({
           {/* Reject dialog — renders via portal, not clipped by sheet overflow */}
           <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
             <DialogContent className="max-w-sm">
-              <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={16} className="text-red-500" />Từ chối đề xuất</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={16} className="text-red-500" />{t('proposals.actions.rejectTitle')}</DialogTitle></DialogHeader>
               <div className="space-y-3 text-sm">
-                <p className="text-gray-600">Vui lòng nhập lý do từ chối đề xuất <strong>{p.proposalNumber}</strong>:</p>
+                <p className="text-gray-600">{t('proposals.actions.rejectReason')} <strong>{p.proposalNumber}</strong>:</p>
                 <textarea
                   className="w-full border rounded-md p-2 text-sm resize-none h-24"
-                  placeholder="Lý do từ chối..."
+                  placeholder={t('approvals.rejectDialog.placeholder')}
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                 />
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowRejectDialog(false)}>Hủy</Button>
+                  <Button variant="outline" onClick={() => setShowRejectDialog(false)}>{t('common:actions.cancel')}</Button>
                   <Button
                     variant="destructive"
                     disabled={!rejectReason.trim() || rejectMutation.isPending}
                     onClick={() => rejectMutation.mutate()}
-                  >Xác nhận từ chối</Button>
+                  >{t('proposals.actions.rejectConfirm')}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -425,13 +431,13 @@ function ProposalDetailSheet({
             <div className="px-6 pt-4 pb-0 border-b border-gray-100 sticky top-0 bg-white z-10">
               {isFetching && (
                 <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-                  <Loader2 size={11} className="animate-spin" /> Đang tải...
+                  <Loader2 size={11} className="animate-spin" /> {t('common:actions.loading')}
                 </div>
               )}
               <TabsList className="mb-0">
-                <TabsTrigger value="detail">Chi tiết</TabsTrigger>
-                <TabsTrigger value="scenarios">Kịch bản</TabsTrigger>
-                <TabsTrigger value="versions">Phiên bản</TabsTrigger>
+                <TabsTrigger value="detail">{t('proposals.tabs.detail')}</TabsTrigger>
+                <TabsTrigger value="scenarios">{t('proposals.tabs.scenarios')}</TabsTrigger>
+                <TabsTrigger value="versions">{t('proposals.tabs.versions')}</TabsTrigger>
               </TabsList>
             </div>
 
@@ -440,17 +446,17 @@ function ProposalDetailSheet({
               <TabsContent value="detail" className="space-y-4 mt-0">
                 {/* Status */}
                 <div className="flex items-center gap-2">
-                  {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{st.label}</Badge>}
+                  {statusColor && <Badge className={`${statusColor} border-0 px-3 py-1 text-sm font-medium`}>{statusLabel}</Badge>}
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => scoreMutation.mutate()}>
-                    Tính deal score
+                    {t('proposals.actions.score')}
                   </Button>
                 </div>
 
-                {/* Lead nguồn */}
+                {/* Lead source */}
                 {p.lead && (
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                     <div className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Link2 size={11} /> LEAD NGUỒN
+                      <Link2 size={11} /> {t('proposals.sections.leadSource')}
                     </div>
                     <button
                       className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
@@ -468,11 +474,11 @@ function ProposalDetailSheet({
                   </div>
                 )}
 
-                {/* Contract kết quả */}
+                {/* Contract result */}
                 {p.contract && (
                   <div className="rounded-xl border border-green-200 bg-green-50 p-3">
                     <div className="text-xs font-semibold text-green-600 mb-1.5 flex items-center gap-1">
-                      <CheckCircle size={11} /> HỢP ĐỒNG ĐÃ KÝ
+                      <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
                     </div>
                     <button
                       className="flex items-center justify-between w-full text-sm hover:text-green-700 group"
@@ -480,7 +486,7 @@ function ProposalDetailSheet({
                     >
                       <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
                       <div className="flex items-center gap-1 text-xs text-green-600">
-                        <span>{p.contract.status}</span>
+                        <span>{t(`contracts.status.${p.contract.status}`, p.contract.status)}</span>
                         <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                       </div>
                     </button>
@@ -488,59 +494,59 @@ function ProposalDetailSheet({
                 )}
 
                 {/* Parties */}
-                <SheetSection label="ĐỀ XUẤT CHO" className="bg-gray-50">
-                  <SheetRow label="Khách thuê" value={p.tenant?.brandName} icon={User} />
-                  <SheetRow label="Công ty" value={p.tenant?.companyName} icon={Building2} />
-                  <SheetRow label="Mặt bằng" value={p.unit?.code} icon={Building2} />
-                  <SheetRow label="Diện tích" value={p.area ? `${p.area.toLocaleString()} m²` : null} icon={Building2} />
+                <SheetSection label={t('proposals.sections.proposedFor')} className="bg-gray-50">
+                  <SheetRow label={t('proposals.fields.tenant')} value={p.tenant?.brandName} icon={User} />
+                  <SheetRow label={t('common:labels.name')} value={p.tenant?.companyName} icon={Building2} />
+                  <SheetRow label={t('proposals.fields.unit')} value={p.unit?.code} icon={Building2} />
+                  <SheetRow label={t('common:labels.area')} value={p.area ? `${p.area.toLocaleString()} m²` : null} icon={Building2} />
                 </SheetSection>
 
                 {/* Financials */}
-                <SheetSection label="TÀI CHÍNH" className="bg-gray-50">
+                <SheetSection label={t('proposals.sections.financials')} className="bg-gray-50">
                   <SheetRow
-                    label="Tiền thuê / tháng"
+                    label={t('proposals.fields.proposedRent')}
                     value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent)}</span>}
                     icon={DollarSign}
                   />
                   <SheetRow
-                    label="Phí CAM / tháng"
+                    label={t('contracts.fields.camFee')}
                     value={p.monthlyCAM ? fmtFull(p.monthlyCAM) : null}
                     icon={DollarSign}
                   />
                   {p.marketingFee > 0 && (
-                    <SheetRow label="Phí marketing" value={fmtFull(p.marketingFee)} icon={DollarSign} />
+                    <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee)} icon={DollarSign} />
                   )}
                   {p.rentFree > 0 && (
-                    <SheetRow label="Miễn tiền thuê" value={`${p.rentFree} tháng`} icon={Calendar} />
+                    <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} tháng`} icon={Calendar} />
                   )}
                   {p.discount > 0 && (
-                    <SheetRow label="Chiết khấu" value={`${p.discount}%`} icon={DollarSign} />
+                    <SheetRow label={t('common:labels.deposit')} value={`${p.discount}%`} icon={DollarSign} />
                   )}
                   <SheetRow
-                    label="Tổng giá trị HĐ"
+                    label={t('contracts.fields.rentAmount')}
                     value={<span className="font-bold text-green-700">{fmt(p.totalContractValue)}</span>}
                     icon={DollarSign}
                   />
                 </SheetSection>
 
                 {/* Term */}
-                <SheetSection label="THỜI HẠN" className="bg-gray-50">
-                  <SheetRow label="Ngày bắt đầu" value={fmtDate(p.startDate)} icon={Calendar} />
-                  <SheetRow label="Ngày kết thúc" value={fmtDate(p.endDate)} icon={Calendar} />
+                <SheetSection label={t('proposals.sections.term')} className="bg-gray-50">
+                  <SheetRow label={t('proposals.fields.startDate')} value={fmtDate(p.startDate)} icon={Calendar} />
+                  <SheetRow label={t('proposals.fields.endDate')} value={fmtDate(p.endDate)} icon={Calendar} />
                   <SheetRow
-                    label="Thời hạn"
+                    label={t('common:labels.duration')}
                     value={p.term ? `${p.term} tháng` : null}
                     icon={Calendar}
                   />
                   {p.escalationPercent > 0 && (
-                    <SheetRow label="Tăng giá/năm" value={`${p.escalationPercent}%`} icon={Calendar} />
+                    <SheetRow label={t('proposals.scenarios.fields.escalation')} value={`${p.escalationPercent}%`} icon={Calendar} />
                   )}
                 </SheetSection>
 
                 {/* Approval workflow */}
                 {approvals.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">QUY TRÌNH PHÊ DUYỆT</div>
+                    <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">{t('proposals.sections.approvalWorkflow')}</div>
                     <div className="space-y-2">
                       {approvals.map((a: any) => (
                         <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
@@ -553,7 +559,7 @@ function ProposalDetailSheet({
                           )}
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium">
-                              Cấp {a.level}: {a.approver?.fullName ?? '—'}
+                              {t('proposals.approval.level', { level: a.level })}: {a.approver?.fullName ?? '—'}
                             </div>
                             {a.comment && (
                               <div className="text-xs text-gray-500 mt-0.5 truncate">{a.comment}</div>
@@ -564,7 +570,7 @@ function ProposalDetailSheet({
                             a.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
                             'bg-gray-100 text-gray-500'
                           }`}>
-                            {a.status === 'APPROVED' ? 'Duyệt' : a.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
+                            {a.status === 'APPROVED' ? t('proposals.approval.statusApproved') : a.status === 'REJECTED' ? t('proposals.approval.statusRejected') : t('proposals.approval.statusPending')}
                           </Badge>
                         </div>
                       ))}
@@ -589,7 +595,7 @@ function ProposalDetailSheet({
                   onClick={() => submitMutation.mutate()}
                   disabled={submitMutation.isPending}
                 >
-                  <Send size={15} /> Gửi phê duyệt
+                  <Send size={15} /> {t('proposals.actions.submit')}
                 </Button>
               )}
               {p.status === 'APPROVED' && (
@@ -598,7 +604,7 @@ function ProposalDetailSheet({
                   onClick={() => convertMutation.mutate()}
                   disabled={convertMutation.isPending}
                 >
-                  <FileText size={15} /> Chuyển thành Hợp đồng
+                  <FileText size={15} /> {t('proposals.actions.convert')}
                 </Button>
               )}
               {['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
@@ -607,7 +613,7 @@ function ProposalDetailSheet({
                   className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
                   onClick={() => { setRejectReason(''); setShowRejectDialog(true); }}
                 >
-                  <XCircle size={15} /> Từ chối đề xuất
+                  <XCircle size={15} /> {t('proposals.actions.reject')}
                 </Button>
               )}
               <div className="flex gap-2">
@@ -615,7 +621,7 @@ function ProposalDetailSheet({
                   className="flex-1 gap-2 text-white bg-indigo-600 hover:bg-indigo-700"
                   onClick={() => setShowEditor(true)}
                 >
-                  <PenSquare size={15} /> Chỉnh sửa Tờ Trình
+                  <PenSquare size={15} /> {t('proposals.actions.editDoc')}
                 </Button>
                 <Button
                   variant="outline"
@@ -630,7 +636,7 @@ function ProposalDetailSheet({
                       a.click();
                       URL.revokeObjectURL(url);
                     } catch {
-                      toast({ title: 'Không thể xuất PDF', variant: 'destructive' });
+                      toast({ title: t('proposals.exportPdfError'), variant: 'destructive' });
                     }
                   }}
                 >
@@ -649,6 +655,7 @@ function ProposalDetailSheet({
 const EMPTY_FILTERS = { search: '', status: '', dateFrom: '', dateTo: '' };
 
 export default function ProposalsPage() {
+  const { t } = useTranslation('deals');
   // draft = what user is typing; applied = what's sent to API
   const [draft, setDraft] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
@@ -661,6 +668,15 @@ export default function ProposalsPage() {
   const { role } = usePermission();
   const canEdit = !!role && ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'].includes(role);
   const canConvert = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
+
+  const STATUS_MAP: Record<string, { label: string; color: string }> = {
+    DRAFT:        { label: t('proposals.status.DRAFT'),        color: 'bg-gray-100 text-gray-700' },
+    SUBMITTED:    { label: t('proposals.status.SUBMITTED'),    color: 'bg-yellow-100 text-yellow-700' },
+    UNDER_REVIEW: { label: t('proposals.status.UNDER_REVIEW'), color: 'bg-blue-100 text-gray-700' },
+    APPROVED:     { label: t('proposals.status.APPROVED'),     color: 'bg-green-100 text-green-700' },
+    REJECTED:     { label: t('proposals.status.REJECTED'),     color: 'bg-red-100 text-red-700' },
+    CONVERTED:    { label: t('proposals.status.CONVERTED'),    color: 'bg-purple-100 text-purple-700' },
+  };
 
   // ── Bulk selection ──
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -708,9 +724,9 @@ export default function ProposalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
-      toast({ title: 'Proposal đã được gửi phê duyệt' });
+      toast({ title: t('proposals.actions.submitSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const convertMutation = useMutation({
@@ -718,9 +734,9 @@ export default function ProposalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
-      toast({ title: 'Đã chuyển thành hợp đồng' });
+      toast({ title: t('proposals.actions.convertSuccess') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
@@ -728,10 +744,10 @@ export default function ProposalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
-      toast({ title: 'Đã xóa đề xuất' });
+      toast({ title: t('proposals.deleteSuccess') });
       setDeletingProposal(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi khi xóa', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorDelete'), variant: 'destructive' }),
   });
 
   const bulkDeleteMutation = useMutation({
@@ -746,12 +762,12 @@ export default function ProposalsPage() {
       setSelectedIds(new Set());
       setConfirmBulkDelete(false);
       if (fail > 0) {
-        toast({ title: `Đã xóa ${ok} đề xuất, ${fail} không thể xóa (sai trạng thái)`, variant: 'destructive' });
+        toast({ title: t('proposals.bulk.deletePartial', { ok, fail }), variant: 'destructive' });
       } else {
-        toast({ title: `Đã xóa ${ok} đề xuất` });
+        toast({ title: t('proposals.bulk.deleteSuccess', { ok }) });
       }
     },
-    onError: () => toast({ title: 'Lỗi khi xóa hàng loạt', variant: 'destructive' }),
+    onError: () => toast({ title: t('proposals.bulk.errorDelete'), variant: 'destructive' }),
   });
 
   const bulkSubmitMutation = useMutation({
@@ -765,12 +781,12 @@ export default function ProposalsPage() {
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       setSelectedIds(new Set());
       if (fail > 0) {
-        toast({ title: `Đã gửi ${ok} đề xuất, ${fail} không thể gửi`, variant: 'destructive' });
+        toast({ title: t('proposals.bulk.submitPartial', { ok, fail }), variant: 'destructive' });
       } else {
-        toast({ title: `Đã gửi ${ok} đề xuất để phê duyệt` });
+        toast({ title: t('proposals.bulk.submitSuccess', { ok }) });
       }
     },
-    onError: () => toast({ title: 'Lỗi khi gửi hàng loạt', variant: 'destructive' }),
+    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
   const proposals: Proposal[] = data?.data ?? [];
@@ -798,7 +814,7 @@ export default function ProposalsPage() {
             disabled={bulkSubmitMutation.isPending}
             onClick={() => bulkSubmitMutation.mutate([...selectedIds].filter((id) => proposals.find((p) => p.id === id)?.status === 'DRAFT'))}
           >
-            <Send size={14} /> Gửi phê duyệt
+            <Send size={14} /> {t('proposals.actions.submit')}
           </Button>
         )}
         {canEdit && canBulkDelete && (
@@ -809,39 +825,39 @@ export default function ProposalsPage() {
             disabled={bulkDeleteMutation.isPending}
             onClick={() => setConfirmBulkDelete(true)}
           >
-            <Trash2 size={14} /> Xóa
+            <Trash2 size={14} /> {t('proposals.actions.delete')}
           </Button>
         )}
       </BulkSelectionBar>
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Proposals</h1>
-          <p className="text-sm text-gray-500 mt-1">Quản lý đề xuất cho thuê</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('proposals.title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('proposals.manage')}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
         {[
-          { key: '', label: 'Tổng đề xuất', value: stats.total ?? 0, color: 'text-gray-900' },
-          { key: 'DRAFT', label: 'Bản nháp', value: stats.DRAFT ?? 0, color: 'text-gray-700' },
-          { key: 'SUBMITTED', label: 'Chờ phê duyệt', value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
-          { key: 'APPROVED', label: 'Đã phê duyệt', value: stats.APPROVED ?? 0, color: 'text-green-600' },
-          { key: 'CONVERTED', label: 'Đã chuyển HĐ', value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
+          { key: '', label: t('proposals.stats.total'), value: stats.total ?? 0, color: 'text-gray-900' },
+          { key: 'DRAFT', label: t('proposals.stats.draft'), value: stats.DRAFT ?? 0, color: 'text-gray-700' },
+          { key: 'SUBMITTED', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
+          { key: 'APPROVED', label: t('proposals.stats.approved'), value: stats.APPROVED ?? 0, color: 'text-green-600' },
+          { key: 'CONVERTED', label: t('proposals.stats.converted'), value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
         ].map((item) => (
           <Card key={item.label} className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
             <CardContent className="p-4"><p className="text-xs text-gray-500">{item.label}</p><p className={`text-2xl font-semibold mt-1 ${item.color}`}>{item.value}</p></CardContent>
           </Card>
         ))}
       </div>
-      {statsError && <button className="text-sm text-amber-700 mb-3" onClick={() => refetchStats()}>Không tải được thống kê. Thử lại</button>}
+      {statsError && <button className="text-sm text-amber-700 mb-3" onClick={() => refetchStats()}>{t('proposals.errorLoad')} {t('common:actions.refresh')}</button>}
 
       {/* Filter bar */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
-            placeholder="Tìm proposal, khách thuê, mặt bằng..."
+            placeholder={t('proposals.filters.search')}
             value={draft.search}
             onChange={(e) => setDraftField('search', e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
@@ -850,10 +866,10 @@ export default function ProposalsPage() {
         </div>
         <Select value={draft.status || 'ALL'} onValueChange={(v) => setDraftField('status', v === 'ALL' ? '' : v)}>
           <SelectTrigger className="h-9 w-40">
-            <SelectValue placeholder="Trạng thái" />
+            <SelectValue placeholder={t('proposals.filters.status')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">Tất cả</SelectItem>
+            <SelectItem value="ALL">{t('proposals.filters.all')}</SelectItem>
             {Object.entries(STATUS_MAP).map(([k, v]) => (
               <SelectItem key={k} value={k}>{v.label}</SelectItem>
             ))}
@@ -864,14 +880,14 @@ export default function ProposalsPage() {
           to={draft.dateTo}
           onFromChange={(v) => setDraftField('dateFrom', v)}
           onToChange={(v) => setDraftField('dateTo', v)}
-          placeholder="Khoảng ngày tạo"
+          placeholder={t('proposals.filters.dateRange')}
         />
         <Button
           className="h-9 gap-1.5"
           onClick={applyFilters}
           disabled={!isDirty && hasApplied}
         >
-          <Search size={14} /> Tìm kiếm
+          <Search size={14} /> {t('common:actions.search')}
         </Button>
         {(hasApplied || isDirty) && (
           <Button
@@ -880,7 +896,7 @@ export default function ProposalsPage() {
             className="h-9 gap-1 text-gray-500"
             onClick={clearFilters}
           >
-            <X size={13} /> Xóa
+            <X size={13} /> {t('common:actions.reset')}
           </Button>
         )}
       </div>
@@ -892,7 +908,7 @@ export default function ProposalsPage() {
           ))}
         </div>
       ) : isError ? (
-        <Card><CardContent className="py-12 text-center"><AlertTriangle className="mx-auto text-amber-500 mb-2"/><p className="text-gray-600 mb-3">Không tải được danh sách đề xuất.</p><Button variant="outline" onClick={() => refetch()}>Thử lại</Button></CardContent></Card>
+        <Card><CardContent className="py-12 text-center"><AlertTriangle className="mx-auto text-amber-500 mb-2"/><p className="text-gray-600 mb-3">{t('proposals.errorLoad')}</p><Button variant="outline" onClick={() => refetch()}>{t('common:actions.refresh')}</Button></CardContent></Card>
       ) : (
         <>
           {!selectedProposal && !editingProposal && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
@@ -916,13 +932,13 @@ export default function ProposalsPage() {
                         : <Square size={15} className="text-gray-300" />}
                     </div>
                   </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Số PO</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Khách thuê</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Mặt bằng</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Diện tích</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Thuê/tháng</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Giá trị HĐ</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Trạng thái</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.proposalNo')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.tenant')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.unit')}</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.area')}</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.monthlyRent')}</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.contractValue')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.status')}</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -971,7 +987,7 @@ export default function ProposalsPage() {
                               onClick={(e) => { e.stopPropagation(); submitMutation.mutate(p.id); }}
                               disabled={submitMutation.isPending}
                             >
-                              <Send size={12} /> Gửi
+                              <Send size={12} /> {t('proposals.actions.send')}
                             </Button>
                           )}
                           {canConvert && p.status === 'APPROVED' && (
@@ -981,14 +997,14 @@ export default function ProposalsPage() {
                               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(p.id); }}
                               disabled={convertMutation.isPending}
                             >
-                              <FileText size={12} /> Ký HĐ
+                              <FileText size={12} /> {t('proposals.actions.signContract')}
                             </Button>
                           )}
                           {canEdit && p.status === 'DRAFT' && <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0 text-gray-400 hover:text-indigo-600"
-                            title="Chỉnh sửa"
+                            title={t('proposals.edit')}
                             onClick={(e) => { e.stopPropagation(); setEditingProposal(p); }}
                           >
                             <Pencil size={13} />
@@ -998,7 +1014,7 @@ export default function ProposalsPage() {
                               size="sm"
                               variant="ghost"
                               className="h-7 w-7 p-0 text-gray-400 hover:text-red-500"
-                              title="Xóa"
+                              title={t('proposals.actions.delete')}
                               onClick={(e) => { e.stopPropagation(); setDeletingProposal(p); }}
                             >
                               <Trash2 size={13} />
@@ -1014,17 +1030,17 @@ export default function ProposalsPage() {
             {proposals.length === 0 && (
               <div className="text-center py-12 text-gray-400">
                 <FileText size={40} className="mx-auto mb-2 opacity-20" />
-                <p>Chưa có proposal nào</p>
+                <p>{t('proposals.noneYet')}</p>
               </div>
             )}
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
-              <span>{total} đề xuất</span>
+              <span>{t('proposals.count', { count: total })}</span>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => { setPage(p => p - 1); setSelectedIds(new Set()); }}>Trước</Button>
-                <span className="px-2 py-1">Trang {page} / {totalPages}</span>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => { setPage(p => p + 1); setSelectedIds(new Set()); }}>Sau</Button>
+                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => { setPage(p => p - 1); setSelectedIds(new Set()); }}>{t('proposals.prev')}</Button>
+                <span className="px-2 py-1">{t('proposals.page', { current: page, total: totalPages })}</span>
+                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => { setPage(p => p + 1); setSelectedIds(new Set()); }}>{t('proposals.next')}</Button>
               </div>
             </div>
           )}
@@ -1048,14 +1064,14 @@ export default function ProposalsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-500" /> Xác nhận xóa hàng loạt
+              <AlertTriangle size={16} className="text-red-500" /> {t('proposals.bulk.deleteTitle')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Bạn có chắc muốn xóa <strong>{[...selectedIds].filter((id) => proposals.find((p) => p.id === id && ['DRAFT', 'REJECTED'].includes(p.status))).length}</strong> đề xuất đã chọn? Hành động này không thể hoàn tác.
+            {t('proposals.bulk.deleteDesc', { count: [...selectedIds].filter((id) => proposals.find((p) => p.id === id && ['DRAFT', 'REJECTED'].includes(p.status))).length })}
           </p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setConfirmBulkDelete(false)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setConfirmBulkDelete(false)}>{t('common:actions.cancel')}</Button>
             <Button
               variant="destructive"
               disabled={bulkDeleteMutation.isPending}
@@ -1065,7 +1081,7 @@ export default function ProposalsPage() {
               }}
             >
               {bulkDeleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              Xóa
+              {t('proposals.actions.delete')}
             </Button>
           </div>
         </DialogContent>
@@ -1076,21 +1092,21 @@ export default function ProposalsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-500" /> Xác nhận xóa
+              <AlertTriangle size={16} className="text-red-500" /> {t('proposals.deleteTitle')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Bạn có chắc muốn xóa đề xuất <strong>{deletingProposal?.proposalNumber}</strong>? Hành động này không thể hoàn tác.
+            {t('proposals.deleteDesc', { number: deletingProposal?.proposalNumber ?? '' })}
           </p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => setDeletingProposal(null)}>Hủy</Button>
+            <Button variant="outline" onClick={() => setDeletingProposal(null)}>{t('common:actions.cancel')}</Button>
             <Button
               variant="destructive"
               disabled={deleteMutation.isPending}
               onClick={() => deletingProposal && deleteMutation.mutate(deletingProposal.id)}
             >
               {deleteMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              Xóa
+              {t('proposals.actions.delete')}
             </Button>
           </div>
         </DialogContent>

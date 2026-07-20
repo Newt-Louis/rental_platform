@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { crmApi, customersApi, usersApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,7 @@ interface LeadEditDialogProps {
 }
 
 export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: LeadEditDialogProps) {
+  const { t } = useTranslation(['crm', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'lead' | 'profile'>('lead');
@@ -143,21 +145,21 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         tasks.push(qc.invalidateQueries({ queryKey: [queryKeys.leadDetail] }));
       }
       await Promise.all(tasks);
-      toast({ title: 'Đã cập nhật thông tin khách hàng' });
+      toast({ title: t('updatedCustomerInfo') });
       onSuccess?.();
       onClose();
     },
     onError: (e: any) => {
       const msg = e?.response?.data?.message;
-      const text = Array.isArray(msg) ? msg.join(' | ') : (msg ?? 'Lỗi cập nhật khách hàng');
-      toast({ title: text, variant: 'destructive' });
+      const text = Array.isArray(msg) ? msg.join(' | ') : msg;
+      toast({ title: text ?? t('checkInfo'), variant: 'destructive' });
     },
   });
 
   const handleSubmit = () => {
     setTouched({ brandName: true, contactName: true, phone: true, email: true });
     if (hasErrors) {
-      toast({ title: 'Vui lòng kiểm tra lại thông tin', variant: 'destructive' });
+      toast({ title: t('checkInfo'), variant: 'destructive' });
       return;
     }
     mutation.mutate();
@@ -169,7 +171,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Chỉnh sửa khách hàng</DialogTitle>
+          <DialogTitle>{t('editLead')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-1">
@@ -177,13 +179,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${activeTab === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
             onClick={() => setActiveTab('lead')}
           >
-            Lead / Cơ hội
+            {t('leadOpportunityTab')}
           </button>
           <button
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${activeTab === 'profile' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
             onClick={() => setActiveTab('profile')}
           >
-            Hồ sơ Khách hàng
+            {t('customerProfileTab')}
           </button>
         </div>
 
@@ -191,7 +193,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
           {activeTab === 'lead' && (<>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Thương hiệu *</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.brand')} *</label>
                 <Input
                   value={form.brandName}
                   onChange={(e) => set('brandName', e.target.value)}
@@ -204,7 +206,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Người liên hệ *</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.contactPerson')} *</label>
                 <Input
                   value={form.contactName}
                   onChange={(e) => set('contactName', e.target.value)}
@@ -217,7 +219,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Điện thoại</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.phone')}</label>
                 <Input
                   value={form.phone}
                   onChange={(e) => set('phone', e.target.value)}
@@ -230,7 +232,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Email</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.email')}</label>
                 <Input
                   value={form.email}
                   onChange={(e) => set('email', e.target.value)}
@@ -243,56 +245,56 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                 )}
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngành hàng</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.industry')}</label>
                 <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
                   value={form.category ?? ''} onChange={(e) => set('category', e.target.value)}>
-                  <option value="">-- Chọn ngành --</option>
+                  <option value="">-- {t('fields.industry')} --</option>
                   {Object.entries(CATEGORY_OPTS).map(([k, label]) => (
                     <option key={k} value={k}>{label}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Nguồn</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.source')}</label>
                 <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
                   value={form.source ?? ''} onChange={(e) => set('source', e.target.value)}>
-                  <option value="">-- Nguồn --</option>
+                  <option value="">-- {t('lead.fields.source')} --</option>
                   {LEAD_SOURCE_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                    <option key={o.value} value={o.value}>{t(`sources.${o.value}`, o.label)}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Mức độ tiềm năng</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.priority')}</label>
                 <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
                   value={form.priority} onChange={(e) => set('priority', e.target.value)}>
-                  <option value="">-- Priority --</option>
+                  <option value="">-- {t('lead.fields.priority')} --</option>
                   {LEAD_PRIORITY_OPTS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Phụ trách</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.assignee')}</label>
                 <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
                   value={form.assignedToId} onChange={(e) => set('assignedToId', e.target.value)}>
-                  <option value="">-- Chưa phân công --</option>
+                  <option value="">-- {t('fields.assignee')} --</option>
                   {users.map((u: any) => (
                     <option key={u.id} value={u.id}>{u.fullName}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Diện tích (m²)</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.area')}</label>
                 <Input type="number" value={form.expectedArea} onChange={(e) => set('expectedArea', e.target.value)} placeholder="100" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng (₫/m²)</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.expectedRent')}</label>
                 <Input type="number" value={form.expectedRent} onChange={(e) => set('expectedRent', e.target.value)} placeholder="680000" />
               </div>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Ghi chú</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.notes')}</label>
               <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} placeholder="Ghi chú nội bộ..." />
             </div>
           </>)}
@@ -300,27 +302,27 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
           {activeTab === 'profile' && (<>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Tên công ty</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.companyName')}</label>
                 <Input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Công ty TNHH..." />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Chức danh liên hệ</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.title')}</label>
                 <Input value={form.contactTitle} onChange={(e) => set('contactTitle', e.target.value)} placeholder="Giám đốc KD" />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-gray-500 mb-1 block">Website</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.website')}</label>
                 <Input value={form.website} onChange={(e) => set('website', e.target.value)} placeholder="https://..." />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngân sách tối thiểu (tr/m²)</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.budgetMin')}</label>
                 <Input type="number" step="0.1" value={form.budgetMin} onChange={(e) => set('budgetMin', e.target.value)} placeholder="0.5" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Ngân sách tối đa (tr/m²)</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.budgetMax')}</label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" />
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-1 block">Tiềm năng (1–5★)</label>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.potential')}</label>
                 <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
                   value={form.rating} onChange={(e) => set('rating', e.target.value)}>
                   <option value="">-- Chưa đánh giá --</option>
@@ -332,15 +334,15 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
             </div>
             {!lead?.customerId && !lead?.customer?.id && (
               <p className="text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
-                Chưa có hồ sơ khách hàng liên kết. Trường công ty sẽ được lưu vào lead.
+                {t('notLinkedProfile')}
               </p>
             )}
           </>)}
 
           <div className="flex justify-end gap-2 pt-1 border-t border-gray-100">
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('common:actions.cancel')}</Button>
             <Button type="button" disabled={mutation.isPending} onClick={handleSubmit}>
-              {mutation.isPending ? 'Đang lưu...' : 'Cập nhật'}
+              {mutation.isPending ? t('saving') : t('update')}
             </Button>
           </div>
         </div>

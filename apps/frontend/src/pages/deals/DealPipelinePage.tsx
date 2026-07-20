@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { crmApi, spacesApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,13 +16,13 @@ import {
   GitBranch, Search, Clock, Building2, User, ChevronRight, Zap,
 } from 'lucide-react';
 
-const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
-  LEAD: { label: 'Lead', color: 'bg-gray-100 text-gray-700' },
-  BOOKING: { label: 'Booking', color: 'bg-blue-100 text-blue-700' },
-  PROPOSAL: { label: 'Đề xuất', color: 'bg-indigo-100 text-indigo-700' },
-  APPROVAL: { label: 'Phê duyệt', color: 'bg-amber-100 text-amber-700' },
-  CONTRACT: { label: 'Hợp đồng', color: 'bg-purple-100 text-purple-700' },
-  WON: { label: 'Thắng', color: 'bg-green-100 text-green-700' },
+const STAGE_CONFIG: Record<string, { color: string }> = {
+  LEAD: { color: 'bg-gray-100 text-gray-700' },
+  BOOKING: { color: 'bg-blue-100 text-blue-700' },
+  PROPOSAL: { color: 'bg-indigo-100 text-indigo-700' },
+  APPROVAL: { color: 'bg-amber-100 text-amber-700' },
+  CONTRACT: { color: 'bg-purple-100 text-purple-700' },
+  WON: { color: 'bg-green-100 text-green-700' },
 };
 
 function fmtValue(v?: number | null) {
@@ -30,6 +31,7 @@ function fmtValue(v?: number | null) {
 }
 
 export default function DealPipelinePage() {
+  const { t } = useTranslation('deals');
   const navigate = useNavigate();
   const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');

@@ -1,0 +1,192 @@
+{
+  "title": "Contracts",
+  "subtitle": "Manage lease contracts — upload scans & e-sign",
+  "status": {
+    "DRAFT": "Draft",
+    "PENDING_LEGAL": "Pending Legal",
+    "PENDING_SIGNATURE": "Pending Signature",
+    "ACTIVE": "Active",
+    "EXPIRING": "Expiring Soon",
+    "EXPIRED": "Expired",
+    "TERMINATING": "Terminating",
+    "TERMINATED": "Terminated"
+  },
+  "type": {
+    "LOI": "LOI",
+    "LEASE_AGREEMENT": "Lease Agreement",
+    "APPENDIX": "Appendix",
+    "RENEWAL": "Renewal",
+    "TERMINATION": "Termination"
+  },
+  "filters": {
+    "searchPlaceholder": "Contract no. / tenant / space...",
+    "allTypes": "All types",
+    "allStatuses": "All statuses",
+    "typeLabel": "Contract type",
+    "statusLabel": "Status",
+    "datePlaceholder": "Contract start date",
+    "clearFilters": "Clear filters"
+  },
+  "actions": {
+    "showExpiring": "Expiring Soon",
+    "showAll": "All Contracts"
+  },
+  "table": {
+    "contractNo": "Contract No.",
+    "tenant": "Tenant",
+    "unit": "Space",
+    "type": "Type",
+    "monthlyRent": "Rent/month",
+    "startDate": "Start",
+    "endDate": "End",
+    "remaining": "Remaining",
+    "status": "Status",
+    "documents": "Documents",
+    "daysRemaining": "{{count}} days"
+  },
+  "empty": "No contracts found",
+  "total": "{{count}} contracts",
+  "pagination": {
+    "prev": "Previous",
+    "next": "Next",
+    "page": "Page {{current}} / {{total}}"
+  },
+  "errorLoad": "Cannot load contract list",
+  "sheet": {
+    "defaultTitle": "Contract",
+    "tabs": {
+      "detail": "Details",
+      "documents": "Documents",
+      "events": "Timeline",
+      "amendments": "Amendments",
+      "template": "Template",
+      "termination": "Termination"
+    },
+    "daysLeft": "{{count}} days left",
+    "source": {
+      "label": "SOURCE",
+      "proposal": "Proposal: ",
+      "lead": "Lead: "
+    },
+    "sections": {
+      "parties": "PARTIES",
+      "financial": "FINANCIAL TERMS",
+      "period": "CONTRACT PERIOD",
+      "terminationInfo": "TERMINATION INFO"
+    },
+    "fields": {
+      "tenant": "Tenant",
+      "company": "Company",
+      "unit": "Space",
+      "rent": "Rent",
+      "cam": "CAM fee",
+      "serviceCharge": "Service charge",
+      "totalMonthly": "Total / month",
+      "deposit": "Deposit",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "signedDate": "Signed date",
+      "duration": "Duration",
+      "durationMonths": "{{count}} months",
+      "perMonth": " ₫/month",
+      "reason": "Reason",
+      "initiatedBy": "Initiated by",
+      "initiatedByThiso": "THISO (Management)",
+      "initiatedByTenant": "Tenant",
+      "noticePeriod": "Notice period",
+      "noticePeriodDays": "{{count}} days",
+      "depositRefund": "Deposit refund",
+      "penalty": "Penalty"
+    }
+  },
+  "sign": {
+    "title": "E-sign document",
+    "infoBox": "The system will generate a SHA-256 hash from the document + signer info + timestamp, creating an independent verification code.",
+    "warningBox": "this is an internal integrity verification (hash), not a legally binding digital signature under Decree 130/2018. For internal documents only; contracts requiring legal validity should be signed through an authorized digital signature provider.",
+    "warningNote": "Note:",
+    "signerName": "Signer name *",
+    "signerNamePlaceholder": "John Smith",
+    "signerRole": "Role",
+    "roles": {
+      "TENANT": "Tenant",
+      "LANDLORD": "Landlord (Management)",
+      "LEGAL": "Legal",
+      "CEO": "CEO",
+      "WITNESS": "Witness"
+    },
+    "cancel": "Cancel",
+    "confirm": "Confirm signature",
+    "signing": "Signing...",
+    "success": "Document signed successfully"
+  },
+  "verify": {
+    "title": "Verify e-signature",
+    "valid": "Document valid",
+    "validDesc": "Digital signature has been verified",
+    "fileName": "Document",
+    "contractNo": "Contract No.",
+    "signerName": "Signer",
+    "signerRole": "Role",
+    "signedAt": "Signed at",
+    "hash": "SHA-256 Hash",
+    "invalidCode": "Invalid verification code",
+    "close": "Close"
+  },
+  "documents": {
+    "uploadDrag": "Drag & drop or click to select file",
+    "uploadTypes": "PDF, JPG, PNG, DOCX, XLSX · Max 30 MB",
+    "uploading": "Uploading...",
+    "empty": "No documents yet — upload a scanned contract",
+    "signedBadge": "Signed (internal)",
+    "signedBadgeTitle": "Internal integrity verification (hash) — not a legally binding digital signature",
+    "verifyCode": "Verify code: ",
+    "download": "Download",
+    "sign": "E-sign",
+    "verifyBtn": "Verify signature",
+    "delete": "Delete",
+    "uploadSuccess": "Uploaded: {{name}}",
+    "uploadError": "Upload failed",
+    "deleteSuccess": "Document deleted",
+    "deleteTitle": "Delete contract document",
+    "deleteDesc": "Document \"{{name}}\" will be removed from the contract.",
+    "deleteConfirm": "Delete document"
+  },
+  "amendments": {
+    "createBtn": "Create amendment (rent +5%)",
+    "createSuccess": "Amendment draft created"
+  },
+  "template": {
+    "select": "Select template...",
+    "render": "Render contract",
+    "renderSuccess": "Template rendered"
+  },
+  "termination": {
+    "noRequest": "No termination request exists for this contract.",
+    "reasonLabel": "Termination reason *",
+    "reasonPlaceholder": "e.g. Tenant ceasing operations, contract breach...",
+    "effectiveDateLabel": "Effective date *",
+    "noticePeriodLabel": "Notice period (days)",
+    "depositRefundLabel": "Deposit refund (if any)",
+    "penaltyLabel": "Penalty (if any)",
+    "initiateBtn": "Initiate contract termination",
+    "initiateSuccess": "Termination process initiated",
+    "effectiveFrom": "Effective from {{date}}",
+    "statuses": {
+      "INITIATED": "Initiated",
+      "IN_PROGRESS": "In Progress",
+      "COMPLETED": "Completed"
+    },
+    "checklist": {
+      "title": "Handover checklist",
+      "accessCard": "Access card returned",
+      "signage": "Signage removed",
+      "keys": "Keys returned"
+    },
+    "completeBtn": "Complete termination",
+    "cancelBtn": "Cancel process",
+    "completeSuccess": "Termination completed — space returned to vacant",
+    "cancelSuccess": "Termination process cancelled",
+    "completedAt": "Completed on {{date}} — space returned to vacant",
+    "updateSuccess": "Updated"
+  }
+}

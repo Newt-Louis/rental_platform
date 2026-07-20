@@ -1,0 +1,148 @@
+{
+  "title": "Khách thuê",
+  "create": "Thêm khách thuê",
+  "edit": "Chỉnh sửa",
+  "detail": "Chi tiết khách thuê",
+  "fields": {
+    "companyName": "Tên công ty",
+    "taxId": "Mã số thuế",
+    "representativeName": "Người đại diện",
+    "representativeTitle": "Chức vụ",
+    "email": "Email",
+    "phone": "Điện thoại",
+    "address": "Địa chỉ",
+    "category": "Ngành nghề",
+    "brand": "Thương hiệu",
+    "website": "Website",
+    "status": "Trạng thái"
+  },
+  "status": {
+    "ACTIVE": "Đang thuê",
+    "INACTIVE": "Không hoạt động",
+    "PROSPECT": "Tiềm năng"
+  },
+  "filters": {
+    "search": "Tìm tên, mã số thuế...",
+    "status": "Trạng thái",
+    "category": "Ngành nghề"
+  },
+  "tabs": {
+    "info": "Thông tin",
+    "contracts": "HĐ",
+    "invoices": "HĐon",
+    "tickets": "YC",
+    "portal": "Portal"
+  },
+  "noTenants": "Không có khách thuê nào",
+  "createSuccess": "Đã tạo khách thuê mới",
+  "updateSuccess": "Đã cập nhật khách thuê",
+  "category": {
+    "FB": "F&B",
+    "FASHION": "Thời trang",
+    "ENTERTAINMENT": "Giải trí",
+    "SERVICES": "Dịch vụ",
+    "EDUCATION": "Giáo dục",
+    "HEALTH": "Sức khoẻ",
+    "RETAIL": "Bán lẻ"
+  },
+  "contractStatus": {
+    "ACTIVE": "Hiệu lực",
+    "EXPIRING": "Sắp HH",
+    "PENDING_SIGNATURE": "Chờ ký",
+    "DRAFT": "Draft",
+    "TERMINATED": "Đã chấm dứt",
+    "EXPIRED": "Hết hạn"
+  },
+  "invoiceStatus": {
+    "PAID": "Đã TT",
+    "OVERDUE": "Quá hạn",
+    "ISSUED": "Đã gửi",
+    "PARTIALLY_PAID": "Một phần",
+    "DRAFT": "Nháp"
+  },
+  "kpi": {
+    "contracts": "Hợp đồng",
+    "monthlyRent": "Thuê/tháng",
+    "overdue": "Quá hạn",
+    "units": "Mặt bằng"
+  },
+  "info": {
+    "contact": "Người liên hệ",
+    "phone": "Điện thoại",
+    "email": "Email",
+    "taxCode": "Mã số thuế",
+    "address": "Địa chỉ",
+    "unitsOccupied": "Mặt bằng đang thuê",
+    "noContracts": "Chưa có hợp đồng",
+    "noInvoices": "Chưa có hóa đơn",
+    "noTickets": "Chưa có yêu cầu hỗ trợ",
+    "viewAllContracts": "Xem toàn bộ hợp đồng",
+    "viewAllInvoices": "Xem toàn bộ hóa đơn",
+    "viewAllTickets": "Xem toàn bộ tickets",
+    "dueDate": "Hạn",
+    "perMonth": "/tháng",
+    "daysLeft": "(còn {{count}}n)"
+  },
+  "portal": {
+    "title": "Tenant Portal",
+    "subtitle": "Quyền truy cập hệ thống",
+    "granted": "Đã cấp",
+    "notGranted": "Chưa cấp",
+    "grantedNote": "Để cấp đăng nhập, vào Quản trị → Tài khoản, tạo tài khoản vai trò \"Khách thuê\" và liên kết với khách thuê này.",
+    "notGrantedNote": "Bật quyền Portal trong phần Chỉnh sửa, sau đó tạo tài khoản đăng nhập trong Quản trị → Tài khoản."
+  },
+  "form": {
+    "addTitle": "Thêm khách thuê mới",
+    "editTitle": "Chỉnh sửa khách thuê",
+    "brand": "Thương hiệu *",
+    "brandPlaceholder": "VD: Highlands Coffee",
+    "company": "Tên công ty",
+    "companyPlaceholder": "Công ty TNHH...",
+    "taxCode": "Mã số thuế",
+    "taxCodePlaceholder": "0123456789",
+    "category": "Ngành",
+    "selectCategory": "-- Chọn ngành --",
+    "contactName": "Người liên hệ",
+    "contactEmail": "Email liên hệ",
+    "contactPhone": "Điện thoại",
+    "address": "Địa chỉ",
+    "portalAccess": "Khách thuê có quyền truy cập Tenant Portal",
+    "portalNote": "Để cấp đăng nhập thật, vào Quản trị → Tài khoản, tạo tài khoản vai trò \"Khách thuê\" và liên kết với khách thuê này.",
+    "saving": "Đang lưu...",
+    "update": "Cập nhật",
+    "create": "Tạo khách thuê",
+    "cancel": "Hủy"
+  },
+  "list": {
+    "header": "Khách thuê",
+    "summary": "{{total}} khách · {{active}} đang thuê",
+    "addNew": "Thêm mới",
+    "searchPlaceholder": "Tìm thương hiệu, công ty...",
+    "allCategories": "Tất cả",
+    "total": "{{count}} khách thuê",
+    "page": "Trang {{current}} / {{total}}",
+    "prev": "Trước",
+    "next": "Sau",
+    "selectHint": "Chọn khách thuê để xem chi tiết",
+    "noMatch": "Không có khách thuê phù hợp",
+    "noMatchDesc": "Thử thay đổi từ khóa hoặc ngành hàng.",
+    "empty": "Chưa có khách thuê nào",
+    "emptyDesc": "Thêm khách thuê đầu tiên để quản lý hồ sơ và hợp đồng.",
+    "clearFilter": "Xóa bộ lọc",
+    "addFirst": "Thêm khách thuê",
+    "errorLoad": "Không thể tải danh sách khách thuê",
+    "errorDesc": "Vui lòng kiểm tra kết nối và thử lại.",
+    "retry": "Thử lại",
+    "edit": "Sửa"
+  },
+  "validation": {
+    "brandRequired": "Bắt buộc nhập",
+    "brandMaxLength": "Tối đa 100 ký tự",
+    "companyMaxLength": "Tối đa 200 ký tự",
+    "taxCodeInvalid": "Không hợp lệ (VD: 0123456789)",
+    "emailInvalid": "Email không đúng định dạng",
+    "phoneInvalid": "SĐT không hợp lệ (VD: 0912345678)",
+    "contactNameMaxLength": "Tối đa 100 ký tự",
+    "addressMaxLength": "Tối đa 500 ký tự"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Thông tin tài khoản",
+  "subtitle": "Quản lý thông tin cá nhân và mật khẩu",
+  "personalInfo": "Thông tin cá nhân",
+  "fields": {
+    "fullName": "Họ tên",
+    "email": "Email",
+    "phone": "Số điện thoại",
+    "role": "Vai trò",
+    "department": "Phòng ban",
+    "avatar": "Ảnh đại diện"
+  },
+  "phonePlaceholder": "Chưa cập nhật",
+  "departmentPlaceholder": "Chưa cập nhật",
+  "saveSuccess": "Cập nhật thành công",
+  "saveError": "Cập nhật thất bại",
+  "saving": "Đang lưu...",
+  "saveChanges": "Lưu thay đổi",
+  "changePassword": {
+    "title": "Đổi mật khẩu",
+    "currentPassword": "Mật khẩu hiện tại",
+    "newPassword": "Mật khẩu mới",
+    "newPasswordPlaceholder": "Ít nhất 6 ký tự",
+    "confirmPassword": "Xác nhận mật khẩu",
+    "confirmPasswordPlaceholder": "Nhập lại mật khẩu",
+    "passwordMismatch": "Mật khẩu xác nhận không khớp",
+    "passwordTooShort": "Mật khẩu phải có ít nhất 6 ký tự",
+    "success": "Đổi mật khẩu thành công",
+    "error": "Đổi mật khẩu thất bại",
+    "changing": "Đang đổi...",
+    "changeBtn": "Đổi mật khẩu"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "language": "Ngôn ngữ",
+    "theme": "Giao diện",
+    "notifications": "Thông báo"
+  },
+  "tenantPortal": {
+    "title": "Cổng thông tin khách thuê",
+    "myUnits": "Mặt bằng của tôi",
+    "myContracts": "Hợp đồng",
+    "myInvoices": "Hóa đơn",
+    "myTickets": "Yêu cầu hỗ trợ",
+    "announcements": "Thông báo từ Mall",
+    "overview": "Tổng quan"
+  }
+}

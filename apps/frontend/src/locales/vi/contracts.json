@@ -1,0 +1,192 @@
+{
+  "title": "Hợp đồng",
+  "subtitle": "Quản lý hợp đồng cho thuê — upload scan & ký điện tử",
+  "status": {
+    "DRAFT": "Draft",
+    "PENDING_LEGAL": "Chờ Legal",
+    "PENDING_SIGNATURE": "Chờ ký",
+    "ACTIVE": "Hiệu lực",
+    "EXPIRING": "Sắp hết hạn",
+    "EXPIRED": "Hết hạn",
+    "TERMINATING": "Đang chấm dứt",
+    "TERMINATED": "Đã chấm dứt"
+  },
+  "type": {
+    "LOI": "LOI",
+    "LEASE_AGREEMENT": "Hợp đồng thuê",
+    "APPENDIX": "Phụ lục",
+    "RENEWAL": "Gia hạn",
+    "TERMINATION": "Chấm dứt HĐ"
+  },
+  "filters": {
+    "searchPlaceholder": "Số HĐ / khách thuê / mặt bằng...",
+    "allTypes": "Tất cả loại",
+    "allStatuses": "Tất cả TT",
+    "typeLabel": "Loại HĐ",
+    "statusLabel": "Trạng thái",
+    "datePlaceholder": "Ngày bắt đầu HĐ",
+    "clearFilters": "Xóa lọc"
+  },
+  "actions": {
+    "showExpiring": "Sắp hết hạn",
+    "showAll": "Tất cả HĐ"
+  },
+  "table": {
+    "contractNo": "Số HĐ",
+    "tenant": "Khách thuê",
+    "unit": "Mặt bằng",
+    "type": "Loại",
+    "monthlyRent": "Thuê/tháng",
+    "startDate": "Bắt đầu",
+    "endDate": "Kết thúc",
+    "remaining": "Còn lại",
+    "status": "Trạng thái",
+    "documents": "Tài liệu",
+    "daysRemaining": "{{count}} ngày"
+  },
+  "empty": "Không có hợp đồng nào",
+  "total": "{{count}} hợp đồng",
+  "pagination": {
+    "prev": "Trước",
+    "next": "Sau",
+    "page": "Trang {{current}} / {{total}}"
+  },
+  "errorLoad": "Không thể tải danh sách hợp đồng",
+  "sheet": {
+    "defaultTitle": "Hợp đồng",
+    "tabs": {
+      "detail": "Chi tiết",
+      "documents": "Tài liệu",
+      "events": "Timeline",
+      "amendments": "Phụ lục",
+      "template": "Template",
+      "termination": "Chấm dứt"
+    },
+    "daysLeft": "Còn {{count}} ngày",
+    "source": {
+      "label": "NGUỒN GỐC",
+      "proposal": "Đề xuất: ",
+      "lead": "Lead: "
+    },
+    "sections": {
+      "parties": "CÁC BÊN",
+      "financial": "ĐIỀU KHOẢN TÀI CHÍNH",
+      "period": "THỜI HẠN HỢP ĐỒNG",
+      "terminationInfo": "THÔNG TIN CHẤM DỨT"
+    },
+    "fields": {
+      "tenant": "Khách thuê",
+      "company": "Công ty",
+      "unit": "Mặt bằng",
+      "rent": "Tiền thuê",
+      "cam": "Phí CAM",
+      "serviceCharge": "Phí dịch vụ",
+      "totalMonthly": "Tổng / tháng",
+      "deposit": "Tiền đặt cọc",
+      "startDate": "Ngày bắt đầu",
+      "endDate": "Ngày kết thúc",
+      "signedDate": "Ngày ký",
+      "duration": "Thời hạn",
+      "durationMonths": "{{count}} tháng",
+      "perMonth": " ₫/tháng",
+      "reason": "Lý do",
+      "initiatedBy": "Khởi tạo bởi",
+      "initiatedByThiso": "THISO (BQL)",
+      "initiatedByTenant": "Khách thuê",
+      "noticePeriod": "Báo trước",
+      "noticePeriodDays": "{{count}} ngày",
+      "depositRefund": "Hoàn cọc",
+      "penalty": "Phạt vi phạm"
+    }
+  },
+  "sign": {
+    "title": "Ký điện tử tài liệu",
+    "infoBox": "Hệ thống sẽ tạo mã hash SHA-256 từ tài liệu + thông tin người ký + thời gian, tạo mã xác thực độc lập.",
+    "warningBox": "đây là xác thực toàn vẹn nội bộ (hash), không phải chữ ký số có giá trị pháp lý theo Nghị định 130/2018. Dùng cho biên bản/phụ lục nội bộ; hợp đồng cần giá trị pháp lý cao nên ký qua nhà cung cấp chữ ký số hợp pháp.",
+    "warningNote": "Lưu ý:",
+    "signerName": "Tên người ký *",
+    "signerNamePlaceholder": "Nguyễn Văn A",
+    "signerRole": "Vai trò",
+    "roles": {
+      "TENANT": "Khách thuê",
+      "LANDLORD": "Chủ đầu tư (BQL)",
+      "LEGAL": "Pháp chế",
+      "CEO": "Tổng giám đốc",
+      "WITNESS": "Người chứng kiến"
+    },
+    "cancel": "Hủy",
+    "confirm": "Xác nhận ký",
+    "signing": "Đang ký...",
+    "success": "Đã ký điện tử thành công"
+  },
+  "verify": {
+    "title": "Xác thực chữ ký điện tử",
+    "valid": "Tài liệu hợp lệ",
+    "validDesc": "Chữ ký điện tử đã được xác thực",
+    "fileName": "Tài liệu",
+    "contractNo": "Số HĐ",
+    "signerName": "Người ký",
+    "signerRole": "Vai trò",
+    "signedAt": "Thời gian ký",
+    "hash": "SHA-256 Hash",
+    "invalidCode": "Mã xác thực không hợp lệ",
+    "close": "Đóng"
+  },
+  "documents": {
+    "uploadDrag": "Kéo & thả hoặc bấm để chọn file",
+    "uploadTypes": "PDF, JPG, PNG, DOCX, XLSX · Tối đa 30 MB",
+    "uploading": "Đang tải lên...",
+    "empty": "Chưa có tài liệu nào — upload bản scan hợp đồng",
+    "signedBadge": "Đã ký (nội bộ)",
+    "signedBadgeTitle": "Xác thực toàn vẹn nội bộ (hash) — không phải chữ ký số có giá trị pháp lý",
+    "verifyCode": "Mã xác thực: ",
+    "download": "Tải xuống",
+    "sign": "Ký điện tử",
+    "verifyBtn": "Xác thực chữ ký",
+    "delete": "Xóa",
+    "uploadSuccess": "Đã upload: {{name}}",
+    "uploadError": "Upload thất bại",
+    "deleteSuccess": "Đã xóa tài liệu",
+    "deleteTitle": "Xóa tài liệu hợp đồng",
+    "deleteDesc": "Tài liệu \"{{name}}\" sẽ bị xóa khỏi hợp đồng.",
+    "deleteConfirm": "Xóa tài liệu"
+  },
+  "amendments": {
+    "createBtn": "Tạo phụ lục (rent +5%)",
+    "createSuccess": "Đã tạo amendment draft"
+  },
+  "template": {
+    "select": "Chọn template...",
+    "render": "Render hợp đồng",
+    "renderSuccess": "Đã render template"
+  },
+  "termination": {
+    "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",
+    "reasonLabel": "Lý do chấm dứt *",
+    "reasonPlaceholder": "VD: Khách thuê ngừng kinh doanh, vi phạm hợp đồng...",
+    "effectiveDateLabel": "Ngày hiệu lực *",
+    "noticePeriodLabel": "Số ngày báo trước",
+    "depositRefundLabel": "Hoàn cọc (nếu có)",
+    "penaltyLabel": "Phạt vi phạm (nếu có)",
+    "initiateBtn": "Khởi tạo chấm dứt hợp đồng",
+    "initiateSuccess": "Đã khởi tạo quy trình chấm dứt hợp đồng",
+    "effectiveFrom": "Hiệu lực từ {{date}}",
+    "statuses": {
+      "INITIATED": "Đã khởi tạo",
+      "IN_PROGRESS": "Đang xử lý",
+      "COMPLETED": "Đã hoàn tất"
+    },
+    "checklist": {
+      "title": "Checklist bàn giao",
+      "accessCard": "Đã thu hồi thẻ ra vào",
+      "signage": "Đã tháo dỡ biển hiệu",
+      "keys": "Đã bàn giao chìa khóa"
+    },
+    "completeBtn": "Hoàn tất chấm dứt",
+    "cancelBtn": "Hủy quy trình",
+    "completeSuccess": "Đã hoàn tất chấm dứt hợp đồng — mặt bằng chuyển về trống",
+    "cancelSuccess": "Đã hủy quy trình chấm dứt",
+    "completedAt": "Hoàn tất ngày {{date}} — mặt bằng đã chuyển về trống",
+    "updateSuccess": "Đã cập nhật"
+  }
+}

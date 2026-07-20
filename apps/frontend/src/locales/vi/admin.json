@@ -1,0 +1,359 @@
+{
+  "title": "Quản trị hệ thống",
+  "systemConfig": "Cấu hình Hệ thống",
+  "systemConfigDesc": "Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.",
+  "erpControlCenter": "ERP Control Center",
+  "superAdmin": "Super Admin · Toàn quyền",
+  "readOnlyNote": "Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code và triển khai lại.",
+  "selectConfigArea": "Chọn khu vực cấu hình",
+  "tabs": {
+    "users": "Tài khoản",
+    "malls": "Mall",
+    "mallAccess": "Quyền Mall",
+    "structure": "Cấu trúc không gian",
+    "categories": "Ngành hàng & Giá",
+    "permissions": "Phân quyền",
+    "approval": "Approval Policy",
+    "system": "Hệ thống",
+    "approvalPolicy": "Chính sách phê duyệt",
+    "branding": "Thương hiệu"
+  },
+  "tabGroups": {
+    "userAccess": "Người dùng & truy cập",
+    "orgMall": "Tổ chức & Mall",
+    "categories": "Danh mục kinh doanh",
+    "process": "Quy trình",
+    "platform": "Nền tảng"
+  },
+  "tabDescriptions": {
+    "users": "Quản lý vòng đời tài khoản và trạng thái truy cập hệ thống.",
+    "malls": "Thiết lập danh mục Mall và thông tin vận hành nền tảng.",
+    "mall-access": "Kiểm soát phạm vi dữ liệu Mall theo từng người dùng.",
+    "structure": "Chuẩn hóa Block, tầng và cấu trúc mặt bằng cho toàn hệ thống.",
+    "categories": "Quản trị ngành hàng, đơn giá và danh mục kinh doanh dùng chung.",
+    "permissions": "Thiết kế quyền theo vai trò và nguyên tắc kiểm soát tối thiểu.",
+    "approval": "Cấu hình luồng phê duyệt, cấp duyệt và ngưỡng nghiệp vụ.",
+    "system": "Quản lý nhận diện thương hiệu và cấu hình vận hành nền tảng."
+  },
+  "confirm": {
+    "cancel": "Hủy",
+    "confirm": "Xác nhận xóa"
+  },
+  "users": {
+    "title": "Quản lý người dùng",
+    "create": "Thêm tài khoản",
+    "createNew": "Tạo tài khoản mới",
+    "edit": "Chỉnh sửa",
+    "info": "THÔNG TIN",
+    "editSection": "CHỈNH SỬA",
+    "resetPassword": "ĐỔI MẬT KHẨU",
+    "resetPasswordBtn": "Đặt lại mật khẩu",
+    "resetBtn": "Đặt lại",
+    "lockAccount": "Khóa tài khoản",
+    "unlockAccount": "Mở khóa",
+    "deleteAccount": "Xóa tài khoản",
+    "confirmDelete": "Xóa tài khoản",
+    "confirmDeleteMessage": "Bạn có chắc muốn xóa tài khoản \"{{name}}\"? Hành động này không thể hoàn tác.",
+    "active": "Hoạt động",
+    "locked": "Đã khóa",
+    "allRoles": "Tất cả vai trò",
+    "allStatuses": "Tất cả trạng thái",
+    "statusActive": "Đang hoạt động",
+    "statusLocked": "Đã khóa",
+    "searchPlaceholder": "Tìm theo tên hoặc email...",
+    "stats": {
+      "total": "Tổng tài khoản",
+      "active": "Đang hoạt động",
+      "locked": "Đã khóa",
+      "roles": "Vai trò"
+    },
+    "table": {
+      "fullName": "Họ tên",
+      "email": "Email",
+      "department": "Phòng ban",
+      "role": "Vai trò",
+      "status": "Trạng thái"
+    },
+    "pagination": "{{total}} tài khoản · Trang {{page}}/{{totalPages}}",
+    "prev": "Trước",
+    "next": "Sau",
+    "noResults": "Không tìm thấy tài khoản nào",
+    "loadError": "Không thể tải danh sách tài khoản.",
+    "retry": "Thử lại",
+    "saving": "Đang lưu...",
+    "saveChanges": "Lưu thay đổi",
+    "newPasswordPlaceholder": "Mật khẩu mới (tối thiểu 8 ký tự)",
+    "linkedTenant": "Khách thuê liên kết",
+    "noLinked": "— Chưa liên kết —",
+    "toast": {
+      "updated": "Đã cập nhật tài khoản",
+      "locked": "Đã khóa tài khoản",
+      "unlocked": "Đã mở khóa tài khoản",
+      "cannotToggle": "Không thể đổi trạng thái tài khoản",
+      "passwordReset": "Đã đổi mật khẩu thành công",
+      "deleted": "Đã xóa tài khoản",
+      "cannotDelete": "Không thể xóa tài khoản",
+      "created": "Tạo tài khoản thành công"
+    },
+    "fields": {
+      "fullName": "Họ tên",
+      "fullNameRequired": "Họ tên *",
+      "email": "Email",
+      "emailRequired": "Email *",
+      "password": "Mật khẩu *",
+      "passwordPlaceholder": "Tối thiểu 8 ký tự",
+      "phone": "Điện thoại",
+      "department": "Phòng ban",
+      "role": "Vai trò",
+      "status": "Trạng thái",
+      "mall": "Mall phụ trách"
+    },
+    "roles": {
+      "ADMIN": "Quản trị viên",
+      "CEO": "CEO",
+      "MALL_DIRECTOR": "Giám đốc Mall",
+      "LEASING_MANAGER": "Trưởng phòng Leasing",
+      "LEASING_EXECUTIVE": "Chuyên viên Leasing",
+      "FINANCE": "Tài chính",
+      "LEGAL": "Pháp lý",
+      "OPERATION": "Vận hành",
+      "TENANT": "Khách thuê"
+    }
+  },
+  "malls": {
+    "title": "Mall",
+    "create": "Thêm Mall",
+    "createNew": "Tạo Mall mới",
+    "edit": "Chỉnh sửa Mall",
+    "noMalls": "Chưa có Mall nào. Tạo Mall đầu tiên!",
+    "confirmDelete": "Xóa Mall",
+    "confirmDeleteMessage": "Xóa Mall \"{{name}}\"? Dữ liệu liên quan (tầng, zone, lô) sẽ không bị xóa nhưng sẽ không hiển thị.",
+    "stats": {
+      "units": "Lô",
+      "floors": "Tầng"
+    },
+    "wizard": {
+      "title": "Tạo Mall mới",
+      "step1": "Thông tin cơ bản",
+      "step2": "Cấu trúc tầng",
+      "next": "Tiếp theo →",
+      "back": "← Quay lại",
+      "creating": "Đang tạo...",
+      "createBtn": "Tạo Mall",
+      "createBtnWithFloors": "Tạo Mall + {{count}} tầng",
+      "quickTemplates": "Thêm nhanh theo chuẩn",
+      "noFloors": "Chưa có tầng nào. Chọn mẫu nhanh hoặc thêm thủ công bên dưới.",
+      "floorPlaceholder": "Tên tầng (VD: Tầng Trệt)",
+      "zonePlaceholderName": "Tên khu vực (VD: Khu A)",
+      "zonePlaceholderCode": "Mã",
+      "addZone": "Thêm khu vực",
+      "addFloor": "Thêm tầng",
+      "templates": {
+        "large": "Mall lớn",
+        "medium": "Mall vừa",
+        "small": "Mall nhỏ"
+      }
+    },
+    "fields": {
+      "name": "Tên Mall *",
+      "code": "Mã Mall *",
+      "address": "Địa chỉ",
+      "city": "Thành phố",
+      "totalArea": "Tổng diện tích (m²)",
+      "description": "Mô tả"
+    },
+    "toast": {
+      "created": "Đã tạo Mall thành công!",
+      "updated": "Đã cập nhật Mall",
+      "deleted": "Đã xóa Mall"
+    }
+  },
+  "structure": {
+    "title": "Cấu trúc không gian",
+    "selectMall": "Chọn Mall:",
+    "addFloor": "Thêm tầng",
+    "noFloors": "Chưa có tầng nào. Thêm tầng đầu tiên!",
+    "selectMallFirst": "Chọn Mall để xem cấu trúc",
+    "zones": "{{count}} khu vực",
+    "units": "{{count}} mặt bằng",
+    "noZones": "Chưa có khu vực nào",
+    "viewInSpaces": "Xem trong Spaces",
+    "addZone": "Zone",
+    "cannotDelete": "Không thể xoá: còn {{count}} mặt bằng đang hoạt động",
+    "editFloor": "Chỉnh sửa tầng",
+    "deleteFloor": "Xóa tầng",
+    "deleteZone": "Xóa khu vực",
+    "deleteFloorMessage": "Xóa tầng \"{{name}}\"?",
+    "deleteZoneMessage": "Xóa khu vực \"{{name}}\"?",
+    "floorFields": {
+      "name": "Tên tầng",
+      "level": "Ký hiệu tầng",
+      "sortOrder": "Thứ tự sắp xếp"
+    },
+    "zoneFields": {
+      "name": "Tên khu vực",
+      "code": "Mã (tùy chọn)",
+      "namePlaceholder": "Tên khu vực",
+      "codePlaceholder": "Mã"
+    },
+    "addZoneBtn": "Thêm khu vực",
+    "addFloorForm": {
+      "name": "Tên tầng",
+      "level": "Ký hiệu",
+      "order": "Thứ tự",
+      "addBtn": "Thêm"
+    },
+    "toast": {
+      "floorCreated": "Đã tạo tầng",
+      "floorUpdated": "Đã cập nhật tầng",
+      "floorDeleted": "Đã xóa tầng",
+      "floorUpdateError": "Lỗi cập nhật tầng",
+      "zoneCreated": "Đã tạo khu vực",
+      "zoneUpdated": "Đã cập nhật khu vực",
+      "zoneDeleted": "Đã xóa khu vực"
+    }
+  },
+  "permissions": {
+    "title": "Phân quyền",
+    "feature": "Chức năng"
+  },
+  "branding": {
+    "title": "Thương hiệu",
+    "subtitle": "Logo và ảnh nền hiển thị ở màn hình đăng nhập",
+    "logo": "Logo",
+    "logoLabel": "Logo công ty",
+    "noLogo": "Chưa có logo — dùng mặc định THISO",
+    "background": "Ảnh nền",
+    "backgroundLabel": "Ảnh nền màn hình đăng nhập",
+    "noBackground": "Chưa có ảnh nền",
+    "upload": "Upload",
+    "remove": "Xoá",
+    "primaryColor": "Màu chính",
+    "toast": {
+      "logoUpdated": "Đã cập nhật logo",
+      "logoUploadError": "Lỗi upload logo",
+      "logoRemoved": "Đã xoá logo",
+      "logoRemoveError": "Không thể xoá logo",
+      "bgUpdated": "Đã cập nhật ảnh nền",
+      "bgUploadError": "Lỗi upload ảnh nền",
+      "bgRemoved": "Đã xoá ảnh nền",
+      "bgRemoveError": "Không thể xoá ảnh nền"
+    }
+  },
+  "categories": {
+    "title": "Danh mục ngành nghề",
+    "create": "Thêm danh mục",
+    "edit": "Chỉnh sửa",
+    "fields": {
+      "name": "Tên danh mục",
+      "code": "Mã",
+      "description": "Mô tả"
+    }
+  },
+  "mallAccess": {
+    "title": "Phân quyền truy cập Mall",
+    "assignUser": "Phân quyền người dùng",
+    "revokeAccess": "Thu hồi quyền"
+  },
+  "approvalPolicy": {
+    "title": "Chính sách phê duyệt",
+    "addRule": "Thêm quy tắc",
+    "threshold": "Ngưỡng giá trị",
+    "approvers": "Người phê duyệt",
+    "sequential": "Phê duyệt tuần tự"
+  },
+  "auditLog": {
+    "title": "Nhật ký hệ thống",
+    "action": "Hành động",
+    "entity": "Đối tượng",
+    "user": "Người thực hiện",
+    "timestamp": "Thời gian",
+    "details": "Chi tiết",
+    "filters": {
+      "action": "Lọc hành động",
+      "user": "Người dùng",
+      "dateRange": "Khoảng thời gian"
+    }
+  },
+  "announcements": {
+    "title": "Thông báo Mall",
+    "create": "Tạo thông báo",
+    "createTitle": "Tạo thông báo mới",
+    "edit": "Chỉnh sửa",
+    "broadcastCenter": "Trung tâm truyền thông",
+    "subtitle": "Theo dõi thông tin vận hành, sự kiện và cảnh báo quan trọng tại một nơi.",
+    "createDisabledHint": "Chọn Mall trước khi tạo thông báo",
+    "filterAll": "Tất cả",
+    "errorLoad": "Không thể tải thông báo",
+    "empty": "Chưa có thông báo nào",
+    "expand": "Xem chi tiết",
+    "collapse": "Thu gọn",
+    "expiresAt": "Hết hạn: ",
+    "createdBy": "bởi ",
+    "deleteCancel": "Hủy",
+    "deleteConfirm": "Xác nhận",
+    "delete": "Xóa",
+    "deleteSuccess": "Đã xóa thông báo",
+    "deleteError": "Không thể xóa thông báo",
+    "createSuccess": "Đã tạo thông báo",
+    "createError": "Lỗi khi tạo thông báo",
+    "cancel": "Hủy",
+    "publishing": "Đang đăng...",
+    "publish": "Đăng thông báo",
+    "stats": {
+      "total": "Tổng hiển thị",
+      "urgent": "Khẩn cấp",
+      "scheduled": "Đã lên lịch"
+    },
+    "categories": {
+      "MAINTENANCE": "Bảo trì",
+      "EVENT": "Sự kiện",
+      "POLICY": "Chính sách",
+      "PROMOTION": "Khuyến mãi",
+      "EMERGENCY": "Khẩn cấp"
+    },
+    "priorities": {
+      "LOW": "Thấp",
+      "NORMAL": "Bình thường",
+      "HIGH": "Cao",
+      "URGENT": "Khẩn"
+    },
+    "fields": {
+      "title": "Tiêu đề",
+      "titleLabel": "Tiêu đề *",
+      "titlePlaceholder": "Tiêu đề thông báo...",
+      "content": "Nội dung",
+      "contentLabel": "Nội dung *",
+      "contentPlaceholder": "Nội dung chi tiết...",
+      "categoryLabel": "Danh mục *",
+      "priorityLabel": "Mức độ ưu tiên",
+      "publishedAtLabel": "Ngày đăng",
+      "expiresAtLabel": "Hết hạn",
+      "type": "Loại thông báo",
+      "targetAudience": "Đối tượng",
+      "publishAt": "Thời gian đăng",
+      "expiresAt": "Hết hạn"
+    },
+    "validation": {
+      "titleRequired": "Vui lòng nhập tiêu đề",
+      "contentRequired": "Vui lòng nhập nội dung",
+      "expiresAfterPublished": "Thời gian hết hạn phải sau thời gian đăng"
+    },
+    "types": {
+      "INFO": "Thông tin",
+      "WARNING": "Cảnh báo",
+      "MAINTENANCE": "Bảo trì",
+      "EVENT": "Sự kiện"
+    }
+  },
+  "notifications": {
+    "title": "Thông báo",
+    "markAllRead": "Đọc tất cả",
+    "noNotifications": "Không có thông báo",
+    "viewAll": "Xem tất cả thông báo",
+    "pendingApprovals": "{{count}} phê duyệt đang chờ bạn",
+    "pendingApprovalsAction": "Nhấn để xử lý ngay",
+    "minutesAgo": "{{count}} phút trước",
+    "hoursAgo": "{{count}} giờ trước"
+  }
+}

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Bell, CheckCheck, CheckSquare, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface NotificationItem {
   id: string;
@@ -35,14 +36,14 @@ function entityLink(entityType?: string, entityId?: string): string | null {
   return map[entityType.toUpperCase()] ?? null;
 }
 
-function fmtTime(iso: string) {
+function fmtTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string) {
   const d = new Date(iso);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins} phút trước`;
+  if (diffMins < 60) return t('notifications.minutesAgo', { count: diffMins });
   const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours} giờ trước`;
+  if (diffHours < 24) return t('notifications.hoursAgo', { count: diffHours });
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -55,6 +56,7 @@ export function NotificationCenter({
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useTranslation('admin');
 
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications'],
@@ -107,7 +109,7 @@ export function NotificationCenter({
       title={
         <div className="flex items-center gap-2">
           <Bell size={16} className="text-gray-500" />
-          <span>Thông báo</span>
+          <span>{t('notifications.title')}</span>
           {unreadInList > 0 && (
             <Badge className="bg-red-500 text-white border-0">{unreadInList}</Badge>
           )}
@@ -125,7 +127,7 @@ export function NotificationCenter({
               disabled={markAllMutation.isPending}
             >
               <CheckCheck size={14} />
-              Đọc tất cả
+              {t('notifications.markAllRead')}
             </Button>
           )}
         </div>
@@ -142,9 +144,9 @@ export function NotificationCenter({
             <CheckSquare className="h-5 w-5 text-amber-600 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-amber-900">
-                {pendingApprovals} phê duyệt đang chờ bạn
+                {t('notifications.pendingApprovals', { count: pendingApprovals })}
               </p>
-              <p className="text-xs text-amber-700">Nhấn để xử lý ngay</p>
+              <p className="text-xs text-amber-700">{t('notifications.pendingApprovalsAction')}</p>
             </div>
             <ExternalLink size={14} className="text-amber-600 shrink-0" />
           </button>
@@ -162,7 +164,7 @@ export function NotificationCenter({
           {!isLoading && (!notifications || notifications.length === 0) && (
             <div className="text-center py-12 text-gray-400 text-sm">
               <Bell className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              Không có thông báo
+              {t('notifications.noNotifications')}
             </div>
           )}
 
@@ -187,7 +189,7 @@ export function NotificationCenter({
                 )}
               </div>
               <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
-              <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.createdAt)}</p>
+              <p className="text-[10px] text-gray-400 mt-1">{fmtTime(n.createdAt, t)}</p>
             </button>
           ))}
         </div>

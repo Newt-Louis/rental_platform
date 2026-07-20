@@ -1,0 +1,85 @@
+{
+  "title": "Dashboard",
+  "subtitle": "Toàn cảnh điều hành · {{mall}}",
+  "tagline": "Một góc nhìn để ra quyết định nhanh hơn mỗi ngày.",
+  "description": "Tập trung vào hiệu suất tài sản, dòng tiền và những điểm cần can thiệp — cập nhật theo dữ liệu vận hành thực tế.",
+  "executiveIntelligence": "Executive intelligence",
+  "keyMetrics": "Chỉ số điều hành trọng yếu",
+  "roleDataRefresh": "Vai trò {{role}} · dữ liệu tự động làm mới mỗi 60 giây",
+  "executiveActions": "Ưu tiên điều hành",
+  "executiveActionsDesc": "Những điểm BLD nên xem trước",
+  "noActionItems": "Không có mục cần xử lý",
+  "health": {
+    "label": "Sức khỏe",
+    "positive": "Vận hành tích cực",
+    "stable": "Ổn định, còn dư địa",
+    "needsWork": "Cần ưu tiên cải thiện"
+  },
+  "occupancy": {
+    "title": "Tỷ lệ lấp đầy",
+    "label": "Lấp đầy",
+    "chart": "Phân bổ diện tích",
+    "totalNla": "Tổng NLA: {{area}}",
+    "leased": "Cho thuê",
+    "vacant": "Trống",
+    "other": "Khác",
+    "leasedFull": "Đang cho thuê",
+    "noData": "Chưa có dữ liệu"
+  },
+  "stats": {
+    "occupancyRate": "Tỷ lệ lấp đầy",
+    "tenants": "Khách thuê",
+    "activeContracts": "Hợp đồng đang hoạt động",
+    "monthlyRevenue": "Doanh thu tháng",
+    "collectedRevenue": "Đã thu: {{amount}}",
+    "overdueDebt": "Công nợ quá hạn",
+    "overdueInvoices": "{{count}} hóa đơn",
+    "activeBookings": "Booking đang giữ",
+    "pendingBookings": "{{count}} chờ kích hoạt",
+    "expiringBookings": "Sắp hết hạn (7 ngày)",
+    "pendingApprovals": "Chờ phê duyệt",
+    "dealsInPipeline": "Deal đang trong luồng",
+    "expiringContracts30": "HĐ hết hạn < 30 ngày",
+    "expiringContracts90": "Trong 90 ngày: {{count}}",
+    "openTickets": "Ticket đang mở",
+    "openTicketsDesc": "Chưa đóng / chưa giải quyết"
+  },
+  "finance": {
+    "cashflow": "Hiệu suất dòng tiền",
+    "currentMonth": "Tháng hiện tại",
+    "totalInvoice": "Tổng hóa đơn",
+    "collected": "Đã thu",
+    "overdue": "Quá hạn",
+    "collectionRate": "Tỷ lệ thu"
+  },
+  "needsAttention": "Cần chú ý",
+  "openPriorityList": "Mở danh sách ưu tiên",
+  "focusAreas": {
+    "occupancy": "Mặt bằng & lấp đầy",
+    "booking": "Booking & giữ chỗ",
+    "approvals": "Phê duyệt deal",
+    "pipeline": "Pipeline bán hàng",
+    "billing": "Billing & thu nợ",
+    "sales": "Doanh thu tenant",
+    "contracts": "Hợp đồng",
+    "tickets": "Ticket vận hành",
+    "fitout": "Fit-out",
+    "overview": "Tổng quan"
+  },
+  "actionItems": {
+    "pendingApprovals": "Deal chờ phê duyệt",
+    "overdueInvoices": "Hóa đơn quá hạn",
+    "expiringContracts30": "HĐ hết hạn trong 30 ngày",
+    "expiringContracts90": "HĐ hết hạn trong 90 ngày",
+    "openTickets": "Ticket đang mở",
+    "expiringBookings": "Booking sắp hết hạn"
+  },
+  "badges": {
+    "needsAction": "Cần xử lý",
+    "urgent": "Cần xử lý ngay",
+    "expiring": "Khẩn"
+  },
+  "error": {
+    "loadFailed": "Không thể tải tổng quan vận hành"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "title": "Báo cáo",
+  "analytics": {
+    "title": "Analytics"
+  },
+  "filters": {
+    "period": "Kỳ báo cáo",
+    "mall": "Mall",
+    "dateRange": "Khoảng thời gian",
+    "groupBy": "Nhóm theo"
+  },
+  "sections": {
+    "occupancy": "Tỷ lệ lấp đầy",
+    "revenue": "Doanh thu",
+    "contracts": "Hợp đồng",
+    "pipeline": "Pipeline",
+    "tenants": "Khách thuê",
+    "fitout": "Fitout"
+  },
+  "charts": {
+    "occupancyTrend": "Xu hướng lấp đầy",
+    "revenueTrend": "Xu hướng doanh thu",
+    "tenantMix": "Cơ cấu khách thuê",
+    "categoryBreakdown": "Phân bổ danh mục",
+    "expiryTimeline": "Lịch hết hạn HĐ"
+  },
+  "export": {
+    "excel": "Xuất Excel",
+    "pdf": "Xuất PDF",
+    "csv": "Xuất CSV"
+  },
+  "sap": {
+    "title": "Tích hợp SAP",
+    "sync": "Đồng bộ SAP",
+    "lastSync": "Đồng bộ lần cuối",
+    "status": "Trạng thái kết nối"
+  },
+  "crossMall": {
+    "title": "Cross-Mall CEO View",
+    "comparison": "So sánh các Mall",
+    "consolidated": "Tổng hợp toàn hệ thống"
+  },
+  "ai": {
+    "title": "AI Assistant",
+    "placeholder": "Hỏi về dữ liệu vận hành...",
+    "analyzing": "Đang phân tích...",
+    "noConversation": "Bắt đầu cuộc trò chuyện với AI"
+  },
+  "noData": "Chưa có dữ liệu báo cáo",
+  "subtitle": "Báo cáo tổng hợp",
+  "exportCsv": "Xuất CSV",
+  "exportError": "Lỗi xuất báo cáo",
+  "exporting": "Đang xuất...",
+  "dateFrom": "Từ",
+  "dateTo": "Đến",
+  "tabs": {
+    "occupancy": "Occupancy",
+    "revenue": "Revenue",
+    "pipeline": "Pipeline",
+    "expiry": "HĐ hết hạn",
+    "revenueReceivables": "Doanh thu & Công nợ",
+    "arAging": "Công nợ theo tuổi nợ",
+    "compliance": "Tuân thủ"
+  },
+  "occupancy": {
+    "byStatus": "Theo trạng thái",
+    "byFloor": "Theo tầng",
+    "occupied": "Đang thuê",
+    "total": "Tổng",
+    "empty": "Chưa có dữ liệu lấp đầy",
+    "emptyDesc": "Dữ liệu sẽ xuất hiện khi mặt bằng được cấu hình và cập nhật trạng thái."
+  },
+  "revenue": {
+    "byMonth": "Doanh thu theo tháng {{year}}",
+    "issued": "Tổng phát hành",
+    "collected": "Đã thu",
+    "empty": "Chưa có dữ liệu doanh thu"
+  },
+  "pipeline": {
+    "leadsByStatus": "Leads theo trạng thái",
+    "proposalsByStatus": "Proposals theo trạng thái",
+    "empty": "Chưa có dữ liệu pipeline"
+  },
+  "expiry": {
+    "title": "HĐ hết hạn",
+    "contractNo": "HĐ số",
+    "tenant": "Khách thuê",
+    "unit": "Mặt bằng",
+    "endDate": "Ngày hết hạn",
+    "remaining": "Còn lại",
+    "daysRemaining": "{{count}} ngày",
+    "empty": "Không có hợp đồng sắp hết hạn",
+    "emptyDesc": "Không có hợp đồng hết hạn trong 180 ngày tới."
+  },
+  "revenueReceivables": {
+    "subtitle": "Doanh thu & công nợ chi tiết — không thay được báo cáo lãi/lỗ (P&L) vì hệ thống chưa có dữ liệu chi phí/OPEX để đối trừ.",
+    "totalBilled": "Tổng phát hành",
+    "totalCollected": "Đã thu",
+    "totalOutstanding": "Còn phải thu",
+    "collectionRate": "Tỷ lệ thu hồi",
+    "byMonth": "Theo tháng",
+    "byType": "Theo loại hoá đơn",
+    "issued": "Phát hành",
+    "collected": "Đã thu",
+    "empty": "Chưa có dữ liệu doanh thu và công nợ"
+  },
+  "arAging": {
+    "tenant": "Khách thuê",
+    "current": "Trong hạn",
+    "days30": "1-30 ngày",
+    "days60": "31-60 ngày",
+    "days90": "61-90 ngày",
+    "days90plus": ">90 ngày",
+    "total": "Tổng",
+    "empty": "Không có công nợ theo tuổi nợ",
+    "emptyDesc": "Hiện chưa có khoản phải thu cần phân loại theo tuổi nợ."
+  },
+  "compliance": {
+    "totalActions": "Tổng thao tác ghi (30 ngày)",
+    "errorCount": "Số lỗi",
+    "errorRate": "Tỷ lệ lỗi",
+    "entityTypes": "Loại đối tượng theo dõi",
+    "recentErrors": "Lỗi gần đây",
+    "noErrors": "Không có lỗi nào trong khoảng thời gian này",
+    "empty": "Chưa có dữ liệu tuân thủ"
+  }
+}

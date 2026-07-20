@@ -7,10 +7,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Building2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export function MallSelector() {
   const { user } = useAuthStore();
   const { selectedMallId, setSelectedMall } = useMallStore();
+  const { t } = useTranslation('nav');
 
   const { data: malls } = useQuery({
     queryKey: ['malls'],
@@ -46,7 +48,7 @@ export function MallSelector() {
         value={selectedMallId ?? '__all__'}
         onValueChange={(v) => {
           if (v === '__all__') {
-            setSelectedMall(null, 'Tất cả Mall');
+            setSelectedMall(null, t('mallSelector.allMalls'));
           } else {
             const m = mallList.find((x: any) => x.id === v);
             setSelectedMall(v, m?.name);
@@ -58,7 +60,7 @@ export function MallSelector() {
         </SelectTrigger>
         <SelectContent>
           {user?.role === 'ADMIN' && (
-            <SelectItem value="__all__">Tất cả Mall</SelectItem>
+            <SelectItem value="__all__">{t('mallSelector.allMalls')}</SelectItem>
           )}
           {mallList.map((m: any) => (
             <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>

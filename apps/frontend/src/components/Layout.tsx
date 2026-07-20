@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsApi, approvalsApi } from '@/api';
 import { cn } from '@/lib/utils';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import {
   LayoutDashboard, Building2, Users, FileText, CheckSquare, File,
   Hammer, Ticket, Receipt, Cpu, Bot, PieChart,
@@ -63,6 +65,7 @@ export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const { t } = useTranslation('nav');
   const [collapsed, setCollapsed] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const location = useLocation();
@@ -115,15 +118,15 @@ export default function Layout() {
           <button
             className="md:hidden p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => setMobileSidebarOpen(true)}
-            aria-label="Mở menu"
+            aria-label={t('ui.openMenu')}
           >
             <Menu size={18} />
           </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors hidden md:block"
-            title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-            aria-label={collapsed ? 'Mở rộng menu điều hướng' : 'Thu gọn menu điều hướng'}
+            title={collapsed ? t('ui.expandSidebar') : t('ui.collapseSidebar')}
+            aria-label={collapsed ? t('ui.expandNav') : t('ui.collapseNav')}
             aria-expanded={!collapsed}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
@@ -135,7 +138,7 @@ export default function Layout() {
 
         {/* Brand + mall selector */}
         <div className="flex items-center gap-4">
-          <span className="hidden sm:inline text-sm text-muted-foreground">THISO {isTenant ? 'Mall' : 'Leasing'}</span>
+          <span className="hidden sm:inline text-sm text-muted-foreground">THISO {isTenant ? t('ui.subMall') : t('ui.subLeasing')}</span>
           {!isTenant && (
             <>
               <div className="hidden sm:block w-px h-4 bg-border" />
@@ -155,13 +158,15 @@ export default function Layout() {
             </Button>
           )}
 
+          <LanguageSwitcher />
+
           <Button
             variant="ghost"
             size="sm"
             className="text-muted-foreground hover:text-foreground"
             onClick={toggleTheme}
-            title={theme === 'light' ? 'Chuyển Dark mode' : 'Chuyển Light mode'}
-            aria-label={theme === 'light' ? 'Bật giao diện tối' : 'Bật giao diện sáng'}
+            title={theme === 'light' ? t('ui.darkMode') : t('ui.lightMode')}
+            aria-label={theme === 'light' ? t('ui.enableDark') : t('ui.enableLight')}
           >
             {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
           </Button>
@@ -171,7 +176,7 @@ export default function Layout() {
             size="sm"
             className="relative text-muted-foreground hover:text-foreground"
             onClick={() => setNotifOpen(true)}
-            aria-label={unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'}
+            aria-label={unreadCount > 0 ? t('ui.notificationsUnread', { count: unreadCount }) : t('ui.notifications')}
           >
             <Bell size={15} />
             {unreadCount > 0 && (
@@ -207,12 +212,12 @@ export default function Layout() {
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate('/profile')} className="gap-2 cursor-pointer">
                 <UserCircle size={15} />
-                Thông tin tài khoản
+                {t('ui.accountInfo')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="gap-2 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50">
                 <LogOut size={15} />
-                Đăng xuất
+                {t('ui.logout')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -233,7 +238,7 @@ export default function Layout() {
 
         {/* Sidebar — sát viền trái, bo góc phải */}
         <aside
-          aria-label="Điều hướng chính"
+          aria-label={t('ui.mainNav')}
           aria-modal={mobileSidebarOpen || undefined}
           role={mobileSidebarOpen ? 'dialog' : undefined}
           className={cn(
@@ -252,7 +257,7 @@ export default function Layout() {
             <button
               onClick={() => setMobileSidebarOpen(false)}
               className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-              aria-label="Đóng menu"
+              aria-label={t('ui.closeMenu')}
             >
               <X size={16} />
             </button>
@@ -274,10 +279,10 @@ export default function Layout() {
                           : 'text-gray-400 hover:bg-gray-800 hover:text-white',
                       )
                     }
-                    title={collapsed ? item.label : undefined}
+                    title={collapsed ? t(`items.${item.module}`, item.label) : undefined}
                   >
                     <Icon size={18} className="shrink-0" />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    {!collapsed && <span className="truncate">{t(`items.${item.module}`, item.label)}</span>}
                   </NavLink>
                 );
               })
@@ -286,7 +291,7 @@ export default function Layout() {
                 <div key={group.label}>
                   {!collapsed && (
                     <div className="px-4 pt-4 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      {group.label}
+                      {t(`groups.${group.key}`, group.label)}
                     </div>
                   )}
                   {group.items.map((item) => {
@@ -305,11 +310,11 @@ export default function Layout() {
                               : 'text-gray-400 hover:bg-gray-800 hover:text-white',
                           )
                         }
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? t(`items.${item.module}`, item.label) : undefined}
                       >
                         <Icon size={17} className="shrink-0" />
                         {!collapsed && (
-                          <span className="truncate flex-1">{item.label}</span>
+                          <span className="truncate flex-1">{t(`items.${item.module}`, item.label)}</span>
                         )}
                         {!collapsed && showApprovalBadge && (
                           <Badge className="h-4 min-w-4 px-1 py-0 text-[10px] bg-amber-500 text-white border-0">
@@ -335,7 +340,7 @@ export default function Layout() {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-white truncate">{user?.fullName}</div>
                   <div className="text-xs text-gray-400 truncate">
-                    {isTenant ? 'Khách thuê' : user?.role}
+                    {isTenant ? t('ui.tenantRole') : user?.role}
                   </div>
                 </div>
               )}
@@ -348,7 +353,7 @@ export default function Layout() {
                 onClick={handleLogout}
               >
                 <LogOut size={14} />
-                Đăng xuất
+                {t('ui.logout')}
               </Button>
             )}
           </div>

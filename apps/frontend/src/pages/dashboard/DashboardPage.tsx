@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { dashboardApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
@@ -16,19 +17,6 @@ import {
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts';
-
-const FOCUS_LABELS: Record<string, string> = {
-  occupancy: 'Mặt bằng & lấp đầy',
-  booking: 'Booking & giữ chỗ',
-  approvals: 'Phê duyệt deal',
-  pipeline: 'Pipeline bán hàng',
-  billing: 'Billing & thu nợ',
-  sales: 'Doanh thu tenant',
-  contracts: 'Hợp đồng',
-  tickets: 'Ticket vận hành',
-  fitout: 'Fit-out',
-  overview: 'Tổng quan',
-};
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
@@ -108,13 +96,14 @@ function OccupancyDonut({
   otherArea: number;
   occupancyRate: number;
 }) {
+  const { t } = useTranslation('dashboard');
   const raw = [
-    { name: 'Đang cho thuê', value: Math.max(0, leasedArea), color: '#10b981' },
-    { name: 'Trống', value: Math.max(0, vacantArea), color: '#e5e7eb' },
-    { name: 'Khác', value: Math.max(0, otherArea), color: '#fbbf24' },
+    { name: t('occupancy.leasedFull'), value: Math.max(0, leasedArea), color: '#10b981' },
+    { name: t('occupancy.vacant'), value: Math.max(0, vacantArea), color: '#e5e7eb' },
+    { name: t('occupancy.other'), value: Math.max(0, otherArea), color: '#fbbf24' },
   ];
   const data = raw.filter((d) => d.value > 0);
-  if (data.length === 0) data.push({ name: 'Chưa có dữ liệu', value: 1, color: '#f3f4f6' });
+  if (data.length === 0) data.push({ name: t('occupancy.noData'), value: 1, color: '#f3f4f6' });
 
   return (
     <div className="relative select-none">
@@ -142,7 +131,7 @@ function OccupancyDonut({
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         <span className="text-2xl font-bold text-gray-900 leading-none">{occupancyRate}%</span>
-        <span className="text-[11px] text-gray-400 mt-1">lấp đầy</span>
+        <span className="text-[11px] text-gray-400 mt-1">{t('occupancy.label')}</span>
       </div>
     </div>
   );
@@ -155,12 +144,13 @@ function OccupancyLegend({
   vacantArea: number;
   otherArea: number;
 }) {
+  const { t } = useTranslation('dashboard');
   return (
     <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-gray-50">
       {[
-        { label: 'Cho thuê', value: fmtArea(leasedArea), dot: 'bg-emerald-500' },
-        { label: 'Trống',    value: fmtArea(vacantArea), dot: 'bg-gray-200' },
-        { label: 'Khác',     value: fmtArea(otherArea),  dot: 'bg-amber-400' },
+        { label: t('occupancy.leased'), value: fmtArea(leasedArea), dot: 'bg-emerald-500' },
+        { label: t('occupancy.vacant'), value: fmtArea(vacantArea), dot: 'bg-gray-200' },
+        { label: t('occupancy.other'),  value: fmtArea(otherArea),  dot: 'bg-amber-400' },
       ].map((item) => (
         <div key={item.label} className="flex flex-col items-center gap-1 text-center">
           <div className={`h-2 w-2 rounded-full ${item.dot}`} />
@@ -179,13 +169,14 @@ function BillingProgress({
   collectedRevenue: number;
   overdueAmount: number;
 }) {
+  const { t } = useTranslation('dashboard');
   const max = Math.max(monthlyRevenue, 1);
   const collectionPct = monthlyRevenue > 0 ? (collectedRevenue / monthlyRevenue) * 100 : 0;
 
   const rows = [
-    { label: 'Tổng hóa đơn', value: monthlyRevenue, pct: 100,                        barColor: 'bg-violet-400' },
-    { label: 'Đã thu',        value: collectedRevenue, pct: (collectedRevenue / max) * 100, barColor: 'bg-emerald-500' },
-    { label: 'Quá hạn',       value: overdueAmount,    pct: (overdueAmount / max) * 100,    barColor: 'bg-red-400'    },
+    { label: t('finance.totalInvoice'), value: monthlyRevenue, pct: 100,                        barColor: 'bg-violet-400' },
+    { label: t('finance.collected'),    value: collectedRevenue, pct: (collectedRevenue / max) * 100, barColor: 'bg-emerald-500' },
+    { label: t('finance.overdue'),      value: overdueAmount,    pct: (overdueAmount / max) * 100,    barColor: 'bg-red-400'    },
   ];
 
   return (
@@ -205,7 +196,7 @@ function BillingProgress({
         </div>
       ))}
       <div className="pt-3 mt-1 border-t border-gray-100 flex items-center justify-between">
-        <span className="text-xs text-gray-400">Tỷ lệ thu</span>
+        <span className="text-xs text-gray-400">{t('finance.collectionRate')}</span>
         <span className={`text-sm font-bold ${collectionPct >= 80 ? 'text-emerald-600' : collectionPct >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
           {collectionPct.toFixed(1)}%
         </span>
@@ -217,6 +208,7 @@ function BillingProgress({
 function ActionItems({ items }: {
   items: { label: string; value: number; urgent: boolean; to: string }[];
 }) {
+  const { t } = useTranslation('dashboard');
   const navigate = useNavigate();
   const sorted = [...items].sort((a, b) => {
     if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
@@ -226,7 +218,7 @@ function ActionItems({ items }: {
   return (
     <div className="space-y-2 mt-1">
       {sorted.length === 0 && (
-        <p className="text-sm text-gray-400 text-center py-6">Không có mục cần xử lý</p>
+        <p className="text-sm text-gray-400 text-center py-6">{t('noActionItems')}</p>
       )}
       {sorted.map((item) => {
         const isAlert = item.urgent && item.value > 0;
@@ -258,6 +250,7 @@ function ActionItems({ items }: {
 }
 
 export default function DashboardPage() {
+  const { t } = useTranslation(['dashboard', 'common']);
   const { selectedMallId, selectedMallName } = useMallStore();
   const { user } = useAuthStore();
 
@@ -299,7 +292,7 @@ export default function DashboardPage() {
     );
   }
   if (isError) {
-    return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải tổng quan vận hành"><div /></AsyncState>;
+    return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle={t('error.loadFailed')}><div /></AsyncState>;
   }
 
   const otherArea = (d?.totalArea ?? 0) - (d?.leasedArea ?? 0) - (d?.vacantArea ?? 0);
@@ -311,15 +304,19 @@ export default function DashboardPage() {
     : 0;
   const attentionTotal = (d?.overdueCount ?? 0) + (d?.pendingApprovals ?? 0) + (d?.expiringIn30 ?? 0) + (bookingStats?.expiringSoon ?? 0) + (d?.openTickets ?? 0);
   const healthScore = Math.round(((d?.occupancyRate ?? 0) * 0.55) + (collectionRate * 0.45));
-  const healthLabel = healthScore >= 85 ? 'Vận hành tích cực' : healthScore >= 70 ? 'Ổn định, còn dư địa' : 'Cần ưu tiên cải thiện';
+  const healthLabel = healthScore >= 85
+    ? t('health.positive')
+    : healthScore >= 70
+    ? t('health.stable')
+    : t('health.needsWork');
 
   const actionItems = [
-    showApprovals && { label: 'Deal chờ phê duyệt', value: d?.pendingApprovals ?? 0, urgent: false, to: '/approvals' },
-    showFinance  && { label: 'Hóa đơn quá hạn', value: d?.overdueCount ?? 0, urgent: true, to: '/billing?status=OVERDUE' },
-    (showLeasing || showFinance || showContracts) && { label: 'HĐ hết hạn trong 30 ngày', value: d?.expiringIn30 ?? 0, urgent: true, to: '/contracts?expiring=30' },
-    (showLeasing || showFinance || showContracts) && { label: 'HĐ hết hạn trong 90 ngày', value: d?.expiringIn90 ?? 0, urgent: false, to: '/contracts?expiring=90' },
-    showOperations && { label: 'Ticket đang mở', value: d?.openTickets ?? 0, urgent: false, to: '/tickets?status=OPEN' },
-    showLeasing  && { label: 'Booking sắp hết hạn', value: bookingStats?.expiringSoon ?? 0, urgent: true, to: '/bookings?expiringSoon=true' },
+    showApprovals && { label: t('actionItems.pendingApprovals'), value: d?.pendingApprovals ?? 0, urgent: false, to: '/approvals' },
+    showFinance  && { label: t('actionItems.overdueInvoices'), value: d?.overdueCount ?? 0, urgent: true, to: '/billing?status=OVERDUE' },
+    (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts30'), value: d?.expiringIn30 ?? 0, urgent: true, to: '/contracts?expiring=30' },
+    (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts90'), value: d?.expiringIn90 ?? 0, urgent: false, to: '/contracts?expiring=90' },
+    showOperations && { label: t('actionItems.openTickets'), value: d?.openTickets ?? 0, urgent: false, to: '/tickets?status=OPEN' },
+    showLeasing  && { label: t('actionItems.expiringBookings'), value: bookingStats?.expiringSoon ?? 0, urgent: true, to: '/bookings?expiringSoon=true' },
   ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[];
 
   return (
@@ -330,28 +327,28 @@ export default function DashboardPage() {
         <div className="relative grid gap-7 xl:grid-cols-[1.35fr_1fr] xl:items-end">
           <div>
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100"><Sparkles size={12} /> Executive intelligence</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-100"><Sparkles size={12} /> {t('executiveIntelligence')}</span>
               <span className="text-xs text-slate-300">{today}</span>
             </div>
-            <p className="text-sm font-medium text-cyan-100/80">Toàn cảnh điều hành · {selectedMallName}</p>
-            <h1 className="mt-2 max-w-3xl text-2xl font-semibold leading-tight tracking-tight sm:text-4xl">Một góc nhìn để ra quyết định<br className="hidden sm:block" /> nhanh hơn mỗi ngày.</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Tập trung vào hiệu suất tài sản, dòng tiền và những điểm cần can thiệp — cập nhật theo dữ liệu vận hành thực tế.</p>
+            <p className="text-sm font-medium text-cyan-100/80">{t('subtitle', { mall: selectedMallName })}</p>
+            <h1 className="mt-2 max-w-3xl text-2xl font-semibold leading-tight tracking-tight sm:text-4xl">{t('tagline')}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">{t('description')}</p>
           </div>
           <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] backdrop-blur-sm">
             <div className="border-r border-white/10 p-4 sm:p-5">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Activity size={12} /> Sức khỏe</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Activity size={12} /> {t('health.label')}</div>
               <div className="mt-2 text-2xl font-semibold sm:text-3xl">{healthScore}<span className="text-sm text-slate-400">/100</span></div>
               <p className="mt-1 text-[11px] text-cyan-100">{healthLabel}</p>
             </div>
             <div className="border-r border-white/10 p-4 sm:p-5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Lấp đầy</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('occupancy.label')}</div>
               <div className="mt-2 text-2xl font-semibold sm:text-3xl">{d?.occupancyRate ?? 0}<span className="text-sm text-slate-400">%</span></div>
               <p className="mt-1 text-[11px] text-slate-300">{fmtArea(d?.leasedArea ?? 0)}</p>
             </div>
             <button type="button" onClick={() => document.getElementById('executive-actions')?.scrollIntoView({ behavior: 'smooth' })} className="group p-4 text-left transition-colors hover:bg-white/10 sm:p-5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cần chú ý</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('needsAttention')}</div>
               <div className="mt-2 flex items-center gap-1 text-2xl font-semibold text-amber-300 sm:text-3xl">{attentionTotal}<ChevronRight size={17} className="transition-transform group-hover:translate-x-1" /></div>
-              <p className="mt-1 text-[11px] text-slate-300">Mở danh sách ưu tiên</p>
+              <p className="mt-1 text-[11px] text-slate-300">{t('openPriorityList')}</p>
             </button>
           </div>
         </div>
@@ -359,21 +356,21 @@ export default function DashboardPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-600" /><h2 className="text-lg font-semibold tracking-tight text-slate-950">Chỉ số điều hành trọng yếu</h2></div>
-          <p className="mt-1 text-xs text-slate-500">Vai trò {user?.role?.replace(/_/g, ' ')} · dữ liệu tự động làm mới mỗi 60 giây</p>
+          <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-600" /><h2 className="text-lg font-semibold tracking-tight text-slate-950">{t('keyMetrics')}</h2></div>
+          <p className="mt-1 text-xs text-slate-500">{t('roleDataRefresh', { role: user?.role?.replace(/_/g, ' ') })}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {focusAreas.filter((f) => f !== 'overview').slice(0, 3).map((f) => (
             <Badge key={f} variant="outline" className="border-slate-200 bg-white text-xs text-slate-600">
-              {FOCUS_LABELS[f] ?? f}
+              {t(`focusAreas.${f}`, f)}
             </Badge>
           ))}
           <span className="text-xs text-gray-400">
-            {dataUpdatedAt ? `Cập nhật ${new Date(dataUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
+            {dataUpdatedAt ? t('common:messages.dataUpdated', { time: new Date(dataUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) }) : ''}
           </span>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5 rounded-xl border-slate-200 bg-white shadow-sm">
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
-            Làm mới
+            {t('common:actions.refresh')}
           </Button>
         </div>
       </div>
@@ -384,7 +381,7 @@ export default function DashboardPage() {
           {showOccupancy && (
             <>
               <StatCard
-                title="Tỷ lệ lấp đầy"
+                title={t('stats.occupancyRate')}
                 value={`${d?.occupancyRate ?? 0}%`}
                 sub={`${fmtArea(d?.leasedArea ?? 0)} / ${fmtArea(d?.totalArea ?? 0)}`}
                 icon={Building2}
@@ -392,9 +389,9 @@ export default function DashboardPage() {
                 to="/spaces"
               />
               <StatCard
-                title="Khách thuê"
+                title={t('stats.tenants')}
                 value={d?.totalTenants ?? 0}
-                sub="Hợp đồng đang hoạt động"
+                sub={t('stats.activeContracts')}
                 icon={Users}
                 color="green"
                 to="/contracts?status=ACTIVE"
@@ -404,20 +401,20 @@ export default function DashboardPage() {
           {showFinance && (
             <>
               <StatCard
-                title="Doanh thu tháng"
+                title={t('stats.monthlyRevenue')}
                 value={fmt(d?.monthlyRevenue ?? 0)}
-                sub={`Đã thu: ${fmt(d?.collectedRevenue ?? 0)}`}
+                sub={t('stats.collectedRevenue', { amount: fmt(d?.collectedRevenue ?? 0) })}
                 icon={TrendingUp}
                 color="purple"
                 to="/billing"
               />
               <StatCard
-                title="Công nợ quá hạn"
+                title={t('stats.overdueDebt')}
                 value={fmt(d?.overdueAmount ?? 0)}
-                sub={`${d?.overdueCount ?? 0} hóa đơn`}
+                sub={t('stats.overdueInvoices', { count: d?.overdueCount ?? 0 })}
                 icon={DollarSign}
                 color="red"
-                badge={(d?.overdueCount ?? 0) > 0 ? { text: 'Cần xử lý', variant: 'destructive' } : undefined}
+                badge={(d?.overdueCount ?? 0) > 0 ? { text: t('badges.needsAction'), variant: 'destructive' } : undefined}
                 to="/billing?status=OVERDUE"
               />
             </>
@@ -431,28 +428,28 @@ export default function DashboardPage() {
           {showLeasing && (
             <>
               <StatCard
-                title="Booking đang giữ"
+                title={t('stats.activeBookings')}
                 value={bookingStats?.active ?? 0}
-                sub={`${bookingStats?.pending ?? 0} chờ kích hoạt`}
+                sub={t('stats.pendingBookings', { count: bookingStats?.pending ?? 0 })}
                 icon={BookmarkCheck}
                 color="yellow"
                 to="/bookings"
               />
               <StatCard
-                title="Sắp hết hạn (7 ngày)"
+                title={t('stats.expiringBookings')}
                 value={bookingStats?.expiringSoon ?? 0}
                 icon={Clock}
                 color="red"
-                badge={(bookingStats?.expiringSoon ?? 0) > 0 ? { text: 'Cần xử lý ngay', variant: 'destructive' } : undefined}
+                badge={(bookingStats?.expiringSoon ?? 0) > 0 ? { text: t('badges.urgent'), variant: 'destructive' } : undefined}
                 to="/bookings?expiringSoon=true"
               />
             </>
           )}
           {showApprovals && (
             <StatCard
-              title="Chờ phê duyệt"
+              title={t('stats.pendingApprovals')}
               value={d?.pendingApprovals ?? 0}
-              sub="Deal đang trong luồng"
+              sub={t('stats.dealsInPipeline')}
               icon={CheckSquare}
               color="blue"
               to="/approvals"
@@ -460,20 +457,20 @@ export default function DashboardPage() {
           )}
           {(showLeasing || showFinance || showContracts) && (
             <StatCard
-              title="HĐ hết hạn < 30 ngày"
+              title={t('stats.expiringContracts30')}
               value={d?.expiringIn30 ?? 0}
-              sub={`Trong 90 ngày: ${d?.expiringIn90 ?? 0}`}
+              sub={t('stats.expiringContracts90', { count: d?.expiringIn90 ?? 0 })}
               icon={AlertTriangle}
               color="red"
-              badge={(d?.expiringIn30 ?? 0) > 0 ? { text: 'Khẩn', variant: 'destructive' } : undefined}
+              badge={(d?.expiringIn30 ?? 0) > 0 ? { text: t('badges.expiring'), variant: 'destructive' } : undefined}
               to="/contracts?expiring=30"
             />
           )}
           {showOperations && (
             <StatCard
-              title="Ticket đang mở"
+              title={t('stats.openTickets')}
               value={d?.openTickets ?? 0}
-              sub="Chưa đóng / chưa giải quyết"
+              sub={t('stats.openTicketsDesc')}
               icon={Ticket}
               color="purple"
               to="/tickets?status=OPEN"
@@ -487,8 +484,8 @@ export default function DashboardPage() {
         {showOccupancy && (
           <Card className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
             <CardHeader className="pb-0">
-              <CardTitle className="text-sm font-semibold text-slate-900">Phân bổ diện tích</CardTitle>
-              <p className="text-xs text-gray-400 mt-0.5">Tổng NLA: {fmtArea(d?.totalArea ?? 0)}</p>
+              <CardTitle className="text-sm font-semibold text-slate-900">{t('occupancy.chart')}</CardTitle>
+              <p className="text-xs text-gray-400 mt-0.5">{t('occupancy.totalNla', { area: fmtArea(d?.totalArea ?? 0) })}</p>
             </CardHeader>
             <CardContent className="pt-2">
               <OccupancyDonut
@@ -509,8 +506,8 @@ export default function DashboardPage() {
         {showFinance && (
           <Card className="rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
             <CardHeader className="pb-0">
-              <CardTitle className="text-sm font-semibold text-slate-900">Hiệu suất dòng tiền</CardTitle>
-              <p className="text-xs text-gray-400 mt-0.5">Tháng hiện tại</p>
+              <CardTitle className="text-sm font-semibold text-slate-900">{t('finance.cashflow')}</CardTitle>
+              <p className="text-xs text-gray-400 mt-0.5">{t('finance.currentMonth')}</p>
             </CardHeader>
             <CardContent className="pt-2">
               <BillingProgress
@@ -524,8 +521,8 @@ export default function DashboardPage() {
 
         <Card id="executive-actions" className="scroll-mt-6 rounded-2xl border border-slate-200/70 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.5)]">
           <CardHeader className="pb-0">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-900"><AlertTriangle size={15} className="text-amber-500" /> Ưu tiên điều hành</CardTitle>
-            <p className="text-xs text-gray-400 mt-0.5">Những điểm BLD nên xem trước</p>
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-slate-900"><AlertTriangle size={15} className="text-amber-500" /> {t('executiveActions')}</CardTitle>
+            <p className="text-xs text-gray-400 mt-0.5">{t('executiveActionsDesc')}</p>
           </CardHeader>
           <CardContent className="pt-2">
             <ActionItems items={actionItems} />

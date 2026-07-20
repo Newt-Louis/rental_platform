@@ -1,0 +1,127 @@
+{
+  "title": "Reports",
+  "analytics": {
+    "title": "Analytics"
+  },
+  "filters": {
+    "period": "Reporting period",
+    "mall": "Mall",
+    "dateRange": "Date range",
+    "groupBy": "Group by"
+  },
+  "sections": {
+    "occupancy": "Occupancy rate",
+    "revenue": "Revenue",
+    "contracts": "Contracts",
+    "pipeline": "Pipeline",
+    "tenants": "Tenants",
+    "fitout": "Fitout"
+  },
+  "charts": {
+    "occupancyTrend": "Occupancy trend",
+    "revenueTrend": "Revenue trend",
+    "tenantMix": "Tenant mix",
+    "categoryBreakdown": "Category breakdown",
+    "expiryTimeline": "Contract expiry timeline"
+  },
+  "export": {
+    "excel": "Export Excel",
+    "pdf": "Export PDF",
+    "csv": "Export CSV"
+  },
+  "sap": {
+    "title": "SAP Integration",
+    "sync": "Sync with SAP",
+    "lastSync": "Last synced",
+    "status": "Connection status"
+  },
+  "crossMall": {
+    "title": "Cross-Mall CEO View",
+    "comparison": "Mall comparison",
+    "consolidated": "Consolidated view"
+  },
+  "ai": {
+    "title": "AI Assistant",
+    "placeholder": "Ask about operational data...",
+    "analyzing": "Analyzing...",
+    "noConversation": "Start a conversation with AI"
+  },
+  "noData": "No report data available",
+  "subtitle": "Aggregated reports",
+  "exportCsv": "Export CSV",
+  "exportError": "Export error",
+  "exporting": "Exporting...",
+  "dateFrom": "From",
+  "dateTo": "To",
+  "tabs": {
+    "occupancy": "Occupancy",
+    "revenue": "Revenue",
+    "pipeline": "Pipeline",
+    "expiry": "Expiring contracts",
+    "revenueReceivables": "Revenue & Receivables",
+    "arAging": "AR Aging",
+    "compliance": "Compliance"
+  },
+  "occupancy": {
+    "byStatus": "By status",
+    "byFloor": "By floor",
+    "occupied": "Occupied",
+    "total": "Total",
+    "empty": "No occupancy data yet",
+    "emptyDesc": "Data will appear when spaces are configured and status updated."
+  },
+  "revenue": {
+    "byMonth": "Monthly revenue {{year}}",
+    "issued": "Total issued",
+    "collected": "Collected",
+    "empty": "No revenue data yet"
+  },
+  "pipeline": {
+    "leadsByStatus": "Leads by status",
+    "proposalsByStatus": "Proposals by status",
+    "empty": "No pipeline data yet"
+  },
+  "expiry": {
+    "title": "Expiring contracts",
+    "contractNo": "Contract no.",
+    "tenant": "Tenant",
+    "unit": "Space",
+    "endDate": "Expiry date",
+    "remaining": "Remaining",
+    "daysRemaining": "{{count}} days",
+    "empty": "No expiring contracts",
+    "emptyDesc": "No contracts expiring within 180 days."
+  },
+  "revenueReceivables": {
+    "subtitle": "Revenue & receivables detail — does not replace P&L report (no cost/OPEX data to offset).",
+    "totalBilled": "Total issued",
+    "totalCollected": "Collected",
+    "totalOutstanding": "Outstanding",
+    "collectionRate": "Collection rate",
+    "byMonth": "By month",
+    "byType": "By invoice type",
+    "issued": "Issued",
+    "collected": "Collected",
+    "empty": "No revenue and receivables data yet"
+  },
+  "arAging": {
+    "tenant": "Tenant",
+    "current": "Current",
+    "days30": "1-30 days",
+    "days60": "31-60 days",
+    "days90": "61-90 days",
+    "days90plus": ">90 days",
+    "total": "Total",
+    "empty": "No AR aging data",
+    "emptyDesc": "No outstanding receivables to categorize by age."
+  },
+  "compliance": {
+    "totalActions": "Total write operations (30 days)",
+    "errorCount": "Error count",
+    "errorRate": "Error rate",
+    "entityTypes": "Entity types tracked",
+    "recentErrors": "Recent errors",
+    "noErrors": "No errors in this period",
+    "empty": "No compliance data yet"
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "title": "Tenants",
+  "create": "Add tenant",
+  "edit": "Edit",
+  "detail": "Tenant details",
+  "fields": {
+    "companyName": "Company name",
+    "taxId": "Tax ID",
+    "representativeName": "Representative",
+    "representativeTitle": "Title",
+    "email": "Email",
+    "phone": "Phone",
+    "address": "Address",
+    "category": "Industry",
+    "brand": "Brand",
+    "website": "Website",
+    "status": "Status"
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "INACTIVE": "Inactive",
+    "PROSPECT": "Prospect"
+  },
+  "filters": {
+    "search": "Search name, tax ID...",
+    "status": "Status",
+    "category": "Industry"
+  },
+  "tabs": {
+    "info": "Info",
+    "contracts": "Contracts",
+    "invoices": "Invoices",
+    "tickets": "Requests",
+    "portal": "Portal"
+  },
+  "noTenants": "No tenants found",
+  "createSuccess": "Tenant created",
+  "updateSuccess": "Tenant updated",
+  "category": {
+    "FB": "F&B",
+    "FASHION": "Fashion",
+    "ENTERTAINMENT": "Entertainment",
+    "SERVICES": "Services",
+    "EDUCATION": "Education",
+    "HEALTH": "Health",
+    "RETAIL": "Retail"
+  },
+  "contractStatus": {
+    "ACTIVE": "Active",
+    "EXPIRING": "Expiring",
+    "PENDING_SIGNATURE": "Pending sign",
+    "DRAFT": "Draft",
+    "TERMINATED": "Terminated",
+    "EXPIRED": "Expired"
+  },
+  "invoiceStatus": {
+    "PAID": "Paid",
+    "OVERDUE": "Overdue",
+    "ISSUED": "Issued",
+    "PARTIALLY_PAID": "Partial",
+    "DRAFT": "Draft"
+  },
+  "kpi": {
+    "contracts": "Contracts",
+    "monthlyRent": "Rent/month",
+    "overdue": "Overdue",
+    "units": "Spaces"
+  },
+  "info": {
+    "contact": "Contact person",
+    "phone": "Phone",
+    "email": "Email",
+    "taxCode": "Tax ID",
+    "address": "Address",
+    "unitsOccupied": "Occupied spaces",
+    "noContracts": "No contracts yet",
+    "noInvoices": "No invoices yet",
+    "noTickets": "No support requests yet",
+    "viewAllContracts": "View all contracts",
+    "viewAllInvoices": "View all invoices",
+    "viewAllTickets": "View all tickets",
+    "dueDate": "Due",
+    "perMonth": "/month",
+    "daysLeft": "({{count}}d left)"
+  },
+  "portal": {
+    "title": "Tenant Portal",
+    "subtitle": "System access",
+    "granted": "Granted",
+    "notGranted": "Not granted",
+    "grantedNote": "To grant login access, go to Admin → Accounts, create an account with the \"Tenant\" role and link it to this tenant.",
+    "notGrantedNote": "Enable Portal access in Edit, then create a login account in Admin → Accounts."
+  },
+  "form": {
+    "addTitle": "Add new tenant",
+    "editTitle": "Edit tenant",
+    "brand": "Brand *",
+    "brandPlaceholder": "e.g. Highlands Coffee",
+    "company": "Company name",
+    "companyPlaceholder": "Company Ltd...",
+    "taxCode": "Tax ID",
+    "taxCodePlaceholder": "0123456789",
+    "category": "Industry",
+    "selectCategory": "-- Select industry --",
+    "contactName": "Contact person",
+    "contactEmail": "Contact email",
+    "contactPhone": "Phone",
+    "address": "Address",
+    "portalAccess": "Tenant has Tenant Portal access",
+    "portalNote": "To grant actual login, go to Admin → Accounts, create an account with \"Tenant\" role and link to this tenant.",
+    "saving": "Saving...",
+    "update": "Update",
+    "create": "Create tenant",
+    "cancel": "Cancel"
+  },
+  "list": {
+    "header": "Tenants",
+    "summary": "{{total}} tenants · {{active}} active",
+    "addNew": "Add new",
+    "searchPlaceholder": "Search brand, company...",
+    "allCategories": "All",
+    "total": "{{count}} tenants",
+    "page": "Page {{current}} / {{total}}",
+    "prev": "Previous",
+    "next": "Next",
+    "selectHint": "Select a tenant to view details",
+    "noMatch": "No matching tenants",
+    "noMatchDesc": "Try changing the keyword or industry.",
+    "empty": "No tenants yet",
+    "emptyDesc": "Add your first tenant to manage their profile and contracts.",
+    "clearFilter": "Clear filters",
+    "addFirst": "Add tenant",
+    "errorLoad": "Cannot load tenant list",
+    "errorDesc": "Please check your connection and try again.",
+    "retry": "Try again",
+    "edit": "Edit"
+  },
+  "validation": {
+    "brandRequired": "Required",
+    "brandMaxLength": "Maximum 100 characters",
+    "companyMaxLength": "Maximum 200 characters",
+    "taxCodeInvalid": "Invalid (e.g. 0123456789)",
+    "emailInvalid": "Invalid email format",
+    "phoneInvalid": "Invalid phone (e.g. 0912345678)",
+    "contactNameMaxLength": "Maximum 100 characters",
+    "addressMaxLength": "Maximum 500 characters"
+  }
+}

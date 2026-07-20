@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -26,32 +27,32 @@ import { AsyncState } from '@/components/ui/async-state';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<string, { label: string; color: string; step: number }> = {
-  DRAFT:          { label: 'Bản nháp',        color: 'bg-gray-100 text-gray-700 border-gray-200',     step: 1 },
-  ISSUED:         { label: 'Đã gửi khách',    color: 'bg-blue-100 text-blue-700 border-blue-200',     step: 3 },
-  PARTIALLY_PAID: { label: 'Thanh toán 1 phần', color: 'bg-amber-100 text-amber-700 border-amber-200', step: 4 },
-  PAID:           { label: 'Đã thanh toán',   color: 'bg-green-100 text-green-700 border-green-200',  step: 4 },
-  OVERDUE:        { label: 'Quá hạn',         color: 'bg-red-100 text-red-700 border-red-200',        step: 3 },
-  CANCELLED:      { label: 'Hủy',             color: 'bg-gray-200 text-gray-500 border-gray-300',     step: 0 },
+const STATUS_MAP: Record<string, { color: string; step: number }> = {
+  DRAFT:          { color: 'bg-gray-100 text-gray-700 border-gray-200',     step: 1 },
+  ISSUED:         { color: 'bg-blue-100 text-blue-700 border-blue-200',     step: 3 },
+  PARTIALLY_PAID: { color: 'bg-amber-100 text-amber-700 border-amber-200', step: 4 },
+  PAID:           { color: 'bg-green-100 text-green-700 border-green-200',  step: 4 },
+  OVERDUE:        { color: 'bg-red-100 text-red-700 border-red-200',        step: 3 },
+  CANCELLED:      { color: 'bg-gray-200 text-gray-500 border-gray-300',     step: 0 },
 };
 
-const LINE_TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; unit?: string; isFixed?: boolean }> = {
-  RENT:           { label: 'Tiền thuê mặt bằng', icon: Receipt,    isFixed: true },
-  CAM:            { label: 'Phí quản lý (CAM)',   icon: Settings,   isFixed: true },
-  DEPOSIT:        { label: 'Đặt cọc',             icon: Banknote,   isFixed: true },
-  ELECTRICITY:    { label: 'Tiền điện',           icon: Zap,        unit: 'kWh'  },
-  WATER:          { label: 'Tiền nước',           icon: Droplets,   unit: 'm³'   },
-  MANAGEMENT_FEE: { label: 'Phí quản lý bổ sung', icon: Settings                },
-  PARKING:        { label: 'Phí đỗ xe',           icon: Package                 },
-  CLEANING:       { label: 'Phí vệ sinh',         icon: Settings                },
-  SECURITY:       { label: 'Phí bảo vệ',         icon: Settings                },
-  MARKETING_FEE:  { label: 'Phí marketing',       icon: Package                 },
-  OTHER:          { label: 'Chi phí khác',        icon: Package                 },
+const LINE_TYPE_CONFIG: Record<string, { icon: React.ElementType; unit?: string; isFixed?: boolean }> = {
+  RENT:           { icon: Receipt,    isFixed: true },
+  CAM:            { icon: Settings,   isFixed: true },
+  DEPOSIT:        { icon: Banknote,   isFixed: true },
+  ELECTRICITY:    { icon: Zap,        unit: 'kWh'  },
+  WATER:          { icon: Droplets,   unit: 'm³'   },
+  MANAGEMENT_FEE: { icon: Settings                },
+  PARKING:        { icon: Package                 },
+  CLEANING:       { icon: Settings                },
+  SECURITY:       { icon: Settings                },
+  MARKETING_FEE:  { icon: Package                 },
+  OTHER:          { icon: Package                 },
 };
 
-const VARIABLE_LINE_TYPES = Object.entries(LINE_TYPE_CONFIG)
+const VARIABLE_LINE_TYPE_KEYS = Object.entries(LINE_TYPE_CONFIG)
   .filter(([, v]) => !v.isFixed)
-  .map(([k, v]) => ({ value: k, label: v.label }));
+  .map(([k]) => k);
 
 function fmtMoney(n?: number | null) {
   if (!n) return '—';
@@ -68,11 +69,12 @@ function fmtDate(d?: string | Date | null) {
 // ── Workflow Steps Bar ────────────────────────────────────────────────────────
 
 function WorkflowBar({ active }: { active?: number }) {
+  const { t } = useTranslation('billing');
   const steps = [
-    { n: 1, label: 'Hệ thống tạo\nbản draft', desc: 'Theo chu kỳ hợp đồng', color: 'gray' },
-    { n: 2, label: 'Vận hành bổ sung\nchi phí biến đổi', desc: 'Điện, nước, dịch vụ', color: 'blue' },
-    { n: 3, label: 'Gửi cho\nkhách hàng', desc: 'Issue → ISSUED', color: 'violet' },
-    { n: 4, label: 'Kế toán ghi nhận\nthanh toán', desc: 'Thu tiền → PAID', color: 'green' },
+    { n: 1, label: t('workflow.step1Label'), desc: t('workflow.step1Desc'), color: 'gray' },
+    { n: 2, label: t('workflow.step2Label'), desc: t('workflow.step2Desc'), color: 'blue' },
+    { n: 3, label: t('workflow.step3Label'), desc: t('workflow.step3Desc'), color: 'violet' },
+    { n: 4, label: t('workflow.step4Label'), desc: t('workflow.step4Desc'), color: 'green' },
   ];
   const colorMap: Record<string, string> = {
     gray: 'bg-gray-200 text-gray-600', blue: 'bg-blue-600 text-white',
@@ -108,6 +110,7 @@ function WorkflowBar({ active }: { active?: number }) {
 function RecordPaymentDialog({ invoice, open, onClose }: {
   invoice: any; open: boolean; onClose: () => void;
 }) {
+  const { t } = useTranslation(['billing', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ amount: '', method: 'BANK_TRANSFER', reference: '', paidAt: '', notes: '' });
@@ -126,10 +129,10 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoices'] });
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoice.id] });
-      toast({ title: 'Đã ghi nhận thanh toán' });
+      toast({ title: t('billing:toast.paymentRecorded') });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   return (
@@ -137,62 +140,62 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Banknote size={16} className="text-green-600" /> Ghi nhận thanh toán
+            <Banknote size={16} className="text-green-600" /> {t('billing:invoice.actions.recordPayment')}
           </DialogTitle>
           {invoice && (
             <p className="text-sm text-gray-500">
-              {invoice.invoiceNumber} · {invoice.tenant?.brandName} · Còn lại: {fmtMoney(remaining)}
+              {invoice.invoiceNumber} · {invoice.tenant?.brandName} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
             </p>
           )}
         </DialogHeader>
         <div className="space-y-3 pt-1">
           <div>
-            <label className="text-sm font-medium mb-1 block">Số tiền thanh toán *</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentAmount')}</label>
             <Input type="number" value={form.amount}
               onChange={(e) => setForm(p => ({ ...p, amount: e.target.value }))}
               placeholder={remaining.toString()} />
             <button className="text-xs text-blue-600 mt-1"
               onClick={() => setForm(p => ({ ...p, amount: remaining.toString() }))}>
-              Điền đủ số tiền còn lại ({fmtMoney(remaining)})
+              {t('billing:detail.fullAmountFill', { amount: fmtMoney(remaining) })}
             </button>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Phương thức</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentMethod')}</label>
             <Select value={form.method} onValueChange={(v) => setForm(p => ({ ...p, method: v }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="BANK_TRANSFER">Chuyển khoản ngân hàng</SelectItem>
-                <SelectItem value="CASH">Tiền mặt</SelectItem>
-                <SelectItem value="CHEQUE">Séc</SelectItem>
-                <SelectItem value="ONLINE">Thanh toán trực tuyến</SelectItem>
+                <SelectItem value="BANK_TRANSFER">{t('billing:paymentMethod.BANK_TRANSFER')}</SelectItem>
+                <SelectItem value="CASH">{t('billing:paymentMethod.CASH')}</SelectItem>
+                <SelectItem value="CHEQUE">{t('billing:paymentMethod.CHEQUE')}</SelectItem>
+                <SelectItem value="ONLINE">{t('billing:paymentMethod.ONLINE')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Mã tham chiếu / Số GD</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentReference')}</label>
             <Input value={form.reference}
               onChange={(e) => setForm(p => ({ ...p, reference: e.target.value }))}
               placeholder="TT2026001234..." />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Ngày thanh toán</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentDate')}</label>
             <Input type="date" value={form.paidAt}
               onChange={(e) => setForm(p => ({ ...p, paidAt: e.target.value }))} />
           </div>
           <div>
-            <label className="text-sm font-medium mb-1 block">Ghi chú</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentNotes')}</label>
             <Input value={form.notes}
               onChange={(e) => setForm(p => ({ ...p, notes: e.target.value }))}
-              placeholder="Thanh toán đợt 1..." />
+              placeholder={t('billing:detail.paymentNotesPlaceholder')} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
+          <Button variant="outline" onClick={onClose}>{t('common:actions.cancel')}</Button>
           <Button disabled={!form.amount || mutation.isPending}
             onClick={() => mutation.mutate()}
             className="bg-green-600 hover:bg-green-700 text-white gap-2">
             <CheckCircle2 size={14} />
-            {mutation.isPending ? 'Đang lưu...' : 'Xác nhận thanh toán'}
+            {mutation.isPending ? t('billing:detail.saving') : t('billing:detail.confirmPayment')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -203,6 +206,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
 // ── Invoice Detail Sheet ──────────────────────────────────────────────────────
 
 function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; onClose: () => void }) {
+  const { t } = useTranslation(['billing', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -229,7 +233,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
   const addLineMutation = useMutation({
     mutationFn: () => billingApi.addInvoiceLine(invoiceId!, {
       type: addForm.type,
-      description: addForm.description || LINE_TYPE_CONFIG[addForm.type]?.label || addForm.type,
+      description: addForm.description || t(`billing:invoice.lineType.${addForm.type}`) || addForm.type,
       qty: Number(addForm.qty),
       unitPrice: Number(addForm.unitPrice),
     }),
@@ -238,9 +242,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
       qc.invalidateQueries({ queryKey: ['invoices'] });
       setRemoveLineId(null);
       setAddForm(p => ({ ...p, description: '', qty: '', unitPrice: '', showForm: false }));
-      toast({ title: 'Đã thêm chi phí' });
+      toast({ title: t('billing:toast.lineAdded') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const updateLineMutation = useMutation({
@@ -250,9 +254,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
       setEditLineId(null);
-      toast({ title: 'Đã cập nhật' });
+      toast({ title: t('billing:toast.lineUpdated') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const removeLineMutation = useMutation({
@@ -260,9 +264,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
-      toast({ title: 'Đã xóa dòng chi phí' });
+      toast({ title: t('billing:toast.lineRemoved') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const issueMutation = useMutation({
@@ -270,10 +274,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
-      toast({ title: 'Đã phát hành hóa đơn — Thông báo gửi khách hàng' });
+      toast({ title: t('billing:toast.invoiceIssued') });
       setConfirmIssue(false);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const voidMutation = useMutation({
@@ -281,9 +285,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
-      toast({ title: 'Đã hủy hóa đơn' });
+      toast({ title: t('billing:toast.invoiceVoided') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi hủy hóa đơn', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const reverseMutation = useMutation({
@@ -291,9 +295,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
-      toast({ title: 'Đã đảo bút toán thanh toán' });
+      toast({ title: t('billing:toast.paymentReversed') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi đảo bút toán', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const handleVoid = () => {
@@ -334,10 +338,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             <>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-bold text-gray-800">{inv?.invoiceNumber}</span>
-                <Badge className={`${statusCfg.color} border text-xs`}>{statusCfg.label}</Badge>
+                <Badge className={`${statusCfg.color} border text-xs`}>{t(`billing:invoice.status.${inv?.status ?? 'DRAFT'}`)}</Badge>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                {inv?.tenant?.brandName} · Kỳ {inv?.period} · Hạn {fmtDate(inv?.dueDate)}
+                {inv?.tenant?.brandName} · {t('billing:list.period')} {inv?.period} · {t('billing:list.dueDate')} {fmtDate(inv?.dueDate)}
               </p>
             </>
           )}
@@ -352,10 +356,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
         <div className="px-5 pt-3 pb-2 border-b border-gray-100">
           <div className="flex items-center gap-1 text-xs">
             {[
-              { n: 1, label: 'Tạo draft', done: true },
-              { n: 2, label: 'Thêm chi phí', done: variableLines.length > 0 },
-              { n: 3, label: 'Gửi khách', done: inv.status !== 'DRAFT' },
-              { n: 4, label: 'Thu tiền', done: inv.status === 'PAID' },
+              { n: 1, label: t('billing:workflow.stepCreate'), done: true },
+              { n: 2, label: t('billing:workflow.stepAddCosts'), done: variableLines.length > 0 },
+              { n: 3, label: t('billing:workflow.stepSend'), done: inv.status !== 'DRAFT' },
+              { n: 4, label: t('billing:workflow.stepCollect'), done: inv.status === 'PAID' },
             ].map((step, i) => (
               <div key={step.n} className="flex items-center gap-1">
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -380,18 +384,18 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 
             {/* ── FIXED LINES (rent, CAM) ── */}
             <div>
-              <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">Chi phí cố định</div>
+              <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">{t('billing:detail.fixedCosts')}</div>
               <div className="border border-gray-100 rounded-lg overflow-hidden">
                 {fixedLines.length === 0 ? (
-                  <div className="py-4 text-center text-sm text-gray-400">Chưa có dòng chi phí cố định</div>
+                  <div className="py-4 text-center text-sm text-gray-400">{t('billing:detail.noFixedLines')}</div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="text-left px-3 py-2 text-xs text-gray-500">Nội dung</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">SL</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">Đơn giá</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">Thành tiền</th>
+                        <th className="text-left px-3 py-2 text-xs text-gray-500">{t('billing:detail.content')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.qty')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.unitPrice')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.amount')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -404,7 +408,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                               <div className="flex items-center gap-2">
                                 <Icon size={13} className="text-gray-400 flex-shrink-0" />
                                 <span className="text-gray-700">{line.description}</span>
-                                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 rounded">cố định</span>
+                                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 rounded">{t('billing:detail.fixedBadge')}</span>
                               </div>
                             </td>
                             <td className="px-3 py-2.5 text-right text-gray-500 text-xs">{line.qty}</td>
@@ -422,12 +426,12 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             {/* ── VARIABLE LINES (utilities) ── */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-bold tracking-wider text-gray-400 uppercase">Chi phí biến đổi</div>
+                <div className="text-xs font-bold tracking-wider text-gray-400 uppercase">{t('billing:detail.variableCosts')}</div>
                 {isDraft && (
                   <button
                     onClick={() => setAddForm(p => ({ ...p, showForm: !p.showForm }))}
                     className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
-                    <Plus size={12} /> Thêm chi phí
+                    <Plus size={12} /> {t('billing:detail.addCost')}
                   </button>
                 )}
               </div>
@@ -435,20 +439,20 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
               {/* Add cost form */}
               {isDraft && addForm.showForm && (
                 <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3 mb-3 space-y-2">
-                  <div className="text-xs font-semibold text-blue-700 mb-2">➕ Thêm dòng chi phí</div>
+                  <div className="text-xs font-semibold text-blue-700 mb-2">➕ {t('billing:detail.addCostLine')}</div>
                   <Select value={addForm.type}
-                    onValueChange={(v) => setAddForm(p => ({ ...p, type: v, description: LINE_TYPE_CONFIG[v]?.label ?? '' }))}>
+                    onValueChange={(v) => setAddForm(p => ({ ...p, type: v, description: t(`billing:invoice.lineType.${v}`) }))}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {VARIABLE_LINE_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value} className="text-xs">{t.label}</SelectItem>
+                      {VARIABLE_LINE_TYPE_KEYS.map((key) => (
+                        <SelectItem key={key} value={key} className="text-xs">{t(`billing:invoice.lineType.${key}`)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <Input
-                    placeholder="Mô tả (vd: Điện tháng 6/2026)"
+                    placeholder={t('billing:detail.descriptionPlaceholder')}
                     className="h-8 text-xs"
                     value={addForm.description}
                     onChange={(e) => setAddForm(p => ({ ...p, description: e.target.value }))}
@@ -456,14 +460,14 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-gray-500 mb-0.5 block">
-                        Số lượng {LINE_TYPE_CONFIG[addForm.type]?.unit ? `(${LINE_TYPE_CONFIG[addForm.type].unit})` : ''}
+                        {t('billing:detail.qtyLabel')} {LINE_TYPE_CONFIG[addForm.type]?.unit ? `(${LINE_TYPE_CONFIG[addForm.type].unit})` : ''}
                       </label>
                       <Input type="number" className="h-8 text-xs" value={addForm.qty}
                         placeholder={LINE_TYPE_CONFIG[addForm.type]?.unit === 'kWh' ? '12500' : '1'}
                         onChange={(e) => setAddForm(p => ({ ...p, qty: e.target.value }))} />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-500 mb-0.5 block">Đơn giá (₫)</label>
+                      <label className="text-xs text-gray-500 mb-0.5 block">{t('billing:detail.unitPriceLabel')}</label>
                       <Input type="number" className="h-8 text-xs" value={addForm.unitPrice}
                         placeholder={LINE_TYPE_CONFIG[addForm.type]?.unit === 'kWh' ? '3200' : '0'}
                         onChange={(e) => setAddForm(p => ({ ...p, unitPrice: e.target.value }))} />
@@ -471,17 +475,17 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                   </div>
                   {addForm.qty && addForm.unitPrice && (
                     <div className="text-xs text-blue-700 font-medium bg-blue-100 px-2 py-1 rounded">
-                      Thành tiền: {fmtMoney(Number(addForm.qty) * Number(addForm.unitPrice))}
+                      {t('billing:detail.subtotalPreview', { amount: fmtMoney(Number(addForm.qty) * Number(addForm.unitPrice)) })}
                     </div>
                   )}
                   <div className="flex gap-2">
                     <Button size="sm" className="h-7 text-xs flex-1 gap-1"
                       disabled={!addForm.qty || !addForm.unitPrice || addLineMutation.isPending}
                       onClick={() => addLineMutation.mutate()}>
-                      <Plus size={11} /> {addLineMutation.isPending ? 'Đang thêm...' : 'Thêm'}
+                      <Plus size={11} /> {addLineMutation.isPending ? t('common:actions.loading') : t('common:actions.add')}
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 text-xs"
-                      onClick={() => setAddForm(p => ({ ...p, showForm: false }))}>Hủy</Button>
+                      onClick={() => setAddForm(p => ({ ...p, showForm: false }))}>{t('common:actions.cancel')}</Button>
                   </div>
                 </div>
               )}
@@ -491,18 +495,18 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                   <div className="py-6 text-center text-sm text-gray-400">
                     <Zap size={24} className="mx-auto mb-2 opacity-30" />
                     {isDraft
-                      ? 'Chưa có chi phí biến đổi — Bấm "Thêm chi phí" để nhập điện/nước/dịch vụ'
-                      : 'Không có chi phí biến đổi trong kỳ này'
+                      ? t('billing:detail.noVariableLinesDraft')
+                      : t('billing:detail.noVariableLinesIssued')
                     }
                   </div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="text-left px-3 py-2 text-xs text-gray-500">Nội dung</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">SL</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">Đơn giá</th>
-                        <th className="text-right px-3 py-2 text-xs text-gray-500">Thành tiền</th>
+                        <th className="text-left px-3 py-2 text-xs text-gray-500">{t('billing:detail.content')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.qty')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.unitPrice')}</th>
+                        <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.amount')}</th>
                         {isDraft && <th className="px-2 py-2" />}
                       </tr>
                     </thead>
@@ -555,7 +559,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                                       onClick={() => updateLineMutation.mutate({
                                         lineId: line.id,
                                         data: { description: editForm.description, qty: Number(editForm.qty), unitPrice: Number(editForm.unitPrice) }
-                                      })}>Lưu</button>
+                                      })}>{t('common:actions.save')}</button>
                                     <button className="text-xs text-gray-400" onClick={() => setEditLineId(null)}>×</button>
                                   </div>
                                 ) : (
@@ -581,37 +585,37 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             </div>
             <ConfirmDialog
               open={!!removeLineId}
-              title="Xóa dòng chi phí?"
-              description="Tổng tiền và thuế của hóa đơn sẽ được tính lại. Chỉ nên xóa khi dòng chi phí được thêm nhầm."
+              title={t('billing:confirmRemoveLine.title')}
+              description={t('billing:confirmRemoveLine.description')}
               onCancel={() => setRemoveLineId(null)}
               onConfirm={() => removeLineId && removeLineMutation.mutate(removeLineId)}
               loading={removeLineMutation.isPending}
-              confirmLabel="Xóa dòng chi phí"
-              loadingLabel="Đang xóa..."
+              confirmLabel={t('billing:confirmRemoveLine.confirm')}
+              loadingLabel={t('billing:confirmRemoveLine.loading')}
             />
 
             {/* ── TOTALS ── */}
             <div className="border border-gray-200 rounded-lg bg-gray-50 p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Subtotal</span>
+                <span className="text-gray-500">{t('billing:detail.subtotal')}</span>
                 <span>{fmtMoney(inv?.subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">VAT ({inv?.vatRate ?? 10}%)</span>
+                <span className="text-gray-500">{t('billing:detail.vat', { rate: inv?.vatRate ?? 10 })}</span>
                 <span>{fmtMoney(inv?.vatAmount)}</span>
               </div>
               <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2">
-                <span>Tổng cộng</span>
+                <span>{t('billing:detail.totalSection')}</span>
                 <span className="text-gray-900">{fmtMoney(inv?.totalAmount)}</span>
               </div>
               {payments.length > 0 && (
                 <>
                   <div className="flex justify-between text-sm text-green-600 border-t border-gray-200 pt-2">
-                    <span>Đã thanh toán</span>
+                    <span>{t('billing:detail.paid')}</span>
                     <span className="font-medium">- {fmtMoney(totalPaid)}</span>
                   </div>
                   <div className={`flex justify-between text-sm font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    <span>Còn lại</span>
+                    <span>{t('billing:detail.remaining')}</span>
                     <span>{fmtMoney(balance)}</span>
                   </div>
                 </>
@@ -621,7 +625,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             {/* ── PAYMENT HISTORY ── */}
             {payments.length > 0 && (
               <div>
-                <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">Lịch sử thanh toán</div>
+                <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">{t('billing:detail.paymentHistory')}</div>
                 <div className="space-y-2">
                   {payments.map((p: any) => (
                     <div key={p.id} className={`flex items-center justify-between border rounded-lg px-3 py-2.5 ${
@@ -632,7 +636,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                         <div>
                           <div className={`text-sm font-medium ${p.reversedAt ? 'text-gray-500 line-through' : 'text-green-800'}`}>{fmtMoney(p.amount)}</div>
                           <div className={`text-xs ${p.reversedAt ? 'text-gray-400' : 'text-green-600'}`}>{p.method} · {fmtDate(p.paidAt)}</div>
-                          {p.reversedAt && <div className="text-xs text-red-500 mt-0.5">Đã đảo: {p.reversalReason}</div>}
+                          {p.reversedAt && <div className="text-xs text-red-500 mt-0.5">{t('billing:detail.reversed', { reason: p.reversalReason })}</div>}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -640,7 +644,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                         {isStaff && !p.reversedAt && (
                           <Button
                             size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-50"
-                            title="Đảo bút toán"
+                            title={t('billing:detail.reversePayment')}
                             onClick={() => handleReversePayment(p.id)}
                             disabled={reverseMutation.isPending}
                           >
@@ -662,37 +666,37 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
         {isDraft && (
           <>
             <p className="text-xs text-amber-600 flex items-center gap-1.5 mb-3">
-              <AlertTriangle size={12} /> Kiểm tra và bổ sung các chi phí biến đổi trước khi gửi khách
+              <AlertTriangle size={12} /> {t('billing:detail.checkBeforeSend')}
             </p>
             <Button className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => setConfirmIssue(true)}
               disabled={issueMutation.isPending}>
               <Send size={15} />
-              {issueMutation.isPending ? 'Đang phát hành...' : 'Phát hành & Gửi khách hàng'}
+              {issueMutation.isPending ? t('billing:detail.issuing') : t('billing:detail.issueAndSend')}
             </Button>
           </>
         )}
         {canPay && (
           <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
             onClick={() => setPaymentOpen(true)}>
-            <Banknote size={15} /> Ghi nhận thanh toán
+            <Banknote size={15} /> {t('billing:invoice.actions.recordPayment')}
           </Button>
         )}
         {inv?.status === 'PAID' && (
           <div className="flex items-center justify-center gap-2 py-2 text-green-600 font-medium">
-            <CheckCircle2 size={16} /> Hóa đơn đã thanh toán đầy đủ
+            <CheckCircle2 size={16} /> {t('billing:detail.invoicePaidFull')}
           </div>
         )}
         {isCancelled && inv?.voidReason && (
           <div className="text-xs text-gray-500 bg-gray-100 rounded-lg px-3 py-2">
-            Đã hủy — lý do: {inv.voidReason}
+            {t('billing:detail.cancelledReason', { reason: inv.voidReason })}
           </div>
         )}
         {isStaff && canVoid && (
           <Button variant="outline" className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
             onClick={handleVoid}
             disabled={voidMutation.isPending}>
-            <Ban size={14} /> Hủy hóa đơn
+            <Ban size={14} /> {t('billing:invoice.actions.cancel')}
           </Button>
         )}
       </div>
@@ -704,20 +708,20 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
       />
       <ConfirmDialog
         open={confirmIssue}
-        title="Phát hành hóa đơn?"
-        description="Hóa đơn sẽ được khóa nội dung và gửi thông báo cho khách thuê. Hãy kiểm tra các dòng chi phí, thuế và hạn thanh toán trước khi tiếp tục."
+        title={t('billing:confirmIssue.title')}
+        description={t('billing:confirmIssue.description')}
         onCancel={() => setConfirmIssue(false)}
         onConfirm={() => issueMutation.mutate()}
         loading={issueMutation.isPending}
-        confirmLabel="Phát hành hóa đơn"
-        loadingLabel="Đang phát hành..."
+        confirmLabel={t('billing:confirmIssue.confirm')}
+        loadingLabel={t('billing:confirmIssue.loading')}
       />
       <ReasonActionDialog
         open={!!reasonAction}
         onOpenChange={(open) => !open && setReasonAction(null)}
-        title={reasonAction?.type === 'void' ? 'Hủy hóa đơn' : 'Đảo bút toán thanh toán'}
-        description="Thao tác ảnh hưởng đến công nợ và sẽ được lưu trong lịch sử kiểm toán."
-        confirmLabel="Xác nhận"
+        title={reasonAction?.type === 'void' ? t('billing:voidDialog.title') : t('billing:reverseDialog.title')}
+        description={t('billing:voidDialog.description')}
+        confirmLabel={t('billing:voidDialog.confirm')}
         loading={voidMutation.isPending || reverseMutation.isPending}
         onConfirm={(reason) => {
           if (reasonAction?.type === 'void') voidMutation.mutate(reason, { onSuccess: () => setReasonAction(null) });
@@ -733,6 +737,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 // ── Invoices Tab ──────────────────────────────────────────────────────────────
 
 function InvoicesTab() {
+  const { t } = useTranslation(['billing', 'common']);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -753,7 +758,7 @@ function InvoicesTab() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast({ title: 'Lỗi xuất file', variant: 'destructive' });
+      toast({ title: t('billing:toast.exportError'), variant: 'destructive' });
     } finally {
       setExporting(false);
     }
@@ -786,19 +791,19 @@ function InvoicesTab() {
           {draftCount > 0 && (
             <button onClick={() => setStatus('DRAFT')}
               className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium hover:bg-amber-100">
-              <Clock size={12} /> {draftCount} bản nháp cần xử lý chi phí
+              <Clock size={12} /> {t('billing:list.draftsNeedAttention', { count: draftCount })}
             </button>
           )}
           {overdueCount > 0 && (
             <button onClick={() => setStatus('OVERDUE')}
               className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 font-medium hover:bg-red-100">
-              <AlertTriangle size={12} /> {overdueCount} hóa đơn quá hạn
+              <AlertTriangle size={12} /> {t('billing:list.overdueInvoices', { count: overdueCount })}
             </button>
           )}
           {pendingPayCount > 0 && (
             <button onClick={() => setStatus('ISSUED')}
               className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 font-medium hover:bg-blue-100">
-              <Banknote size={12} /> {pendingPayCount} chờ thu tiền
+              <Banknote size={12} /> {t('billing:list.pendingCollection', { count: pendingPayCount })}
             </button>
           )}
         </div>
@@ -807,7 +812,7 @@ function InvoicesTab() {
       <div className="flex gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input placeholder="Tìm số hóa đơn, khách thuê..."
+          <Input placeholder={t('billing:list.searchPlaceholder')}
             value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
         </div>
         <div className="flex gap-0.5 rounded-lg border overflow-hidden h-9">
@@ -816,12 +821,12 @@ function InvoicesTab() {
               className={`px-3 text-xs font-medium transition-colors whitespace-nowrap ${
                 status === s ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
               }`}>
-              {s === '' ? 'Tất cả' : STATUS_MAP[s]?.label}
+              {s === '' ? t('billing:filters.allStatuses') : t(`billing:invoice.status.${s}`)}
             </button>
           ))}
         </div>
         <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={handleExportCsv} disabled={exporting}>
-          <Download size={13} /> {exporting ? 'Đang xuất...' : 'CSV'}
+          <Download size={13} /> {exporting ? t('billing:list.exporting') : 'CSV'}
         </Button>
       </div>
 
@@ -835,13 +840,13 @@ function InvoicesTab() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Số HĐ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách thuê</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Kỳ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Loại</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Tổng tiền</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Hạn TT</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.invoiceNo')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.tenant')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.period')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.type')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.totalAmount')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.dueDate')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.status')}</th>
                 <th className="px-3 py-3" />
               </tr>
             </thead>
@@ -870,7 +875,7 @@ function InvoicesTab() {
                       {overdue && <span className="ml-1 text-red-500">(!)</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={`${st?.color} border text-xs`}>{st?.label}</Badge>
+                      <Badge className={`${st?.color} border text-xs`}>{t(`billing:invoice.status.${inv.status}`)}</Badge>
                     </td>
                     <td className="px-3 py-3">
                       <ChevronRight size={15} className={`transition-transform ${isSelected ? 'rotate-90 text-blue-500' : 'text-gray-300'}`} />
@@ -883,7 +888,7 @@ function InvoicesTab() {
           {invoices.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Receipt size={36} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Không có hóa đơn nào</p>
+              <p className="text-sm">{t('billing:list.noInvoices')}</p>
             </div>
           )}
         </div>
@@ -903,6 +908,7 @@ function InvoicesTab() {
 // ── AR Aging Tab ──────────────────────────────────────────────────────────────
 
 function ArAgingTab() {
+  const { t } = useTranslation('billing');
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging'], queryFn: billingApi.arAging });
   const rows: ArAgingRow[] = data?.data ?? data ?? [];
   const total = rows.reduce((s, r) => s + r.total, 0);
@@ -911,13 +917,13 @@ function ArAgingTab() {
     <div>
       <div className="grid grid-cols-5 gap-3 mb-4">
         {['current', 'days30', 'days60', 'days90', 'days90plus'].map((key, i) => {
-          const labels = ['Hiện tại', '1-30 ngày', '31-60 ngày', '61-90 ngày', '>90 ngày'];
+          const labelKeys = ['arAging.current', 'arAging.days30', 'arAging.days60', 'arAging.days90', 'arAging.over90'] as const;
           const colors = ['text-green-600', 'text-yellow-600', 'text-orange-600', 'text-red-500', 'text-red-700'];
           const sum = rows.reduce((s, r) => s + (r as any)[key], 0);
           return (
             <Card key={key}>
               <CardContent className="pt-4 text-center">
-                <p className="text-xs text-gray-500">{labels[i]}</p>
+                <p className="text-xs text-gray-500">{t(labelKeys[i])}</p>
                 <p className={`text-lg font-bold ${colors[i]}`}>{fmtCompact(sum)}</p>
               </CardContent>
             </Card>
@@ -935,13 +941,13 @@ function ArAgingTab() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs">Khách thuê</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">Hiện tại</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">1-30 ngày</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">31-60 ngày</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">61-90 ngày</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">&gt;90 ngày</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs font-bold">Tổng</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs">{t('arAging.tenant')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">{t('arAging.current')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">{t('arAging.days30')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">{t('arAging.days60')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">{t('arAging.days90')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs">&gt;90 {t('arAging.days90').split('-').pop()?.trim()}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs font-bold">{t('arAging.total')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -957,7 +963,7 @@ function ArAgingTab() {
                 </tr>
               ))}
               <tr className="bg-gray-50 font-bold border-t">
-                <td className="px-4 py-3">Tổng cộng</td>
+                <td className="px-4 py-3">{t('arAging.grandTotal')}</td>
                 <td colSpan={5} />
                 <td className="px-4 py-3 text-right text-red-700">{fmtCompact(total)}</td>
               </tr>
@@ -972,6 +978,7 @@ function ArAgingTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
+  const { t } = useTranslation('billing');
   const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi'], queryFn: () => billingApi.getCollectionKpi(6) });
   const kpi = executiveKpi?.data ?? executiveKpi ?? {};
   return (
@@ -979,22 +986,22 @@ export default function BillingPage() {
       <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-6 text-white shadow-[0_25px_65px_-35px_rgba(6,78,59,0.8)]">
         <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-emerald-200/10 bg-emerald-200/5" />
         <div className="relative grid gap-6 xl:grid-cols-[1.4fr_1fr] xl:items-end">
-          <div><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200"><Sparkles size={13} /> Revenue operations</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Hóa đơn và thu tiền</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Kiểm soát trọn vòng đời doanh thu: lập lịch → phát hành → thu tiền → nhắc nợ → đối soát hiệu quả.</p></div>
+          <div><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200"><Sparkles size={13} /> Revenue operations</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('header.title')}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{t('header.subtitle')}</p></div>
           <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07]">
-            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tỷ lệ thu</div><div className="mt-2 text-2xl font-semibold text-emerald-300">{kpi.collectionRate ?? 0}%</div></div>
-            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">DSO</div><div className="mt-2 text-2xl font-semibold">{kpi.dso ?? 0}<span className="ml-1 text-xs text-slate-400">ngày</span></div></div>
-            <div className="p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AR còn lại</div><div className="mt-2 text-lg font-semibold text-amber-300">{fmtCompact(kpi.outstandingAr ?? 0)}</div></div>
+            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.collectionRate')}</div><div className="mt-2 text-2xl font-semibold text-emerald-300">{kpi.collectionRate ?? 0}%</div></div>
+            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.dso')}</div><div className="mt-2 text-2xl font-semibold">{kpi.dso ?? 0}<span className="ml-1 text-xs text-slate-400">{t('header.dsoUnit')}</span></div></div>
+            <div className="p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.arOutstanding')}</div><div className="mt-2 text-lg font-semibold text-amber-300">{fmtCompact(kpi.outstandingAr ?? 0)}</div></div>
           </div>
         </div>
       </section>
-      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-700" /><div><h2 className="text-lg font-semibold text-slate-950">Trung tâm điều hành Billing</h2><p className="text-xs text-slate-500">Chọn một bước để tiếp tục xử lý</p></div></div>
+      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-700" /><div><h2 className="text-lg font-semibold text-slate-950">{t('header.operationsCenter')}</h2><p className="text-xs text-slate-500">{t('header.selectStep')}</p></div></div>
       <Tabs defaultValue="invoices">
         <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
-          <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-lg"><Receipt size={13} /> Hóa đơn</TabsTrigger>
-          <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> Tuổi nợ</TabsTrigger>
-          <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> Lịch lập hóa đơn</TabsTrigger>
-          <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> Nhắc nợ</TabsTrigger>
-          <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> Hiệu quả thu hồi</TabsTrigger>
+          <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-lg"><Receipt size={13} /> {t('tabs.invoices')}</TabsTrigger>
+          <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> {t('tabs.arAging')}</TabsTrigger>
+          <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> {t('tabs.schedule')}</TabsTrigger>
+          <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> {t('tabs.dunning')}</TabsTrigger>
+          <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> {t('tabs.kpi')}</TabsTrigger>
         </TabsList>
         <TabsContent value="invoices"><InvoicesTab /></TabsContent>
         <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>

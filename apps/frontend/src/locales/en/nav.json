@@ -1,0 +1,73 @@
+{
+  "groups": {
+    "overview": "Overview",
+    "salesProcess": "Sales Process",
+    "crm": "Prospects (CRM)",
+    "operations": "Operations",
+    "finance": "Finance",
+    "analytics": "Analytics",
+    "system": "System"
+  },
+  "items": {
+    "dashboard": "Dashboard",
+    "spaces": "Spaces",
+    "bookings": "Bookings",
+    "proposals": "Proposals",
+    "approvals": "Approvals",
+    "contracts": "Contracts",
+    "tenants": "Tenants",
+    "pipelineStats": "Pipeline Stats",
+    "crmOverview": "CRM Overview",
+    "crm": "Lead Management",
+    "fitout": "Fitout",
+    "tickets": "Tickets",
+    "sales": "Sales",
+    "billing": "Billing & AR",
+    "sap": "SAP",
+    "dealPipeline": "Deal Pipeline",
+    "reports": "Reports",
+    "analytics": "Analytics",
+    "ai": "AI Assistant",
+    "crossMall": "Cross-Mall CEO",
+    "announcements": "Announcements",
+    "tenantPortal": "Tenant Portal",
+    "auditLog": "Audit Log",
+    "admin": "Admin"
+  },
+  "tenant": {
+    "overview": "Overview",
+    "billing": "Invoices",
+    "tickets": "Support Requests",
+    "sales": "Sales",
+    "announcements": "Announcements"
+  },
+  "mallSelector": {
+    "selectMall": "Select Mall",
+    "allMalls": "All Malls"
+  },
+  "ui": {
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar",
+    "expandNav": "Expand navigation menu",
+    "collapseNav": "Collapse navigation menu",
+    "logout": "Log out",
+    "accountInfo": "Account information",
+    "notifications": "Notifications",
+    "notificationsUnread": "Notifications, {{count}} unread",
+    "darkMode": "Switch to Dark mode",
+    "lightMode": "Switch to Light mode",
+    "enableDark": "Enable dark theme",
+    "enableLight": "Enable light theme",
+    "thisoLeasing": "THISO Leasing",
+    "thisoMall": "THISO Mall",
+    "subLeasing": "Leasing",
+    "subMall": "Mall",
+    "tenantRole": "Tenant",
+    "mainNav": "Main navigation",
+    "language": "Language",
+    "vietnamese": "Tiếng Việt",
+    "english": "English"
+  }
+}

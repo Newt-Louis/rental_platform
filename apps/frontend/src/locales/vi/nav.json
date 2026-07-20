@@ -1,0 +1,73 @@
+{
+  "groups": {
+    "overview": "Tổng quan",
+    "salesProcess": "Quy trình bán hàng",
+    "crm": "Khách hàng tiềm năng (CRM)",
+    "operations": "Vận hành",
+    "finance": "Tài chính",
+    "analytics": "Phân tích",
+    "system": "Hệ thống"
+  },
+  "items": {
+    "dashboard": "Dashboard",
+    "spaces": "Mặt bằng",
+    "bookings": "Booking",
+    "proposals": "Đề xuất",
+    "approvals": "Phê duyệt",
+    "contracts": "Hợp đồng",
+    "tenants": "Khách thuê",
+    "pipelineStats": "Thống kê",
+    "crmOverview": "Điều hành CRM",
+    "crm": "Xử lý Lead",
+    "fitout": "Fitout",
+    "tickets": "Ticket",
+    "sales": "Doanh thu",
+    "billing": "Billing & AR",
+    "sap": "SAP",
+    "dealPipeline": "Deal Pipeline",
+    "reports": "Báo cáo",
+    "analytics": "Analytics",
+    "ai": "AI Assistant",
+    "crossMall": "Cross-Mall CEO",
+    "announcements": "Thông báo Mall",
+    "tenantPortal": "Tenant Portal",
+    "auditLog": "Nhật ký hệ thống",
+    "admin": "Quản trị"
+  },
+  "tenant": {
+    "overview": "Tổng quan",
+    "billing": "Hóa đơn",
+    "tickets": "Yêu cầu hỗ trợ",
+    "sales": "Doanh thu",
+    "announcements": "Thông báo"
+  },
+  "mallSelector": {
+    "selectMall": "Chọn Mall",
+    "allMalls": "Tất cả Mall"
+  },
+  "ui": {
+    "openMenu": "Mở menu",
+    "closeMenu": "Đóng menu",
+    "expandSidebar": "Mở rộng sidebar",
+    "collapseSidebar": "Thu gọn sidebar",
+    "expandNav": "Mở rộng menu điều hướng",
+    "collapseNav": "Thu gọn menu điều hướng",
+    "logout": "Đăng xuất",
+    "accountInfo": "Thông tin tài khoản",
+    "notifications": "Thông báo",
+    "notificationsUnread": "Thông báo, {{count}} chưa đọc",
+    "darkMode": "Chuyển Dark mode",
+    "lightMode": "Chuyển Light mode",
+    "enableDark": "Bật giao diện tối",
+    "enableLight": "Bật giao diện sáng",
+    "thisoLeasing": "THISO Leasing",
+    "thisoMall": "THISO Mall",
+    "subLeasing": "Leasing",
+    "subMall": "Mall",
+    "tenantRole": "Khách thuê",
+    "mainNav": "Điều hướng chính",
+    "language": "Ngôn ngữ",
+    "vietnamese": "Tiếng Việt",
+    "english": "English"
+  }
+}

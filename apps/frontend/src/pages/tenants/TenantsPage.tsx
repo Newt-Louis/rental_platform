@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { tenantsApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,31 +21,31 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CATEGORY_META: Record<string, { label: string; color: string; emoji: string }> = {
-  FB:            { label: 'F&B',           color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🍜' },
-  FASHION:       { label: 'Thời trang',    color: 'bg-pink-100 text-pink-700 border-pink-200',       emoji: '👗' },
-  ENTERTAINMENT: { label: 'Giải trí',      color: 'bg-purple-100 text-purple-700 border-purple-200', emoji: '🎮' },
-  SERVICES:      { label: 'Dịch vụ',       color: 'bg-blue-100 text-blue-700 border-blue-200',       emoji: '⚙️' },
-  EDUCATION:     { label: 'Giáo dục',      color: 'bg-green-100 text-green-700 border-green-200',    emoji: '📚' },
-  HEALTH:        { label: 'Sức khoẻ',      color: 'bg-red-100 text-red-700 border-red-200',          emoji: '🏥' },
-  RETAIL:        { label: 'Bán lẻ',        color: 'bg-yellow-100 text-yellow-700 border-yellow-200', emoji: '🛍️' },
+const CATEGORY_META: Record<string, { color: string; emoji: string }> = {
+  FB:            { color: 'bg-orange-100 text-orange-700 border-orange-200', emoji: '🍜' },
+  FASHION:       { color: 'bg-pink-100 text-pink-700 border-pink-200',       emoji: '👗' },
+  ENTERTAINMENT: { color: 'bg-purple-100 text-purple-700 border-purple-200', emoji: '🎮' },
+  SERVICES:      { color: 'bg-blue-100 text-blue-700 border-blue-200',       emoji: '⚙️' },
+  EDUCATION:     { color: 'bg-green-100 text-green-700 border-green-200',    emoji: '📚' },
+  HEALTH:        { color: 'bg-red-100 text-red-700 border-red-200',          emoji: '🏥' },
+  RETAIL:        { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', emoji: '🛍️' },
 };
 
-const CONTRACT_STATUS: Record<string, { label: string; color: string; dot: string }> = {
-  ACTIVE:           { label: 'Hiệu lực',     color: 'text-green-700', dot: 'bg-green-500'  },
-  EXPIRING:         { label: 'Sắp HH',       color: 'text-orange-600', dot: 'bg-orange-400' },
-  PENDING_SIGNATURE:{ label: 'Chờ ký',       color: 'text-blue-600',  dot: 'bg-blue-400'   },
-  DRAFT:            { label: 'Draft',         color: 'text-gray-500',  dot: 'bg-gray-300'   },
-  TERMINATED:       { label: 'Đã chấm dứt',  color: 'text-red-500',   dot: 'bg-red-400'    },
-  EXPIRED:          { label: 'Hết hạn',       color: 'text-red-400',   dot: 'bg-red-300'    },
+const CONTRACT_STATUS: Record<string, { color: string; dot: string }> = {
+  ACTIVE:           { color: 'text-green-700', dot: 'bg-green-500'  },
+  EXPIRING:         { color: 'text-orange-600', dot: 'bg-orange-400' },
+  PENDING_SIGNATURE:{ color: 'text-blue-600',  dot: 'bg-blue-400'   },
+  DRAFT:            { color: 'text-gray-500',  dot: 'bg-gray-300'   },
+  TERMINATED:       { color: 'text-red-500',   dot: 'bg-red-400'    },
+  EXPIRED:          { color: 'text-red-400',   dot: 'bg-red-300'    },
 };
 
-const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
-  PAID:           { label: 'Đã TT',      color: 'bg-green-100 text-green-700' },
-  OVERDUE:        { label: 'Quá hạn',    color: 'bg-red-100 text-red-700' },
-  ISSUED:         { label: 'Đã gửi',     color: 'bg-blue-100 text-blue-700' },
-  PARTIALLY_PAID: { label: 'Một phần',   color: 'bg-amber-100 text-amber-700' },
-  DRAFT:          { label: 'Nháp',       color: 'bg-gray-100 text-gray-600' },
+const INVOICE_STATUS: Record<string, { color: string }> = {
+  PAID:           { color: 'bg-green-100 text-green-700' },
+  OVERDUE:        { color: 'bg-red-100 text-red-700' },
+  ISSUED:         { color: 'bg-blue-100 text-blue-700' },
+  PARTIALLY_PAID: { color: 'bg-amber-100 text-amber-700' },
+  DRAFT:          { color: 'bg-gray-100 text-gray-600' },
 };
 
 function fmtMoney(n?: number | null) {
@@ -72,29 +73,29 @@ const PHONE_RE = /^(0|\+84)[0-9]{8,10}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TAX_RE = /^\d{10}(-\d{3})?$/;
 
-function validateField(k: string, v: string): string {
+function validateField(k: string, v: string, t: (key: string) => string): string {
   switch (k) {
     case 'brandName':
-      if (!v.trim()) return 'Bắt buộc nhập';
-      if (v.length > 100) return 'Tối đa 100 ký tự';
+      if (!v.trim()) return t('validation.brandRequired');
+      if (v.length > 100) return t('validation.brandMaxLength');
       return '';
     case 'companyName':
-      if (v.length > 200) return 'Tối đa 200 ký tự';
+      if (v.length > 200) return t('validation.companyMaxLength');
       return '';
     case 'taxCode':
-      if (v && !TAX_RE.test(v.trim())) return 'Không hợp lệ (VD: 0123456789)';
+      if (v && !TAX_RE.test(v.trim())) return t('validation.taxCodeInvalid');
       return '';
     case 'contactEmail':
-      if (v && !EMAIL_RE.test(v.trim())) return 'Email không đúng định dạng';
+      if (v && !EMAIL_RE.test(v.trim())) return t('validation.emailInvalid');
       return '';
     case 'contactPhone':
-      if (v && !PHONE_RE.test(v.trim())) return 'SĐT không hợp lệ (VD: 0912345678)';
+      if (v && !PHONE_RE.test(v.trim())) return t('validation.phoneInvalid');
       return '';
     case 'contactName':
-      if (v.length > 100) return 'Tối đa 100 ký tự';
+      if (v.length > 100) return t('validation.contactNameMaxLength');
       return '';
     case 'address':
-      if (v.length > 500) return 'Tối đa 500 ký tự';
+      if (v.length > 500) return t('validation.addressMaxLength');
       return '';
     default:
       return '';
@@ -102,6 +103,7 @@ function validateField(k: string, v: string): string {
 }
 
 function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean; onClose: () => void; onCreated?: () => void; tenant?: any }) {
+  const { t } = useTranslation(['tenants', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState(tenant ? {
@@ -122,7 +124,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
     setForm((f) => ({ ...f, [k]: v }));
     // Re-validate live only for fields that already show an error
     if (typeof v === 'string' && k in fieldErrors) {
-      const err = validateField(k, v);
+      const err = validateField(k, v, (key) => t(key));
       setFieldErrors((prev) => {
         const next = { ...prev };
         if (err) next[k] = err; else delete next[k];
@@ -134,7 +136,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
   const blur = (k: string) => {
     const v = (form as any)[k];
     if (typeof v !== 'string') return;
-    const err = validateField(k, v);
+    const err = validateField(k, v, (key) => t(key));
     setFieldErrors((prev) => {
       const next = { ...prev };
       if (err) next[k] = err; else delete next[k];
@@ -149,11 +151,11 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tenants'] });
       if (tenant) qc.invalidateQueries({ queryKey: ['tenant', tenant.id] });
-      toast({ title: tenant ? 'Đã cập nhật khách thuê' : 'Đã tạo khách thuê mới' });
+      toast({ title: tenant ? t('tenants:updateSuccess') : t('tenants:createSuccess') });
       if (!tenant) onCreated?.();
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const handleSubmit = () => {
@@ -161,7 +163,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
     for (const k of Object.keys(form)) {
       const v = (form as any)[k];
       if (typeof v !== 'string') continue;
-      const err = validateField(k, v);
+      const err = validateField(k, v, (key) => t(key));
       if (err) allErrors[k] = err;
     }
     setFieldErrors(allErrors);
@@ -175,58 +177,58 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{tenant ? 'Chỉnh sửa khách thuê' : 'Thêm khách thuê mới'}</DialogTitle>
+          <DialogTitle>{tenant ? t('tenants:form.editTitle') : t('tenants:form.addTitle')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Thương hiệu *</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.brand')}</label>
               <Input
                 value={form.brandName}
                 onChange={(e) => set('brandName', e.target.value)}
                 onBlur={() => blur('brandName')}
                 maxLength={100}
-                placeholder="VD: Highlands Coffee"
+                placeholder={t('tenants:form.brandPlaceholder')}
                 error={!!fe.brandName}
               />
               {fe.brandName && <p className="text-xs text-red-500 mt-1">{fe.brandName}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Tên công ty</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.company')}</label>
               <Input
                 value={form.companyName}
                 onChange={(e) => set('companyName', e.target.value)}
                 onBlur={() => blur('companyName')}
                 maxLength={200}
-                placeholder="Công ty TNHH..."
+                placeholder={t('tenants:form.companyPlaceholder')}
                 error={!!fe.companyName}
               />
               {fe.companyName && <p className="text-xs text-red-500 mt-1">{fe.companyName}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Mã số thuế</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.taxCode')}</label>
               <Input
                 value={form.taxCode}
                 onChange={(e) => set('taxCode', e.target.value)}
                 onBlur={() => blur('taxCode')}
                 maxLength={14}
-                placeholder="0123456789"
+                placeholder={t('tenants:form.taxCodePlaceholder')}
                 error={!!fe.taxCode}
               />
               {fe.taxCode && <p className="text-xs text-red-500 mt-1">{fe.taxCode}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Ngành</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.category')}</label>
               <select className="w-full border rounded-md h-9 px-2 text-sm" value={form.category}
                 onChange={(e) => set('category', e.target.value)}>
-                <option value="">-- Chọn ngành --</option>
+                <option value="">{t('tenants:form.selectCategory')}</option>
                 {Object.entries(CATEGORY_META).map(([k, v]) => (
-                  <option key={k} value={k}>{v.emoji} {v.label}</option>
+                  <option key={k} value={k}>{v.emoji} {t('tenants:category.' + k)}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Người liên hệ</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.contactName')}</label>
               <Input
                 value={form.contactName}
                 onChange={(e) => set('contactName', e.target.value)}
@@ -237,7 +239,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
               {fe.contactName && <p className="text-xs text-red-500 mt-1">{fe.contactName}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Email liên hệ</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.contactEmail')}</label>
               <Input
                 type="email"
                 value={form.contactEmail}
@@ -250,7 +252,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
               {fe.contactEmail && <p className="text-xs text-red-500 mt-1">{fe.contactEmail}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Điện thoại</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.contactPhone')}</label>
               <Input
                 value={form.contactPhone}
                 onChange={(e) => set('contactPhone', e.target.value)}
@@ -262,7 +264,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
               {fe.contactPhone && <p className="text-xs text-red-500 mt-1">{fe.contactPhone}</p>}
             </div>
             <div>
-              <label className="text-xs text-gray-500 mb-1 block">Địa chỉ</label>
+              <label className="text-xs text-gray-500 mb-1 block">{t('tenants:form.address')}</label>
               <Input
                 value={form.address}
                 onChange={(e) => set('address', e.target.value)}
@@ -276,18 +278,18 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
           <div className="border-t pt-3">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
               <input type="checkbox" checked={form.isPortalUser} onChange={(e) => set('isPortalUser', e.target.checked)} />
-              Khách thuê có quyền truy cập Tenant Portal
+              {t('tenants:form.portalAccess')}
             </label>
             {form.isPortalUser && (
               <p className="text-xs text-gray-500 mt-2">
-                Để cấp đăng nhập thật, vào <strong>Quản trị → Tài khoản</strong>, tạo tài khoản vai trò "Khách thuê" và liên kết với khách thuê này.
+                {t('tenants:form.portalNote')}
               </p>
             )}
           </div>
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose}>Hủy</Button>
+            <Button variant="outline" onClick={onClose}>{t('tenants:form.cancel')}</Button>
             <Button disabled={mutation.isPending} onClick={handleSubmit}>
-              {mutation.isPending ? 'Đang lưu...' : (tenant ? 'Cập nhật' : 'Tạo khách thuê')}
+              {mutation.isPending ? t('tenants:form.saving') : (tenant ? t('tenants:form.update') : t('tenants:form.create'))}
             </Button>
           </div>
         </div>
@@ -301,6 +303,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
 function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
   tenantId: string; onEdit: () => void; onClose: () => void; canEdit: boolean;
 }) {
+  const { t } = useTranslation('tenants');
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
@@ -309,17 +312,17 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
     enabled: !!tenantId,
   });
 
-  const t = data;
-  const contracts: any[] = t?.contracts ?? [];
-  const invoices: any[] = t?.invoices ?? [];
-  const tickets: any[] = t?.tickets ?? [];
-  const units: any[] = t?.occupiedUnits ?? [];
+  const td = data;
+  const contracts: any[] = td?.contracts ?? [];
+  const invoices: any[] = td?.invoices ?? [];
+  const tickets: any[] = td?.tickets ?? [];
+  const units: any[] = td?.occupiedUnits ?? [];
 
   const activeContract = contracts.find((c: any) => c.status === 'ACTIVE' || c.status === 'EXPIRING');
   const overdueInvoices = invoices.filter((i: any) => i.status === 'OVERDUE');
   const monthlyRent = activeContract ? (activeContract.rent ?? 0) + (activeContract.cam ?? 0) : 0;
 
-  const catMeta = t?.category ? CATEGORY_META[t.category] : null;
+  const catMeta = td?.category ? CATEGORY_META[td.category] : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -329,18 +332,18 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
           <div className="flex items-center gap-3">
             {/* Avatar */}
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shrink-0">
-              {t?.brandName?.[0] ?? '?'}
+              {td?.brandName?.[0] ?? '?'}
             </div>
             <div>
               {isLoading ? <Skeleton className="h-6 w-40 mb-1" /> : (
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-bold text-gray-900">{t?.brandName}</h2>
-                  {catMeta && (
+                  <h2 className="text-lg font-bold text-gray-900">{td?.brandName}</h2>
+                  {catMeta && td?.category && (
                     <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${catMeta.color}`}>
-                      {catMeta.emoji} {catMeta.label}
+                      {catMeta.emoji} {t('category.' + td.category)}
                     </span>
                   )}
-                  {t?.isPortalUser && (
+                  {td?.isPortalUser && (
                     <span className="text-xs bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
                       <Globe size={10} /> Portal
                     </span>
@@ -348,13 +351,13 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                 </div>
               )}
               {isLoading ? <Skeleton className="h-4 w-56" /> : (
-                <p className="text-sm text-gray-500 mt-0.5">{t?.companyName ?? '—'}</p>
+                <p className="text-sm text-gray-500 mt-0.5">{td?.companyName ?? '—'}</p>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
             {canEdit && <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5 h-8">
-              <Edit2 size={12} /> Sửa
+              <Edit2 size={12} /> {t('list.edit')}
             </Button>}
             <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
               <X size={16} className="text-gray-400" />
@@ -365,22 +368,22 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
         {/* KPI row */}
         <div className="grid grid-cols-4 gap-2">
           <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold text-gray-800">{t?._count?.contracts ?? contracts.length}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Hợp đồng</div>
+            <div className="text-lg font-bold text-gray-800">{td?._count?.contracts ?? contracts.length}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{t('kpi.contracts')}</div>
           </div>
           <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
             <div className="text-lg font-bold text-blue-700">{fmtMoney(monthlyRent)}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Thuê/tháng</div>
+            <div className="text-xs text-gray-400 mt-0.5">{t('kpi.monthlyRent')}</div>
           </div>
           <div className={`border rounded-xl p-3 text-center ${overdueInvoices.length > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
             <div className={`text-lg font-bold ${overdueInvoices.length > 0 ? 'text-red-600' : 'text-gray-800'}`}>
               {overdueInvoices.length}
             </div>
-            <div className="text-xs text-gray-400 mt-0.5">Quá hạn</div>
+            <div className="text-xs text-gray-400 mt-0.5">{t('kpi.overdue')}</div>
           </div>
           <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
             <div className="text-lg font-bold text-gray-800">{units.length}</div>
-            <div className="text-xs text-gray-400 mt-0.5">Mặt bằng</div>
+            <div className="text-xs text-gray-400 mt-0.5">{t('kpi.units')}</div>
           </div>
         </div>
       </div>
@@ -394,68 +397,68 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
         ) : (
           <Tabs defaultValue="info" className="px-5 pt-4 pb-6">
             <TabsList className="grid grid-cols-5 w-full mb-4">
-              <TabsTrigger value="info">Thông tin</TabsTrigger>
-              <TabsTrigger value="contracts">HĐ ({contracts.length})</TabsTrigger>
-              <TabsTrigger value="invoices">HĐon ({invoices.length})</TabsTrigger>
-              <TabsTrigger value="tickets">YC ({tickets.length})</TabsTrigger>
-              <TabsTrigger value="portal">Portal</TabsTrigger>
+              <TabsTrigger value="info">{t('tabs.info')}</TabsTrigger>
+              <TabsTrigger value="contracts">{`${t('tabs.contracts')} (${contracts.length})`}</TabsTrigger>
+              <TabsTrigger value="invoices">{`${t('tabs.invoices')} (${invoices.length})`}</TabsTrigger>
+              <TabsTrigger value="tickets">{`${t('tabs.tickets')} (${tickets.length})`}</TabsTrigger>
+              <TabsTrigger value="portal">{t('tabs.portal')}</TabsTrigger>
             </TabsList>
 
             {/* Tab: Thông tin */}
             <TabsContent value="info" className="space-y-4">
               <div className="space-y-2.5">
-                {t?.contactName && (
+                {td?.contactName && (
                   <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                       <User size={13} className="text-gray-500" />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-400">Người liên hệ</div>
-                      <div className="text-sm font-medium text-gray-800">{t.contactName}</div>
+                      <div className="text-xs text-gray-400">{t('info.contact')}</div>
+                      <div className="text-sm font-medium text-gray-800">{td.contactName}</div>
                     </div>
                   </div>
                 )}
-                {t?.contactPhone && (
+                {td?.contactPhone && (
                   <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                       <Phone size={13} className="text-blue-500" />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-400">Điện thoại</div>
-                      <a href={`tel:${t.contactPhone}`} className="text-sm font-medium text-blue-600 hover:underline">{t.contactPhone}</a>
+                      <div className="text-xs text-gray-400">{t('info.phone')}</div>
+                      <a href={`tel:${td.contactPhone}`} className="text-sm font-medium text-blue-600 hover:underline">{td.contactPhone}</a>
                     </div>
                   </div>
                 )}
-                {t?.contactEmail && (
+                {td?.contactEmail && (
                   <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                       <Mail size={13} className="text-blue-500" />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-400">Email</div>
-                      <a href={`mailto:${t.contactEmail}`} className="text-sm font-medium text-blue-600 hover:underline">{t.contactEmail}</a>
+                      <div className="text-xs text-gray-400">{t('info.email')}</div>
+                      <a href={`mailto:${td.contactEmail}`} className="text-sm font-medium text-blue-600 hover:underline">{td.contactEmail}</a>
                     </div>
                   </div>
                 )}
-                {t?.taxCode && (
+                {td?.taxCode && (
                   <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
                       <Hash size={13} className="text-gray-500" />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-400">Mã số thuế</div>
-                      <div className="text-sm font-medium text-gray-800 font-mono">{t.taxCode}</div>
+                      <div className="text-xs text-gray-400">{t('info.taxCode')}</div>
+                      <div className="text-sm font-medium text-gray-800 font-mono">{td.taxCode}</div>
                     </div>
                   </div>
                 )}
-                {t?.address && (
+                {td?.address && (
                   <div className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-gray-50">
                     <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
                       <MapPin size={13} className="text-gray-500" />
                     </div>
                     <div>
-                      <div className="text-xs text-gray-400">Địa chỉ</div>
-                      <div className="text-sm text-gray-700">{t.address}</div>
+                      <div className="text-xs text-gray-400">{t('info.address')}</div>
+                      <div className="text-sm text-gray-700">{td.address}</div>
                     </div>
                   </div>
                 )}
@@ -464,7 +467,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               {/* Mặt bằng đang thuê */}
               {units.length > 0 && (
                 <div className="border-t pt-4">
-                  <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">Mặt bằng đang thuê</div>
+                  <div className="text-xs font-bold tracking-wider text-gray-400 mb-2 uppercase">{t('info.unitsOccupied')}</div>
                   <div className="space-y-2">
                     {units.map((u: any) => (
                       <div key={u.id} className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
@@ -490,10 +493,10 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               {contracts.length === 0 ? (
                 <div className="text-center py-10 text-gray-400">
                   <FileText size={32} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Chưa có hợp đồng</p>
+                  <p className="text-sm">{t('info.noContracts')}</p>
                 </div>
               ) : contracts.map((c: any) => {
-                const cs = CONTRACT_STATUS[c.status] ?? { label: c.status, color: 'text-gray-500', dot: 'bg-gray-300' };
+                const cs = CONTRACT_STATUS[c.status] ?? { color: 'text-gray-500', dot: 'bg-gray-300' };
                 const days = daysUntil(c.endDate);
                 return (
                   <div key={c.id}
@@ -505,7 +508,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                           <span className="font-mono text-xs text-gray-500">{c.contractNumber}</span>
                           <span className={`flex items-center gap-1 text-xs font-medium ${cs.color}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${cs.dot}`} />
-                            {cs.label}
+                            {t('contractStatus.' + c.status)}
                           </span>
                         </div>
                         <div className="text-sm font-medium text-gray-800 mt-0.5">{c.unit?.code}</div>
@@ -514,7 +517,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                           {fmtDate(c.startDate)} → {fmtDate(c.endDate)}
                           {days !== null && days <= 90 && days > 0 && (
                             <span className={`ml-1 font-medium ${days <= 30 ? 'text-red-500' : 'text-orange-500'}`}>
-                              (còn {days}n)
+                              {t('info.daysLeft', { count: days })}
                             </span>
                           )}
                         </div>
@@ -523,7 +526,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                         <div className="text-sm font-bold text-gray-800">
                           {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)}đ
                         </div>
-                        <div className="text-xs text-gray-400">/tháng</div>
+                        <div className="text-xs text-gray-400">{t('info.perMonth')}</div>
                       </div>
                     </div>
                   </div>
@@ -531,7 +534,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               })}
               <Button variant="outline" size="sm" className="w-full gap-1.5 mt-2 text-xs h-8"
                 onClick={() => navigate('/contracts')}>
-                <ChevronRight size={12} /> Xem toàn bộ hợp đồng
+                <ChevronRight size={12} /> {t('info.viewAllContracts')}
               </Button>
             </TabsContent>
 
@@ -540,19 +543,19 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               {invoices.length === 0 ? (
                 <div className="text-center py-10 text-gray-400">
                   <Receipt size={32} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Chưa có hóa đơn</p>
+                  <p className="text-sm">{t('info.noInvoices')}</p>
                 </div>
               ) : invoices.slice(0, 10).map((inv: any) => {
-                const is = INVOICE_STATUS[inv.status] ?? { label: inv.status, color: 'bg-gray-100 text-gray-600' };
+                const is = INVOICE_STATUS[inv.status] ?? { color: 'bg-gray-100 text-gray-600' };
                 return (
                   <div key={inv.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl hover:bg-gray-50">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs text-gray-500">{inv.invoiceNumber}</span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${is.color}`}>{is.label}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${is.color}`}>{t('invoiceStatus.' + inv.status)}</span>
                       </div>
                       <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                        <Clock size={10} /> {inv.period} · Hạn {fmtDate(inv.dueDate)}
+                        <Clock size={10} /> {inv.period} · {t('info.dueDate')} {fmtDate(inv.dueDate)}
                       </div>
                     </div>
                     <div className="text-sm font-bold text-gray-800">
@@ -563,7 +566,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               })}
               <Button variant="outline" size="sm" className="w-full gap-1.5 mt-2 text-xs h-8"
                 onClick={() => navigate('/billing')}>
-                <ChevronRight size={12} /> Xem toàn bộ hóa đơn
+                <ChevronRight size={12} /> {t('info.viewAllInvoices')}
               </Button>
             </TabsContent>
 
@@ -572,7 +575,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               {tickets.length === 0 ? (
                 <div className="text-center py-10 text-gray-400">
                   <Ticket size={32} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">Chưa có yêu cầu hỗ trợ</p>
+                  <p className="text-sm">{t('info.noTickets')}</p>
                 </div>
               ) : tickets.map((tk: any) => (
                 <div key={tk.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-xl hover:bg-gray-50">
@@ -585,7 +588,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
               ))}
               <Button variant="outline" size="sm" className="w-full gap-1.5 mt-2 text-xs h-8"
                 onClick={() => navigate('/tickets')}>
-                <ChevronRight size={12} /> Xem toàn bộ tickets
+                <ChevronRight size={12} /> {t('info.viewAllTickets')}
               </Button>
             </TabsContent>
 
@@ -597,23 +600,23 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                     <Globe size={14} className="text-blue-600" />
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Tenant Portal</div>
-                    <div className="text-xs text-gray-400">Quyền truy cập hệ thống</div>
+                    <div className="text-sm font-semibold text-gray-800">{t('portal.title')}</div>
+                    <div className="text-xs text-gray-400">{t('portal.subtitle')}</div>
                   </div>
                   <div className="ml-auto">
-                    {t?.isPortalUser
-                      ? <Badge className="bg-green-100 text-green-700 border-0 gap-1"><CheckCircle size={10} />Đã cấp</Badge>
-                      : <Badge variant="outline" className="text-gray-400 gap-1"><XCircle size={10} />Chưa cấp</Badge>
+                    {td?.isPortalUser
+                      ? <Badge className="bg-green-100 text-green-700 border-0 gap-1"><CheckCircle size={10} />{t('portal.granted')}</Badge>
+                      : <Badge variant="outline" className="text-gray-400 gap-1"><XCircle size={10} />{t('portal.notGranted')}</Badge>
                     }
                   </div>
                 </div>
-                {t?.isPortalUser ? (
+                {td?.isPortalUser ? (
                   <p className="text-xs text-gray-500 border-t pt-3">
-                    Để cấp đăng nhập, vào <strong>Quản trị → Tài khoản</strong>, tạo tài khoản vai trò "Khách thuê" và liên kết với khách thuê này.
+                    {t('portal.grantedNote')}
                   </p>
                 ) : (
                   <p className="text-xs text-gray-400 border-t pt-3">
-                    Bật quyền Portal trong phần Chỉnh sửa, sau đó tạo tài khoản đăng nhập trong Quản trị → Tài khoản.
+                    {t('portal.notGrantedNote')}
                   </p>
                 )}
               </div>
@@ -627,11 +630,12 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
 
 // ── Tenant Card ───────────────────────────────────────────────────────────────
 
-function TenantCard({ t, selected, onSelect, onEdit, canEdit }: {
-  t: any; selected: boolean; onSelect: () => void; onEdit: (e: React.MouseEvent) => void; canEdit: boolean;
+function TenantCard({ tenant, selected, onSelect, onEdit, canEdit }: {
+  tenant: any; selected: boolean; onSelect: () => void; onEdit: (e: React.MouseEvent) => void; canEdit: boolean;
 }) {
-  const catMeta = t.category ? CATEGORY_META[t.category] : null;
-  const activeContract = t.contracts?.find((c: any) => c.status === 'ACTIVE' || c.status === 'EXPIRING');
+  const { t } = useTranslation('tenants');
+  const catMeta = tenant.category ? CATEGORY_META[tenant.category] : null;
+  const activeContract = tenant.contracts?.find((c: any) => c.status === 'ACTIVE' || c.status === 'EXPIRING');
   const cs = activeContract ? CONTRACT_STATUS[activeContract.status] : null;
 
   return (
@@ -647,35 +651,35 @@ function TenantCard({ t, selected, onSelect, onEdit, canEdit }: {
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${
           selected ? 'bg-blue-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
         }`}>
-          {t.brandName?.[0] ?? '?'}
+          {tenant.brandName?.[0] ?? '?'}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-semibold text-gray-900 text-sm truncate">{t.brandName}</span>
-            {catMeta && (
+            <span className="font-semibold text-gray-900 text-sm truncate">{tenant.brandName}</span>
+            {catMeta && tenant.category && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full border ${catMeta.color}`}>
-                {catMeta.emoji}
+                {catMeta.emoji + ' ' + t('category.' + tenant.category)}
               </span>
             )}
-            {t.isPortalUser && <Globe size={11} className="text-blue-400 shrink-0" />}
+            {tenant.isPortalUser && <Globe size={11} className="text-blue-400 shrink-0" />}
           </div>
 
-          {t.companyName && (
-            <div className="text-xs text-gray-400 mt-0.5 truncate">{t.companyName}</div>
+          {tenant.companyName && (
+            <div className="text-xs text-gray-400 mt-0.5 truncate">{tenant.companyName}</div>
           )}
 
           <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
             <span className="flex items-center gap-0.5">
-              <FileText size={10} /> {t._count?.contracts ?? 0} HĐ
+              <FileText size={10} /> {tenant._count?.contracts ?? 0} HĐ
             </span>
             <span className="flex items-center gap-0.5">
-              <Receipt size={10} /> {t._count?.invoices ?? 0} HĐon
+              <Receipt size={10} /> {tenant._count?.invoices ?? 0} HĐon
             </span>
             {cs && activeContract && (
               <span className={`flex items-center gap-1 font-medium ${cs.color}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${cs.dot}`} />
-                {cs.label}
+                {t('contractStatus.' + activeContract.status)}
               </span>
             )}
           </div>
@@ -694,6 +698,7 @@ function TenantCard({ t, selected, onSelect, onEdit, canEdit }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function TenantsPage() {
+  const { t } = useTranslation('tenants');
   const { hasRole } = usePermission();
   const canManage = hasRole(['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR']);
   const [search, setSearch] = useState('');
@@ -714,14 +719,14 @@ export default function TenantsPage() {
   const total: number = data?.total ?? 0;
   const totalPages: number = data?.totalPages ?? 1;
 
-  const openEdit = useCallback((t: any, e?: React.MouseEvent) => {
+  const openEdit = useCallback((ten: any, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setEditTenant(t);
+    setEditTenant(ten);
     setShowForm(true);
   }, []);
   const closeForm = useCallback(() => { setShowForm(false); setEditTenant(null); }, []);
 
-  const selectedTenant = tenants.find((t) => t.id === selectedId);
+  const selectedTenant = tenants.find((ten) => ten.id === selectedId);
 
   // Stats
   const activeCount: number = data?.activeCount ?? 0;
@@ -737,14 +742,14 @@ export default function TenantsPage() {
         <div className="px-5 pt-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Khách thuê</h1>
+              <h1 className="text-xl font-bold text-gray-900">{t('list.header')}</h1>
               <p className="text-xs text-gray-400 mt-0.5">
-                {total} khách · {activeCount} đang thuê
+                {t('list.summary', { total, active: activeCount })}
               </p>
             </div>
             {canManage && <Button size="sm" className="gap-1.5 h-8 text-xs shrink-0"
               onClick={() => { setEditTenant(null); setShowForm(true); }}>
-              <Plus size={13} /> Thêm mới
+              <Plus size={13} /> {t('list.addNew')}
             </Button>}
           </div>
 
@@ -752,14 +757,14 @@ export default function TenantsPage() {
             <div className="relative flex-1">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm thương hiệu, công ty..."
+                placeholder={t('list.searchPlaceholder')}
                 className="pl-8 h-8 text-sm" />
             </div>
             <select className="border rounded-lg h-8 px-2 text-xs min-w-24 bg-white"
               value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">Tất cả</option>
+              <option value="">{t('list.allCategories')}</option>
               {Object.entries(CATEGORY_META).map(([k, v]) => (
-                <option key={k} value={k}>{v.emoji} {v.label}</option>
+                <option key={k} value={k}>{v.emoji} {t('category.' + k)}</option>
               ))}
             </select>
           </div>
@@ -772,34 +777,34 @@ export default function TenantsPage() {
           ) : isError ? (
             <div role="alert" className="text-center py-16 px-4">
               <Building2 size={40} className="mx-auto mb-2 text-red-300" />
-              <p className="text-sm font-medium text-red-700">Không thể tải danh sách khách thuê</p>
-              <p className="mt-1 text-xs text-red-600">Vui lòng kiểm tra kết nối và thử lại.</p>
-              <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>Thử lại</Button>
+              <p className="text-sm font-medium text-red-700">{t('list.errorLoad')}</p>
+              <p className="mt-1 text-xs text-red-600">{t('list.errorDesc')}</p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()}>{t('list.retry')}</Button>
             </div>
           ) : tenants.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <Building2 size={40} className="mx-auto mb-2 opacity-20" />
-              <p className="text-sm font-medium text-gray-600">{search || category ? 'Không có khách thuê phù hợp' : 'Chưa có khách thuê nào'}</p>
-              <p className="mt-1 text-xs">{search || category ? 'Thử thay đổi từ khóa hoặc ngành hàng.' : 'Thêm khách thuê đầu tiên để quản lý hồ sơ và hợp đồng.'}</p>
+              <p className="text-sm font-medium text-gray-600">{search || category ? t('list.noMatch') : t('list.empty')}</p>
+              <p className="mt-1 text-xs">{search || category ? t('list.noMatchDesc') : t('list.emptyDesc')}</p>
               {search || category ? (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setCategory(''); setPage(1); }}>Xóa bộ lọc</Button>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setCategory(''); setPage(1); }}>{t('list.clearFilter')}</Button>
               ) : (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setEditTenant(null); setShowForm(true); }}>Thêm khách thuê</Button>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setEditTenant(null); setShowForm(true); }}>{t('list.addFirst')}</Button>
               )}
             </div>
-          ) : tenants.map((t) => (
-            <TenantCard key={t.id} t={t} canEdit={canManage}
-              selected={selectedId === t.id}
-              onSelect={() => setSelectedId(t.id === selectedId ? null : t.id)}
-              onEdit={(e) => openEdit(t, e)} />
+          ) : tenants.map((ten) => (
+            <TenantCard key={ten.id} tenant={ten} canEdit={canManage}
+              selected={selectedId === ten.id}
+              onSelect={() => setSelectedId(ten.id === selectedId ? null : ten.id)}
+              onEdit={(e) => openEdit(ten, e)} />
           ))}
         </div>
         <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-          <span>{total} khách thuê</span>
+          <span>{t('list.total', { count: total })}</span>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
-            <span className="px-1">Trang {page} / {totalPages || 1}</span>
-            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('list.prev')}</Button>
+            <span className="px-1">{t('list.page', { current: page, total: totalPages || 1 })}</span>
+            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>{t('list.next')}</Button>
           </div>
         </div>
       </div>
@@ -810,7 +815,7 @@ export default function TenantsPage() {
           <TenantDetailPanel
             tenantId={selectedId}
             canEdit={canManage}
-            onEdit={() => { const t = tenants.find((x) => x.id === selectedId); if (t) openEdit(t); }}
+            onEdit={() => { const ten = tenants.find((x) => x.id === selectedId); if (ten) openEdit(ten); }}
             onClose={() => setSelectedId(null)}
           />
         </div>
@@ -821,7 +826,7 @@ export default function TenantsPage() {
         <div className="hidden lg:flex flex-1 items-center justify-center text-gray-300 bg-gray-50/50">
           <div className="text-center">
             <Building2 size={48} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">Chọn khách thuê để xem chi tiết</p>
+            <p className="text-sm font-medium">{t('list.selectHint')}</p>
           </div>
         </div>
       )}

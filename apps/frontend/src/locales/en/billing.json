@@ -1,0 +1,212 @@
+{
+  "title": "Billing & AR",
+  "invoice": {
+    "create": "Create invoice",
+    "edit": "Edit",
+    "detail": "Invoice details",
+    "status": {
+      "DRAFT": "Draft",
+      "ISSUED": "Issued",
+      "PARTIALLY_PAID": "Partially paid",
+      "PAID": "Paid",
+      "OVERDUE": "Overdue",
+      "CANCELLED": "Cancelled"
+    },
+    "lineType": {
+      "RENT": "Rent",
+      "CAM": "CAM fee",
+      "DEPOSIT": "Deposit",
+      "ELECTRICITY": "Electricity",
+      "WATER": "Water",
+      "MANAGEMENT_FEE": "Additional management fee",
+      "PARKING": "Parking fee",
+      "CLEANING": "Cleaning fee",
+      "SECURITY": "Security fee",
+      "MARKETING_FEE": "Marketing fee",
+      "OTHER": "Other charges"
+    },
+    "fields": {
+      "invoiceNo": "Invoice number",
+      "tenant": "Tenant",
+      "unit": "Space",
+      "period": "Billing period",
+      "dueDate": "Due date",
+      "amount": "Total amount",
+      "paidAmount": "Amount paid",
+      "remainingAmount": "Remaining",
+      "issuedAt": "Issued date",
+      "paidAt": "Payment date"
+    },
+    "actions": {
+      "issue": "Issue invoice",
+      "recordPayment": "Record payment",
+      "cancel": "Cancel invoice",
+      "sendReminder": "Send payment reminder",
+      "generateAll": "Bulk generate"
+    }
+  },
+  "filters": {
+    "search": "Search contract no., tenant...",
+    "status": "Status",
+    "period": "Period",
+    "allStatuses": "All statuses"
+  },
+  "tabs": {
+    "invoices": "Invoices",
+    "arAging": "AR Aging",
+    "schedule": "Invoice schedule",
+    "dunning": "Dunning",
+    "kpi": "Collection efficiency"
+  },
+  "stats": {
+    "totalInvoices": "Total invoices",
+    "collected": "Collected",
+    "overdue": "Overdue",
+    "collectionRate": "Collection rate"
+  },
+  "dunning": {
+    "title": "Automated dunning",
+    "level1": "Reminder 1",
+    "level2": "Reminder 2",
+    "level3": "Reminder 3 (Final)"
+  },
+  "arAging": {
+    "title": "AR Aging",
+    "current": "Current",
+    "days30": "1-30 days",
+    "days60": "31-60 days",
+    "days90": "61-90 days",
+    "over90": "Over 90 days",
+    "tenant": "Tenant",
+    "total": "Total",
+    "grandTotal": "Grand total"
+  },
+  "sales": {
+    "title": "Sales",
+    "tenant": "Tenant sales",
+    "period": "Reporting period",
+    "submitSales": "Submit sales data"
+  },
+  "workflow": {
+    "step1Label": "System creates\ndraft",
+    "step1Desc": "Per contract cycle",
+    "step2Label": "Operations adds\nvariable costs",
+    "step2Desc": "Electricity, water, services",
+    "step3Label": "Send to\ncustomer",
+    "step3Desc": "Issue → ISSUED",
+    "step4Label": "Finance records\npayment",
+    "step4Desc": "Collect → PAID",
+    "stepCreate": "Create draft",
+    "stepAddCosts": "Add costs",
+    "stepSend": "Send",
+    "stepCollect": "Collect"
+  },
+  "detail": {
+    "fixedCosts": "Fixed costs",
+    "variableCosts": "Variable costs",
+    "noFixedLines": "No fixed cost lines",
+    "noVariableLinesDraft": "No variable costs — Click \"Add cost\" to enter electricity/water/services",
+    "noVariableLinesIssued": "No variable costs in this period",
+    "addCostLine": "Add cost line",
+    "addCost": "Add cost",
+    "fixedBadge": "fixed",
+    "description": "Description",
+    "descriptionPlaceholder": "Description (e.g. Electricity June 2026)",
+    "qty": "Qty",
+    "unitPrice": "Unit price",
+    "amount": "Amount",
+    "content": "Content",
+    "totalSection": "Total",
+    "subtotal": "Subtotal",
+    "vat": "VAT ({{rate}}%)",
+    "paid": "Paid",
+    "remaining": "Remaining",
+    "paymentHistory": "Payment history",
+    "reversed": "Reversed: {{reason}}",
+    "reversePayment": "Reverse payment",
+    "checkBeforeSend": "Check and add variable costs before sending to customer",
+    "issueAndSend": "Issue & Send to customer",
+    "issuing": "Issuing...",
+    "fullAmountFill": "Fill remaining amount ({{amount}})",
+    "invoicePaidFull": "Invoice fully paid",
+    "cancelledReason": "Cancelled — reason: {{reason}}",
+    "qtyLabel": "Quantity",
+    "unitPriceLabel": "Unit price (₫)",
+    "subtotalPreview": "Amount: {{amount}}",
+    "paymentAmount": "Payment amount *",
+    "paymentMethod": "Method",
+    "paymentReference": "Reference / Transaction no.",
+    "paymentDate": "Payment date",
+    "paymentNotes": "Notes",
+    "paymentNotesPlaceholder": "Payment installment 1...",
+    "confirmPayment": "Confirm payment",
+    "saving": "Saving..."
+  },
+  "paymentMethod": {
+    "BANK_TRANSFER": "Bank transfer",
+    "CASH": "Cash",
+    "CHEQUE": "Cheque",
+    "ONLINE": "Online payment"
+  },
+  "confirmIssue": {
+    "title": "Issue invoice?",
+    "description": "The invoice will be locked and a notification sent to the tenant. Please verify all cost lines, taxes and due date before continuing.",
+    "confirm": "Issue invoice",
+    "loading": "Issuing..."
+  },
+  "confirmRemoveLine": {
+    "title": "Remove cost line?",
+    "description": "The invoice total and tax will be recalculated. Only remove lines added by mistake.",
+    "confirm": "Remove cost line",
+    "loading": "Removing..."
+  },
+  "toast": {
+    "paymentRecorded": "Payment recorded",
+    "lineAdded": "Cost added",
+    "lineUpdated": "Updated",
+    "lineRemoved": "Cost line removed",
+    "invoiceIssued": "Invoice issued — Notification sent to tenant",
+    "invoiceVoided": "Invoice cancelled",
+    "paymentReversed": "Payment reversed",
+    "exportError": "Export error"
+  },
+  "list": {
+    "invoiceNo": "Invoice no.",
+    "tenant": "Tenant",
+    "period": "Period",
+    "type": "Type",
+    "totalAmount": "Total amount",
+    "dueDate": "Due date",
+    "status": "Status",
+    "draftsNeedAttention": "{{count}} drafts need cost processing",
+    "overdueInvoices": "{{count}} overdue invoices",
+    "pendingCollection": "{{count}} pending collection",
+    "searchPlaceholder": "Search invoice no., tenant...",
+    "exporting": "Exporting...",
+    "noInvoices": "No invoices found"
+  },
+  "header": {
+    "title": "Invoices & collections",
+    "subtitle": "Control the full revenue lifecycle: schedule → issue → collect → dunning → reconcile.",
+    "collectionRate": "Collection rate",
+    "dso": "DSO",
+    "dsoUnit": "days",
+    "arOutstanding": "AR outstanding",
+    "operationsCenter": "Billing operations center",
+    "selectStep": "Select a step to continue"
+  },
+  "voidDialog": {
+    "title": "Cancel invoice",
+    "description": "This action affects receivables and will be saved in the audit trail.",
+    "confirm": "Confirm"
+  },
+  "reverseDialog": {
+    "title": "Reverse payment",
+    "description": "This action affects receivables and will be saved in the audit trail.",
+    "confirm": "Confirm"
+  },
+  "noInvoices": "No invoices found",
+  "createSuccess": "Invoice created successfully",
+  "issueSuccess": "Invoice issued to tenant",
+  "paymentSuccess": "Payment recorded successfully"
+}

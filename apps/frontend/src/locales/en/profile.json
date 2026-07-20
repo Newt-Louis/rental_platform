@@ -1,0 +1,55 @@
+{
+  "title": "Account information",
+  "fields": {
+    "fullName": "Full name",
+    "email": "Email",
+    "phone": "Phone number",
+    "role": "Role",
+    "department": "Department",
+    "avatar": "Profile picture"
+  },
+  "changePassword": {
+    "title": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordMismatch": "Passwords do not match",
+    "success": "Password changed successfully"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "theme": "Theme",
+    "notifications": "Notifications"
+  },
+  "tenantPortal": {
+    "title": "Tenant portal",
+    "myUnits": "My spaces",
+    "myContracts": "Contracts",
+    "myInvoices": "Invoices",
+    "myTickets": "Support requests",
+    "announcements": "Mall announcements",
+    "overview": "Overview"
+  },
+  "saveSuccess": "Profile updated successfully",
+  "saveError": "Update failed",
+  "saving": "Saving...",
+  "saveChanges": "Save changes",
+  "personalInfo": "Personal information",
+  "phonePlaceholder": "Not set",
+  "departmentPlaceholder": "Not set",
+  "changePassword": {
+    "title": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "At least 6 characters",
+    "confirmPassword": "Confirm password",
+    "confirmPasswordPlaceholder": "Re-enter password",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "success": "Password changed successfully",
+    "error": "Password change failed",
+    "changing": "Changing...",
+    "changeBtn": "Change password"
+  }
+}

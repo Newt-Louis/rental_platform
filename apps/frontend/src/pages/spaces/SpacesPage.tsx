@@ -9,6 +9,7 @@ import { MallMapViewer } from '@/components/MallMapViewer';
 import { MallMapEditor } from '@/components/MallMapEditor';
 import { useAuthStore } from '@/store/auth.store';
 import { useToast } from '@/components/ui/use-toast';
+import { useTranslation } from 'react-i18next';
 import {
   Map, Plus, Pencil, Trash2, Layers, LayoutGrid, BarChart3,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ import { SpacesGrid } from './SpacesGrid';
 type ViewMode = 'grid' | 'floor' | 'map' | 'analytics';
 
 export default function SpacesPage() {
+  const { t } = useTranslation(['spaces', 'common']);
   const { selectedMallId } = useMallStore();
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -136,21 +138,21 @@ export default function SpacesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã xóa mặt bằng' });
+      toast({ title: t('deleteSuccess') });
       setDeletingUnit(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('deleteFail'), variant: 'destructive' }),
   });
 
   const deleteFloorMutation = useMutation({
     mutationFn: (id: string) => spacesApi.deleteFloor(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['floors'] });
-      toast({ title: 'Đã xóa tầng' });
+      toast({ title: t('deleteFloorSuccess') });
       setDeletingFloor(null);
       if (floorFilter === id) setFloorFilter('');
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi xóa', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('deleteFloorFail'), variant: 'destructive' }),
   });
 
   return (
@@ -158,8 +160,8 @@ export default function SpacesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Mall Spaces</h1>
-          <p className="text-sm text-gray-500 mt-1">Quản lý mặt bằng và tình trạng cho thuê</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <p className="text-sm text-gray-500 mt-1">{t('common:nav.spaces')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* View toggle */}
@@ -169,41 +171,41 @@ export default function SpacesPage() {
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'grid' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Danh sách"
+              title={t('views.grid')}
             >
-              <LayoutGrid size={14} /> <span className="hidden sm:inline">Danh sách</span>
+              <LayoutGrid size={14} /> <span className="hidden sm:inline">{t('views.grid')}</span>
             </button>
             <button
               onClick={() => setView('floor')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'floor' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Sơ đồ tầng"
+              title={t('views.floor')}
             >
-              <Map size={14} /> <span className="hidden sm:inline">Sơ đồ tầng</span>
+              <Map size={14} /> <span className="hidden sm:inline">{t('views.floor')}</span>
             </button>
             <button
               onClick={() => { setView('map'); setMapEditorMode(false); }}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'map' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Bản đồ số"
+              title={t('views.map')}
             >
-              <Map size={14} /> <span className="hidden sm:inline">Bản đồ số</span>
+              <Map size={14} /> <span className="hidden sm:inline">{t('views.map')}</span>
             </button>
             <button
               onClick={() => setView('analytics')}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-colors ${
                 view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'
               }`}
-              title="Analytics"
+              title={t('views.analytics')}
             >
-              <BarChart3 size={14} /> <span className="hidden sm:inline">Analytics</span>
+              <BarChart3 size={14} /> <span className="hidden sm:inline">{t('views.analytics')}</span>
             </button>
           </div>
 {isAdmin && selectedMallId && (
-            <Button onClick={() => setCreateOpen(true)} className="gap-2" title="Thêm mặt bằng">
-              <Plus size={15} /> <span className="hidden sm:inline">Thêm mặt bằng</span>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2" title={t('unit.create')}>
+              <Plus size={15} /> <span className="hidden sm:inline">{t('unit.create')}</span>
             </Button>
           )}
         </div>
@@ -218,7 +220,7 @@ export default function SpacesPage() {
             className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
               ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
           >
-            Tất cả tầng
+            {t('floor.allFloors')}
           </button>
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
@@ -242,14 +244,14 @@ export default function SpacesPage() {
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditingFloor(f); setFloorDialogOpen(true); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="Sửa tầng"
+                    title={t('floor.edit')}
                   >
                     <Pencil size={11} />
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeletingFloor(f); }}
                     className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title="Xóa tầng"
+                    title={t('floor.delete')}
                   >
                     <Trash2 size={11} />
                   </button>
@@ -262,7 +264,7 @@ export default function SpacesPage() {
               onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
               className="shrink-0 text-xs px-2.5 py-1.5 rounded-full font-medium border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 hover:border-gray-400 flex items-center gap-1 whitespace-nowrap"
             >
-              <Plus size={12} /> Thêm tầng
+              <Plus size={12} /> {t('floor.create')}
             </button>
           )}
         </div>
@@ -273,9 +275,9 @@ export default function SpacesPage() {
 
       {isError && view !== 'analytics' && (
         <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-          <p className="font-medium text-red-700">Không thể tải dữ liệu mặt bằng</p>
-          <p className="mt-1 text-sm text-red-600">Bộ lọc hiện tại chưa thể được áp dụng. Vui lòng thử lại.</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>Thử lại</Button>
+          <p className="font-medium text-red-700">{t('error.loadFailed')}</p>
+          <p className="mt-1 text-sm text-red-600">{t('error.loadDesc')}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>{t('common:actions.retry')}</Button>
         </div>
       )}
 
@@ -321,7 +323,7 @@ export default function SpacesPage() {
           {/* Map mode toolbar */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-              <Map size={16} className="text-blue-600" /> Bản đồ số mặt bằng
+              <Map size={16} className="text-blue-600" /> {t('map.title')}
             </div>
             {isAdmin && (
               <div className="flex rounded-lg border overflow-hidden text-xs ml-auto">
@@ -329,13 +331,13 @@ export default function SpacesPage() {
                   onClick={() => { setMapEditorMode(false); setMapEditorFloorId(null); }}
                   className={`px-3 py-1.5 transition-colors ${!mapEditorMode ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Xem bản đồ
+                  {t('map.viewMode')}
                 </button>
                 <button
                   onClick={() => setMapEditorMode(true)}
                   className={`px-3 py-1.5 transition-colors ${mapEditorMode ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
                 >
-                  Chỉnh sửa sơ đồ
+                  {t('map.editDiagram')}
                 </button>
               </div>
             )}
@@ -345,7 +347,7 @@ export default function SpacesPage() {
             /* Editor: pick a floor first */
             <div className="space-y-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-500">Chọn tầng để chỉnh sửa:</span>
+                <span className="text-xs text-gray-500">{t('floor.selectToEdit')}</span>
                 {floors.map((f: any) => (
                   <button
                     key={f.id}
@@ -369,7 +371,7 @@ export default function SpacesPage() {
                     onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed border-blue-300 text-blue-500 hover:bg-blue-50 transition-all flex items-center gap-1"
                   >
-                    <Plus size={11} /> Thêm tầng
+                    <Plus size={11} /> {t('floor.create')}
                   </button>
                 )}
               </div>
@@ -378,19 +380,19 @@ export default function SpacesPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-400 text-sm border-2 border-dashed rounded-xl gap-3">
                   {!selectedMallId ? (
-                    <span className="text-center px-6">Vui lòng chọn một <strong className="text-gray-600">mall cụ thể</strong> ở header trước (không phải "Tất cả Mall")</span>
+                    <span className="text-center px-6">{t('map.noMallSelected')}</span>
                   ) : floors.length === 0 ? (
                     <>
-                      <span>Chưa có tầng nào trong mall này</span>
+                      <span>{t('floor.noFloorYet')}</span>
                       <button
                         onClick={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
                         className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                       >
-                        <Plus size={14} /> Thêm tầng đầu tiên
+                        <Plus size={14} /> {t('floor.addFirst')}
                       </button>
                     </>
                   ) : (
-                    <span>Chọn một tầng ở trên để bắt đầu chỉnh sửa sơ đồ</span>
+                    <span>{t('floor.selectForMap')}</span>
                   )}
                 </div>
               )}
@@ -406,7 +408,7 @@ export default function SpacesPage() {
             ) : (
               <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-400 text-sm border-2 border-dashed rounded-xl">
                 <Map size={36} className="opacity-30" />
-                <p>Chưa có tầng nào trong mall này</p>
+                <p>{t('floor.noFloorYet')}</p>
               </div>
             )
           )}
@@ -440,8 +442,8 @@ export default function SpacesPage() {
       {/* Delete unit confirm */}
       <ConfirmDialog
         open={!!deletingUnit}
-        title={`Xóa mặt bằng ${deletingUnit?.code}?`}
-        description={`Thao tác này sẽ ẩn mặt bằng "${deletingUnit?.code}" khỏi hệ thống. Dữ liệu lịch sử sẽ được giữ lại.`}
+        title={t('unit.delete') + ` ${deletingUnit?.code}?`}
+        description={t('unit.deleteDesc')}
         onConfirm={() => deleteMutation.mutate(deletingUnit.id)}
         onCancel={() => setDeletingUnit(null)}
         loading={deleteMutation.isPending}

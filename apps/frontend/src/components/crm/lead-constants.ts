@@ -9,17 +9,17 @@ export const CATEGORY_OPTS: Record<string, string> = {
 };
 
 export const LEAD_SOURCE_OPTS = [
-  { value: 'BROKER', label: 'Môi giới' },
-  { value: 'WEBSITE', label: 'Website' },
-  { value: 'REFERRAL', label: 'Giới thiệu' },
-  { value: 'WALK_IN', label: 'Trực tiếp' },
-  { value: 'EXISTING_TENANT', label: 'KH hiện tại' },
+  { value: 'BROKER', label: 'Môi giới', tKey: 'sources.BROKER' },
+  { value: 'WEBSITE', label: 'Website', tKey: 'sources.WEBSITE' },
+  { value: 'REFERRAL', label: 'Giới thiệu', tKey: 'sources.REFERRAL' },
+  { value: 'WALK_IN', label: 'Trực tiếp', tKey: 'sources.WALK_IN' },
+  { value: 'EXISTING_TENANT', label: 'KH hiện tại', tKey: 'sources.EXISTING_TENANT' },
 ];
 
 export const LEAD_PRIORITY_OPTS = [
-  { value: 'HOT', label: '🔥 Hot' },
-  { value: 'WARM', label: '🌤 Warm' },
-  { value: 'COLD', label: '🧊 Cold' },
+  { value: 'HOT', label: '🔥 Hot', tKey: 'priority.HOT' },
+  { value: 'WARM', label: '🌤 Warm', tKey: 'priority.WARM' },
+  { value: 'COLD', label: '🧊 Cold', tKey: 'priority.COLD' },
 ];
 
 const RE_PHONE = /^(0|\+84)[0-9]{8,10}$/;
@@ -29,6 +29,18 @@ export function normalizePhone(p: string | null | undefined) {
   return (p ?? '').replace(/[\s\-().]/g, '');
 }
 
+/** Returns validation error keys for use with t() in components */
+export function validateLeadFormKeys(f: { brandName: string; contactName: string; phone: string; email: string }) {
+  const errors: Partial<Record<'brandName' | 'contactName' | 'phone' | 'email', string>> = {};
+  if (!f.brandName.trim()) errors.brandName = 'validation.brandRequired';
+  else if (f.brandName.trim().length < 2) errors.brandName = 'validation.brandTooShort';
+  if (!f.contactName.trim()) errors.contactName = 'validation.contactRequired';
+  if (f.phone && !RE_PHONE.test(f.phone.trim())) errors.phone = 'validation.phoneInvalid';
+  if (f.email && !RE_EMAIL.test(f.email.trim())) errors.email = 'validation.emailInvalid';
+  return errors;
+}
+
+/** Legacy: returns hardcoded Vietnamese strings (kept for backward compatibility) */
 export function validateLeadForm(f: { brandName: string; contactName: string; phone: string; email: string }) {
   const errors: Partial<Record<'brandName' | 'contactName' | 'phone' | 'email', string>> = {};
   if (!f.brandName.trim()) errors.brandName = 'Tên thương hiệu không được để trống';

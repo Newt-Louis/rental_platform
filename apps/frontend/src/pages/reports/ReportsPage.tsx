@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { reportsApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -18,6 +19,7 @@ import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucid
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 function OccupancyReport() {
+  const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-occupancy'],
     queryFn: () => reportsApi.occupancyReport(),
@@ -43,12 +45,12 @@ function OccupancyReport() {
     isEmpty={statusData.length === 0 && floorData.length === 0}
     onRetry={refetch}
     loading={<Skeleton className="h-64" />}
-    emptyTitle="Chưa có dữ liệu lấp đầy"
-    emptyDescription="Dữ liệu sẽ xuất hiện khi mặt bằng được cấu hình và cập nhật trạng thái."
+    emptyTitle={t('occupancy.empty')}
+    emptyDescription={t('occupancy.emptyDesc')}
   >(
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
-        <CardHeader><CardTitle className="text-sm">Theo trạng thái</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t('occupancy.byStatus')}</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
@@ -61,15 +63,15 @@ function OccupancyReport() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle className="text-sm">Theo tầng</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t('occupancy.byFloor')}</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={floorData}>
               <XAxis dataKey="floor" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip />
-              <Bar dataKey="occupied" name="Đang thuê" fill="#3b82f6" />
-              <Bar dataKey="total" name="Tổng" fill="#e5e7eb" />
+              <Bar dataKey="occupied" name={t('occupancy.occupied')} fill="#3b82f6" />
+              <Bar dataKey="total" name={t('occupancy.total')} fill="#e5e7eb" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
@@ -79,6 +81,7 @@ function OccupancyReport() {
 }
 
 function RevenueReport() {
+  const { t } = useTranslation('reports');
   const year = new Date().getFullYear();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-revenue', year],
@@ -89,17 +92,17 @@ function RevenueReport() {
   const byPeriod = d?.byPeriod ?? [];
 
   return <AsyncState isLoading={isLoading} isError={isError} isEmpty={byPeriod.length === 0} onRetry={refetch}
-    loading={<Skeleton className="h-64" />} emptyTitle="Chưa có dữ liệu doanh thu">
+    loading={<Skeleton className="h-64" />} emptyTitle={t('revenue.empty')}>
     <Card>
-      <CardHeader><CardTitle className="text-sm">Doanh thu theo tháng {year}</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-sm">{t('revenue.byMonth', { year })}</CardTitle></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={byPeriod}>
             <XAxis dataKey="period" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1e6).toFixed(0)}M`} />
             <Tooltip formatter={(v: any) => [`${(v / 1e6).toFixed(1)}M VNĐ`]} />
-            <Bar dataKey="total" name="Tổng phát hành" fill="#93c5fd" />
-            <Bar dataKey="paid" name="Đã thu" fill="#3b82f6" />
+            <Bar dataKey="total" name={t('revenue.issued')} fill="#93c5fd" />
+            <Bar dataKey="paid" name={t('revenue.collected')} fill="#3b82f6" />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
@@ -108,6 +111,7 @@ function RevenueReport() {
 }
 
 function PipelineReport() {
+  const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-pipeline'],
     queryFn: reportsApi.pipelineReport,
@@ -119,10 +123,10 @@ function PipelineReport() {
 
   return <AsyncState isLoading={isLoading} isError={isError}
     isEmpty={leads.length === 0 && proposals.length === 0} onRetry={refetch}
-    loading={<Skeleton className="h-64" />} emptyTitle="Chưa có dữ liệu pipeline">
+    loading={<Skeleton className="h-64" />} emptyTitle={t('pipeline.empty')}>
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
-        <CardHeader><CardTitle className="text-sm">Leads theo trạng thái</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t('pipeline.leadsByStatus')}</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
             {leads.map((l: any, i: number) => (
@@ -135,7 +139,7 @@ function PipelineReport() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle className="text-sm">Proposals theo trạng thái</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">{t('pipeline.proposalsByStatus')}</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
             {proposals.map((p: any, i: number) => (
@@ -159,6 +163,7 @@ function PipelineReport() {
 }
 
 function ContractExpiryReport() {
+  const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-expiry'],
     queryFn: () => reportsApi.contractExpiryReport({ days: 180 }),
@@ -168,17 +173,17 @@ function ContractExpiryReport() {
 
   return <AsyncState isLoading={isLoading} isError={isError} isEmpty={contracts.length === 0}
     onRetry={refetch} loading={<Skeleton className="h-64" />}
-    emptyTitle="Không có hợp đồng sắp hết hạn"
-    emptyDescription="Không có hợp đồng hết hạn trong 180 ngày tới.">
+    emptyTitle={t('expiry.empty')}
+    emptyDescription={t('expiry.emptyDesc')}>
     <div className="bg-white rounded-lg border overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b">
           <tr>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">HĐ số</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Khách thuê</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Mặt bằng</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Ngày hết hạn</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">Còn lại</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('expiry.contractNo')}</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('expiry.tenant')}</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('expiry.unit')}</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('expiry.endDate')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('expiry.remaining')}</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -189,7 +194,7 @@ function ContractExpiryReport() {
               <td className="px-4 py-3 text-gray-500">{c.unit?.code}</td>
               <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString('vi-VN')}</td>
               <td className={`px-4 py-3 text-right font-medium ${c.daysRemaining <= 30 ? 'text-red-600' : c.daysRemaining <= 90 ? 'text-orange-500' : 'text-gray-600'}`}>
-                {c.daysRemaining} ngày
+                {t('expiry.daysRemaining', { count: c.daysRemaining })}
               </td>
             </tr>
           ))}
@@ -204,6 +209,7 @@ function fmtMoney(n: number) {
 }
 
 function RevenueReceivablesReport() {
+  const { t } = useTranslation('reports');
   const year = new Date().getFullYear();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-revenue-receivables', year],
@@ -216,40 +222,38 @@ function RevenueReceivablesReport() {
   return <AsyncState isLoading={isLoading} isError={isError}
     isEmpty={!d || (byPeriod.length === 0 && byType.length === 0 && !d.totalBilled)}
     onRetry={refetch} loading={<Skeleton className="h-64" />}
-    emptyTitle="Chưa có dữ liệu doanh thu và công nợ">
+    emptyTitle={t('revenueReceivables.empty')}>
     <div className="space-y-6">
-      <p className="text-xs text-gray-400 -mt-2">
-        Doanh thu &amp; công nợ chi tiết — không thay được báo cáo lãi/lỗ (P&amp;L) vì hệ thống chưa có dữ liệu chi phí/OPEX để đối trừ.
-      </p>
+      <p className="text-xs text-gray-400 -mt-2">{t('revenueReceivables.subtitle')}</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tổng phát hành</p><p className="text-xl font-bold">{fmtMoney(d?.totalBilled ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Đã thu</p><p className="text-xl font-bold text-green-600">{fmtMoney(d?.totalCollected ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Còn phải thu</p><p className="text-xl font-bold text-red-600">{fmtMoney(d?.totalOutstanding ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tỷ lệ thu hồi</p><p className="text-xl font-bold">{d?.collectionRate ?? 0}%</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalBilled')}</p><p className="text-xl font-bold">{fmtMoney(d?.totalBilled ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalCollected')}</p><p className="text-xl font-bold text-green-600">{fmtMoney(d?.totalCollected ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalOutstanding')}</p><p className="text-xl font-bold text-red-600">{fmtMoney(d?.totalOutstanding ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.collectionRate')}</p><p className="text-xl font-bold">{d?.collectionRate ?? 0}%</p></CardContent></Card>
       </div>
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-sm">Theo tháng</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('revenueReceivables.byMonth')}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={byPeriod}>
                 <XAxis dataKey="period" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1e6).toFixed(0)}M`} />
                 <Tooltip formatter={(v: any) => [`${(v / 1e6).toFixed(1)}M VNĐ`]} />
-                <Bar dataKey="billed" name="Phát hành" fill="#93c5fd" />
-                <Bar dataKey="collected" name="Đã thu" fill="#3b82f6" />
+                <Bar dataKey="billed" name={t('revenueReceivables.issued')} fill="#93c5fd" />
+                <Bar dataKey="collected" name={t('revenueReceivables.collected')} fill="#3b82f6" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm">Theo loại hoá đơn</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('revenueReceivables.byType')}</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {byType.map((t: any) => (
-                <div key={t.type} className="flex justify-between items-center text-sm">
-                  <span>{t.type}</span>
-                  <span className="text-gray-500">{fmtMoney(t.collected)} / {fmtMoney(t.billed)}</span>
+              {byType.map((inv: any) => (
+                <div key={inv.type} className="flex justify-between items-center text-sm">
+                  <span>{inv.type}</span>
+                  <span className="text-gray-500">{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
                 </div>
               ))}
             </div>
@@ -261,6 +265,7 @@ function RevenueReceivablesReport() {
 }
 
 function ArAgingReport() {
+  const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-ar-aging'],
     queryFn: () => reportsApi.arAgingReport(),
@@ -269,19 +274,19 @@ function ArAgingReport() {
 
   return <AsyncState isLoading={isLoading} isError={isError} isEmpty={rows.length === 0}
     onRetry={refetch} loading={<Skeleton className="h-64" />}
-    emptyTitle="Không có công nợ theo tuổi nợ"
-    emptyDescription="Hiện chưa có khoản phải thu cần phân loại theo tuổi nợ.">
+    emptyTitle={t('arAging.empty')}
+    emptyDescription={t('arAging.emptyDesc')}>
     <div className="bg-white rounded-lg border overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b">
           <tr>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Khách thuê</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">Trong hạn</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">1-30 ngày</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">31-60 ngày</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">61-90 ngày</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">&gt;90 ngày</th>
-            <th className="text-right px-4 py-3 font-medium text-gray-600">Tổng</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('arAging.tenant')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.current')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days30')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days60')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days90')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days90plus')}</th>
+            <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.total')}</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -303,6 +308,7 @@ function ArAgingReport() {
 }
 
 function ComplianceReport() {
+  const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-compliance'],
     queryFn: () => reportsApi.complianceReport(),
@@ -311,16 +317,16 @@ function ComplianceReport() {
 
   return <AsyncState isLoading={isLoading} isError={isError} isEmpty={!d}
     onRetry={refetch} loading={<Skeleton className="h-64" />}
-    emptyTitle="Chưa có dữ liệu tuân thủ">
+    emptyTitle={t('compliance.empty')}>
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tổng thao tác ghi (30 ngày)</p><p className="text-xl font-bold">{d?.totalActions ?? 0}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Số lỗi</p><p className="text-xl font-bold text-red-600">{d?.errorCount ?? 0}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Tỷ lệ lỗi</p><p className="text-xl font-bold">{d?.errorRate ?? 0}%</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">Loại đối tượng theo dõi</p><p className="text-xl font-bold">{d?.entityTypesTracked ?? 0}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('compliance.totalActions')}</p><p className="text-xl font-bold">{d?.totalActions ?? 0}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('compliance.errorCount')}</p><p className="text-xl font-bold text-red-600">{d?.errorCount ?? 0}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('compliance.errorRate')}</p><p className="text-xl font-bold">{d?.errorRate ?? 0}%</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('compliance.entityTypes')}</p><p className="text-xl font-bold">{d?.entityTypesTracked ?? 0}</p></CardContent></Card>
       </div>
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><AlertTriangle size={14} className="text-red-500" /> Lỗi gần đây</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><AlertTriangle size={14} className="text-red-500" /> {t('compliance.recentErrors')}</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
             {(d?.recentErrors ?? []).map((e: any) => (
@@ -333,7 +339,7 @@ function ComplianceReport() {
               </div>
             ))}
             {(!d?.recentErrors || d.recentErrors.length === 0) && (
-              <p className="text-center text-gray-400 py-4">Không có lỗi nào trong khoảng thời gian này</p>
+              <p className="text-center text-gray-400 py-4">{t('compliance.noErrors')}</p>
             )}
           </div>
         </CardContent>
@@ -343,6 +349,7 @@ function ComplianceReport() {
 }
 
 export default function ReportsPage() {
+  const { t } = useTranslation('reports');
   const { user } = useAuthStore();
   const isAdminOrCeo = user?.role === 'ADMIN' || user?.role === 'CEO';
   // Khớp @Roles(...MODULE_ROLES.billingStaff, Role.CEO) của endpoint /reports/ar-aging ở backend.
@@ -368,7 +375,7 @@ export default function ReportsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast({ title: 'Lỗi xuất báo cáo', variant: 'destructive' });
+      toast({ title: t('exportError'), variant: 'destructive' });
     } finally {
       setExporting(false);
     }
@@ -380,35 +387,35 @@ export default function ReportsPage() {
         <div className="flex items-center gap-3">
           <PieIcon size={24} className="text-gray-700" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-            <p className="text-sm text-gray-500">Báo cáo tổng hợp</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+            <p className="text-sm text-gray-500">{t('subtitle')}</p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-500">Từ</Label>
+            <Label className="text-xs text-gray-500">{t('dateFrom')}</Label>
             <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-8 text-sm w-36" />
           </div>
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-500">Đến</Label>
+            <Label className="text-xs text-gray-500">{t('dateTo')}</Label>
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 text-sm w-36" />
           </div>
           <Button variant="outline" size="sm" onClick={() => handleExportCsv('revenue')} disabled={exporting} className="gap-1.5">
-            <Download size={14} /> Xuất CSV
+            <Download size={14} /> {exporting ? t('exporting') : t('exportCsv')}
           </Button>
         </div>
       </div>
 
       <Tabs defaultValue="occupancy">
         <TabsList className="mb-6">
-          <TabsTrigger value="occupancy">Occupancy</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
-          <TabsTrigger value="expiry">HĐ hết hạn</TabsTrigger>
-          <TabsTrigger value="revenue-receivables">Doanh thu &amp; Công nợ</TabsTrigger>
-          {isFinanceOrAbove && <TabsTrigger value="ar-aging">Công nợ theo tuổi nợ</TabsTrigger>}
+          <TabsTrigger value="occupancy">{t('tabs.occupancy')}</TabsTrigger>
+          <TabsTrigger value="revenue">{t('tabs.revenue')}</TabsTrigger>
+          <TabsTrigger value="pipeline">{t('tabs.pipeline')}</TabsTrigger>
+          <TabsTrigger value="expiry">{t('tabs.expiry')}</TabsTrigger>
+          <TabsTrigger value="revenue-receivables">{t('tabs.revenueReceivables')}</TabsTrigger>
+          {isFinanceOrAbove && <TabsTrigger value="ar-aging">{t('tabs.arAging')}</TabsTrigger>}
           {isAdminOrCeo && (
-            <TabsTrigger value="compliance" className="gap-1.5"><ShieldCheck size={13} /> Tuân thủ</TabsTrigger>
+            <TabsTrigger value="compliance" className="gap-1.5"><ShieldCheck size={13} /> {t('tabs.compliance')}</TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="occupancy"><OccupancyReport /></TabsContent>

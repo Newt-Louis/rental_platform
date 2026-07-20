@@ -107,6 +107,7 @@ export function canAccessPath(role: string | undefined, path: string): boolean {
 
 export const NAV_GROUPS = [
   {
+    key: 'overview',
     label: 'Tổng quan',
     items: [
       { label: 'Dashboard', path: '/dashboard', module: 'dashboard' as RouteModule },
@@ -114,6 +115,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'salesProcess',
     // Chỉ giữ lại các bước hành động tuần tự thật của quy trình cho thuê 1 mặt bằng cụ thể
     // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM (chăm sóc lead trước khi
     // chọn mặt bằng) và Deal Pipeline (dashboard tổng hợp chỉ để xem, không thao tác) đã tách
@@ -129,6 +131,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'crm',
     // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể — một giai đoạn
     // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
     label: 'Khách hàng tiềm năng (CRM)',
@@ -138,6 +141,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'operations',
     label: 'Vận hành',
     items: [
       { label: 'Fitout', path: '/fitout', module: 'fitout' as RouteModule },
@@ -145,6 +149,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'finance',
     label: 'Tài chính',
     items: [
       { label: 'Doanh thu', path: '/sales', module: 'sales' as RouteModule },
@@ -153,6 +158,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'analytics',
     label: 'Phân tích',
     items: [
       // Deal Pipeline là dashboard tổng hợp Lead→Booking→Đề xuất→Duyệt→Hợp đồng chỉ để xem
@@ -165,6 +171,7 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: 'system',
     label: 'Hệ thống',
     items: [
       { label: 'Thông báo Mall', path: '/announcements', module: 'announcements' as RouteModule },

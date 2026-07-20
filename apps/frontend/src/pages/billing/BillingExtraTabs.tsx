@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi, contractsApi } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ function fmt(n: number) {
 }
 
 export function ScheduleTab() {
+  const { t } = useTranslation(['billing', 'common']);
   const [contractId, setContractId] = useState('');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -31,17 +33,17 @@ export function ScheduleTab() {
 
   const buildMutation = useMutation({
     mutationFn: () => billingApi.buildSchedule(contractId),
-    onSuccess: () => { refetch(); toast({ title: 'Đã build schedule' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { refetch(); toast({ title: t('billing:schedule.buildSuccess') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const generateMutation = useMutation({
     mutationFn: () => billingApi.generateDueInvoices(),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['invoices'] });
-      toast({ title: `Đã sinh ${r?.created ?? 0} hóa đơn` });
+      toast({ title: t('billing:schedule.generateSuccess', { count: r?.created ?? 0 }) });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể sinh hóa đơn đến hạn', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('billing:schedule.generateError'), variant: 'destructive' }),
   });
 
   const entries: any[] = schedule?.data ?? schedule ?? [];
@@ -55,23 +57,23 @@ export function ScheduleTab() {
           value={contractId}
           onChange={(e) => setContractId(e.target.value)}
         >
-          <option value="">Chọn hợp đồng...</option>
+          <option value="">{t('billing:schedule.selectContract')}</option>
           {contractList.map((c) => (
             <option key={c.id} value={c.id}>{c.contractNumber} — {c.tenant?.brandName}</option>
           ))}
         </select>
         {contractId && (
           <Button size="sm" variant="outline" onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending}>
-            <Calendar size={14} className="mr-1" /> Tạo lại lịch
+            <Calendar size={14} className="mr-1" /> {t('billing:schedule.rebuild')}
           </Button>
         )}
         <Button size="sm" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-          <RefreshCw size={14} className="mr-1" /> Sinh hóa đơn đến hạn
+          <RefreshCw size={14} className="mr-1" /> {t('billing:schedule.generateDue')}
         </Button>
       </div>
 
       {!contractId ? (
-        <p className="text-sm text-gray-500">Chọn hợp đồng để xem lịch billing</p>
+        <p className="text-sm text-gray-500">{t('billing:schedule.selectContractPrompt')}</p>
       ) : isLoading ? (
         <Skeleton className="h-48" />
       ) : (
@@ -79,11 +81,11 @@ export function ScheduleTab() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-3 py-2">Kỳ</th>
-                <th className="text-right px-3 py-2">Rent</th>
-                <th className="text-right px-3 py-2">CAM</th>
-                <th className="text-left px-3 py-2">Hạn TT</th>
-                <th className="text-left px-3 py-2">Trạng thái</th>
+                <th className="text-left px-3 py-2">{t('billing:list.period')}</th>
+                <th className="text-right px-3 py-2">{t('billing:invoice.lineType.RENT')}</th>
+                <th className="text-right px-3 py-2">{t('billing:invoice.lineType.CAM')}</th>
+                <th className="text-left px-3 py-2">{t('billing:list.dueDate')}</th>
+                <th className="text-left px-3 py-2">{t('billing:list.status')}</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -98,7 +100,7 @@ export function ScheduleTab() {
               ))}
             </tbody>
           </table>
-          {entries.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Chưa có schedule — nhấn Build</p>}
+          {entries.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">{t('billing:schedule.noSchedule')}</p>}
         </div>
       )}
     </div>
@@ -106,6 +108,7 @@ export function ScheduleTab() {
 }
 
 export function DunningTab() {
+  const { t } = useTranslation(['billing', 'common']);
   const { toast } = useToast();
   const { data: policies, isLoading } = useQuery({
     queryKey: ['dunning-policies'],
@@ -114,14 +117,14 @@ export function DunningTab() {
 
   const runMutation = useMutation({
     mutationFn: billingApi.runDunning,
-    onSuccess: (r) => toast({ title: `Dunning: ${r?.notified ?? 0} thông báo` }),
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể chạy nhắc nợ', variant: 'destructive' }),
+    onSuccess: (r) => toast({ title: t('billing:dunning.runSuccess', { count: r?.notified ?? 0 }) }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('billing:dunning.runError'), variant: 'destructive' }),
   });
 
   const penaltyMutation = useMutation({
     mutationFn: billingApi.runPenalty,
-    onSuccess: (r) => toast({ title: `Penalty: ${r?.created ?? 0} hóa đơn` }),
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tính lãi phạt', variant: 'destructive' }),
+    onSuccess: (r) => toast({ title: t('billing:dunning.penaltySuccess', { count: r?.created ?? 0 }) }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('billing:dunning.penaltyError'), variant: 'destructive' }),
   });
 
   const list: any[] = policies?.data ?? policies ?? [];
@@ -130,10 +133,10 @@ export function DunningTab() {
     <div className="space-y-4">
       <div className="flex gap-2">
         <Button size="sm" onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-          <Bell size={14} className="mr-1" /> Gửi nhắc nợ đến hạn
+          <Bell size={14} className="mr-1" /> {t('billing:dunning.runBtn')}
         </Button>
         <Button size="sm" variant="outline" onClick={() => penaltyMutation.mutate()} disabled={penaltyMutation.isPending}>
-          Tạo phí phạt quá hạn
+          {t('billing:dunning.penaltyBtn')}
         </Button>
       </div>
       {isLoading ? <Skeleton className="h-32" /> : (

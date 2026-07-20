@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
@@ -29,6 +30,7 @@ import { CreateBookingDialog } from './CreateBookingDialog';
 import { CreateSlotBookingDialog } from './CreateSlotBookingDialog';
 
 export default function BookingsPage() {
+  const { t } = useTranslation('bookings');
   const { selectedMallId } = useMallStore();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -60,11 +62,11 @@ export default function BookingsPage() {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       setConfirmReinstateId(null);
-      toast({ title: 'Đã khôi phục booking' });
+      toast({ title: t('reinstateSuccess') });
     },
     onError: (e: any) => {
       setConfirmReinstateId(null);
-      toast({ title: e?.response?.data?.message ?? 'Lỗi khôi phục booking', variant: 'destructive' });
+      toast({ title: e?.response?.data?.message ?? t('errors.reinstate'), variant: 'destructive' });
     },
   });
 
@@ -74,11 +76,11 @@ export default function BookingsPage() {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       setConfirmDeleteId(null);
-      toast({ title: 'Đã xóa booking' });
+      toast({ title: t('deleteSuccess') });
     },
     onError: (e: any) => {
       setConfirmDeleteId(null);
-      toast({ title: e?.response?.data?.message ?? 'Lỗi xóa booking', variant: 'destructive' });
+      toast({ title: e?.response?.data?.message ?? t('errors.delete'), variant: 'destructive' });
     },
   });
 
@@ -87,11 +89,11 @@ export default function BookingsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
       setConfirmDeleteSlotId(null);
-      toast({ title: 'Đã xóa slot booking' });
+      toast({ title: t('deleteSlotSuccess') });
     },
     onError: (e: any) => {
       setConfirmDeleteSlotId(null);
-      toast({ title: e?.response?.data?.message ?? 'Lỗi xóa slot booking', variant: 'destructive' });
+      toast({ title: e?.response?.data?.message ?? t('errors.deleteSlot'), variant: 'destructive' });
     },
   });
 
@@ -109,12 +111,12 @@ export default function BookingsPage() {
       setConfirmCancelIds(null);
       setCancelReason('');
       if (fail > 0) {
-        toast({ title: `Đã hủy ${ok} booking, ${fail} booking không thể hủy (sai trạng thái)`, variant: 'destructive' });
+        toast({ title: `${t('cancelSuccess')} (${ok}), ${fail} ${t('errors.bulkCancel').toLowerCase()}`, variant: 'destructive' });
       } else {
-        toast({ title: `Đã hủy ${ok} booking` });
+        toast({ title: `${t('cancelSuccess')} (${ok})` });
       }
     },
-    onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
+    onError: () => toast({ title: t('errors.bulkCancel'), variant: 'destructive' }),
   });
 
   // ── UnitBooking state ──
@@ -241,29 +243,29 @@ export default function BookingsPage() {
               .filter((b) => ['ACTIVE', 'PENDING'].includes(b.status) && selectedUnitIds.has(b.id))
               .map((b) => b.id);
             if (cancellable.length === 0) {
-              toast({ title: 'Không có booking nào có thể hủy', description: 'Chỉ booking đang giữ hoặc chờ duyệt mới được hủy.', variant: 'destructive' });
+              toast({ title: t('errors.noCancellable'), description: t('errors.noCancellableDesc'), variant: 'destructive' });
               return;
             }
             setConfirmCancelIds(cancellable);
           }}
         >
-          <Trash2 size={14} /> Hủy booking
+          <Trash2 size={14} /> {t('page.cancelSelected')}
         </Button>
       </BulkSelectionBar>
 
       <PageHeader
         className="mb-5"
-        eyebrow="Không gian làm việc"
-        title="Quản lý đặt chỗ"
-        description="Theo dõi giữ chỗ mặt bằng dài hạn và lịch đặt không gian ngắn hạn."
+        eyebrow={t('page.eyebrow')}
+        title={t('page.title')}
+        description={t('page.description')}
         actions={
           <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
             <SelectTrigger className="h-9 w-full sm:w-56">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> Giữ mặt bằng dài hạn</span></SelectItem>
-              <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> Đặt không gian ngắn hạn</span></SelectItem>
+              <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> {t('page.unitType')}</span></SelectItem>
+              <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> {t('page.slotType')}</span></SelectItem>
             </SelectContent>
           </Select>
         }
@@ -273,17 +275,17 @@ export default function BookingsPage() {
         <>
           {statsError && (
             <div className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              <span>Không thể tải thống kê booking.</span>
-              <Button variant="outline" size="sm" onClick={() => refetchStats()}>Thử lại</Button>
+              <span>{t('page.statsError')}</span>
+              <Button variant="outline" size="sm" onClick={() => refetchStats()}>{t('actions.retry')}</Button>
             </div>
           )}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label="Thống kê booking mặt bằng">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label={t('unitStats.all')}>
             {[
-              { label: 'Tất cả', value: stats?.total ?? 0, status: '', urgent: false },
-              { label: 'Đang giữ', value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
-              { label: 'Chờ duyệt', value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
-              { label: 'Sắp hết hạn', value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
-              { label: 'Đã lập đề xuất', value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
+              { label: t('unitStats.all'), value: stats?.total ?? 0, status: '', urgent: false },
+              { label: t('unitStats.active'), value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
+              { label: t('unitStats.pending'), value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
+              { label: t('unitStats.expiringSoon'), value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
+              { label: t('unitStats.converted'), value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
             ].map((item) => (
               <button key={item.label} type="button" onClick={() => filterUnit(item.status, !!item.expiring)}
                 className={`rounded-xl border bg-white p-3 text-left transition-colors hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${item.urgent && item.value > 0 ? 'border-red-200' : 'border-gray-200'}`}>
@@ -296,7 +298,7 @@ export default function BookingsPage() {
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input placeholder="Tìm unit, lead, khách hàng..." className="pl-9 h-9"
+              <Input placeholder={t('filterLabels.searchUnit')} className="pl-9 h-9"
                 value={unitDraft.search}
                 onChange={(e) => setUnitField('search', e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && applyUnit()}
@@ -304,10 +306,10 @@ export default function BookingsPage() {
             </div>
             <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
-                <SelectValue placeholder="Trạng thái" />
+                <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.all')}</SelectItem>
                 {Object.entries(UNIT_STATUS_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
@@ -319,26 +321,26 @@ export default function BookingsPage() {
               }`}
               onClick={() => setUnitField('expiringSoon', !unitDraft.expiringSoon)}
             >
-              <Clock size={13} /> Sắp hết hạn (7 ngày)
+              <Clock size={13} /> {t('filterLabels.expiringSoon')}
             </button>
             <DateRangePicker
               from={unitDraft.dateFrom}
               to={unitDraft.dateTo}
               onFromChange={(v) => setUnitField('dateFrom', v)}
               onToChange={(v) => setUnitField('dateTo', v)}
-              placeholder="Khoảng ngày tạo"
+              placeholder={t('filterLabels.dateRange')}
             />
             <Button className="h-9 gap-1.5" onClick={applyUnit} disabled={!unitIsDirty && unitHasApplied}>
-              <Search size={14} /> Tìm kiếm
+              <Search size={14} /> {t('filters.search')}
             </Button>
             {(unitHasApplied || unitIsDirty) && (
               <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearUnit}>
-                <span>✕</span> Xóa
+                <span>✕</span> {t('actions.clear')}
               </Button>
             )}
             <Button className="gap-2 bg-amber-600 hover:bg-amber-700 text-white h-9 ml-auto"
               onClick={() => setCreateUnitOpen(true)}>
-              <Plus size={14} /> Tạo booking lô
+              <Plus size={14} /> {t('page.createUnitBooking')}
             </Button>
           </div>
 
@@ -346,7 +348,7 @@ export default function BookingsPage() {
           {!selectedBooking && !dialogOpen && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
           <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
             {unitError ? (
-              <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle="Không thể tải danh sách giữ chỗ"><div /></AsyncState>
+              <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle={t('page.unitBookingError')}><div /></AsyncState>
             ) : unitLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -359,8 +361,8 @@ export default function BookingsPage() {
             ) : unitBookings.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <BookmarkX size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">Không có booking nào</p>
-                <p className="text-sm mt-1">Tạo booking từ trang Mặt bằng hoặc CRM</p>
+                <p className="font-medium">{t('noBookings')}</p>
+                <p className="text-sm mt-1">{t('page.noBookingHint')}</p>
               </div>
             ) : (
               <table className="w-full text-sm">
@@ -382,15 +384,15 @@ export default function BookingsPage() {
                           : <Square size={15} className="text-gray-300" />}
                       </div>
                     </th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Booking #</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Unit</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách hàng</th>
-                    <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">Ưu tiên</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Hết hạn</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ngày tạo</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Cập nhật</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Sale</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.bookingNo')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.unit')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
+                    <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.priority')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.expiry')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.updatedAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.sale')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
@@ -434,7 +436,7 @@ export default function BookingsPage() {
                         <td data-section="bs-timeline" className="px-4 py-3">
                           {b.status === 'ACTIVE' && dl !== null ? (
                             <span className={`text-xs font-medium ${dl <= 7 ? 'text-red-500' : dl <= 14 ? 'text-amber-500' : 'text-gray-500'}`}>
-                              {dl > 0 ? `${dl} ngày` : 'Hôm nay'}
+                              {dl > 0 ? t('detail.daysLeft', { count: dl }) : t('detail.expiresToday')}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">{fmtDate(b.expiresAt)}</span>
@@ -452,14 +454,14 @@ export default function BookingsPage() {
                               <>
                                 <button
                                   className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                                  title="Chỉnh sửa booking"
+                                  title={t('edit')}
                                   onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
                                 >
                                   <Pencil size={13} />
                                 </button>
                                 <button
                                   className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                  title="Hủy booking"
+                                  title={t('actions.cancel')}
                                   onClick={(e) => { e.stopPropagation(); setConfirmCancelIds([b.id]); }}
                                 >
                                   <Ban size={13} />
@@ -469,7 +471,7 @@ export default function BookingsPage() {
                             {b.status === 'CANCELLED' && (
                               <button
                                 className="p-1 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                title="Khôi phục booking"
+                                title={t('detail.reinstate')}
                                 onClick={(e) => { e.stopPropagation(); setConfirmReinstateId(b.id); }}
                               >
                                 <RotateCcw size={13} />
@@ -478,7 +480,7 @@ export default function BookingsPage() {
                             {(isAdmin || ['CANCELLED', 'EXPIRED'].includes(b.status)) && (
                               <button
                                 className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                title={isAdmin ? 'Xóa booking (Admin)' : 'Xóa booking'}
+                                title={t('actions.delete')}
                                 onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(b.id); }}
                               >
                                 <Trash2 size={13} />
@@ -494,11 +496,11 @@ export default function BookingsPage() {
             )}
             {unitTotalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
-                <span>Tổng {unitTotal} bookings</span>
+                <span>{t('page.totalBookings', { count: unitTotal })}</span>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
-                  <span className="px-2 py-1">Trang {page} / {unitTotalPages}</span>
-                  <Button variant="outline" size="sm" disabled={page >= unitTotalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('page.prev')}</Button>
+                  <span className="px-2 py-1">{t('page.page', { current: page, total: unitTotalPages })}</span>
+                  <Button variant="outline" size="sm" disabled={page >= unitTotalPages} onClick={() => setPage(p => p + 1)}>{t('page.next')}</Button>
                 </div>
               </div>
             )}
@@ -509,12 +511,12 @@ export default function BookingsPage() {
       {/* ══════════ SLOT BOOKING ══════════ */}
       {typeFilter === 'slot' && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label="Thống kê booking ngắn hạn">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
             {[
-              { label: 'Chờ xác nhận', value: slotStats.pending, status: 'PENDING' },
-              { label: 'Đã xác nhận', value: slotStats.confirmed, status: 'CONFIRMED' },
-              { label: 'Hoàn thành', value: slotStats.completed, status: 'COMPLETED' },
-              { label: 'Doanh thu', value: fmtMoney(slotStats.revenue), status: '' },
+              { label: t('slotStats.pending'), value: slotStats.pending, status: 'PENDING' },
+              { label: t('slotStats.confirmed'), value: slotStats.confirmed, status: 'CONFIRMED' },
+              { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
+              { label: t('slotStats.revenue'), value: fmtMoney(slotStats.revenue), status: '' },
             ].map((item) => (
               <button key={item.label} type="button" onClick={() => filterSlot(item.status)}
                 className="rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
@@ -527,7 +529,7 @@ export default function BookingsPage() {
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input placeholder="Tìm ref, unit, slot, khách hàng..." className="pl-9 h-9"
+              <Input placeholder={t('filterLabels.searchSlot')} className="pl-9 h-9"
                 value={slotDraft.search}
                 onChange={(e) => setSlotField('search', e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && applySlot()}
@@ -535,10 +537,10 @@ export default function BookingsPage() {
             </div>
             <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-44">
-                <SelectValue placeholder="Trạng thái" />
+                <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.allStatuses')}</SelectItem>
                 {Object.entries(SLOT_STATUS_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
@@ -546,35 +548,35 @@ export default function BookingsPage() {
             </Select>
             <Select value={slotDraft.type || 'ALL'} onValueChange={(v) => setSlotField('type', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
-                <SelectValue placeholder="Loại slot" />
+                <SelectValue placeholder={t('table.type')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả loại</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.allTypes')}</SelectItem>
                 {Object.entries(SLOT_TYPE_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Button className="h-9 gap-1.5" onClick={applySlot} disabled={!slotIsDirty && slotHasApplied}>
-              <Search size={14} /> Tìm kiếm
+              <Search size={14} /> {t('filters.search')}
             </Button>
             {(slotHasApplied || slotIsDirty) && (
               <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearSlot}>
-                <span>✕</span> Xóa
+                <span>✕</span> {t('actions.clear')}
               </Button>
             )}
             <Button
               className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9 ml-auto"
               onClick={() => setCreateSlotOpen(true)}
             >
-              <Plus size={14} /> Tạo booking slot
+              <Plus size={14} /> {t('page.createSlotBooking')}
             </Button>
           </div>
 
           {/* Table */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             {slotError ? (
-              <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle="Không thể tải danh sách đặt không gian"><div /></AsyncState>
+              <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle={t('page.slotBookingError')}><div /></AsyncState>
             ) : slotLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -587,22 +589,22 @@ export default function BookingsPage() {
             ) : slotBookings.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <CalendarDays size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">Không có đặt slot nào</p>
-                <p className="text-sm mt-1">Tạo đặt slot từ trang Mặt bằng → chọn lô → Quản lý Slot</p>
+                <p className="font-medium">{t('noSlotBookings')}</p>
+                <p className="text-sm mt-1">{t('page.noSlotHint')}</p>
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-violet-50/50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ref #</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Loại</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Unit / Slot</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách hàng</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thành tiền</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ngày tạo</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Cập nhật</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.ref')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.type')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.unitSlot')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.timeRange')}</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.amount')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.updatedAt')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
@@ -645,7 +647,7 @@ export default function BookingsPage() {
                             {['PENDING', 'CONFIRMED'].includes(b.status) && (
                               <button
                                 className="p-1 rounded text-violet-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
-                                title="Chỉnh sửa booking slot"
+                                title={t('edit')}
                                 onClick={() => { setSelectedSlotBooking(b); setEditSlotDirectly(true); }}
                               >
                                 <Pencil size={13} />
@@ -654,7 +656,7 @@ export default function BookingsPage() {
                             {b.status === 'CANCELLED' && (
                               <button
                                 className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                title="Xóa slot booking"
+                                title={t('actions.deleteSlot')}
                                 onClick={() => setConfirmDeleteSlotId(b.id)}
                               >
                                 <Trash2 size={13} />
@@ -693,25 +695,25 @@ export default function BookingsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-blue-600">
-              <RotateCcw size={18} /> Xác nhận khôi phục booking
+              <RotateCcw size={18} /> {t('confirmations.reinstate')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Booking sẽ được đưa vào cuối hàng đợi của mặt bằng và được gia hạn thêm từ hôm nay.
+            {t('confirmations.reinstateDesc')}
           </p>
           <div className="space-y-1.5">
-            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">Lý do hủy <span className="text-red-500">*</span></label>
+            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">{t('confirmations.cancelReason')} <span className="text-red-500">*</span></label>
             <Textarea id="booking-cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="Nhập lý do để lưu vào lịch sử booking..." rows={3} />
-            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && <p className="text-xs text-red-500">Lý do cần ít nhất 5 ký tự.</p>}
+              placeholder={t('confirmations.cancelReasonPlaceholder')} rows={3} />
+            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && <p className="text-xs text-red-500">{t('confirmations.cancelReasonMinLength')}</p>}
           </div>
           <DialogFooter className="gap-2 mt-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>Hủy</Button>
+            <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>{t('confirmations.no')}</Button>
             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white"
               disabled={reinstateListMutation.isPending}
               onClick={() => confirmReinstateId && reinstateListMutation.mutate(confirmReinstateId)}>
               {reinstateListMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
-              Khôi phục
+              {t('actions.reinstate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -722,18 +724,18 @@ export default function BookingsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle size={18} /> Xác nhận xóa booking
+              <AlertTriangle size={18} /> {t('confirmations.delete')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Booking sẽ bị xóa khỏi danh sách và không thể khôi phục. Bạn có chắc chắn muốn tiếp tục?
+            {t('confirmations.deleteDesc')}
           </p>
           <DialogFooter className="gap-2 mt-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)} disabled={softDeleteMutation.isPending}>Hủy</Button>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)} disabled={softDeleteMutation.isPending}>{t('confirmations.no')}</Button>
             <Button variant="destructive" size="sm" disabled={softDeleteMutation.isPending}
               onClick={() => confirmDeleteId && softDeleteMutation.mutate(confirmDeleteId)}>
               {softDeleteMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
-              Xóa
+              {t('actions.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -744,18 +746,18 @@ export default function BookingsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle size={18} /> Xác nhận xóa slot booking
+              <AlertTriangle size={18} /> {t('confirmations.deleteSlot')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Slot booking đã hủy sẽ bị xóa vĩnh viễn. Bạn có chắc chắn muốn tiếp tục?
+            {t('confirmations.deleteSlotDesc')}
           </p>
           <DialogFooter className="gap-2 mt-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteSlotId(null)} disabled={deleteSlotMutation.isPending}>Hủy</Button>
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteSlotId(null)} disabled={deleteSlotMutation.isPending}>{t('confirmations.no')}</Button>
             <Button variant="destructive" size="sm" disabled={deleteSlotMutation.isPending}
               onClick={() => confirmDeleteSlotId && deleteSlotMutation.mutate(confirmDeleteSlotId)}>
               {deleteSlotMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
-              Xóa
+              {t('actions.deleteSlot')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -766,20 +768,20 @@ export default function BookingsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle size={18} /> Xác nhận hủy booking
+              <AlertTriangle size={18} /> {t('confirmations.bulkCancel')}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-gray-600">
-            Bạn có chắc muốn hủy <span className="font-semibold">{confirmCancelIds?.length ?? 0} booking</span> đã chọn?
+            {t('confirmations.bulkCancelDesc', { count: confirmCancelIds?.length ?? 0 })}
             {selectedUnitIds.size > 0 && selectedUnitIds.size !== (confirmCancelIds?.length ?? 0) && (
               <span className="block mt-1 text-amber-600 text-xs">
-                ({selectedUnitIds.size - (confirmCancelIds?.length ?? 0)} booking ở trạng thái không thể hủy sẽ được bỏ qua)
+                {t('confirmations.skipped', { count: selectedUnitIds.size - (confirmCancelIds?.length ?? 0) })}
               </span>
             )}
           </p>
           <DialogFooter className="gap-2 mt-2">
             <Button variant="outline" size="sm" onClick={() => { setConfirmCancelIds(null); setCancelReason(''); }} disabled={bulkCancelMutation.isPending}>
-              Không
+              {t('confirmations.no')}
             </Button>
             <Button
               variant="destructive" size="sm"
@@ -787,7 +789,7 @@ export default function BookingsPage() {
               onClick={() => confirmCancelIds && bulkCancelMutation.mutate(confirmCancelIds)}
             >
               {bulkCancelMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
-              Xác nhận hủy
+              {t('confirmations.yes')}
             </Button>
           </DialogFooter>
         </DialogContent>

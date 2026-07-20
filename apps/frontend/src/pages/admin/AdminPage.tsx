@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, spacesApi, tenantsApi, brandingApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,15 +57,16 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
   open: boolean; title: string; message: string;
   onConfirm: () => void; onCancel: () => void; loading?: boolean;
 }) {
+  const { t } = useTranslation('admin');
   return (
     <Dialog open={open} onOpenChange={onCancel}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={18} className="text-red-500" />{title}</DialogTitle></DialogHeader>
         <p className="text-sm text-gray-600">{message}</p>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={onCancel}>Hủy</Button>
+          <Button variant="outline" onClick={onCancel}>{t('confirm.cancel')}</Button>
           <Button variant="destructive" onClick={onConfirm} disabled={loading}>
-            {loading ? <RefreshCw size={14} className="animate-spin mr-1" /> : null} Xác nhận xóa
+            {loading ? <RefreshCw size={14} className="animate-spin mr-1" /> : null} {t('confirm.confirm')}
           </Button>
         </div>
       </DialogContent>
@@ -77,6 +79,7 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation('admin');
   const { register, handleSubmit, reset, watch } = useForm();
   const [showResetPwd, setShowResetPwd] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -91,26 +94,26 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => usersApi.updateUser(user!.id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Đã cập nhật tài khoản' }); onClose(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.updated') }); onClose(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const toggleMutation = useMutation({
     mutationFn: () => usersApi.updateUser(user!.id, { isActive: !user!.isActive }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: user?.isActive ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' }); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể đổi trạng thái tài khoản', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: user?.isActive ? t('users.toast.locked') : t('users.toast.unlocked') }); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('users.toast.cannotToggle'), variant: 'destructive' }),
   });
 
   const resetPwdMutation = useMutation({
     mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
-    onSuccess: () => { toast({ title: 'Đã đổi mật khẩu thành công' }); setShowResetPwd(false); reset(); },
+    onSuccess: () => { toast({ title: t('users.toast.passwordReset') }); setShowResetPwd(false); reset(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => usersApi.deleteUser(user!.id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Đã xóa tài khoản' }); setConfirmDelete(false); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xóa tài khoản', variant: 'destructive' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.deleted') }); setConfirmDelete(false); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('users.toast.cannotDelete'), variant: 'destructive' }),
   });
 
   const role = user ? ROLE_MAP[user.role] : null;
@@ -123,66 +126,66 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
             <div className="flex items-center gap-2">
               {role && <Badge className={`${role.color} border-0`}>{role.label}</Badge>}
               <Badge className={user.isActive ? 'bg-green-100 text-green-700 border-0' : 'bg-gray-100 text-gray-500 border-0'}>
-                {user.isActive ? 'Hoạt động' : 'Đã khóa'}
+                {user.isActive ? t('users.active') : t('users.locked')}
               </Badge>
             </div>
 
-            <SheetSection label="THÔNG TIN" className="bg-gray-50">
+            <SheetSection label={t('users.info')} className="bg-gray-50">
               <SheetRow label="Email" value={user.email} icon={Mail} />
-              <SheetRow label="Điện thoại" value={user.phone} icon={Phone} />
-              <SheetRow label="Phòng ban" value={user.department} icon={Briefcase} />
+              <SheetRow label={t('users.fields.phone')} value={user.phone} icon={Phone} />
+              <SheetRow label={t('users.fields.department')} value={user.department} icon={Briefcase} />
             </SheetSection>
 
             {/* Edit form */}
             <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-3 bg-gray-50 rounded-xl p-4">
-              <div className="text-xs font-semibold tracking-wider text-gray-500 mb-2">CHỈNH SỬA</div>
+              <div className="text-xs font-semibold tracking-wider text-gray-500 mb-2">{t('users.editSection')}</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Họ tên</Label>
+                  <Label className="text-xs">{t('users.fields.fullName')}</Label>
                   <Input defaultValue={user.fullName} {...register('fullName')} className="mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs">Điện thoại</Label>
+                  <Label className="text-xs">{t('users.fields.phone')}</Label>
                   <Input defaultValue={user.phone ?? ''} {...register('phone')} className="mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs">Phòng ban</Label>
+                  <Label className="text-xs">{t('users.fields.department')}</Label>
                   <Input defaultValue={user.department ?? ''} {...register('department')} className="mt-1" />
                 </div>
                 <div>
-                  <Label className="text-xs">Vai trò</Label>
+                  <Label className="text-xs">{t('users.fields.role')}</Label>
                   <select defaultValue={user.role} {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
                     {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
                   </select>
                 </div>
                 {selectedRole === 'TENANT' && (
                   <div className="col-span-2">
-                    <Label className="text-xs">Khách thuê liên kết</Label>
+                    <Label className="text-xs">{t('users.linkedTenant')}</Label>
                     <select defaultValue={user.tenantId ?? ''} {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                      <option value="">— Chưa liên kết —</option>
-                      {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
+                      <option value="">{t('users.noLinked')}</option>
+                      {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
                     </select>
                   </div>
                 )}
               </div>
               <Button type="submit" size="sm" className="w-full" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
+                {updateMutation.isPending ? t('users.saving') : t('users.saveChanges')}
               </Button>
             </form>
 
             {/* Password reset */}
             {showResetPwd ? (
               <form onSubmit={handleSubmit((d) => resetPwdMutation.mutate(d))} className="space-y-2 bg-amber-50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-amber-600 mb-2">ĐỔI MẬT KHẨU</div>
-                <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder="Mật khẩu mới (tối thiểu 8 ký tự)" />
+                <div className="text-xs font-semibold text-amber-600 mb-2">{t('users.resetPassword')}</div>
+                <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder={t('users.newPasswordPlaceholder')} />
                 <div className="flex gap-2">
-                  <Button size="sm" type="submit" disabled={resetPwdMutation.isPending} className="flex-1">Đặt lại</Button>
-                  <Button size="sm" type="button" variant="outline" onClick={() => { setShowResetPwd(false); reset(); }}>Hủy</Button>
+                  <Button size="sm" type="submit" disabled={resetPwdMutation.isPending} className="flex-1">{t('users.resetBtn')}</Button>
+                  <Button size="sm" type="button" variant="outline" onClick={() => { setShowResetPwd(false); reset(); }}>{t('confirm.cancel')}</Button>
                 </div>
               </form>
             ) : (
               <Button variant="outline" className="w-full gap-2" size="sm" onClick={() => setShowResetPwd(true)}>
-                <KeyRound size={14} /> Đặt lại mật khẩu
+                <KeyRound size={14} /> {t('users.resetPasswordBtn')}
               </Button>
             )}
 
@@ -194,14 +197,14 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
                 onClick={() => toggleMutation.mutate()}
                 disabled={toggleMutation.isPending}
               >
-                {user.isActive ? <><Lock size={14} /> Khóa tài khoản</> : <><Unlock size={14} /> Mở khóa</>}
+                {user.isActive ? <><Lock size={14} /> {t('users.lockAccount')}</> : <><Unlock size={14} /> {t('users.unlockAccount')}</>}
               </Button>
               <Button
                 variant="outline"
                 className="w-full gap-2 text-red-500 border-red-200 hover:bg-red-50"
                 onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 size={14} /> Xóa tài khoản
+                <Trash2 size={14} /> {t('users.deleteAccount')}
               </Button>
             </div>
           </div>
@@ -210,8 +213,8 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Xóa tài khoản"
-        message={`Bạn có chắc muốn xóa tài khoản "${user?.fullName}"? Hành động này không thể hoàn tác.`}
+        title={t('users.confirmDelete')}
+        message={t('users.confirmDeleteMessage', { name: user?.fullName })}
         onConfirm={() => deleteMutation.mutate()}
         onCancel={() => setConfirmDelete(false)}
         loading={deleteMutation.isPending}
@@ -223,6 +226,7 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation('admin');
   const { register, handleSubmit, reset, watch } = useForm();
   const selectedRole = watch('role', ROLE_KEYS[0]);
 
@@ -235,40 +239,40 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
   const mutation = useMutation({
     mutationFn: (data: any) => usersApi.createUser(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Tạo tài khoản thành công' }); reset(); onClose(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.created') }); reset(); onClose(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Tạo tài khoản mới</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('users.createNew')}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Họ tên *</Label><Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" /></div>
-            <div><Label>Email *</Label><Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" /></div>
-            <div><Label>Mật khẩu *</Label><Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder="Tối thiểu 8 ký tự" className="mt-1" /></div>
+            <div><Label>{t('users.fields.fullNameRequired')}</Label><Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" /></div>
+            <div><Label>{t('users.fields.emailRequired')}</Label><Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" /></div>
+            <div><Label>{t('users.fields.password')}</Label><Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1" /></div>
             <div>
-              <Label>Vai trò</Label>
+              <Label>{t('users.fields.role')}</Label>
               <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
                 {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
               </select>
             </div>
-            <div><Label>Điện thoại</Label><Input {...register('phone')} placeholder="0901234567" className="mt-1" /></div>
-            <div><Label>Phòng ban</Label><Input {...register('department')} placeholder="Leasing" className="mt-1" /></div>
+            <div><Label>{t('users.fields.phone')}</Label><Input {...register('phone')} placeholder="0901234567" className="mt-1" /></div>
+            <div><Label>{t('users.fields.department')}</Label><Input {...register('department')} placeholder="Leasing" className="mt-1" /></div>
             {selectedRole === 'TENANT' && (
               <div className="col-span-2">
-                <Label>Khách thuê liên kết</Label>
+                <Label>{t('users.linkedTenant')}</Label>
                 <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                  <option value="">— Chưa liên kết —</option>
-                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
+                  <option value="">{t('users.noLinked')}</option>
+                  {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
                 </select>
               </div>
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>Tạo tài khoản</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t('confirm.cancel')}</Button>
+            <Button type="submit" disabled={mutation.isPending}>{t('users.create')}</Button>
           </div>
         </form>
       </DialogContent>
@@ -659,7 +663,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
   const { register, handleSubmit, reset } = useForm();
 
   useEffect(() => {
-    if (open) reset(mall ?? { name: '', code: '', address: '', city: '', totalArea: '', description: '' });
+    if (open) reset(mall ? { name: mall.name, code: mall.code, address: mall.address, city: mall.city, totalArea: mall.totalArea, description: mall.description } : { name: '', code: '', address: '', city: '', totalArea: '', description: '' });
   }, [open, mall]);
 
   const mutation = useMutation({
@@ -1001,7 +1005,7 @@ function SpaceStructureTab() {
   const zones: any[] = zonesData?.data ?? zonesData ?? [];
 
   const createFloorMutation = useMutation({
-    mutationFn: (d: any) => spacesApi.createFloor({ mallId: selectedMallId, ...d }),
+    mutationFn: (d: any) => spacesApi.createFloor({ mallId: selectedMallId, ...d, sortOrder: Number(d.sortOrder) || 0 }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['floors', selectedMallId] }); toast({ title: 'Đã tạo tầng' }); setShowAddFloor(false); reset(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
