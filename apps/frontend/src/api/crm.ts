@@ -8,8 +8,8 @@ export const crmApi = {
   updateLead: (id: string, data: Record<string, unknown>) =>
     api.put(`/crm/leads/${id}`, data).then((r) => r.data),
   deleteLead: (id: string) => api.delete(`/crm/leads/${id}`).then((r) => r.data),
-  pipeline: (limit?: number) => api.get('/crm/pipeline', { params: limit ? { limit } : undefined }).then((r) => r.data),
-  stats: () => api.get('/crm/stats').then((r) => r.data),
+  pipeline: (limit?: number, mallId?: string) => api.get('/crm/pipeline', { params: { limit, mallId } }).then((r) => r.data),
+  stats: (mallId?: string) => api.get('/crm/stats', { params: { mallId } }).then((r) => r.data),
   getLead: (id: string) => api.get(`/crm/leads/${id}`).then((r) => r.data),
   getLeadTimeline: (id: string) => api.get(`/crm/leads/${id}/timeline`).then((r) => r.data),
   getDeals: (params?: Record<string, unknown>) =>
@@ -20,8 +20,8 @@ export const crmApi = {
     api.put(`/crm/leads/${id}/move`, { status, position }).then((r) => r.data),
   bulkAction: (action: string, leadIds: string[], data?: Record<string, unknown>) =>
     api.post('/crm/leads/bulk', { action, leadIds, data }).then((r) => r.data),
-  pipelineStats: () => api.get('/crm/pipeline/stats').then((r) => r.data),
-  staleLeads: (days?: number) => api.get('/crm/stale-leads', { params: days ? { days } : undefined }).then((r) => r.data),
+  pipelineStats: (mallId?: string) => api.get('/crm/pipeline/stats', { params: { mallId } }).then((r) => r.data),
+  staleLeads: (days?: number, mallId?: string) => api.get('/crm/stale-leads', { params: { days, mallId } }).then((r) => r.data),
   autoMoveStale: (days?: number) => api.post('/crm/leads/auto-move-stale', null, { params: days ? { days } : undefined }).then((r) => r.data),
   autoAssign: (id: string) => api.post(`/crm/leads/${id}/auto-assign`).then((r) => r.data),
   autoFollowUp: (id: string, daysFromNow?: number, note?: string) =>

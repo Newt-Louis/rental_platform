@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -7,12 +7,17 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 export class TenantsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: PaginationDto & { category?: string }) {
+  async findAll(query: PaginationDto & { category?: string; mallIds?: string[] }) {
     const { page = 1, limit = 20, search, category } = query;
     const skip = (+page - 1) * +limit;
 
     const where: any = { isActive: true, deletedAt: null };
     if (category) where.category = category;
+    if (query.mallIds) where.AND = [{ OR: [
+      { contracts: { some: { isActive: true, unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } } },
+      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } } },
+      { occupiedUnits: { some: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } },
+    ] }];
     if (search) {
       where.OR = [
         { brandName: { contains: search, mode: 'insensitive' } },
@@ -22,7 +27,7 @@ export class TenantsService {
       ];
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, activeCount] = await Promise.all([
       this.prisma.tenant.findMany({
         where,
         skip,
@@ -35,9 +40,12 @@ export class TenantsService {
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.tenant.count({ where }),
+      this.prisma.tenant.count({
+        where: { AND: [where, { contracts: { some: { isActive: true, status: 'ACTIVE' } } }] },
+      }),
     ]);
 
-    return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
+    return { data, total, activeCount, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
   async findOne(id: string) {
@@ -94,6 +102,10 @@ export class TenantsService {
 
   async remove(id: string) {
     await this.findOne(id);
+    const activeContracts = await this.prisma.contract.count({
+      where: { tenantId: id, isActive: true, deletedAt: null, status: { notIn: ['EXPIRED', 'TERMINATED'] } },
+    });
+    if (activeContracts > 0) throw new BadRequestException('Cannot delete a tenant with active contracts');
     await this.prisma.tenant.update({
       where: { id },
       data: { isActive: false, deletedAt: new Date() },

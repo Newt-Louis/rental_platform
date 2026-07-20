@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
 import {
   Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
-  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, Globe,
+  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
   SquareStack, Info, GitBranch, ExternalLink,
 } from 'lucide-react';
@@ -98,6 +98,7 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
   const toggleMutation = useMutation({
     mutationFn: () => usersApi.updateUser(user!.id, { isActive: !user!.isActive }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: user?.isActive ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' }); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể đổi trạng thái tài khoản', variant: 'destructive' }),
   });
 
   const resetPwdMutation = useMutation({
@@ -109,6 +110,7 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
   const deleteMutation = useMutation({
     mutationFn: () => usersApi.deleteUser(user!.id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Đã xóa tài khoản' }); setConfirmDelete(false); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xóa tài khoản', variant: 'destructive' }),
   });
 
   const role = user ? ROLE_MAP[user.role] : null;
@@ -1140,11 +1142,13 @@ function BrandingCard() {
   const removeLogoMutation = useMutation({
     mutationFn: brandingApi.removeLogo,
     onSuccess: () => { invalidate(); toast({ title: 'Đã xoá logo' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xoá logo', variant: 'destructive' }),
   });
 
   const removeBgMutation = useMutation({
     mutationFn: brandingApi.removeBackground,
     onSuccess: () => { invalidate(); toast({ title: 'Đã xoá ảnh nền' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xoá ảnh nền', variant: 'destructive' }),
   });
 
   return (
@@ -1218,140 +1222,6 @@ function BrandingCard() {
   );
 }
 
-// ─── Tab 5: System Settings ───────────────────────────────────────────────────
-
-function SystemTab() {
-  const { toast } = useToast();
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-
-  const { data: healthData } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => fetch('/api/health').then((r) => r.json()),
-    refetchInterval: 30000,
-  });
-
-  const configItems = [
-    {
-      label: 'ANTHROPIC_API_KEY',
-      desc: 'Khóa API để dùng Claude Vision phân tích bản vẽ sơ đồ thực tế',
-      status: 'Chưa cấu hình — đang dùng chế độ Demo',
-      statusColor: 'text-amber-600',
-      action: (
-        <div className="mt-2 flex gap-2">
-          <Input
-            type={showKey ? 'text' : 'password'}
-            value={anthropicKey}
-            onChange={(e) => setAnthropicKey(e.target.value)}
-            placeholder="sk-ant-api03-..."
-            className="flex-1 text-xs"
-          />
-          <Button size="sm" variant="outline" onClick={() => setShowKey(!showKey)} className="shrink-0 px-2">
-            {showKey ? '🙈' : '👁'}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              toast({ title: 'Lưu ý: Cần thêm vào file .env và rebuild Docker backend để có hiệu lực', });
-              setAnthropicKey('');
-            }}
-            disabled={!anthropicKey}
-          >
-            Lưu
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const systemInfo = [
-    { label: 'Backend', value: 'NestJS 10 + Prisma 5', icon: <Globe size={14} /> },
-    { label: 'Database', value: 'PostgreSQL 16', icon: <Globe size={14} /> },
-    { label: 'Frontend', value: 'React 18 + Vite + TailwindCSS', icon: <Globe size={14} /> },
-    { label: 'AI Model', value: 'Claude claude-sonnet-4-6 (Anthropic)', icon: <Globe size={14} /> },
-    { label: 'Auth', value: 'JWT Bearer Token (7 ngày)', icon: <Shield size={14} /> },
-    { label: 'Approval Flow', value: '≤5% → Manager | ≤10% → Manager+Director | >10% → +CEO', icon: <CheckCircle size={14} /> },
-  ];
-
-  return (
-    <div className="space-y-5">
-      <BrandingCard />
-
-      {/* Server health */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className={`w-2 h-2 rounded-full ${healthData ? 'bg-green-500' : 'bg-gray-300'}`} />
-          <h3 className="font-semibold text-gray-900 text-sm">Trạng thái hệ thống</h3>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {['Backend API', 'Database', 'Frontend'].map((s, i) => (
-            <div key={i} className="flex items-center gap-2 p-2.5 bg-green-50 rounded-lg">
-              <CheckCircle size={14} className="text-green-500" />
-              <span className="text-xs text-green-700">{s}: Online</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* API Configuration */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Cấu hình API</h3>
-        {configItems.map((item, i) => (
-          <div key={i} className="p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs font-mono font-bold text-gray-800">{item.label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{item.desc}</div>
-                <div className={`text-xs font-medium mt-1 ${item.statusColor}`}>{item.status}</div>
-              </div>
-            </div>
-            {item.action}
-          </div>
-        ))}
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-2">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-          <span>Để áp dụng thay đổi API key: thêm vào <code className="font-mono">apps/backend/.env</code> rồi chạy <code className="font-mono">docker compose up -d --build backend</code></span>
-        </div>
-      </div>
-
-      {/* System info */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Thông tin hệ thống</h3>
-        <div className="space-y-2">
-          {systemInfo.map((info, i) => (
-            <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-              <span className="text-gray-400">{info.icon}</span>
-              <span className="text-xs text-gray-500 w-32 shrink-0">{info.label}</span>
-              <span className="text-xs text-gray-800 font-medium">{info.value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Approval thresholds */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Cấu hình phê duyệt Proposal</h3>
-        <div className="space-y-2">
-          {[
-            { range: 'Discount ≤ 5%', path: 'Leasing Manager', color: 'bg-gray-50 text-gray-700' },
-            { range: 'Discount 5–10%', path: 'Leasing Manager → Mall Director', color: 'bg-yellow-50 text-yellow-700' },
-            { range: 'Discount > 10% hoặc Rent-Free > 60 ngày', path: 'Leasing Manager → Mall Director → CEO', color: 'bg-red-50 text-red-700' },
-            { range: 'Mọi proposal', path: '+ Finance + Legal (song song)', color: 'bg-purple-50 text-purple-700' },
-          ].map((a, i) => (
-            <div key={i} className={`flex items-start gap-2 p-2.5 rounded-lg ${a.color}`}>
-              <ChevronRight size={12} className="mt-0.5 shrink-0" />
-              <div>
-                <div className="text-xs font-medium">{a.range}</div>
-                <div className="text-xs opacity-70">→ {a.path}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main AdminPage ────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -1364,6 +1234,17 @@ const TABS = [
   { id: 'approval',    label: 'Approval Policy',    icon: GitBranch },
   { id: 'system',      label: 'Hệ thống',           icon: Settings },
 ];
+
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  users: 'Quản lý vòng đời tài khoản và trạng thái truy cập hệ thống.',
+  malls: 'Thiết lập danh mục Mall và thông tin vận hành nền tảng.',
+  'mall-access': 'Kiểm soát phạm vi dữ liệu Mall theo từng người dùng.',
+  structure: 'Chuẩn hóa Block, tầng và cấu trúc mặt bằng cho toàn hệ thống.',
+  categories: 'Quản trị ngành hàng, đơn giá và danh mục kinh doanh dùng chung.',
+  permissions: 'Thiết kế quyền theo vai trò và nguyên tắc kiểm soát tối thiểu.',
+  approval: 'Cấu hình luồng phê duyệt, cấp duyệt và ngưỡng nghiệp vụ.',
+  system: 'Quản lý nhận diện thương hiệu và cấu hình vận hành nền tảng.',
+};
 
 const TAB_GROUPS = [
   { label: 'Người dùng & truy cập', ids: ['users', 'mall-access', 'permissions'] },
@@ -1386,18 +1267,16 @@ export default function AdminPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-slate-900 p-2.5 rounded-xl">
-          <Settings size={20} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cấu hình Hệ thống</h1>
-          <p className="text-sm text-gray-500">Quản lý tài khoản, mall, không gian và phân quyền</p>
-        </div>
-        <div className="ml-auto">
-          <Badge className="bg-red-100 text-red-700 border-0 px-3 py-1">
-            <Shield size={12} className="mr-1.5" /> Super Admin
-          </Badge>
+      <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-xl">
+        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="relative flex items-center gap-3">
+          <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/15"><Settings size={22} /></div>
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200">ERP Control Center</div>
+            <h1 className="text-2xl font-bold">Cấu hình Hệ thống</h1>
+            <p className="mt-1 text-sm text-slate-300">Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.</p>
+          </div>
+          <div className="ml-auto hidden sm:block"><Badge className="border border-rose-300/20 bg-rose-400/15 px-3 py-1 text-rose-100"><Shield size={12} className="mr-1.5" /> Super Admin · Toàn quyền</Badge></div>
         </div>
       </div>
 
@@ -1437,6 +1316,11 @@ export default function AdminPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</p>
+        <p className="mt-0.5 text-xs text-slate-600">{TAB_DESCRIPTIONS[activeTab]}</p>
       </div>
 
       {/* Tab content */}

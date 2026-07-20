@@ -11,6 +11,10 @@ describe('MallAccessService resource resolution', () => {
     fitoutSubmittal: { findUnique: jest.fn() },
     fitoutIssue: { findUnique: jest.fn() },
     invoice: { findUnique: jest.fn() },
+    unitBooking: { findUnique: jest.fn() },
+    unitSlot: { findUnique: jest.fn() },
+    slotBooking: { findUnique: jest.fn() },
+    slotPricingRule: { findUnique: jest.fn() },
   };
   let service: MallAccessService;
 
@@ -24,6 +28,10 @@ describe('MallAccessService resource resolution', () => {
     ['fitoutSubmittalId', 'fitoutSubmittal'],
     ['fitoutIssueId', 'fitoutIssue'],
     ['invoiceId', 'invoice'],
+    ['bookingId', 'unitBooking'],
+    ['slotId', 'unitSlot'],
+    ['slotBookingId', 'slotBooking'],
+    ['slotPricingRuleId', 'slotPricingRule'],
   ])('enforces mall access resolved from %s', async (source, repository) => {
     const relation = repository === 'fitoutProject'
       ? { unit: { mallId: 'mall-1', floor: null } }
@@ -31,7 +39,11 @@ describe('MallAccessService resource resolution', () => {
         ? { project: { unit: { mallId: 'mall-1', floor: null } } }
         : repository === 'fitoutIssue'
           ? { unit: { mallId: 'mall-1', floor: null } }
-          : { contract: { unit: { mallId: 'mall-1', floor: null } } };
+      : repository === 'invoice'
+        ? { contract: { unit: { mallId: 'mall-1', floor: null } } }
+        : repository === 'slotBooking' || repository === 'slotPricingRule'
+          ? { slot: { unit: { mallId: 'mall-1', floor: null } } }
+          : { unit: { mallId: 'mall-1', floor: null } };
     (prisma as any)[repository].findUnique.mockResolvedValue(relation);
     prisma.userMallAccess.findFirst.mockResolvedValue(null);
 

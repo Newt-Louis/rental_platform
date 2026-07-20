@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../common/services/redis.service';
+import { MallAccessService } from '../../common/services/mall-access.service';
 import {
   ContractStatus,
   InvoiceStatus,
@@ -18,6 +19,7 @@ const LEASING_ROLES = new Set([
 const FINANCE_ROLES = new Set(['FINANCE', 'ADMIN']);
 
 const OPERATION_ROLES = new Set(['OPERATION', 'ADMIN']);
+const OVERVIEW_ROLES = new Set(['ADMIN', 'CEO', 'MALL_DIRECTOR']);
 
 const DASHBOARD_CACHE_TTL = 60;
 
@@ -26,14 +28,22 @@ export class DashboardService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private mallAccess: MallAccessService,
   ) {}
 
-  private mallUnitFilter(mallId?: string) {
-    return mallId ? { floor: { mallId } } : {};
+  private unitMallFilter(mallIds: string[] | null) {
+    if (mallIds === null) return {};
+    return {
+      OR: [
+        { mallId: { in: mallIds } },
+        { floor: { mallId: { in: mallIds } } },
+      ],
+    };
   }
 
   private focusAreasForRole(role?: string): string[] {
     if (!role) return ['overview'];
+    if (OVERVIEW_ROLES.has(role)) return ['overview'];
     if (FINANCE_ROLES.has(role)) return ['billing', 'sales', 'contracts'];
     if (OPERATION_ROLES.has(role)) return ['tickets', 'fitout'];
     if (LEASING_ROLES.has(role)) return ['occupancy', 'booking', 'approvals', 'pipeline'];
@@ -41,19 +51,61 @@ export class DashboardService {
     return ['overview'];
   }
 
-  async getDashboard(mallId?: string, role?: string) {
-    const cacheKey = `dashboard:v1:${mallId ?? 'all'}:${role ?? 'all'}`;
+  private shapeForRole(data: Record<string, any>, role?: string) {
+    if (!role || OVERVIEW_ROLES.has(role)) return data;
+    const base = { mallId: data.mallId, focusAreas: data.focusAreas };
+    if (role === 'FINANCE') return {
+      ...base,
+      totalTenants: data.totalTenants,
+      monthlyRevenue: data.monthlyRevenue,
+      collectedRevenue: data.collectedRevenue,
+      overdueAmount: data.overdueAmount,
+      overdueCount: data.overdueCount,
+      expiringIn30: data.expiringIn30,
+      expiringIn90: data.expiringIn90,
+    };
+    if (role === 'OPERATION') return { ...base, openTickets: data.openTickets };
+    if (role === 'LEGAL') return {
+      ...base,
+      expiringIn30: data.expiringIn30,
+      expiringIn90: data.expiringIn90,
+      pendingApprovals: data.pendingApprovals,
+    };
+    return {
+      ...base,
+      occupancyRate: data.occupancyRate,
+      totalArea: data.totalArea,
+      vacantArea: data.vacantArea,
+      leasedArea: data.leasedArea,
+      totalTenants: data.totalTenants,
+      expiringIn30: data.expiringIn30,
+      expiringIn90: data.expiringIn90,
+      pendingApprovals: data.pendingApprovals,
+      bookingStats: data.bookingStats,
+    };
+  }
+
+  async getDashboard(mallId?: string, user?: { id: string; role: string }) {
+    const role = user?.role;
+    let mallIds: string[] | null = mallId ? [mallId] : null;
+    if (user) {
+      if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+      else mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    }
+
+    const scopeKey = mallId ?? (mallIds === null ? 'all' : `user:${user?.id ?? 'none'}`);
+    const cacheKey = `dashboard:v2:${scopeKey}:${role ?? 'all'}`;
     const cached = await this.redis.getJson<Awaited<ReturnType<DashboardService['buildDashboard']>>>(cacheKey);
     if (cached) {
       return { ...cached, fromCache: true };
     }
 
-    const result = await this.buildDashboard(mallId, role);
+    const result = this.shapeForRole(await this.buildDashboard(mallIds, mallId, role), role);
     await this.redis.setJson(cacheKey, result, DASHBOARD_CACHE_TTL);
     return result;
   }
 
-  private async buildDashboard(mallId?: string, role?: string) {
+  private async buildDashboard(mallIds: string[] | null, mallId?: string, role?: string) {
     const today = new Date();
     const in30 = new Date(today);
     in30.setDate(in30.getDate() + 30);
@@ -61,10 +113,9 @@ export class DashboardService {
     in90.setDate(in90.getDate() + 90);
 
     const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const unitWhere = { isActive: true, ...this.mallUnitFilter(mallId) };
-    const contractMallWhere = mallId
-      ? { unit: { floor: { mallId } } }
-      : {};
+    const unitScope = this.unitMallFilter(mallIds);
+    const unitWhere = { isActive: true, ...unitScope };
+    const relationScope = mallIds === null ? {} : { unit: unitScope };
 
     const [
       units,
@@ -75,6 +126,9 @@ export class DashboardService {
       monthInvoices,
       overdueInvoices,
       tenantCount,
+      activeBookings,
+      pendingBookings,
+      expiringBookings,
     ] = await Promise.all([
       this.prisma.unit.findMany({
         where: unitWhere,
@@ -84,54 +138,55 @@ export class DashboardService {
         where: {
           isActive: true,
           status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
-          endDate: { lte: in30 },
-          ...contractMallWhere,
+          endDate: { gte: today, lte: in30 },
+          ...relationScope,
         },
       }),
       this.prisma.contract.count({
         where: {
           isActive: true,
           status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
-          endDate: { lte: in90 },
-          ...contractMallWhere,
+          endDate: { gte: today, lte: in90 },
+          ...relationScope,
         },
       }),
       this.prisma.approvalWorkflow.count({
         where: {
           status: WorkflowStatus.IN_PROGRESS,
-          ...(mallId
-            ? { proposal: { unit: { floor: { mallId } } } }
-            : {}),
+          ...(mallIds === null ? {} : { proposal: { unit: unitScope } }),
         },
       }),
       this.prisma.ticket.count({
         where: {
           isActive: true,
           status: { notIn: [TicketStatus.CLOSED, TicketStatus.RESOLVED] },
-          ...(mallId ? { unit: { floor: { mallId } } } : {}),
+          ...relationScope,
         },
       }),
       this.prisma.invoice.findMany({
         where: {
           isActive: true,
           period: currentMonth,
-          ...(mallId
-            ? { contract: { unit: { floor: { mallId } } } }
-            : {}),
+          ...(mallIds === null ? {} : { contract: { unit: unitScope } }),
         },
-        select: { totalAmount: true, status: true },
+        select: {
+          totalAmount: true,
+          status: true,
+          payments: { where: { reversedAt: null }, select: { amount: true } },
+        },
       }),
       this.prisma.invoice.findMany({
         where: {
           isActive: true,
           status: InvoiceStatus.OVERDUE,
-          ...(mallId
-            ? { contract: { unit: { floor: { mallId } } } }
-            : {}),
+          ...(mallIds === null ? {} : { contract: { unit: unitScope } }),
         },
-        select: { totalAmount: true },
+        select: {
+          totalAmount: true,
+          payments: { where: { reversedAt: null }, select: { amount: true } },
+        },
       }),
-      mallId
+      mallIds !== null
         ? this.prisma.tenant.count({
             where: {
               isActive: true,
@@ -140,12 +195,26 @@ export class DashboardService {
                 some: {
                   isActive: true,
                   status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
-                  unit: { floor: { mallId } },
+                  unit: unitScope,
                 },
               },
             },
           })
         : this.prisma.tenant.count({ where: { isActive: true, deletedAt: null } }),
+      this.prisma.unitBooking.count({
+        where: { isActive: true, status: 'ACTIVE', ...relationScope },
+      }),
+      this.prisma.unitBooking.count({
+        where: { isActive: true, status: 'PENDING', ...relationScope },
+      }),
+      this.prisma.unitBooking.count({
+        where: {
+          isActive: true,
+          status: 'ACTIVE',
+          expiresAt: { gte: today, lte: new Date(today.getTime() + 7 * 86400000) },
+          ...relationScope,
+        },
+      }),
     ]);
 
     const totalArea = units.reduce((s, u) => s + u.areaNLA, 0);
@@ -154,10 +223,14 @@ export class DashboardService {
     const occupancyRate = totalArea > 0 ? (leasedArea / totalArea) * 100 : 0;
 
     const monthlyRevenue = monthInvoices.reduce((s, i) => s + i.totalAmount, 0);
-    const collectedRevenue = monthInvoices
-      .filter((i) => i.status === 'PAID' || i.status === 'PARTIALLY_PAID')
-      .reduce((s, i) => s + i.totalAmount, 0);
-    const overdueAmount = overdueInvoices.reduce((s, i) => s + i.totalAmount, 0);
+    const collectedRevenue = monthInvoices.reduce(
+      (sum, invoice) => sum + invoice.payments.reduce((paid, payment) => paid + payment.amount, 0),
+      0,
+    );
+    const overdueAmount = overdueInvoices.reduce((sum, invoice) => {
+      const paid = invoice.payments.reduce((value, payment) => value + payment.amount, 0);
+      return sum + Math.max(0, invoice.totalAmount - paid);
+    }, 0);
 
     return {
       mallId: mallId ?? null,
@@ -175,6 +248,11 @@ export class DashboardService {
       expiringIn90,
       pendingApprovals,
       openTickets,
+      bookingStats: {
+        active: activeBookings,
+        pending: pendingBookings,
+        expiringSoon: expiringBookings,
+      },
     };
   }
 

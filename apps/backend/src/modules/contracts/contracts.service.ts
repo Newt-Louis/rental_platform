@@ -74,6 +74,7 @@ export class ContractsService {
     startDateTo?: string;
     page?: number;
     limit?: number;
+    mallIds?: string[];
   }, currentUser?: CurrentUser) {
     const { search, ...filters } = query;
     const page = Math.max(1, +query.page || 1);
@@ -90,6 +91,10 @@ export class ContractsService {
       where.tenantId = filters.tenantId;
     }
     if (filters.unitId) where.unitId = filters.unitId;
+    if (query.mallIds) where.AND = [{ OR: [
+      { unit: { mallId: { in: query.mallIds } } },
+      { unit: { floor: { mallId: { in: query.mallIds } } } },
+    ] }];
     if (query.startDateFrom || query.startDateTo) {
       where.startDate = {};
       if (query.startDateFrom) where.startDate.gte = new Date(query.startDateFrom);
@@ -309,7 +314,7 @@ export class ContractsService {
     return updated;
   }
 
-  async getExpiring(days = 90) {
+  async getExpiring(days = 90, mallIds?: string[]) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + days);
 
@@ -318,6 +323,10 @@ export class ContractsService {
         isActive: true,
         status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
         endDate: { lte: cutoff },
+        ...(mallIds ? { OR: [
+          { unit: { mallId: { in: mallIds } } },
+          { unit: { floor: { mallId: { in: mallIds } } } },
+        ] } : {}),
       },
       include: {
         tenant: { select: { id: true, brandName: true, contactEmail: true, contactPhone: true } },

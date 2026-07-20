@@ -45,15 +45,26 @@ export class ApprovalsService {
     private outbox: OutboxService,
   ) {}
 
-  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number } = {}) {
+  private workflowMallScope(mallIds?: string[]) {
+    if (!mallIds) return {};
+    return { OR: [
+      { proposal: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } },
+      { fitoutSubmittal: { project: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+    ] };
+  }
+
+  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number } = {}, mallIds?: string[]) {
     const { page = 1, limit = 15 } = query;
 
     const where: any = {
       status: StepStatus.PENDING,
-      workflow: { status: WorkflowStatus.IN_PROGRESS },
+      workflow: { status: WorkflowStatus.IN_PROGRESS, ...this.workflowMallScope(mallIds) },
     };
     if (userRole !== 'ADMIN') {
-      where.approverRole = userRole as any;
+      where.OR = [
+        { approverId: userId },
+        { approverId: null, approverRole: userRole as any },
+      ];
     }
 
     const steps = await this.prisma.approvalStep.findMany({
@@ -93,7 +104,7 @@ export class ApprovalsService {
       include: {
         steps: {
           include: {
-            approver: { select: { id: true, fullName: true, role: true } },
+            approver: { select: { id: true, fullName: true, role: true, email: true, department: true } },
           },
           orderBy: { stepOrder: 'asc' },
         },
@@ -111,11 +122,11 @@ export class ApprovalsService {
     return workflow;
   }
 
-  async getAllWorkflows(query: { status?: WorkflowStatus; page?: number; limit?: number }) {
+  async getAllWorkflows(query: { status?: WorkflowStatus; page?: number; limit?: number }, mallIds?: string[]) {
     const { page = 1, limit = 20, status } = query;
     const skip = (page - 1) * +limit;
 
-    const where: any = {};
+    const where: any = { ...this.workflowMallScope(mallIds) };
     if (status) where.status = status;
 
     const [data, total] = await Promise.all([
@@ -175,6 +186,9 @@ export class ApprovalsService {
       }
       if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) {
         throw new ForbiddenException('Not authorized for this step');
+      }
+      if (userRole !== 'ADMIN' && step.approverId && step.approverId !== userId) {
+        throw new ForbiddenException('This approval step is assigned to another user');
       }
 
       const unapprovedEarlierStep = step.workflow.steps.find(
@@ -246,6 +260,9 @@ export class ApprovalsService {
       if (userRole !== 'ADMIN' && current.approverRole !== (userRole as any)) {
         throw new ForbiddenException('Not authorized for this step');
       }
+      if (userRole !== 'ADMIN' && current.approverId && current.approverId !== userId) {
+        throw new ForbiddenException('This approval step is assigned to another user');
+      }
 
       await tx.approvalStep.update({
         where: { id: stepId },
@@ -276,13 +293,13 @@ export class ApprovalsService {
     return { message: 'Step rejected' };
   }
 
-  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string }) {
+  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string }, mallIds?: string[]) {
     const { page = 1, limit = 25, status } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = {
       status: status ? { in: [status] } : { in: [StepStatus.APPROVED, StepStatus.REJECTED] },
-      workflow: { entityType: 'PROPOSAL' },
+      workflow: { entityType: 'PROPOSAL', ...this.workflowMallScope(mallIds) },
     };
     if (userRole !== 'ADMIN') {
       where.approverId = userId;

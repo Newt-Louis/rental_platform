@@ -41,6 +41,15 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(context)).toBe(true);
   });
 
+  it('always allows Super Admin even when endpoint metadata omits ADMIN', () => {
+    reflector.getAllAndOverride
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce([Role.TENANT]);
+    withUser({ role: Role.ADMIN });
+
+    expect(guard.canActivate(context)).toBe(true);
+  });
+
   it('denies a user without a required role', () => {
     reflector.getAllAndOverride
       .mockReturnValueOnce(false)

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { LeadStatus } from '@prisma/client';
+import { LeadStatus, Role } from '@prisma/client';
 import { CrmService } from './crm.service';
 
 describe('CrmService lead list filters', () => {
@@ -37,5 +37,28 @@ describe('CrmService lead list filters', () => {
   it('rejects ambiguous status and statuses filters', async () => {
     await expect(service.findAll({ status: LeadStatus.NEW, statuses: 'QUALIFIED' }))
       .rejects.toThrow(BadRequestException);
+  });
+
+  it('limits a leasing executive to leads assigned to that user', async () => {
+    await service.findAll({
+      scope: { userId: 'executive-1', role: Role.LEASING_EXECUTIVE, mallIds: ['mall-1'] },
+    });
+
+    expect(prisma.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        AND: [{ OR: [{ assignedToId: 'executive-1' }] }],
+      }),
+    }));
+  });
+
+  it('keeps mall scope when a search filter also adds an OR clause', async () => {
+    await service.findAll({
+      search: 'Acme',
+      scope: { userId: 'manager-1', role: Role.LEASING_MANAGER, mallIds: ['mall-1'] },
+    });
+
+    const where = prisma.lead.findMany.mock.calls[0][0].where;
+    expect(where.AND).toHaveLength(1);
+    expect(where.OR).toHaveLength(4);
   });
 });

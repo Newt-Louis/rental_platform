@@ -41,6 +41,7 @@ export function ScheduleTab() {
       qc.invalidateQueries({ queryKey: ['invoices'] });
       toast({ title: `Đã sinh ${r?.created ?? 0} hóa đơn` });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể sinh hóa đơn đến hạn', variant: 'destructive' }),
   });
 
   const entries: any[] = schedule?.data ?? schedule ?? [];
@@ -61,11 +62,11 @@ export function ScheduleTab() {
         </select>
         {contractId && (
           <Button size="sm" variant="outline" onClick={() => buildMutation.mutate()} disabled={buildMutation.isPending}>
-            <Calendar size={14} className="mr-1" /> Build schedule
+            <Calendar size={14} className="mr-1" /> Tạo lại lịch
           </Button>
         )}
         <Button size="sm" onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-          <RefreshCw size={14} className="mr-1" /> Generate due invoices
+          <RefreshCw size={14} className="mr-1" /> Sinh hóa đơn đến hạn
         </Button>
       </div>
 
@@ -114,11 +115,13 @@ export function DunningTab() {
   const runMutation = useMutation({
     mutationFn: billingApi.runDunning,
     onSuccess: (r) => toast({ title: `Dunning: ${r?.notified ?? 0} thông báo` }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể chạy nhắc nợ', variant: 'destructive' }),
   });
 
   const penaltyMutation = useMutation({
     mutationFn: billingApi.runPenalty,
     onSuccess: (r) => toast({ title: `Penalty: ${r?.created ?? 0} hóa đơn` }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tính lãi phạt', variant: 'destructive' }),
   });
 
   const list: any[] = policies?.data ?? policies ?? [];
@@ -127,10 +130,10 @@ export function DunningTab() {
     <div className="space-y-4">
       <div className="flex gap-2">
         <Button size="sm" onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-          <Bell size={14} className="mr-1" /> Chạy dunning
+          <Bell size={14} className="mr-1" /> Gửi nhắc nợ đến hạn
         </Button>
         <Button size="sm" variant="outline" onClick={() => penaltyMutation.mutate()} disabled={penaltyMutation.isPending}>
-          Tính lãi phạt
+          Tạo phí phạt quá hạn
         </Button>
       </div>
       {isLoading ? <Skeleton className="h-32" /> : (
@@ -161,7 +164,7 @@ export function CollectionKpiTab() {
     <div>
       {isLoading ? <Skeleton className="h-64" /> : (
         <>
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 gap-3 mb-6 xl:grid-cols-4">
             <Card><CardContent className="pt-4 text-center">
               <p className="text-xs text-gray-500">DSO (ngày)</p>
               <p className="text-2xl font-bold text-gray-900">{kpi.dso ?? 0}</p>

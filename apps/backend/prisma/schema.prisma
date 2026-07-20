@@ -387,6 +387,8 @@ model User {
   ticketComments         TicketComment[]
   voidedInvoices         Invoice[]                @relation("InvoiceVoidedBy")
   reversedPayments       Payment[]                @relation("PaymentReversedBy")
+  maintenanceAssigned    MaintenanceSchedule[]    @relation("MaintenanceAssignedTo")
+  maintenanceExecutions  MaintenanceExecution[]   @relation("MaintenancePerformedBy")
 
   @@index([tenantId])
 }
@@ -1953,24 +1955,51 @@ model WorkerAccessLog {
 
 // Lch bo tr nh k (preventive maintenance)
 model MaintenanceSchedule {
-  id             String    @id @default(cuid())
+  id             String                 @id @default(cuid())
   mallId         String
-  mall           Mall      @relation(fields: [mallId], references: [id])
+  mall           Mall                   @relation(fields: [mallId], references: [id])
   unitId         String?
-  unit           Unit?     @relation(fields: [unitId], references: [id])
+  unit           Unit?                  @relation(fields: [unitId], references: [id])
   title          String
   description    String?
   frequency      String // 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY'
   nextDueDate    DateTime
   lastExecutedAt DateTime?
-  assignedRole   Role      @default(OPERATION)
+  assignedRole   Role                   @default(OPERATION)
+  assignedToId   String?
+  assignedTo     User?                  @relation("MaintenanceAssignedTo", fields: [assignedToId], references: [id])
+  reminderDays   Int                    @default(3)
+  checklist      Json?
   estimatedHours Float?
-  isActive       Boolean   @default(true)
+  isActive       Boolean                @default(true)
   createdById    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  executions     MaintenanceExecution[]
 
   @@index([mallId, nextDueDate, isActive])
+  @@index([assignedToId, nextDueDate])
+}
+
+model MaintenanceExecution {
+  id              String              @id @default(cuid())
+  scheduleId      String
+  schedule        MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  dueDate         DateTime
+  status          String              @default("PLANNED")
+  startedAt       DateTime?
+  completedAt     DateTime?
+  performedById   String?
+  performedBy     User?               @relation("MaintenancePerformedBy", fields: [performedById], references: [id])
+  notes           String?
+  evidenceUrls    String[]            @default([])
+  checklistResult Json?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([scheduleId, dueDate])
+  @@index([status, dueDate])
+  @@index([performedById])
 }
 
 // nh gi satisfaction ca tenant sau khi ng ticket

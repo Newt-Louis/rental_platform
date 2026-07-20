@@ -11,6 +11,7 @@ export const salesApi = {
     api.get('/sales/top-tenants', { params: { period } }).then((r) => r.data),
   getDeadlineStatus: (period: string) =>
     api.get('/sales/deadline', { params: { period } }).then((r) => r.data),
+  getSubmissionUnits: () => api.get('/sales/submission-units').then((r) => r.data),
   getAuditTrail: (id: string) =>
     api.get(`/sales/${id}/audit`).then((r) => r.data),
   approveSales: (id: string) =>

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
+import { usePermission } from '@/hooks/usePermission';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   DRAFT:        { label: 'Draft',         color: 'bg-gray-100 text-gray-700' },
@@ -657,6 +658,9 @@ export default function ProposalsPage() {
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { role } = usePermission();
+  const canEdit = !!role && ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'].includes(role);
+  const canConvert = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
 
   // ── Bulk selection ──
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -681,7 +685,7 @@ export default function ProposalsPage() {
   function applyFilters() { setApplied({ ...draft }); setPage(1); }
   function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['proposals', applied, page],
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
@@ -693,10 +697,17 @@ export default function ProposalsPage() {
     }),
   });
 
+  const { data: statsResponse, isError: statsError, refetch: refetchStats } = useQuery({
+    queryKey: ['proposal-stats'],
+    queryFn: proposalsApi.getStats,
+  });
+  const stats = statsResponse?.data ?? statsResponse ?? {};
+
   const submitMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       toast({ title: 'Proposal đã được gửi phê duyệt' });
     },
     onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
@@ -706,6 +717,7 @@ export default function ProposalsPage() {
     mutationFn: (id: string) => proposalsApi.convertProposal(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       toast({ title: 'Đã chuyển thành hợp đồng' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
@@ -715,6 +727,7 @@ export default function ProposalsPage() {
     mutationFn: (id: string) => proposalsApi.deleteProposal(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       toast({ title: 'Đã xóa đề xuất' });
       setDeletingProposal(null);
     },
@@ -729,6 +742,7 @@ export default function ProposalsPage() {
       })),
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       setSelectedIds(new Set());
       setConfirmBulkDelete(false);
       if (fail > 0) {
@@ -748,6 +762,7 @@ export default function ProposalsPage() {
       })),
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       setSelectedIds(new Set());
       if (fail > 0) {
         toast({ title: `Đã gửi ${ok} đề xuất, ${fail} không thể gửi`, variant: 'destructive' });
@@ -775,7 +790,7 @@ export default function ProposalsPage() {
         onSelectAll={() => setSelectedIds(new Set(proposals.map((p) => p.id)))}
         onClear={() => setSelectedIds(new Set())}
       >
-        {canBulkSubmit && (
+        {canEdit && canBulkSubmit && (
           <Button
             size="sm"
             variant="ghost"
@@ -786,7 +801,7 @@ export default function ProposalsPage() {
             <Send size={14} /> Gửi phê duyệt
           </Button>
         )}
-        {canBulkDelete && (
+        {canEdit && canBulkDelete && (
           <Button
             size="sm"
             variant="ghost"
@@ -805,6 +820,21 @@ export default function ProposalsPage() {
           <p className="text-sm text-gray-500 mt-1">Quản lý đề xuất cho thuê</p>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        {[
+          { key: '', label: 'Tổng đề xuất', value: stats.total ?? 0, color: 'text-gray-900' },
+          { key: 'DRAFT', label: 'Bản nháp', value: stats.DRAFT ?? 0, color: 'text-gray-700' },
+          { key: 'SUBMITTED', label: 'Chờ phê duyệt', value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
+          { key: 'APPROVED', label: 'Đã phê duyệt', value: stats.APPROVED ?? 0, color: 'text-green-600' },
+          { key: 'CONVERTED', label: 'Đã chuyển HĐ', value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
+        ].map((item) => (
+          <Card key={item.label} className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
+            <CardContent className="p-4"><p className="text-xs text-gray-500">{item.label}</p><p className={`text-2xl font-semibold mt-1 ${item.color}`}>{item.value}</p></CardContent>
+          </Card>
+        ))}
+      </div>
+      {statsError && <button className="text-sm text-amber-700 mb-3" onClick={() => refetchStats()}>Không tải được thống kê. Thử lại</button>}
 
       {/* Filter bar */}
       <div className="flex items-center gap-2 flex-wrap mb-4">
@@ -861,10 +891,12 @@ export default function ProposalsPage() {
             <Card key={i}><CardContent className="pt-4"><Skeleton className="h-16" /></CardContent></Card>
           ))}
         </div>
+      ) : isError ? (
+        <Card><CardContent className="py-12 text-center"><AlertTriangle className="mx-auto text-amber-500 mb-2"/><p className="text-gray-600 mb-3">Không tải được danh sách đề xuất.</p><Button variant="outline" onClick={() => refetch()}>Thử lại</Button></CardContent></Card>
       ) : (
         <>
           {!selectedProposal && !editingProposal && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
-          <div ref={gridRef} className="bg-white rounded-lg border overflow-hidden select-none">
+          <div ref={gridRef} className="bg-white rounded-lg border overflow-x-auto select-none">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
@@ -931,7 +963,7 @@ export default function ProposalsPage() {
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
-                          {p.status === 'DRAFT' && (
+                          {canEdit && p.status === 'DRAFT' && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -942,7 +974,7 @@ export default function ProposalsPage() {
                               <Send size={12} /> Gửi
                             </Button>
                           )}
-                          {p.status === 'APPROVED' && (
+                          {canConvert && p.status === 'APPROVED' && (
                             <Button
                               size="sm"
                               className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700 text-white"
@@ -952,7 +984,7 @@ export default function ProposalsPage() {
                               <FileText size={12} /> Ký HĐ
                             </Button>
                           )}
-                          <Button
+                          {canEdit && p.status === 'DRAFT' && <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0 text-gray-400 hover:text-indigo-600"
@@ -960,8 +992,8 @@ export default function ProposalsPage() {
                             onClick={(e) => { e.stopPropagation(); setEditingProposal(p); }}
                           >
                             <Pencil size={13} />
-                          </Button>
-                          {['DRAFT', 'REJECTED'].includes(p.status) && (
+                          </Button>}
+                          {canEdit && ['DRAFT', 'REJECTED'].includes(p.status) && (
                             <Button
                               size="sm"
                               variant="ghost"

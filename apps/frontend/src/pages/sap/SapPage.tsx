@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
-import { Cpu, RefreshCw, CheckCircle, XCircle, Clock, Link2, AlertCircle, Scale, FlaskConical } from 'lucide-react';
+import { Cpu, RefreshCw, CheckCircle, XCircle, Clock, Link2, AlertCircle, Scale, FlaskConical, Sparkles, ShieldCheck } from 'lucide-react';
 
 const STATUS_MAP = {
   PENDING: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
@@ -54,29 +54,35 @@ export default function SapPage() {
     mutationFn: () => sapApi.runReconciliation(),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ['sap-reconciliation'] });
+      qc.invalidateQueries({ queryKey: ['sap-stats'] });
       toast({
         title: 'Đối soát hoàn tất',
         description: `Khớp: ${r?.matched ?? 0}, lệch: ${r?.mismatched ?? 0}`,
       });
     },
+    onError: (e: any) => toast({ title: 'Không thể chạy đối soát', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const syncPendingMutation = useMutation({
     mutationFn: () => sapApi.syncPendingMappings(),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ['sap-mappings'] });
+      qc.invalidateQueries({ queryKey: ['sap-mapping-summary'] });
+      qc.invalidateQueries({ queryKey: ['sap-logs'] });
       toast({ title: `Đã xử lý ${r?.processed ?? 0} mapping` });
     },
+    onError: (e: any) => toast({ title: 'Không thể đồng bộ mapping', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const upsertMappingMutation = useMutation({
     mutationFn: (dto: typeof mappingForm) => sapApi.upsertMapping(dto),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sap-mappings'] });
+      qc.invalidateQueries({ queryKey: ['sap-mapping-summary'] });
       setMappingForm({ entityType: 'TENANT', entityId: '', sapRef: '', sapCompanyCode: '1000' });
       toast({ title: 'Đã lưu mapping' });
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: 'Không thể lưu mapping', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const logs = logsData?.data ?? [];
@@ -94,44 +100,48 @@ export default function SapPage() {
   const pendingMappings = mappings.filter((m: any) => m.syncStatus === 'PENDING' || m.syncStatus === 'FAILED').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-blue-950 to-cyan-900 p-6 text-white shadow-[0_25px_65px_-35px_rgba(8,47,73,0.85)]">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-cyan-200/10 bg-cyan-200/5" />
+        <div className="relative flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">Tích hợp SAP</h1>
+            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200"><Sparkles size={13} /> Finance integration hub</span>
             {sapEnabled ? (
-              <Badge className="bg-green-100 text-green-700 border-0 gap-1">
+              <Badge className="border border-emerald-300/20 bg-emerald-300/10 text-emerald-200 gap-1">
                 <CheckCircle size={12} /> Live
               </Badge>
             ) : (
-              <Badge className="bg-amber-100 text-amber-800 border-0 gap-1">
+              <Badge className="border border-amber-300/20 bg-amber-300/10 text-amber-200 gap-1">
                 <FlaskConical size={12} /> Demo mode — SAP_ENABLED=false
               </Badge>
             )}
           </div>
-          <p className="text-sm text-gray-500 mt-1">Đồng bộ dữ liệu với SAP FI/CO</p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Tích hợp SAP FI/CO</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Theo dõi độ tin cậy đồng bộ, xử lý ngoại lệ và đảm bảo số liệu Platform khớp với hệ thống tài chính.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button
             size="sm"
             variant="outline"
-            className="gap-2"
+            className="gap-2 border-white/15 bg-white/10 text-white hover:bg-white/20 hover:text-white"
             onClick={() => runReconciliationMutation.mutate()}
             disabled={runReconciliationMutation.isPending}
           >
             <Scale size={14} /> Chạy đối soát
           </Button>
           {pendingMappings > 0 && (
-            <Button size="sm" variant="outline" className="gap-2 border-orange-300 text-orange-600"
+            <Button size="sm" variant="outline" className="gap-2 border-amber-300/30 bg-amber-300/10 text-amber-200 hover:bg-amber-300/20 hover:text-amber-100"
               onClick={() => syncPendingMutation.mutate()} disabled={syncPendingMutation.isPending}>
               <AlertCircle size={14} /> Sync {pendingMappings} pending
             </Button>
           )}
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => qc.invalidateQueries({ queryKey: ['sap-logs'] })}>
+          <Button variant="outline" size="sm" className="gap-2 border-white/15 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => qc.invalidateQueries({ queryKey: ['sap-logs'] })}>
             <RefreshCw size={14} /> Làm mới
           </Button>
         </div>
-      </div>
+        </div>
+      </section>
 
       {/* Stats */}
       {logsUpdatedAt > 0 && <p className="-mt-4 mb-4 text-right text-xs text-gray-400">Cập nhật gần nhất: {new Date(logsUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
@@ -162,8 +172,9 @@ export default function SapPage() {
         </Card>
       </div>
 
+      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-cyan-700" /><div><h2 className="text-lg font-semibold text-slate-950">Kiểm soát tích hợp</h2><p className="text-xs text-slate-500">Ưu tiên ngoại lệ đối soát trước khi xem log kỹ thuật</p></div></div>
       <Tabs defaultValue="reconciliation">
-        <TabsList className="mb-4 flex-wrap h-auto">
+        <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
           <TabsTrigger value="reconciliation" className="gap-1">
             Đối soát
             {mismatchCount > 0 && (
@@ -375,7 +386,7 @@ export default function SapPage() {
                       <p className="text-sm font-medium">{e.label}</p>
                       <p className="text-xs text-gray-400 font-mono">{e.endpoint}</p>
                     </div>
-                    <Badge className="bg-green-100 text-green-700 border-0 text-xs">Online</Badge>
+                    <Badge className={`border-0 text-xs ${sapEnabled ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{sapEnabled ? 'Online' : 'Chưa kết nối'}</Badge>
                   </div>
                 ))}
               </div>

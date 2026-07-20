@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { bookingApi, crmApi, reportsApi, slotsApi } from '@/api';
+import { bookingApi, crmApi, slotsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -73,14 +73,8 @@ export default function SalesPipelineStatsPage() {
   });
 
   const { data: pipelineStatsData, refetch: refetchPipeline, isFetching: fetchingPipeline, isError: pipelineError } = useQuery({
-    queryKey: ['crm-pipeline-stats'],
-    queryFn: () => crmApi.pipelineStats(),
-    refetchInterval: 60_000,
-  });
-
-  const { data: pipelineReportData, refetch: refetchReport, isFetching: fetchingReport, isError: reportError } = useQuery({
-    queryKey: ['pipeline-report'],
-    queryFn: () => reportsApi.pipelineReport(),
+    queryKey: ['crm-pipeline-stats', selectedMallId],
+    queryFn: () => crmApi.pipelineStats(selectedMallId ?? undefined),
     refetchInterval: 60_000,
   });
 
@@ -90,19 +84,17 @@ export default function SalesPipelineStatsPage() {
     refetchInterval: 60_000,
   });
 
-  const isLoading = !bookingStatsData && !pipelineStatsData && !pipelineReportData;
-  const isFetching = fetchingBooking || fetchingPipeline || fetchingReport || fetchingSlot;
+  const isLoading = !bookingStatsData && !pipelineStatsData;
+  const isFetching = fetchingBooking || fetchingPipeline || fetchingSlot;
 
   function refetchAll() {
     refetchBooking();
     refetchPipeline();
-    refetchReport();
     refetchSlot();
   }
 
   const bs = bookingStatsData?.data ?? bookingStatsData;
   const ps = pipelineStatsData?.data ?? pipelineStatsData;
-  const pr = pipelineReportData?.data ?? pipelineReportData;
 
   const allSlotBookings: any[] = slotBookingsData?.data ?? slotBookingsData ?? [];
   const slotStats = {
@@ -116,15 +108,9 @@ export default function SalesPipelineStatsPage() {
 
   // ── Derived data ─────────────────────────────────────────────────────────────
 
-  const leadByStatus: Record<string, number> = {};
-  (pr?.leads ?? []).forEach((l: any) => { leadByStatus[l.status] = l._count; });
-
-  const proposalByStatus: Record<string, number> = {};
-  const proposalValueByStatus: Record<string, number> = {};
-  (pr?.proposals ?? []).forEach((p: any) => {
-    proposalByStatus[p.status] = p._count;
-    proposalValueByStatus[p.status] = p._sum?.totalContractValue ?? 0;
-  });
+  const leadByStatus: Record<string, number> = ps?.byStatus ?? {};
+  const proposalByStatus: Record<string, number> = ps?.proposalByStatus ?? {};
+  const proposalValueByStatus: Record<string, number> = ps?.proposalValueByStatus ?? {};
 
   const activeLeads = Object.entries(leadByStatus)
     .filter(([k]) => !['WON', 'LOST'].includes(k))
@@ -178,7 +164,7 @@ export default function SalesPipelineStatsPage() {
       </div>
     );
   }
-  if (bookingError || pipelineError || reportError || slotError) {
+  if (bookingError || pipelineError || slotError) {
     return (
       <AsyncState
         isLoading={false}
@@ -187,7 +173,6 @@ export default function SalesPipelineStatsPage() {
         onRetry={() => {
           refetchBooking();
           refetchPipeline();
-          refetchReport();
           refetchSlot();
         }}
       >

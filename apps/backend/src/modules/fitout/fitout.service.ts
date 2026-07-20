@@ -33,11 +33,14 @@ export class FitoutService {
     private slaService: FitoutSlaService,
   ) {}
 
-  async findAll(query: { status?: string; tenantId?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
+  async findAll(query: { status?: string; tenantId?: string; mallIds?: string[]; page?: number; limit?: number }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = {};
+    if (query.mallIds && currentUser?.role !== 'TENANT') {
+      where.unit = { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] };
+    }
     if (filters.status) where.status = filters.status;
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.

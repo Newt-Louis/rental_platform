@@ -67,6 +67,19 @@ export class ProposalPdfService {
         const handoverDate = proposal.handoverDate ? fmtDateFull(proposal.handoverDate) : null;
         const openingDate = proposal.openingDate ? fmtDate(proposal.openingDate) : `…/…/20……`;
         const specialConditions = proposal.specialConditions ?? proposal.notes ?? '[…]';
+        const approvalSteps = (proposal.approvalWorkflow?.steps ?? []) as any[];
+        const signatureSteps = approvalSteps.filter((step) => step.status === 'APPROVED' && step.approver);
+        const signatureCells = (signatureSteps.length ? signatureSteps : approvalSteps).map((step) => ({
+          stack: [
+            { text: step.stepName?.toUpperCase() ?? step.approverRole, fontSize: 8, bold: true, alignment: 'center' },
+            { text: '\n\n', fontSize: 8 },
+            { text: step.approver?.fullName ?? 'CHƯA DUYỆT', fontSize: 9, bold: true, alignment: 'center' },
+            { text: step.decidedAt ? `Duyệt lúc ${new Date(step.decidedAt).toLocaleString('vi-VN')}` : 'Đang chờ phê duyệt', fontSize: 7, color: '#555', alignment: 'center', margin: [0, 3, 0, 0] },
+            ...(step.comment ? [{ text: `Ý kiến: ${step.comment}`, fontSize: 7, italics: true, color: '#555', alignment: 'center', margin: [0, 2, 0, 0] }] : []),
+          ],
+          alignment: 'center',
+          fillColor: '#fafafa',
+        }));
 
         // Document number
         const year = new Date().getFullYear();
@@ -265,36 +278,8 @@ export class ProposalPdfService {
             // ── Signature block ──────────────────────────────────────────────────
             {
               table: {
-                widths: ['33%', '33%', '34%'],
-                body: [[
-                  {
-                    stack: [
-                      { text: 'TRƯỞNG PHÒNG CHO THUÊ TTTM', fontSize: 9, bold: true, alignment: 'center' },
-                      { text: '\n\n\n\n', fontSize: 9 },
-                      { text: proposal.createdBy?.fullName ?? 'PHẠM THỊ KHÁNH TRANG', fontSize: 9, bold: true, alignment: 'center' },
-                    ],
-                    alignment: 'center',
-                    fillColor: '#fafafa',
-                  },
-                  {
-                    stack: [
-                      { text: 'BAN KẾ TOÁN THISO', fontSize: 9, bold: true, alignment: 'center' },
-                      { text: '\n\n\n\n', fontSize: 9 },
-                      { text: 'NGUYỄN ĐÌNH CÔNG', fontSize: 9, bold: true, alignment: 'center' },
-                    ],
-                    alignment: 'center',
-                    fillColor: '#fafafa',
-                  },
-                  {
-                    stack: [
-                      { text: 'PHÓ TỔNG GIÁM ĐỐC THƯỜNG TRỰC THISO', fontSize: 9, bold: true, alignment: 'center' },
-                      { text: '\n\n\n\n', fontSize: 9 },
-                      { text: 'TRẦN VIÊN NGỌC OANH', fontSize: 9, bold: true, alignment: 'center' },
-                    ],
-                    alignment: 'center',
-                    fillColor: '#fafafa',
-                  },
-                ]],
+                widths: signatureCells.length ? signatureCells.map(() => '*') : ['*'],
+                body: [signatureCells.length ? signatureCells : [{ text: 'Chưa có thông tin phê duyệt', alignment: 'center', fontSize: 9 }]],
               },
               layout: {
                 hLineColor: '#999',

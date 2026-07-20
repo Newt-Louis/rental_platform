@@ -10,6 +10,7 @@ interface ReasonActionDialogProps {
   description: string;
   confirmLabel?: string;
   loading?: boolean;
+  minLength?: number;
   onConfirm: (reason: string) => void;
 }
 
@@ -20,6 +21,7 @@ export function ReasonActionDialog({
   description,
   confirmLabel = 'Xác nhận',
   loading = false,
+  minLength = 1,
   onConfirm,
 }: ReasonActionDialogProps) {
   const [reason, setReason] = useState('');
@@ -43,9 +45,12 @@ export function ReasonActionDialog({
           placeholder="Nhập lý do để lưu vào lịch sử xử lý..."
           autoFocus
         />
+        {reason.trim().length > 0 && reason.trim().length < minLength && (
+          <p className="text-xs text-red-500">Lý do cần ít nhất {minLength} ký tự.</p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>Quay lại</Button>
-          <Button variant="destructive" disabled={!reason.trim() || loading} onClick={() => onConfirm(reason.trim())}>
+          <Button variant="destructive" disabled={reason.trim().length < minLength || loading} onClick={() => onConfirm(reason.trim())}>
             {loading ? 'Đang xử lý…' : confirmLabel}
           </Button>
         </DialogFooter>

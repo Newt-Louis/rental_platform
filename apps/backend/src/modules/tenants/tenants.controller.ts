@@ -6,6 +6,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
+import { Role } from '@prisma/client';
+
+const TENANT_MANAGE_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
 
 @ApiTags('Tenants')
 @ApiBearerAuth('JWT-auth')
@@ -13,7 +18,7 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 @Roles(...MODULE_ROLES.tenants)
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(private readonly tenantsService: TenantsService, private readonly mallAccess: MallAccessService) {}
 
   @Get()
   @ApiOperation({ summary: 'List tenants' })
@@ -21,31 +26,38 @@ export class TenantsController {
   @ApiQuery({ name: 'category', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: PaginationDto & { category?: string }) {
-    return this.tenantsService.findAll(query);
+  async findAll(@Query() query: PaginationDto & { category?: string }, @CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.tenantsService.findAll({ ...query, mallIds: mallIds ?? undefined });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get tenant details' })
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { tenantId: id });
     return this.tenantsService.findOne(id);
   }
 
   @Post()
+  @Roles(...TENANT_MANAGE_ROLES)
   @ApiOperation({ summary: 'Create tenant' })
   create(@Body() dto: CreateTenantDto) {
     return this.tenantsService.create(dto);
   }
 
   @Put(':id')
+  @Roles(...TENANT_MANAGE_ROLES)
   @ApiOperation({ summary: 'Update tenant' })
-  update(@Param('id') id: string, @Body() dto: Partial<CreateTenantDto>) {
+  async update(@Param('id') id: string, @Body() dto: Partial<CreateTenantDto>, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { tenantId: id });
     return this.tenantsService.update(id, dto);
   }
 
   @Delete(':id')
+  @Roles(...TENANT_MANAGE_ROLES)
   @ApiOperation({ summary: 'Delete tenant (soft delete)' })
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { tenantId: id });
     return this.tenantsService.remove(id);
   }
 }

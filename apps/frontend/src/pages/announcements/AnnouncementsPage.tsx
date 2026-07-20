@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { useMallStore } from '@/store/mall.store';
-import { Plus, Megaphone, AlertTriangle, Wrench, Star, Tag, Zap, Clock } from 'lucide-react';
+import { Plus, Megaphone, AlertTriangle, Wrench, Star, Tag, Clock, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { AsyncState } from '@/components/ui/async-state';
 
@@ -36,7 +36,8 @@ function fmtDate(d: string) {
 function CreateAnnouncementDialog({ open, onClose, mallId }: { open: boolean; onClose: () => void; mallId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
+  const publishedAt = watch('publishedAt');
 
   const mutation = useMutation({
     mutationFn: (data: any) => announcementsApi.create({ ...data, mallId }),
@@ -50,13 +51,14 @@ function CreateAnnouncementDialog({ open, onClose, mallId }: { open: boolean; on
   });
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Tạo thông báo mới</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div>
             <Label>Tiêu đề *</Label>
             <Input {...register('title', { required: true })} placeholder="Tiêu đề thông báo..." />
+            {errors.title && <p className="mt-1 text-xs text-red-600">Vui lòng nhập tiêu đề</p>}
           </div>
           <div>
             <Label>Nội dung *</Label>
@@ -66,6 +68,7 @@ function CreateAnnouncementDialog({ open, onClose, mallId }: { open: boolean; on
               className="w-full mt-1 border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Nội dung chi tiết..."
             />
+            {errors.content && <p className="mt-1 text-xs text-red-600">Vui lòng nhập nội dung</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -86,12 +89,13 @@ function CreateAnnouncementDialog({ open, onClose, mallId }: { open: boolean; on
             </div>
             <div>
               <Label>Hết hạn</Label>
-              <Input {...register('expiresAt')} type="datetime-local" />
+              <Input {...register('expiresAt', { validate: (value) => !value || !publishedAt || new Date(value as string) > new Date(publishedAt as string) || 'Thời gian hết hạn phải sau thời gian đăng' })} type="datetime-local" />
+              {errors.expiresAt && <p className="mt-1 text-xs text-red-600">{String(errors.expiresAt.message)}</p>}
             </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>Đăng thông báo</Button>
+            <Button type="submit" disabled={mutation.isPending || !mallId}>{mutation.isPending ? 'Đang đăng...' : 'Đăng thông báo'}</Button>
           </div>
         </form>
       </DialogContent>
@@ -106,13 +110,15 @@ export default function AnnouncementsPage() {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const isTenant = user?.role === 'TENANT';
   const isStaff = !isTenant;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: isStaff ? ['announcements-admin', selectedMallId] : ['announcements', selectedMallId],
     queryFn: () => isStaff
-      ? announcementsApi.list(selectedMallId || undefined)
+      ? announcementsApi.listAdmin(selectedMallId || undefined)
       : announcementsApi.list(selectedMallId || undefined),
   });
 
@@ -121,24 +127,38 @@ export default function AnnouncementsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['announcements-admin'] });
       toast({ title: 'Đã xóa thông báo' });
+      setDeletingId(null);
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xóa thông báo', variant: 'destructive' }),
   });
 
   const items: any[] = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
   const filtered = categoryFilter ? items.filter((a) => a.category === categoryFilter) : items;
+  const now = Date.now();
+  const urgentCount = items.filter((a) => a.priority === 'URGENT').length;
+  const scheduledCount = items.filter((a) => new Date(a.publishedAt).getTime() > now).length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-xl">
+        <div className="absolute -right-16 -top-20 h-52 w-52 rounded-full bg-blue-500/20 blur-3xl" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Thông báo Mall</h1>
-          <p className="text-sm text-gray-500 mt-1">Thông báo từ Ban quản lý đến tất cả khách thuê</p>
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-200"><Radio size={14} /> Trung tâm truyền thông</div>
+          <h1 className="text-2xl font-bold">Thông báo Mall</h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-300">Theo dõi thông tin vận hành, sự kiện và cảnh báo quan trọng tại một nơi.</p>
         </div>
         {isStaff && (
-          <Button onClick={() => setShowCreate(true)} className="gap-2">
+          <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId} title={!selectedMallId ? 'Chọn Mall trước khi tạo thông báo' : undefined} className="gap-2 bg-white text-slate-900 hover:bg-blue-50">
             <Plus size={16} /> Tạo thông báo
           </Button>
         )}
+        </div>
+        <div className="relative mt-5 grid grid-cols-3 gap-3 border-t border-white/10 pt-4 text-sm">
+          <div><p className="text-xs text-slate-400">Tổng hiển thị</p><p className="mt-1 text-xl font-semibold">{items.length}</p></div>
+          <div><p className="text-xs text-slate-400">Khẩn cấp</p><p className="mt-1 text-xl font-semibold text-rose-300">{urgentCount}</p></div>
+          <div><p className="text-xs text-slate-400">Đã lên lịch</p><p className="mt-1 text-xl font-semibold text-sky-300">{scheduledCount}</p></div>
+        </div>
       </div>
 
       {/* Category filter */}
@@ -204,7 +224,10 @@ export default function AnnouncementsPage() {
                               <span className="text-xs text-gray-400">{ann.mall.name}</span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-600 line-clamp-2">{ann.content}</p>
+                          <p className={`whitespace-pre-wrap text-sm leading-6 text-gray-600 ${expandedId === ann.id ? '' : 'line-clamp-2'}`}>{ann.content}</p>
+                          <button className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-900" onClick={() => setExpandedId(expandedId === ann.id ? null : ann.id)}>
+                            {expandedId === ann.id ? <><ChevronUp size={12} /> Thu gọn</> : <><ChevronDown size={12} /> Xem chi tiết</>}
+                          </button>
                           <div className="flex items-center gap-3 mt-2">
                             <div className="flex items-center gap-1 text-xs text-gray-400">
                               <Clock size={11} />
@@ -221,11 +244,11 @@ export default function AnnouncementsPage() {
                           </div>
                         </div>
                         {isStaff && (
-                          <Button
+                          deletingId === ann.id ? <div className="flex shrink-0 gap-1"><Button size="sm" variant="outline" onClick={() => setDeletingId(null)}>Hủy</Button><Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={() => deleteMutation.mutate(ann.id)}>Xác nhận</Button></div> : <Button
                             variant="ghost"
                             size="sm"
                             className="text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0"
-                            onClick={() => deleteMutation.mutate(ann.id)}
+                            onClick={() => setDeletingId(ann.id)}
                           >
                             Xóa
                           </Button>

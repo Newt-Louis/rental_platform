@@ -68,6 +68,13 @@ describe('usePermission', () => {
     expect(result.current.hasRole(['TENANT', 'ADMIN'])).toBe(false);
   });
 
+  it('hasRole always grants Super Admin', () => {
+    useAuthStore.setState({ user: makeUser('ADMIN') });
+    const { result } = renderHook(() => usePermission());
+    expect(result.current.hasRole(['TENANT'])).toBe(true);
+    expect(result.current.hasRole([])).toBe(true);
+  });
+
   it('hasRole returns false when no user', () => {
     const { result } = renderHook(() => usePermission());
     expect(result.current.hasRole(['ADMIN'])).toBe(false);

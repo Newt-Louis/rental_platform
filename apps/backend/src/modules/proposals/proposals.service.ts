@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateProposalDto } from './dto/create-proposal.dto';
+import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
 import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
@@ -93,7 +93,7 @@ export class ProposalsService {
     };
   }
 
-  async findAll(query: { status?: ProposalStatus; unitId?: string; tenantId?: string; page?: number; limit?: number }) {
+  async findAll(query: { status?: ProposalStatus; unitId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
     const { ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
@@ -103,6 +103,25 @@ export class ProposalsService {
     if (filters.status) where.status = filters.status;
     if (filters.unitId) where.unitId = filters.unitId;
     if (filters.tenantId) where.tenantId = filters.tenantId;
+    const mallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
+    if (mallIds) where.OR = [
+      { unit: { mallId: { in: mallIds } } },
+      { unit: { floor: { mallId: { in: mallIds } } } },
+    ];
+    if (filters.search?.trim()) {
+      const search = filters.search.trim();
+      where.AND = [{ OR: [
+        { proposalNumber: { contains: search, mode: 'insensitive' } },
+        { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+        { tenant: { companyName: { contains: search, mode: 'insensitive' } } },
+        { lead: { brandName: { contains: search, mode: 'insensitive' } } },
+        { unit: { code: { contains: search, mode: 'insensitive' } } },
+      ] }];
+    }
+    if (filters.dateFrom || filters.dateTo) where.createdAt = {
+      ...(filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {}),
+      ...(filters.dateTo ? { lte: new Date(`${filters.dateTo}T23:59:59.999Z`) } : {}),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.proposal.findMany({
@@ -127,6 +146,19 @@ export class ProposalsService {
     ]);
 
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
+  }
+
+  async getStats(mallIds?: string[]) {
+    const base: any = { isActive: true, deletedAt: null };
+    if (mallIds) base.OR = [
+      { unit: { mallId: { in: mallIds } } },
+      { unit: { floor: { mallId: { in: mallIds } } } },
+    ];
+    const statuses = Object.values(ProposalStatus);
+    const grouped = await this.prisma.proposal.groupBy({ by: ['status'], where: base, _count: { _all: true } });
+    const counts = Object.fromEntries(statuses.map((status) => [status, 0]));
+    grouped.forEach((row: any) => { counts[row.status] = row._count._all; });
+    return { total: grouped.reduce((sum: number, row: any) => sum + row._count._all, 0), ...counts };
   }
 
   async findOne(id: string) {
@@ -155,6 +187,8 @@ export class ProposalsService {
   async create(dto: CreateProposalDto, userId: string) {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
+    if (!unit.isActive) throw new BadRequestException('Cannot create a proposal for an inactive unit');
+    if (dto.area > unit.areaNLA) throw new BadRequestException('Proposal area exceeds the unit leasable area');
 
     // Auto-inherit tenantId from lead when not explicitly provided
     let resolvedTenantId = dto.tenantId;
@@ -228,14 +262,17 @@ export class ProposalsService {
     return proposal;
   }
 
-  async update(id: string, dto: Partial<CreateProposalDto>) {
+  async update(id: string, dto: UpdateProposalDto, userId?: string) {
     const proposal = await this.findOne(id);
     if (proposal.status !== ProposalStatus.DRAFT) {
       throw new BadRequestException('Only DRAFT proposals can be edited');
     }
 
     const updateData: any = { ...dto };
-    if (dto.startDate || dto.area || dto.rentPerSqm || dto.term || dto.discount) {
+    const financialFields: (keyof UpdateProposalDto)[] = [
+      'startDate', 'area', 'rentPerSqm', 'camPerSqm', 'term', 'deposit', 'rentFree', 'discount',
+    ];
+    if (financialFields.some((field) => dto[field] !== undefined)) {
       const merged = { ...proposal, ...dto };
       const financials = this.calcFinancials(merged as any);
       Object.assign(updateData, {
@@ -248,7 +285,7 @@ export class ProposalsService {
     }
 
     const updated = await this.prisma.proposal.update({ where: { id }, data: updateData });
-    await this.snapshotProposal(updated as unknown as Record<string, unknown>, undefined, 'UPDATED');
+    await this.snapshotProposal(updated as unknown as Record<string, unknown>, userId, 'UPDATED');
     return updated;
   }
 
@@ -650,12 +687,15 @@ export class ProposalsService {
   }
 
   async saveEditorContent(id: string, editorContent: any) {
-    await this.findOne(id);
-    return this.prisma.proposal.update({
+    const proposal = await this.findOne(id);
+    if (proposal.status !== ProposalStatus.DRAFT) throw new BadRequestException('Only DRAFT proposals can be edited');
+    const updated = await this.prisma.proposal.update({
       where: { id },
       data: { editorContent },
       select: { id: true, proposalNumber: true, editorContent: true },
     });
+    await this.snapshotProposal({ ...proposal, editorContent } as unknown as Record<string, unknown>, undefined, 'EDITOR_UPDATED');
+    return updated;
   }
 
   /** Update supplementary doc-generation fields (fees, hours, deposit amounts).
@@ -672,8 +712,9 @@ export class ProposalsService {
       fitoutFee?: number;
     },
   ) {
-    await this.findOne(id);
-    return this.prisma.proposal.update({
+    const proposal = await this.findOne(id);
+    if (proposal.status !== ProposalStatus.DRAFT) throw new BadRequestException('Only DRAFT proposals can be edited');
+    const updated = await this.prisma.proposal.update({
       where: { id },
       data: {
         utilityFee:      dto.utilityFee,
@@ -690,6 +731,8 @@ export class ProposalsService {
         paymentTermDays: true, depositLease: true, depositFitout: true, fitoutFee: true,
       },
     });
+    await this.snapshotProposal({ ...proposal, ...dto } as unknown as Record<string, unknown>, undefined, 'DOCUMENT_FIELDS_UPDATED');
+    return updated;
   }
 
   async listVersions(proposalId: string) {

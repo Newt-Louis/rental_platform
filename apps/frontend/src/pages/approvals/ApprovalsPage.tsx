@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
-import { approvalsApi, bookingApi } from '@/api';
+import { approvalsApi, bookingApi, proposalsApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,10 +11,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
+import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import {
   CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
-  Building2, Loader2, History, ChevronLeft, ChevronRight,
+  Building2, Loader2, History, ChevronLeft, ChevronRight, Eye, Download,
+  FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck,
 } from 'lucide-react';
+import { usePermission } from '@/hooks/usePermission';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
@@ -24,14 +27,106 @@ function fmtPrice(n: number | null | undefined) {
   return new Intl.NumberFormat('vi-VN').format(n);
 }
 
+function fmtDateTime(value?: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | null; onClose: () => void }) {
+  const { toast } = useToast();
+  const { data: workflow, isLoading, isError, refetch } = useQuery({
+    queryKey: ['approval-workflow', workflowId],
+    queryFn: () => approvalsApi.getWorkflow(workflowId!),
+    enabled: !!workflowId,
+  });
+  const w: any = workflow;
+  const p: any = w?.proposal;
+  const steps: any[] = w?.steps ?? [];
+  const completed = w?.status === 'APPROVED';
+
+  const getPdf = async (mode: 'open' | 'download') => {
+    if (!p?.id) return;
+    try {
+      const blob = await proposalsApi.exportPdf(p.id);
+      const url = URL.createObjectURL(blob);
+      if (mode === 'open') {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `proposal-${p.proposalNumber}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      toast({ title: 'Không thể tạo bản đề xuất PDF', variant: 'destructive' });
+    }
+  };
+
+  return (
+    <Sheet open={!!workflowId} onClose={onClose} title={p?.proposalNumber ?? 'Hồ sơ phê duyệt'} subtitle={p?.tenant?.brandName ?? p?.lead?.brandName} className="w-[720px] max-w-[96vw]">
+      {isLoading ? <div className="space-y-3 p-6">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}</div>
+      : isError ? <div className="p-6"><AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải hồ sơ phê duyệt"><div /></AsyncState></div>
+      : w && p ? (
+        <div className="space-y-5 p-6">
+          <div className={`rounded-2xl border p-4 ${completed ? 'border-emerald-200 bg-emerald-50' : w.status === 'REJECTED' ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div><p className="text-xs font-semibold uppercase tracking-wider opacity-60">Trạng thái hồ sơ</p><p className="mt-1 text-lg font-bold">{completed ? 'Đã hoàn tất toàn bộ phê duyệt' : w.status === 'REJECTED' ? 'Hồ sơ đã bị từ chối' : 'Đang trong quy trình phê duyệt'}</p><p className="mt-1 text-xs opacity-70">Khởi tạo {fmtDateTime(w.createdAt)} · Cập nhật {fmtDateTime(w.updatedAt)}</p></div>
+              <Badge className="border-0 bg-white/80 text-slate-700">{steps.filter((s) => s.status === 'APPROVED').length}/{steps.length} bước</Badge>
+            </div>
+          </div>
+
+          <SheetSection label="THÔNG TIN ĐỀ XUẤT" className="bg-slate-50">
+            <div className="grid grid-cols-2 gap-x-4">
+              <SheetRow label="Khách thuê / thương hiệu" value={p.tenant?.brandName ?? p.lead?.brandName} icon={User} />
+              <SheetRow label="Công ty" value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
+              <SheetRow label="Mặt bằng" value={`${p.unit?.code ?? '—'}${p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}`} icon={Building2} />
+              <SheetRow label="Diện tích" value={p.area ? `${Number(p.area).toLocaleString('vi-VN')} m²` : null} icon={Building2} />
+              <SheetRow label="Thời hạn thuê" value={p.term ? `${p.term} tháng` : null} icon={CalendarDays} />
+              <SheetRow label="Từ ngày – đến ngày" value={`${p.startDate ? new Date(p.startDate).toLocaleDateString('vi-VN') : '—'} – ${p.endDate ? new Date(p.endDate).toLocaleDateString('vi-VN') : '—'}`} icon={CalendarDays} />
+            </div>
+          </SheetSection>
+
+          <SheetSection label="ĐIỀU KIỆN TÀI CHÍNH" className="bg-slate-50">
+            <div className="grid grid-cols-2 gap-x-4">
+              <SheetRow label="Đơn giá thuê / m²" value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
+              <SheetRow label="Tiền thuê / tháng" value={p.monthlyRent ? fmt(p.monthlyRent) : null} icon={DollarSign} />
+              <SheetRow label="Phí CAM / tháng" value={p.monthlyCAM ? fmt(p.monthlyCAM) : null} icon={DollarSign} />
+              <SheetRow label="Chiết khấu" value={`${p.discount ?? 0}%`} icon={DollarSign} />
+              <SheetRow label="Miễn tiền thuê" value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
+              <SheetRow label="Tổng giá trị hợp đồng" value={p.totalContractValue ? fmt(p.totalContractValue) : null} icon={DollarSign} />
+            </div>
+            {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">Điều kiện/Ghi chú: </span>{p.specialConditions ?? p.notes}</div>}
+          </SheetSection>
+
+          <section>
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-slate-500"><ShieldCheck size={15} /> NHẬT KÝ PHÊ DUYỆT</div>
+            <div className="space-y-0">
+              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-5 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">Bước {step.stepOrder}: {step.stepName}</p><p className="mt-0.5 text-xs text-slate-500">Vai trò: {step.approverRole}</p></div><Badge className={`border-0 ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{step.status === 'APPROVED' ? 'Đã duyệt' : step.status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt'}</Badge></div>{step.approver && <div className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.department ?? step.approver.role}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
+            </div>
+          </section>
+
+          {completed ? <div className="sticky bottom-0 flex gap-2 border-t bg-white pt-4"><Button className="flex-1 gap-2" onClick={() => getPdf('open')}><Eye size={15} /> Xem / In bản hoàn chỉnh</Button><Button variant="outline" className="flex-1 gap-2" onClick={() => getPdf('download')}><Download size={15} /> Lưu PDF</Button></div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><FileText size={15} className="mr-2 inline" />Bản đề xuất hoàn chỉnh để in và lưu sẽ mở khi tất cả các bước đã được phê duyệt.</div>}
+        </div>
+      ) : null}
+    </Sheet>
+  );
+}
+
 export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { role } = usePermission();
+  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
   const [view, setView] = useState<'proposals' | 'prices' | 'history'>('proposals');
   const [proposalPage, setProposalPage] = useState(1);
   const [pricePage, setPricePage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
 
   // ── Selection state ──
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
@@ -75,6 +170,7 @@ export default function ApprovalsPage() {
     queryKey: ['pending-price-approvals', pricePage],
     queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25 }),
     refetchInterval: 30_000,
+    enabled: canApprovePrices,
   });
 
   const steps: any[] = data?.data ?? [];
@@ -90,22 +186,22 @@ export default function ApprovalsPage() {
   // ── Mutations — single ──
   const approveMutation = useMutation({
     mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.approve(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã phê duyệt thành công' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const rejectMutation = useMutation({
-    mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.reject(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
+    mutationFn: ({ id, comment }: { id: string; comment: string }) => approvalsApi.reject(id, comment),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: 'Đã từ chối', variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const approvePriceMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => bookingApi.approvePrice(id, note),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); toast({ title: 'Đã phê duyệt giá' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã phê duyệt giá' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
   const rejectPriceMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingApi.rejectPrice(id, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); toast({ title: 'Đã từ chối giá', variant: 'destructive' }); closeRejectDialog(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: 'Đã từ chối giá', variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
@@ -122,6 +218,8 @@ export default function ApprovalsPage() {
     },
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
       if (fail > 0) toast({ title: `Đã duyệt ${ok}, ${fail} lỗi`, variant: 'destructive' });
       else toast({ title: `Đã phê duyệt ${ok} bước` });
@@ -139,6 +237,8 @@ export default function ApprovalsPage() {
     },
     onSuccess: ({ ok, fail }) => {
       qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
+      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
       setSelectedProposalIds(new Set());
       closeRejectDialog();
       if (fail > 0) toast({ title: `Đã từ chối ${ok}, ${fail} lỗi`, variant: 'destructive' });
@@ -180,7 +280,8 @@ export default function ApprovalsPage() {
 
   function handleRejectConfirm() {
     if (!rejectDialog) return;
-    const reason = rejectReason || 'Không phê duyệt';
+    const reason = rejectReason.trim();
+    if (reason.length < 5) return;
     if (rejectDialog.type === 'price') {
       if (rejectDialog.bulk) bulkRejectPriceMutation.mutate({ ids: rejectDialog.ids, reason });
       else rejectPriceMutation.mutate({ id: rejectDialog.ids[0], reason });
@@ -243,7 +344,7 @@ export default function ApprovalsPage() {
         </div>
         <div className="flex gap-2">
           <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{proposalTotal} deal</Badge>
-          <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceApprovals.length} giá</Badge>
+          {canApprovePrices && <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{priceTotal} giá</Badge>}
         </div>
       </div>
 
@@ -256,13 +357,13 @@ export default function ApprovalsPage() {
           <CheckSquare size={14} className="inline mr-1.5" />
           Proposal ({proposalTotal})
         </button>
-        <button
+        {canApprovePrices && <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'prices' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
         >
           <DollarSign size={14} className="inline mr-1.5" />
-          Giá Booking ({priceApprovals.length})
-        </button>
+          Giá Booking ({priceTotal})
+        </button>}
         <button
           onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
@@ -297,7 +398,7 @@ export default function ApprovalsPage() {
           ) : (
             <>
               {!rejectDialog && <Selecto ref={proposalSelectoRef} container={proposalGridRef.current} {...proposalSelectoProps} />}
-              <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
+              <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-blue-50/40">
@@ -327,8 +428,9 @@ export default function ApprovalsPage() {
                       const isSelected = selectedProposalIds.has(step.id);
                       return (
                         <tr key={step.id}
-                          className={`${DRAG_SELECT_CLASS} transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
+                          className={`${DRAG_SELECT_CLASS} cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
                           data-step-id={step.id}
+                          onClick={() => setSelectedWorkflowId(step.workflowId)}
                         >
                           <td className="px-3 py-3 w-8" data-checkbox>
                             <div className="cursor-pointer" onClick={(e) => {
@@ -378,6 +480,13 @@ export default function ApprovalsPage() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                title="Xem toàn bộ hồ sơ"
+                                onClick={(e) => { e.stopPropagation(); setSelectedWorkflowId(step.workflowId); }}
+                              >
+                                <Eye size={13} /> Chi tiết
+                              </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
                                 title="Từ chối"
@@ -450,7 +559,7 @@ export default function ApprovalsPage() {
           ) : (
             <>
               {!rejectDialog && <Selecto ref={priceSelectoRef} container={priceGridRef.current} {...priceSelectoProps} />}
-              <div ref={priceGridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none" key={pricePage}>
+              <div ref={priceGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none" key={pricePage}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-amber-50/40">
@@ -638,7 +747,7 @@ export default function ApprovalsPage() {
                   {historySteps.map((step: any) => {
                     const proposal = step.workflow?.proposal;
                     return (
-                      <tr key={step.id} className="hover:bg-gray-50/60 transition-colors">
+                      <tr key={step.id} className="cursor-pointer hover:bg-gray-50/60 transition-colors" onClick={() => setSelectedWorkflowId(step.workflowId)}>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs text-gray-600">
                             {proposal?.proposalNumber ?? '—'}
@@ -726,6 +835,8 @@ export default function ApprovalsPage() {
       )}
 
       {/* ── Reject Dialog ── */}
+      <ApprovalDetailSheet workflowId={selectedWorkflowId} onClose={() => setSelectedWorkflowId(null)} />
+
       <Dialog open={!!rejectDialog} onOpenChange={() => closeRejectDialog()}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -749,7 +860,7 @@ export default function ApprovalsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={closeRejectDialog}>Hủy</Button>
             <Button variant="destructive" onClick={handleRejectConfirm}
-              disabled={rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
+              disabled={rejectReason.trim().length < 5 || rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
               Xác nhận từ chối
             </Button>
           </DialogFooter>

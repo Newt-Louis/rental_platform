@@ -28,6 +28,16 @@ export class MallAccessService {
     }
   }
 
+  async getAccessibleMallIds(userId: string, role: string): Promise<string[] | null> {
+    if (this.bypassesMallCheck(role)) return null;
+
+    const accesses = await this.prisma.userMallAccess.findMany({
+      where: { userId, isActive: true },
+      select: { mallId: true },
+    });
+    return accesses.map((access) => access.mallId);
+  }
+
   /** Resolve mallId from unitId when mallId not provided explicitly */
   async resolveMallIdFromUnit(unitId: string): Promise<string | null> {
     const unit = await this.prisma.unit.findUnique({
@@ -50,6 +60,16 @@ export class MallAccessService {
       fitoutSubmittalId?: string;
       fitoutIssueId?: string;
       invoiceId?: string;
+      bookingId?: string;
+      slotId?: string;
+      slotBookingId?: string;
+      slotPricingRuleId?: string;
+      proposalId?: string;
+      approvalStepId?: string;
+      approvalWorkflowId?: string;
+      tenantId?: string;
+      ticketId?: string;
+      maintenanceScheduleId?: string;
     },
   ): Promise<void> {
     if (this.bypassesMallCheck(role)) return;
@@ -74,6 +94,11 @@ export class MallAccessService {
         select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
       });
       mallId = contract?.unit?.mallId ?? contract?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.maintenanceScheduleId) {
+      const schedule = await this.prisma.maintenanceSchedule.findUnique({ where: { id: sources.maintenanceScheduleId }, select: { mallId: true } });
+      mallId = schedule?.mallId;
     }
 
     if (!mallId && sources.fitoutProjectId) {
@@ -106,6 +131,83 @@ export class MallAccessService {
         select: { contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
       });
       mallId = invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.bookingId) {
+      const booking = await this.prisma.unitBooking.findUnique({
+        where: { id: sources.bookingId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = booking?.unit?.mallId ?? booking?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotId) {
+      const slot = await this.prisma.unitSlot.findUnique({
+        where: { id: sources.slotId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = slot?.unit?.mallId ?? slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotBookingId) {
+      const booking = await this.prisma.slotBooking.findUnique({
+        where: { id: sources.slotBookingId },
+        select: { slot: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = booking?.slot?.unit?.mallId ?? booking?.slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.slotPricingRuleId) {
+      const rule = await this.prisma.slotPricingRule.findUnique({
+        where: { id: sources.slotPricingRuleId },
+        select: { slot: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = rule?.slot?.unit?.mallId ?? rule?.slot?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.proposalId) {
+      const proposal = await this.prisma.proposal.findUnique({
+        where: { id: sources.proposalId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = proposal?.unit?.mallId ?? proposal?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && (sources.approvalStepId || sources.approvalWorkflowId)) {
+      const workflowId = sources.approvalWorkflowId ?? (await this.prisma.approvalStep.findUnique({
+        where: { id: sources.approvalStepId }, select: { workflowId: true },
+      }))?.workflowId;
+      if (workflowId) {
+        const workflow = await this.prisma.approvalWorkflow.findUnique({
+          where: { id: workflowId },
+          select: {
+            proposal: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+            fitoutSubmittal: { select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } } },
+          },
+        });
+        mallId = workflow?.proposal?.unit?.mallId ?? workflow?.proposal?.unit?.floor?.mallId
+          ?? workflow?.fitoutSubmittal?.project?.unit?.mallId ?? workflow?.fitoutSubmittal?.project?.unit?.floor?.mallId;
+      }
+    }
+
+    if (!mallId && sources.tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: sources.tenantId },
+        select: {
+          contracts: { where: { isActive: true }, take: 1, select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          proposals: { where: { isActive: true }, take: 1, select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+        },
+      });
+      const unit = tenant?.contracts[0]?.unit ?? tenant?.proposals[0]?.unit;
+      mallId = unit?.mallId ?? unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.ticketId) {
+      const ticket = await this.prisma.ticket.findUnique({
+        where: { id: sources.ticketId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = ticket?.unit?.mallId ?? ticket?.unit?.floor?.mallId;
     }
 
     if (mallId) {

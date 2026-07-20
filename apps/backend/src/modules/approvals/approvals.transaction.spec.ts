@@ -60,6 +60,19 @@ describe('ApprovalsService transactional decisions', () => {
     expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 
+  it('rejects a decision when the pending step is assigned to another user', async () => {
+    tx.approvalStep.findUnique.mockResolvedValue({
+      id: 'step-1', workflowId: 'workflow-1', status: 'PENDING', approverRole: 'FINANCE',
+      approverId: 'other-user', stepOrder: 1,
+      workflow: { status: 'IN_PROGRESS', entityType: 'PROPOSAL', entityId: 'proposal-1', steps: [] },
+    });
+
+    await expect(service.approve('step-1', 'user-1', 'FINANCE')).rejects.toThrow(
+      'This approval step is assigned to another user',
+    );
+    expect(tx.approvalStep.update).not.toHaveBeenCalled();
+  });
+
   it('does not emit when the transaction fails', async () => {
     prisma.$transaction.mockRejectedValueOnce(new Error('rollback'));
 
