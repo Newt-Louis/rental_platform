@@ -22,6 +22,7 @@ import {
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { getMallAccessDisplay } from './mallAccessDisplay';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import type { User } from '@/types';
@@ -341,6 +342,29 @@ function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: ()
 
 const MALL_ACCESS_ROLES = ['MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'];
 
+function MallAccessCell({ user }: { user: User }) {
+  const display = getMallAccessDisplay(user);
+
+  if (display.kind === 'global') {
+    return <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">Toàn hệ thống</Badge>;
+  }
+  if (display.kind === 'not-applicable') {
+    return <span className="text-gray-300 text-xs">—</span>;
+  }
+  if (display.kind === 'unassigned') {
+    return <span className="text-gray-400 text-xs">Chưa gán</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {display.malls.map((m) => (
+        <span key={m.id} className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-blue-100 bg-blue-50 text-blue-700 text-xs">
+          <Building2 size={10} />{m.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -442,6 +466,7 @@ function UsersTab() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Phòng ban</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Vai trò</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Quyền truy cập Mall</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
                 <th className="px-4 py-3 w-36" />
               </tr>
@@ -455,6 +480,7 @@ function UsersTab() {
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{(u as any).department ?? '—'}</td>
                     <td className="px-4 py-3"><Badge className={`${roleInfo.color} border-0 text-xs`}>{roleInfo.label}</Badge></td>
+                    <td className="px-4 py-3"><MallAccessCell user={u} /></td>
                     <td className="px-4 py-3">
                       <Badge className={u.isActive ? 'bg-green-100 text-green-700 border-0 text-xs' : 'bg-gray-100 text-gray-500 border-0 text-xs'}>
                         {u.isActive ? 'Hoạt động' : 'Đã khóa'}
