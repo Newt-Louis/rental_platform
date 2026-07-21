@@ -265,8 +265,8 @@ export class SpacesController {
   @Post('units')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create unit' })
-  createUnit(@Body() dto: CreateUnitDto) {
-    return this.spacesService.createUnit(dto);
+  createUnit(@Body() dto: CreateUnitDto, @CurrentUser() user: any) {
+    return this.spacesService.createUnit({ ...dto, mallId: dto.mallId ?? user.activeMallId });
   }
 
   @Patch('units/:id')

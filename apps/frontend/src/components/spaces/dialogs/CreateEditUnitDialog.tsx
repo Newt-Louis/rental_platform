@@ -106,7 +106,7 @@ export function CreateEditUnitDialog({
         ...data,
         mallId,
         areaGFA: Number(data.areaGFA),
-        areaNLA: Number(data.areaNLA),
+        areaNLA: data.areaNLA ? Number(data.areaNLA) : undefined,
         baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
         camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
         floorId: data.floorId || undefined,
@@ -247,14 +247,18 @@ export function CreateEditUnitDialog({
               <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích GFA (m²) *</label>
               <Input
                 {...register('areaGFA', { required: true })}
+                value={watch('areaGFA')}
+                onChange={(e) => setValue('areaGFA', e.target.value, { shouldDirty: true, shouldValidate: true })}
                 type="number" step="0.01" placeholder="120"
                 className={errors.areaGFA ? 'border-red-400' : ''}
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích NLA (m²) *</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích NLA (m²)</label>
               <Input
-                {...register('areaNLA', { required: true })}
+                {...register('areaNLA')}
+                value={watch('areaNLA')}
+                onChange={(e) => setValue('areaNLA', e.target.value, { shouldDirty: true })}
                 type="number" step="0.01" placeholder="100"
                 className={errors.areaNLA ? 'border-red-400' : ''}
               />
@@ -265,11 +269,21 @@ export function CreateEditUnitDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (₫/m²)</label>
-              <Input {...register('baseRentPerSqm')} type="number" placeholder="450000" />
+              <Input
+                {...register('baseRentPerSqm')}
+                value={watch('baseRentPerSqm')}
+                onChange={(e) => setValue('baseRentPerSqm', e.target.value, { shouldDirty: true })}
+                type="number" placeholder="450000"
+              />
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
-              <Input {...register('camPerSqm')} type="number" placeholder="80000" />
+              <Input
+                {...register('camPerSqm')}
+                value={watch('camPerSqm')}
+                onChange={(e) => setValue('camPerSqm', e.target.value, { shouldDirty: true })}
+                type="number" placeholder="80000"
+              />
             </div>
           </div>
 
@@ -324,11 +338,21 @@ export function CreateEditUnitDialog({
               <div className="grid grid-cols-2 gap-3 mt-2">
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Diện tích tối thiểu (m²)</label>
-                  <Input {...register('minFlexArea')} type="number" step="0.1" placeholder="50" />
+                  <Input
+                    {...register('minFlexArea')}
+                    value={watch('minFlexArea')}
+                    onChange={(e) => setValue('minFlexArea', e.target.value, { shouldDirty: true })}
+                    type="number" step="0.1" placeholder="50"
+                  />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Diện tích tối đa (m²)</label>
-                  <Input {...register('maxFlexArea')} type="number" step="0.1" placeholder="200" />
+                  <Input
+                    {...register('maxFlexArea')}
+                    value={watch('maxFlexArea')}
+                    onChange={(e) => setValue('maxFlexArea', e.target.value, { shouldDirty: true })}
+                    type="number" step="0.1" placeholder="200"
+                  />
                 </div>
               </div>
             )}

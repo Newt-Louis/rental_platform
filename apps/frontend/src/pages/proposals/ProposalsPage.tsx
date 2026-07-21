@@ -341,7 +341,7 @@ function ProposalDetailSheet({
 
   const p: any = detail?.data ?? detail ?? proposal;
   const statusColor = p ? STATUS_COLOR[p.status] ?? STATUS_COLOR.DRAFT : null;
-  const statusLabel = p ? t(`proposals.status.${p.status}`, p.status) : null;
+  const statusLabel = p ? t(`proposals.status.${p.status}`, p.status as string) : null;
 
   const navigate = useNavigate();
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -487,7 +487,7 @@ function ProposalDetailSheet({
                     >
                       <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
                       <div className="flex items-center gap-1 text-xs text-green-600">
-                        <span>{t(`contracts.status.${p.contract.status}`, p.contract.status)}</span>
+                        <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
                         <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                       </div>
                     </button>

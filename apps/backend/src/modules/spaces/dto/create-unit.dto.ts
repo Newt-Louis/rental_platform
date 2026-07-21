@@ -24,9 +24,10 @@ export enum UnitTierDto {
 }
 
 export class CreateUnitDto {
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Mặc định lấy theo mall đang active của user nếu không truyền' })
+  @IsOptional()
   @IsString()
-  mallId: string;
+  mallId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -56,9 +57,10 @@ export class CreateUnitDto {
   @IsNumber()
   areaGFA: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsNumber()
-  areaNLA: number;
+  areaNLA?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

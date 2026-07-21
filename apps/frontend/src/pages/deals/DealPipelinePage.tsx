@@ -89,7 +89,7 @@ export default function DealPipelinePage() {
             }`}
           >
             <p className="text-lg font-bold text-gray-900">{summary[key] ?? 0}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">{cfg.label}</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{t(`pipeline.stages.${key}`)}</p>
           </button>
         ))}
       </div>
@@ -111,8 +111,8 @@ export default function DealPipelinePage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Tất cả giai đoạn</SelectItem>
-            {Object.entries(STAGE_CONFIG).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+            {Object.entries(STAGE_CONFIG).map(([k]) => (
+              <SelectItem key={k} value={k}>{t(`pipeline.stages.${k}`)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -137,7 +137,8 @@ export default function DealPipelinePage() {
       ) : (
         <div className="space-y-3">
           {deals.map((deal: any) => {
-            const stageCfg = STAGE_CONFIG[deal.stage] ?? STAGE_CONFIG.LEAD;
+            const stageKey = STAGE_CONFIG[deal.stage] ? deal.stage : 'LEAD';
+            const stageCfg = STAGE_CONFIG[stageKey];
             return (
               <Card
                 key={deal.leadId}
@@ -149,7 +150,7 @@ export default function DealPipelinePage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className="font-semibold text-gray-900">{deal.brandName}</span>
-                        <Badge className={`border-0 text-xs ${stageCfg.color}`}>{stageCfg.label}</Badge>
+                        <Badge className={`border-0 text-xs ${stageCfg.color}`}>{t(`pipeline.stages.${stageKey}`)}</Badge>
                         {deal.priority === 'HOT' && (
                           <Badge className="bg-red-100 text-red-700 border-0 text-xs">HOT</Badge>
                         )}

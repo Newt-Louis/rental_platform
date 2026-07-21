@@ -55,6 +55,11 @@ export class CreateLeadDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  mallId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   tenantId?: string;
 
   @ApiPropertyOptional()

@@ -353,6 +353,8 @@ export class SpacesService {
   }
 
   async createUnit(dto: CreateUnitDto) {
+    if (!dto.mallId) throw new BadRequestException('mallId is required to create a unit');
+
     const existing = await this.prisma.unit.findUnique({
       where: { mallId_code: { mallId: dto.mallId, code: dto.code } },
       select: { id: true },

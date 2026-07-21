@@ -17,6 +17,7 @@ export class CrmService {
     if (!scope?.mallIds) return {};
     const mallIds = scope.mallIds;
     const relatedToMall = [
+      { mallId: { in: mallIds } },
       { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: mallIds } } } } },
       { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
       { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },

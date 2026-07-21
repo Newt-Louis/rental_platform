@@ -198,6 +198,7 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { selectedMallId } = useMallStore();
   const [mode, setMode] = useState<'lead' | 'customer'>('lead');
   const [form, setForm] = useState({
     brandName: '', companyName: '', contactName: '', contactTitle: '',
@@ -228,6 +229,7 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
       source: form.source as any,
       notes: form.notes || undefined,
       assignedToId: assignedToId || undefined,
+      mallId: selectedMallId ?? undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
@@ -2623,13 +2625,18 @@ function FollowUpsWorkspace() {
             <p className="py-8 text-center text-sm text-gray-400">{t('followUpsWorkspace.noTasks')}</p>
           ) : (
             <div className="space-y-2">
-              {group.items.map((item: any) => (
+              {group.items.map((item: any) => {
+                const leadStage = item.lead?.status ? LEAD_STAGES.find((s) => s.key === item.lead.status) : null;
+                return (
                 <article key={item.id} className="rounded-lg border p-3">
-                  <button
-                    type="button"
-                    className="text-left text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
-                    onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}
-                  >{item.lead?.brandName ?? item.customer?.companyName ?? 'Follow-up'}</button>
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="text-left text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+                      onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}
+                    >{item.lead?.brandName ?? item.customer?.companyName ?? 'Follow-up'}</button>
+                    {leadStage && <Badge className={`${leadStage.color} border-0 text-[10px] shrink-0`}>{leadStage.short}</Badge>}
+                  </div>
                   {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-gray-400">{t('followUpsWorkspace.dueDate', { date: fmtDate(item.dueDate) })}</span>
@@ -2638,7 +2645,8 @@ function FollowUpsWorkspace() {
                     </Button>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

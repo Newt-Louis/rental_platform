@@ -423,6 +423,7 @@ model Mall {
   categoryPricings     CategoryMallPricing[]
   servicePriceCatalog  ServicePriceCatalog[]
   activeUsers          User[]               @relation("UserActiveMall")
+  leads                Lead[]
 }
 
 model Building {
@@ -493,7 +494,7 @@ model Unit {
   code           String
   name           String?
   areaGFA        Float
-  areaNLA        Float
+  areaNLA        Float      @default(0)
   category       String? // Legacy: free text category
   categoryId     String? // NEW: FK to Category master
   categoryRef    Category?  @relation(fields: [categoryId], references: [id])
@@ -625,6 +626,8 @@ model Lead {
   tenant            Tenant?      @relation(fields: [tenantId], references: [id])
   customerId        String?
   customer          Customer?    @relation(fields: [customerId], references: [id])
+  mallId            String?
+  mall              Mall?        @relation(fields: [mallId], references: [id])
   notes             String?
   expectedRent      Float?
   expectedArea      Float?
@@ -646,6 +649,7 @@ model Lead {
   slotBookings SlotBooking[]
 
   @@index([status, priority, position])
+  @@index([mallId])
 }
 
 model LeadActivity {

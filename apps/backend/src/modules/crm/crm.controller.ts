@@ -93,7 +93,8 @@ export class CrmController {
 
   @Post('leads')
   @ApiOperation({ summary: 'Create new lead' })
-  create(@Body() dto: CreateLeadDto, @CurrentUser() user: any) {
+  async create(@Body() dto: CreateLeadDto, @CurrentUser() user: any) {
+    if (dto.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, dto.mallId);
     const payload = user.role === Role.LEASING_EXECUTIVE ? { ...dto, assignedToId: user.id } : dto;
     return this.crmService.create(payload);
   }
