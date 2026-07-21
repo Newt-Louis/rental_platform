@@ -34,6 +34,22 @@ describe('UsersService admin safety and listing', () => {
     }));
   });
 
+  it('includes active mall access with mall name for each listed user', async () => {
+    prisma.user.findMany.mockResolvedValue([]);
+    prisma.user.count.mockResolvedValue(0);
+
+    await service.findAll({ page: 1, limit: 20 });
+
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({
+        mallAccess: {
+          where: { isActive: true },
+          select: { role: true, mall: { select: { id: true, name: true } } },
+        },
+      }),
+    }));
+  });
+
   it('returns totals independent from list pagination', async () => {
     prisma.user.count
       .mockResolvedValueOnce(12)
