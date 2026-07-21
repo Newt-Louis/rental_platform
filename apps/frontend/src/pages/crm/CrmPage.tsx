@@ -194,11 +194,13 @@ function RatingStars({ value }: { value?: number }) {
 
 // ─── Unified Add Dialog ────────────────────────────────────────────────────────
 
-function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
   const { selectedMallId } = useMallStore();
+  const { user } = useAuthStore();
+  const isSelfOnlyAssignee = user?.role === 'LEASING_EXECUTIVE';
   const [mode, setMode] = useState<'lead' | 'customer'>('lead');
   const [form, setForm] = useState({
     brandName: '', companyName: '', contactName: '', contactTitle: '',
@@ -213,7 +215,7 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
     const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
     return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
   }, [categoryOptions]);
-  const [assignedToId, setAssignedToId] = useState('');
+  const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -386,10 +388,17 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldAssignee')}</Label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
-                <option value="">{t('addDialog.fieldAssigneeNone')}</option>
-                {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select>
+              {isSelfOnlyAssignee ? (
+                <div className="mt-1 h-9 flex items-center px-3 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-600">
+                  {user?.fullName}
+                  <span className="ml-1 text-gray-400">({t('addDialog.fieldAssigneeSelfHint')})</span>
+                </div>
+              ) : (
+                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
+                  <option value="">{t('addDialog.fieldAssigneeNone')}</option>
+                  {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                </select>
+              )}
             </div>
             <div className="col-span-2">
               <Label className="text-xs">{t('addDialog.fieldNotes')}</Label>

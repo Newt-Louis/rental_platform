@@ -510,6 +510,7 @@
     "fieldSource": "Nguồn khách hàng",
     "fieldAssignee": "Phụ trách",
     "fieldAssigneeNone": "— Chưa phân công —",
+    "fieldAssigneeSelfHint": "bạn",
     "fieldNotes": "Ghi chú",
     "fieldNotesPlaceholder": "Yêu cầu đặc biệt, lịch sử tiếp cận...",
     "cancel": "Hủy",

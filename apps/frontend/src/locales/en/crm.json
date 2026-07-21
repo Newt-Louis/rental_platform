@@ -510,6 +510,7 @@
     "fieldSource": "Lead source",
     "fieldAssignee": "Assigned to",
     "fieldAssigneeNone": "— Unassigned —",
+    "fieldAssigneeSelfHint": "you",
     "fieldNotes": "Notes",
     "fieldNotesPlaceholder": "Special requirements, contact history...",
     "cancel": "Cancel",
