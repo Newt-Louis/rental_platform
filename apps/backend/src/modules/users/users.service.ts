@@ -51,7 +51,7 @@ export class UsersService {
           updatedAt: true,
           mallAccess: {
             where: { isActive: true },
-            select: { role: true, mall: { select: { id: true, name: true } } },
+            select: { mall: { select: { id: true, name: true } } },
           },
         },
         orderBy: { createdAt: 'desc' },

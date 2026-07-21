@@ -22,7 +22,7 @@ import {
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
-import { getMallAccessDisplay } from './mallAccessDisplay';
+import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import type { User } from '@/types';
@@ -340,9 +340,7 @@ function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: ()
   );
 }
 
-const MALL_ACCESS_ROLES = ['MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'];
-
-function MallAccessCell({ user }: { user: User }) {
+export function MallAccessCell({ user }: { user: User }) {
   const display = getMallAccessDisplay(user);
 
   if (display.kind === 'global') {

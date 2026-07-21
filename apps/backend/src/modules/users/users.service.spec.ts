@@ -44,7 +44,7 @@ describe('UsersService admin safety and listing', () => {
       select: expect.objectContaining({
         mallAccess: {
           where: { isActive: true },
-          select: { role: true, mall: { select: { id: true, name: true } } },
+          select: { mall: { select: { id: true, name: true } } },
         },
       }),
     }));

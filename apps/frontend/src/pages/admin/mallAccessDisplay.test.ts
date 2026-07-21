@@ -24,8 +24,8 @@ describe('getMallAccessDisplay', () => {
 
   it('returns the mall list for a mall-scoped role with grants', () => {
     const mallAccess = [
-      { role: 'LEASING_EXECUTIVE', mall: { id: 'mall-1', name: 'THISO Mall Sala' } },
-      { role: 'LEASING_EXECUTIVE', mall: { id: 'mall-2', name: 'THISO Mall Vivo' } },
+      { mall: { id: 'mall-1', name: 'THISO Mall Sala' } },
+      { mall: { id: 'mall-2', name: 'THISO Mall Vivo' } },
     ];
     expect(getMallAccessDisplay({ role: 'LEASING_EXECUTIVE', mallAccess })).toEqual({
       kind: 'malls',
@@ -34,5 +34,9 @@ describe('getMallAccessDisplay', () => {
         { id: 'mall-2', name: 'THISO Mall Vivo' },
       ],
     });
+  });
+
+  it('defaults to not-applicable for a role outside both the global and mall-scoped lists (defensive default for future roles)', () => {
+    expect(getMallAccessDisplay({ role: 'SOME_FUTURE_ROLE' as any, mallAccess: [] })).toEqual({ kind: 'not-applicable' });
   });
 });

@@ -22,7 +22,7 @@ export interface User {
   avatar?: string;
   isActive: boolean;
   tenantId?: string | null;
-  mallAccess?: { role: string; mall: { id: string; name: string } }[];
+  mallAccess?: { mall: { id: string; name: string } }[];
 }
 
 export interface AuthState {
