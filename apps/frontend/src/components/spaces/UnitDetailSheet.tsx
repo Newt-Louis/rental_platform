@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spacesApi, bookingApi, proposalsApi, slotsApi } from '@/api';
+import { useForm } from 'react-hook-form';
+import { spacesApi, bookingApi, proposalsApi, slotsApi, categoriesApi } from '@/api';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,17 +13,18 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Building2, DollarSign, User, Mail, Phone, FileText, Pencil, Trash2,
   BookmarkPlus, Clock, TrendingUp, Users, Star, SlidersHorizontal,
-  Calendar, Image, LayoutList, Scissors, GitMerge,
+  Calendar, Image, LayoutList, Scissors, GitMerge, Save, X,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 import {
   STATUS_CONFIG, STATUS_ICONS, SPACE_TYPE_OPTIONS, TIER_OPTIONS, LEASE_TERM_OPTIONS,
-  mediaUrl, fmtDate, fmtMoney,
+  CATEGORIES, mediaUrl, fmtDate, fmtMoney,
 } from '@/pages/spaces/spaces.constants';
 import { UnitMediaTab } from './tabs/UnitMediaTab';
 import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
+import { UnitFormFields } from './dialogs/UnitFormFields';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { useAuthStore } from '@/store/auth.store';
@@ -46,6 +48,19 @@ export function UnitDetailSheet({
   const [convertBooking, setConvertBooking] = useState<any | null>(null);
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [splitConfirmOpen, setSplitConfirmOpen] = useState(false);
+  const [isEditingInfo, setIsEditingInfo] = useState(false);
+
+  const {
+    register: editRegister, handleSubmit: handleEditSubmit, watch: editWatch,
+    setValue: editSetValue, reset: editReset, formState: { errors: editErrors },
+  } = useForm({
+    defaultValues: {
+      code: '', name: '', category: '', floorId: '', zoneId: '',
+      areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
+      spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
+      minFlexArea: '', maxFlexArea: '',
+    },
+  });
 
   const submitProposalMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
@@ -81,6 +96,23 @@ export function UnitDetailSheet({
     enabled: !!unit?.id,
   });
 
+  const { data: floorsData } = useQuery({
+    queryKey: ['floors', unit?.mallId],
+    queryFn: () => spacesApi.listFloors(unit!.mallId),
+    enabled: isEditingInfo && !!unit?.mallId,
+  });
+  const { data: zonesData } = useQuery({
+    queryKey: ['zones', unit?.mallId],
+    queryFn: () => spacesApi.listZones({ mallId: unit!.mallId }),
+    enabled: isEditingInfo && !!unit?.mallId,
+  });
+  const { data: categoryOptions } = useQuery({
+    queryKey: ['category-options'],
+    queryFn: categoriesApi.getOptions,
+    staleTime: 300_000,
+    enabled: isEditingInfo,
+  });
+
   const cancelBookingMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       bookingApi.cancel(id, reason),
@@ -105,6 +137,39 @@ export function UnitDetailSheet({
     onError: () => toast({ title: 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
   });
 
+  const updateInfoMutation = useMutation({
+    mutationFn: (data: any) => {
+      const payload = {
+        ...data,
+        mallId: unit!.mallId,
+        areaGFA: Number(data.areaGFA),
+        areaNLA: data.areaNLA ? Number(data.areaNLA) : undefined,
+        baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
+        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
+        floorId: data.floorId || undefined,
+        zoneId: data.zoneId || undefined,
+        name: data.name || undefined,
+        category: data.category || undefined,
+        spaceType: data.spaceType || undefined,
+        leaseTermType: data.leaseTermType || undefined,
+        tier: data.tier || undefined,
+        minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
+        maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
+        isFlexibleArea: !!data.isFlexibleArea,
+      };
+      return spacesApi.updateUnit(detail?.id ?? unit!.id, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
+      toast({ title: 'Đã cập nhật mặt bằng' });
+      setIsEditingInfo(false);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
   const splitMutation = useMutation({
     mutationFn: () => spacesApi.splitUnit((detail as any)?.id ?? unit!.id),
     onSuccess: () => {
@@ -121,6 +186,41 @@ export function UnitDetailSheet({
   const d: any = detail ?? unit;
   const cfg = d ? STATUS_CONFIG[d.status] : null;
   const monthlyEst = d ? ((d.baseRentPerSqm ?? 0) + (d.camPerSqm ?? 0)) * d.areaNLA : 0;
+
+  const floors: any[] = (floorsData?.data ?? floorsData ?? []).slice().sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  const allZones: any[] = zonesData?.data ?? zonesData ?? [];
+  const editFloorId = editWatch('floorId');
+  const zones = editFloorId ? allZones.filter((z: any) => z.floorId === editFloorId) : allZones;
+  const categoryNames: string[] = useMemo(() => {
+    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
+    return fromApi.length > 0 ? fromApi : CATEGORIES;
+  }, [categoryOptions]);
+
+  const handleStartEdit = () => {
+    editReset({
+      code: d.code ?? '',
+      name: d.name ?? '',
+      category: d.category ?? '',
+      floorId: d.floorId ?? '',
+      zoneId: d.zoneId ?? '',
+      areaGFA: d.areaGFA?.toString() ?? '',
+      areaNLA: d.areaNLA?.toString() ?? '',
+      baseRentPerSqm: d.baseRentPerSqm?.toString() ?? '',
+      camPerSqm: d.camPerSqm?.toString() ?? '',
+      spaceType: d.spaceType ?? '',
+      leaseTermType: d.leaseTermType ?? '',
+      tier: d.tier ?? '',
+      isFlexibleArea: d.isFlexibleArea ?? false,
+      minFlexArea: d.minFlexArea?.toString() ?? '',
+      maxFlexArea: d.maxFlexArea?.toString() ?? '',
+    });
+    setIsEditingInfo(true);
+  };
+
+  const handleCancelEdit = () => {
+    editReset();
+    setIsEditingInfo(false);
+  };
 
   return (
     <Sheet
@@ -246,35 +346,55 @@ export function UnitDetailSheet({
           </div>}
 
           {/* Space info */}
-          <SheetSection label="THÔNG TIN MẶT BẰNG" className="bg-gray-50">
-            <SheetRow label="Diện tích GFA"      value={`${d.areaGFA?.toLocaleString()} m²`}  icon={Building2} />
-            <SheetRow label="Diện tích NLA"      value={`${d.areaNLA?.toLocaleString()} m²`}  icon={Building2} />
-            <SheetRow label="Giá thuê cơ bản"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : '—'} icon={DollarSign} />
-            <SheetRow label="Phí CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : '—'} icon={DollarSign} />
-            {monthlyEst > 0 && (
-              <SheetRow
-                label="Ước tính / tháng"
-                value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} ₫</span>}
-                icon={DollarSign}
-              />
-            )}
-            {d.spaceType && (
-              <SheetRow label="Loại sảnh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
-            )}
-            {d.tier && (
-              <SheetRow label="Tier" value={TIER_OPTIONS.find(o => o.value === d.tier)?.label ?? d.tier} icon={Star} />
-            )}
-            {d.leaseTermType && (
-              <SheetRow label="Hình thức thuê" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
-            )}
-            {d.isFlexibleArea && (
-              <SheetRow
-                label="Diện tích linh động"
-                value={`${d.minFlexArea?.toLocaleString() ?? '?'} – ${d.maxFlexArea?.toLocaleString() ?? '?'} m²`}
-                icon={SlidersHorizontal}
-              />
-            )}
-          </SheetSection>
+          {!isEditingInfo ? (
+            <SheetSection label="THÔNG TIN MẶT BẰNG" className="bg-gray-50">
+              <SheetRow label="Diện tích GFA"      value={`${d.areaGFA?.toLocaleString()} m²`}  icon={Building2} />
+              <SheetRow label="Diện tích NLA"      value={`${d.areaNLA?.toLocaleString()} m²`}  icon={Building2} />
+              <SheetRow label="Giá thuê cơ bản"    value={d.baseRentPerSqm ? fmtMoney(d.baseRentPerSqm) : '—'} icon={DollarSign} />
+              <SheetRow label="Phí CAM"            value={d.camPerSqm ? fmtMoney(d.camPerSqm) : '—'} icon={DollarSign} />
+              {monthlyEst > 0 && (
+                <SheetRow
+                  label="Ước tính / tháng"
+                  value={<span className="text-gray-700 font-semibold">{new Intl.NumberFormat('vi-VN').format(monthlyEst)} ₫</span>}
+                  icon={DollarSign}
+                />
+              )}
+              {d.spaceType && (
+                <SheetRow label="Loại sảnh" value={SPACE_TYPE_OPTIONS.find(o => o.value === d.spaceType)?.label ?? d.spaceType} icon={Building2} />
+              )}
+              {d.tier && (
+                <SheetRow label="Tier" value={TIER_OPTIONS.find(o => o.value === d.tier)?.label ?? d.tier} icon={Star} />
+              )}
+              {d.leaseTermType && (
+                <SheetRow label="Hình thức thuê" value={LEASE_TERM_OPTIONS.find(o => o.value === d.leaseTermType)?.label ?? d.leaseTermType} icon={Clock} />
+              )}
+              {d.isFlexibleArea && (
+                <SheetRow
+                  label="Diện tích linh động"
+                  value={`${d.minFlexArea?.toLocaleString() ?? '?'} – ${d.maxFlexArea?.toLocaleString() ?? '?'} m²`}
+                  icon={SlidersHorizontal}
+                />
+              )}
+            </SheetSection>
+          ) : (
+            <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+              <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">THÔNG TIN MẶT BẰNG</div>
+              <form
+                id="unit-info-edit-form"
+                onSubmit={handleEditSubmit((data) => updateInfoMutation.mutate(data))}
+              >
+                <UnitFormFields
+                  register={editRegister}
+                  watch={editWatch}
+                  setValue={editSetValue}
+                  errors={editErrors}
+                  floors={floors}
+                  zones={zones}
+                  categoryNames={categoryNames}
+                />
+              </form>
+            </div>
+          )}
 
           {/* GAP #2 — Sảnh gộp info + Tách sảnh */}
           {d.isCombined && (
@@ -374,7 +494,7 @@ export function UnitDetailSheet({
 
           {/* Actions */}
           {(canManageSpaces || canManageSales) && <div className="flex gap-2 pt-2 border-t border-gray-100">
-            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
+            {canManageSales && !isEditingInfo && (d.status === 'VACANT' || d.status === 'BOOKING') && (
               <Button
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}
@@ -382,14 +502,30 @@ export function UnitDetailSheet({
                 <BookmarkPlus size={14} /> Tạo Booking
               </Button>
             )}
-            {canManageSpaces && <Button
+            {canManageSpaces && !isEditingInfo && <Button
               variant="outline"
               className="flex-1 gap-2"
-              onClick={() => { onEdit(d); }}
+              onClick={handleStartEdit}
             >
               <Pencil size={14} /> Sửa
             </Button>}
-            {canManageSpaces && <Button
+            {canManageSpaces && isEditingInfo && <Button
+              type="button"
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={handleCancelEdit}
+            >
+              <X size={14} /> Hủy
+            </Button>}
+            {canManageSpaces && isEditingInfo && <Button
+              type="submit"
+              form="unit-info-edit-form"
+              className="flex-1 gap-2"
+              disabled={updateInfoMutation.isPending}
+            >
+              <Save size={14} /> {updateInfoMutation.isPending ? 'Đang lưu...' : 'Lưu'}
+            </Button>}
+            {canManageSpaces && !isEditingInfo && <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
               onClick={() => { onDelete(d); }}
