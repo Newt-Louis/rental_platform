@@ -35,7 +35,8 @@ export class ProposalsController {
   }
 
   private async scopedQuery(user: any, query: any) {
-    const mallId: string | undefined = user.activeMallId ?? undefined;
+    const mallId: string | undefined = query.mallId ?? user.activeMallId ?? undefined;
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     const mallIds = mallId ? undefined : (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
     return { ...query, mallId, mallIds };
   }
@@ -44,6 +45,7 @@ export class ProposalsController {
   @ApiOperation({ summary: 'List proposals' })
   @ApiQuery({ name: 'status', required: false, enum: ProposalStatus })
   @ApiQuery({ name: 'unitId', required: false })
+  @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -53,8 +55,9 @@ export class ProposalsController {
 
   @Get('stats/overview')
   @ApiOperation({ summary: 'Proposal KPI by status' })
-  async stats(@CurrentUser() user: any) {
-    const mallId: string | undefined = user.activeMallId ?? undefined;
+  async stats(@CurrentUser() user: any, @Query('mallId') requestedMallId?: string) {
+    const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     const mallIds = mallId
       ? [mallId]
       : (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;

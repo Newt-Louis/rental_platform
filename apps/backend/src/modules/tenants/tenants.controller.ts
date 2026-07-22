@@ -24,10 +24,15 @@ export class TenantsController {
   @ApiOperation({ summary: 'List tenants' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'category', required: false })
+  @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  async findAll(@Query() query: PaginationDto & { category?: string }, @CurrentUser() user: any) {
-    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+  async findAll(@Query() query: PaginationDto & { category?: string; mallId?: string }, @CurrentUser() user: any) {
+    const requestedMallId = query.mallId ?? user.activeMallId ?? undefined;
+    if (requestedMallId) await this.mallAccess.assertMallAccess(user.id, user.role, requestedMallId);
+    const mallIds = requestedMallId
+      ? [requestedMallId]
+      : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.tenantsService.findAll({ ...query, mallIds: mallIds ?? undefined });
   }
 

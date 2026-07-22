@@ -93,7 +93,7 @@ export class ProposalsService {
     };
   }
 
-  async findAll(query: { status?: ProposalStatus; unitId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
+  async findAll(query: { status?: ProposalStatus; unitId?: string; floorId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
     const { ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
@@ -104,10 +104,10 @@ export class ProposalsService {
     if (filters.unitId) where.unitId = filters.unitId;
     if (filters.tenantId) where.tenantId = filters.tenantId;
     const mallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
-    if (mallIds) where.OR = [
-      { unit: { mallId: { in: mallIds } } },
-      { unit: { floor: { mallId: { in: mallIds } } } },
-    ];
+    if (mallIds || filters.floorId) where.unit = {
+      ...(mallIds ? { mallId: { in: mallIds } } : {}),
+      ...(filters.floorId ? { floorId: filters.floorId } : {}),
+    };
     if (filters.search?.trim()) {
       const search = filters.search.trim();
       where.AND = [{ OR: [
@@ -129,7 +129,7 @@ export class ProposalsService {
         skip,
         take: +limit,
         include: {
-          unit: { select: { id: true, code: true, name: true, floor: { select: { name: true } } } },
+          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
           lead: { select: { id: true, brandName: true, contactName: true } },
           booking: {
@@ -150,10 +150,7 @@ export class ProposalsService {
 
   async getStats(mallIds?: string[]) {
     const base: any = { isActive: true, deletedAt: null };
-    if (mallIds) base.OR = [
-      { unit: { mallId: { in: mallIds } } },
-      { unit: { floor: { mallId: { in: mallIds } } } },
-    ];
+    if (mallIds) base.unit = { mallId: { in: mallIds } };
     const statuses = Object.values(ProposalStatus);
     const grouped = await this.prisma.proposal.groupBy({ by: ['status'], where: base, _count: { _all: true } });
     const counts = Object.fromEntries(statuses.map((status) => [status, 0]));

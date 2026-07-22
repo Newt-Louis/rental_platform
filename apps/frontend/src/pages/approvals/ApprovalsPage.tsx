@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
-import { approvalsApi, bookingApi, proposalsApi } from '@/api';
+import { approvalsApi, bookingApi, proposalsApi, spacesApi } from '@/api';
+import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +18,7 @@ import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import {
   CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
   Building2, Loader2, History, ChevronLeft, ChevronRight, Eye, Download,
-  FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck,
+  FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck, Search, SlidersHorizontal, Sparkles, X,
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
@@ -34,6 +36,98 @@ function fmtDateTime(value?: string | null) {
   return new Date(value).toLocaleString('vi-VN', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function isRecent(value: string) { return Date.now() - new Date(value).getTime() < 24 * 60 * 60 * 1000; }
+function approvalAge(value: string) {
+  const hours = Math.floor(Math.max(0, Date.now() - new Date(value).getTime()) / 3_600_000);
+  if (hours < 1) return 'Vừa tạo';
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  return days < 7 ? `${days} ngày trước` : new Date(value).toLocaleDateString('vi-VN');
+}
+
+function ApprovalPipeline({ steps, workflowStatus }: { steps: any[]; workflowStatus?: string }) {
+  const approvedCount = steps.filter((step) => step.status === 'APPROVED').length;
+  const rejectedIndex = steps.findIndex((step) => step.status === 'REJECTED');
+  const pendingIndex = steps.findIndex((step) => step.status !== 'APPROVED' && step.status !== 'REJECTED');
+  const currentIndex = rejectedIndex >= 0 ? rejectedIndex : pendingIndex;
+  const progress = steps.length ? Math.round((approvedCount / steps.length) * 100) : 0;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <ShieldCheck size={17} className="text-blue-600" /> Tiến trình phê duyệt
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {workflowStatus === 'APPROVED'
+                ? 'Tất cả các bước đã hoàn thành'
+                : workflowStatus === 'REJECTED'
+                  ? `Dừng tại bước ${rejectedIndex + 1}`
+                  : currentIndex >= 0 ? `Đang chờ xử lý bước ${currentIndex + 1} trên ${steps.length}` : 'Chưa có bước duyệt'}
+            </p>
+          </div>
+          <div className="min-w-[150px] text-right">
+            <span className="text-sm font-bold text-slate-900">{progress}%</span>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto px-4 py-5">
+        <div className="flex min-w-max items-stretch">
+          {steps.map((step, index) => {
+            const approved = step.status === 'APPROVED';
+            const rejected = step.status === 'REJECTED';
+            const active = index === currentIndex && !rejected;
+            const waiting = !approved && !rejected && !active;
+            return (
+              <div key={step.id} className="flex items-center">
+                <div className={`w-44 rounded-xl border p-3 transition-colors ${
+                  approved ? 'border-emerald-200 bg-emerald-50' :
+                  rejected ? 'border-red-300 bg-red-50' :
+                  active ? 'border-blue-300 bg-blue-50 ring-2 ring-blue-100' :
+                  'border-slate-200 bg-slate-50'
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                      approved ? 'bg-emerald-600 text-white' : rejected ? 'bg-red-600 text-white' : active ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      {approved ? <CheckCircle size={17} /> : rejected ? <XCircle size={17} /> : index + 1}
+                    </span>
+                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${
+                      approved ? 'text-emerald-700' : rejected ? 'text-red-700' : active ? 'text-blue-700' : 'text-slate-400'
+                    }`}>
+                      {approved ? 'Đã duyệt' : rejected ? 'Từ chối' : active ? 'Đang xử lý' : 'Chưa đến lượt'}
+                    </span>
+                  </div>
+                  <p className="mt-3 line-clamp-2 min-h-10 text-sm font-semibold text-slate-900">{step.stepName}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{step.approverRole}</p>
+                  <div className="mt-3 border-t border-current/10 pt-2 text-[11px] text-slate-500">
+                    {step.approver?.fullName ? (
+                      <><p className="truncate font-medium text-slate-700">{step.approver.fullName}</p><p className="mt-0.5">{fmtDateTime(step.decidedAt)}</p></>
+                    ) : active ? <p className="font-medium text-blue-700">Đang chờ người duyệt</p>
+                      : waiting ? <p>Chờ hoàn tất bước trước</p> : null}
+                  </div>
+                </div>
+                {index < steps.length - 1 && (
+                  <div className={`mx-2 h-0.5 w-8 ${approved ? 'bg-emerald-400' : 'bg-slate-200'}`}>
+                    <span className={`block h-2 w-2 -translate-y-[3px] translate-x-7 rotate-45 border-r-2 border-t-2 ${approved ? 'border-emerald-400' : 'border-slate-300'}`} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {steps.length > 3 && <p className="border-t border-slate-100 px-4 py-2 text-center text-[11px] text-slate-400">Kéo ngang để xem toàn bộ quy trình</p>}
+    </section>
+  );
 }
 
 function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | null; onClose: () => void }) {
@@ -81,6 +175,8 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
               <Badge className="border-0 bg-white/80 text-slate-700">{t('approvals.workflow.steps', { done: steps.filter((s) => s.status === 'APPROVED').length, total: steps.length })}</Badge>
             </div>
           </div>
+
+          <ApprovalPipeline steps={steps} workflowStatus={w.status} />
 
           <SheetSection label={t('approvals.workflow.section.proposalInfo')} className="bg-slate-50">
             <div className="grid grid-cols-2 gap-x-4">
@@ -132,6 +228,25 @@ export default function ApprovalsPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [floorId, setFloorId] = useState('');
+  const [unitId, setUnitId] = useState('');
+
+  const { data: floorsResponse } = useQuery({
+    queryKey: ['approval-filter-floors', selectedMallId],
+    queryFn: () => spacesApi.listFloors(selectedMallId || undefined),
+  });
+  const floors: any[] = floorsResponse?.data ?? floorsResponse ?? [];
+  const { data: unitsResponse } = useQuery({
+    queryKey: ['approval-filter-units', selectedMallId, floorId],
+    queryFn: () => spacesApi.listUnits({ mallId: selectedMallId || undefined, floorId: floorId || undefined, page: 1, limit: 500 }),
+  });
+  const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
+
+  useEffect(() => {
+    setProposalPage(1); setHistoryPage(1); setSelectedWorkflowId(null);
+    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId('');
+  }, [selectedMallId]);
 
   // ── Selection state ──
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
@@ -157,17 +272,20 @@ export default function ApprovalsPage() {
 
   // ── Queries ──
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['pending-approvals', proposalPage, selectedMallId],
-    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined }),
+    queryKey: ['pending-approvals', proposalPage, selectedMallId, search, floorId, unitId],
+    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined, search: search || undefined, floorId: floorId || undefined, unitId: unitId || undefined }),
     refetchInterval: 30_000,
   });
   const { data: historyData, isLoading: loadingHistory, isError: historyError, refetch: refetchHistory } = useQuery({
-    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId],
+    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId, search, floorId, unitId],
     queryFn: () => approvalsApi.history({
       page: historyPage,
       limit: 25,
       status: historyStatus === 'ALL' ? undefined : historyStatus,
       mallId: selectedMallId || undefined,
+      search: search || undefined,
+      floorId: floorId || undefined,
+      unitId: unitId || undefined,
     }),
     enabled: view === 'history',
   });
@@ -379,6 +497,21 @@ export default function ApprovalsPage() {
         </button>
       </div>
 
+      {view !== 'prices' && (
+        <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800"><SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc</div>
+            <span className="text-xs text-gray-500">{view === 'history' ? historyTotal : proposalTotal} hồ sơ</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <div className="relative min-w-[240px] flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><Input className="h-9 pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setProposalPage(1); setHistoryPage(1); }} placeholder="Số đề xuất, khách thuê, mã mặt bằng..." /></div>
+            <Select value={floorId || 'ALL'} onValueChange={(value) => { setFloorId(value === 'ALL' ? '' : value); setUnitId(''); }}><SelectTrigger className="h-9 w-44"><SelectValue placeholder="Tầng" /></SelectTrigger><SelectContent><SelectItem value="ALL">Tất cả tầng</SelectItem>{floors.map((floor) => <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>)}</SelectContent></Select>
+            <Select value={unitId || 'ALL'} onValueChange={(value) => setUnitId(value === 'ALL' ? '' : value)}><SelectTrigger className="h-9 w-52"><SelectValue placeholder="Mặt bằng" /></SelectTrigger><SelectContent><SelectItem value="ALL">Tất cả mặt bằng</SelectItem>{units.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}{unit.name ? ` — ${unit.name}` : ''}</SelectItem>)}</SelectContent></Select>
+            {(search || floorId || unitId) && <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={() => { setSearch(''); setFloorId(''); setUnitId(''); }}><X size={13} /> Đặt lại</Button>}
+          </div>
+        </CardContent></Card>
+      )}
+
       {/* ══════════ PROPOSALS TABLE ══════════ */}
       {view === 'proposals' && (
         <>
@@ -419,6 +552,7 @@ export default function ApprovalsPage() {
                         </div>
                       </th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposal')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian tạo</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.approvalStep')}</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.role')}</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.tenant')}</th>
@@ -432,9 +566,11 @@ export default function ApprovalsPage() {
                     {steps.map((step: any) => {
                       const proposal = step.workflow?.proposal;
                       const isSelected = selectedProposalIds.has(step.id);
+                      const createdAt = step.workflow?.createdAt ?? step.createdAt;
+                      const isNew = isRecent(createdAt);
                       return (
                         <tr key={step.id}
-                          className={`${DRAG_SELECT_CLASS} cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
+                          className={`${DRAG_SELECT_CLASS} cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : isNew ? 'bg-sky-50/40' : 'hover:bg-gray-50/60'}`}
                           data-step-id={step.id}
                           onClick={() => setSelectedWorkflowId(step.workflowId)}
                         >
@@ -453,10 +589,12 @@ export default function ApprovalsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-mono text-xs text-gray-600">
+                            <span className="font-mono text-xs font-semibold text-gray-700">
                               {proposal?.proposalNumber ?? '—'}
                             </span>
+                            {isNew && <Badge className="ml-2 gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> Mới</Badge>}
                           </td>
+                          <td className="px-4 py-3 whitespace-nowrap"><div className={`flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}><Clock3 size={13} />{approvalAge(createdAt)}</div><div className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(createdAt)}</div></td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-800 text-sm">{step.stepName}</div>
                             <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">{t('approvals.table.step', { order: step.stepOrder })}</Badge>

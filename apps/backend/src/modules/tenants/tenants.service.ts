@@ -14,9 +14,9 @@ export class TenantsService {
     const where: any = { isActive: true, deletedAt: null };
     if (category) where.category = category;
     if (query.mallIds) where.AND = [{ OR: [
-      { contracts: { some: { isActive: true, unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } } },
-      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } } },
-      { occupiedUnits: { some: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } } },
+      { contracts: { some: { isActive: true, unit: { mallId: { in: query.mallIds } } } } },
+      { proposals: { some: { isActive: true, unit: { mallId: { in: query.mallIds } } } } },
+      { occupiedUnits: { some: { mallId: { in: query.mallIds } } } },
     ] }];
     if (search) {
       where.OR = [

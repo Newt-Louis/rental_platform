@@ -19,9 +19,12 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 export class ApprovalsController {
   constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
 
-  private async mallIds(user: any): Promise<string[] | undefined> {
-    const mallId: string | undefined = user.activeMallId ?? undefined;
-    if (mallId) return [mallId];
+  private async mallIds(user: any, requestedMallId?: string): Promise<string[] | undefined> {
+    const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
+    if (mallId) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+      return [mallId];
+    }
     return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
   }
 
@@ -30,7 +33,7 @@ export class ApprovalsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   async getPending(@CurrentUser() user: any, @Query() query: any) {
-    return this.approvalsService.getPending(user.id, user.role, query, await this.mallIds(user));
+    return this.approvalsService.getPending(user.id, user.role, query, await this.mallIds(user, query.mallId));
   }
 
   @Get('history')
@@ -39,7 +42,7 @@ export class ApprovalsController {
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false, enum: ['APPROVED', 'REJECTED'] })
   async getHistory(@CurrentUser() user: any, @Query() query: any) {
-    return this.approvalsService.getHistory(user.id, user.role, query, await this.mallIds(user));
+    return this.approvalsService.getHistory(user.id, user.role, query, await this.mallIds(user, query.mallId));
   }
 
   @Get()
@@ -48,7 +51,7 @@ export class ApprovalsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   async getAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.approvalsService.getAllWorkflows(query, await this.mallIds(user));
+    return this.approvalsService.getAllWorkflows(query, await this.mallIds(user, query.mallId));
   }
 
   @Get('policy/rules')

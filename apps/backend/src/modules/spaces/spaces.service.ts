@@ -362,7 +362,7 @@ export class SpacesService {
     if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
 
     return this.prisma.unit.create({
-      data: dto,
+      data: { ...dto, mallId: dto.mallId } as Prisma.UnitUncheckedCreateInput,
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },

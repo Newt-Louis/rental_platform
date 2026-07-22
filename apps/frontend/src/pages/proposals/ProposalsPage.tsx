@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
-import { proposalsApi, dealScoringApi, proposalScenariosApi } from '@/api';
+import { proposalsApi, dealScoringApi, proposalScenariosApi, spacesApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import {
   Search, FileText, Send, Building2, DollarSign, Calendar, User, CheckCircle, XCircle,
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
-  X, Loader2, Pencil, CheckSquare, Square,
+  X, Loader2, Pencil, CheckSquare, Square, SlidersHorizontal, Clock3, Sparkles,
 } from 'lucide-react';
 import type { Proposal } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
@@ -48,6 +48,22 @@ function fmtFull(n: number) {
 function fmtDate(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function proposalAge(createdAt: string) {
+  const elapsed = Math.max(0, Date.now() - new Date(createdAt).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return 'Vừa tạo';
+  if (minutes < 60) return `${minutes} phút trước`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} ngày trước`;
+  return new Date(createdAt).toLocaleDateString('vi-VN');
+}
+
+function isNewProposal(createdAt: string) {
+  return Date.now() - new Date(createdAt).getTime() < 24 * 60 * 60 * 1000;
 }
 
 function ProposalVersionsPanel({ proposalId }: { proposalId: string }) {
@@ -653,7 +669,7 @@ function ProposalDetailSheet({
   );
 }
 
-const EMPTY_FILTERS = { search: '', status: '', dateFrom: '', dateTo: '' };
+const EMPTY_FILTERS = { search: '', status: '', floorId: '', unitId: '', dateFrom: '', dateTo: '' };
 
 export default function ProposalsPage() {
   const { t } = useTranslation('deals');
@@ -670,6 +686,29 @@ export default function ProposalsPage() {
   const { selectedMallId } = useMallStore();
   const canEdit = !!role && ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'].includes(role);
   const canConvert = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
+
+  const { data: floorsResponse } = useQuery({
+    queryKey: ['proposal-filter-floors', selectedMallId],
+    queryFn: () => spacesApi.listFloors(selectedMallId || undefined),
+  });
+  const floors: any[] = floorsResponse?.data ?? floorsResponse ?? [];
+  const { data: unitsResponse } = useQuery({
+    queryKey: ['proposal-filter-units', selectedMallId, draft.floorId],
+    queryFn: () => spacesApi.listUnits({
+      mallId: selectedMallId || undefined,
+      floorId: draft.floorId || undefined,
+      page: 1,
+      limit: 500,
+    }),
+  });
+  const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
+
+  useEffect(() => {
+    setDraft(EMPTY_FILTERS);
+    setApplied(EMPTY_FILTERS);
+    setPage(1);
+    setSelectedProposal(null);
+  }, [selectedMallId]);
 
   const STATUS_MAP: Record<string, { label: string; color: string }> = {
     DRAFT:        { label: t('proposals.status.DRAFT'),        color: 'bg-gray-100 text-gray-700' },
@@ -693,12 +732,9 @@ export default function ProposalsPage() {
   const setDraftField = (k: keyof typeof draft, v: string) =>
     setDraft((f) => ({ ...f, [k]: v }));
 
-  const hasApplied = !!(applied.search || applied.status || applied.dateFrom || applied.dateTo);
-  const isDirty =
-    draft.search !== applied.search ||
-    draft.status !== applied.status ||
-    draft.dateFrom !== applied.dateFrom ||
-    draft.dateTo !== applied.dateTo;
+  const hasApplied = Object.values(applied).some(Boolean);
+  const isDirty = Object.keys(draft).some((key) => draft[key as keyof typeof draft] !== applied[key as keyof typeof applied]);
+  const appliedFilterCount = [applied.status, applied.floorId, applied.unitId, applied.dateFrom || applied.dateTo].filter(Boolean).length;
 
   function applyFilters() { setApplied({ ...draft }); setPage(1); }
   function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
@@ -708,6 +744,8 @@ export default function ProposalsPage() {
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
       status: applied.status || undefined,
+      floorId: applied.floorId || undefined,
+      unitId: applied.unitId || undefined,
       dateFrom: applied.dateFrom || undefined,
       dateTo: applied.dateTo || undefined,
       mallId: selectedMallId || undefined,
@@ -855,8 +893,17 @@ export default function ProposalsPage() {
       </div>
       {statsError && <button className="text-sm text-amber-700 mb-3" onClick={() => refetchStats()}>{t('proposals.errorLoad')} {t('common:actions.refresh')}</button>}
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 flex-wrap mb-4">
+      {/* Search and filters */}
+      <Card className="mb-4 border-gray-200 shadow-sm">
+      <CardContent className="p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+          <SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc
+          {appliedFilterCount > 0 && <Badge className="bg-blue-100 text-blue-700 border-0">{appliedFilterCount} bộ lọc</Badge>}
+        </div>
+        <span className="text-xs text-gray-500">{total} đề xuất</span>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
@@ -876,6 +923,27 @@ export default function ProposalsPage() {
             {Object.entries(STATUS_MAP).map(([k, v]) => (
               <SelectItem key={k} value={k}>{v.label}</SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={draft.floorId || 'ALL'}
+          onValueChange={(v) => setDraft((f) => ({ ...f, floorId: v === 'ALL' ? '' : v, unitId: '' }))}
+        >
+          <SelectTrigger className="h-9 w-44">
+            <SelectValue placeholder="Tầng" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả tầng</SelectItem>
+            {floors.map((floor) => <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={draft.unitId || 'ALL'} onValueChange={(v) => setDraftField('unitId', v === 'ALL' ? '' : v)}>
+          <SelectTrigger className="h-9 w-52">
+            <SelectValue placeholder="Mặt bằng" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Tất cả mặt bằng</SelectItem>
+            {units.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}{unit.name ? ` — ${unit.name}` : ''}</SelectItem>)}
           </SelectContent>
         </Select>
         <DateRangePicker
@@ -903,6 +971,8 @@ export default function ProposalsPage() {
           </Button>
         )}
       </div>
+      </CardContent>
+      </Card>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -936,6 +1006,7 @@ export default function ProposalsPage() {
                     </div>
                   </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.proposalNo')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Thời gian tạo</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.tenant')}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.unit')}</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.area')}</th>
@@ -948,10 +1019,11 @@ export default function ProposalsPage() {
               <tbody className="divide-y divide-gray-100">
                 {proposals.map((p) => {
                   const st = STATUS_MAP[p.status] ?? STATUS_MAP.DRAFT;
+                  const isNew = isNewProposal(p.createdAt);
                   return (
                     <tr
                       key={p.id}
-                      className={`${DRAG_SELECT_CLASS} hover:bg-gray-50 cursor-pointer transition-colors ${selectedIds.has(p.id) ? 'bg-blue-50' : ''}`}
+                      className={`${DRAG_SELECT_CLASS} hover:bg-gray-50 cursor-pointer transition-colors ${selectedIds.has(p.id) ? 'bg-blue-50' : isNew ? 'bg-sky-50/40' : ''}`}
                       data-proposal-id={p.id}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest('[data-checkbox]')) return;
@@ -969,11 +1041,27 @@ export default function ProposalsPage() {
                             : <Square size={15} className="text-gray-300" />}
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs">{p.proposalNumber}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-semibold text-gray-900">{p.proposalNumber}</span>
+                          {isNew && <Badge className="gap-1 border-0 bg-blue-600 text-white text-[10px] px-1.5 py-0"><Sparkles size={10} /> Mới</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className={`flex items-center gap-1.5 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
+                          <Clock3 size={13} /> {proposalAge(p.createdAt)}
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          {new Date(p.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         {p.tenant?.brandName ?? p.lead?.brandName ?? p.booking?.lead?.brandName ?? p.booking?.customer?.brandName ?? '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{p.unit?.code}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-800">{p.unit?.code}</div>
+                        <div className="text-xs text-gray-400">{p.unit?.floor?.name ?? 'Chưa xác định tầng'}</div>
+                      </td>
                       <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
                       <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>
                       <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>

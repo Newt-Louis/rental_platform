@@ -2,13 +2,24 @@ import { ApprovalsController } from './approvals.controller';
 
 describe('ApprovalsController mall access', () => {
   const service: any = { getPending: jest.fn(), getHistory: jest.fn(), approve: jest.fn(), getWorkflow: jest.fn() };
-  const mallAccess: any = { getAccessibleMallIds: jest.fn(), extractAndValidateMallAccess: jest.fn() };
+  const mallAccess: any = {
+    assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn(), extractAndValidateMallAccess: jest.fn(),
+  };
   let controller: ApprovalsController;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
     controller = new ApprovalsController(service, mallAccess);
+  });
+
+  it('uses and validates the mall selected in the request instead of stale active mall context', async () => {
+    const user = { id: 'u1', role: 'FINANCE', activeMallId: 'mall-old' };
+    await controller.getPending(user, { page: 1, mallId: 'mall-new' });
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('u1', 'FINANCE', 'mall-new');
+    expect(service.getPending).toHaveBeenCalledWith(
+      'u1', 'FINANCE', { page: 1, mallId: 'mall-new' }, ['mall-new'],
+    );
   });
 
   it('scopes pending and history queues to assigned malls', async () => {
