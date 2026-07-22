@@ -22,6 +22,16 @@ describe('ProposalsController access and roles', () => {
     expect(service.getStats).toHaveBeenCalledWith(['mall-1']);
   });
 
+  it('uses and validates the mall selected in the request instead of stale active mall context', async () => {
+    const user = { id: 'u1', role: 'LEASING_EXECUTIVE', activeMallId: 'mall-old' };
+    await controller.findAll({ status: 'DRAFT', mallId: 'mall-new' }, user);
+    await controller.stats(user, 'mall-new');
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledTimes(2);
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('u1', 'LEASING_EXECUTIVE', 'mall-new');
+    expect(service.findAll).toHaveBeenCalledWith({ status: 'DRAFT', mallId: 'mall-new', mallIds: undefined });
+    expect(service.getStats).toHaveBeenCalledWith(['mall-new']);
+  });
+
   it('validates proposal mall before returning detail', async () => {
     await controller.findOne('p1', { id: 'u1', role: 'LEASING_EXECUTIVE' });
     expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(

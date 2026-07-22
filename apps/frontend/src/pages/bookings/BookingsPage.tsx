@@ -701,12 +701,6 @@ export default function BookingsPage() {
           <p className="text-sm text-gray-600">
             {t('confirmations.reinstateDesc')}
           </p>
-          <div className="space-y-1.5">
-            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">{t('confirmations.cancelReason')} <span className="text-red-500">*</span></label>
-            <Textarea id="booking-cancel-reason" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
-              placeholder={t('confirmations.cancelReasonPlaceholder')} rows={3} />
-            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && <p className="text-xs text-red-500">{t('confirmations.cancelReasonMinLength')}</p>}
-          </div>
           <DialogFooter className="gap-2 mt-2">
             <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>{t('confirmations.no')}</Button>
             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white"
@@ -779,6 +773,22 @@ export default function BookingsPage() {
               </span>
             )}
           </p>
+          <div className="space-y-1.5">
+            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">
+              {t('confirmations.cancelReason')} <span className="text-red-500">*</span>
+            </label>
+            <Textarea
+              id="booking-cancel-reason"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder={t('confirmations.cancelReasonPlaceholder')}
+              rows={3}
+              autoFocus
+            />
+            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && (
+              <p className="text-xs text-red-500">{t('confirmations.cancelReasonMinLength')}</p>
+            )}
+          </div>
           <DialogFooter className="gap-2 mt-2">
             <Button variant="outline" size="sm" onClick={() => { setConfirmCancelIds(null); setCancelReason(''); }} disabled={bulkCancelMutation.isPending}>
               {t('confirmations.no')}

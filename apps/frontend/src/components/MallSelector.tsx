@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
 import { authApi } from '@/api/auth';
 import { useMallStore } from '@/store/mall.store';
@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { Building2, ChevronDown } from 'lucide-react';
 
 export function MallSelector() {
+  const qc = useQueryClient();
   const { user } = useAuthStore();
   const { selectedMallId, selectedMallName, setSelectedMall, openMallContextModal } = useMallStore();
 
@@ -20,8 +21,13 @@ export function MallSelector() {
   useEffect(() => {
     if (mallList.length === 0 || selectedMallId !== null || user?.role === 'ADMIN') return;
     const first = mallList[0];
-    setSelectedMall(first.id, first.name);
-    authApi.setActiveMall(first.id);
+    let cancelled = false;
+    void authApi.setActiveMall(first.id).then(() => {
+      if (cancelled) return;
+      setSelectedMall(first.id, first.name);
+      qc.invalidateQueries();
+    });
+    return () => { cancelled = true; };
   }, [mallList]);
 
   if (mallList.length === 0) return null;

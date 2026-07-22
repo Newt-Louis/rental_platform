@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { tenantsApi } from '@/api';
+import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -699,6 +700,7 @@ function TenantCard({ tenant, selected, onSelect, onEdit, canEdit }: {
 
 export default function TenantsPage() {
   const { t } = useTranslation('tenants');
+  const { selectedMallId } = useMallStore();
   const { hasRole } = usePermission();
   const canManage = hasRole(['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR']);
   const [search, setSearch] = useState('');
@@ -708,11 +710,20 @@ export default function TenantsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editTenant, setEditTenant] = useState<any>(null);
 
-  useEffect(() => { setPage(1); }, [search, category]);
+  useEffect(() => {
+    setPage(1);
+    setSelectedId(null);
+  }, [search, category, selectedMallId]);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['tenants', search, category, page],
-    queryFn: () => tenantsApi.listTenants({ search: search || undefined, category: category || undefined, page, limit: 25 }),
+    queryKey: ['tenants', search, category, page, selectedMallId],
+    queryFn: () => tenantsApi.listTenants({
+      search: search || undefined,
+      category: category || undefined,
+      mallId: selectedMallId || undefined,
+      page,
+      limit: 25,
+    }),
   });
 
   const tenants: any[] = data?.data ?? [];

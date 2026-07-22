@@ -63,6 +63,8 @@ export class ContractsController {
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
   @ApiQuery({ name: 'type', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
+  @ApiQuery({ name: 'unitId', required: false })
+  @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'startDateFrom', required: false })

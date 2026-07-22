@@ -48,17 +48,33 @@ export class ApprovalsService {
   private workflowMallScope(mallIds?: string[]) {
     if (!mallIds) return {};
     return { OR: [
-      { proposal: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } },
-      { fitoutSubmittal: { project: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+      { proposal: { unit: { mallId: { in: mallIds } } } },
+      { fitoutSubmittal: { project: { unit: { mallId: { in: mallIds } } } } },
     ] };
   }
 
-  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number } = {}, mallIds?: string[]) {
+  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string }) {
+    const AND: any[] = [];
+    if (query.floorId) AND.push({ proposal: { unit: { floorId: query.floorId } } });
+    if (query.unitId) AND.push({ proposal: { unitId: query.unitId } });
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+      AND.push({ OR: [
+        { proposal: { proposalNumber: { contains: search, mode: 'insensitive' } } },
+        { proposal: { tenant: { brandName: { contains: search, mode: 'insensitive' } } } },
+        { proposal: { lead: { brandName: { contains: search, mode: 'insensitive' } } } },
+        { proposal: { unit: { code: { contains: search, mode: 'insensitive' } } } },
+      ] });
+    }
+    return AND.length ? { AND } : {};
+  }
+
+  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string } = {}, mallIds?: string[]) {
     const { page = 1, limit = 15 } = query;
 
     const where: any = {
       status: StepStatus.PENDING,
-      workflow: { status: WorkflowStatus.IN_PROGRESS, ...this.workflowMallScope(mallIds) },
+      workflow: { status: WorkflowStatus.IN_PROGRESS, ...this.workflowMallScope(mallIds), ...this.workflowListScope(query) },
     };
     if (userRole !== 'ADMIN') {
       where.OR = [
@@ -293,13 +309,13 @@ export class ApprovalsService {
     return { message: 'Step rejected' };
   }
 
-  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string }, mallIds?: string[]) {
+  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string; floorId?: string; unitId?: string; search?: string }, mallIds?: string[]) {
     const { page = 1, limit = 25, status } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = {
       status: status ? { in: [status] } : { in: [StepStatus.APPROVED, StepStatus.REJECTED] },
-      workflow: { entityType: 'PROPOSAL', ...this.workflowMallScope(mallIds) },
+      workflow: { entityType: 'PROPOSAL', ...this.workflowMallScope(mallIds), ...this.workflowListScope(query) },
     };
     if (userRole !== 'ADMIN') {
       where.approverId = userId;

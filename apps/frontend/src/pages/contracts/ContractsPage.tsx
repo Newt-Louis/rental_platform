@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { contractsApi, terminationApi } from '@/api';
+import { contractsApi, terminationApi, spacesApi } from '@/api';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,7 @@ import { useMallStore } from '@/store/mall.store';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
-  CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut,
+  CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles,
 } from 'lucide-react';
 import type { Contract } from '@/types';
 
@@ -41,6 +42,16 @@ const TYPE_KEYS = ['LOI', 'LEASE_AGREEMENT', 'APPENDIX', 'RENEWAL', 'TERMINATION
 
 function daysUntil(date: string) {
   return Math.floor((new Date(date).getTime() - Date.now()) / 86400000);
+}
+function isRecentlyCreated(value: string) {
+  return Date.now() - new Date(value).getTime() < 24 * 60 * 60 * 1000;
+}
+function createdAge(value: string) {
+  const hours = Math.floor(Math.max(0, Date.now() - new Date(value).getTime()) / 3_600_000);
+  if (hours < 1) return 'Vừa tạo';
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  return days < 7 ? `${days} ngày trước` : new Date(value).toLocaleDateString('vi-VN');
 }
 function fmtDate(d?: string | null) {
   if (!d) return '—';
@@ -780,26 +791,42 @@ export default function ContractsPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [type, setType] = useState('');
+  const [floorId, setFloorId] = useState('');
+  const [unitId, setUnitId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showExpiring, setShowExpiring] = useState(false);
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const hasFilter = !!(search || status || type || dateFrom || dateTo);
+  const hasFilter = !!(search || status || type || floorId || unitId || dateFrom || dateTo);
+  const filterCount = [status, type, floorId, unitId, dateFrom || dateTo].filter(Boolean).length;
 
-  useEffect(() => { setPage(1); }, [search, status, type, dateFrom, dateTo, selectedMallId]);
+  const { data: floorsResponse } = useQuery({
+    queryKey: ['contract-filter-floors', selectedMallId],
+    queryFn: () => spacesApi.listFloors(selectedMallId || undefined),
+  });
+  const floors: any[] = floorsResponse?.data ?? floorsResponse ?? [];
+  const { data: unitsResponse } = useQuery({
+    queryKey: ['contract-filter-units', selectedMallId, floorId],
+    queryFn: () => spacesApi.listUnits({ mallId: selectedMallId || undefined, floorId: floorId || undefined, page: 1, limit: 500 }),
+  });
+  const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
+
+  useEffect(() => { setPage(1); setSelectedContractId(null); }, [search, status, type, floorId, unitId, dateFrom, dateTo, selectedMallId]);
 
   function clearFilters() {
-    setSearch(''); setStatus(''); setType(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setStatus(''); setType(''); setFloorId(''); setUnitId(''); setDateFrom(''); setDateTo('');
   }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['contracts', { search, status, type, dateFrom, dateTo, page, selectedMallId }],
+    queryKey: ['contracts', { search, status, type, floorId, unitId, dateFrom, dateTo, page, selectedMallId }],
     queryFn: () => contractsApi.listContracts({
       search: search || undefined,
       status: status || undefined,
       type: type || undefined,
+      floorId: floorId || undefined,
+      unitId: unitId || undefined,
       startDateFrom: dateFrom || undefined,
       startDateTo: dateTo || undefined,
       page,
@@ -836,7 +863,15 @@ export default function ContractsPage() {
       </div>
 
       {!showExpiring && (
-        <div className="flex flex-wrap gap-3 mb-4">
+        <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+            <SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc
+            {filterCount > 0 && <Badge className="border-0 bg-blue-100 text-blue-700">{filterCount} bộ lọc</Badge>}
+          </div>
+          <span className="text-xs text-gray-500">{total} hợp đồng</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
@@ -855,6 +890,20 @@ export default function ContractsPage() {
               {TYPE_KEYS.map((k) => (
                 <SelectItem key={k} value={k}>{t('type.' + k)}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={floorId || 'ALL'} onValueChange={(value) => { setFloorId(value === 'ALL' ? '' : value); setUnitId(''); }}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Tầng" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tất cả tầng</SelectItem>
+              {floors.map((floor) => <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={unitId || 'ALL'} onValueChange={(value) => setUnitId(value === 'ALL' ? '' : value)}>
+            <SelectTrigger className="w-52"><SelectValue placeholder="Mặt bằng" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Tất cả mặt bằng</SelectItem>
+              {units.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}{unit.name ? ` — ${unit.name}` : ''}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={setStatus}>
@@ -881,6 +930,7 @@ export default function ContractsPage() {
             </Button>
           )}
         </div>
+        </CardContent></Card>
       )}
 
       {(showExpiring ? expiringError : isError) ? (
@@ -899,6 +949,7 @@ export default function ContractsPage() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.contractNo')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Thời gian tạo</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.tenant')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.unit')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.type')}</th>
@@ -916,13 +967,21 @@ export default function ContractsPage() {
                 const days = daysUntil(c.endDate);
                 const fileCount = c.files?.length ?? 0;
                 const hasSignedFile = c.files?.some((f: any) => f.signedAt);
+                const isNew = isRecentlyCreated(c.createdAt);
                 return (
                   <tr key={c.id}
-                    className={`hover:bg-gray-50 cursor-pointer transition-colors ${showExpiring && days <= 30 ? 'bg-red-50' : ''}`}
+                    className={`hover:bg-gray-50 cursor-pointer transition-colors ${showExpiring && days <= 30 ? 'bg-red-50' : isNew ? 'bg-sky-50/40' : ''}`}
                     onClick={() => setSelectedContractId(c.id)}>
-                    <td className="px-4 py-3 font-mono text-xs">{c.contractNumber}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2"><span className="font-mono text-xs font-semibold">{c.contractNumber}</span>
+                      {isNew && <Badge className="gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> Mới</Badge>}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className={`flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}><Clock size={13} />{createdAge(c.createdAt)}</div>
+                      <div className="mt-0.5 text-[11px] text-gray-400">{new Date(c.createdAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
                     <td className="px-4 py-3 font-medium">{c.tenant?.brandName}</td>
-                    <td className="px-4 py-3 text-gray-500">{c.unit?.code}</td>
+                    <td className="px-4 py-3"><div className="font-medium text-gray-800">{c.unit?.code}</div><div className="text-xs text-gray-400">{c.unit?.floor?.name ?? 'Chưa xác định tầng'}</div></td>
                     <td className="px-4 py-3">
                       <Badge variant="outline" className="text-xs">{c.type}</Badge>
                     </td>

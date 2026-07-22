@@ -69,6 +69,7 @@ export class ContractsService {
     type?: string;
     tenantId?: string;
     unitId?: string;
+    floorId?: string;
     search?: string;
     startDateFrom?: string;
     startDateTo?: string;
@@ -91,10 +92,10 @@ export class ContractsService {
       where.tenantId = filters.tenantId;
     }
     if (filters.unitId) where.unitId = filters.unitId;
-    if (query.mallIds) where.AND = [{ OR: [
-      { unit: { mallId: { in: query.mallIds } } },
-      { unit: { floor: { mallId: { in: query.mallIds } } } },
-    ] }];
+    if (query.mallIds || filters.floorId) where.unit = {
+      ...(query.mallIds ? { mallId: { in: query.mallIds } } : {}),
+      ...(filters.floorId ? { floorId: filters.floorId } : {}),
+    };
     if (query.startDateFrom || query.startDateTo) {
       where.startDate = {};
       if (query.startDateFrom) where.startDate.gte = new Date(query.startDateFrom);
@@ -115,7 +116,7 @@ export class ContractsService {
         take: +limit,
         include: {
           tenant: { select: { id: true, brandName: true, companyName: true } },
-          unit: { select: { id: true, code: true, name: true, floor: { select: { name: true } } } },
+          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
           managedBy: { select: { id: true, fullName: true } },
         },
         orderBy: { createdAt: 'desc' },
