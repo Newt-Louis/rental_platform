@@ -25,6 +25,7 @@ import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
 import { UnitFormFields } from './dialogs/UnitFormFields';
+import { UNIT_FORM_DEFAULT_VALUES, seedUnitFormValues, buildUnitFormPayload } from './dialogs/unitFormHelpers';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { useAuthStore } from '@/store/auth.store';
@@ -54,12 +55,7 @@ export function UnitDetailSheet({
     register: editRegister, handleSubmit: handleEditSubmit, watch: editWatch,
     setValue: editSetValue, reset: editReset, formState: { errors: editErrors },
   } = useForm({
-    defaultValues: {
-      code: '', name: '', category: '', floorId: '', zoneId: '',
-      areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
-      spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
-      minFlexArea: '', maxFlexArea: '',
-    },
+    defaultValues: UNIT_FORM_DEFAULT_VALUES,
   });
 
   useEffect(() => {
@@ -144,24 +140,7 @@ export function UnitDetailSheet({
 
   const updateInfoMutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = {
-        ...data,
-        mallId: unit!.mallId,
-        areaGFA: Number(data.areaGFA),
-        areaNLA: data.areaNLA ? Number(data.areaNLA) : undefined,
-        baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
-        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
-        floorId: data.floorId || undefined,
-        zoneId: data.zoneId || undefined,
-        name: data.name || undefined,
-        category: data.category || undefined,
-        spaceType: data.spaceType || undefined,
-        leaseTermType: data.leaseTermType || undefined,
-        tier: data.tier || undefined,
-        minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
-        maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
-        isFlexibleArea: !!data.isFlexibleArea,
-      };
+      const payload = buildUnitFormPayload(data, unit!.mallId);
       return spacesApi.updateUnit(detail?.id ?? unit!.id, payload);
     },
     onSuccess: () => {
@@ -202,23 +181,7 @@ export function UnitDetailSheet({
   }, [categoryOptions]);
 
   const handleStartEdit = () => {
-    editReset({
-      code: d.code ?? '',
-      name: d.name ?? '',
-      category: d.category ?? '',
-      floorId: d.floorId ?? '',
-      zoneId: d.zoneId ?? '',
-      areaGFA: d.areaGFA?.toString() ?? '',
-      areaNLA: d.areaNLA?.toString() ?? '',
-      baseRentPerSqm: d.baseRentPerSqm?.toString() ?? '',
-      camPerSqm: d.camPerSqm?.toString() ?? '',
-      spaceType: d.spaceType ?? '',
-      leaseTermType: d.leaseTermType ?? '',
-      tier: d.tier ?? '',
-      isFlexibleArea: d.isFlexibleArea ?? false,
-      minFlexArea: d.minFlexArea?.toString() ?? '',
-      maxFlexArea: d.maxFlexArea?.toString() ?? '',
-    });
+    editReset(seedUnitFormValues(d));
     setIsEditingInfo(true);
   };
 

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { STATUS_CONFIG, CATEGORIES } from '@/pages/spaces/spaces.constants';
 import { UnitFormFields } from './UnitFormFields';
+import { UNIT_FORM_DEFAULT_VALUES, seedUnitFormValues, buildUnitFormPayload } from './unitFormHelpers';
 
 export function CreateEditUnitDialog({
   open, unit, mallId, defaultFloorId, onClose,
@@ -26,10 +27,9 @@ export function CreateEditUnitDialog({
 
   const { register, handleSubmit, watch, setValue, reset, formState: { errors, isDirty } } = useForm({
     defaultValues: {
-      code: '', name: '', category: '', floorId: defaultFloorId ?? '',
-      zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
-      spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
-      minFlexArea: '', maxFlexArea: '',
+      ...UNIT_FORM_DEFAULT_VALUES,
+      floorId: defaultFloorId ?? '',
+      status: 'VACANT',
     },
   });
 
@@ -38,27 +38,12 @@ export function CreateEditUnitDialog({
   useEffect(() => {
     if (open) {
       reset(unit ? {
-        code: unit.code ?? '',
-        name: unit.name ?? '',
-        category: unit.category ?? '',
-        floorId: unit.floorId ?? defaultFloorId ?? '',
-        zoneId: unit.zoneId ?? '',
-        areaGFA: unit.areaGFA?.toString() ?? '',
-        areaNLA: unit.areaNLA?.toString() ?? '',
-        baseRentPerSqm: unit.baseRentPerSqm?.toString() ?? '',
-        camPerSqm: unit.camPerSqm?.toString() ?? '',
+        ...seedUnitFormValues(unit, defaultFloorId),
         status: unit.status ?? 'VACANT',
-        spaceType: unit.spaceType ?? '',
-        leaseTermType: unit.leaseTermType ?? '',
-        tier: unit.tier ?? '',
-        isFlexibleArea: unit.isFlexibleArea ?? false,
-        minFlexArea: unit.minFlexArea?.toString() ?? '',
-        maxFlexArea: unit.maxFlexArea?.toString() ?? '',
       } : {
-        code: '', name: '', category: '', floorId: defaultFloorId ?? '',
-        zoneId: '', areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', status: 'VACANT',
-        spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
-        minFlexArea: '', maxFlexArea: '',
+        ...UNIT_FORM_DEFAULT_VALUES,
+        floorId: defaultFloorId ?? '',
+        status: 'VACANT',
       });
     }
   }, [open, unit, defaultFloorId]);
@@ -100,24 +85,7 @@ export function CreateEditUnitDialog({
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = {
-        ...data,
-        mallId,
-        areaGFA: Number(data.areaGFA),
-        areaNLA: data.areaNLA ? Number(data.areaNLA) : undefined,
-        baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
-        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
-        floorId: data.floorId || undefined,
-        zoneId: data.zoneId || undefined,
-        name: data.name || undefined,
-        category: data.category || undefined,
-        spaceType: data.spaceType || undefined,
-        leaseTermType: data.leaseTermType || undefined,
-        tier: data.tier || undefined,
-        minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
-        maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
-        isFlexibleArea: !!data.isFlexibleArea,
-      };
+      const payload = buildUnitFormPayload(data, mallId);
       return isEdit ? spacesApi.updateUnit(unit.id, payload) : spacesApi.createUnit(payload);
     },
     onSuccess: () => {
