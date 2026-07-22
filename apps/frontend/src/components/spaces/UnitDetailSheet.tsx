@@ -417,14 +417,6 @@ export function UnitDetailSheet({
 
           {/* Actions */}
           {(canManageSpaces || canManageSales) && <div className="flex gap-2 pt-2 border-t border-gray-100">
-            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
-              <Button
-                className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
-                onClick={() => { setBookingOpen(true); }}
-              >
-                <BookmarkPlus size={14} /> Tạo Booking
-              </Button>
-            )}
             {canManageSpaces && <Button
               type="submit"
               form="unit-info-edit-form"
@@ -433,6 +425,14 @@ export function UnitDetailSheet({
             >
               <Save size={14} /> {updateInfoMutation.isPending ? 'Đang lưu...' : 'Lưu'}
             </Button>}
+            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
+              <Button
+                className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={() => { setBookingOpen(true); }}
+              >
+                <BookmarkPlus size={14} /> Tạo Booking
+              </Button>
+            )}
             {canManageSpaces && <Button
               variant="outline"
               className="gap-2 text-red-600 border-red-200 hover:bg-red-50"
