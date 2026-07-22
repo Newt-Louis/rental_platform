@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, proposalsApi, slotsApi, categoriesApi } from '@/api';
@@ -61,6 +61,11 @@ export function UnitDetailSheet({
       minFlexArea: '', maxFlexArea: '',
     },
   });
+
+  useEffect(() => {
+    setIsEditingInfo(false);
+    editReset();
+  }, [unit?.id]);
 
   const submitProposalMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
