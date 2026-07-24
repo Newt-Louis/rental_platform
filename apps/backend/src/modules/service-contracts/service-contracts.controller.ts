@@ -37,6 +37,9 @@ export class ServiceContractsController {
   @Get('tools/generate-number')
   generateNumber(@Query('mallCode') mallCode?: string) { return { contractNumber: this.service.generateNumber(mallCode) }; }
 
+  @Get('summary/alerts')
+  async alerts(@Query('days') days: string, @CurrentUser() user: any) { const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role); return this.service.alerts(mallIds ?? undefined, Number(days) || 30); }
+
   @Get(':id')
   async detail(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.findOne(id); }
 
@@ -72,6 +75,8 @@ export class ServiceContractsController {
   async createPayment(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createPayment(id, body); }
   @Post(':id/payments/recurring') @Roles(...EDIT_ROLES)
   async recurring(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.recurringPayments(id, body); }
+  @Post(':id/payments/:itemId/transfer-to-billing') @Roles(...EDIT_ROLES, Role.FINANCE)
+  async transferToBilling(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.transferPaymentToBilling(id, itemId, user.id); }
   @Patch(':id/payments/:itemId') @Roles(...EDIT_ROLES)
   async updatePayment(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updatePayment(id, itemId, body); }
   @Delete(':id/payments/:itemId') @Roles(...EDIT_ROLES)

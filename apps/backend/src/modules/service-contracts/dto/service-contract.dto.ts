@@ -10,6 +10,7 @@ export class CreateServiceContractDto {
   @IsOptional() @IsString() counterpartyTax?: string;
   @IsOptional() @IsEmail() counterpartyEmail?: string;
   @IsOptional() @IsString() counterpartyPhone?: string;
+  @IsOptional() @IsString() counterpartyAddress?: string;
   @IsOptional() @IsEnum(ServiceContractType) type?: ServiceContractType;
   @IsOptional() @IsEnum(ServiceContractStatus) status?: ServiceContractStatus;
   @IsOptional() @IsDateString() signedDate?: string;
@@ -18,6 +19,9 @@ export class CreateServiceContractDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() currency?: string;
   @IsOptional() @IsString() paymentDirection?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) invoiceLeadDays?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) defaultVatRate?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) paymentTermDays?: number;
   @IsOptional() @IsString() productName?: string;
   @IsOptional() @IsString() workflowStage?: string;
   @IsOptional() @IsString() workflowColor?: string;

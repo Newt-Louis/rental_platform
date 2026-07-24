@@ -95,6 +95,15 @@ export class AuthService {
     return result;
   }
 
+  async activateInvitation(token: string, password: string) {
+    if (!token || !password || password.length < 8) throw new UnauthorizedException('Liên kết hoặc mật khẩu không hợp lệ');
+    const hash = require('crypto').createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.user.findFirst({ where: { inviteTokenHash: hash, inviteExpiresAt: { gt: new Date() }, isActive: true } });
+    if (!user) throw new UnauthorizedException('Liên kết kích hoạt đã hết hạn hoặc không hợp lệ');
+    await this.prisma.user.update({ where: { id: user.id }, data: { password: await bcrypt.hash(password, 10), inviteTokenHash: null, inviteExpiresAt: null, mustChangePassword: false } });
+    return { activated: true, email: user.email };
+  }
+
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

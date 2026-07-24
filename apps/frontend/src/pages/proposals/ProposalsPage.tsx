@@ -363,6 +363,8 @@ function ProposalDetailSheet({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showEditor, setShowEditor] = useState(false);
+  const [showTenantDialog, setShowTenantDialog] = useState(false);
+  const [tenantForm, setTenantForm] = useState<any>({ companyName: '', brandName: '', taxCode: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
 
   const submitMutation = useMutation({
     mutationFn: () => proposalsApi.submitProposal(p!.id),
@@ -375,7 +377,7 @@ function ProposalDetailSheet({
   });
 
   const convertMutation = useMutation({
-    mutationFn: () => proposalsApi.convertProposal(p!.id),
+    mutationFn: (tenant?: Record<string, unknown>) => proposalsApi.convertProposal(p!.id, tenant),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       toast({ title: t('proposals.actions.convertSuccess') });
@@ -419,6 +421,22 @@ function ProposalDetailSheet({
     >
       {p && (
         <>
+          <Dialog open={showTenantDialog} onOpenChange={setShowTenantDialog}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader><DialogTitle>Tạo khách thuê và tài khoản Tenant Portal</DialogTitle></DialogHeader>
+              <p className="text-sm text-muted-foreground">Kiểm tra thông tin lấy từ Lead trước khi ký hợp đồng. Hệ thống sẽ gửi email kích hoạt tài khoản portal cho khách.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">Tên pháp nhân *<Input value={tenantForm.companyName} onChange={(e) => setTenantForm({ ...tenantForm, companyName: e.target.value })} /></label>
+                <label className="text-sm">Tên thương hiệu *<Input value={tenantForm.brandName} onChange={(e) => setTenantForm({ ...tenantForm, brandName: e.target.value })} /></label>
+                <label className="text-sm">Mã số thuế<Input value={tenantForm.taxCode} onChange={(e) => setTenantForm({ ...tenantForm, taxCode: e.target.value })} /></label>
+                <label className="text-sm">Người liên hệ *<Input value={tenantForm.contactName} onChange={(e) => setTenantForm({ ...tenantForm, contactName: e.target.value })} /></label>
+                <label className="text-sm">Email đăng nhập portal *<Input type="email" value={tenantForm.contactEmail} onChange={(e) => setTenantForm({ ...tenantForm, contactEmail: e.target.value })} /></label>
+                <label className="text-sm">Điện thoại<Input value={tenantForm.contactPhone} onChange={(e) => setTenantForm({ ...tenantForm, contactPhone: e.target.value })} /></label>
+                <label className="col-span-2 text-sm">Địa chỉ<Input value={tenantForm.address} onChange={(e) => setTenantForm({ ...tenantForm, address: e.target.value })} /></label>
+              </div>
+              <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowTenantDialog(false)}>Hủy</Button><Button disabled={convertMutation.isPending || !tenantForm.companyName.trim() || !tenantForm.brandName.trim() || !tenantForm.contactName.trim() || !tenantForm.contactEmail.trim()} onClick={() => convertMutation.mutate(tenantForm)}>Tạo khách thuê và ký hợp đồng</Button></div>
+            </DialogContent>
+          </Dialog>
           {/* Reject dialog — renders via portal, not clipped by sheet overflow */}
           <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
             <DialogContent className="max-w-sm">
@@ -618,7 +636,7 @@ function ProposalDetailSheet({
               {p.status === 'APPROVED' && (
                 <Button
                   className="w-full gap-2 bg-green-600 hover:bg-green-700"
-                  onClick={() => convertMutation.mutate()}
+                  onClick={() => { if (p.tenantId) convertMutation.mutate(undefined); else { setTenantForm({ companyName: p.lead?.company || p.lead?.brandName || '', brandName: p.lead?.brandName || '', taxCode: '', contactName: p.lead?.contactName || '', contactEmail: p.lead?.email || '', contactPhone: p.lead?.phone || '', address: '' }); setShowTenantDialog(true); } }}
                   disabled={convertMutation.isPending}
                 >
                   <FileText size={15} /> {t('proposals.actions.convert')}

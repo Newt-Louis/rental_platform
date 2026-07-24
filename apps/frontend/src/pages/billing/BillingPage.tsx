@@ -144,7 +144,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
           </DialogTitle>
           {invoice && (
             <p className="text-sm text-gray-500">
-              {invoice.invoiceNumber} · {invoice.tenant?.brandName} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
+              {invoice.invoiceNumber} · {invoice.tenant?.brandName || invoice.billingParty?.name} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
             </p>
           )}
         </DialogHeader>
@@ -341,7 +341,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                 <Badge className={`${statusCfg.color} border text-xs`}>{t(`billing:invoice.status.${inv?.status ?? 'DRAFT'}`)}</Badge>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
-                {inv?.tenant?.brandName} · {t('billing:list.period')} {inv?.period} · {t('billing:list.dueDate')} {fmtDate(inv?.dueDate)}
+                {inv?.tenant?.brandName || inv?.billingParty?.name} · {t('billing:list.period')} {inv?.period} · {t('billing:list.dueDate')} {fmtDate(inv?.dueDate)}
               </p>
             </>
           )}
@@ -862,7 +862,7 @@ function InvoicesTab() {
                     }`}
                     onClick={() => setSelectedId(isSelected ? null : inv.id)}>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{inv.invoiceNumber}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{inv.tenant?.brandName}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">{inv.tenant?.brandName || inv.billingParty?.name}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{inv.period}</td>
                     <td className="px-4 py-3">
                       <span className="text-xs text-gray-500">{inv.type}</span>

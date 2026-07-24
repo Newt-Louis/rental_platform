@@ -1,0 +1,18 @@
+CREATE TABLE "BillingParty" ("id" TEXT NOT NULL,"mallId" TEXT,"tenantId" TEXT,"name" TEXT NOT NULL,"taxCode" TEXT,"email" TEXT,"phone" TEXT,"address" TEXT,"isActive" BOOLEAN NOT NULL DEFAULT true,"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"updatedAt" TIMESTAMP(3) NOT NULL,CONSTRAINT "BillingParty_pkey" PRIMARY KEY ("id"));
+ALTER TABLE "ServiceContract" ADD COLUMN "billingPartyId" TEXT, ADD COLUMN "invoiceLeadDays" INTEGER NOT NULL DEFAULT 7, ADD COLUMN "defaultVatRate" DOUBLE PRECISION NOT NULL DEFAULT 10, ADD COLUMN "paymentTermDays" INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE "ServiceContractPayment" ADD COLUMN "invoiceId" TEXT, ADD COLUMN "billingStatus" TEXT NOT NULL DEFAULT 'SCHEDULED', ADD COLUMN "periodStart" TIMESTAMP(3), ADD COLUMN "periodEnd" TIMESTAMP(3), ADD COLUMN "invoicePlannedDate" TIMESTAMP(3), ADD COLUMN "subtotal" DOUBLE PRECISION, ADD COLUMN "vatRate" DOUBLE PRECISION, ADD COLUMN "vatAmount" DOUBLE PRECISION, ADD COLUMN "totalAmount" DOUBLE PRECISION, ADD COLUMN "transferredToBillingAt" TIMESTAMP(3), ADD COLUMN "billingError" TEXT;
+ALTER TABLE "Invoice" ALTER COLUMN "contractId" DROP NOT NULL, ALTER COLUMN "tenantId" DROP NOT NULL, ADD COLUMN "billingPartyId" TEXT, ADD COLUMN "sourceType" TEXT NOT NULL DEFAULT 'LEASE_CONTRACT', ADD COLUMN "sourceId" TEXT;
+ALTER TABLE "Payment" ALTER COLUMN "tenantId" DROP NOT NULL, ADD COLUMN "billingPartyId" TEXT;
+CREATE UNIQUE INDEX "BillingParty_tenantId_key" ON "BillingParty"("tenantId");
+CREATE INDEX "BillingParty_mallId_isActive_idx" ON "BillingParty"("mallId","isActive");
+CREATE INDEX "BillingParty_taxCode_idx" ON "BillingParty"("taxCode");
+CREATE UNIQUE INDEX "ServiceContractPayment_invoiceId_key" ON "ServiceContractPayment"("invoiceId");
+CREATE INDEX "Invoice_sourceType_sourceId_idx" ON "Invoice"("sourceType","sourceId");
+CREATE INDEX "Invoice_billingPartyId_status_dueDate_idx" ON "Invoice"("billingPartyId","status","dueDate");
+ALTER TABLE "BillingParty" ADD CONSTRAINT "BillingParty_mallId_fkey" FOREIGN KEY ("mallId") REFERENCES "Mall"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "BillingParty" ADD CONSTRAINT "BillingParty_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ServiceContract" ADD CONSTRAINT "ServiceContract_billingPartyId_fkey" FOREIGN KEY ("billingPartyId") REFERENCES "BillingParty"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ServiceContractPayment" ADD CONSTRAINT "ServiceContractPayment_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_billingPartyId_fkey" FOREIGN KEY ("billingPartyId") REFERENCES "BillingParty"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_billingPartyId_fkey" FOREIGN KEY ("billingPartyId") REFERENCES "BillingParty"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TYPE "InvoiceType" ADD VALUE IF NOT EXISTS 'SERVICE_CONTRACT';

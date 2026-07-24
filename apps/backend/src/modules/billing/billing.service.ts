@@ -59,6 +59,7 @@ export class BillingService {
       where.OR = [
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
         { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+        { billingParty: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -69,6 +70,7 @@ export class BillingService {
         take: +limit,
         include: {
           tenant: { select: { id: true, brandName: true } },
+          billingParty: { select: { id: true, name: true, taxCode: true } },
           contract: { select: { id: true, contractNumber: true } },
           payments: { select: { id: true, amount: true, paidAt: true, method: true } },
         },
@@ -85,6 +87,7 @@ export class BillingService {
       where: { id },
       include: {
         tenant: true,
+        billingParty: true,
         contract: { include: { unit: { select: { id: true, code: true, name: true } } } },
         lines: { orderBy: { order: 'asc' } },
         payments: { orderBy: { paidAt: 'desc' } },
@@ -101,8 +104,11 @@ export class BillingService {
   }
 
   async createInvoice(dto: {
-    contractId: string;
-    tenantId: string;
+    contractId?: string;
+    tenantId?: string;
+    billingPartyId?: string;
+    sourceType?: string;
+    sourceId?: string;
     period: string;
     type?: string;
     subtotal: number;
@@ -124,6 +130,9 @@ export class BillingService {
         invoiceNumber,
         contractId: dto.contractId,
         tenantId: dto.tenantId,
+        billingPartyId: dto.billingPartyId,
+        sourceType: dto.sourceType,
+        sourceId: dto.sourceId,
         period: dto.period,
         type: (dto.type as any) ?? 'MONTHLY_RENT',
         subtotal: dto.subtotal,
@@ -144,10 +153,12 @@ export class BillingService {
     // Recalculate totals from lines before issuing
     await this.recalculateTotals(id);
 
-    return this.prisma.invoice.update({
+    const updated = await this.prisma.invoice.update({
       where: { id },
       data: { status: InvoiceStatus.ISSUED, issuedAt: new Date() },
     });
+    await this.syncServiceContractPayment(id);
+    return updated;
   }
 
   // ── Invoice Line Management ────────────────────────────────────────────────
@@ -304,6 +315,7 @@ export class BillingService {
           data: {
             invoiceId,
             tenantId: invoice.tenantId,
+            billingPartyId: invoice.billingPartyId,
             amount: dto.amount,
             method: dto.method ?? PaymentMethod.BANK_TRANSFER,
             reference: dto.reference,
@@ -363,6 +375,24 @@ export class BillingService {
       where: { id: invoiceId },
       data: { status: newStatus, paidAt: newStatus === InvoiceStatus.PAID ? new Date() : null },
     });
+    await this.syncServiceContractPayment(invoiceId, db);
+  }
+
+  private async syncServiceContractPayment(
+    invoiceId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId }, include: { payments: { where: { reversedAt: null } } } });
+    if (!invoice || invoice.sourceType !== 'SERVICE_CONTRACT') return;
+    const paidAmount = invoice.payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const statusMap: Record<InvoiceStatus, string> = {
+      DRAFT: 'PENDING', ISSUED: 'PENDING', PARTIALLY_PAID: 'PARTIAL', PAID: 'PAID', OVERDUE: 'OVERDUE', CANCELLED: 'CANCELLED',
+    };
+    await db.serviceContractPayment.updateMany({ where: { invoiceId }, data: {
+      billingStatus: invoice.status === InvoiceStatus.DRAFT ? 'INVOICE_DRAFT' : invoice.status,
+      status: statusMap[invoice.status], paidAmount,
+      paidDate: invoice.status === InvoiceStatus.PAID ? (invoice.paidAt || new Date()) : null,
+    } });
   }
 
   // ── Void / Reversal (Phase 1 — kiểm soát tài chính) ─────────────────────────
@@ -381,7 +411,7 @@ export class BillingService {
       throw new BadRequestException('Phải nêu lý do hủy hóa đơn');
     }
 
-    return this.prisma.invoice.update({
+    const updated = await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: InvoiceStatus.CANCELLED,
@@ -390,6 +420,8 @@ export class BillingService {
         voidReason: reason.trim(),
       },
     });
+    await this.syncServiceContractPayment(invoiceId);
+    return updated;
   }
 
   async reversePayment(paymentId: string, reason: string, userId: string) {

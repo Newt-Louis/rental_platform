@@ -99,9 +99,9 @@ export class ProposalsController {
   @Post(':id/convert')
   @Roles(...PROPOSAL_CONVERT_ROLES)
   @ApiOperation({ summary: 'Convert approved proposal to contract' })
-  async convert(@Param('id') id: string, @CurrentUser() user: any) {
+  async convert(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) {
     await this.validateProposal(user, id);
-    return this.proposalsService.convertToContract(id, user.id);
+    return this.proposalsService.convertToContract(id, user.id, body?.tenant);
   }
 
   @Delete(':id')

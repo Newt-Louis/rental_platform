@@ -456,8 +456,9 @@ export interface Contract {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  tenant: Tenant;
-  contract: Contract;
+  tenant?: Tenant;
+  contract?: Contract;
+  billingParty?: { id: string; name: string; taxCode?: string };
   period: string;
   type: string;
   status: InvoiceStatus;

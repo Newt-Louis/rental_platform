@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
 import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus } from '@prisma/client';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
 import type {
   ApprovalWorkflowCompletedEvent,
@@ -631,12 +632,42 @@ export class ProposalsService {
     return contract;
   }
 
-  async convertToContract(id: string, userId?: string) {
-    const proposal = await this.findOne(id);
+  async convertToContract(id: string, userId?: string, tenantData?: any) {
+    let proposal = await this.findOne(id);
     if (proposal.status !== ProposalStatus.APPROVED) {
       throw new BadRequestException('Only APPROVED proposals can be converted');
     }
-    return this.createContractFromProposal(id, { userId, markConverted: true });
+    let invitation: { email: string; token: string } | null = null;
+    if (!proposal.tenantId) {
+      const lead = proposal.lead;
+      const companyName = tenantData?.companyName?.trim() || lead?.company?.trim();
+      const brandName = tenantData?.brandName?.trim() || lead?.brandName?.trim();
+      const contactName = tenantData?.contactName?.trim() || lead?.contactName?.trim();
+      const contactEmail = tenantData?.contactEmail?.trim().toLowerCase() || lead?.email?.trim().toLowerCase();
+      if (!companyName || !brandName || !contactName || !contactEmail) throw new BadRequestException('Vui lòng nhập đầy đủ tên pháp nhân, thương hiệu, người liên hệ và email để tạo khách thuê');
+      const existingUser = await this.prisma.user.findUnique({ where: { email: contactEmail } });
+      if (existingUser && existingUser.role !== 'TENANT') throw new BadRequestException('Email này đang thuộc tài khoản nhân viên và không thể dùng cho portal khách thuê');
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const inviteExpiresAt = new Date(Date.now() + 72 * 3600000);
+      const tenant = await this.prisma.$transaction(async tx => {
+        const created = await tx.tenant.create({ data: { companyName, brandName, taxCode: tenantData?.taxCode || undefined, contactName, contactEmail, contactPhone: tenantData?.contactPhone || lead?.phone || undefined, address: tenantData?.address || undefined, category: tenantData?.category || lead?.category || undefined, isPortalUser: true } });
+        await tx.proposal.update({ where: { id }, data: { tenantId: created.id } });
+        if (proposal.leadId) await tx.lead.update({ where: { id: proposal.leadId }, data: { tenantId: created.id } });
+        if (existingUser) await tx.user.update({ where: { id: existingUser.id }, data: { tenantId: created.id, inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
+        else await tx.user.create({ data: { email: contactEmail, fullName: contactName, phone: tenantData?.contactPhone || lead?.phone || undefined, role: 'TENANT', tenantId: created.id, password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10), inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
+        return created;
+      });
+      invitation = { email: contactEmail, token: rawToken };
+      proposal = await this.findOne(id);
+    }
+    const contract = await this.createContractFromProposal(id, { userId, markConverted: true });
+    if (invitation) {
+      const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/activate?token=${encodeURIComponent(invitation.token)}`;
+      try { await this.emailService.sendMail({ to: invitation.email, subject: '[THISO] Kích hoạt tài khoản Tenant Portal', html: `<div style="font-family:Arial;max-width:600px;margin:auto"><h2>Chào mừng đến THISO Tenant Portal</h2><p>Hợp đồng của Quý khách đã được khởi tạo. Vui lòng bấm nút dưới đây để đặt mật khẩu và kích hoạt tài khoản.</p><p><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px">Kích hoạt tài khoản</a></p><p>Liên kết có hiệu lực trong 72 giờ.</p></div>` }); }
+      catch (error) { this.logger.warn(`Tenant portal invitation failed for ${invitation.email}: ${error.message}`); }
+    }
+    return { ...contract, portalInvitationSent: Boolean(invitation), portalEmail: invitation?.email };
   }
 
   async reject(id: string, rejectionReason: string, userId: string) {

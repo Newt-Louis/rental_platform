@@ -49,12 +49,15 @@ export class ArDunningService {
       },
       include: {
         tenant: { select: { id: true, brandName: true, contactEmail: true, contactName: true } },
+        billingParty: { select: { id: true, name: true, email: true } },
       },
     });
 
     let notified = 0;
 
     for (const invoice of overdueInvoices) {
+      const partyName = invoice.tenant?.brandName || invoice.billingParty?.name || 'Đối tác';
+      const partyEmail = invoice.tenant?.contactEmail || invoice.billingParty?.email;
       const overdueDays = daysOverdue(invoice.dueDate, asOf);
       if (overdueDays <= 0) continue;
 
@@ -74,7 +77,7 @@ export class ArDunningService {
           for (const user of financeUsers) {
             await this.notificationsService.create({
               userId: user.id,
-              title: `[AR L${policy.level}] ${invoice.tenant.brandName}`,
+              title: `[AR L${policy.level}] ${partyName}`,
               body: `HĐ ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày — ${invoice.totalAmount.toLocaleString('vi-VN')} VNĐ`,
               type: 'AR_DUNNING',
               entityType: 'INVOICE',
@@ -83,13 +86,13 @@ export class ArDunningService {
           }
         }
 
-        if (policy.notifyTenant && invoice.tenant.contactEmail) {
+        if (policy.notifyTenant && partyEmail) {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
-              to: invoice.tenant.contactEmail,
+              to: partyEmail,
               subject: `[THISO] Nhắc thanh toán hóa đơn ${invoice.invoiceNumber} (L${policy.level})`,
               html: this.emailService.invoiceOverdueHtml({
-                tenantName: invoice.tenant.brandName,
+                tenantName: partyName,
                 invoiceNumber: invoice.invoiceNumber,
                 totalAmount: invoice.totalAmount,
                 dueDate: new Date(invoice.dueDate).toLocaleDateString('vi-VN'),
@@ -115,6 +118,7 @@ export class ArDunningService {
           where: { id: invoice.id },
           data: { status: 'OVERDUE' },
         });
+        await this.prisma.serviceContractPayment.updateMany({ where: { invoiceId: invoice.id }, data: { status: 'OVERDUE', billingStatus: 'OVERDUE' } });
       }
     }
 
