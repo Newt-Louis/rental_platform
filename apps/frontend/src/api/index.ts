@@ -25,3 +25,6 @@ export * from './audit-log';
 export * from './mall-access';
 export * from './analytics';
 export * from './health';
+export * from './service-contracts';
+export * from './inventory';
+export * from './work-orders';

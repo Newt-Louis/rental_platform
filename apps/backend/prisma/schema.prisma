@@ -238,6 +238,35 @@ enum ContractStatus {
   TERMINATED
 }
 
+enum ServiceContractStatus {
+  DRAFT
+  PROPOSAL
+  UNDER_REVIEW
+  PENDING_SIGNATURE
+  ACTIVE
+  EXPIRING
+  EXPIRED
+  TERMINATED
+  RENEWED
+  CANCELLED
+}
+
+enum ServiceContractType {
+  SERVICE
+  LABOR
+  MAINTENANCE
+  SUPPLY
+  CONSTRUCTION
+  CONSULTING
+  PARTNERSHIP
+  CONFIDENTIALITY
+  SOFTWARE
+  INSURANCE
+  SECURITY
+  CLEANING
+  OTHER
+}
+
 enum BillingCycle {
   MONTHLY
   QUARTERLY
@@ -351,48 +380,58 @@ model User {
   activeMallId String?
   activeMall   Mall?   @relation("UserActiveMall", fields: [activeMallId], references: [id])
 
-  assignedLeads          Lead[]                   @relation("AssignedLeads")
-  approvalSteps          ApprovalStep[]
-  ticketsAssigned        Ticket[]                 @relation("AssignedTickets")
-  auditLogs              AuditLog[]
-  notifications          Notification[]
-  managedContracts       Contract[]               @relation("ManagedContracts")
-  fitoutProjects         FitoutProject[]          @relation("OperationManaged")
-  recordedSales          SalesTurnover[]          @relation("RecordedBy")
-  leadActivities         LeadActivity[]
-  assignedCustomers      Customer[]               @relation("AssignedCustomers")
-  createdCustomers       Customer[]               @relation("CreatedCustomers")
-  customerActivities     CustomerActivity[]       @relation("CustomerActivityBy")
-  contractEvents         ContractEvent[]
-  mallAccess             UserMallAccess[]
-  followUpsAssigned      LeadFollowUp[]           @relation("FollowUpAssigned")
-  uploadedDocuments      UnifiedDocument[]        @relation("DocumentUploadedBy")
-  salesAudits            SalesAuditTrail[]        @relation("SalesAuditBy")
-  announcements          MallAnnouncement[]       @relation("AnnouncementCreatedBy")
-  createdBookings        UnitBooking[]            @relation("BookingCreatedBy")
-  assignedBookings       UnitBooking[]            @relation("BookingAssignedTo")
-  approvedBookingPrices  UnitBooking[]            @relation("BookingPriceApprover")
-  bookingActivities      BookingActivity[]
-  uploadedUnitMedia      UnitMedia[]
-  unitHistoryChanges     UnitHistory[]            @relation("UnitHistoryChangedBy")
-  slotBookings           SlotBooking[]            @relation("SlotBookedBy")
-  categoryPricings       CategoryMallPricing[]    @relation("CategoryPricingCreatedBy")
-  submittedSubmittals    FitoutSubmittal[]        @relation("SubmittalSubmittedBy")
-  entityComments         EntityComment[]
-  entityDistributions    EntityDistribution[]
-  createdIssues          FitoutIssue[]            @relation("IssueCreatedBy")
-  assignedIssues         FitoutIssue[]            @relation("IssueAssignedTo")
-  createdDailyReports    FitoutDailyReportEntry[] @relation("DailyReportCreatedBy")
-  ownedFitoutRisks       FitoutRisk[]             @relation("FitoutRiskOwner")
-  createdFitoutRisks     FitoutRisk[]             @relation("FitoutRiskCreatedBy")
-  requestedFitoutChanges FitoutChangeOrder[]      @relation("FitoutChangeRequestedBy")
-  approvedFitoutChanges  FitoutChangeOrder[]      @relation("FitoutChangeApprovedBy")
-  createdTickets         Ticket[]                 @relation("TicketCreatedBy")
-  ticketComments         TicketComment[]
-  voidedInvoices         Invoice[]                @relation("InvoiceVoidedBy")
-  reversedPayments       Payment[]                @relation("PaymentReversedBy")
-  maintenanceAssigned    MaintenanceSchedule[]    @relation("MaintenanceAssignedTo")
-  maintenanceExecutions  MaintenanceExecution[]   @relation("MaintenancePerformedBy")
+  assignedLeads              Lead[]                   @relation("AssignedLeads")
+  approvalSteps              ApprovalStep[]
+  ticketsAssigned            Ticket[]                 @relation("AssignedTickets")
+  auditLogs                  AuditLog[]
+  notifications              Notification[]
+  managedContracts           Contract[]               @relation("ManagedContracts")
+  fitoutProjects             FitoutProject[]          @relation("OperationManaged")
+  recordedSales              SalesTurnover[]          @relation("RecordedBy")
+  leadActivities             LeadActivity[]
+  assignedCustomers          Customer[]               @relation("AssignedCustomers")
+  createdCustomers           Customer[]               @relation("CreatedCustomers")
+  customerActivities         CustomerActivity[]       @relation("CustomerActivityBy")
+  contractEvents             ContractEvent[]
+  mallAccess                 UserMallAccess[]
+  followUpsAssigned          LeadFollowUp[]           @relation("FollowUpAssigned")
+  uploadedDocuments          UnifiedDocument[]        @relation("DocumentUploadedBy")
+  salesAudits                SalesAuditTrail[]        @relation("SalesAuditBy")
+  announcements              MallAnnouncement[]       @relation("AnnouncementCreatedBy")
+  createdBookings            UnitBooking[]            @relation("BookingCreatedBy")
+  assignedBookings           UnitBooking[]            @relation("BookingAssignedTo")
+  approvedBookingPrices      UnitBooking[]            @relation("BookingPriceApprover")
+  bookingActivities          BookingActivity[]
+  uploadedUnitMedia          UnitMedia[]
+  unitHistoryChanges         UnitHistory[]            @relation("UnitHistoryChangedBy")
+  slotBookings               SlotBooking[]            @relation("SlotBookedBy")
+  categoryPricings           CategoryMallPricing[]    @relation("CategoryPricingCreatedBy")
+  submittedSubmittals        FitoutSubmittal[]        @relation("SubmittalSubmittedBy")
+  entityComments             EntityComment[]
+  entityDistributions        EntityDistribution[]
+  createdIssues              FitoutIssue[]            @relation("IssueCreatedBy")
+  assignedIssues             FitoutIssue[]            @relation("IssueAssignedTo")
+  createdDailyReports        FitoutDailyReportEntry[] @relation("DailyReportCreatedBy")
+  ownedFitoutRisks           FitoutRisk[]             @relation("FitoutRiskOwner")
+  createdFitoutRisks         FitoutRisk[]             @relation("FitoutRiskCreatedBy")
+  requestedFitoutChanges     FitoutChangeOrder[]      @relation("FitoutChangeRequestedBy")
+  approvedFitoutChanges      FitoutChangeOrder[]      @relation("FitoutChangeApprovedBy")
+  createdTickets             Ticket[]                 @relation("TicketCreatedBy")
+  ticketComments             TicketComment[]
+  voidedInvoices             Invoice[]                @relation("InvoiceVoidedBy")
+  reversedPayments           Payment[]                @relation("PaymentReversedBy")
+  maintenanceAssigned        MaintenanceSchedule[]    @relation("MaintenanceAssignedTo")
+  maintenanceExecutions      MaintenanceExecution[]   @relation("MaintenancePerformedBy")
+  inventoryTransactions      InventoryTransaction[]   @relation("InventoryTransactionCreatedBy")
+  workOrdersRequested        WorkOrder[]              @relation("WorkOrderRequester")
+  workOrdersAssigned         WorkOrder[]              @relation("WorkOrderAssignee")
+  workOrdersReviewed         WorkOrder[]              @relation("WorkOrderReviewer")
+  workOrderEvents            WorkOrderEvent[]
+  workOrderChecklistDone     WorkOrderChecklistItem[] @relation("WorkOrderChecklistCompletedBy")
+  workOrderEvidence          WorkOrderEvidence[]
+  workOrderComments          WorkOrderComment[]
+  workOrderTemplatesCreated  WorkOrderTemplate[]      @relation("WorkOrderTemplateCreator")
+  workOrderTemplatesAssigned WorkOrderTemplate[]      @relation("WorkOrderTemplateAssignee")
 
   @@index([tenantId])
 }
@@ -409,21 +448,250 @@ model Mall {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  buildings            Building[]
-  floors               Floor[]
-  zones                Zone[]
-  units                Unit[]
-  floorPlans           FloorPlanAnalysis[]
-  occupancySnapshots   OccupancySnapshot[]
-  mallPolicy           MallPolicy?
-  userAccess           UserMallAccess[]
-  announcements        MallAnnouncement[]
-  maintenanceSchedules MaintenanceSchedule[]
-  unifiedDocuments     UnifiedDocument[]
-  categoryPricings     CategoryMallPricing[]
-  servicePriceCatalog  ServicePriceCatalog[]
-  activeUsers          User[]               @relation("UserActiveMall")
-  leads                Lead[]
+  buildings             Building[]
+  floors                Floor[]
+  zones                 Zone[]
+  units                 Unit[]
+  floorPlans            FloorPlanAnalysis[]
+  occupancySnapshots    OccupancySnapshot[]
+  mallPolicy            MallPolicy?
+  userAccess            UserMallAccess[]
+  announcements         MallAnnouncement[]
+  maintenanceSchedules  MaintenanceSchedule[]
+  unifiedDocuments      UnifiedDocument[]
+  categoryPricings      CategoryMallPricing[]
+  servicePriceCatalog   ServicePriceCatalog[]
+  activeUsers           User[]                 @relation("UserActiveMall")
+  leads                 Lead[]
+  inventoryCategories   InventoryCategory[]
+  inventoryItems        InventoryItem[]
+  inventoryTransactions InventoryTransaction[]
+  workOrders            WorkOrder[]
+  workOrderTemplates    WorkOrderTemplate[]
+}
+
+enum InventoryItemType {
+  VTTH
+  CCDC
+  EQUIPMENT
+}
+
+enum InventoryTransactionType {
+  IN
+  OUT
+  RETURN
+  ADJUST
+}
+
+model InventoryCategory {
+  id          String            @id @default(cuid())
+  mallId      String
+  mall        Mall              @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  code        String
+  name        String
+  itemType    InventoryItemType
+  description String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  items       InventoryItem[]
+
+  @@unique([mallId, code])
+  @@index([mallId, itemType, isActive])
+}
+
+model InventoryItem {
+  id            String                 @id @default(cuid())
+  mallId        String
+  mall          Mall                   @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      InventoryCategory      @relation(fields: [categoryId], references: [id])
+  sku           String
+  name          String
+  itemType      InventoryItemType
+  unit          String
+  specification String?
+  manufacturer  String?
+  location      String?
+  minStock      Float                  @default(0)
+  currentStock  Float                  @default(0)
+  averageCost   Float                  @default(0)
+  isActive      Boolean                @default(true)
+  notes         String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  transactions  InventoryTransaction[]
+
+  @@unique([mallId, sku])
+  @@index([mallId, itemType, isActive])
+  @@index([categoryId])
+}
+
+model InventoryTransaction {
+  id            String                   @id @default(cuid())
+  transactionNo String                   @unique
+  mallId        String
+  mall          Mall                     @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          InventoryItem            @relation(fields: [itemId], references: [id])
+  type          InventoryTransactionType
+  quantity      Float
+  unitCost      Float?
+  stockBefore   Float
+  stockAfter    Float
+  transactionAt DateTime                 @default(now())
+  supplier      String?
+  recipient     String?
+  department    String?
+  referenceNo   String?
+  purpose       String?
+  notes         String?
+  createdById   String
+  createdBy     User                     @relation("InventoryTransactionCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime                 @default(now())
+
+  @@index([mallId, transactionAt])
+  @@index([itemId, transactionAt])
+  @@index([type])
+}
+
+model WorkOrder {
+  id                 String                   @id @default(cuid())
+  workOrderNumber    String                   @unique
+  mallId             String
+  mall               Mall                     @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  unitId             String?
+  unit               Unit?                    @relation(fields: [unitId], references: [id])
+  category           String
+  title              String
+  description        String?
+  priority           String                   @default("MEDIUM")
+  status             String                   @default("NEW")
+  location           String?
+  assignedDepartment String?
+  requesterId        String
+  requester          User                     @relation("WorkOrderRequester", fields: [requesterId], references: [id])
+  assigneeId         String?
+  assignee           User?                    @relation("WorkOrderAssignee", fields: [assigneeId], references: [id])
+  reviewerId         String?
+  reviewer           User?                    @relation("WorkOrderReviewer", fields: [reviewerId], references: [id])
+  dueDate            DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  reviewedAt         DateTime?
+  reviewStatus       String?
+  reviewNote         String?
+  sourceEntityType   String?
+  sourceEntityId     String?
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  checklist          WorkOrderChecklistItem[]
+  events             WorkOrderEvent[]
+  evidence           WorkOrderEvidence[]
+  comments           WorkOrderComment[]
+  templateId         String?
+  template           WorkOrderTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  scheduledFor       DateTime?
+
+  @@unique([templateId, scheduledFor])
+  @@index([mallId, status, dueDate])
+  @@index([assigneeId, status])
+  @@index([assignedDepartment, status])
+  @@index([sourceEntityType, sourceEntityId])
+}
+
+model WorkOrderTemplate {
+  id                 String      @id @default(cuid())
+  mallId             String
+  mall               Mall        @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  name               String
+  category           String
+  title              String
+  description        String?
+  priority           String      @default("MEDIUM")
+  location           String?
+  assignedDepartment String?
+  assigneeId         String?
+  assignee           User?       @relation("WorkOrderTemplateAssignee", fields: [assigneeId], references: [id])
+  frequency          String
+  nextRunAt          DateTime
+  lastRunAt          DateTime?
+  dueHours           Int         @default(24)
+  checklist          Json        @default("[]")
+  isActive           Boolean     @default(true)
+  createdById        String
+  createdBy          User        @relation("WorkOrderTemplateCreator", fields: [createdById], references: [id])
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  workOrders         WorkOrder[]
+
+  @@unique([mallId, name])
+  @@index([isActive, nextRunAt])
+  @@index([mallId, category])
+}
+
+model WorkOrderChecklistItem {
+  id            String    @id @default(cuid())
+  workOrderId   String
+  workOrder     WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  isRequired    Boolean   @default(true)
+  isCompleted   Boolean   @default(false)
+  completedAt   DateTime?
+  completedById String?
+  completedBy   User?     @relation("WorkOrderChecklistCompletedBy", fields: [completedById], references: [id])
+  order         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workOrderId, order])
+}
+
+model WorkOrderEvent {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  eventType   String
+  description String?
+  oldValue    String?
+  newValue    String?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@index([workOrderId, createdAt])
+}
+
+model WorkOrderEvidence {
+  id           String    @id @default(cuid())
+  workOrderId  String
+  workOrder    WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  evidenceType String    @default("PROGRESS")
+  fileName     String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  caption      String?
+  uploadedById String
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime  @default(now())
+
+  @@index([workOrderId, evidenceType])
+}
+
+model WorkOrderComment {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  content     String
+  isInternal  Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  @@index([workOrderId, createdAt])
 }
 
 model Building {
@@ -563,6 +831,7 @@ model Unit {
   history              UnitHistory[]
   slots                UnitSlot[]
   fitoutIssues         FitoutIssue[]
+  workOrders           WorkOrder[]
 
   @@unique([mallId, code])
   @@index([mallId, status])
@@ -940,6 +1209,143 @@ model ContractFile {
   signerRole   String?
   verifyCode   String?   @unique
   createdAt    DateTime  @default(now())
+}
+
+/// Service and operations contracts, separate from leasing Contract records.
+model ServiceContract {
+  id                    String                @id @default(cuid())
+  contractNumber        String                @unique
+  title                 String
+  mallId                String
+  counterpartyName      String
+  counterpartyTax       String?
+  counterpartyEmail     String?
+  counterpartyPhone     String?
+  type                  ServiceContractType   @default(SERVICE)
+  status                ServiceContractStatus @default(DRAFT)
+  workflowStage         String?
+  workflowColor         String?
+  signedDate            DateTime?
+  startDate             DateTime?
+  endDate               DateTime?
+  terminatedDate        DateTime?
+  totalValue            Float                 @default(0)
+  currency              String                @default("VND")
+  paymentDirection      String                @default("PAYABLE")
+  productName           String?
+  riskScore             Int                   @default(0)
+  hasAllRequiredClauses Boolean               @default(false)
+  ownerId               String?
+  createdById           String
+  parentContractId      String?
+  parentContract        ServiceContract?      @relation("ServiceContractRenewals", fields: [parentContractId], references: [id])
+  renewals              ServiceContract[]     @relation("ServiceContractRenewals")
+  notes                 String?
+  tags                  String?
+  isDeleted             Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  documents  ServiceContractDocument[]
+  events     ServiceContractEvent[]
+  payments   ServiceContractPayment[]
+  checklist  ServiceContractChecklistItem[]
+  milestones ServiceContractMilestone[]
+
+  @@index([mallId, status])
+  @@index([endDate])
+  @@index([counterpartyName])
+}
+
+model ServiceContractDocument {
+  id           String                  @id @default(cuid())
+  contractId   String
+  contract     ServiceContract         @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  fileName     String
+  filePath     String
+  fileSize     Int
+  mimeType     String
+  documentType String                  @default("CONTRACT")
+  paymentId    String?
+  payment      ServiceContractPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  version      Int                     @default(1)
+  uploadedById String
+  createdAt    DateTime                @default(now())
+
+  @@index([contractId, documentType])
+}
+
+model ServiceContractPayment {
+  id             String                    @id @default(cuid())
+  contractId     String
+  contract       ServiceContract           @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  milestone      String
+  dueDate        DateTime
+  amount         Float
+  currency       String                    @default("VND")
+  status         String                    @default("PENDING")
+  paidDate       DateTime?
+  paidAmount     Float?
+  invoiceNumber  String?
+  periodType     String?
+  periodNumber   Int?
+  reminderDays   Int                       @default(7)
+  reminderSentAt DateTime?
+  notes          String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  documents      ServiceContractDocument[]
+
+  @@index([contractId, dueDate])
+  @@index([status, dueDate])
+}
+
+model ServiceContractChecklistItem {
+  id            String          @id @default(cuid())
+  contractId    String
+  contract      ServiceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  isCompleted   Boolean         @default(false)
+  completedAt   DateTime?
+  completedById String?
+  dueDate       DateTime?
+  order         Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([contractId, order])
+}
+
+model ServiceContractMilestone {
+  id            String          @id @default(cuid())
+  contractId    String
+  contract      ServiceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  dueDate       DateTime?
+  status        String          @default("PENDING")
+  completedAt   DateTime?
+  completedById String?
+  order         Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([contractId, order])
+}
+
+model ServiceContractEvent {
+  id          String          @id @default(cuid())
+  contractId  String
+  contract    ServiceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  eventType   String
+  description String?
+  oldValue    String?
+  newValue    String?
+  userId      String?
+  createdAt   DateTime        @default(now())
+
+  @@index([contractId, createdAt])
 }
 
 model FitoutProject {

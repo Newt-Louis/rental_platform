@@ -1,0 +1,713 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { Cron } from "@nestjs/schedule";
+import { PrismaService } from "../../prisma/prisma.service";
+import { StorageService } from "../../storage/storage.service";
+import { CreateWorkOrderDto } from "./dto/work-order.dto";
+import { NotificationsService } from "../notifications/notifications.service";
+
+const TRANSITIONS: Record<string, string[]> = {
+  NEW: ["ASSIGNED", "IN_PROGRESS", "CANCELLED"],
+  ASSIGNED: ["IN_PROGRESS", "CANCELLED"],
+  IN_PROGRESS: ["WAITING_REVIEW", "ON_HOLD", "CANCELLED"],
+  ON_HOLD: ["IN_PROGRESS", "CANCELLED"],
+  WAITING_REVIEW: ["IN_PROGRESS", "COMPLETED"],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+@Injectable()
+export class WorkOrdersService {
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+    private notifications: NotificationsService,
+  ) {}
+  async mallId(id: string) {
+    const row = await this.prisma.workOrder.findUnique({
+      where: { id },
+      select: { mallId: true },
+    });
+    if (!row) throw new NotFoundException("Không tìm thấy công việc");
+    return row.mallId;
+  }
+
+  async templateMallId(id: string) {
+    const row = await this.prisma.workOrderTemplate.findUnique({
+      where: { id },
+      select: { mallId: true },
+    });
+    if (!row) throw new NotFoundException("Không tìm thấy mẫu công việc");
+    return row.mallId;
+  }
+
+  async listTemplates(query: any, mallIds?: string[]) {
+    return this.prisma.workOrderTemplate.findMany({
+      where: {
+        ...(query.mallId
+          ? { mallId: query.mallId }
+          : mallIds
+            ? { mallId: { in: mallIds } }
+            : {}),
+        ...(query.isActive === undefined
+          ? {}
+          : { isActive: String(query.isActive) === "true" }),
+      },
+      include: {
+        mall: { select: { id: true, code: true, name: true } },
+        assignee: { select: { id: true, fullName: true } },
+        _count: { select: { workOrders: true } },
+      },
+      orderBy: [{ isActive: "desc" }, { nextRunAt: "asc" }],
+    });
+  }
+
+  async createTemplate(body: any, userId: string) {
+    this.validateTemplate(body);
+    return this.prisma.workOrderTemplate.create({
+      data: {
+        mallId: body.mallId,
+        name: body.name.trim(),
+        category: body.category,
+        title: body.title.trim(),
+        description: body.description || undefined,
+        priority: body.priority || "MEDIUM",
+        location: body.location || undefined,
+        assignedDepartment: body.assignedDepartment || undefined,
+        assigneeId: body.assigneeId || undefined,
+        frequency: body.frequency,
+        nextRunAt: new Date(body.nextRunAt),
+        dueHours: Math.max(1, Number(body.dueHours) || 24),
+        checklist: Array.isArray(body.checklist) ? body.checklist : [],
+        createdById: userId,
+      },
+    });
+  }
+
+  async updateTemplate(id: string, body: any) {
+    const current = await this.prisma.workOrderTemplate.findUnique({
+      where: { id },
+    });
+    if (!current) throw new NotFoundException("Không tìm thấy mẫu công việc");
+    const data: any = {};
+    for (const key of [
+      "name",
+      "category",
+      "title",
+      "description",
+      "priority",
+      "location",
+      "assignedDepartment",
+      "assigneeId",
+      "frequency",
+      "dueHours",
+      "checklist",
+    ])
+      if (key in body) data[key] = body[key] === "" ? null : body[key];
+    if (body.nextRunAt) data.nextRunAt = new Date(body.nextRunAt);
+    if (data.name) data.name = data.name.trim();
+    if (data.title) data.title = data.title.trim();
+    if (data.dueHours) data.dueHours = Math.max(1, Number(data.dueHours));
+    if (data.frequency && !this.frequencies.includes(data.frequency))
+      throw new BadRequestException("Tần suất không hợp lệ");
+    return this.prisma.workOrderTemplate.update({ where: { id }, data });
+  }
+
+  async toggleTemplate(id: string, isActive?: boolean) {
+    const row = await this.prisma.workOrderTemplate.findUnique({
+      where: { id },
+    });
+    if (!row) throw new NotFoundException("Không tìm thấy mẫu công việc");
+    return this.prisma.workOrderTemplate.update({
+      where: { id },
+      data: { isActive: isActive ?? !row.isActive },
+    });
+  }
+
+  async runTemplate(id: string, scheduledFor?: Date) {
+    const template = await this.prisma.workOrderTemplate.findUnique({
+      where: { id },
+    });
+    if (!template) throw new NotFoundException("Không tìm thấy mẫu công việc");
+    const runAt = scheduledFor || new Date();
+    const dueDate = new Date(runAt.getTime() + template.dueHours * 3600000);
+    try {
+      const created = await this.prisma.workOrder.create({
+        data: {
+          workOrderNumber: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`,
+          mallId: template.mallId,
+          category: template.category,
+          title: template.title,
+          description: template.description,
+          priority: template.priority,
+          location: template.location,
+          assignedDepartment: template.assignedDepartment,
+          assigneeId: template.assigneeId,
+          status: template.assigneeId ? "ASSIGNED" : "NEW",
+          requesterId: template.createdById,
+          dueDate,
+          templateId: template.id,
+          scheduledFor: runAt,
+          sourceEntityType: "WORK_ORDER_TEMPLATE",
+          sourceEntityId: template.id,
+          checklist: {
+            create: ((template.checklist as string[]) || []).map(
+              (title, order) => ({
+                title,
+                order,
+              }),
+            ),
+          },
+          events: {
+            create: {
+              eventType: "SCHEDULED_CREATED",
+              description: `Tự động tạo từ mẫu ${template.name}`,
+              userId: template.createdById,
+            },
+          },
+        },
+      });
+      if (created.assigneeId)
+        await this.notify(
+          created.assigneeId,
+          created.id,
+          "Công việc định kỳ mới",
+          `${created.workOrderNumber} · ${created.title}`,
+        );
+      return { created: true, workOrder: created };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      )
+        return { created: false, reason: "DUPLICATE_SCHEDULE" };
+      throw error;
+    }
+  }
+
+  private readonly frequencies = [
+    "DAILY",
+    "WEEKLY",
+    "MONTHLY",
+    "QUARTERLY",
+    "ANNUALLY",
+  ];
+  private validateTemplate(body: any) {
+    if (
+      !body.mallId ||
+      !body.name?.trim() ||
+      !body.title?.trim() ||
+      !body.nextRunAt
+    )
+      throw new BadRequestException(
+        "Mall, tên mẫu, tiêu đề và lần chạy tiếp theo là bắt buộc",
+      );
+    if (!this.frequencies.includes(body.frequency))
+      throw new BadRequestException("Tần suất không hợp lệ");
+    if (Number.isNaN(new Date(body.nextRunAt).getTime()))
+      throw new BadRequestException("Ngày chạy tiếp theo không hợp lệ");
+  }
+
+  private nextRun(from: Date, frequency: string) {
+    const next = new Date(from);
+    if (frequency === "DAILY") next.setDate(next.getDate() + 1);
+    if (frequency === "WEEKLY") next.setDate(next.getDate() + 7);
+    if (frequency === "MONTHLY") next.setMonth(next.getMonth() + 1);
+    if (frequency === "QUARTERLY") next.setMonth(next.getMonth() + 3);
+    if (frequency === "ANNUALLY") next.setFullYear(next.getFullYear() + 1);
+    return next;
+  }
+
+  @Cron("0 5 * * *", {
+    name: "work-order-template-generator",
+    timeZone: "Asia/Ho_Chi_Minh",
+  })
+  async generateScheduledWorkOrders() {
+    const now = new Date();
+    const templates = await this.prisma.workOrderTemplate.findMany({
+      where: { isActive: true, nextRunAt: { lte: now } },
+    });
+    let created = 0;
+    for (const template of templates) {
+      let scheduledFor = template.nextRunAt;
+      while (scheduledFor <= now) {
+        const result = await this.runTemplate(template.id, scheduledFor);
+        if (result.created) created++;
+        scheduledFor = this.nextRun(scheduledFor, template.frequency);
+      }
+      await this.prisma.workOrderTemplate.update({
+        where: { id: template.id },
+        data: { lastRunAt: now, nextRunAt: scheduledFor },
+      });
+    }
+    return { templates: templates.length, created };
+  }
+
+  async list(query: any, mallIds?: string[]) {
+    const page = Math.max(1, Number(query.page) || 1),
+      limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const where: Prisma.WorkOrderWhereInput = {
+      isActive: true,
+      ...(query.mallId
+        ? { mallId: query.mallId }
+        : mallIds
+          ? { mallId: { in: mallIds } }
+          : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.priority ? { priority: query.priority } : {}),
+      ...(query.department ? { assignedDepartment: query.department } : {}),
+      ...(query.assigneeId ? { assigneeId: query.assigneeId } : {}),
+      ...(query.overdue === "true"
+        ? {
+            dueDate: { lt: new Date() },
+            status: { notIn: ["COMPLETED", "CANCELLED"] },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              {
+                workOrderNumber: {
+                  contains: query.search,
+                  mode: "insensitive",
+                },
+              },
+              { title: { contains: query.search, mode: "insensitive" } },
+              { location: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+    const include = {
+      mall: { select: { id: true, code: true, name: true } },
+      unit: { select: { id: true, code: true, name: true } },
+      requester: { select: { id: true, fullName: true } },
+      assignee: { select: { id: true, fullName: true } },
+      _count: { select: { checklist: true, evidence: true } },
+    } as const;
+    const [data, total] = await Promise.all([
+      this.prisma.workOrder.findMany({
+        where,
+        include,
+        orderBy: [
+          { priority: "desc" },
+          { dueDate: "asc" },
+          { createdAt: "desc" },
+        ],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.workOrder.count({ where }),
+    ]);
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async detail(id: string) {
+    const row = await this.prisma.workOrder.findFirst({
+      where: { id, isActive: true },
+      include: {
+        mall: true,
+        unit: true,
+        requester: { select: { id: true, fullName: true } },
+        assignee: { select: { id: true, fullName: true } },
+        reviewer: { select: { id: true, fullName: true } },
+        checklist: {
+          include: { completedBy: { select: { fullName: true } } },
+          orderBy: { order: "asc" },
+        },
+        evidence: {
+          include: { uploadedBy: { select: { fullName: true } } },
+          orderBy: { createdAt: "desc" },
+        },
+        events: {
+          include: { user: { select: { fullName: true } } },
+          orderBy: { createdAt: "desc" },
+        },
+        comments: {
+          include: { user: { select: { id: true, fullName: true } } },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("Không tìm thấy công việc");
+    return row;
+  }
+
+  async create(dto: CreateWorkOrderDto, userId: string) {
+    if (dto.unitId) {
+      const unit = await this.prisma.unit.findFirst({
+        where: { id: dto.unitId, mallId: dto.mallId },
+      });
+      if (!unit)
+        throw new BadRequestException(
+          "Mặt bằng không thuộc trung tâm thương mại đã chọn",
+        );
+    }
+    const no = `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
+    const created = await this.prisma.workOrder.create({
+      data: {
+        workOrderNumber: no,
+        mallId: dto.mallId,
+        unitId: dto.unitId || undefined,
+        category: dto.category,
+        title: dto.title.trim(),
+        description: dto.description,
+        priority: dto.priority || "MEDIUM",
+        location: dto.location,
+        assignedDepartment: dto.assignedDepartment,
+        assigneeId: dto.assigneeId || undefined,
+        status: dto.assigneeId ? "ASSIGNED" : "NEW",
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        sourceEntityType: dto.sourceEntityType,
+        sourceEntityId: dto.sourceEntityId,
+        requesterId: userId,
+        checklist: dto.checklist?.length
+          ? {
+              create: dto.checklist
+                .filter(Boolean)
+                .map((title, order) => ({ title, order })),
+            }
+          : undefined,
+        events: {
+          create: {
+            eventType: "CREATED",
+            description: "Tạo công việc vận hành",
+            userId,
+          },
+        },
+      },
+      include: { checklist: true },
+    });
+    if (created.assigneeId) {
+      await this.notify(
+        created.assigneeId,
+        created.id,
+        "Công việc mới được giao",
+        `${created.workOrderNumber} · ${created.title}`,
+      );
+    }
+    return created;
+  }
+
+  async update(id: string, body: any, userId: string) {
+    const before = await this.detail(id);
+    const allowed = [
+      "title",
+      "description",
+      "priority",
+      "location",
+      "assignedDepartment",
+      "assigneeId",
+      "dueDate",
+    ];
+    const data: any = {};
+    for (const key of allowed)
+      if (key in body)
+        data[key] =
+          key === "dueDate" && body[key]
+            ? new Date(body[key])
+            : body[key] || (key === "assigneeId" ? null : body[key]);
+    if (body.assigneeId && before.status === "NEW") data.status = "ASSIGNED";
+    const row = await this.prisma.workOrder.update({ where: { id }, data });
+    await this.event(id, "UPDATED", userId, undefined, JSON.stringify(data));
+    if (body.assigneeId && body.assigneeId !== before.assigneeId) {
+      await this.notify(
+        body.assigneeId,
+        id,
+        "Bạn được giao công việc",
+        `${before.workOrderNumber} · ${before.title}`,
+      );
+    }
+    return row;
+  }
+  async transition(id: string, status: string, userId: string, note?: string) {
+    const row = await this.detail(id);
+    if (!(TRANSITIONS[row.status] || []).includes(status))
+      throw new BadRequestException(
+        `Không thể chuyển từ ${row.status} sang ${status}`,
+      );
+    if (status === "WAITING_REVIEW") {
+      const missing = row.checklist.filter(
+        (x) => x.isRequired && !x.isCompleted,
+      );
+      if (missing.length)
+        throw new BadRequestException(
+          `Còn ${missing.length} mục checklist bắt buộc chưa hoàn thành`,
+        );
+      if (!row.evidence.some((x) => x.evidenceType === "AFTER"))
+        throw new BadRequestException(
+          "Cần tải ít nhất một ảnh minh chứng sau xử lý",
+        );
+    }
+    const data: any = { status };
+    if (status === "IN_PROGRESS") data.startedAt = row.startedAt || new Date();
+    if (status === "COMPLETED") data.completedAt = new Date();
+    const updated = await this.prisma.workOrder.update({ where: { id }, data });
+    await this.event(id, "STATUS_CHANGED", userId, row.status, status, note);
+    const recipient =
+      status === "WAITING_REVIEW" ? row.requesterId : row.assigneeId;
+    if (recipient && recipient !== userId)
+      await this.notify(
+        recipient,
+        id,
+        `Công việc: ${status}`,
+        `${row.workOrderNumber} · ${row.title}`,
+      );
+    return updated;
+  }
+  async review(
+    id: string,
+    approved: boolean,
+    note: string | undefined,
+    userId: string,
+  ) {
+    const row = await this.detail(id);
+    if (row.status !== "WAITING_REVIEW")
+      throw new BadRequestException(
+        "Công việc chưa ở trạng thái chờ nghiệm thu",
+      );
+    const status = approved ? "COMPLETED" : "IN_PROGRESS";
+    const updated = await this.prisma.workOrder.update({
+      where: { id },
+      data: {
+        status,
+        reviewerId: userId,
+        reviewedAt: new Date(),
+        reviewStatus: approved ? "APPROVED" : "REJECTED",
+        reviewNote: note,
+        completedAt: approved ? new Date() : null,
+      },
+    });
+    await this.event(
+      id,
+      approved ? "APPROVED" : "REJECTED",
+      userId,
+      "WAITING_REVIEW",
+      status,
+      note,
+    );
+    if (row.assigneeId && row.assigneeId !== userId)
+      await this.notify(
+        row.assigneeId,
+        id,
+        approved
+          ? "Công việc đã được nghiệm thu"
+          : "Công việc cần khắc phục lại",
+        `${row.workOrderNumber} · ${row.title}`,
+      );
+    return updated;
+  }
+  async addComment(id: string, content: string, userId: string) {
+    const row = await this.detail(id);
+    if (!content?.trim())
+      throw new BadRequestException("Nội dung trao đổi không được để trống");
+    const comment = await this.prisma.workOrderComment.create({
+      data: { workOrderId: id, userId, content: content.trim() },
+      include: { user: { select: { id: true, fullName: true } } },
+    });
+    const recipients = [row.requesterId, row.assigneeId].filter(
+      (x): x is string => !!x && x !== userId,
+    );
+    await Promise.all(
+      [...new Set(recipients)].map((uid) =>
+        this.notify(
+          uid,
+          id,
+          "Trao đổi mới về công việc",
+          `${row.workOrderNumber} · ${content.trim().slice(0, 100)}`,
+        ),
+      ),
+    );
+    return comment;
+  }
+  async addChecklist(id: string, body: any) {
+    await this.detail(id);
+    return this.prisma.workOrderChecklistItem.create({
+      data: {
+        workOrderId: id,
+        title: body.title,
+        description: body.description,
+        isRequired: body.isRequired !== false,
+        order: Number(body.order) || 0,
+      },
+    });
+  }
+  async toggleChecklist(
+    id: string,
+    itemId: string,
+    completed: boolean,
+    userId: string,
+  ) {
+    const item = await this.prisma.workOrderChecklistItem.findFirst({
+      where: { id: itemId, workOrderId: id },
+    });
+    if (!item) throw new NotFoundException("Không tìm thấy mục checklist");
+    return this.prisma.workOrderChecklistItem.update({
+      where: { id: itemId },
+      data: {
+        isCompleted: completed,
+        completedAt: completed ? new Date() : null,
+        completedById: completed ? userId : null,
+      },
+    });
+  }
+  async upload(
+    id: string,
+    file: Express.Multer.File,
+    evidenceType: string,
+    caption: string | undefined,
+    userId: string,
+  ) {
+    if (!file) throw new BadRequestException("Vui lòng chọn file minh chứng");
+    await this.detail(id);
+    if (!["BEFORE", "PROGRESS", "AFTER", "DOCUMENT"].includes(evidenceType))
+      throw new BadRequestException("Loại minh chứng không hợp lệ");
+    const saved = await this.storage.saveFile(file, `work-orders/${id}`);
+    return this.prisma.workOrderEvidence.create({
+      data: {
+        workOrderId: id,
+        evidenceType,
+        caption,
+        fileName: saved.fileName,
+        filePath: saved.filePath,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        uploadedById: userId,
+      },
+    });
+  }
+  async summary(mallIds?: string[], mallId?: string) {
+    const where: Prisma.WorkOrderWhereInput = {
+      isActive: true,
+      ...(mallId ? { mallId } : mallIds ? { mallId: { in: mallIds } } : {}),
+    };
+    const [total, grouped, overdue, pendingReview] = await Promise.all([
+      this.prisma.workOrder.count({ where }),
+      this.prisma.workOrder.groupBy({ by: ["status"], where, _count: true }),
+      this.prisma.workOrder.count({
+        where: {
+          ...where,
+          dueDate: { lt: new Date() },
+          status: { notIn: ["COMPLETED", "CANCELLED"] },
+        },
+      }),
+      this.prisma.workOrder.count({
+        where: { ...where, status: "WAITING_REVIEW" },
+      }),
+    ]);
+    return {
+      total,
+      overdue,
+      pendingReview,
+      byStatus: Object.fromEntries(grouped.map((x) => [x.status, x._count])),
+    };
+  }
+  async exportCsv(query: any, mallIds?: string[]) {
+    const result = await this.list({ ...query, page: 1, limit: 100 }, mallIds);
+    const esc = (value: unknown) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const headers = [
+      "Số phiếu",
+      "Mall",
+      "Tiêu đề",
+      "Nhóm",
+      "Bộ phận",
+      "Ưu tiên",
+      "Trạng thái",
+      "Người xử lý",
+      "Vị trí",
+      "Hạn hoàn thành",
+      "Ngày tạo",
+    ];
+    const lines = result.data.map((x) =>
+      [
+        x.workOrderNumber,
+        x.mall.name,
+        x.title,
+        x.category,
+        x.assignedDepartment,
+        x.priority,
+        x.status,
+        x.assignee?.fullName,
+        x.location,
+        x.dueDate?.toISOString(),
+        x.createdAt.toISOString(),
+      ]
+        .map(esc)
+        .join(","),
+    );
+    return `\uFEFF${headers.map(esc).join(",")}\n${lines.join("\n")}`;
+  }
+  @Cron("0 8 * * *", {
+    name: "work-order-overdue-reminders",
+    timeZone: "Asia/Ho_Chi_Minh",
+  })
+  async sendOverdueReminders() {
+    const now = new Date(),
+      since = new Date();
+    since.setHours(0, 0, 0, 0);
+    const rows = await this.prisma.workOrder.findMany({
+      where: {
+        isActive: true,
+        assigneeId: { not: null },
+        dueDate: { lt: now },
+        status: { notIn: ["COMPLETED", "CANCELLED"] },
+      },
+    });
+    let sent = 0;
+    for (const row of rows) {
+      const exists = await this.prisma.notification.findFirst({
+        where: {
+          userId: row.assigneeId!,
+          entityType: "WORK_ORDER_OVERDUE",
+          entityId: row.id,
+          createdAt: { gte: since },
+        },
+      });
+      if (!exists) {
+        await this.notifications.create({
+          userId: row.assigneeId!,
+          title: "Công việc đã quá hạn",
+          body: `${row.workOrderNumber} · ${row.title}`,
+          type: "WORK_ORDER",
+          entityType: "WORK_ORDER_OVERDUE",
+          entityId: row.id,
+        });
+        sent++;
+      }
+    }
+    return { sent };
+  }
+  private notify(
+    userId: string,
+    entityId: string,
+    title: string,
+    body: string,
+  ) {
+    return this.notifications.create({
+      userId,
+      title,
+      body,
+      type: "WORK_ORDER",
+      entityType: "WORK_ORDER",
+      entityId,
+    });
+  }
+  private event(
+    workOrderId: string,
+    eventType: string,
+    userId: string,
+    oldValue?: string,
+    newValue?: string,
+    description?: string,
+  ) {
+    return this.prisma.workOrderEvent.create({
+      data: { workOrderId, eventType, userId, oldValue, newValue, description },
+    });
+  }
+}

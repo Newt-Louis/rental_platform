@@ -35,6 +35,9 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { BrandingModule } from './modules/branding/branding.module';
 import { HealthController } from './health/health.controller';
+import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
 
 @Module({
   imports: [
@@ -78,6 +81,9 @@ import { HealthController } from './health/health.controller';
     CategoriesModule,
     AuditLogModule,
     BrandingModule,
+    ServiceContractsModule,
+    InventoryModule,
+    WorkOrdersModule,
   ],
   controllers: [HealthController],
   providers: [

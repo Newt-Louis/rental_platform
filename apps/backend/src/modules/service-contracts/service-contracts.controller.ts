@@ -1,0 +1,93 @@
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
+import { CreateServiceContractDto, UpdateServiceContractStatusDto } from './dto/service-contract.dto';
+import { ServiceContractsService } from './service-contracts.service';
+
+const VIEW_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.FINANCE, Role.LEGAL, Role.OPERATION];
+const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEGAL, Role.OPERATION];
+
+@ApiTags('Service Contracts')
+@ApiBearerAuth('JWT-auth')
+@Roles(...VIEW_ROLES)
+@Controller('service-contracts')
+export class ServiceContractsController {
+  constructor(private service: ServiceContractsService, private mallAccess: MallAccessService) {}
+
+  private async assertItemAccess(id: string, user: any) {
+    const item = await this.service.findOne(id);
+    await this.mallAccess.assertMallAccess(user.id, user.role, item.mallId);
+    return item;
+  }
+
+  @Get()
+  async list(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.service.findAll(query, mallIds ?? undefined);
+  }
+
+  @Get('summary/stats')
+  async stats(@CurrentUser() user: any) { const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role); return this.service.stats(mallIds ?? undefined); }
+
+  @Get('tools/generate-number')
+  generateNumber(@Query('mallCode') mallCode?: string) { return { contractNumber: this.service.generateNumber(mallCode) }; }
+
+  @Get(':id')
+  async detail(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.findOne(id); }
+
+  @Post()
+  @Roles(...EDIT_ROLES)
+  async create(@Body() dto: CreateServiceContractDto, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, dto.mallId); return this.service.create(dto, user.id); }
+
+  @Patch(':id')
+  @Roles(...EDIT_ROLES)
+  async update(@Param('id') id: string, @Body() dto: Partial<CreateServiceContractDto>, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.update(id, dto, user.id); }
+
+  @Patch(':id/status')
+  @Roles(...EDIT_ROLES)
+  async status(@Param('id') id: string, @Body() dto: UpdateServiceContractStatusDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateStatus(id, dto.status, dto.description, user.id); }
+
+  @Post(':id/documents')
+  @Roles(...EDIT_ROLES)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 30 * 1024 * 1024 }, fileFilter: (_req, file, cb) => cb(null, ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'].includes(file.mimetype)) }))
+  async upload(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Body('documentType') documentType: string, @Body('paymentId') paymentId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.uploadDocument(id, file, documentType || 'CONTRACT', user.id, paymentId || undefined); }
+
+  @Delete(':id/documents/:documentId')
+  @Roles(...EDIT_ROLES)
+  async deleteDocument(@Param('id') id: string, @Param('documentId') documentId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deleteDocument(id, documentId); }
+
+  @Delete(':id')
+  @Roles(...EDIT_ROLES)
+  async remove(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.remove(id, user.id); }
+
+  @Post(':id/renew') @Roles(...EDIT_ROLES)
+  async renew(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.renew(id, body, user.id); }
+
+  @Post(':id/payments') @Roles(...EDIT_ROLES)
+  async createPayment(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createPayment(id, body); }
+  @Post(':id/payments/recurring') @Roles(...EDIT_ROLES)
+  async recurring(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.recurringPayments(id, body); }
+  @Patch(':id/payments/:itemId') @Roles(...EDIT_ROLES)
+  async updatePayment(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updatePayment(id, itemId, body); }
+  @Delete(':id/payments/:itemId') @Roles(...EDIT_ROLES)
+  async deletePayment(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deletePayment(id, itemId); }
+
+  @Post(':id/checklist') @Roles(...EDIT_ROLES)
+  async createChecklist(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createChecklist(id, body); }
+  @Patch(':id/checklist/:itemId') @Roles(...EDIT_ROLES)
+  async updateChecklist(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateChecklist(id, itemId, body, user.id); }
+  @Delete(':id/checklist/:itemId') @Roles(...EDIT_ROLES)
+  async deleteChecklist(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deleteChecklist(id, itemId); }
+
+  @Post(':id/milestones') @Roles(...EDIT_ROLES)
+  async createMilestone(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createMilestone(id, body); }
+  @Patch(':id/milestones/:itemId') @Roles(...EDIT_ROLES)
+  async updateMilestone(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateMilestone(id, itemId, body, user.id); }
+  @Delete(':id/milestones/:itemId') @Roles(...EDIT_ROLES)
+  async deleteMilestone(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deleteMilestone(id, itemId); }
+}

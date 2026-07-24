@@ -18,6 +18,7 @@ import viReports from '@/locales/vi/reports.json';
 import viAdmin from '@/locales/vi/admin.json';
 import viProfile from '@/locales/vi/profile.json';
 import viContracts from '@/locales/vi/contracts.json';
+import viServiceContracts from '@/locales/vi/serviceContracts.json';
 
 import enCommon from '@/locales/en/common.json';
 import enNav from '@/locales/en/nav.json';
@@ -35,6 +36,7 @@ import enReports from '@/locales/en/reports.json';
 import enAdmin from '@/locales/en/admin.json';
 import enProfile from '@/locales/en/profile.json';
 import enContracts from '@/locales/en/contracts.json';
+import enServiceContracts from '@/locales/en/serviceContracts.json';
 
 i18n
   .use(LanguageDetector)
@@ -58,6 +60,7 @@ i18n
         admin: viAdmin,
         profile: viProfile,
         contracts: viContracts,
+        serviceContracts: viServiceContracts,
       },
       en: {
         common: enCommon,
@@ -76,6 +79,7 @@ i18n
         admin: enAdmin,
         profile: enProfile,
         contracts: enContracts,
+        serviceContracts: enServiceContracts,
       },
     },
     defaultNS: 'common',
