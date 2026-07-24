@@ -25,6 +25,7 @@ export type RouteModule =
   | "service-contracts"
   | "inventory"
   | "work-orders"
+  | "patrol"
   | "tenants"
   | "fitout"
   | "tickets"
@@ -123,6 +124,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "OPERATION",
     "LEASING_MANAGER",
   ],
+  patrol: ["ADMIN", "CEO", "MALL_DIRECTOR", "OPERATION"],
   tenants: [
     "ADMIN",
     "LEASING_MANAGER",
@@ -174,6 +176,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   "service-contracts": "service-contracts",
   inventory: "inventory",
   "work-orders": "work-orders",
+  patrol: "patrol",
   tenants: "tenants",
   fitout: "fitout",
   tickets: "tickets",
@@ -291,6 +294,11 @@ export const NAV_GROUPS = [
         label: "Điều phối công việc",
         path: "/work-orders",
         module: "work-orders" as RouteModule,
+      },
+      {
+        label: "Tuần tra an ninh",
+        path: "/patrol",
+        module: "patrol" as RouteModule,
       },
       { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
       { label: "Ticket", path: "/tickets", module: "tickets" as RouteModule },

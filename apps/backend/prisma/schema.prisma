@@ -432,6 +432,9 @@ model User {
   workOrderComments          WorkOrderComment[]
   workOrderTemplatesCreated  WorkOrderTemplate[]      @relation("WorkOrderTemplateCreator")
   workOrderTemplatesAssigned WorkOrderTemplate[]      @relation("WorkOrderTemplateAssignee")
+  patrolShiftsAssigned       PatrolShift[]            @relation("PatrolShiftAssignee")
+  patrolShiftsCreated        PatrolShift[]            @relation("PatrolShiftCreator")
+  patrolChecksPerformed      PatrolCheck[]            @relation("PatrolCheckPerformer")
 
   @@index([tenantId])
 }
@@ -468,6 +471,8 @@ model Mall {
   inventoryTransactions InventoryTransaction[]
   workOrders            WorkOrder[]
   workOrderTemplates    WorkOrderTemplate[]
+  patrolRoutes          PatrolRoute[]
+  patrolShifts          PatrolShift[]
 }
 
 enum InventoryItemType {
@@ -692,6 +697,89 @@ model WorkOrderComment {
   createdAt   DateTime  @default(now())
 
   @@index([workOrderId, createdAt])
+}
+
+model PatrolRoute {
+  id          String        @id @default(cuid())
+  mallId      String
+  mall        Mall          @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  code        String
+  name        String
+  description String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  points      PatrolPoint[]
+  shifts      PatrolShift[]
+
+  @@unique([mallId, code])
+  @@index([mallId, isActive])
+}
+
+model PatrolPoint {
+  id           String        @id @default(cuid())
+  routeId      String
+  route        PatrolRoute   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  code         String
+  name         String
+  location     String?
+  instructions String?
+  isRequired   Boolean       @default(true)
+  order        Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  checks       PatrolCheck[]
+
+  @@unique([routeId, code])
+  @@index([routeId, order])
+}
+
+model PatrolShift {
+  id          String        @id @default(cuid())
+  shiftNumber String        @unique
+  mallId      String
+  mall        Mall          @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  routeId     String
+  route       PatrolRoute   @relation(fields: [routeId], references: [id])
+  assigneeId  String?
+  assignee    User?         @relation("PatrolShiftAssignee", fields: [assigneeId], references: [id])
+  createdById String
+  createdBy   User          @relation("PatrolShiftCreator", fields: [createdById], references: [id])
+  scheduledAt DateTime
+  startedAt   DateTime?
+  completedAt DateTime?
+  status      String        @default("SCHEDULED")
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  checks      PatrolCheck[]
+
+  @@index([mallId, status, scheduledAt])
+  @@index([assigneeId, status])
+}
+
+model PatrolCheck {
+  id            String      @id @default(cuid())
+  shiftId       String
+  shift         PatrolShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  pointId       String
+  point         PatrolPoint @relation(fields: [pointId], references: [id])
+  result        String      @default("PENDING")
+  note          String?
+  checkedAt     DateTime?
+  performedById String?
+  performedBy   User?       @relation("PatrolCheckPerformer", fields: [performedById], references: [id])
+  fileName      String?
+  filePath      String?
+  fileSize      Int?
+  mimeType      String?
+  workOrderId   String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([shiftId, pointId])
+  @@index([shiftId, result])
+  @@index([workOrderId])
 }
 
 model Building {

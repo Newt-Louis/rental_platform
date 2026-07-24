@@ -21,6 +21,7 @@ const ServiceContractsPage = lazy(
 );
 const InventoryPage = lazy(() => import("@/pages/inventory/InventoryPage"));
 const WorkOrdersPage = lazy(() => import("@/pages/work-orders/WorkOrdersPage"));
+const PatrolPage = lazy(() => import("@/pages/patrol/PatrolPage"));
 const FitoutPage = lazy(() => import("@/pages/fitout/FitoutPage"));
 const FitoutSettingsPage = lazy(
   () => import("@/pages/fitout/FitoutSettingsPage"),
@@ -218,6 +219,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <WorkOrdersPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="patrol"
+                    element={
+                      <RoleRoute>
+                        <PatrolPage />
                       </RoleRoute>
                     }
                   />
