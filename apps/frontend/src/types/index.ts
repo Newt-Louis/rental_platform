@@ -82,10 +82,10 @@ export interface CategoryMallPricing {
   floor?: Floor;
   zoneId?: string;
   zone?: Zone;
-  minRentPerSqm: number;
-  maxRentPerSqm: number;
-  suggestedRent?: number;
-  camPerSqm: number;
+  minRentPerSqm: number | null;
+  maxRentPerSqm: number | null;
+  suggestedRent?: number | null;
+  camPerSqm: number | null;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -105,6 +105,7 @@ export interface PriceValidationResult {
   requiresApproval: boolean;
   approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
   message: string;
+  sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
 
 export interface Tenant {

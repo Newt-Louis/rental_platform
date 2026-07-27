@@ -175,12 +175,14 @@ model CategoryMallPricing {
   zone       Zone?    @relation(fields: [zoneId], references: [id])
 
   // Price range (VND/m2/month)
-  minRentPerSqm Float // Gi sn
-  maxRentPerSqm Float // Gi trn
+  // Null on a floor/zone override means "inherit from the next applicable rule".
+  // Mall-wide base rules are still required to provide min/max by service validation.
+  minRentPerSqm Float? // Gi sn
+  maxRentPerSqm Float? // Gi trn
   suggestedRent Float? // Gi  xut (tham kho)
 
   // CAM pricing
-  camPerSqm Float @default(0) // Ph qun l chun
+  camPerSqm Float? // Null = inherit; zero is an explicit free CAM value
 
   effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime? // Null = v thi hn
@@ -1330,6 +1332,8 @@ model Proposal {
   discount            Float          @default(0)
   status              ProposalStatus @default(DRAFT)
   notes               String?
+  pricingRuleId       String? // Rule version used when pricing was evaluated
+  pricingSnapshot     Json?   // Immutable effective values + source metadata
 
   // T Trnh fields
   businessModel         BusinessModelEnum? // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
@@ -2975,6 +2979,8 @@ model UnitBooking {
   priceApprovedBy       User?                @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
   priceApprovedAt       DateTime?
   priceDeviationPercent Float? // % chnh lch so vi gi sn
+  pricingRuleId          String? // Rule version used for the latest validation
+  pricingSnapshot        Json?   // Effective pricing values and inheritance sources
 
   createdById  String
   createdBy    User     @relation("BookingCreatedBy", fields: [createdById], references: [id])

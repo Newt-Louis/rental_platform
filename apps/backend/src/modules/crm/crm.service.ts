@@ -200,6 +200,7 @@ export class CrmService {
           orderBy: { createdAt: 'desc' },
         },
         proposals: {
+          where: { isActive: true },
           include: {
             unit: { select: { id: true, code: true, name: true } },
             approvalWorkflow: {
@@ -254,6 +255,21 @@ export class CrmService {
 
   async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
     const existing = await this.findOne(id);
+
+    // Chặn nhảy thẳng lên WON khi chưa có Proposal nào được duyệt — tránh tạo Customer/kích hoạt
+    // (customersService.createFromLead bên dưới) cho một lead chưa thực sự chốt được deal, cùng
+    // lớp bảo vệ như state machine đã thêm cho Contract/Proposal.
+    if (dto.status === 'WON' && existing.status !== 'WON') {
+      const hasApprovedProposal = (existing as any).proposals?.some((p: any) =>
+        ['APPROVED', 'CONVERTED'].includes(p.status),
+      );
+      if (!hasApprovedProposal) {
+        throw new BadRequestException(
+          'Lead cần có ít nhất một đề xuất (Proposal) đã được duyệt trước khi đánh dấu Đã chốt (WON).',
+        );
+      }
+    }
+
     const updateData: Record<string, unknown> = {};
     if (dto.brandName !== undefined) updateData.brandName = dto.brandName;
     if (dto.company !== undefined) updateData.company = dto.company;
