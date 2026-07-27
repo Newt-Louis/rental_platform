@@ -102,6 +102,7 @@
     "stepCollect": "Collect"
   },
   "detail": {
+    "viewContract": "View contract {{number}}",
     "fixedCosts": "Fixed costs",
     "variableCosts": "Variable costs",
     "noFixedLines": "No fixed cost lines",

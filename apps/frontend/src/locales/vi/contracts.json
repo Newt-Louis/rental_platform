@@ -79,6 +79,7 @@
     "daysLeft": "Còn {{count}} ngày",
     "source": {
       "label": "NGUỒN GỐC",
+      "booking": "Booking: ",
       "proposal": "Đề xuất: ",
       "lead": "Lead: "
     },

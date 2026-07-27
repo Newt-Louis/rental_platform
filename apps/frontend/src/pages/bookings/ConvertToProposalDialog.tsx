@@ -57,7 +57,7 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       toast({ title: `Đã tạo Proposal ${data?.proposal?.proposalNumber ?? ''}` });
       onClose();
-      navigate('/proposals');
+      navigate(data?.proposal?.id ? `/proposals?id=${data.proposal.id}` : '/proposals');
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });

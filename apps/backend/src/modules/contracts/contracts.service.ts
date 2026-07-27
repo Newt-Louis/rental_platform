@@ -175,6 +175,8 @@ export class ContractsService {
             proposalNumber: true,
             leadId: true,
             lead: { select: { id: true, brandName: true, contactName: true, status: true } },
+            bookingId: true,
+            booking: { select: { id: true, bookingNumber: true, status: true } },
           },
         },
         fitoutProject: { select: { id: true, status: true } },

@@ -79,6 +79,7 @@
     "daysLeft": "{{count}} days left",
     "source": {
       "label": "SOURCE",
+      "booking": "Booking: ",
       "proposal": "Proposal: ",
       "lead": "Lead: "
     },

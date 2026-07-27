@@ -71,8 +71,9 @@
       "financials": "FINANCIALS",
       "term": "TERM",
       "approvalWorkflow": "APPROVAL WORKFLOW",
+      "viewApprovalWorkflow": "View approval details",
       "leadSource": "LEAD SOURCE",
-      "contractResult": "SIGNED CONTRACT"
+      "contractResult": "RELATED CONTRACT"
     },
     "tabs": {
       "detail": "Details",
@@ -253,6 +254,7 @@
       "rejected": "File has been rejected",
       "inProgress": "In approval process",
       "steps": "{{done}}/{{total}} steps",
+      "viewProposal": "View source proposal",
       "section": {
         "proposalInfo": "PROPOSAL INFORMATION",
         "financial": "FINANCIAL CONDITIONS",

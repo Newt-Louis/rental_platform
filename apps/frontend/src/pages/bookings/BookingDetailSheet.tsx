@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingApi, spacesApi, crmApi, usersApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
@@ -30,6 +31,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   booking: UnitBooking | null; onClose: () => void; scrollTo?: string; initialEditing?: boolean;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { selectedMallId } = useMallStore();
   const [convertOpen, setConvertOpen] = useState(false);
@@ -384,13 +386,19 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
             )}
 
             {d.proposal && (
-              <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100 rounded-xl">
+              <button
+                className="flex items-center justify-between w-full p-3 bg-green-50 border border-green-100 rounded-xl hover:bg-green-100 transition-colors"
+                onClick={() => { onClose(); navigate(`/proposals?id=${d.proposal!.id}`); }}
+              >
                 <div className="flex items-center gap-2 text-sm">
                   <FileText size={14} className="text-green-600" />
                   <span className="font-medium">{d.proposal.proposalNumber}</span>
                 </div>
-                <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
-              </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
+                  <ArrowRight size={12} className="text-green-500" />
+                </div>
+              </button>
             )}
 
             {canEdit && (

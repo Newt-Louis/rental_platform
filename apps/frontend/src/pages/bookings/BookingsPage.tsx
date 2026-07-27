@@ -130,7 +130,9 @@ export default function BookingsPage() {
   });
   const [unitDraft, setUnitDraft] = useState(initialUnitFilters);
   const [unitApplied, setUnitApplied] = useState(initialUnitFilters);
-  const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(
+    searchParams.get('id') ? ({ id: searchParams.get('id') } as UnitBooking) : null,
+  );
   const [editDirectly, setEditDirectly] = useState(false);
   const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);

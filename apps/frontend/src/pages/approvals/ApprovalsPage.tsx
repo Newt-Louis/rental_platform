@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
@@ -132,6 +133,7 @@ function ApprovalPipeline({ steps, workflowStatus }: { steps: any[]; workflowSta
 
 function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | null; onClose: () => void }) {
   const { t } = useTranslation(['deals', 'common']);
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { data: workflow, isLoading, isError, refetch } = useQuery({
     queryKey: ['approval-workflow', workflowId],
@@ -174,6 +176,14 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
               <div><p className="text-xs font-semibold uppercase tracking-wider opacity-60">{t('approvals.workflow.status')}</p><p className="mt-1 text-lg font-bold">{completed ? t('approvals.workflow.completed') : w.status === 'REJECTED' ? t('approvals.workflow.rejected') : t('approvals.workflow.inProgress')}</p><p className="mt-1 text-xs opacity-70">{t('approvals.workflow.timestamps', { created: fmtDateTime(w.createdAt), updated: fmtDateTime(w.updatedAt) })}</p></div>
               <Badge className="border-0 bg-white/80 text-slate-700">{t('approvals.workflow.steps', { done: steps.filter((s) => s.status === 'APPROVED').length, total: steps.length })}</Badge>
             </div>
+            {p.id && (
+              <button
+                className="mt-3 flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+                onClick={() => { onClose(); navigate(`/proposals?id=${p.id}`); }}
+              >
+                <FileText size={12} /> {t('approvals.workflow.viewProposal')} <ChevronRight size={12} />
+              </button>
+            )}
           </div>
 
           <ApprovalPipeline steps={steps} workflowStatus={w.status} />
@@ -217,6 +227,8 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
 
 export default function ApprovalsPage() {
   const { t } = useTranslation(['deals', 'common']);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
@@ -227,7 +239,7 @@ export default function ApprovalsPage() {
   const [pricePage, setPricePage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(searchParams.get('workflowId'));
   const [search, setSearch] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
