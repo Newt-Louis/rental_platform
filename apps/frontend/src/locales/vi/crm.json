@@ -223,6 +223,16 @@
     "REJECTED": "Từ chối",
     "CONVERTED": "Đã tạo HĐ"
   },
+  "contractStatus": {
+    "DRAFT": "Bản nháp",
+    "PENDING_LEGAL": "Chờ Legal",
+    "PENDING_SIGNATURE": "Chờ ký",
+    "ACTIVE": "Hiệu lực",
+    "EXPIRING": "Sắp hết hạn",
+    "EXPIRED": "Hết hạn",
+    "TERMINATING": "Đang chấm dứt",
+    "TERMINATED": "Đã chấm dứt"
+  },
   "bookingStatus": {
     "PENDING": "Chờ duyệt",
     "ACTIVE": "Đang giữ",
@@ -477,6 +487,7 @@
     "noActivities": "Chưa có hoạt động",
     "advancePipeline": "Pipeline → {{label}}",
     "customerSyncHint": "Hồ sơ KH → {{label}}",
+    "wonRequiresApprovedProposal": "Cần ít nhất 1 đề xuất (Proposal) đã được duyệt trước khi đánh dấu Đã chốt.",
     "markLost": "Đánh dấu thất bại",
     "markedLost": "Đã đánh dấu thất bại",
     "customerLostHint": "Hồ sơ KH → Không hợp tác",

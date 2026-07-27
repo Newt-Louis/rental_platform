@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus } from '@prisma/client';
+import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus, Prisma } from '@prisma/client';
 import {
   CreateBookingDto,
   UpdateBookingDto,
@@ -89,8 +89,10 @@ export class BookingService {
     // Validate proposed price if provided
     let priceApprovalStatus: PriceApprovalStatus | null = null;
     let priceDeviationPercent: number | null = null;
+    let pricingRuleId: string | null = null;
+    let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    if (dto.proposedRentPerSqm && unit.categoryId) {
+    if (dto.proposedRentPerSqm !== undefined && unit.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: unit.mallId,
         categoryId: unit.categoryId,
@@ -103,6 +105,16 @@ export class BookingService {
         priceApprovalStatus = PriceApprovalStatus.PENDING;
         priceDeviationPercent = validation.deviationPercent;
       }
+      pricingRuleId = validation.categoryPricing?.id ?? null;
+      pricingSnapshot = {
+        evaluatedAt: new Date().toISOString(),
+        proposedRentPerSqm: dto.proposedRentPerSqm,
+        minRentPerSqm: validation.minRentPerSqm,
+        maxRentPerSqm: validation.maxRentPerSqm,
+        suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
+        camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
+        sources: validation.categoryPricing?.sources ?? null,
+      };
     }
 
     const booking = await this.prisma.unitBooking.create({
@@ -120,6 +132,8 @@ export class BookingService {
         proposedCamPerSqm: dto.proposedCamPerSqm,
         priceApprovalStatus,
         priceDeviationPercent,
+        pricingRuleId,
+        pricingSnapshot,
         holdDays,
         expiresAt,
         activatedAt: priority === 1 ? new Date() : null,
@@ -313,9 +327,11 @@ export class BookingService {
 
     let priceApprovalStatus: PriceApprovalStatus | null | undefined = undefined;
     let priceDeviationPercent: number | null | undefined = undefined;
+    let pricingRuleId: string | null | undefined = undefined;
+    let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
     if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
-      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm) {
+      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!newUnitId) {
         const validation = await this.categoriesService.validateProposedPrice({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
@@ -331,6 +347,16 @@ export class BookingService {
           priceApprovalStatus = null;
           priceDeviationPercent = null;
         }
+        pricingRuleId = validation.categoryPricing?.id ?? null;
+        pricingSnapshot = {
+          evaluatedAt: new Date().toISOString(),
+          proposedRentPerSqm: dto.proposedRentPerSqm,
+          minRentPerSqm: validation.minRentPerSqm,
+          maxRentPerSqm: validation.maxRentPerSqm,
+          suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
+          camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
+          sources: validation.categoryPricing?.sources ?? null,
+        };
       }
     }
 
@@ -347,6 +373,8 @@ export class BookingService {
         proposedCamPerSqm: dto.proposedCamPerSqm,
         ...(priceApprovalStatus !== undefined && { priceApprovalStatus }),
         ...(priceDeviationPercent !== undefined && { priceDeviationPercent }),
+        ...(pricingRuleId !== undefined && { pricingRuleId }),
+        ...(pricingSnapshot !== undefined && { pricingSnapshot }),
         notes: dto.notes,
       },
       include: this.defaultInclude(),

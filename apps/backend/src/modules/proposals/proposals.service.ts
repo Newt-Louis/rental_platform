@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
-import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus } from '@prisma/client';
+import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
@@ -315,6 +315,8 @@ export class ProposalsService {
     // luồng này không truyền priceDeviationPct nên các rule PRICE_DEVIATION_PCT (Director/CEO price
     // review) không bao giờ khớp được, dù booking gốc đã bị flag lệch giá lớn.
     let priceDeviationPct = 0;
+    let pricingRuleId: string | null = null;
+    let pricingSnapshot: Prisma.InputJsonValue | undefined;
     if (proposal.unit?.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: proposal.unit.mallId,
@@ -324,6 +326,20 @@ export class ProposalsService {
         proposedRentPerSqm: proposal.rentPerSqm,
       });
       priceDeviationPct = validation.deviationPercent;
+      pricingRuleId = validation.categoryPricing?.id ?? null;
+      pricingSnapshot = {
+        evaluatedAt: new Date().toISOString(),
+        proposedRentPerSqm: proposal.rentPerSqm,
+        minRentPerSqm: validation.minRentPerSqm,
+        maxRentPerSqm: validation.maxRentPerSqm,
+        suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
+        camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
+        sources: validation.categoryPricing?.sources ?? null,
+      };
+      await this.prisma.proposal.update({
+        where: { id },
+        data: { pricingRuleId, pricingSnapshot },
+      });
     }
 
     const steps = buildApprovalStepsFromRules(rules, {
@@ -340,7 +356,7 @@ export class ProposalsService {
       );
     }
 
-    await this.snapshotProposal(proposal as unknown as Record<string, unknown>, undefined, 'SUBMITTED');
+    await this.snapshotProposal({ ...proposal, pricingRuleId, pricingSnapshot } as unknown as Record<string, unknown>, undefined, 'SUBMITTED');
 
     const workflow = await this.prisma.approvalWorkflow.create({
       data: {

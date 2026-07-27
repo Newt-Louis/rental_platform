@@ -453,6 +453,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
   });
   const [newFollowUp, setNewFollowUp] = useState({ dueDate: '', note: '' });
 
+  // Sheet dùng chung 1 instance cho mọi lead (không remount) — nếu không reset thủ công, tab đang
+  // mở và nội dung follow-up nháp của lead trước sẽ còn nguyên khi chuyển sang xem lead khác.
+  useEffect(() => {
+    setActiveTab('profile');
+    setNewFollowUp({ dueDate: '', note: '' });
+  }, [lead?.id]);
+
   const displayLead: any = fullLead ?? lead;
   const customer: any = fullLead?.customer ?? null;
   const stage = LEAD_STAGES.find((s) => s.key === displayLead?.status);
@@ -478,11 +485,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
   const completeFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.complete(id),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.completeFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const deleteFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.delete(id),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.deleteFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const invalidateAll = () => {
@@ -504,6 +513,7 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
         description: customer && syncedTo ? t('leadSheet.advanceSyncHint', { label: syncedTo }) : undefined,
       });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const lostMutation = useMutation({
@@ -516,6 +526,7 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
       });
       onClose();
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   return (
@@ -640,12 +651,23 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                 {/* Pipeline advance actions */}
                 {!['WON', 'LOST'].includes(displayLead.status) && (
                   <div className="space-y-2 pt-1">
-                    {nextStage && (
-                      <Button className="w-full flex-col h-auto py-2.5" onClick={() => advanceMutation.mutate(nextStage.key)} disabled={advanceMutation.isPending}>
-                        <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> {t('leadSheet.advancePipeline', { label: nextStage.label })}</span>
-                        {customer && <span className="text-[10px] opacity-75 mt-0.5">{t('leadSheet.customerSyncHint', { label: LEAD_TO_CUSTOMER_LABEL[nextStage.key] })}</span>}
-                      </Button>
-                    )}
+                    {nextStage && (() => {
+                      const needsApprovedProposal = nextStage.key === 'WON'
+                        && !proposals.some((p: any) => ['APPROVED', 'CONVERTED'].includes(p.status));
+                      return (
+                        <>
+                          <Button className="w-full flex-col h-auto py-2.5"
+                            onClick={() => advanceMutation.mutate(nextStage.key)}
+                            disabled={advanceMutation.isPending || needsApprovedProposal}>
+                            <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> {t('leadSheet.advancePipeline', { label: nextStage.label })}</span>
+                            {customer && <span className="text-[10px] opacity-75 mt-0.5">{t('leadSheet.customerSyncHint', { label: LEAD_TO_CUSTOMER_LABEL[nextStage.key] })}</span>}
+                          </Button>
+                          {needsApprovedProposal && (
+                            <p className="text-xs text-amber-600">{t('leadSheet.wonRequiresApprovedProposal')}</p>
+                          )}
+                        </>
+                      );
+                    })()}
                     <Button variant="outline" className="w-full text-red-500 border-red-200 hover:bg-red-50" onClick={() => lostMutation.mutate()} disabled={lostMutation.isPending}>
                       {t('sheet.markLost')}
                     </Button>
@@ -679,7 +701,10 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         const bcfg = BOOKING_STATUS_CFG[b.status] ?? BOOKING_STATUS_CFG.PENDING;
                         const dl = b.expiresAt ? Math.max(0, Math.ceil((new Date(b.expiresAt).getTime() - Date.now()) / 86400000)) : null;
                         return (
-                          <div key={b.id} className={`rounded-xl border p-3 ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+                          <div key={b.id}
+                            className={`rounded-xl border p-3 cursor-pointer hover:border-blue-300 transition-colors ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}
+                            onClick={() => { onClose(); navigate(`/bookings?id=${b.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${b.priority === 1 ? 'bg-amber-400 text-white' : 'bg-gray-200 text-gray-600'}`}>{b.priority}</span>
@@ -693,14 +718,18 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                                   <span className={`text-xs ${dl <= 7 ? 'text-red-500' : 'text-gray-400'}`}><Clock size={10} className="inline" /> {dl}d</span>
                                 )}
                                 <Badge className={`text-xs border-0 ${bcfg.color}`}>{t(`bookingStatus.${b.status}`, { defaultValue: bcfg.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
                               </div>
                             </div>
                             {b.proposal && (
-                              <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8">
+                              <button
+                                className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8 hover:text-blue-600"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/proposals?id=${b.proposal.id}`); }}
+                              >
                                 <ArrowRight size={10} />
                                 <span className="font-mono">{b.proposal.proposalNumber}</span>
                                 <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{t(`proposalStatus.${b.proposal.status}`, { defaultValue: PROPOSAL_STATUS[b.proposal.status]?.label })}</Badge>
-                              </div>
+                              </button>
                             )}
                           </div>
                         );
@@ -723,19 +752,25 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         const ps = PROPOSAL_STATUS[p.status] ?? PROPOSAL_STATUS.DRAFT;
                         const steps: any[] = p.approvalWorkflow?.steps ?? [];
                         return (
-                          <div key={p.id} className={`rounded-xl border p-3 space-y-2 ${
+                          <div key={p.id}
+                            className={`rounded-xl border p-3 space-y-2 cursor-pointer hover:border-blue-300 transition-colors ${
                             p.status === 'APPROVED' ? 'border-green-200 bg-green-50' :
                             p.status === 'REJECTED' ? 'border-red-100 bg-red-50/40' :
                             p.status === 'CONVERTED' ? 'border-purple-100 bg-purple-50/30' :
                             p.status === 'SUBMITTED' || p.status === 'UNDER_REVIEW' ? 'border-yellow-200 bg-yellow-50/40' :
                             'border-gray-200 bg-white'
-                          }`}>
+                          }`}
+                            onClick={() => { onClose(); navigate(`/proposals?id=${p.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div>
                                 <span className="text-sm font-mono font-semibold">{p.proposalNumber}</span>
                                 {p.unit && <span className="text-xs text-gray-400 ml-2">{p.unit.code}</span>}
                               </div>
-                              <Badge className={`text-xs border-0 ${ps.color}`}>{t(`proposalStatus.${p.status}`, { defaultValue: ps.label })}</Badge>
+                              <div className="flex items-center gap-1.5">
+                                <Badge className={`text-xs border-0 ${ps.color}`}>{t(`proposalStatus.${p.status}`, { defaultValue: ps.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
+                              </div>
                             </div>
                             {(p.monthlyRent || p.totalContractValue) && (
                               <div className="grid grid-cols-2 gap-x-4 text-xs">
@@ -761,11 +796,17 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                               </div>
                             )}
                             {p.contract && (
-                              <div className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2">
+                              <button
+                                className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2 w-full hover:border-purple-300"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
+                              >
                                 <FileText size={11} className="text-purple-500" />
                                 <span className="font-mono font-medium">{p.contract.contractNumber}</span>
-                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">{p.contract.status}</Badge>
-                              </div>
+                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
+                                  {t(`contractStatus.${p.contract.status}`, { defaultValue: p.contract.status })}
+                                </Badge>
+                                <ArrowRight size={11} className="text-purple-300" />
+                              </button>
                             )}
                           </div>
                         );
@@ -802,11 +843,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
-                            title={t('followUpsWorkspace.complete')} onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            title={t('followUpsWorkspace.complete')} disabled={completeFollowUpMutation.isPending}
+                            onClick={() => completeFollowUpMutation.mutate(f.id)}>
                             <CheckCircle size={13} />
                           </Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
-                            title={t('lead.delete')} onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            title={t('lead.delete')} disabled={deleteFollowUpMutation.isPending}
+                            onClick={() => deleteFollowUpMutation.mutate(f.id)}>
                             <X size={13} />
                           </Button>
                         </div>

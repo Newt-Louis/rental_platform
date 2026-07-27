@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, IsDateString, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsDateString, Min, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCategoryPricingDto {
@@ -20,27 +20,29 @@ export class CreateCategoryPricingDto {
   @IsOptional()
   zoneId?: string;
 
-  @ApiProperty({ description: 'Minimum rent per sqm (VND)', example: 400000 })
+  @ApiPropertyOptional({ description: 'Minimum rent per sqm (VND). Required for mall-wide base rules; null inherits on overrides.', example: 400000 })
   @IsNumber()
   @Min(0)
-  minRentPerSqm: number;
+  @IsOptional()
+  minRentPerSqm?: number | null;
 
-  @ApiProperty({ description: 'Maximum rent per sqm (VND)', example: 800000 })
+  @ApiPropertyOptional({ description: 'Maximum rent per sqm (VND). Required for mall-wide base rules; null inherits on overrides.', example: 800000 })
   @IsNumber()
   @Min(0)
-  maxRentPerSqm: number;
+  @IsOptional()
+  maxRentPerSqm?: number | null;
 
   @ApiPropertyOptional({ description: 'Suggested rent per sqm (VND)', example: 550000 })
   @IsNumber()
   @Min(0)
   @IsOptional()
-  suggestedRent?: number;
+  suggestedRent?: number | null;
 
   @ApiPropertyOptional({ description: 'CAM per sqm (VND)', example: 80000, default: 0 })
   @IsNumber()
   @Min(0)
   @IsOptional()
-  camPerSqm?: number;
+  camPerSqm?: number | null;
 
   @ApiPropertyOptional({ description: 'Effective from date' })
   @IsDateString()
@@ -50,12 +52,12 @@ export class CreateCategoryPricingDto {
   @ApiPropertyOptional({ description: 'Effective to date (null = no end)' })
   @IsDateString()
   @IsOptional()
-  effectiveTo?: string;
+  effectiveTo?: string | null;
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  notes?: string;
+  notes?: string | null;
 }
 
 export class UpdateCategoryPricingDto {
@@ -63,38 +65,39 @@ export class UpdateCategoryPricingDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
-  minRentPerSqm?: number;
+  minRentPerSqm?: number | null;
 
   @ApiPropertyOptional()
   @IsNumber()
   @Min(0)
   @IsOptional()
-  maxRentPerSqm?: number;
+  maxRentPerSqm?: number | null;
 
   @ApiPropertyOptional()
   @IsNumber()
   @Min(0)
   @IsOptional()
-  suggestedRent?: number;
+  suggestedRent?: number | null;
 
   @ApiPropertyOptional()
   @IsNumber()
   @Min(0)
   @IsOptional()
-  camPerSqm?: number;
+  camPerSqm?: number | null;
 
   @ApiPropertyOptional()
   @IsDateString()
   @IsOptional()
-  effectiveTo?: string;
+  effectiveTo?: string | null;
 
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  notes?: string;
+  notes?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 

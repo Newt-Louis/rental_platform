@@ -81,7 +81,7 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
 
   // Validate proposed price when it changes
   const { data: priceValidation } = useQuery({
-    queryKey: ['price-validation', unit?.mall?.id, unit?.categoryId, proposedRent],
+    queryKey: ['price-validation', unit?.mall?.id, unit?.categoryId, unit?.floor?.id, unit?.zone?.id, proposedRent],
     queryFn: () => categoriesApi.validatePrice({
       mallId: unit!.mall!.id,
       categoryId: unit!.categoryId!,
@@ -98,11 +98,11 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
   // theo suggestedRent/camPerSqm đã đăng ký — không ghi đè nếu người dùng đã tự sửa sau đó.
   useEffect(() => {
     if (open && !priceAutofilledRef.current && categoryPricing) {
-      if (categoryPricing.suggestedRent) {
+      if (categoryPricing.suggestedRent != null) {
         setValue('expectedRent', String(categoryPricing.suggestedRent));
         setValue('proposedRentPerSqm', String(categoryPricing.suggestedRent));
       }
-      if (categoryPricing.camPerSqm) {
+      if (categoryPricing.camPerSqm != null) {
         setValue('proposedCamPerSqm', String(categoryPricing.camPerSqm));
       }
       priceAutofilledRef.current = true;
