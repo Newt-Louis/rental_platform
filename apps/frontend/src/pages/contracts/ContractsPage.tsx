@@ -705,8 +705,18 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                   <div className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                     <Link2 size={11} /> {t('sheet.source.label')}
                   </div>
+                  {detail.proposal.booking && (
+                    <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                      onClick={() => { onClose(); navigate(`/bookings?id=${detail.proposal.booking.id}`); }}>
+                      <div>
+                        <span className="text-xs text-gray-500 font-medium">{t('sheet.source.booking')}</span>
+                        <span className="font-medium text-gray-900">{detail.proposal.booking.bookingNumber}</span>
+                      </div>
+                      <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  )}
                   <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                    onClick={() => { onClose(); navigate('/proposals'); }}>
+                    onClick={() => { onClose(); navigate(`/proposals?id=${detail.proposal.id}`); }}>
                     <div>
                       <span className="text-xs text-gray-500 font-medium">{t('sheet.source.proposal')}</span>
                       <span className="font-medium text-gray-900">{detail.proposal.proposalNumber}</span>
@@ -715,7 +725,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                   </button>
                   {detail.proposal.lead && (
                     <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                      onClick={() => { onClose(); navigate('/crm'); }}>
+                      onClick={() => { onClose(); navigate(`/crm?leadId=${detail.proposal.lead.id}`); }}>
                       <div>
                         <span className="text-xs text-gray-500 font-medium">{t('sheet.source.lead')}</span>
                         <span className="font-medium text-gray-900">{detail.proposal.lead.brandName}</span>
@@ -900,7 +910,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                                 {e.invoice ? (
                                   <button
                                     className="flex flex-wrap items-center gap-1.5 text-left hover:underline"
-                                    onClick={() => { onClose(); navigate('/billing'); }}
+                                    onClick={() => { onClose(); navigate(`/billing?invoiceId=${e.invoice.id}`); }}
                                     title={t('billingTab.viewInvoice')}
                                   >
                                     <span className="font-mono text-xs text-blue-700">{e.invoice.invoiceNumber}</span>
@@ -1114,7 +1124,7 @@ export default function ContractsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showExpiring, setShowExpiring] = useState(searchParams.has('expiring'));
-  const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(searchParams.get('id'));
   const [page, setPage] = useState(1);
 
   const hasFilter = !!(search || status || type || floorId || unitId || dateFrom || dateTo);

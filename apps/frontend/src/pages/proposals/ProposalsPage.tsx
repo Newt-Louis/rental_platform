@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
@@ -495,7 +495,7 @@ function ProposalDetailSheet({
                     </div>
                     <button
                       className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                      onClick={() => { onClose(); navigate('/crm'); }}
+                      onClick={() => { onClose(); navigate(`/crm?leadId=${p.lead.id}`); }}
                     >
                       <div>
                         <div className="font-medium text-gray-900">{p.lead.brandName}</div>
@@ -526,7 +526,7 @@ function ProposalDetailSheet({
                       </div>
                       <button
                         className={`flex items-center justify-between w-full text-sm ${tone.hover} group`}
-                        onClick={() => { onClose(); navigate('/contracts'); }}
+                        onClick={() => { onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
                       >
                         <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
                         <div className={`flex items-center gap-1 text-xs ${tone.text}`}>
@@ -591,7 +591,17 @@ function ProposalDetailSheet({
                 {/* Approval workflow */}
                 {approvals.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">{t('proposals.sections.approvalWorkflow')}</div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs font-semibold tracking-wider text-gray-400">{t('proposals.sections.approvalWorkflow')}</div>
+                      {p.approvalWorkflow?.id && (
+                        <button
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                          onClick={() => { onClose(); navigate(`/approvals?workflowId=${p.approvalWorkflow.id}`); }}
+                        >
+                          {t('proposals.sections.viewApprovalWorkflow')} <ArrowRight size={11} />
+                        </button>
+                      )}
+                    </div>
                     <div className="space-y-2">
                       {approvals.map((a: any) => (
                         <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
@@ -701,11 +711,17 @@ const EMPTY_FILTERS = { search: '', status: '', floorId: '', unitId: '', dateFro
 
 export default function ProposalsPage() {
   const { t } = useTranslation('deals');
+  const [searchParams] = useSearchParams();
   // draft = what user is typing; applied = what's sent to API
   const [draft, setDraft] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id) setSelectedProposal({ id } as Proposal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const qc = useQueryClient();

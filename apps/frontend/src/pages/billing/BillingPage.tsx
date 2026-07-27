@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api';
@@ -218,6 +218,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
 
 function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; onClose: () => void }) {
   const { t } = useTranslation(['billing', 'common']);
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -354,6 +355,14 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
               <p className="text-xs text-gray-500 mt-0.5">
                 {inv?.tenant?.brandName || inv?.billingParty?.name} · {t('billing:list.period')} {inv?.period} · {t('billing:list.dueDate')} {fmtDate(inv?.dueDate)}
               </p>
+              {inv?.contractId && (
+                <button
+                  className="flex items-center gap-1 text-[11px] text-blue-600 hover:underline mt-1"
+                  onClick={() => { onClose(); navigate(`/contracts?id=${inv.contractId}`); }}
+                >
+                  {t('billing:detail.viewContract', { number: inv.contract?.contractNumber ?? '' })} <ArrowRight size={10} />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -756,7 +765,7 @@ function InvoicesTab() {
   const [bucket, setBucket] = useState('');
   const [sourceType, setSourceType] = useState('');
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('invoiceId'));
   const [selectedPending, setSelectedPending] = useState<Set<string>>(new Set());
   const [confirmBulkPending, setConfirmBulkPending] = useState(false);
   const [exporting, setExporting] = useState(false);
