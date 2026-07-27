@@ -509,24 +509,34 @@ function ProposalDetailSheet({
                   </div>
                 )}
 
-                {/* Contract result */}
-                {p.contract && (
-                  <div className="rounded-xl border border-green-200 bg-green-50 p-3">
-                    <div className="text-xs font-semibold text-green-600 mb-1.5 flex items-center gap-1">
-                      <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
-                    </div>
-                    <button
-                      className="flex items-center justify-between w-full text-sm hover:text-green-700 group"
-                      onClick={() => { onClose(); navigate('/contracts'); }}
-                    >
-                      <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
-                      <div className="flex items-center gap-1 text-xs text-green-600">
-                        <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
-                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                {/* Contract result — màu phản ánh đúng trạng thái thật của hợp đồng, không mặc định
+                    xanh lá (đã xong) ngay cả khi hợp đồng vẫn còn ở DRAFT/chưa ký. */}
+                {p.contract && (() => {
+                  const inForce = ['ACTIVE', 'EXPIRING'].includes(p.contract.status);
+                  const ended = ['EXPIRED', 'TERMINATED'].includes(p.contract.status);
+                  const tone = inForce
+                    ? { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-600', hover: 'hover:text-green-700' }
+                    : ended
+                    ? { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-500', hover: 'hover:text-gray-700' }
+                    : { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600', hover: 'hover:text-amber-700' };
+                  return (
+                    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3`}>
+                      <div className={`text-xs font-semibold ${tone.text} mb-1.5 flex items-center gap-1`}>
+                        <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
                       </div>
-                    </button>
-                  </div>
-                )}
+                      <button
+                        className={`flex items-center justify-between w-full text-sm ${tone.hover} group`}
+                        onClick={() => { onClose(); navigate('/contracts'); }}
+                      >
+                        <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
+                        <div className={`flex items-center gap-1 text-xs ${tone.text}`}>
+                          <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
+                          <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Parties */}
                 <SheetSection label={t('proposals.sections.proposedFor')} className="bg-gray-50">
@@ -1085,6 +1095,11 @@ export default function ProposalsPage() {
                       <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
                       <td className="px-4 py-3">
                         <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                        {p.status === 'CONVERTED' && p.contract && (
+                          <div className="mt-1 text-[11px] text-gray-400">
+                            {t(`contracts.status.${p.contract.status}`, p.contract.status as string)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
@@ -1106,7 +1121,7 @@ export default function ProposalsPage() {
                               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(p.id); }}
                               disabled={convertMutation.isPending}
                             >
-                              <FileText size={12} /> {t('proposals.actions.signContract')}
+                              <FileText size={12} /> {t('proposals.actions.convert')}
                             </Button>
                           )}
                           {canEdit && p.status === 'DRAFT' && <Button

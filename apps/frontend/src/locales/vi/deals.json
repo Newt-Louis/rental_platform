@@ -11,7 +11,7 @@
       "UNDER_REVIEW": "Đang xem",
       "APPROVED": "Đã duyệt",
       "REJECTED": "Từ chối",
-      "CONVERTED": "Đã ký HĐ",
+      "CONVERTED": "Đã tạo HĐ",
       "WITHDRAWN": "Rút lại",
       "EXPIRED": "Hết hạn"
     },
@@ -294,7 +294,7 @@
     "edit": "Chỉnh sửa",
     "detail": "Chi tiết hợp đồng",
     "status": {
-      "DRAFT": "Draft",
+      "DRAFT": "Bản nháp",
       "PENDING_LEGAL": "Chờ Legal",
       "PENDING_SIGNATURE": "Chờ ký",
       "ACTIVE": "Hiệu lực",

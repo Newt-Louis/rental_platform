@@ -108,7 +108,7 @@
   "stats": {
     "total": "Tổng lead",
     "active": "Đang xử lý",
-    "won": "Đã ký HĐ",
+    "won": "Đã chốt",
     "lost": "Thất bại"
   },
   "noLeads": "Không có lead nào",
@@ -216,12 +216,12 @@
     "OTHER": "Khác"
   },
   "proposalStatus": {
-    "DRAFT": "Draft",
+    "DRAFT": "Bản nháp",
     "SUBMITTED": "Chờ duyệt",
     "UNDER_REVIEW": "Đang xem",
     "APPROVED": "Đã duyệt",
     "REJECTED": "Từ chối",
-    "CONVERTED": "Đã ký HĐ"
+    "CONVERTED": "Đã tạo HĐ"
   },
   "bookingStatus": {
     "PENDING": "Chờ duyệt",

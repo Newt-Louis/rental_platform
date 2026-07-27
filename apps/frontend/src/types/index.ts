@@ -427,6 +427,7 @@ export interface Proposal {
   depositFitout: number;
   fitoutFee: number;
   createdAt: string;
+  contract?: { id: string; contractNumber: string; status: string };
 }
 
 export interface Contract {

@@ -140,6 +140,7 @@ export class ProposalsService {
             },
           },
           approvalWorkflow: { select: { id: true, status: true } },
+          contract: { select: { id: true, contractNumber: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),

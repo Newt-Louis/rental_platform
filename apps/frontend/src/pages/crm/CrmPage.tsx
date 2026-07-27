@@ -155,12 +155,12 @@ const LEAD_CATEGORIES = [
 ];
 
 const PROPOSAL_STATUS: Record<string, { label: string; color: string }> = {
-  DRAFT:        { label: 'Draft',      color: 'bg-gray-100 text-gray-600' },
+  DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
   SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
   UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-gray-700' },
   APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
   REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã ký HĐ', color: 'bg-purple-100 text-purple-700' },
+  CONVERTED:    { label: 'Đã tạo HĐ', color: 'bg-purple-100 text-purple-700' },
 };
 
 const BOOKING_STATUS_CFG: Record<string, { label: string; color: string }> = {
