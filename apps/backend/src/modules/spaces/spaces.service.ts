@@ -16,12 +16,23 @@ const UNIT_RELATION_FIELDS = new Set([
   'unitHistory',
 ]);
 
+// Scalar fields that are non-nullable in schema.prisma -- sending `null` for these
+// makes Prisma throw a misleading "Unknown argument `floorId`" error instead of the
+// real "Argument `x` must not be null", because the query engine mis-reports the
+// first field it can't reconcile once any field in the payload fails validation.
+const UNIT_REQUIRED_FIELDS = new Set([
+  'mallId', 'code', 'areaGFA', 'areaNLA', 'baseRentPerSqm', 'camPerSqm',
+  'status', 'isActive', 'isFlexibleArea', 'isCombined',
+]);
+
 function sanitizeUnitDto(dto: any): any {
   const out: any = {};
   for (const key of Object.keys(dto)) {
-    if (!UNIT_RELATION_FIELDS.has(key)) {
-      out[key] = dto[key];
+    if (UNIT_RELATION_FIELDS.has(key)) continue;
+    if (dto[key] === null && UNIT_REQUIRED_FIELDS.has(key)) {
+      throw new BadRequestException(`Trường "${key}" không được để trống`);
     }
+    out[key] = dto[key];
   }
   return out;
 }
@@ -353,10 +364,11 @@ export class SpacesService {
   }
 
   async createUnit(dto: CreateUnitDto) {
-    if (!dto.mallId) throw new BadRequestException('mallId is required to create a unit');
+    const { mallId } = dto;
+    if (!mallId) throw new BadRequestException('mallId is required to create a unit');
 
     const existing = await this.prisma.unit.findUnique({
-      where: { mallId_code: { mallId: dto.mallId, code: dto.code } },
+      where: { mallId_code: { mallId, code: dto.code } },
       select: { id: true },
     });
     if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);

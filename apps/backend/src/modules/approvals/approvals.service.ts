@@ -98,7 +98,7 @@ export class ApprovalsService {
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     // Only return steps where all earlier steps in the same workflow are APPROVED.

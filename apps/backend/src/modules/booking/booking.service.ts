@@ -443,6 +443,7 @@ export class BookingService {
     const where: any = {
       isActive: true,
       priceApprovalStatus: PriceApprovalStatus.PENDING,
+      status: { in: [BookingStatus.PENDING, BookingStatus.ACTIVE] },
     };
     if (mallIds) where.unit = {
       OR: [
@@ -476,7 +477,7 @@ export class BookingService {
             },
           },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.unitBooking.count({ where }),
     ]);
