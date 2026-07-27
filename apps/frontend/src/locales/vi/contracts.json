@@ -73,6 +73,7 @@
       "events": "Timeline",
       "amendments": "Phụ lục",
       "template": "Template",
+      "billing": "Thu tiền",
       "termination": "Chấm dứt"
     },
     "daysLeft": "Còn {{count}} ngày",
@@ -196,6 +197,36 @@
     "select": "Chọn mẫu hợp đồng...",
     "render": "Xuất hợp đồng",
     "renderSuccess": "Đã xuất mẫu hợp đồng"
+  },
+  "billingTab": {
+    "summary": {
+      "totalScheduled": "Tổng giá trị theo lịch",
+      "collected": "Đã thu",
+      "remaining": "Còn phải thu",
+      "collectionRate": "Tỷ lệ thu",
+      "periodCount": "{{count}} kỳ"
+    },
+    "rebuild": "Làm mới lịch thu",
+    "rebuildSuccess": "Đã làm mới lịch thu tiền theo hợp đồng",
+    "notActiveHint": "Lịch thu tiền chỉ tự tạo khi hợp đồng ở trạng thái Hiệu lực/Sắp hết hạn — bấm \"Làm mới lịch thu\" nếu cần tạo lại thủ công.",
+    "noSchedule": "Chưa có lịch thu tiền cho hợp đồng này.",
+    "table": {
+      "period": "Kỳ",
+      "rent": "Tiền thuê",
+      "cam": "CAM",
+      "total": "Tổng",
+      "dueDate": "Hạn thu",
+      "periodStatus": "Trạng thái kỳ",
+      "invoice": "Hóa đơn",
+      "collectedOfTotal": "{{collected}} / {{total}}"
+    },
+    "entryStatus": {
+      "PENDING": "Chờ lập hóa đơn",
+      "INVOICED": "Đã lập hóa đơn",
+      "SKIPPED": "Miễn thu (rent-free)"
+    },
+    "noInvoiceYet": "Chưa có hóa đơn",
+    "viewInvoice": "Xem hóa đơn"
   },
   "termination": {
     "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",

@@ -73,6 +73,7 @@
       "events": "Timeline",
       "amendments": "Amendments",
       "template": "Template",
+      "billing": "Billing",
       "termination": "Termination"
     },
     "daysLeft": "{{count}} days left",
@@ -196,6 +197,36 @@
     "select": "Select template...",
     "render": "Render contract",
     "renderSuccess": "Template rendered"
+  },
+  "billingTab": {
+    "summary": {
+      "totalScheduled": "Total scheduled value",
+      "collected": "Collected",
+      "remaining": "Remaining",
+      "collectionRate": "Collection rate",
+      "periodCount": "{{count}} periods"
+    },
+    "rebuild": "Rebuild schedule",
+    "rebuildSuccess": "Billing schedule rebuilt",
+    "notActiveHint": "Billing schedule is auto-generated only while the contract is Active/Expiring — click \"Rebuild schedule\" to regenerate manually if needed.",
+    "noSchedule": "No billing schedule for this contract yet.",
+    "table": {
+      "period": "Period",
+      "rent": "Rent",
+      "cam": "CAM",
+      "total": "Total",
+      "dueDate": "Due date",
+      "periodStatus": "Period status",
+      "invoice": "Invoice",
+      "collectedOfTotal": "{{collected}} / {{total}}"
+    },
+    "entryStatus": {
+      "PENDING": "Pending invoice",
+      "INVOICED": "Invoiced",
+      "SKIPPED": "Skipped (rent-free)"
+    },
+    "noInvoiceYet": "No invoice yet",
+    "viewInvoice": "View invoice"
   },
   "termination": {
     "noRequest": "No termination request exists for this contract.",

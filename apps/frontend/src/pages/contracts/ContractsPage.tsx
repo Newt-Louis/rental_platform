@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { contractsApi, terminationApi, spacesApi } from '@/api';
+import { contractsApi, terminationApi, spacesApi, billingApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -70,6 +70,23 @@ function fmtDate(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
+function fmtCurrency(n?: number | null) {
+  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ₫`;
+}
+
+const BILLING_ENTRY_STATUS_COLOR: Record<string, string> = {
+  PENDING: 'border-gray-300 text-gray-600',
+  INVOICED: 'border-blue-300 text-blue-700',
+  SKIPPED: 'border-gray-200 text-gray-400',
+};
+const INVOICE_STATUS_COLOR: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-700',
+  ISSUED: 'bg-blue-100 text-blue-700',
+  PARTIALLY_PAID: 'bg-amber-100 text-amber-700',
+  PAID: 'bg-emerald-100 text-emerald-700',
+  OVERDUE: 'bg-red-100 text-red-700',
+  CANCELLED: 'bg-gray-200 text-gray-500',
+};
 function fmtBytes(b?: number | null) {
   if (!b) return '';
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -467,6 +484,22 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
+  const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
+    queryKey: ['contract-billing-schedule', contractId],
+    queryFn: () => billingApi.getSchedule(contractId!),
+    enabled: !!contractId,
+  });
+  const scheduleEntries: any[] = scheduleData?.data ?? scheduleData ?? [];
+
+  const buildScheduleMutation = useMutation({
+    mutationFn: () => billingApi.buildSchedule(contractId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-billing-schedule', contractId] });
+      toast({ title: t('billingTab.rebuildSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
   const { data: events } = useQuery({
     queryKey: ['contract-events', contractId],
     queryFn: () => contractsApi.getEvents(contractId!),
@@ -609,6 +642,9 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <TabsTrigger value="events">{t('sheet.tabs.events')}</TabsTrigger>
               <TabsTrigger value="amendments">{t('sheet.tabs.amendments')}</TabsTrigger>
               <TabsTrigger value="template">{t('sheet.tabs.template')}</TabsTrigger>
+              <TabsTrigger value="billing" className="gap-1.5">
+                <DollarSign size={13} /> {t('sheet.tabs.billing')}
+              </TabsTrigger>
               <TabsTrigger value="termination" className="gap-1.5">
                 <LogOut size={13} /> {t('sheet.tabs.termination')}
                 {term && term.status !== 'CANCELLED' && (
@@ -796,6 +832,100 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <Button size="sm" disabled={!templateId} onClick={() => renderMutation.mutate()}>
                 {t('template.render')}
               </Button>
+            </TabsContent>
+
+            {/* ── Tab: Thu tiền theo kỳ ── */}
+            <TabsContent value="billing" className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-gray-500 max-w-md">{t('billingTab.notActiveHint')}</p>
+                <Button size="sm" variant="outline" disabled={buildScheduleMutation.isPending}
+                  onClick={() => buildScheduleMutation.mutate()}>
+                  <Calendar size={14} className="mr-1" /> {t('billingTab.rebuild')}
+                </Button>
+              </div>
+
+              {scheduleLoading ? (
+                <Skeleton className="h-40" />
+              ) : scheduleEntries.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">{t('billingTab.noSchedule')}</p>
+              ) : (() => {
+                const totalScheduled = scheduleEntries.reduce((s, e) => s + e.subtotal, 0);
+                const totalCollected = scheduleEntries.reduce((s, e) => s + (e.invoice?.collectedAmount ?? 0), 0);
+                const collectionRate = totalScheduled > 0 ? (totalCollected / totalScheduled) * 100 : 0;
+                return (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <div className="text-[11px] text-gray-500">{t('billingTab.summary.totalScheduled')}</div>
+                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled)}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">{t('billingTab.summary.periodCount', { count: scheduleEntries.length })}</div>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="text-[11px] text-emerald-700">{t('billingTab.summary.collected')}</div>
+                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected)}</div>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="text-[11px] text-amber-700">{t('billingTab.summary.remaining')}</div>
+                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected))}</div>
+                      </div>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                        <div className="text-[11px] text-blue-700">{t('billingTab.summary.collectionRate')}</div>
+                        <div className="text-base font-semibold text-blue-700">{collectionRate.toFixed(1)}%</div>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.period')}</th>
+                            <th className="text-right px-3 py-2">{t('billingTab.table.total')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.dueDate')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.periodStatus')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.invoice')}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {scheduleEntries.map((e: any) => (
+                            <tr key={e.id}>
+                              <td className="px-3 py-2 font-medium text-gray-800">{e.period}</td>
+                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal)}</td>
+                              <td className="px-3 py-2 text-gray-600">{fmtDate(e.dueDate)}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className={`${BILLING_ENTRY_STATUS_COLOR[e.status] ?? ''} text-xs`}>
+                                  {t(`billingTab.entryStatus.${e.status}`, e.status as string)}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                {e.invoice ? (
+                                  <button
+                                    className="flex flex-wrap items-center gap-1.5 text-left hover:underline"
+                                    onClick={() => { onClose(); navigate('/billing'); }}
+                                    title={t('billingTab.viewInvoice')}
+                                  >
+                                    <span className="font-mono text-xs text-blue-700">{e.invoice.invoiceNumber}</span>
+                                    <Badge className={`${INVOICE_STATUS_COLOR[e.invoice.status] ?? ''} border-0 text-[10px]`}>
+                                      {t(`billing:status.${e.invoice.status}`, e.invoice.status as string)}
+                                    </Badge>
+                                    <span className="text-[11px] text-gray-400">
+                                      {t('billingTab.table.collectedOfTotal', {
+                                        collected: fmtCurrency(e.invoice.collectedAmount),
+                                        total: fmtCurrency(e.invoice.totalAmount),
+                                      })}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">{t('billingTab.noInvoiceYet')}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             {/* ── Tab: Chấm dứt hợp đồng ── */}
