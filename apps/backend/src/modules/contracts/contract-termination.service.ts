@@ -86,9 +86,26 @@ export class ContractTerminationService {
     const term = await this.prisma.contractTermination.findUnique({ where: { contractId } });
     if (!term) throw new NotFoundException('Termination not found');
 
-    const data: any = { ...dto };
-    if (dto.handoverDate) data.handoverDate = new Date(dto.handoverDate);
-    if (dto.status) data.status = dto.status;
+    // Whitelist tường minh — dto đến từ @Body() any ở controller nên không có ValidationPipe
+    // nào lọc field lạ; nếu spread thẳng "...dto" thì client có thể ghi đè initiatedBy,
+    // penaltyAmount, createdById... Chỉ COMPLETED/CANCELLED mới hợp lệ qua complete()/cancel()
+    // (có kiểm tra checklist/transaction riêng), nên ở đây chỉ cho set INITIATED/IN_PROGRESS.
+    const data: Record<string, unknown> = {};
+    if (dto.handoverDate !== undefined) data.handoverDate = new Date(dto.handoverDate);
+    if (dto.handoverCondition !== undefined) data.handoverCondition = dto.handoverCondition;
+    if (dto.utilityFinalRead !== undefined) data.utilityFinalRead = dto.utilityFinalRead;
+    if (dto.accessCardReturn !== undefined) data.accessCardReturn = dto.accessCardReturn;
+    if (dto.signageRemoved !== undefined) data.signageRemoved = dto.signageRemoved;
+    if (dto.keysReturned !== undefined) data.keysReturned = dto.keysReturned;
+    if (dto.notes !== undefined) data.notes = dto.notes;
+    if (dto.status !== undefined) {
+      if (!['INITIATED', 'IN_PROGRESS'].includes(dto.status)) {
+        throw new BadRequestException(
+          'status chỉ nhận INITIATED hoặc IN_PROGRESS ở đây — dùng /termination/complete hoặc /termination/cancel để hoàn tất/hủy.',
+        );
+      }
+      data.status = dto.status;
+    }
 
     return this.prisma.contractTermination.update({ where: { contractId }, data });
   }
@@ -130,9 +147,21 @@ export class ContractTerminationService {
     if (!term) throw new NotFoundException('Termination not found');
     if (term.status === 'COMPLETED') throw new BadRequestException('Cannot cancel a completed termination');
 
+    // Hợp đồng có thể đã ở EXPIRING (không chỉ ACTIVE) trước khi initiate() chuyển sang
+    // TERMINATING — khôi phục đúng theo endDate thay vì luôn set cứng ACTIVE.
+    const contract = await this.prisma.contract.findUnique({ where: { id: contractId }, select: { endDate: true } });
+    const now = new Date();
+    const expiringThreshold = new Date(now);
+    expiringThreshold.setDate(expiringThreshold.getDate() + 90);
+    const restoredStatus = !contract || contract.endDate < now
+      ? ContractStatus.EXPIRED
+      : contract.endDate <= expiringThreshold
+      ? ContractStatus.EXPIRING
+      : ContractStatus.ACTIVE;
+
     await this.prisma.$transaction([
       this.prisma.contractTermination.update({ where: { contractId }, data: { status: 'CANCELLED' } }),
-      this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.ACTIVE } }),
+      this.prisma.contract.update({ where: { id: contractId }, data: { status: restoredStatus } }),
     ]);
 
     return { message: 'Termination cancelled' };

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { contractsApi, terminationApi, spacesApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -422,6 +422,12 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [templateId, setTemplateId] = useState('');
+  const [amendmentDialogOpen, setAmendmentDialogOpen] = useState(false);
+  const [amendmentForm, setAmendmentForm] = useState({
+    type: 'RENT_CHANGE',
+    newRent: '', newCam: '', newRentFree: '', newEndDate: '',
+    effectiveDate: '', reason: '',
+  });
 
   const { data: c, isLoading } = useQuery({
     queryKey: ['contract-detail', contractId],
@@ -501,16 +507,47 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   });
 
   const createAmendmentMutation = useMutation({
-    mutationFn: () => contractsApi.createAmendment(contractId!, {
-      type: 'RENT_CHANGE',
-      effectiveDate: new Date().toISOString(),
-      changes: { rent: (detail?.rent ?? 0) * 1.05 },
-      reason: t('amendments.reason'),
-    }),
+    mutationFn: () => {
+      const changes: Record<string, unknown> = {};
+      if (amendmentForm.type === 'RENT_CHANGE') changes.rent = +amendmentForm.newRent;
+      else if (amendmentForm.type === 'CAM_CHANGE') changes.cam = +amendmentForm.newCam;
+      else if (amendmentForm.type === 'RENT_FREE_CHANGE') changes.rentFree = +amendmentForm.newRentFree;
+      else if (amendmentForm.type === 'TERM_EXTENSION' || amendmentForm.type === 'RENEWAL') changes.endDate = amendmentForm.newEndDate;
+
+      return contractsApi.createAmendment(contractId!, {
+        type: amendmentForm.type,
+        effectiveDate: amendmentForm.effectiveDate ? new Date(amendmentForm.effectiveDate).toISOString() : new Date().toISOString(),
+        changes,
+        reason: amendmentForm.reason || undefined,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
       toast({ title: t('amendments.createSuccess') });
+      setAmendmentDialogOpen(false);
+      setAmendmentForm({ type: 'RENT_CHANGE', newRent: '', newCam: '', newRentFree: '', newEndDate: '', effectiveDate: '', reason: '' });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const submitAmendmentMutation = useMutation({
+    mutationFn: (amendmentId: string) => contractsApi.submitAmendment(contractId!, amendmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
+      toast({ title: t('amendments.submitSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const approveAmendmentMutation = useMutation({
+    mutationFn: (amendmentId: string) => contractsApi.approveAmendment(contractId!, amendmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      toast({ title: t('amendments.approveSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const st = detail ? STATUS_MAP[detail.status] ?? STATUS_MAP.DRAFT : null;
@@ -654,13 +691,30 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
             {/* ── Tab: Phụ lục ── */}
             <TabsContent value="amendments">
-              <Button size="sm" className="mb-3" onClick={() => createAmendmentMutation.mutate()}>
+              <Button size="sm" className="mb-3" onClick={() => setAmendmentDialogOpen(true)}>
                 <GitBranch size={14} className="mr-1" /> {t('amendments.createBtn')}
               </Button>
+              {(amendments?.data ?? amendments ?? []).length === 0 && (
+                <p className="text-sm text-gray-400">{t('amendments.noAmendments')}</p>
+              )}
               {(amendments?.data ?? amendments ?? []).map((a: any) => (
-                <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm">
-                  <div className="font-medium">{a.amendmentNumber} — {a.type}</div>
-                  <Badge variant="outline" className="mt-1">{a.status}</Badge>
+                <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{a.amendmentNumber} — {t(`amendments.type.${a.type}`, a.type)}</div>
+                    <Badge variant="outline" className="mt-1">{a.status}</Badge>
+                  </div>
+                  {a.status === 'DRAFT' && (
+                    <Button size="sm" variant="outline" disabled={submitAmendmentMutation.isPending}
+                      onClick={() => submitAmendmentMutation.mutate(a.id)}>
+                      {t('amendments.submitBtn')}
+                    </Button>
+                  )}
+                  {a.status === 'SUBMITTED' && (
+                    <Button size="sm" disabled={approveAmendmentMutation.isPending}
+                      onClick={() => approveAmendmentMutation.mutate(a.id)}>
+                      {t('amendments.approveBtn')}
+                    </Button>
+                  )}
                 </div>
               ))}
             </TabsContent>
@@ -779,6 +833,73 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
           </Tabs>
         </div>
       )}
+
+      <Dialog open={amendmentDialogOpen} onOpenChange={setAmendmentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('amendments.dialogTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.typeLabel')}</label>
+              <Select value={amendmentForm.type} onValueChange={(v) => setAmendmentForm((f) => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['RENT_CHANGE', 'CAM_CHANGE', 'RENT_FREE_CHANGE', 'TERM_EXTENSION', 'RENEWAL', 'OTHER'].map((tp) => (
+                    <SelectItem key={tp} value={tp}>{t(`amendments.type.${tp}`)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {amendmentForm.type === 'RENT_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel')}</label>
+                <Input type="number" value={amendmentForm.newRent}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newRent: e.target.value }))} />
+              </div>
+            )}
+            {amendmentForm.type === 'CAM_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel')}</label>
+                <Input type="number" value={amendmentForm.newCam}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newCam: e.target.value }))} />
+              </div>
+            )}
+            {amendmentForm.type === 'RENT_FREE_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentFreeLabel')}</label>
+                <Input type="number" value={amendmentForm.newRentFree}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newRentFree: e.target.value }))} />
+              </div>
+            )}
+            {(amendmentForm.type === 'TERM_EXTENSION' || amendmentForm.type === 'RENEWAL') && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newEndDateLabel')}</label>
+                <Input type="date" value={amendmentForm.newEndDate}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newEndDate: e.target.value }))} />
+              </div>
+            )}
+
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.effectiveDateLabel')}</label>
+              <Input type="date" value={amendmentForm.effectiveDate}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.reasonLabel')}</label>
+              <Textarea value={amendmentForm.reason} placeholder={t('amendments.reasonPlaceholder')}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAmendmentDialogOpen(false)}>{t('amendments.cancel')}</Button>
+            <Button disabled={createAmendmentMutation.isPending} onClick={() => createAmendmentMutation.mutate()}>
+              {t('amendments.submit')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
@@ -788,14 +909,16 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 export default function ContractsPage() {
   const { t } = useTranslation('contracts');
   const { selectedMallId } = useMallStore();
+  const [searchParams] = useSearchParams();
+  const expiringDays = searchParams.get('expiring') ? +searchParams.get('expiring')! : 90;
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(searchParams.get('status') ?? '');
   const [type, setType] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showExpiring, setShowExpiring] = useState(false);
+  const [showExpiring, setShowExpiring] = useState(searchParams.has('expiring'));
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
@@ -837,8 +960,8 @@ export default function ContractsPage() {
   });
 
   const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
-    queryKey: ['contracts-expiring', selectedMallId],
-    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined),
+    queryKey: ['contracts-expiring', selectedMallId, expiringDays],
+    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays),
     enabled: showExpiring,
   });
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { billingApi } from '@/api';
@@ -749,8 +750,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 function InvoicesTab() {
   const { t } = useTranslation(['billing', 'common']);
   const { selectedMallId } = useMallStore();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(searchParams.get('status') ?? '');
   const [bucket, setBucket] = useState('');
   const [sourceType, setSourceType] = useState('');
   const [page, setPage] = useState(1);

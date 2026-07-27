@@ -6,6 +6,7 @@ import { ContractsService } from './contracts.service';
 import { ContractEventsService } from './contract-events.service';
 import { ContractTemplatesService, ContractAmendmentsService } from './contract-templates.service';
 import { ContractTerminationService } from './contract-termination.service';
+import { ContractExpiryStatusScheduler } from './contract-expiry-status.scheduler';
 import { BillingModule } from '../billing/billing.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { BillingModule } from '../billing/billing.module';
     ContractTemplatesService,
     ContractAmendmentsService,
     ContractTerminationService,
+    ContractExpiryStatusScheduler,
   ],
   exports: [ContractsService, ContractEventsService, ContractTerminationService],
 })

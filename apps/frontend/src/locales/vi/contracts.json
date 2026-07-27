@@ -152,9 +152,32 @@
     "deleteConfirm": "Xóa tài liệu"
   },
   "amendments": {
-    "createBtn": "Tạo phụ lục (+5% tiền thuê)",
+    "createBtn": "Tạo phụ lục",
     "createSuccess": "Đã tạo phụ lục bản nháp",
-    "reason": "Điều chỉnh tiền thuê +5%"
+    "submitSuccess": "Đã gửi phụ lục để duyệt",
+    "approveSuccess": "Đã duyệt và áp dụng phụ lục",
+    "submitBtn": "Gửi duyệt",
+    "approveBtn": "Duyệt",
+    "dialogTitle": "Tạo phụ lục hợp đồng",
+    "typeLabel": "Loại phụ lục",
+    "type": {
+      "RENT_CHANGE": "Điều chỉnh tiền thuê",
+      "CAM_CHANGE": "Điều chỉnh phí quản lý (CAM)",
+      "RENT_FREE_CHANGE": "Điều chỉnh số tháng miễn phí thuê",
+      "TERM_EXTENSION": "Gia hạn thời hạn hợp đồng",
+      "RENEWAL": "Tái ký / gia hạn mới",
+      "OTHER": "Khác"
+    },
+    "newRentLabel": "Tiền thuê mới (VND/tháng)",
+    "newCamLabel": "Phí CAM mới (VND/tháng)",
+    "newRentFreeLabel": "Số tháng miễn phí thuê mới",
+    "newEndDateLabel": "Ngày kết thúc mới",
+    "effectiveDateLabel": "Ngày hiệu lực",
+    "reasonLabel": "Lý do",
+    "reasonPlaceholder": "Mô tả lý do điều chỉnh...",
+    "cancel": "Hủy",
+    "submit": "Tạo phụ lục",
+    "noAmendments": "Chưa có phụ lục nào cho hợp đồng này."
   },
   "template": {
     "select": "Chọn mẫu hợp đồng...",

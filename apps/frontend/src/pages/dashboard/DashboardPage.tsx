@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { dashboardApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
+import { canAccessPath } from '@/lib/permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
@@ -253,15 +254,22 @@ export default function DashboardPage() {
   const { t } = useTranslation(['dashboard', 'common']);
   const { selectedMallId, selectedMallName } = useMallStore();
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
 
+  const queryKey = ['dashboard', selectedMallId];
   const { data, isLoading, isError, isFetching, dataUpdatedAt, refetch } = useQuery({
-    queryKey: ['dashboard', selectedMallId],
+    queryKey,
     queryFn: () => dashboardApi.getDashboard(selectedMallId ?? undefined),
     refetchInterval: 60_000,
+  });
+  const handleForceRefresh = () => queryClient.fetchQuery({
+    queryKey,
+    queryFn: () => dashboardApi.getDashboard(selectedMallId ?? undefined, true),
   });
   const d = data?.data ?? data;
   const bookingStats = d?.bookingStats;
   const focusAreas: string[] = d?.focusAreas ?? ['overview'];
+  const linkTo = (path: string) => (canAccessPath(user?.role, path) ? path : undefined);
 
   const showOccupancy = focusAreas.some((f) => ['occupancy', 'pipeline', 'overview', 'booking'].includes(f));
   const showFinance   = focusAreas.some((f) => ['billing', 'sales', 'overview'].includes(f));
@@ -299,25 +307,23 @@ export default function DashboardPage() {
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
   });
-  const collectionRate = (d?.monthlyRevenue ?? 0) > 0
-    ? Math.min(100, ((d?.collectedRevenue ?? 0) / d.monthlyRevenue) * 100)
-    : 0;
   const attentionTotal = (d?.overdueCount ?? 0) + (d?.pendingApprovals ?? 0) + (d?.expiringIn30 ?? 0) + (bookingStats?.expiringSoon ?? 0) + (d?.openTickets ?? 0);
-  const healthScore = Math.round(((d?.occupancyRate ?? 0) * 0.55) + (collectionRate * 0.45));
-  const healthLabel = healthScore >= 85
+  const healthScore: number | null = d?.healthScore ?? null;
+  const healthLabel = healthScore === null ? '' : healthScore >= 85
     ? t('health.positive')
     : healthScore >= 70
     ? t('health.stable')
     : t('health.needsWork');
 
-  const actionItems = [
+  const actionItems = ([
     showApprovals && { label: t('actionItems.pendingApprovals'), value: d?.pendingApprovals ?? 0, urgent: false, to: '/approvals' },
     showFinance  && { label: t('actionItems.overdueInvoices'), value: d?.overdueCount ?? 0, urgent: true, to: '/billing?status=OVERDUE' },
     (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts30'), value: d?.expiringIn30 ?? 0, urgent: true, to: '/contracts?expiring=30' },
     (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts90'), value: d?.expiringIn90 ?? 0, urgent: false, to: '/contracts?expiring=90' },
-    showOperations && { label: t('actionItems.openTickets'), value: d?.openTickets ?? 0, urgent: false, to: '/tickets?status=OPEN' },
+    showOperations && { label: t('actionItems.openTickets'), value: d?.openTickets ?? 0, urgent: false, to: '/tickets?queue=open' },
     showLeasing  && { label: t('actionItems.expiringBookings'), value: bookingStats?.expiringSoon ?? 0, urgent: true, to: '/bookings?expiringSoon=true' },
-  ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[];
+  ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[])
+    .filter((item) => canAccessPath(user?.role, item.to));
 
   return (
     <div className="-m-4 min-h-full space-y-6 bg-[radial-gradient(circle_at_top_right,_rgba(219,234,254,0.55),_transparent_32%),linear-gradient(to_bottom,_#f8fafc,_#ffffff_26rem)] p-4 sm:-m-6 sm:p-6">
@@ -334,17 +340,21 @@ export default function DashboardPage() {
             <h1 className="mt-2 max-w-3xl text-2xl font-semibold leading-tight tracking-tight sm:text-4xl">{t('tagline')}</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">{t('description')}</p>
           </div>
-          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] backdrop-blur-sm">
-            <div className="border-r border-white/10 p-4 sm:p-5">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Activity size={12} /> {t('health.label')}</div>
-              <div className="mt-2 text-2xl font-semibold sm:text-3xl">{healthScore}<span className="text-sm text-slate-400">/100</span></div>
-              <p className="mt-1 text-[11px] text-cyan-100">{healthLabel}</p>
-            </div>
-            <div className="border-r border-white/10 p-4 sm:p-5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('occupancy.label')}</div>
-              <div className="mt-2 text-2xl font-semibold sm:text-3xl">{d?.occupancyRate ?? 0}<span className="text-sm text-slate-400">%</span></div>
-              <p className="mt-1 text-[11px] text-slate-300">{fmtArea(d?.leasedArea ?? 0)}</p>
-            </div>
+          <div className={`grid ${['grid-cols-1', 'grid-cols-2', 'grid-cols-3'][(healthScore !== null ? 1 : 0) + (showOccupancy ? 1 : 0)]} overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07] backdrop-blur-sm`}>
+            {healthScore !== null && (
+              <div className="border-r border-white/10 p-4 sm:p-5">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"><Activity size={12} /> {t('health.label')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{healthScore}<span className="text-sm text-slate-400">/100</span></div>
+                <p className="mt-1 text-[11px] text-cyan-100">{healthLabel}</p>
+              </div>
+            )}
+            {showOccupancy && (
+              <div className="border-r border-white/10 p-4 sm:p-5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('occupancy.label')}</div>
+                <div className="mt-2 text-2xl font-semibold sm:text-3xl">{d?.occupancyRate ?? 0}<span className="text-sm text-slate-400">%</span></div>
+                <p className="mt-1 text-[11px] text-slate-300">{fmtArea(d?.leasedArea ?? 0)}</p>
+              </div>
+            )}
             <button type="button" onClick={() => document.getElementById('executive-actions')?.scrollIntoView({ behavior: 'smooth' })} className="group p-4 text-left transition-colors hover:bg-white/10 sm:p-5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('needsAttention')}</div>
               <div className="mt-2 flex items-center gap-1 text-2xl font-semibold text-amber-300 sm:text-3xl">{attentionTotal}<ChevronRight size={17} className="transition-transform group-hover:translate-x-1" /></div>
@@ -368,7 +378,7 @@ export default function DashboardPage() {
           <span className="text-xs text-gray-400">
             {dataUpdatedAt ? t('common:messages.dataUpdated', { time: new Date(dataUpdatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) }) : ''}
           </span>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-1.5 rounded-xl border-slate-200 bg-white shadow-sm">
+          <Button variant="outline" size="sm" onClick={handleForceRefresh} disabled={isFetching} className="gap-1.5 rounded-xl border-slate-200 bg-white shadow-sm">
             <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
             {t('common:actions.refresh')}
           </Button>
@@ -386,7 +396,7 @@ export default function DashboardPage() {
                 sub={`${fmtArea(d?.leasedArea ?? 0)} / ${fmtArea(d?.totalArea ?? 0)}`}
                 icon={Building2}
                 color="blue"
-                to="/spaces"
+                to={linkTo('/spaces')}
               />
               <StatCard
                 title={t('stats.tenants')}
@@ -394,7 +404,7 @@ export default function DashboardPage() {
                 sub={t('stats.activeContracts')}
                 icon={Users}
                 color="green"
-                to="/contracts?status=ACTIVE"
+                to={linkTo('/contracts?status=ACTIVE')}
               />
             </>
           )}
@@ -406,7 +416,7 @@ export default function DashboardPage() {
                 sub={t('stats.collectedRevenue', { amount: fmt(d?.collectedRevenue ?? 0) })}
                 icon={TrendingUp}
                 color="purple"
-                to="/billing"
+                to={linkTo('/billing')}
               />
               <StatCard
                 title={t('stats.overdueDebt')}
@@ -415,7 +425,7 @@ export default function DashboardPage() {
                 icon={DollarSign}
                 color="red"
                 badge={(d?.overdueCount ?? 0) > 0 ? { text: t('badges.needsAction'), variant: 'destructive' } : undefined}
-                to="/billing?status=OVERDUE"
+                to={linkTo('/billing?status=OVERDUE')}
               />
             </>
           )}
@@ -433,7 +443,7 @@ export default function DashboardPage() {
                 sub={t('stats.pendingBookings', { count: bookingStats?.pending ?? 0 })}
                 icon={BookmarkCheck}
                 color="yellow"
-                to="/bookings"
+                to={linkTo('/bookings')}
               />
               <StatCard
                 title={t('stats.expiringBookings')}
@@ -441,7 +451,7 @@ export default function DashboardPage() {
                 icon={Clock}
                 color="red"
                 badge={(bookingStats?.expiringSoon ?? 0) > 0 ? { text: t('badges.urgent'), variant: 'destructive' } : undefined}
-                to="/bookings?expiringSoon=true"
+                to={linkTo('/bookings?expiringSoon=true')}
               />
             </>
           )}
@@ -452,7 +462,7 @@ export default function DashboardPage() {
               sub={t('stats.dealsInPipeline')}
               icon={CheckSquare}
               color="blue"
-              to="/approvals"
+              to={linkTo('/approvals')}
             />
           )}
           {(showLeasing || showFinance || showContracts) && (
@@ -463,7 +473,7 @@ export default function DashboardPage() {
               icon={AlertTriangle}
               color="red"
               badge={(d?.expiringIn30 ?? 0) > 0 ? { text: t('badges.expiring'), variant: 'destructive' } : undefined}
-              to="/contracts?expiring=30"
+              to={linkTo('/contracts?expiring=30')}
             />
           )}
           {showOperations && (
@@ -473,7 +483,7 @@ export default function DashboardPage() {
               sub={t('stats.openTicketsDesc')}
               icon={Ticket}
               color="purple"
-              to="/tickets?status=OPEN"
+              to={linkTo('/tickets?queue=open')}
             />
           )}
         </div>

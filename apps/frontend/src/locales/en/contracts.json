@@ -152,9 +152,32 @@
     "deleteConfirm": "Delete document"
   },
   "amendments": {
-    "createBtn": "Create amendment (rent +5%)",
+    "createBtn": "Create amendment",
     "createSuccess": "Amendment draft created",
-    "reason": "Rent adjustment +5%"
+    "submitSuccess": "Amendment submitted for approval",
+    "approveSuccess": "Amendment approved and applied",
+    "submitBtn": "Submit",
+    "approveBtn": "Approve",
+    "dialogTitle": "Create contract amendment",
+    "typeLabel": "Amendment type",
+    "type": {
+      "RENT_CHANGE": "Rent adjustment",
+      "CAM_CHANGE": "CAM fee adjustment",
+      "RENT_FREE_CHANGE": "Rent-free months adjustment",
+      "TERM_EXTENSION": "Term extension",
+      "RENEWAL": "Renewal",
+      "OTHER": "Other"
+    },
+    "newRentLabel": "New rent (VND/month)",
+    "newCamLabel": "New CAM fee (VND/month)",
+    "newRentFreeLabel": "New rent-free months",
+    "newEndDateLabel": "New end date",
+    "effectiveDateLabel": "Effective date",
+    "reasonLabel": "Reason",
+    "reasonPlaceholder": "Describe the reason for this change...",
+    "cancel": "Cancel",
+    "submit": "Create amendment",
+    "noAmendments": "No amendments for this contract yet."
   },
   "template": {
     "select": "Select template...",

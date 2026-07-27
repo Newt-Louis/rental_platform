@@ -3,6 +3,20 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AmendmentStatus, AmendmentType } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
+import { BillingScheduleService } from '../billing/billing-schedule.service';
+
+// Field hợp đồng được phép thay đổi qua Amendment — không cho amend tenantId/unitId/status/...
+// (những field này ảnh hưởng workflow riêng: tạo hợp đồng mới, termination, activation).
+const AMENDABLE_CONTRACT_FIELDS = new Set([
+  'rent', 'cam', 'deposit', 'depositLease', 'depositFitout', 'fitoutFee',
+  'utilityFee', 'afterHoursFee', 'operatingHours', 'billingCycle', 'paymentTerm',
+  'rentFree', 'escalationPercent', 'startDate', 'endDate', 'term', 'notes',
+]);
+const AMENDMENT_DATE_FIELDS = new Set(['startDate', 'endDate']);
+// Field nào đổi thì lịch thu tiền (billing schedule) đã sinh trước đó phải build lại.
+const BILLING_RELEVANT_FIELDS = new Set([
+  'rent', 'cam', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent', 'startDate', 'endDate',
+]);
 
 @Injectable()
 export class ContractTemplatesService {
@@ -99,6 +113,7 @@ export class ContractAmendmentsService {
   constructor(
     private prisma: PrismaService,
     private events: ContractEventsService,
+    private billingScheduleService: BillingScheduleService,
   ) {}
 
   private generateNumber() {
@@ -123,6 +138,11 @@ export class ContractAmendmentsService {
   }) {
     const contract = await this.prisma.contract.findUnique({ where: { id: contractId } });
     if (!contract) throw new NotFoundException('Contract not found');
+
+    const invalidKeys = Object.keys(data.changes).filter((key) => !AMENDABLE_CONTRACT_FIELDS.has(key));
+    if (invalidKeys.length) {
+      throw new BadRequestException(`Không thể amend các trường: ${invalidKeys.join(', ')}`);
+    }
 
     return this.prisma.contractAmendment.create({
       data: {
@@ -164,22 +184,29 @@ export class ContractAmendmentsService {
     const updateData: Record<string, unknown> = {};
     const before: Record<string, unknown> = {};
 
+    // Whitelist tường minh — tránh amendment ghi đè field không dự tính (status, tenantId,
+    // unitId...) chỉ vì tên field đó trùng với 1 property trên Contract.
     for (const [key, value] of Object.entries(changes)) {
-      if (key in amendment.contract) {
+      if (AMENDABLE_CONTRACT_FIELDS.has(key)) {
         before[key] = (amendment.contract as any)[key];
-        updateData[key] = value;
+        updateData[key] = AMENDMENT_DATE_FIELDS.has(key) ? new Date(value as string) : value;
       }
     }
 
     if (amendment.type === AmendmentType.RENEWAL) {
       updateData.type = 'RENEWAL';
-      updateData.status = 'ACTIVE';
     }
 
     await this.prisma.contract.update({
       where: { id: amendment.contractId },
       data: updateData as any,
     });
+
+    // Rebuild lịch thu tiền nếu amendment đổi field ảnh hưởng billing (rent/cam/kỳ hạn...) —
+    // trước đây approve() chỉ cập nhật bảng Contract, các kỳ đã sinh vẫn dùng giá cũ.
+    if (Object.keys(updateData).some((key) => BILLING_RELEVANT_FIELDS.has(key))) {
+      await this.billingScheduleService.buildScheduleForContract(amendment.contractId);
+    }
 
     const updated = await this.prisma.contractAmendment.update({
       where: { id: amendmentId },
