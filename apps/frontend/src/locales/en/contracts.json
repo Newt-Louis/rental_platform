@@ -18,6 +18,19 @@
     "RENEWAL": "Renewal",
     "TERMINATION": "Termination"
   },
+  "workflow": {
+    "label": "Contract workflow",
+    "notReadyForActive": "Not ready for activation (ACTIVE) — needs:",
+    "updateSuccess": "Contract status updated",
+    "moveTo": {
+      "PENDING_LEGAL": "Move to Pending Legal",
+      "PENDING_SIGNATURE": "Move to Pending Signature",
+      "ACTIVE": "Activate contract",
+      "DRAFT": "Revert to Draft",
+      "EXPIRING": "Mark Expiring",
+      "EXPIRED": "Mark Expired"
+    }
+  },
   "filters": {
     "searchPlaceholder": "Contract no. / tenant / space...",
     "allTypes": "All types",

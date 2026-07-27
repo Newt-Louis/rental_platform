@@ -40,6 +40,19 @@ const STATUS_MAP: Record<string, { color: string }> = {
 
 const TYPE_KEYS = ['LOI', 'LEASE_AGREEMENT', 'APPENDIX', 'RENEWAL', 'TERMINATION'] as const;
 
+// Transition hiển thị trên UI — khớp với CONTRACT_STATUS_TRANSITIONS ở backend
+// (contracts.service.ts), trừ nhánh TERMINATING/TERMINATED đã có tab "Chấm dứt hợp đồng" riêng.
+const CONTRACT_UI_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['PENDING_LEGAL', 'ACTIVE'],
+  PENDING_LEGAL: ['PENDING_SIGNATURE', 'DRAFT'],
+  PENDING_SIGNATURE: ['ACTIVE', 'PENDING_LEGAL'],
+  ACTIVE: ['EXPIRING'],
+  EXPIRING: ['ACTIVE', 'EXPIRED'],
+  EXPIRED: [],
+  TERMINATING: [],
+  TERMINATED: [],
+};
+
 function daysUntil(date: string) {
   return Math.floor((new Date(date).getTime() - Date.now()) / 86400000);
 }
@@ -435,6 +448,25 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     enabled: !!contractId,
   });
 
+  const { data: readinessData } = useQuery({
+    queryKey: ['contract-activation-readiness', contractId],
+    queryFn: () => contractsApi.getActivationReadiness(contractId!),
+    enabled: !!contractId,
+  });
+  const readiness: any = readinessData?.data ?? readinessData;
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (status: string) => contractsApi.updateStatus(contractId!, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-events', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-activation-readiness', contractId] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      toast({ title: t('workflow.updateSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
   const { data: events } = useQuery({
     queryKey: ['contract-events', contractId],
     queryFn: () => contractsApi.getEvents(contractId!),
@@ -597,6 +629,39 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                   </Badge>
                 )}
               </div>
+
+              {/* Quy trình xử lý — chuyển trạng thái thủ công, hiện điều kiện còn thiếu để kích hoạt */}
+              {CONTRACT_UI_TRANSITIONS[detail.status]?.length > 0 && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
+                  <div className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    <CheckCircle2 size={13} /> {t('workflow.label')}
+                  </div>
+                  {readiness && !readiness.ready && CONTRACT_UI_TRANSITIONS[detail.status].includes('ACTIVE') && (
+                    <div className="text-xs text-amber-800 bg-amber-100 rounded-lg p-2.5">
+                      <div className="font-medium mb-1">{t('workflow.notReadyForActive')}</div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {readiness.missing.map((m: string, i: number) => <li key={i}>{m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {CONTRACT_UI_TRANSITIONS[detail.status].map((nextStatus) => {
+                      const blockedByReadiness = nextStatus === 'ACTIVE' && readiness && !readiness.ready;
+                      return (
+                        <Button
+                          key={nextStatus}
+                          size="sm"
+                          variant={nextStatus === 'ACTIVE' ? 'default' : 'outline'}
+                          disabled={updateStatusMutation.isPending || blockedByReadiness}
+                          onClick={() => updateStatusMutation.mutate(nextStatus)}
+                        >
+                          {t(`workflow.moveTo.${nextStatus}`)}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Source */}
               {detail.proposal && (

@@ -18,6 +18,19 @@
     "RENEWAL": "Gia hạn",
     "TERMINATION": "Chấm dứt HĐ"
   },
+  "workflow": {
+    "label": "Quy trình xử lý hợp đồng",
+    "notReadyForActive": "Chưa đủ điều kiện kích hoạt (ACTIVE) — cần xử lý:",
+    "updateSuccess": "Đã cập nhật trạng thái hợp đồng",
+    "moveTo": {
+      "PENDING_LEGAL": "Chuyển sang Chờ Legal",
+      "PENDING_SIGNATURE": "Chuyển sang Chờ ký",
+      "ACTIVE": "Kích hoạt hợp đồng",
+      "DRAFT": "Trả về Bản nháp",
+      "EXPIRING": "Đánh dấu Sắp hết hạn",
+      "EXPIRED": "Đánh dấu Hết hạn"
+    }
+  },
   "filters": {
     "searchPlaceholder": "Số HĐ / khách thuê / mặt bằng...",
     "allTypes": "Tất cả loại",
