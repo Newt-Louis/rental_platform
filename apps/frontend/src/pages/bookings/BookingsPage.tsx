@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
@@ -29,8 +30,11 @@ import { SlotBookingDetailSheet } from './SlotBookingDetailSheet';
 import { CreateBookingDialog } from './CreateBookingDialog';
 import { CreateSlotBookingDialog } from './CreateSlotBookingDialog';
 
+const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '' };
+
 export default function BookingsPage() {
   const { t } = useTranslation('bookings');
+  const [searchParams] = useSearchParams();
   const { selectedMallId } = useMallStore();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -120,14 +124,28 @@ export default function BookingsPage() {
   });
 
   // ── UnitBooking state ──
-  const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '' };
-  const [unitDraft, setUnitDraft] = useState(UNIT_EMPTY);
-  const [unitApplied, setUnitApplied] = useState(UNIT_EMPTY);
+  const initialUnitFilters = () => ({
+    ...UNIT_EMPTY,
+    expiringSoon: searchParams.get('expiringSoon') === 'true',
+  });
+  const [unitDraft, setUnitDraft] = useState(initialUnitFilters);
+  const [unitApplied, setUnitApplied] = useState(initialUnitFilters);
   const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
   const [editDirectly, setEditDirectly] = useState(false);
   const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [createUnitOpen, setCreateUnitOpen] = useState(false);
+
+  const urlFilterKey = searchParams.toString();
+  useEffect(() => {
+    const next = {
+      ...UNIT_EMPTY,
+      expiringSoon: searchParams.get('expiringSoon') === 'true',
+    };
+    setUnitDraft(next);
+    setUnitApplied(next);
+    setPage(1);
+  }, [urlFilterKey]);
 
   const setUnitField = <K extends keyof typeof UNIT_EMPTY>(k: K, v: typeof UNIT_EMPTY[K]) =>
     setUnitDraft((f) => ({ ...f, [k]: v }));

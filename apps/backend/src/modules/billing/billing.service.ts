@@ -13,6 +13,253 @@ interface CurrentUser {
 export class BillingService {
   constructor(private prisma: PrismaService) {}
 
+  async getPendingReceivables(query: {
+    mallId?: string;
+    sourceType?: string;
+    search?: string;
+  }, mallIds?: string[]) {
+    const now = new Date();
+    const search = query.search?.trim();
+    const includeLease = !query.sourceType || query.sourceType === 'LEASE_CONTRACT';
+    const includeService = !query.sourceType || query.sourceType === 'SERVICE_CONTRACT';
+
+    const leaseWhere: Prisma.BillingScheduleEntryWhereInput = {
+      status: 'PENDING',
+      invoiceId: null,
+      contract: {
+        isActive: true,
+        status: { in: ['ACTIVE', 'EXPIRING'] },
+        ...(mallIds ? { unit: { mallId: { in: mallIds } } } : {}),
+        ...(search ? { OR: [
+          { contractNumber: { contains: search, mode: 'insensitive' } },
+          { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+        ] } : {}),
+      },
+    };
+    const serviceWhere: Prisma.ServiceContractPaymentWhereInput = {
+      invoiceId: null,
+      billingStatus: 'SCHEDULED',
+      status: { in: ['PENDING', 'PARTIAL'] },
+      contract: {
+        isDeleted: false,
+        paymentDirection: 'RECEIVABLE',
+        status: { in: ['ACTIVE', 'EXPIRING'] },
+        ...(mallIds ? { mallId: { in: mallIds } } : {}),
+        ...(search ? { OR: [
+          { contractNumber: { contains: search, mode: 'insensitive' } },
+          { title: { contains: search, mode: 'insensitive' } },
+          { counterpartyName: { contains: search, mode: 'insensitive' } },
+        ] } : {}),
+      },
+    };
+
+    const [leaseRows, serviceRows] = await Promise.all([
+      includeLease ? this.prisma.billingScheduleEntry.findMany({
+        where: leaseWhere,
+        take: 200,
+        orderBy: { dueDate: 'asc' },
+        include: { contract: { select: {
+          id: true, contractNumber: true,
+          tenant: { select: { id: true, brandName: true } },
+          unit: { select: { mallId: true, code: true } },
+        } } },
+      }) : [],
+      includeService ? this.prisma.serviceContractPayment.findMany({
+        where: serviceWhere,
+        take: 200,
+        orderBy: { dueDate: 'asc' },
+        include: { contract: { select: {
+          id: true, contractNumber: true, title: true, mallId: true,
+          counterpartyName: true, counterpartyTax: true, defaultVatRate: true,
+          billingParty: { select: { id: true, name: true, taxCode: true } },
+        } } },
+      }) : [],
+    ]);
+
+    const timing = (dueDate: Date, plannedDate?: Date | null) => {
+      const target = plannedDate || dueDate;
+      const days = Math.floor((target.getTime() - now.getTime()) / 86400000);
+      return {
+        daysUntilInvoice: days,
+        daysInvoiceOverdue: Math.max(0, -days),
+        isDueForInvoice: days <= 0,
+      };
+    };
+    const lease = leaseRows.map((row) => ({
+      id: row.id,
+      sourceType: 'LEASE_CONTRACT',
+      contractId: row.contractId,
+      contractNumber: row.contract.contractNumber,
+      counterpartyName: row.contract.tenant.brandName,
+      taxCode: null,
+      mallId: row.contract.unit.mallId,
+      unitCode: row.contract.unit.code,
+      period: row.period,
+      milestone: `Tiền thuê & CAM ${row.period}`,
+      subtotal: row.subtotal,
+      vatRate: 10,
+      totalAmount: row.subtotal * 1.1,
+      invoicePlannedDate: row.dueDate,
+      dueDate: row.dueDate,
+      ...timing(row.dueDate),
+    }));
+    const service = serviceRows.map((row) => {
+      const subtotal = row.subtotal ?? row.amount;
+      const vatRate = row.vatRate ?? row.contract.defaultVatRate;
+      return {
+        id: row.id,
+        sourceType: 'SERVICE_CONTRACT',
+        contractId: row.contractId,
+        contractNumber: row.contract.contractNumber,
+        counterpartyName: row.contract.billingParty?.name || row.contract.counterpartyName,
+        taxCode: row.contract.billingParty?.taxCode || row.contract.counterpartyTax,
+        mallId: row.contract.mallId,
+        unitCode: null,
+        period: row.periodStart
+          ? `${row.periodStart.getFullYear()}-${String(row.periodStart.getMonth() + 1).padStart(2, '0')}`
+          : null,
+        milestone: row.milestone,
+        subtotal,
+        vatRate,
+        totalAmount: row.totalAmount ?? subtotal * (1 + vatRate / 100),
+        invoicePlannedDate: row.invoicePlannedDate || row.dueDate,
+        dueDate: row.dueDate,
+        ...timing(row.dueDate, row.invoicePlannedDate),
+      };
+    });
+    const data = [...lease, ...service].sort((a, b) =>
+      new Date(a.invoicePlannedDate).getTime() - new Date(b.invoicePlannedDate).getTime());
+    const dueRows = data.filter((row) => row.isDueForInvoice);
+    return {
+      data,
+      total: data.length,
+      summary: {
+        count: data.length,
+        amount: data.reduce((sum, row) => sum + row.totalAmount, 0),
+        dueCount: dueRows.length,
+        dueAmount: dueRows.reduce((sum, row) => sum + row.totalAmount, 0),
+        bySource: {
+          LEASE_CONTRACT: { count: lease.length, amount: lease.reduce((sum, row) => sum + row.totalAmount, 0) },
+          SERVICE_CONTRACT: { count: service.length, amount: service.reduce((sum, row) => sum + row.totalAmount, 0) },
+        },
+      },
+    };
+  }
+
+  async createInvoiceFromPending(sourceType: string, id: string, userId: string, mallIds?: string[]) {
+    if (sourceType === 'LEASE_CONTRACT') {
+      const row = await this.prisma.billingScheduleEntry.findFirst({
+        where: { id, ...(mallIds ? { contract: { unit: { mallId: { in: mallIds } } } } : {}) },
+        include: { contract: true, invoice: true },
+      });
+      if (!row) throw new NotFoundException('Không tìm thấy kỳ thu hợp đồng thuê');
+      if (row.invoice) return row.invoice;
+      if (row.status !== 'PENDING') throw new BadRequestException('Kỳ thu không còn ở trạng thái chờ xuất hóa đơn');
+      const vatRate = 10;
+      return this.prisma.$transaction(async (tx) => {
+        const invoice = await tx.invoice.create({ data: {
+          // A deterministic source key prevents duplicate invoices when a request is retried.
+          invoiceNumber: `INV-SCHEDULE-${row.id}`,
+          contractId: row.contractId,
+          tenantId: row.contract.tenantId,
+          sourceType: 'LEASE_CONTRACT',
+          sourceId: row.contractId,
+          period: row.period,
+          type: 'MONTHLY_RENT',
+          subtotal: row.subtotal,
+          vatRate,
+          vatAmount: row.subtotal * vatRate / 100,
+          totalAmount: row.subtotal * (1 + vatRate / 100),
+          dueDate: row.dueDate,
+          notes: `Tạo từ lịch thu ${row.period}`,
+          lines: { create: [
+            { type: 'RENT', description: `Tiền thuê - ${row.period}`, qty: 1, unitPrice: row.rentAmount, amount: row.rentAmount, order: 0 },
+            { type: 'CAM', description: `Phí CAM - ${row.period}`, qty: 1, unitPrice: row.camAmount, amount: row.camAmount, order: 1 },
+          ] },
+        } });
+        await tx.billingScheduleEntry.update({ where: { id }, data: { status: 'INVOICED', invoiceId: invoice.id } });
+        return invoice;
+      });
+    }
+
+    if (sourceType === 'SERVICE_CONTRACT') {
+      const payment = await this.prisma.serviceContractPayment.findFirst({
+        where: { id, ...(mallIds ? { contract: { mallId: { in: mallIds } } } : {}) },
+        include: { invoice: true, contract: true },
+      });
+      if (!payment) throw new NotFoundException('Không tìm thấy kỳ thu hợp đồng dịch vụ');
+      if (payment.invoice) return payment.invoice;
+      if (payment.contract.paymentDirection !== 'RECEIVABLE') throw new BadRequestException('Đây không phải hợp đồng phải thu');
+      if (!payment.contract.billingPartyId) throw new BadRequestException('Hợp đồng chưa có đối tượng công nợ');
+      const subtotal = payment.subtotal ?? payment.amount;
+      const vatRate = payment.vatRate ?? payment.contract.defaultVatRate;
+      const vatAmount = payment.vatAmount ?? subtotal * vatRate / 100;
+      const period = payment.periodStart
+        ? `${payment.periodStart.getFullYear()}-${String(payment.periodStart.getMonth() + 1).padStart(2, '0')}`
+        : `${payment.dueDate.getFullYear()}-${String(payment.dueDate.getMonth() + 1).padStart(2, '0')}`;
+      return this.prisma.$transaction(async (tx) => {
+        const invoice = await tx.invoice.create({ data: {
+          // A deterministic source key prevents duplicate invoices when a request is retried.
+          invoiceNumber: `SC-PAYMENT-${payment.id}`,
+          billingPartyId: payment.contract.billingPartyId,
+          sourceType: 'SERVICE_CONTRACT', sourceId: payment.contractId,
+          period, type: 'SERVICE_CONTRACT', subtotal, vatRate, vatAmount,
+          totalAmount: payment.totalAmount ?? subtotal + vatAmount,
+          dueDate: payment.dueDate,
+          notes: `${payment.contract.contractNumber} - ${payment.milestone}`,
+          lines: { create: { type: 'SERVICE_CONTRACT', description: `${payment.contract.title} - ${payment.milestone}`, qty: 1, unitPrice: subtotal, amount: subtotal } },
+        } });
+        await tx.serviceContractPayment.update({ where: { id }, data: {
+          invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber,
+          billingStatus: 'INVOICE_DRAFT', transferredToBillingAt: new Date(), billingError: null,
+        } });
+        await tx.serviceContractEvent.create({ data: {
+          contractId: payment.contractId, eventType: 'TRANSFERRED_TO_BILLING',
+          description: `Chuyển kỳ thu ${payment.milestone} sang hóa đơn ${invoice.invoiceNumber}`, userId,
+        } });
+        return invoice;
+      });
+    }
+    throw new BadRequestException('Nguồn phải thu không hợp lệ');
+  }
+
+  async createDueInvoicesFromPending(
+    query: { mallId?: string; sourceType?: string; search?: string; items?: { id: string; sourceType: string }[] },
+    userId: string,
+    mallIds?: string[],
+  ) {
+    const pending = await this.getPendingReceivables(query, mallIds);
+    const allDueRows = pending.data.filter((row) => row.isDueForInvoice);
+    const requestedKeys = Array.isArray(query.items)
+      ? new Set(query.items.slice(0, 100).map((row) => `${row.sourceType}:${row.id}`))
+      : null;
+    const dueRows = allDueRows
+      .filter((row) => !requestedKeys || requestedKeys.has(`${row.sourceType}:${row.id}`))
+      .slice(0, 100);
+    const results: { id: string; sourceType: string; invoiceId?: string; invoiceNumber?: string; error?: string }[] = [];
+
+    for (const row of dueRows) {
+      try {
+        const invoice = await this.createInvoiceFromPending(row.sourceType, row.id, userId, mallIds);
+        results.push({ id: row.id, sourceType: row.sourceType, invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber });
+      } catch (error) {
+        results.push({
+          id: row.id,
+          sourceType: row.sourceType,
+          error: error instanceof Error ? error.message : 'Unable to create invoice',
+        });
+      }
+    }
+
+    return {
+      requested: dueRows.length,
+      created: results.filter((row) => row.invoiceId).length,
+      failed: results.filter((row) => row.error).length,
+      hasMore: allDueRows.length > dueRows.length,
+      results,
+    };
+  }
+
   private async runSerializableTransaction<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
     maxAttempts = 3,
@@ -40,46 +287,107 @@ export class BillingService {
     search?: string;
     page?: number;
     limit?: number;
-  }, currentUser?: CurrentUser) {
-    const { page = 1, limit = 20, search, ...filters } = query;
-    const skip = (page - 1) * +limit;
+    mallId?: string;
+    sourceType?: string;
+    type?: string;
+    bucket?: string;
+  }, currentUser?: CurrentUser, mallIds?: string[]) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
+    const { search } = query;
+    const skip = (page - 1) * limit;
 
     const where: any = { isActive: true };
-    if (filters.status) where.status = filters.status;
-    if (filters.period) where.period = filters.period;
+    if (query.period) where.period = query.period;
 
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
       where.tenantId = currentUser.tenantId ?? '__none__';
-    } else if (filters.tenantId) {
-      where.tenantId = filters.tenantId;
+    } else if (query.tenantId) {
+      where.tenantId = query.tenantId;
     }
 
+    const and: any[] = [];
+    const now = new Date();
+    if (mallIds) and.push({ OR: [
+      { contract: { unit: { mallId: { in: mallIds } } } },
+      { billingParty: { mallId: { in: mallIds } } },
+    ] });
     if (search) {
-      where.OR = [
+      and.push({ OR: [
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
         { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
         { billingParty: { name: { contains: search, mode: 'insensitive' } } },
-      ];
+        { contract: { contractNumber: { contains: search, mode: 'insensitive' } } },
+      ] });
     }
+    if (and.length) where.AND = and;
+    const summaryWhere = { ...where, ...(and.length ? { AND: [...and] } : {}) };
+    if (query.status) where.status = query.status;
+    if (query.sourceType) where.sourceType = query.sourceType;
+    if (query.type) where.type = query.type;
+    const filteredAnd = [...and];
+    if (query.bucket === 'DRAFT') filteredAnd.push({ status: InvoiceStatus.DRAFT });
+    if (query.bucket === 'CURRENT') filteredAnd.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] }, dueDate: { gte: now } });
+    if (query.bucket === 'PARTIAL') filteredAnd.push({ status: InvoiceStatus.PARTIALLY_PAID, dueDate: { gte: now } });
+    if (query.bucket === 'OVERDUE') filteredAnd.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] }, dueDate: { lt: now } });
+    if (filteredAnd.length) where.AND = filteredAnd;
 
-    const [data, total] = await Promise.all([
+    const [rawData, total, summaryRows] = await Promise.all([
       this.prisma.invoice.findMany({
         where,
         skip,
-        take: +limit,
+        take: limit,
         include: {
           tenant: { select: { id: true, brandName: true } },
           billingParty: { select: { id: true, name: true, taxCode: true } },
-          contract: { select: { id: true, contractNumber: true } },
-          payments: { select: { id: true, amount: true, paidAt: true, method: true } },
+          contract: { select: { id: true, contractNumber: true, unit: { select: { mallId: true, code: true } } } },
+          serviceContractPayment: { select: { milestone: true, contract: { select: { id: true, contractNumber: true, title: true } } } },
+          payments: { select: { id: true, amount: true, paidAt: true, method: true, reversedAt: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({
+        where: summaryWhere,
+        select: { status: true, sourceType: true, type: true, totalAmount: true, dueDate: true, payments: { select: { amount: true, reversedAt: true } } },
+      }),
     ]);
 
-    return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
+    const today = new Date();
+    const enrich = (invoice: any) => {
+      const totalPaid = invoice.payments.filter((payment: any) => !payment.reversedAt).reduce((sum: number, payment: any) => sum + payment.amount, 0);
+      const balance = Math.max(0, invoice.totalAmount - totalPaid);
+      const daysOverdue = balance > 0 && new Date(invoice.dueDate) < today
+        ? Math.max(1, Math.floor((today.getTime() - new Date(invoice.dueDate).getTime()) / 86400000))
+        : 0;
+      return { ...invoice, totalPaid, balance, daysOverdue };
+    };
+    const data = rawData.map(enrich);
+    const summary = {
+      totalOutstanding: 0,
+      draft: { count: 0, amount: 0 },
+      current: { count: 0, amount: 0 },
+      partial: { count: 0, amount: 0 },
+      overdue: { count: 0, amount: 0 },
+      paid: { count: 0, amount: 0 },
+      bySource: {} as Record<string, { count: number; amount: number }>,
+    };
+    for (const row of summaryRows.map(enrich)) {
+      const source = row.sourceType || row.type || 'OTHER';
+      summary.bySource[source] ||= { count: 0, amount: 0 };
+      summary.bySource[source].count++;
+      summary.bySource[source].amount += row.balance;
+      if (!['PAID', 'CANCELLED'].includes(row.status)) summary.totalOutstanding += row.balance;
+      const bucket = row.status === 'DRAFT' ? summary.draft
+        : row.status === 'PAID' ? summary.paid
+        : row.daysOverdue > 0 || row.status === 'OVERDUE' ? summary.overdue
+        : row.status === 'PARTIALLY_PAID' ? summary.partial
+        : summary.current;
+      bucket.count++;
+      bucket.amount += row.status === 'PAID' ? row.totalAmount : row.balance;
+    }
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit), summary };
   }
 
   async findOneInvoice(id: string, currentUser?: CurrentUser) {
@@ -89,6 +397,7 @@ export class BillingService {
         tenant: true,
         billingParty: true,
         contract: { include: { unit: { select: { id: true, code: true, name: true } } } },
+        serviceContractPayment: { include: { contract: true } },
         lines: { orderBy: { order: 'asc' } },
         payments: { orderBy: { paidAt: 'desc' } },
       },
@@ -566,15 +875,17 @@ export class BillingService {
     return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
   }
 
-  async getArAging() {
+  async getArAging(mallIds?: string[]) {
     const today = new Date();
     const overdue = await this.prisma.invoice.findMany({
       where: {
         isActive: true,
         status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] },
+        ...(mallIds ? { OR: [{ contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
       },
       include: {
         tenant: { select: { id: true, brandName: true, companyName: true } },
+        billingParty: { select: { id: true, name: true, taxCode: true } },
         payments: true,
       },
     });
@@ -589,9 +900,12 @@ export class BillingService {
 
       const daysDue = Math.floor((today.getTime() - new Date(inv.dueDate).getTime()) / 86400000);
 
-      if (!byTenant[inv.tenantId]) {
-        byTenant[inv.tenantId] = {
+      const counterpartyKey = inv.tenantId ? `tenant:${inv.tenantId}` : inv.billingPartyId ? `party:${inv.billingPartyId}` : `invoice:${inv.id}`;
+      if (!byTenant[counterpartyKey]) {
+        byTenant[counterpartyKey] = {
           tenant: inv.tenant,
+          billingParty: inv.billingParty,
+          counterpartyName: inv.tenant?.brandName || inv.billingParty?.name || 'Chưa xác định',
           current: 0,
           days30: 0,
           days60: 0,
@@ -601,7 +915,7 @@ export class BillingService {
         };
       }
 
-      const bucket = byTenant[inv.tenantId];
+      const bucket = byTenant[counterpartyKey];
       bucket.total += outstanding;
       if (daysDue <= 0) bucket.current += outstanding;
       else if (daysDue <= 30) bucket.days30 += outstanding;

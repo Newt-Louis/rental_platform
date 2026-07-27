@@ -24,6 +24,7 @@ import type { Invoice, ArAgingRow } from '@/types';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { AsyncState } from '@/components/ui/async-state';
+import { useMallStore } from '@/store/mall.store';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,15 @@ const STATUS_MAP: Record<string, { color: string; step: number }> = {
   PAID:           { color: 'bg-green-100 text-green-700 border-green-200',  step: 4 },
   OVERDUE:        { color: 'bg-red-100 text-red-700 border-red-200',        step: 3 },
   CANCELLED:      { color: 'bg-gray-200 text-gray-500 border-gray-300',     step: 0 },
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  LEASE_CONTRACT: 'Hợp đồng thuê',
+  SERVICE_CONTRACT: 'Hợp đồng dịch vụ',
+  PARKING: 'Bãi đỗ xe',
+  REVENUE_SHARE: 'Chia sẻ doanh thu',
+  UTILITY: 'Điện nước',
+  PENALTY: 'Phí phạt',
 };
 
 const LINE_TYPE_CONFIG: Record<string, { icon: React.ElementType; unit?: string; isFixed?: boolean }> = {
@@ -738,9 +748,15 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 
 function InvoicesTab() {
   const { t } = useTranslation(['billing', 'common']);
+  const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [bucket, setBucket] = useState('');
+  const [sourceType, setSourceType] = useState('');
+  const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPending, setSelectedPending] = useState<Set<string>>(new Set());
+  const [confirmBulkPending, setConfirmBulkPending] = useState(false);
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
 
@@ -765,14 +781,65 @@ function InvoicesTab() {
   };
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['invoices', { search, status }],
-    queryFn: () => billingApi.listInvoices({ search: search || undefined, status: status || undefined }),
+    queryKey: ['invoices', { selectedMallId, search, status, bucket, sourceType, page }],
+    queryFn: () => billingApi.listInvoices({ mallId: selectedMallId || undefined, search: search || undefined, status: status || undefined, bucket: bucket || undefined, sourceType: sourceType || undefined, page, limit: 25 }),
+    enabled: !!selectedMallId,
+  });
+
+  const { data: pendingData, isLoading: isPendingLoading } = useQuery({
+    queryKey: ['pending-receivables', { selectedMallId, search, sourceType }],
+    queryFn: () => billingApi.listPendingReceivables({
+      mallId: selectedMallId || undefined,
+      search: search || undefined,
+      sourceType: sourceType || undefined,
+    }),
+    enabled: !!selectedMallId,
+  });
+
+  const qc = useQueryClient();
+  const createPendingInvoice = useMutation({
+    mutationFn: (row: any) => billingApi.createInvoiceFromPending(row.sourceType, row.id),
+    onSuccess: (invoice) => {
+      qc.invalidateQueries({ queryKey: ['pending-receivables'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      toast({ title: 'Đã tạo hóa đơn nháp', description: invoice.invoiceNumber });
+      setBucket('DRAFT');
+      setSelectedId(invoice.id);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tạo hóa đơn', variant: 'destructive' }),
+  });
+
+  const pendingRows: any[] = pendingData?.data ?? [];
+  const pendingSummary = pendingData?.summary ?? {};
+  const duePendingRows = pendingRows.filter((row) => row.isDueForInvoice);
+  const allDueSelected = duePendingRows.length > 0 && duePendingRows.every((row) => selectedPending.has(`${row.sourceType}:${row.id}`));
+
+  const createDueInvoices = useMutation({
+    mutationFn: () => billingApi.createDueInvoicesFromPending({
+      mallId: selectedMallId || undefined,
+      search: search || undefined,
+      sourceType: sourceType || undefined,
+      items: selectedPending.size
+        ? pendingRows.filter((row) => selectedPending.has(`${row.sourceType}:${row.id}`)).map((row) => ({ id: row.id, sourceType: row.sourceType }))
+        : undefined,
+    }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['pending-receivables'] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      setSelectedPending(new Set());
+      setConfirmBulkPending(false);
+      toast({
+        title: `Đã tạo ${result.created} hóa đơn nháp`,
+        description: result.failed ? `${result.failed} khoản chưa xử lý được` : undefined,
+        variant: result.failed ? 'destructive' : 'default',
+      });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tạo hóa đơn hàng loạt', variant: 'destructive' }),
   });
 
   const invoices: Invoice[] = data?.data ?? [];
-  const draftCount = invoices.filter(i => i.status === 'DRAFT').length;
-  const overdueCount = invoices.filter(i => i.status === 'OVERDUE').length;
-  const pendingPayCount = invoices.filter(i => ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(i.status)).length;
+  const summary = data?.summary ?? {};
+  const totalPages = data?.totalPages ?? 1;
 
   // Active step based on filter
   const activeStep = !status ? undefined
@@ -785,39 +852,95 @@ function InvoicesTab() {
     <div>
       <WorkflowBar active={activeStep} />
 
-      {/* Quick stat chips */}
-      {(draftCount > 0 || overdueCount > 0) && (
-        <div className="flex gap-3 mb-4">
-          {draftCount > 0 && (
-            <button onClick={() => setStatus('DRAFT')}
-              className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium hover:bg-amber-100">
-              <Clock size={12} /> {t('billing:list.draftsNeedAttention', { count: draftCount })}
-            </button>
-          )}
-          {overdueCount > 0 && (
-            <button onClick={() => setStatus('OVERDUE')}
-              className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 font-medium hover:bg-red-100">
-              <AlertTriangle size={12} /> {t('billing:list.overdueInvoices', { count: overdueCount })}
-            </button>
-          )}
-          {pendingPayCount > 0 && (
-            <button onClick={() => setStatus('ISSUED')}
-              className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 font-medium hover:bg-blue-100">
-              <Banknote size={12} /> {t('billing:list.pendingCollection', { count: pendingPayCount })}
-            </button>
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {[
+          ['', 'Tổng phải thu dự kiến', (summary.totalOutstanding || 0) + (pendingSummary.amount || 0), (summary.draft?.count || 0) + (summary.current?.count || 0) + (summary.partial?.count || 0) + (summary.overdue?.count || 0) + (pendingSummary.count || 0), 'border-slate-200 bg-white text-slate-900'],
+          ['UNBILLED', 'Chờ xuất hóa đơn', pendingSummary.amount || 0, pendingSummary.count || 0, 'border-violet-200 bg-violet-50 text-violet-800'],
+          ['DRAFT', 'Hóa đơn nháp', summary.draft?.amount || 0, summary.draft?.count || 0, 'border-amber-200 bg-amber-50 text-amber-800'],
+          ['CURRENT', 'Chờ thu trong hạn', summary.current?.amount || 0, summary.current?.count || 0, 'border-blue-200 bg-blue-50 text-blue-800'],
+          ['PARTIAL', 'Đã thu một phần', summary.partial?.amount || 0, summary.partial?.count || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
+          ['OVERDUE', 'Quá hạn', summary.overdue?.amount || 0, summary.overdue?.count || 0, 'border-red-200 bg-red-50 text-red-800'],
+        ].map(([key, label, amount, count, color]) => (
+          <button key={String(key)} onClick={() => { setBucket(String(key)); setStatus(''); setPage(1); }}
+            className={`rounded-xl border p-3 text-left transition-shadow hover:shadow-sm ${color} ${bucket === key ? 'ring-2 ring-slate-700' : ''}`}>
+            <div className="text-xs font-medium">{label}</div>
+            <div className="mt-1 text-lg font-bold">{fmtCompact(Number(amount))} ₫</div>
+            <div className="mt-1 text-xs opacity-70">{count} khoản</div>
+          </button>
+        ))}
+      </div>
+
+      {(bucket === 'UNBILLED' || (!bucket && pendingRows.length > 0)) && (
+        <div className="mb-5 overflow-hidden rounded-xl border border-violet-200 bg-white">
+          <div className="flex items-center justify-between border-b border-violet-100 bg-violet-50 px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2 font-semibold text-violet-900"><Clock size={15} /> Khoản phải thu chờ xuất hóa đơn</div>
+              <p className="mt-0.5 text-xs text-violet-700">Phát sinh từ lịch thu hợp đồng, chưa được ghi nhận thành hóa đơn.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge className="border border-violet-200 bg-white text-violet-700">{pendingSummary.dueCount || 0} khoản đến hạn xuất</Badge>
+              <Button size="sm" className="gap-1.5" disabled={!duePendingRows.length || createDueInvoices.isPending} onClick={() => setConfirmBulkPending(true)}>
+                <FileText size={13} /> {selectedPending.size ? `Tạo ${selectedPending.size} hóa đơn` : 'Tạo tất cả đến hạn'}
+              </Button>
+            </div>
+          </div>
+          {isPendingLoading ? (
+            <div className="space-y-2 p-4"><Skeleton className="h-11" /><Skeleton className="h-11" /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[1050px] w-full text-sm">
+                <thead className="bg-gray-50 text-xs text-gray-500"><tr>
+                  <th className="w-10 px-3 py-2.5 text-center"><input type="checkbox" aria-label="Chọn tất cả khoản đến hạn" checked={allDueSelected} disabled={!duePendingRows.length} onChange={(event) => setSelectedPending(event.target.checked ? new Set(duePendingRows.map((row) => `${row.sourceType}:${row.id}`)) : new Set())} /></th>
+                  <th className="px-4 py-2.5 text-left font-medium">Đối tượng phải thu</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Nguồn / Hợp đồng</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Kỳ thu / Nội dung</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Dự kiến phải thu</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Ngày dự kiến xuất</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Tình trạng</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Thao tác</th>
+                </tr></thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pendingRows.map((row) => (
+                    <tr key={`${row.sourceType}-${row.id}`} className={row.isDueForInvoice ? 'bg-red-50/40' : ''}>
+                      <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Chọn ${row.contractNumber}`} disabled={!row.isDueForInvoice} checked={selectedPending.has(`${row.sourceType}:${row.id}`)} onChange={(event) => setSelectedPending((current) => { const next = new Set(current); const key = `${row.sourceType}:${row.id}`; event.target.checked ? next.add(key) : next.delete(key); return next; })} /></td>
+                      <td className="px-4 py-3"><div className="font-medium text-gray-800">{row.counterpartyName}</div><div className="text-xs text-gray-400">{row.taxCode || row.unitCode || '—'}</div></td>
+                      <td className="px-4 py-3"><div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[row.sourceType] || row.sourceType}</div><div className="font-mono text-[11px] text-slate-400">{row.contractNumber}</div></td>
+                      <td className="px-4 py-3"><div className="text-gray-700">{row.milestone}</div><div className="text-xs text-gray-400">{row.period || 'Theo mốc hợp đồng'}</div></td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(row.totalAmount)} ₫</td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{fmtDate(row.invoicePlannedDate)}<div className="text-[11px] text-gray-400">Hạn thu {fmtDate(row.dueDate)}</div></td>
+                      <td className="px-4 py-3">{row.isDueForInvoice
+                        ? <Badge className="border border-red-200 bg-red-100 text-red-700">{row.daysInvoiceOverdue ? `Treo ${row.daysInvoiceOverdue} ngày` : 'Đến hạn xuất'}</Badge>
+                        : <Badge className="border border-violet-200 bg-violet-100 text-violet-700">Dự kiến sau {Math.max(1, row.daysUntilInvoice)} ngày</Badge>}
+                      </td>
+                      <td className="px-4 py-3 text-right"><Button size="sm" variant={row.isDueForInvoice ? 'default' : 'outline'} className="gap-1.5" disabled={createPendingInvoice.isPending} onClick={() => createPendingInvoice.mutate(row)}><FileText size={13} /> Tạo hóa đơn nháp</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {pendingRows.length === 0 && <div className="py-8 text-center text-sm text-gray-400">Không có khoản phải thu nào đang chờ xuất hóa đơn.</div>}
+            </div>
           )}
         </div>
       )}
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button onClick={() => { setSourceType(''); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${!sourceType ? 'bg-slate-900 text-white' : 'bg-white'}`}>Tất cả nguồn</button>
+        {Object.entries(summary.bySource || {}).map(([source, value]: [string, any]) => (
+          <button key={source} onClick={() => { setSourceType(source); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${sourceType === source ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'}`}>
+            {SOURCE_LABELS[source] || source} · {value.count}
+          </button>
+        ))}
+      </div>
 
       <div className="flex gap-3 mb-4 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input placeholder={t('billing:list.searchPlaceholder')}
-            value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
+            value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9 h-9" />
         </div>
         <div className="flex gap-0.5 rounded-lg border overflow-hidden h-9">
           {['', 'DRAFT', 'ISSUED', 'OVERDUE', 'PARTIALLY_PAID', 'PAID'].map((s) => (
-            <button key={s} onClick={() => setStatus(s)}
+            <button key={s} onClick={() => { setStatus(s); setBucket(''); setPage(1); }}
               className={`px-3 text-xs font-medium transition-colors whitespace-nowrap ${
                 status === s ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
               }`}>
@@ -830,21 +953,23 @@ function InvoicesTab() {
         </Button>
       </div>
 
-      {isError ? (
+      {bucket !== 'UNBILLED' && (isError ? (
         <AsyncState isLoading={false} isError onRetry={refetch}
           errorTitle="Không thể tải danh sách hóa đơn"><div /></AsyncState>
       ) : isLoading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="min-w-[1280px] w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.invoiceNo')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.tenant')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.period')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.type')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Nguồn / Hợp đồng</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Kỳ thu</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.totalAmount')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Đã thu</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Còn phải thu</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.dueDate')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.status')}</th>
                 <th className="px-3 py-3" />
@@ -863,16 +988,19 @@ function InvoicesTab() {
                     onClick={() => setSelectedId(isSelected ? null : inv.id)}>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{inv.invoiceNumber}</td>
                     <td className="px-4 py-3 font-medium text-gray-800">{inv.tenant?.brandName || inv.billingParty?.name}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{inv.period}</td>
                     <td className="px-4 py-3">
-                      <span className="text-xs text-gray-500">{inv.type}</span>
+                      <div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[inv.sourceType || ''] || inv.type}</div>
+                      <div className="text-[11px] text-slate-400">{inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
                     </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-slate-400">{inv.type}</div></td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-800">
                       {fmtCompact(inv.totalAmount)} ₫
                     </td>
+                    <td className="px-4 py-3 text-right text-emerald-700">{inv.totalPaid ? `${fmtCompact(inv.totalPaid)} ₫` : '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(inv.balance ?? inv.totalAmount)} ₫</td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {fmtDate(inv.dueDate)}
-                      {overdue && <span className="ml-1 text-red-500">(!)</span>}
+                      {(inv.daysOverdue || overdue) ? <div className="mt-0.5 font-medium text-red-600">Quá {inv.daysOverdue || 0} ngày</div> : null}
                     </td>
                     <td className="px-4 py-3">
                       <Badge className={`${st?.color} border text-xs`}>{t(`billing:invoice.status.${inv.status}`)}</Badge>
@@ -892,7 +1020,12 @@ function InvoicesTab() {
             </div>
           )}
         </div>
-      )}
+      ))}
+
+      {bucket !== 'UNBILLED' && totalPages > 1 && <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
+        <span>Trang {page}/{totalPages} · {data?.total || 0} hóa đơn</span>
+        <div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Trang trước</Button><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Trang sau</Button></div>
+      </div>}
 
       {/* Detail sheet overlay */}
       {selectedId && (
@@ -901,6 +1034,17 @@ function InvoicesTab() {
           <InvoiceDetailSheet invoiceId={selectedId} onClose={() => setSelectedId(null)} />
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmBulkPending}
+        title="Tạo hóa đơn nháp hàng loạt"
+        description={`Hệ thống sẽ tạo ${selectedPending.size || duePendingRows.length} hóa đơn nháp từ các khoản đã đến hạn. Kế toán vẫn cần kiểm tra và phát hành từng hóa đơn.`}
+        confirmLabel="Tạo hóa đơn nháp"
+        loadingLabel="Đang tạo..."
+        onConfirm={() => createDueInvoices.mutate()}
+        onCancel={() => setConfirmBulkPending(false)}
+        loading={createDueInvoices.isPending}
+      />
     </div>
   );
 }
@@ -909,7 +1053,8 @@ function InvoicesTab() {
 
 function ArAgingTab() {
   const { t } = useTranslation('billing');
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging'], queryFn: billingApi.arAging });
+  const { selectedMallId } = useMallStore();
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging', selectedMallId], queryFn: () => billingApi.arAging(selectedMallId || undefined), enabled: !!selectedMallId });
   const rows: ArAgingRow[] = data?.data ?? data ?? [];
   const total = rows.reduce((s, r) => s + r.total, 0);
 
@@ -953,7 +1098,7 @@ function ArAgingTab() {
             <tbody className="divide-y divide-gray-100">
               {rows.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{r.tenant?.brandName}</td>
+                  <td className="px-4 py-3 font-medium"><div>{r.counterpartyName || r.tenant?.brandName || r.billingParty?.name}</div>{r.billingParty?.taxCode && <div className="text-xs font-normal text-slate-400">MST: {r.billingParty.taxCode}</div>}</td>
                   <td className="px-4 py-3 text-right text-sm">{r.current > 0 ? fmtCompact(r.current) : '—'}</td>
                   <td className="px-4 py-3 text-right text-sm text-yellow-600">{r.days30 > 0 ? fmtCompact(r.days30) : '—'}</td>
                   <td className="px-4 py-3 text-right text-sm text-orange-600">{r.days60 > 0 ? fmtCompact(r.days60) : '—'}</td>
@@ -979,7 +1124,8 @@ function ArAgingTab() {
 
 export default function BillingPage() {
   const { t } = useTranslation('billing');
-  const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi'], queryFn: () => billingApi.getCollectionKpi(6) });
+  const { selectedMallId } = useMallStore();
+  const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi', selectedMallId], queryFn: () => billingApi.getCollectionKpi(6, selectedMallId || undefined), enabled: !!selectedMallId });
   const kpi = executiveKpi?.data ?? executiveKpi ?? {};
   return (
     <div className="space-y-6">

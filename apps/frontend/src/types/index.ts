@@ -458,7 +458,13 @@ export interface Invoice {
   invoiceNumber: string;
   tenant?: Tenant;
   contract?: Contract;
+  serviceContractPayment?: {
+    milestone?: string;
+    contract?: { id: string; contractNumber: string; title?: string };
+  };
   billingParty?: { id: string; name: string; taxCode?: string };
+  sourceType?: string;
+  sourceId?: string;
   period: string;
   type: string;
   status: InvoiceStatus;
@@ -466,6 +472,9 @@ export interface Invoice {
   dueDate: string;
   issuedAt?: string;
   paidAt?: string;
+  totalPaid?: number;
+  balance?: number;
+  daysOverdue?: number;
 }
 
 export interface Ticket {
@@ -557,7 +566,9 @@ export interface Notification {
 }
 
 export interface ArAgingRow {
-  tenant: Tenant;
+  tenant?: Tenant;
+  billingParty?: { id: string; name: string; taxCode?: string };
+  counterpartyName?: string;
   current: number;
   days30: number;
   days60: number;

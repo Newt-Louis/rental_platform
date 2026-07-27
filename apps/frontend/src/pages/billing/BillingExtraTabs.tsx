@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { RefreshCw, Calendar, Bell, TrendingUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useMallStore } from '@/store/mall.store';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
@@ -156,9 +157,11 @@ export function DunningTab() {
 }
 
 export function CollectionKpiTab() {
+  const { selectedMallId } = useMallStore();
   const { data, isLoading } = useQuery({
-    queryKey: ['collection-kpi'],
-    queryFn: () => billingApi.getCollectionKpi(6),
+    queryKey: ['collection-kpi', selectedMallId],
+    queryFn: () => billingApi.getCollectionKpi(6, selectedMallId || undefined),
+    enabled: !!selectedMallId,
   });
 
   const kpi = data?.data ?? data ?? {};

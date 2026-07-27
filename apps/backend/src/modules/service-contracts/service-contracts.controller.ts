@@ -5,7 +5,19 @@ import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
-import { CreateServiceContractDto, UpdateServiceContractStatusDto } from './dto/service-contract.dto';
+import {
+  CreateChecklistItemDto,
+  CreateMilestoneDto,
+  CreateRecurringPaymentsDto,
+  CreateServiceContractDto,
+  CreateServiceContractPaymentDto,
+  RenewServiceContractDto,
+  UpdateChecklistItemDto,
+  UpdateMilestoneDto,
+  UpdateServiceContractDto,
+  UpdateServiceContractPaymentDto,
+  UpdateServiceContractStatusDto,
+} from './dto/service-contract.dto';
 import { ServiceContractsService } from './service-contracts.service';
 
 const VIEW_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.FINANCE, Role.LEGAL, Role.OPERATION];
@@ -32,13 +44,21 @@ export class ServiceContractsController {
   }
 
   @Get('summary/stats')
-  async stats(@CurrentUser() user: any) { const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role); return this.service.stats(mallIds ?? undefined); }
+  async stats(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.service.stats(mallIds ?? undefined);
+  }
 
   @Get('tools/generate-number')
   generateNumber(@Query('mallCode') mallCode?: string) { return { contractNumber: this.service.generateNumber(mallCode) }; }
 
   @Get('summary/alerts')
-  async alerts(@Query('days') days: string, @CurrentUser() user: any) { const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role); return this.service.alerts(mallIds ?? undefined, Number(days) || 30); }
+  async alerts(@Query('days') days: string, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.service.alerts(mallIds ?? undefined, Number(days) || 30);
+  }
 
   @Get(':id')
   async detail(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.findOne(id); }
@@ -49,7 +69,7 @@ export class ServiceContractsController {
 
   @Patch(':id')
   @Roles(...EDIT_ROLES)
-  async update(@Param('id') id: string, @Body() dto: Partial<CreateServiceContractDto>, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.update(id, dto, user.id); }
+  async update(@Param('id') id: string, @Body() dto: UpdateServiceContractDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.update(id, dto, user.id); }
 
   @Patch(':id/status')
   @Roles(...EDIT_ROLES)
@@ -69,30 +89,30 @@ export class ServiceContractsController {
   async remove(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.remove(id, user.id); }
 
   @Post(':id/renew') @Roles(...EDIT_ROLES)
-  async renew(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.renew(id, body, user.id); }
+  async renew(@Param('id') id: string, @Body() body: RenewServiceContractDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.renew(id, body, user.id); }
 
   @Post(':id/payments') @Roles(...EDIT_ROLES)
-  async createPayment(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createPayment(id, body); }
+  async createPayment(@Param('id') id: string, @Body() body: CreateServiceContractPaymentDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createPayment(id, body); }
   @Post(':id/payments/recurring') @Roles(...EDIT_ROLES)
-  async recurring(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.recurringPayments(id, body); }
+  async recurring(@Param('id') id: string, @Body() body: CreateRecurringPaymentsDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.recurringPayments(id, body); }
   @Post(':id/payments/:itemId/transfer-to-billing') @Roles(...EDIT_ROLES, Role.FINANCE)
   async transferToBilling(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.transferPaymentToBilling(id, itemId, user.id); }
   @Patch(':id/payments/:itemId') @Roles(...EDIT_ROLES)
-  async updatePayment(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updatePayment(id, itemId, body); }
+  async updatePayment(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: UpdateServiceContractPaymentDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updatePayment(id, itemId, body); }
   @Delete(':id/payments/:itemId') @Roles(...EDIT_ROLES)
   async deletePayment(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deletePayment(id, itemId); }
 
   @Post(':id/checklist') @Roles(...EDIT_ROLES)
-  async createChecklist(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createChecklist(id, body); }
+  async createChecklist(@Param('id') id: string, @Body() body: CreateChecklistItemDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createChecklist(id, body); }
   @Patch(':id/checklist/:itemId') @Roles(...EDIT_ROLES)
-  async updateChecklist(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateChecklist(id, itemId, body, user.id); }
+  async updateChecklist(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: UpdateChecklistItemDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateChecklist(id, itemId, body, user.id); }
   @Delete(':id/checklist/:itemId') @Roles(...EDIT_ROLES)
   async deleteChecklist(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deleteChecklist(id, itemId); }
 
   @Post(':id/milestones') @Roles(...EDIT_ROLES)
-  async createMilestone(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createMilestone(id, body); }
+  async createMilestone(@Param('id') id: string, @Body() body: CreateMilestoneDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createMilestone(id, body); }
   @Patch(':id/milestones/:itemId') @Roles(...EDIT_ROLES)
-  async updateMilestone(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: any, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateMilestone(id, itemId, body, user.id); }
+  async updateMilestone(@Param('id') id: string, @Param('itemId') itemId: string, @Body() body: UpdateMilestoneDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.updateMilestone(id, itemId, body, user.id); }
   @Delete(':id/milestones/:itemId') @Roles(...EDIT_ROLES)
   async deleteMilestone(@Param('id') id: string, @Param('itemId') itemId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.deleteMilestone(id, itemId); }
 }

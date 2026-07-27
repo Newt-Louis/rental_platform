@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import BookingsPage from './BookingsPage';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -132,15 +133,23 @@ const CANCELLED_BOOKING = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Wrapper({ children }: { children: React.ReactNode }) {
+function TestProviders({ children, initialEntry = '/bookings' }: { children: React.ReactNode; initialEntry?: string }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  return (
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    </MemoryRouter>
+  );
 }
 
-function renderPage() {
-  return render(<BookingsPage />, { wrapper: Wrapper });
+function renderPage(initialEntry = '/bookings') {
+  return render(
+    <TestProviders initialEntry={initialEntry}>
+      <BookingsPage />
+    </TestProviders>,
+  );
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -171,6 +180,17 @@ describe('BookingsPage — render', () => {
       expect(screen.getByText('BK-001')).toBeInTheDocument();
       expect(screen.getByText('Pizza Hut')).toBeInTheDocument();
       expect(screen.getByText('A1-01')).toBeInTheDocument();
+    });
+  });
+
+  it('applies expiringSoon filter from the URL', async () => {
+    renderPage('/bookings?expiringSoon=true');
+
+    await waitFor(() => {
+      expect(mockListBookings).toHaveBeenCalledWith(expect.objectContaining({
+        expiringSoon: true,
+        page: 1,
+      }));
     });
   });
 
