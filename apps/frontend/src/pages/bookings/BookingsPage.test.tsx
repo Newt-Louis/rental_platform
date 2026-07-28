@@ -7,6 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 import BookingsPage, {
   countSlotBookingStatuses,
   countUnitBookingStatuses,
+  filterSlotBookings,
   groupSlotBookings,
   groupUnitBookings,
 } from './BookingsPage';
@@ -46,6 +47,10 @@ vi.mock('@/api', () => ({
       },
     ]),
     deleteSlotBooking: (...args: any[]) => mockDeleteSlotBooking(...args),
+  },
+  spacesApi: {
+    listFloors: vi.fn().mockResolvedValue([]),
+    listUnits: vi.fn().mockResolvedValue({ data: [] }),
   },
   authApi: {
     me: vi.fn().mockResolvedValue({ id: 'u1', role: 'LEASING_EXECUTIVE', fullName: 'Test User' }),
@@ -178,6 +183,23 @@ describe('groupSlotBookings', () => {
       { status: 'CONFIRMED' },
       { status: 'CANCELLED' },
     ])).toEqual({ total: 4, pending: 2, confirmed: 1 });
+  });
+
+  it('filters short-term bookings by floor, slot and floor-name search', () => {
+    const bookings = [
+      {
+        id: 'booking-1', bookingRef: 'SB-001',
+        slot: { id: 'slot-1', code: 'S-01', unit: { code: 'A-01', floor: { id: 'floor-1', name: 'Tầng 1' } } },
+      },
+      {
+        id: 'booking-2', bookingRef: 'SB-002',
+        slot: { id: 'slot-2', code: 'S-02', unit: { code: 'A-02', floor: { id: 'floor-2', name: 'Tầng 2' } } },
+      },
+    ];
+
+    expect(filterSlotBookings(bookings, { floorId: 'floor-2' }).map((booking) => booking.id)).toEqual(['booking-2']);
+    expect(filterSlotBookings(bookings, { slotId: 'slot-1' }).map((booking) => booking.id)).toEqual(['booking-1']);
+    expect(filterSlotBookings(bookings, { search: 'tầng 2' }).map((booking) => booking.id)).toEqual(['booking-2']);
   });
 });
 

@@ -9,12 +9,12 @@ import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { UnitCard } from '@/components/spaces/UnitCard';
 import { CompareModal } from '@/components/spaces/CompareModal';
 import { MergeUnitsDialog } from '@/components/spaces/dialogs/MergeUnitsDialog';
-import { BulkStatusDialog, BulkCategoryDialog, BulkRentDialog } from '@/components/spaces/dialogs/BulkDialogs';
+import { BulkCategoryDialog, BulkRentDialog } from '@/components/spaces/dialogs/BulkDialogs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import {
-  Building2, Plus, Columns, RefreshCw, Filter, DollarSign, GitMerge,
+  Building2, Plus, Columns, Filter, DollarSign, GitMerge,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 
@@ -63,7 +63,7 @@ export function SpacesGrid({
     idAttribute: 'data-unit-id',
   });
 
-  const [bulkActionOpen, setBulkActionOpen] = useState<'status' | 'category' | 'rent' | null>(null);
+  const [bulkActionOpen, setBulkActionOpen] = useState<'category' | 'rent' | null>(null);
 
   const bulkMutation = useMutation({
     mutationFn: (params: { unitIds: string[]; updates: any }) => spacesApi.bulkUpdateUnits(params),
@@ -108,9 +108,6 @@ export function SpacesGrid({
               <GitMerge size={14} /> Gộp sảnh
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('status')}>
-            <RefreshCw size={14} /> Đổi trạng thái
-          </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('category')}>
             <Filter size={14} /> Đổi ngành hàng
           </Button>
@@ -162,13 +159,6 @@ export function SpacesGrid({
       )}
 
       {/* Bulk Action Dialogs */}
-      <BulkStatusDialog
-        open={bulkActionOpen === 'status'}
-        count={selectedIds.size}
-        onClose={() => setBulkActionOpen(null)}
-        onConfirm={(status) => bulkMutation.mutate({ unitIds: Array.from(selectedIds), updates: { status } })}
-        loading={bulkMutation.isPending}
-      />
       <BulkCategoryDialog
         open={bulkActionOpen === 'category'}
         count={selectedIds.size}

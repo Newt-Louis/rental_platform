@@ -380,6 +380,12 @@ function ProposalDetailSheet({
     mutationFn: (tenant?: Record<string, unknown>) => proposalsApi.convertProposal(p!.id, tenant),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: t('proposals.actions.convertSuccess') });
       onClose();
     },
@@ -819,6 +825,11 @@ export default function ProposalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: t('proposals.actions.convertSuccess') });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),

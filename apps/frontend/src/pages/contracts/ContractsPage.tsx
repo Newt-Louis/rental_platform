@@ -479,6 +479,10 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
       qc.invalidateQueries({ queryKey: ['contract-events', contractId] });
       qc.invalidateQueries({ queryKey: ['contract-activation-readiness', contractId] });
       qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: t('workflow.updateSuccess') });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
@@ -533,6 +537,10 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     qc.invalidateQueries({ queryKey: ['contract-termination', contractId] });
     qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
     qc.invalidateQueries({ queryKey: ['contracts'] });
+    qc.invalidateQueries({ queryKey: ['units'] });
+    qc.invalidateQueries({ queryKey: ['unit-detail'] });
+    qc.invalidateQueries({ queryKey: ['occupancy'] });
+    qc.invalidateQueries({ queryKey: ['floor-map'] });
   };
 
   const initiateTerminationMutation = useMutation({

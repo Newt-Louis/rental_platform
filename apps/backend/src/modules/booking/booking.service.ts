@@ -177,6 +177,7 @@ export class BookingService {
 
   async findAll(query: {
     unitId?: string;
+    floorId?: string;
     leadId?: string;
     customerId?: string;
     status?: BookingStatus;
@@ -202,12 +203,17 @@ export class BookingService {
     if (filters.status) where.status = filters.status;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
     const scopedMallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
-    if (scopedMallIds) where.unit = {
-      OR: [
-        { mallId: { in: scopedMallIds } },
-        { floor: { mallId: { in: scopedMallIds } } },
-      ],
-    };
+    if (scopedMallIds || filters.floorId) {
+      where.unit = {
+        ...(scopedMallIds ? {
+          OR: [
+            { mallId: { in: scopedMallIds } },
+            { floor: { mallId: { in: scopedMallIds } } },
+          ],
+        } : {}),
+        ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      };
+    }
     if (expiringSoon) {
       const in7days = new Date();
       in7days.setDate(in7days.getDate() + 7);
@@ -227,6 +233,7 @@ export class BookingService {
       where.OR = [
         { bookingNumber: { contains: search, mode: 'insensitive' } },
         { unit: { code: { contains: search, mode: 'insensitive' } } },
+        { unit: { floor: { name: { contains: search, mode: 'insensitive' } } } },
         { lead: { brandName: { contains: search, mode: 'insensitive' } } },
         { lead: { contactName: { contains: search, mode: 'insensitive' } } },
         { customer: { companyName: { contains: search, mode: 'insensitive' } } },
@@ -989,7 +996,7 @@ export class BookingService {
           areaNLA: true,
           category: true,
           baseRentPerSqm: true,
-          floor: { select: { name: true, level: true } },
+          floor: { select: { id: true, name: true, level: true } },
           mall: { select: { id: true, name: true, code: true } },
         },
       },

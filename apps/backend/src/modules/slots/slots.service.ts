@@ -310,7 +310,14 @@ export class SlotsService {
         slot: {
           select: {
             id: true, code: true, name: true, area: true,
-            unit: { select: { id: true, code: true, mallId: true } },
+            unit: {
+              select: {
+                id: true,
+                code: true,
+                mallId: true,
+                floor: { select: { id: true, name: true, level: true } },
+              },
+            },
           },
         },
         lead: { select: { id: true, brandName: true } },

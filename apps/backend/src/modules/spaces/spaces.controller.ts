@@ -286,8 +286,8 @@ export class SpacesController {
   @Delete('units/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete unit' })
-  deleteUnit(@Param('id') id: string) {
-    return this.spacesService.deleteUnit(id);
+  deleteUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.spacesService.deleteUnit(id, user?.id);
   }
 
   // ─── Unit Media ───────────────────────────────────────────────────────────

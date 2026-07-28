@@ -58,6 +58,60 @@ export class UnitStatusService {
     const unit = await this.prisma.unit.findUnique({ where: { id: unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
 
+    const isLowAvailabilityStatus = ([UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.NEGOTIATING] as UnitStatus[])
+      .includes(toStatus);
+    if (unit.status !== toStatus && isLowAvailabilityStatus) {
+      const liveContract = await this.prisma.contract.findFirst({
+        where: {
+          unitId,
+          isActive: true,
+          deletedAt: null,
+          status: { notIn: ['EXPIRED', 'TERMINATED'] },
+        },
+        select: { contractNumber: true },
+      });
+      if (liveContract) {
+        throw new BadRequestException(
+          `Unit has live contract ${liveContract.contractNumber}; cannot transition to ${toStatus}`,
+        );
+      }
+    }
+
+    if (unit.status !== toStatus && toStatus === UnitStatus.BOOKING) {
+      const activeBooking = await this.prisma.unitBooking.findFirst({
+        where: { unitId, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
+        select: { id: true },
+      });
+      if (!activeBooking) {
+        throw new BadRequestException('Cannot set BOOKING without an active booking');
+      }
+    }
+
+    if (unit.status !== toStatus && toStatus === UnitStatus.VACANT) {
+      const activeBooking = await this.prisma.unitBooking.findFirst({
+        where: { unitId, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
+        select: { id: true },
+      });
+      if (activeBooking) {
+        throw new BadRequestException('Cannot set VACANT while an active booking exists');
+      }
+    }
+
+    if (unit.status !== toStatus && COMMITTED_STATUSES.includes(toStatus)) {
+      const liveContract = await this.prisma.contract.findFirst({
+        where: {
+          unitId,
+          isActive: true,
+          deletedAt: null,
+          status: { notIn: ['EXPIRED', 'TERMINATED'] },
+        },
+        select: { id: true },
+      });
+      if (!liveContract) {
+        throw new BadRequestException(`Cannot set ${toStatus} without a live contract`);
+      }
+    }
+
     if (unit.status !== toStatus) {
       if (!options.force && !this.canTransition(unit.status, toStatus)) {
         throw new BadRequestException(
@@ -75,6 +129,9 @@ export class UnitStatusService {
       data.tenantId = null;
       data.leaseStartDate = null;
       data.leaseEndDate = null;
+      data.vacantSince = new Date();
+    } else {
+      data.vacantSince = null;
     }
 
     const [updated] = await this.prisma.$transaction([

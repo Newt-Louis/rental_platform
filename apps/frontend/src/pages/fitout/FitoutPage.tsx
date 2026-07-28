@@ -173,6 +173,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       qc.invalidateQueries({ queryKey: ['fitouts'] });
       qc.invalidateQueries({ queryKey: ['fitout-detail', projectId] });
       qc.invalidateQueries({ queryKey: ['fitout-milestones', projectId] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       setGateWarning(null);
       setPendingAdvanceStatus(null);
       setOverrideReason('');

@@ -38,12 +38,12 @@ export function UnitFormFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Tầng</label>
-          <Select value={watch('floorId')} onValueChange={(v) => { setValue('floorId', v); setValue('zoneId', ''); }}>
+          <Select value={watch('floorId') || 'NONE'} onValueChange={(v) => { setValue('floorId', v === 'NONE' ? '' : v, { shouldDirty: true }); setValue('zoneId', '', { shouldDirty: true }); }}>
             <SelectTrigger>
               <SelectValue placeholder="Chọn tầng..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Không chọn —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {floors.map((f: any) => (
                 <SelectItem key={f.id} value={f.id}>{f.name} ({f.level})</SelectItem>
               ))}
@@ -53,12 +53,12 @@ export function UnitFormFields({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Khu vực (Zone)</label>
-          <Select value={watch('zoneId')} onValueChange={(v) => setValue('zoneId', v)}>
+          <Select value={watch('zoneId') || 'NONE'} onValueChange={(v) => setValue('zoneId', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger>
               <SelectValue placeholder="Chọn zone..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Không chọn —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {zones.map((z: any) => (
                 <SelectItem key={z.id} value={z.id}>{z.name}{z.code ? ` (${z.code})` : ''}</SelectItem>
               ))}
@@ -68,12 +68,12 @@ export function UnitFormFields({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Ngành hàng</label>
-          <Select value={watch('category')} onValueChange={(v) => setValue('category', v)}>
+          <Select value={watch('category') || 'NONE'} onValueChange={(v) => setValue('category', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger>
               <SelectValue placeholder="Chọn ngành hàng..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Không chọn —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {categoryNames.map((c) => (
                 <SelectItem key={c} value={c}>{c}</SelectItem>
               ))}
@@ -133,10 +133,10 @@ export function UnitFormFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Loại sảnh</label>
-          <Select value={watch('spaceType')} onValueChange={(v) => setValue('spaceType', v)}>
+          <Select value={watch('spaceType') || 'NONE'} onValueChange={(v) => setValue('spaceType', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger><SelectValue placeholder="Chọn loại..." /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Tất cả —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {SPACE_TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -144,10 +144,10 @@ export function UnitFormFields({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Tier</label>
-          <Select value={watch('tier')} onValueChange={(v) => setValue('tier', v)}>
+          <Select value={watch('tier') || 'NONE'} onValueChange={(v) => setValue('tier', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger><SelectValue placeholder="Chọn tier..." /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Không chọn —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {TIER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -155,10 +155,10 @@ export function UnitFormFields({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Hình thức thuê</label>
-          <Select value={watch('leaseTermType')} onValueChange={(v) => setValue('leaseTermType', v)}>
+          <Select value={watch('leaseTermType') || 'NONE'} onValueChange={(v) => setValue('leaseTermType', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger><SelectValue placeholder="Chọn..." /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">— Không chọn —</SelectItem>
+              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {LEASE_TERM_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>

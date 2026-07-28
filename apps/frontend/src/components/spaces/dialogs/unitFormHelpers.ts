@@ -43,23 +43,27 @@ export function seedUnitFormValues(unit: any, defaultFloorId?: string): UnitForm
   };
 }
 
-export function buildUnitFormPayload(data: Record<string, any>, mallId: string) {
+export function buildUnitFormPayload(data: Record<string, any>, mallId: string, isEdit = false) {
+  const optional = (value: unknown) => value ? value : (isEdit ? null : undefined);
+  const optionalNumber = (value: unknown) => value !== '' && value != null
+    ? Number(value)
+    : (isEdit ? null : undefined);
   return {
-    ...data,
-    mallId,
+    ...(!isEdit ? { mallId } : {}),
+    code: data.code.trim(),
     areaGFA: Number(data.areaGFA),
-    areaNLA: data.areaNLA ? Number(data.areaNLA) : undefined,
-    baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : undefined,
-    camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : undefined,
-    floorId: data.floorId || undefined,
-    zoneId: data.zoneId || undefined,
-    name: data.name || undefined,
-    category: data.category || undefined,
-    spaceType: data.spaceType || undefined,
-    leaseTermType: data.leaseTermType || undefined,
-    tier: data.tier || undefined,
-    minFlexArea: data.minFlexArea ? Number(data.minFlexArea) : undefined,
-    maxFlexArea: data.maxFlexArea ? Number(data.maxFlexArea) : undefined,
+    areaNLA: data.areaNLA ? Number(data.areaNLA) : 0,
+    baseRentPerSqm: data.baseRentPerSqm ? Number(data.baseRentPerSqm) : 0,
+    camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : 0,
+    floorId: optional(data.floorId),
+    zoneId: optional(data.zoneId),
+    name: optional(data.name),
+    category: optional(data.category),
+    spaceType: optional(data.spaceType),
+    leaseTermType: optional(data.leaseTermType),
+    tier: optional(data.tier),
+    minFlexArea: optionalNumber(data.minFlexArea),
+    maxFlexArea: optionalNumber(data.maxFlexArea),
     isFlexibleArea: !!data.isFlexibleArea,
   };
 }
