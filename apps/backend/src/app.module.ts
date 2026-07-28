@@ -9,6 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { PrismaMssqlModule } from './prisma-mssql/prisma-mssql.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
@@ -55,6 +56,7 @@ import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
       ignoreUserAgents: [/googlebot/i, /bingbot/i],
     }),
     PrismaModule,
+    PrismaMssqlModule,
     CommonModule,
     AuthModule,
     UsersModule,

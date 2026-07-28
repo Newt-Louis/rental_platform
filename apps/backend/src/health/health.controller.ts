@@ -3,11 +3,16 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/services/redis.service';
+import { PrismaMssqlService } from '../prisma-mssql/prisma-mssql.service';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService, private readonly redis: RedisService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+    private readonly mssql: PrismaMssqlService,
+  ) {}
 
   @Get('live')
   @Public()
@@ -33,17 +38,20 @@ export class HealthController {
     const redisStatus = this.redis.isConfigured
       ? ((await this.redis.ping()) ? 'up' : 'down')
       : 'disabled';
-    if (database === 'up' && redisStatus !== 'down') {
+    const mssqlStatus = this.mssql.isConfigured
+      ? ((await this.mssql.ping()) ? 'up' : 'down')
+      : 'disabled';
+    if (database === 'up' && redisStatus !== 'down' && mssqlStatus !== 'down') {
       return {
         status: 'ok',
         timestamp: new Date().toISOString(),
-        components: { database: 'up', redis: redisStatus },
+        components: { database: 'up', redis: redisStatus, mssql: mssqlStatus },
       };
     }
     throw new ServiceUnavailableException({
       status: 'degraded',
       timestamp: new Date().toISOString(),
-      components: { database, redis: redisStatus },
+      components: { database, redis: redisStatus, mssql: mssqlStatus },
     });
   }
 
@@ -66,6 +74,9 @@ export class HealthController {
     const redisStatus = this.redis.isConfigured
       ? ((await this.redis.ping()) ? 'up' : 'down')
       : 'disabled';
+    const mssqlStatus = this.mssql.isConfigured
+      ? ((await this.mssql.ping()) ? 'up' : 'down')
+      : 'disabled';
 
     return {
       status: dbStatus === 'up' ? 'ok' : 'degraded',
@@ -75,6 +86,7 @@ export class HealthController {
       components: {
         database: dbStatus,
         redis: redisStatus,
+        mssql: mssqlStatus,
         ai: aiEnabled ? 'configured' : 'disabled',
         email: emailEnabled ? 'configured' : 'disabled',
         sap: sapEnabled ? 'enabled' : 'disabled',
