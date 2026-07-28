@@ -65,6 +65,39 @@ export function countUnitBookingStatuses(bookings: UnitBooking[]) {
   );
 }
 
+export function groupSlotBookings(bookings: any[]) {
+  const sorted = [...bookings].sort((a, b) => {
+    const unitCodeOrder = unitCodeCollator.compare(a.slot?.unit?.code ?? '', b.slot?.unit?.code ?? '');
+    if (unitCodeOrder !== 0) return unitCodeOrder;
+    const slotCodeOrder = unitCodeCollator.compare(a.slot?.code ?? '', b.slot?.code ?? '');
+    if (slotCodeOrder !== 0) return slotCodeOrder;
+    return new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime();
+  });
+
+  const groups: Array<{ unitId: string; bookings: any[] }> = [];
+  for (const booking of sorted) {
+    const unitId = booking.slot?.unit?.id ?? booking.slot?.unit?.code ?? 'unknown-unit';
+    const group = groups[groups.length - 1];
+    if (!group || group.unitId !== unitId) {
+      groups.push({ unitId, bookings: [booking] });
+    } else {
+      group.bookings.push(booking);
+    }
+  }
+  return groups;
+}
+
+export function countSlotBookingStatuses(bookings: any[]) {
+  return bookings.reduce(
+    (counts, booking) => ({
+      total: counts.total + 1,
+      pending: counts.pending + (booking.status === 'PENDING' ? 1 : 0),
+      confirmed: counts.confirmed + (booking.status === 'CONFIRMED' ? 1 : 0),
+    }),
+    { total: 0, pending: 0, confirmed: 0 },
+  );
+}
+
 export default function BookingsPage() {
   const { t } = useTranslation('bookings');
   const [searchParams] = useSearchParams();
@@ -278,6 +311,7 @@ export default function BookingsPage() {
         );
       })
     : allSlotBookings;
+  const slotBookingGroups = useMemo(() => groupSlotBookings(slotBookings), [slotBookings]);
 
   return (
     <div>
@@ -678,7 +712,7 @@ export default function BookingsPage() {
                   <tr className="border-b border-gray-100 bg-violet-50/50">
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.ref')}</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.type')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.unitSlot')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.slot')}</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.timeRange')}</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.amount')}</th>
@@ -689,7 +723,34 @@ export default function BookingsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {slotBookings.map((b: any) => {
+                  {slotBookingGroups.map((group) => {
+                    const firstBooking = group.bookings[0];
+                    const counts = countSlotBookingStatuses(group.bookings);
+                    return (
+                      <Fragment key={group.unitId}>
+                        <tr className="border-y border-violet-200 bg-violet-50/70">
+                          <td colSpan={10} className="px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-violet-400">{t('table.unit')}</span>
+                                <span className="font-semibold text-slate-900">{firstBooking.slot?.unit?.code ?? '—'}</span>
+                              </div>
+                              <span className="h-4 w-px bg-violet-200" aria-hidden="true" />
+                              <Badge variant="outline" className="border-violet-200 bg-white text-violet-700">
+                                {t('table.bookingCount', { count: counts.total })}
+                              </Badge>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                                {t('table.pendingConfirmationCount', { count: counts.pending })}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700">
+                                <span className="h-2 w-2 rounded-full bg-violet-500" aria-hidden="true" />
+                                {t('table.confirmedCount', { count: counts.confirmed })}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.bookings.map((b: any) => {
                     const typeCfg = SLOT_TYPE_CONFIG[b.type] ?? SLOT_TYPE_CONFIG.DAILY;
                     const statusCfg = SLOT_STATUS_CONFIG[b.status];
                     const clientName = b.customer?.companyName ?? b.lead?.brandName ?? '—';
@@ -706,8 +767,8 @@ export default function BookingsPage() {
                           </Badge>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="font-medium">{b.slot?.unit?.code ?? '—'}</div>
-                          <div className="text-xs text-gray-400">{b.slot?.code} · {b.slot?.name}</div>
+                          <div className="font-medium">{b.slot?.code ?? '—'}</div>
+                          {b.slot?.name && <div className="text-xs text-gray-400">{b.slot.name}</div>}
                         </td>
                         <td className="px-4 py-3 font-medium">{clientName}</td>
                         <td className="px-4 py-3 text-xs text-gray-600">
@@ -745,6 +806,9 @@ export default function BookingsPage() {
                           </div>
                         </td>
                       </tr>
+                    );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>

@@ -316,7 +316,11 @@ export class SlotsService {
         lead: { select: { id: true, brandName: true } },
         customer: { select: { id: true, companyName: true } },
       },
-      orderBy: { startDatetime: 'desc' },
+      orderBy: [
+        { slot: { unit: { code: 'asc' } } },
+        { slot: { code: 'asc' } },
+        { startDatetime: 'asc' },
+      ],
       take: 200,
     });
   }

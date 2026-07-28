@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import BookingsPage, { countUnitBookingStatuses, groupUnitBookings } from './BookingsPage';
+import BookingsPage, {
+  countSlotBookingStatuses,
+  countUnitBookingStatuses,
+  groupSlotBookings,
+  groupUnitBookings,
+} from './BookingsPage';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -151,6 +156,28 @@ describe('groupUnitBookings', () => {
     ] as any);
 
     expect(counts).toEqual({ total: 3, active: 1, pending: 2 });
+  });
+});
+
+describe('groupSlotBookings', () => {
+  it('sorts naturally by unit, then slot and booking time', () => {
+    const groups = groupSlotBookings([
+      { id: '3', startDatetime: '2026-08-03', slot: { code: 'S-1', unit: { id: 'u10', code: 'A-10' } } },
+      { id: '2', startDatetime: '2026-08-02', slot: { code: 'S-10', unit: { id: 'u2', code: 'A-2' } } },
+      { id: '1', startDatetime: '2026-08-01', slot: { code: 'S-2', unit: { id: 'u2', code: 'A-2' } } },
+    ]);
+
+    expect(groups.map((group) => group.bookings[0].slot.unit.code)).toEqual(['A-2', 'A-10']);
+    expect(groups[0].bookings.map((booking) => booking.slot.code)).toEqual(['S-2', 'S-10']);
+  });
+
+  it('counts pending and confirmed short-term bookings separately', () => {
+    expect(countSlotBookingStatuses([
+      { status: 'PENDING' },
+      { status: 'PENDING' },
+      { status: 'CONFIRMED' },
+      { status: 'CANCELLED' },
+    ])).toEqual({ total: 4, pending: 2, confirmed: 1 });
   });
 });
 
