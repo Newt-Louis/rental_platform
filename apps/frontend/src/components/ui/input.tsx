@@ -22,8 +22,14 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           onValueChange={(values) => {
             if (onChange) {
               // bridge onValueChange → onChange with raw unformatted value
+              const target = {
+                name: props.name,
+                type: 'text',
+                value: values.value,
+              } as HTMLInputElement;
               const syntheticEvent = {
-                target: { value: values.value },
+                target,
+                currentTarget: target,
               } as React.ChangeEvent<HTMLInputElement>;
               onChange(syntheticEvent);
             }

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tags, DollarSign,
   Building2, RefreshCw, AlertTriangle,
@@ -162,7 +162,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset, watch, setValue } = useForm<PricingFormValues>();
+  const { register, handleSubmit, reset, watch, setValue, control } = useForm<PricingFormValues>();
 
   const { data: categoriesData } = useQuery({ queryKey: ['categories-options'], queryFn: () => categoriesApi.getOptions() });
   const categories: Category[] = categoriesData ?? [];
@@ -204,9 +204,13 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
     });
   }, [open, pricing, reset]);
 
-  const optionalNumber = (value: string, label: string): number | null => {
-    if (value == null || value.trim() === '') return null;
-    const parsed = Number(value);
+  const optionalNumber = (value: unknown, label: string): number | null => {
+    if (value == null) return null;
+    const normalized = typeof value === 'number'
+      ? value
+      : String(value).trim().replace(/[\s,]/g, '');
+    if (normalized === '') return null;
+    const parsed = Number(normalized);
     if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${label} phải là số không âm hợp lệ`);
     return parsed;
   };
@@ -290,19 +294,35 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
             </div>
             <div>
               <Label>Giá sàn (VND/m²) {!isOverride && '*'}</Label>
-              <Input {...register('minRentPerSqm')} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '400000'} className="mt-1" />
+              <Controller
+                name="minRentPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '400000'} className="mt-1" />}
+              />
             </div>
             <div>
               <Label>Giá trần (VND/m²) {!isOverride && '*'}</Label>
-              <Input {...register('maxRentPerSqm')} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '800000'} className="mt-1" />
+              <Controller
+                name="maxRentPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '800000'} className="mt-1" />}
+              />
             </div>
             <div>
               <Label>Giá đề xuất (VND/m²)</Label>
-              <Input {...register('suggestedRent')} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '550000'} className="mt-1" />
+              <Controller
+                name="suggestedRent"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '550000'} className="mt-1" />}
+              />
             </div>
             <div>
               <Label>CAM (VND/m²)</Label>
-              <Input {...register('camPerSqm')} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '80000'} className="mt-1" />
+              <Controller
+                name="camPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '80000'} className="mt-1" />}
+              />
             </div>
             {!pricing && (
               <>
