@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -31,6 +31,39 @@ import { CreateBookingDialog } from './CreateBookingDialog';
 import { CreateSlotBookingDialog } from './CreateSlotBookingDialog';
 
 const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '' };
+
+const unitCodeCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+export function groupUnitBookings(bookings: UnitBooking[]) {
+  const sorted = [...bookings].sort((a, b) => {
+    const unitCodeOrder = unitCodeCollator.compare(a.unit?.code ?? '', b.unit?.code ?? '');
+    if (unitCodeOrder !== 0) return unitCodeOrder;
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const groups: Array<{ unitId: string; bookings: UnitBooking[] }> = [];
+  for (const booking of sorted) {
+    const group = groups[groups.length - 1];
+    if (!group || group.unitId !== booking.unitId) {
+      groups.push({ unitId: booking.unitId, bookings: [booking] });
+    } else {
+      group.bookings.push(booking);
+    }
+  }
+  return groups;
+}
+
+export function countUnitBookingStatuses(bookings: UnitBooking[]) {
+  return bookings.reduce(
+    (counts, booking) => ({
+      total: counts.total + 1,
+      active: counts.active + (booking.status === 'ACTIVE' ? 1 : 0),
+      pending: counts.pending + (booking.status === 'PENDING' ? 1 : 0),
+    }),
+    { total: 0, active: 0, pending: 0 },
+  );
+}
 
 export default function BookingsPage() {
   const { t } = useTranslation('bookings');
@@ -218,6 +251,7 @@ export default function BookingsPage() {
   });
 
   const unitBookings: UnitBooking[] = data?.data ?? [];
+  const unitBookingGroups = useMemo(() => groupUnitBookings(unitBookings), [unitBookings]);
   const unitTotal: number = data?.total ?? 0;
   const unitTotalPages: number = data?.totalPages ?? 1;
 
@@ -405,7 +439,6 @@ export default function BookingsPage() {
                       </div>
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.bookingNo')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.unit')}</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
                     <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.priority')}</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.expiry')}</th>
@@ -417,7 +450,37 @@ export default function BookingsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {unitBookings.map((b) => {
+                  {unitBookingGroups.map((group) => {
+                    const firstBooking = group.bookings[0];
+                    const counts = countUnitBookingStatuses(group.bookings);
+                    return (
+                      <Fragment key={group.unitId}>
+                        <tr className="border-y border-slate-200 bg-slate-50/90">
+                          <td colSpan={10} className="px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t('table.unit')}</span>
+                                <span className="font-semibold text-slate-900">{firstBooking.unit?.code ?? '—'}</span>
+                                {(firstBooking.unit as any)?.floor?.name && (
+                                  <span className="text-xs text-slate-500">{(firstBooking.unit as any).floor.name}</span>
+                                )}
+                              </div>
+                              <span className="h-4 w-px bg-slate-200" aria-hidden="true" />
+                              <Badge variant="outline" className="border-slate-200 bg-white text-slate-600">
+                                {t('table.bookingCount', { count: counts.total })}
+                              </Badge>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                                <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                                {t('table.holdingCount', { count: counts.active })}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                                {t('table.waitingCount', { count: counts.pending })}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.bookings.map((b) => {
                     const cfg = UNIT_STATUS_CONFIG[b.status];
                     const dl = daysLeft(b.expiresAt);
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
@@ -438,12 +501,6 @@ export default function BookingsPage() {
                           </div>
                         </td>
                         <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600 cursor-pointer" onClick={() => openBooking(undefined)}>{b.bookingNumber}</td>
-                        <td data-section="bs-unit" className="px-4 py-3">
-                          <span className="font-medium">{b.unit?.code ?? '—'}</span>
-                          {(b.unit as any)?.floor?.name && (
-                            <span className="text-xs text-gray-400 ml-1.5">{(b.unit as any).floor.name}</span>
-                          )}
-                        </td>
                         <td data-section="bs-customer" className="px-4 py-3">
                           <div className="font-medium">{clientName}</div>
                           {b.lead?.contactName && <div className="text-xs text-gray-400">{b.lead.contactName}</div>}
@@ -509,6 +566,9 @@ export default function BookingsPage() {
                           </div>
                         </td>
                       </tr>
+                    );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>
