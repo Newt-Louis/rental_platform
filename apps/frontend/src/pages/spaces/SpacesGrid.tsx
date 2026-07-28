@@ -56,6 +56,7 @@ export function SpacesGrid({
     mergeDialogOpen,
     setMergeDialogOpen,
   } = useSpacesStore();
+  const selectedHasNonVacant = units.some((unit) => selectedIds.has(unit.id) && unit.status !== 'VACANT');
 
   const { gridRef, selectoRef, selectoProps, dialogOpen } = useDragSelect({
     onSelect: selectAll,
@@ -108,10 +109,24 @@ export function SpacesGrid({
               <GitMerge size={14} /> Gộp sảnh
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('category')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
+            disabled={selectedHasNonVacant}
+            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            onClick={() => setBulkActionOpen('category')}
+          >
             <Filter size={14} /> Đổi ngành hàng
           </Button>
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('rent')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
+            disabled={selectedHasNonVacant}
+            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            onClick={() => setBulkActionOpen('rent')}
+          >
             <DollarSign size={14} /> Đổi giá thuê
           </Button>
         </BulkSelectionBar>
@@ -145,7 +160,7 @@ export function SpacesGrid({
         <div className="text-center py-16 text-gray-400">
           <Building2 size={48} className="mx-auto mb-3 opacity-20" />
           <p className="font-medium">Không tìm thấy mặt bằng</p>
-          {mallId && (
+          {isAdmin && mallId && (
             <Button
               variant="outline"
               size="sm"

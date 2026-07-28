@@ -41,6 +41,14 @@ describe('SpacesService unit CRUD safeguards', () => {
     expect(prisma.unit.update).not.toHaveBeenCalled();
   });
 
+  it('rejects information edits when the unit is not vacant', async () => {
+    jest.spyOn(service, 'getUnit').mockResolvedValueOnce({ ...unit, status: UnitStatus.BOOKING } as any);
+
+    await expect(service.updateUnit('unit-1', { name: 'Blocked update' }))
+      .rejects.toThrow('Chỉ có thể điều chỉnh thông tin mặt bằng');
+    expect(prisma.unit.update).not.toHaveBeenCalled();
+  });
+
   it('blocks deletion while a live contract exists', async () => {
     prisma.contract.count.mockResolvedValue(1);
 
@@ -63,6 +71,14 @@ describe('SpacesService unit CRUD safeguards', () => {
 
     await expect(service.bulkUpdateUnits(['unit-1'], { status: UnitStatus.BOOKING }, 'user-1'))
       .rejects.toThrow('không thể đổi hàng loạt');
+    expect(prisma.unit.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects bulk information edits containing a non-vacant unit', async () => {
+    prisma.unit.findMany.mockResolvedValue([{ ...unit, status: UnitStatus.CONTRACTED }]);
+
+    await expect(service.bulkUpdateUnits(['unit-1'], { category: 'Retail' }, 'user-1'))
+      .rejects.toThrow('Chỉ có thể cập nhật hàng loạt các mặt bằng đang trống');
     expect(prisma.unit.updateMany).not.toHaveBeenCalled();
   });
 });

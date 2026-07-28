@@ -71,6 +71,15 @@ export class SpacesService {
     private unitStatus: UnitStatusService,
   ) {}
 
+  private assertVacantForModification(unit: { code?: string; status: UnitStatus }) {
+    if (unit.status !== UnitStatus.VACANT) {
+      const unitLabel = unit.code ? ` "${unit.code}"` : '';
+      throw new BadRequestException(
+        `Chỉ có thể điều chỉnh thông tin mặt bằng${unitLabel} khi đang trống (VACANT). Trạng thái hiện tại: ${unit.status}.`,
+      );
+    }
+  }
+
   private async validateUnitLocation(mallId: string, floorId?: string | null, zoneId?: string | null) {
     const mall = await this.prisma.mall.findFirst({ where: { id: mallId, isActive: true }, select: { id: true } });
     if (!mall) throw new BadRequestException('Mall không tồn tại hoặc đã ngừng hoạt động');
@@ -410,6 +419,7 @@ export class SpacesService {
 
   async updateUnit(id: string, dto: any) {
     const current = await this.getUnit(id);
+    this.assertVacantForModification(current);
     const nextFloorId = Object.prototype.hasOwnProperty.call(dto, 'floorId') ? dto.floorId : current.floorId;
     const nextZoneId = Object.prototype.hasOwnProperty.call(dto, 'zoneId') ? dto.zoneId : current.zoneId;
     await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
@@ -607,6 +617,7 @@ export class SpacesService {
   async updateUnitWithHistory(id: string, dto: any, userId?: string) {
     const current = await this.getUnit(id);
     const { status, ...infoDto } = dto;
+    if (Object.keys(infoDto).length > 0) this.assertVacantForModification(current);
     const changes: { field: string; oldVal: any; newVal: any; type: UnitHistoryType }[] = [];
 
     if (status && status !== current.status) {
@@ -1187,11 +1198,20 @@ export class SpacesService {
     // Verify all units exist
     const existingUnits = await this.prisma.unit.findMany({
       where: { id: { in: unitIds }, isActive: true },
-      select: { id: true, status: true, baseRentPerSqm: true, camPerSqm: true, category: true, condition: true },
+      select: { id: true, code: true, status: true, baseRentPerSqm: true, camPerSqm: true, category: true, condition: true },
     });
 
     if (existingUnits.length !== unitIds.length) {
       throw new NotFoundException('One or more units not found');
+    }
+
+    const unavailableUnits = existingUnits.filter((unit) => unit.status !== UnitStatus.VACANT);
+    if (unavailableUnits.length > 0) {
+      const codes = unavailableUnits.slice(0, 5).map((unit) => unit.code).join(', ');
+      const remaining = unavailableUnits.length > 5 ? ` và ${unavailableUnits.length - 5} mặt bằng khác` : '';
+      throw new BadRequestException(
+        `Chỉ có thể cập nhật hàng loạt các mặt bằng đang trống (VACANT). Không thể điều chỉnh: ${codes}${remaining}.`,
+      );
     }
 
     // Prepare update data
