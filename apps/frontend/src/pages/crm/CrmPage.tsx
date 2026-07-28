@@ -216,8 +216,34 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
   }, [categoryOptions]);
   const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
+  const { data: selectableLeadsRaw, isLoading: isLoadingSelectableLeads } = useQuery({
+    queryKey: ['selectable-customer-leads', leadSearch, selectedMallId],
+    queryFn: () => crmApi.listLeads({ search: leadSearch || undefined, limit: 50, mallId: selectedMallId ?? undefined }),
+    enabled: open && mode === 'customer',
+  });
+  const selectableLeads: Lead[] = (selectableLeadsRaw?.data ?? selectableLeadsRaw ?? []).filter((lead: Lead) => !lead.customerId);
+  const selectedLead = selectableLeads.find((lead) => lead.id === selectedLeadId);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const selectLeadForCustomer = (lead: Lead) => {
+    setSelectedLeadId(lead.id);
+    setForm((current) => ({
+      ...current,
+      brandName: lead.brandName || current.brandName,
+      companyName: lead.company || lead.brandName || current.companyName,
+      contactName: lead.contactName || current.contactName,
+      phone: lead.phone || current.phone,
+      email: lead.email || current.email,
+      category: lead.category || current.category,
+      expectedArea: lead.expectedArea != null ? String(lead.expectedArea) : current.expectedArea,
+      budgetMin: lead.expectedRent != null ? String(lead.expectedRent) : current.budgetMin,
+      source: lead.source || current.source,
+      notes: lead.notes || current.notes,
+    }));
+    if (lead.assignedTo?.id && !isSelfOnlyAssignee) setAssignedToId(lead.assignedTo.id);
+  };
 
   const createLead = useMutation({
     mutationFn: () => crmApi.createLead({
@@ -247,6 +273,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
 
   const createCustomer = useMutation({
     mutationFn: () => customersApi.createCustomer({
+      leadId: selectedLeadId || undefined,
       companyName: form.companyName || form.brandName,
       brandName: form.brandName || undefined,
       contactName: form.contactName,
@@ -266,7 +293,11 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
       qc.invalidateQueries({ queryKey: ['customers-stats'] });
+      qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
+      if (selectedLeadId) qc.invalidateQueries({ queryKey: ['lead-detail', selectedLeadId] });
       toast({ title: t('addDialog.customerSuccess') });
+      setSelectedLeadId('');
+      setLeadSearch('');
       onClose();
     },
     onError: (err: any) => {
@@ -288,7 +319,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
         <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-4">
           <button
             className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setMode('lead')}
+            onClick={() => { setMode('lead'); setSelectedLeadId(''); setLeadSearch(''); }}
           >
             <Target size={14} /> {t('addDialog.modeLead')}
           </button>
@@ -305,6 +336,42 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
         </p>
 
         <div className="space-y-3 text-sm">
+          {mode === 'customer' && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label className="text-xs font-semibold text-blue-900">{t('addDialog.selectLeadTitle')}</Label>
+                  <p className="text-[11px] text-blue-700 mt-0.5">{t('addDialog.selectLeadHint')}</p>
+                </div>
+                {selectedLeadId && <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedLeadId('')}><X size={12} className="mr-1" />{t('addDialog.clearLead')}</Button>}
+              </div>
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder={t('addDialog.searchLeadPlaceholder')} className="h-9 bg-white pl-8" />
+              </div>
+              {selectedLead ? (
+                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-white px-3 py-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-gray-900">{selectedLead.brandName}</div>
+                    <div className="truncate text-xs text-gray-500">{selectedLead.contactName}{selectedLead.phone ? ` · ${selectedLead.phone}` : ''}</div>
+                  </div>
+                  <Badge className="border-0 bg-blue-100 text-blue-700">{t('addDialog.leadSelected')}</Badge>
+                </div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {isLoadingSelectableLeads ? <p className="py-3 text-center text-xs text-gray-400">{t('customersView.loading')}</p> : selectableLeads.length === 0 ? <p className="py-3 text-center text-xs text-gray-500">{t('addDialog.noSelectableLeads')}</p> : selectableLeads.map((lead) => (
+                    <button key={lead.id} type="button" onClick={() => selectLeadForCustomer(lead)} className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left hover:bg-blue-100/60">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{lead.brandName}</div>
+                        <div className="truncate text-xs text-gray-500">{lead.contactName}{lead.phone ? ` · ${lead.phone}` : ''}</div>
+                      </div>
+                      <Plus size={13} className="shrink-0 text-blue-600" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Shared fields */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -430,7 +497,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
 
 // ─── Lead Detail Sheet ─────────────────────────────────────────────────────────
 
-function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null; onClose: () => void; onOpenCustomer?: (customerId: string) => void }) {
   const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -529,6 +596,16 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
+  const customerProfileMutation = useMutation({
+    mutationFn: () => crmApi.createCustomerProfile(lead!.id),
+    onSuccess: (createdCustomer: any) => {
+      invalidateAll();
+      toast({ title: t('leadSheet.customerProfileReady'), description: t('leadSheet.customerProfileReadyHint') });
+      onOpenCustomer?.(createdCustomer.id);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('leadSheet.customerProfileError'), variant: 'destructive' }),
+  });
+
   return (
     <>
       <Sheet open={!!lead} onClose={onClose} title={displayLead?.brandName ?? ''} subtitle={stage ? t(`lead.stages.${stage.key}`, { defaultValue: stage.label }) : undefined}>
@@ -606,7 +683,11 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
 
                 {/* Customer company profile (nếu đã đăng ký) */}
                 {customer && (
-                  <SheetSection label={t('leadSheet.companyProfile')} className="bg-blue-50">
+                  <SheetSection
+                    label={t('leadSheet.companyProfile')}
+                    className="bg-blue-50"
+                    action={<button onClick={() => onOpenCustomer?.(customer.id)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">{t('leadSheet.openCustomerProfile')} <ArrowRight size={11} /></button>}
+                  >
                     {customer.companyName && <SheetRow label={t('leadSheet.fieldCompany')} value={customer.companyName} icon={Building2} />}
                     {customer.taxCode && <SheetRow label={t('leadSheet.fieldTaxCode')} value={customer.taxCode} icon={Hash} />}
                     {customer.industry && <SheetRow label={t('leadSheet.fieldIndustry')} value={customer.industry} icon={Briefcase} />}
@@ -645,6 +726,16 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                   <div className="rounded-xl bg-amber-50 p-3">
                     <div className="text-xs font-semibold text-amber-600 mb-1">{t('leadSheet.notes')}</div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{displayLead.notes}</p>
+                  </div>
+                )}
+
+                {!customer && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+                    <div className="text-sm font-semibold text-blue-900">{t('leadSheet.noLinkedCustomer')}</div>
+                    <p className="text-xs text-blue-700">{t('leadSheet.createCustomerProfileHint')}</p>
+                    <Button className="w-full gap-2" onClick={() => customerProfileMutation.mutate()} disabled={customerProfileMutation.isPending}>
+                      <UserPlus size={14} /> {customerProfileMutation.isPending ? t('leadSheet.creatingCustomerProfile') : t('leadSheet.createCustomerProfile')}
+                    </Button>
                   </div>
                 )}
 
@@ -1138,7 +1229,7 @@ interface PipelineFilters {
 
 // ─── Pipeline View (Kanban + List) ─────────────────────────────────────────────
 
-function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onOpenCustomers?: () => void }) {
+function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew: () => void; onOpenCustomers?: () => void; onOpenCustomer?: (customerId: string) => void }) {
   const { t } = useTranslation('crm');
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -1837,7 +1928,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
         </div>
       )}
 
-      <LeadDetailSheet lead={selectedLead} onClose={() => {
+      <LeadDetailSheet lead={selectedLead} onOpenCustomer={onOpenCustomer} onClose={() => {
         setSelectedLead(null);
         setSearchParams((previous) => {
           const next = new URLSearchParams(previous);
@@ -2163,6 +2254,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const [showActivity, setShowActivity] = useState(false);
   const [showInactiveReason, setShowInactiveReason] = useState(false);
   const [inactiveReason, setInactiveReason] = useState('');
+  const [showLeadSync, setShowLeadSync] = useState(false);
+  const [syncLeadId, setSyncLeadId] = useState('');
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2175,6 +2268,13 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const statusInfo = CUSTOMER_STATUSES.find((s) => s.key === customer?.status);
   const nextStatusKey = customer?.status === 'PROSPECT' ? 'NEGOTIATING' : customer?.status === 'NEGOTIATING' ? 'ACTIVE' : null;
   const nextStatusInfo = nextStatusKey ? CUSTOMER_STATUSES.find((s) => s.key === nextStatusKey) : null;
+
+  const { data: leadOptionsRaw, isLoading: isLoadingLeads } = useQuery({
+    queryKey: ['customer-sync-leads'],
+    queryFn: () => crmApi.listLeads({ limit: 200 }),
+    enabled: showLeadSync,
+  });
+  const leadOptions: Lead[] = (leadOptionsRaw?.data ?? leadOptionsRaw ?? []).filter((item: Lead) => !item.customerId || item.customerId === customerId);
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['customer', customerId] });
@@ -2213,6 +2313,17 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
       });
       setShowInactiveReason(false);
     },
+  });
+
+  const syncLeadMutation = useMutation({
+    mutationFn: () => crmApi.syncLeadToCustomer(syncLeadId, customer!.id),
+    onSuccess: () => {
+      invalidateAll();
+      setShowLeadSync(false);
+      setSyncLeadId('');
+      toast({ title: t('customerDetail.syncLeadSuccess'), description: t('customerDetail.syncLeadSuccessHint') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('customerDetail.syncLeadError'), variant: 'destructive' }),
   });
 
   return (
@@ -2345,6 +2456,9 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
 
             {detailTab === 'leads' && (
               <div className="space-y-2">
+                <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowLeadSync(true)}>
+                  <RefreshCw size={13} /> {t('customerDetail.getInfoFromLead')}
+                </Button>
                 {(customer.leads ?? []).length === 0 ? (
                   <div className="text-center py-8 text-gray-400 text-sm"><Target size={28} className="mx-auto mb-2 opacity-20" />{t('customerDetail.noLinkedLeads')}</div>
                 ) : (customer.leads ?? []).map((lead: any) => {
@@ -2383,17 +2497,42 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={showLeadSync} onOpenChange={(open) => { setShowLeadSync(open); if (!open) setSyncLeadId(''); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('customerDetail.getInfoFromLead')}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">{t('customerDetail.syncLeadDescription')}</p>
+            <Select value={syncLeadId} onValueChange={setSyncLeadId} disabled={isLoadingLeads}>
+              <SelectTrigger><SelectValue placeholder={isLoadingLeads ? t('customersView.loading') : t('customerDetail.selectLead')} /></SelectTrigger>
+              <SelectContent>
+                {leadOptions.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.brandName} — {item.contactName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isLoadingLeads && leadOptions.length === 0 && <p className="text-sm text-amber-600">{t('customerDetail.noAvailableLeads')}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLeadSync(false)}>{t('customerDetail.cancel')}</Button>
+              <Button disabled={!syncLeadId || syncLeadMutation.isPending} onClick={() => syncLeadMutation.mutate()}>{t('customerDetail.syncNow')}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
 // ─── Customers View ────────────────────────────────────────────────────────────
 
-function CustomersView({ onAddNew }: { onAddNew: () => void }) {
+function CustomersView({ onAddNew, requestedCustomerId, onCustomerClosed }: { onAddNew: () => void; requestedCustomerId?: string | null; onCustomerClosed?: () => void }) {
   const { t } = useTranslation('crm');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (requestedCustomerId) setSelectedId(requestedCustomerId);
+  }, [requestedCustomerId]);
 
   const { data: statsData } = useQuery({
     queryKey: ['customers-stats'],
@@ -2503,7 +2642,7 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
         </div>
       </div>
 
-      <CustomerDetailSheet customerId={selectedId} onClose={() => setSelectedId(null)} />
+      <CustomerDetailSheet customerId={selectedId} onClose={() => { setSelectedId(null); onCustomerClosed?.(); }} />
     </div>
   );
 }
@@ -2715,6 +2854,12 @@ export default function CrmPage() {
     requestedSection === 'followups' || requestedSection === 'customers' ? requestedSection : 'leads',
   );
   const [showAdd, setShowAdd] = useState(false);
+  const [customerToOpen, setCustomerToOpen] = useState<string | null>(searchParams.get('customerId'));
+
+  const openCustomerProfile = (customerId: string) => {
+    setCustomerToOpen(customerId);
+    setActiveTab('customers');
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -2734,10 +2879,10 @@ export default function CrmPage() {
           </TabsList>
         </div>
         <TabsContent value="leads" className="mt-0 flex-1 overflow-y-auto pb-4">
-          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} />
+          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} onOpenCustomer={openCustomerProfile} />
         </TabsContent>
         <TabsContent value="followups" className="mt-0 flex-1 overflow-y-auto pb-4"><FollowUpsWorkspace /></TabsContent>
-        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} /></TabsContent>
+        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} requestedCustomerId={customerToOpen} onCustomerClosed={() => setCustomerToOpen(null)} /></TabsContent>
       </Tabs>
       <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
     </div>

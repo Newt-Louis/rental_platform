@@ -125,6 +125,24 @@ export class CrmController {
     return this.crmService.addActivity(id, dto, user.id);
   }
 
+  @Post('leads/:id/customer-profile')
+  @ApiOperation({ summary: 'Create a customer profile from a lead, or return the linked profile' })
+  async createCustomerProfile(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    return this.crmService.createCustomerProfile(id, user.id);
+  }
+
+  @Post('leads/:id/sync-customer')
+  @ApiOperation({ summary: 'Link a lead and copy its information to a customer profile' })
+  async syncLeadToCustomer(
+    @Param('id') id: string,
+    @Body('customerId') customerId: string,
+    @CurrentUser() user: any,
+  ) {
+    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    return this.crmService.syncLeadToCustomer(id, customerId);
+  }
+
   // ── Follow-ups ───────────────────────────────────────────────────────────────
 
   @Get('follow-ups')

@@ -242,6 +242,15 @@ export class CrmService {
     });
   }
 
+  async createCustomerProfile(leadId: string, userId: string) {
+    return this.customersService.createProfileFromLead(leadId, userId);
+  }
+
+  async syncLeadToCustomer(leadId: string, customerId: string) {
+    if (!customerId) throw new BadRequestException('Vui lòng chọn hồ sơ khách hàng.');
+    return this.customersService.syncFromLead(customerId, leadId);
+  }
+
   // Lead status → corresponding Customer status
   private readonly LEAD_TO_CUSTOMER: Record<string, string> = {
     NEW: 'PROSPECT', CONTACTED: 'PROSPECT', QUALIFIED: 'PROSPECT',
