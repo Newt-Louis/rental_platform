@@ -4,7 +4,6 @@ import { AlertCircle, Edit3, Plus, RefreshCw } from 'lucide-react';
 import { approvalsApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,21 +28,38 @@ type PolicyRule = {
 const ROLE_LABELS: Record<string, string> = {
   LEASING_MANAGER: 'Leasing Manager', MALL_DIRECTOR: 'Mall Director', CEO: 'CEO', FINANCE: 'Finance', LEGAL: 'Legal',
 };
-const CONDITION_LABELS: Record<string, string> = {
-  DISCOUNT_PCT: 'Chiết khấu (%)', RENT_FREE_DAYS: 'Số ngày miễn tiền thuê', INDUSTRY_TAG: 'Ngành hàng', HAS_AR_DEBT: 'Có công nợ',
+export const CONDITION_LABELS: Record<string, string> = {
+  DISCOUNT_PCT: 'Tỷ lệ chiết khấu',
+  RENT_FREE_DAYS: 'Thời gian miễn tiền thuê',
+  INDUSTRY_TAG: 'Ngành hàng',
+  HAS_AR_DEBT: 'Có công nợ quá hạn',
+  PRICE_BELOW_MIN: 'Giá thuê thấp hơn giá tối thiểu',
+  PRICE_DEVIATION_PCT: 'Mức giá thấp hơn giá tối thiểu',
 };
-const NUMERIC_CONDITIONS = new Set(['DISCOUNT_PCT', 'RENT_FREE_DAYS']);
+const NUMERIC_CONDITIONS = new Set(['DISCOUNT_PCT', 'RENT_FREE_DAYS', 'PRICE_DEVIATION_PCT']);
+const TEXT_CONDITIONS = new Set(['INDUSTRY_TAG']);
+const BOOLEAN_CONDITIONS = new Set(['HAS_AR_DEBT', 'PRICE_BELOW_MIN']);
+const OPERATORS = ['>', '>=', '<', '<=', '='];
+const OPERATOR_LABELS: Record<string, string> = {
+  '>': 'lớn hơn (>)', '>=': 'lớn hơn hoặc bằng (>=)', '<': 'nhỏ hơn (<)', '<=': 'nhỏ hơn hoặc bằng (<=)', '=': 'bằng (=)',
+};
 const EMPTY_FORM = {
   code: '', name: '', stepName: '', stepOrder: 10, approverRole: 'LEASING_MANAGER',
   conditionType: 'DISCOUNT_PCT', operator: '>', threshold: 5, matchValue: '', isRequired: false,
 };
 
-function ruleCondition(rule: PolicyRule) {
+export function ruleCondition(rule: PolicyRule) {
   if (rule.isRequired) return 'Áp dụng cho mọi hồ sơ';
   const condition = CONDITION_LABELS[rule.conditionType] ?? rule.conditionType;
-  return NUMERIC_CONDITIONS.has(rule.conditionType)
-    ? `${condition} ${rule.operator ?? '='} ${rule.threshold ?? '—'}`
-    : `${condition}: ${rule.matchValue || '—'}`;
+  if (NUMERIC_CONDITIONS.has(rule.conditionType)) {
+    const unit = rule.conditionType === 'RENT_FREE_DAYS' ? ' ngày' : '%';
+    return rule.operator === 'BETWEEN'
+      ? `${condition}: từ ${rule.threshold ?? '—'}${unit} đến ${rule.matchValue ?? '—'}${unit}`
+      : `${condition} ${OPERATOR_LABELS[rule.operator ?? '='] ?? rule.operator ?? '='} ${rule.threshold ?? '—'}${unit}`;
+  }
+  if (TEXT_CONDITIONS.has(rule.conditionType)) return `${condition}: ${rule.matchValue || '—'}`;
+  if (BOOLEAN_CONDITIONS.has(rule.conditionType)) return condition;
+  return condition;
 }
 
 export function ApprovalPolicyTab() {
@@ -60,15 +76,20 @@ export function ApprovalPolicyTab() {
     const list = raw?.data ?? raw ?? [];
     return Array.isArray(list) ? [...list].sort((a, b) => a.stepOrder - b.stepOrder) : [];
   }, [query.data]);
+  const conditionPreview = ruleCondition({ ...form, id: editingId ?? '', isActive: true });
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      const isNumeric = NUMERIC_CONDITIONS.has(form.conditionType) && !form.isRequired;
+      const isText = TEXT_CONDITIONS.has(form.conditionType) && !form.isRequired;
+      const isBetween = isNumeric && form.operator === 'BETWEEN';
       const payload = {
         ...form,
         code: form.code.trim().toUpperCase(), name: form.name.trim(), stepName: form.stepName.trim(),
-        stepOrder: Number(form.stepOrder), threshold: NUMERIC_CONDITIONS.has(form.conditionType) && !form.isRequired ? Number(form.threshold) : undefined,
-        operator: NUMERIC_CONDITIONS.has(form.conditionType) && !form.isRequired ? form.operator : undefined,
-        matchValue: !NUMERIC_CONDITIONS.has(form.conditionType) && !form.isRequired ? form.matchValue.trim() : undefined,
+        stepOrder: Number(form.stepOrder),
+        threshold: isNumeric ? Number(form.threshold) : null,
+        operator: isNumeric ? form.operator : null,
+        matchValue: isBetween ? String(form.matchValue).trim() : isText ? form.matchValue.trim() : null,
       };
       return editingId ? approvalsApi.updatePolicyRule(editingId, payload) : approvalsApi.createPolicyRule(payload);
     },
@@ -100,7 +121,11 @@ export function ApprovalPolicyTab() {
     if (!form.code.trim() || !form.name.trim() || !form.stepName.trim()) return setValidationError('Vui lòng nhập mã, tên quy tắc và tên bước duyệt.');
     if (form.stepOrder < 1) return setValidationError('Thứ tự bước phải lớn hơn hoặc bằng 1.');
     if (!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && (!Number.isFinite(Number(form.threshold)) || Number(form.threshold) < 0)) return setValidationError('Ngưỡng phải là số không âm.');
-    if (!form.isRequired && !NUMERIC_CONDITIONS.has(form.conditionType) && !form.matchValue.trim()) return setValidationError('Vui lòng nhập giá trị điều kiện.');
+    if (!form.isRequired && form.conditionType === 'PRICE_DEVIATION_PCT' && form.operator === 'BETWEEN'
+      && (!Number.isFinite(Number(form.matchValue)) || Number(form.matchValue) <= Number(form.threshold))) {
+      return setValidationError('Giá trị kết thúc phải là số lớn hơn giá trị bắt đầu.');
+    }
+    if (!form.isRequired && TEXT_CONDITIONS.has(form.conditionType) && !form.matchValue.trim()) return setValidationError('Vui lòng nhập giá trị điều kiện.');
     if (rules.some((rule) => rule.code.toUpperCase() === form.code.trim().toUpperCase() && rule.id !== editingId)) return setValidationError('Mã quy tắc đã tồn tại.');
     setValidationError(''); saveMutation.mutate();
   };
@@ -127,9 +152,12 @@ export function ApprovalPolicyTab() {
         {validationError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{validationError}</div>}
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="policy-code">Mã quy tắc</Label><Input id="policy-code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="DISCOUNT_MANAGER" /></div><div><Label htmlFor="policy-name">Tên quy tắc</Label><Input id="policy-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="step-name">Tên bước duyệt</Label><Input id="step-name" value={form.stepName} onChange={(e) => setForm({ ...form, stepName: e.target.value })} /></div><div><Label htmlFor="step-order">Thứ tự bước</Label><Input id="step-order" type="number" min={1} value={form.stepOrder} onChange={(e) => setForm({ ...form, stepOrder: Number(e.target.value) })} /></div></div>
-        <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="approver-role">Vai trò phê duyệt</Label><select id="approver-role" className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={form.approverRole} onChange={(e) => setForm({ ...form, approverRole: e.target.value })}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div></div>
-        <label className="flex items-center gap-2 text-sm"><Checkbox checked={form.isRequired} onCheckedChange={(checked) => setForm({ ...form, isRequired: checked === true })} /> Luôn yêu cầu bước duyệt này</label>
-        {!form.isRequired && (NUMERIC_CONDITIONS.has(form.conditionType) ? <div className="grid grid-cols-[140px_1fr] gap-3"><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-white px-3 text-sm" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })}>{['>', '>=', '<', '<=', '='].map((operator) => <option key={operator}>{operator}</option>)}</select></div><div><Label htmlFor="threshold">Ngưỡng áp dụng</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div></div> : <div><Label htmlFor="match-value">Giá trị điều kiện</Label><Input id="match-value" value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>)}
+        <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="approver-role">Vai trò phê duyệt</Label><select id="approver-role" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.approverRole} onChange={(e) => setForm({ ...form, approverRole: e.target.value })}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><Label htmlFor="application-scope">Phạm vi áp dụng</Label><select id="application-scope" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.isRequired ? 'ALWAYS' : 'CONDITIONAL'} onChange={(e) => setForm({ ...form, isRequired: e.target.value === 'ALWAYS' })}><option value="CONDITIONAL">Khi thỏa điều kiện</option><option value="ALWAYS">Mọi hồ sơ (không điều kiện)</option></select></div></div>
+        {!form.isRequired && <div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value, operator: '>', threshold: 0, matchValue: '' })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>}
+        {!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && <div className={`grid gap-3 ${form.operator === 'BETWEEN' ? 'sm:grid-cols-3' : 'grid-cols-[220px_1fr]'}`}><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value, matchValue: e.target.value === 'BETWEEN' ? form.matchValue : '' })}>{[...OPERATORS, ...(form.conditionType === 'PRICE_DEVIATION_PCT' ? ['BETWEEN'] : [])].map((operator) => <option key={operator} value={operator}>{operator === 'BETWEEN' ? 'Trong khoảng' : OPERATOR_LABELS[operator]}</option>)}</select></div><div><Label htmlFor="threshold">{form.operator === 'BETWEEN' ? `Từ (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})` : `Ngưỡng (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})`}</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div>{form.operator === 'BETWEEN' && <div><Label htmlFor="range-maximum">Đến (%)</Label><Input id="range-maximum" type="number" min={0} value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}</div>}
+        {!form.isRequired && TEXT_CONDITIONS.has(form.conditionType) && <div><Label htmlFor="match-value">Giá trị điều kiện</Label><Input id="match-value" value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}
+        {!form.isRequired && BOOLEAN_CONDITIONS.has(form.conditionType) && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">Điều kiện này tự động áp dụng khi hồ sơ thỏa trạng thái “{CONDITION_LABELS[form.conditionType]}”, không cần nhập thêm giá trị.</div>}
+        <div className="rounded-lg border bg-muted/40 p-3 text-sm"><div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Hiển thị trên danh sách</div><div className="font-medium text-foreground">{conditionPreview}</div></div>
         <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Hủy</Button><Button onClick={submit} disabled={saveMutation.isPending}>{saveMutation.isPending && <RefreshCw className="mr-2 animate-spin" size={14} />} Lưu quy tắc</Button></div>
       </div></DialogContent></Dialog>
     </div>

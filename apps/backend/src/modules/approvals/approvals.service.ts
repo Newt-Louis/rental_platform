@@ -378,13 +378,15 @@ export class ApprovalsService {
     const name = rule.name?.trim();
     const stepName = rule.stepName?.trim();
     const conditionType = rule.conditionType as ApprovalPolicyConditionType;
-    const operator = rule.operator || null;
-    const matchValue = typeof rule.matchValue === 'string' ? rule.matchValue.trim() || null : null;
-    const threshold = rule.threshold ?? null;
+    let operator = rule.operator || null;
+    let matchValue = typeof rule.matchValue === 'string' ? rule.matchValue.trim() || null : null;
+    let threshold = rule.threshold ?? null;
 
     if (!code || !name || !stepName) {
       throw new BadRequestException('Code, name and step name must not be empty');
     }
+
+    const isRequired = rule.isRequired ?? false;
 
     const numericConditions = new Set([
       ApprovalPolicyConditionType.DISCOUNT_PCT,
@@ -393,7 +395,13 @@ export class ApprovalsService {
     ]);
     const numericOperators = new Set(['>', '>=', '<', '<=', '=']);
 
-    if (numericConditions.has(conditionType)) {
+    if (isRequired) {
+      // An unconditional approval step has no predicate. Clearing these fields is important
+      // when an existing conditional rule is changed to "always required".
+      operator = null;
+      threshold = null;
+      matchValue = null;
+    } else if (numericConditions.has(conditionType)) {
       if (!operator || (!numericOperators.has(operator) && !(conditionType === ApprovalPolicyConditionType.PRICE_DEVIATION_PCT && operator === ApprovalPolicyOperator.BETWEEN))) {
         throw new BadRequestException('Numeric conditions require a supported comparison operator');
       }
@@ -422,7 +430,7 @@ export class ApprovalsService {
     return {
       code, name, stepName, stepOrder: rule.stepOrder, approverRole: rule.approverRole,
       conditionType, operator, threshold, matchValue,
-      isRequired: rule.isRequired ?? false, isActive: rule.isActive ?? true,
+      isRequired, isActive: rule.isActive ?? true,
     };
   }
 
