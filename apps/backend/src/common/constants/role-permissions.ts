@@ -76,6 +76,7 @@ export const MODULE_ROLES = {
   tenantPortal: [Role.TENANT],
   // Nhật ký hệ thống (ai đã sửa gì) — công cụ tuân thủ, giới hạn ADMIN/CEO.
   auditLog: [Role.ADMIN, Role.CEO],
+  parking: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION],
 } as const satisfies Record<string, Role[]>;
 
 export type ModuleKey = keyof typeof MODULE_ROLES;

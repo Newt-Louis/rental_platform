@@ -6,7 +6,8 @@
     "operations": "Operations",
     "finance": "Finance",
     "analytics": "Analytics",
-    "system": "System"
+    "system": "System",
+    "parkingCentral": "Parking Central"
   },
   "items": {
     "dashboard": "Dashboard",
@@ -32,7 +33,9 @@
     "announcements": "Announcements",
     "tenantPortal": "Tenant Portal",
     "auditLog": "Audit Log",
-    "admin": "Admin"
+    "admin": "Admin",
+    "parking-report": "Parking Report",
+    "parking-transaction": "Parking Transaction"
   },
   "tenant": {
     "overview": "Overview",

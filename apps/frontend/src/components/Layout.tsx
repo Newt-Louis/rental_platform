@@ -40,6 +40,8 @@ import {
   Menu,
   X,
   Warehouse,
+  ParkingCircle,
+  ScanLine,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
@@ -87,6 +89,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   "/tenant-portal": ShoppingBag,
   "/audit-log": FileText,
   "/admin": Settings,
+  "/parking-report": ParkingCircle,
+  "/parking-transaction": ScanLine,
 };
 
 export default function Layout() {

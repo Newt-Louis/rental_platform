@@ -1,0 +1,43 @@
+{
+  "report": {
+    "title": "Báo cáo bãi đỗ xe",
+    "todayRevenue": "Doanh thu hôm nay",
+    "todayTransactions": "Lượt hôm nay",
+    "lastMonthRevenue": "Doanh thu tháng trước",
+    "lastMonthTransactions": "Lượt tháng trước",
+    "revenueByMonth": "Doanh thu theo ngày",
+    "trafficByMonth": "Lượt xe theo ngày",
+    "empty": "Chưa có dữ liệu"
+  },
+  "transaction": {
+    "title": "Giao dịch bãi đỗ xe",
+    "parkingLot": "Bãi đỗ",
+    "startDate": "Từ ngày",
+    "endDate": "Đến ngày",
+    "cardCode": "Mã thẻ",
+    "licensePlate": "Biển số",
+    "search": "Tìm kiếm",
+    "export": "Xuất Excel",
+    "exporting": "Đang xuất...",
+    "exportError": "Không thể xuất Excel",
+    "empty": "Không có giao dịch nào",
+    "total": "Tổng: {{count}} giao dịch",
+    "prev": "Trước",
+    "next": "Sau",
+    "imagePreview": "Ảnh biển số",
+    "entryImage": "Ảnh vào",
+    "exitImage": "Ảnh ra",
+    "noImage": "Không có ảnh",
+    "col": {
+      "recordId": "Mã",
+      "vehicleType": "Loại xe",
+      "cardCode": "Mã thẻ",
+      "entryPlate": "Biển vào",
+      "exitPlate": "Biển ra",
+      "entryTime": "Giờ vào",
+      "exitTime": "Giờ ra",
+      "totalAmount": "Tổng thu",
+      "image": "Ảnh"
+    }
+  }
+}

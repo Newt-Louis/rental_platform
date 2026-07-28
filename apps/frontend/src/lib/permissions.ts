@@ -38,7 +38,9 @@ export type RouteModule =
   | "announcements"
   | "tenant-portal"
   | "cross-mall"
-  | "audit-log";
+  | "audit-log"
+  | "parking-report"
+  | "parking-transaction";
 
 export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: [
@@ -157,6 +159,8 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   ],
   "cross-mall": ["ADMIN", "CEO"],
   "audit-log": ["ADMIN", "CEO"],
+  "parking-report": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
+  "parking-transaction": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
 };
 
 /** Map URL path segment → module key */
@@ -188,6 +192,8 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   "tenant-portal": "tenant-portal",
   "cross-mall": "cross-mall",
   "audit-log": "audit-log",
+  "parking-report": "parking-report",
+  "parking-transaction": "parking-transaction",
 };
 
 export function canAccessModule(
@@ -354,6 +360,22 @@ export const NAV_GROUPS = [
         module: "audit-log" as RouteModule,
       },
       { label: "Quản trị", path: "/admin", module: "admin" as RouteModule },
+    ],
+  },
+  {
+    key: "parkingCentral",
+    label: "Parking Central",
+    items: [
+      {
+        label: "Báo cáo bãi đỗ xe",
+        path: "/parking-report",
+        module: "parking-report" as RouteModule,
+      },
+      {
+        label: "Giao dịch bãi đỗ xe",
+        path: "/parking-transaction",
+        module: "parking-transaction" as RouteModule,
+      },
     ],
   },
 ];

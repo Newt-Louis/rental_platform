@@ -58,6 +58,12 @@ const BookingsPage = lazy(() => import("@/pages/bookings/BookingsPage"));
 const SalesPipelineStatsPage = lazy(
   () => import("@/pages/pipeline-stats/SalesPipelineStatsPage"),
 );
+const ParkingReportPage = lazy(
+  () => import("@/pages/parking/ParkingReportPage"),
+);
+const ParkingTransactionPage = lazy(
+  () => import("@/pages/parking/ParkingTransactionPage"),
+);
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
@@ -354,6 +360,22 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <AuditLogPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="parking-report"
+                    element={
+                      <RoleRoute>
+                        <ParkingReportPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="parking-transaction"
+                    element={
+                      <RoleRoute>
+                        <ParkingTransactionPage />
                       </RoleRoute>
                     }
                   />
