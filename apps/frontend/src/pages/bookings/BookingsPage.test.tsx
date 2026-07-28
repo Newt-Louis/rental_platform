@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import BookingsPage from './BookingsPage';
+import BookingsPage, { countUnitBookingStatuses, groupUnitBookings } from './BookingsPage';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -130,6 +130,29 @@ const CANCELLED_BOOKING = {
   updatedAt: '2024-01-16T00:00:00.000Z',
   assignedTo: null,
 };
+
+describe('groupUnitBookings', () => {
+  it('sorts unit codes naturally and keeps each queue in priority order', () => {
+    const groups = groupUnitBookings([
+      { ...ACTIVE_BOOKING, id: 'b10', unitId: 'u10', unit: { code: 'A-10' }, priority: 1 },
+      { ...ACTIVE_BOOKING, id: 'b2-p2', unitId: 'u2', unit: { code: 'A-2' }, priority: 2 },
+      { ...ACTIVE_BOOKING, id: 'b2-p1', unitId: 'u2', unit: { code: 'A-2' }, priority: 1 },
+    ] as any);
+
+    expect(groups.map((group) => group.bookings[0].unit?.code)).toEqual(['A-2', 'A-10']);
+    expect(groups[0].bookings.map((booking) => booking.priority)).toEqual([1, 2]);
+  });
+
+  it('counts held and waiting bookings separately for a unit', () => {
+    const counts = countUnitBookingStatuses([
+      ACTIVE_BOOKING,
+      { ...ACTIVE_BOOKING, id: 'b-pending-1', status: 'PENDING' },
+      { ...ACTIVE_BOOKING, id: 'b-pending-2', status: 'PENDING' },
+    ] as any);
+
+    expect(counts).toEqual({ total: 3, active: 1, pending: 2 });
+  });
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

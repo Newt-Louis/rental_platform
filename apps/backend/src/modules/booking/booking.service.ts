@@ -239,7 +239,12 @@ export class BookingService {
         skip,
         take: l,
         include: this.defaultInclude(),
-        orderBy: { createdAt: 'desc' },
+        // Keep each unit queue together and make its priority order explicit.
+        orderBy: [
+          { unit: { code: 'asc' } },
+          { priority: 'asc' },
+          { createdAt: 'desc' },
+        ],
       }),
       this.prisma.unitBooking.count({ where }),
     ]);
