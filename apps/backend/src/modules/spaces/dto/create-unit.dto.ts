@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsEnum, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum, IsBoolean, IsNotEmpty, Min } from 'class-validator';
 import { UnitStatus } from '@prisma/client';
 
 // Enums from schema — imported as string enums to avoid circular dependency before prisma client regeneration
@@ -46,6 +46,7 @@ export class CreateUnitDto {
 
   @ApiProperty()
   @IsString()
+  @IsNotEmpty()
   code: string;
 
   @ApiPropertyOptional()
@@ -55,11 +56,13 @@ export class CreateUnitDto {
 
   @ApiProperty()
   @IsNumber()
+  @Min(0)
   areaGFA: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   areaNLA?: number;
 
   @ApiPropertyOptional()
@@ -70,11 +73,13 @@ export class CreateUnitDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   baseRentPerSqm?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   camPerSqm?: number;
 
   @ApiPropertyOptional({ enum: UnitStatus })
@@ -106,11 +111,13 @@ export class CreateUnitDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   minFlexArea?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
+  @Min(0)
   maxFlexArea?: number;
 
   // ─── GAP #6 — Tier ──────────────────────────────────────────────────────

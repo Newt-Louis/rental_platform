@@ -5,8 +5,7 @@ import { spacesApi, categoriesApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { STATUS_CONFIG, CATEGORIES } from '@/pages/spaces/spaces.constants';
+import { CATEGORIES } from '@/pages/spaces/spaces.constants';
 import { UnitFormFields } from './UnitFormFields';
 import { UNIT_FORM_DEFAULT_VALUES, seedUnitFormValues, buildUnitFormPayload } from './unitFormHelpers';
 
@@ -29,7 +28,6 @@ export function CreateEditUnitDialog({
     defaultValues: {
       ...UNIT_FORM_DEFAULT_VALUES,
       floorId: defaultFloorId ?? '',
-      status: 'VACANT',
     },
   });
 
@@ -39,11 +37,9 @@ export function CreateEditUnitDialog({
     if (open) {
       reset(unit ? {
         ...seedUnitFormValues(unit, defaultFloorId),
-        status: unit.status ?? 'VACANT',
       } : {
         ...UNIT_FORM_DEFAULT_VALUES,
         floorId: defaultFloorId ?? '',
-        status: 'VACANT',
       });
     }
   }, [open, unit, defaultFloorId]);
@@ -85,13 +81,15 @@ export function CreateEditUnitDialog({
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = buildUnitFormPayload(data, mallId);
+      const payload = buildUnitFormPayload(data, mallId, isEdit);
       return isEdit ? spacesApi.updateUnit(unit.id, payload) : spacesApi.createUnit(payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       qc.invalidateQueries({ queryKey: ['floor-map'] });
+      qc.invalidateQueries({ queryKey: ['floors'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
       toast({ title: isEdit ? 'Đã cập nhật mặt bằng' : 'Đã tạo mặt bằng mới' });
       onClose();
     },
@@ -123,22 +121,6 @@ export function CreateEditUnitDialog({
             <DialogTitle>{isEdit ? `Sửa mặt bằng: ${unit.code}` : 'Thêm mặt bằng mới'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
-
-            {/* Status */}
-            <div className="max-w-xs">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Trạng thái</label>
-              <Select value={watch('status')} onValueChange={(v) => setValue('status', v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('status')} />
-            </div>
 
             <UnitFormFields
               register={register}

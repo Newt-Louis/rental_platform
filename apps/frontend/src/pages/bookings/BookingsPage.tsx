@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
-import { bookingApi, slotsApi, authApi } from '@/api';
+import { bookingApi, slotsApi, spacesApi, authApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ import { SlotBookingDetailSheet } from './SlotBookingDetailSheet';
 import { CreateBookingDialog } from './CreateBookingDialog';
 import { CreateSlotBookingDialog } from './CreateSlotBookingDialog';
 
-const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '' };
+const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '', floorId: '', unitId: '' };
 
 const unitCodeCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
@@ -96,6 +96,27 @@ export function countSlotBookingStatuses(bookings: any[]) {
     }),
     { total: 0, pending: 0, confirmed: 0 },
   );
+}
+
+export function filterSlotBookings(
+  bookings: any[],
+  filters: { search?: string; floorId?: string; slotId?: string },
+) {
+  const query = filters.search?.trim().toLowerCase() ?? '';
+  return bookings.filter((booking) => {
+    if (filters.floorId && booking.slot?.unit?.floor?.id !== filters.floorId) return false;
+    if (filters.slotId && booking.slot?.id !== filters.slotId) return false;
+    if (!query) return true;
+    return [
+      booking.bookingRef,
+      booking.slot?.unit?.code,
+      booking.slot?.unit?.floor?.name,
+      booking.slot?.code,
+      booking.slot?.name,
+      booking.customer?.companyName,
+      booking.lead?.brandName,
+    ].some((value) => value?.toLowerCase().includes(query));
+  });
 }
 
 export default function BookingsPage() {
@@ -217,7 +238,7 @@ export default function BookingsPage() {
 
   const setUnitField = <K extends keyof typeof UNIT_EMPTY>(k: K, v: typeof UNIT_EMPTY[K]) =>
     setUnitDraft((f) => ({ ...f, [k]: v }));
-  const unitHasApplied = !!(unitApplied.search || unitApplied.status || unitApplied.expiringSoon || unitApplied.dateFrom || unitApplied.dateTo);
+  const unitHasApplied = !!(unitApplied.search || unitApplied.status || unitApplied.expiringSoon || unitApplied.dateFrom || unitApplied.dateTo || unitApplied.floorId || unitApplied.unitId);
   const unitIsDirty = JSON.stringify(unitDraft) !== JSON.stringify(unitApplied);
   function applyUnit() { setUnitApplied({ ...unitDraft }); setPage(1); }
   function clearUnit() { setUnitDraft(UNIT_EMPTY); setUnitApplied(UNIT_EMPTY); setPage(1); }
@@ -229,7 +250,7 @@ export default function BookingsPage() {
   }
 
   // ── SlotBooking state ──
-  const SLOT_EMPTY = { search: '', status: '', type: '' };
+  const SLOT_EMPTY = { search: '', status: '', type: '', floorId: '', slotId: '' };
   const [slotDraft, setSlotDraft] = useState(SLOT_EMPTY);
   const [slotApplied, setSlotApplied] = useState(SLOT_EMPTY);
   const [selectedSlotBooking, setSelectedSlotBooking] = useState<any | null>(null);
@@ -239,7 +260,7 @@ export default function BookingsPage() {
 
   const setSlotField = <K extends keyof typeof SLOT_EMPTY>(k: K, v: typeof SLOT_EMPTY[K]) =>
     setSlotDraft((f) => ({ ...f, [k]: v }));
-  const slotHasApplied = !!(slotApplied.search || slotApplied.status || slotApplied.type);
+  const slotHasApplied = !!(slotApplied.search || slotApplied.status || slotApplied.type || slotApplied.floorId || slotApplied.slotId);
   const slotIsDirty = JSON.stringify(slotDraft) !== JSON.stringify(slotApplied);
   function applySlot() { setSlotApplied({ ...slotDraft }); }
   function clearSlot() { setSlotDraft(SLOT_EMPTY); setSlotApplied(SLOT_EMPTY); }
@@ -262,6 +283,8 @@ export default function BookingsPage() {
     queryKey: ['bookings', selectedMallId, unitApplied, page],
     queryFn: () => bookingApi.list({
       mallId: selectedMallId ?? undefined,
+      floorId: unitApplied.floorId || undefined,
+      unitId: unitApplied.unitId || undefined,
       status: unitApplied.status || undefined,
       expiringSoon: unitApplied.expiringSoon || undefined,
       search: unitApplied.search || undefined,
@@ -270,6 +293,20 @@ export default function BookingsPage() {
       page, limit: 15,
     }),
     refetchInterval: 60_000,
+  });
+
+  const { data: unitFloorsData } = useQuery({
+    queryKey: ['booking-filter-floors', selectedMallId],
+    queryFn: () => spacesApi.listFloors(selectedMallId ?? undefined),
+  });
+  const { data: unitOptionsData } = useQuery({
+    queryKey: ['booking-filter-units', selectedMallId, unitDraft.floorId],
+    queryFn: () => spacesApi.listUnits({
+      mallId: selectedMallId ?? undefined,
+      floorId: unitDraft.floorId || undefined,
+      page: 1,
+      limit: 500,
+    }),
   });
 
   // ── SlotBooking data ──
@@ -287,6 +324,10 @@ export default function BookingsPage() {
   const unitBookingGroups = useMemo(() => groupUnitBookings(unitBookings), [unitBookings]);
   const unitTotal: number = data?.total ?? 0;
   const unitTotalPages: number = data?.totalPages ?? 1;
+  const unitFloorOptions: any[] = (Array.isArray(unitFloorsData) ? unitFloorsData : unitFloorsData?.data ?? [])
+    .sort((a: any, b: any) => (a.level ?? 0) - (b.level ?? 0) || unitCodeCollator.compare(a.name ?? '', b.name ?? ''));
+  const unitOptions: any[] = (Array.isArray(unitOptionsData) ? unitOptionsData : unitOptionsData?.data ?? [])
+    .sort((a: any, b: any) => unitCodeCollator.compare(a.code ?? '', b.code ?? ''));
 
   const rawSlotBookings: any[] = Array.isArray(slotData) ? slotData : (slotData?.data ?? []);
   const allSlotBookings = selectedMallId
@@ -296,21 +337,26 @@ export default function BookingsPage() {
     pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
+    cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
     revenue: allSlotBookings.filter((b) => b.status === 'COMPLETED').reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
   };
 
-  const slotBookings = slotApplied.search
-    ? allSlotBookings.filter((b) => {
-        const q = slotApplied.search.toLowerCase();
-        return (
-          b.bookingRef?.toLowerCase().includes(q) ||
-          b.slot?.unit?.code?.toLowerCase().includes(q) ||
-          b.slot?.code?.toLowerCase().includes(q) ||
-          b.customer?.companyName?.toLowerCase().includes(q) ||
-          b.lead?.brandName?.toLowerCase().includes(q)
-        );
-      })
-    : allSlotBookings;
+  const floorOptions = Array.from(
+    new Map(
+      allSlotBookings
+        .filter((booking) => booking.slot?.unit?.floor?.id)
+        .map((booking) => [booking.slot.unit.floor.id, booking.slot.unit.floor]),
+    ).values(),
+  ).sort((a: any, b: any) => (a.level ?? 0) - (b.level ?? 0) || unitCodeCollator.compare(a.name ?? '', b.name ?? '')) as any[];
+  const slotOptions = Array.from(
+    new Map(
+      allSlotBookings
+        .filter((booking) => !slotDraft.floorId || booking.slot?.unit?.floor?.id === slotDraft.floorId)
+        .filter((booking) => booking.slot?.id)
+        .map((booking) => [booking.slot.id, booking.slot]),
+    ).values(),
+  ).sort((a: any, b: any) => unitCodeCollator.compare(a.code ?? '', b.code ?? '')) as any[];
+  const slotBookings = filterSlotBookings(allSlotBookings, slotApplied);
   const slotBookingGroups = useMemo(() => groupSlotBookings(slotBookings), [slotBookings]);
 
   return (
@@ -382,6 +428,43 @@ export default function BookingsPage() {
               </button>
             ))}
           </div>
+          <div className="mb-4 overflow-x-auto pb-1">
+            <div
+              role="tablist"
+              aria-label={t('filterLabels.bookingStatusTabs')}
+              className="inline-flex min-w-max items-center gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-1"
+            >
+              {[
+                { status: '', label: t('filterLabels.all'), count: stats?.total },
+                { status: 'ACTIVE', label: t('status.ACTIVE'), count: stats?.active },
+                { status: 'PENDING', label: t('status.PENDING'), count: stats?.pending },
+                { status: 'CONVERTED', label: t('status.CONVERTED'), count: stats?.converted },
+                { status: 'EXPIRED', label: t('status.EXPIRED') },
+                { status: 'CANCELLED', label: t('status.CANCELLED') },
+              ].map((item) => {
+                const selected = unitApplied.status === item.status && !unitApplied.expiringSoon;
+                return (
+                  <button
+                    key={item.status || 'ALL'}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => filterUnit(item.status)}
+                    className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                      selected ? 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.label}
+                    {item.count !== undefined && (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-amber-100 text-amber-800' : 'bg-white text-gray-500'}`}>
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
@@ -400,6 +483,35 @@ export default function BookingsPage() {
                 <SelectItem value="ALL">{t('filterLabels.all')}</SelectItem>
                 {Object.entries(UNIT_STATUS_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={unitDraft.floorId || 'ALL'}
+              onValueChange={(v) => setUnitDraft((filters) => ({
+                ...filters,
+                floorId: v === 'ALL' ? '' : v,
+                unitId: '',
+              }))}
+            >
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.floor')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allFloors')}</SelectItem>
+                {unitFloorOptions.map((floor) => (
+                  <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={unitDraft.unitId || 'ALL'} onValueChange={(v) => setUnitField('unitId', v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.unit')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allUnits')}</SelectItem>
+                {unitOptions.map((unit) => (
+                  <SelectItem key={unit.id} value={unit.id}>{unit.code}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -639,6 +751,40 @@ export default function BookingsPage() {
               </button>
             ))}
           </div>
+          <div className="mb-4 overflow-x-auto pb-1">
+            <div
+              role="tablist"
+              aria-label={t('filterLabels.bookingStatusTabs')}
+              className="inline-flex min-w-max items-center gap-1 rounded-xl border border-violet-200 bg-violet-50/60 p-1"
+            >
+              {[
+                { status: '', label: t('filterLabels.all'), count: allSlotBookings.length },
+                { status: 'PENDING', label: t('slotStatus.PENDING'), count: slotStats.pending },
+                { status: 'CONFIRMED', label: t('slotStatus.CONFIRMED'), count: slotStats.confirmed },
+                { status: 'COMPLETED', label: t('slotStatus.COMPLETED'), count: slotStats.completed },
+                { status: 'CANCELLED', label: t('slotStatus.CANCELLED'), count: slotStats.cancelled },
+              ].map((item) => {
+                const selected = slotApplied.status === item.status;
+                return (
+                  <button
+                    key={item.status || 'ALL'}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => filterSlot(item.status)}
+                    className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
+                      selected ? 'bg-white text-violet-800 shadow-sm ring-1 ring-violet-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.label}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-violet-100 text-violet-800' : 'bg-white text-gray-500'}`}>
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {/* Filters + Create */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
@@ -668,6 +814,36 @@ export default function BookingsPage() {
                 <SelectItem value="ALL">{t('filterLabels.allTypes')}</SelectItem>
                 {Object.entries(SLOT_TYPE_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={slotDraft.floorId || 'ALL'}
+              onValueChange={(value) => {
+                const floorId = value === 'ALL' ? '' : value;
+                setSlotDraft((filters) => ({ ...filters, floorId, slotId: '' }));
+              }}
+            >
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.floor')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allFloors')}</SelectItem>
+                {floorOptions.map((floor) => (
+                  <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={slotDraft.slotId || 'ALL'} onValueChange={(value) => setSlotField('slotId', value === 'ALL' ? '' : value)}>
+              <SelectTrigger className="h-9 w-44">
+                <SelectValue placeholder={t('filterLabels.slot')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allSlots')}</SelectItem>
+                {slotOptions.map((slot) => (
+                  <SelectItem key={slot.id} value={slot.id}>
+                    {slot.code}{slot.name ? ` · ${slot.name}` : ''}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -734,6 +910,9 @@ export default function BookingsPage() {
                               <div className="flex items-baseline gap-2">
                                 <span className="text-xs font-semibold uppercase tracking-wider text-violet-400">{t('table.unit')}</span>
                                 <span className="font-semibold text-slate-900">{firstBooking.slot?.unit?.code ?? '—'}</span>
+                                {firstBooking.slot?.unit?.floor?.name && (
+                                  <span className="text-xs text-slate-500">{firstBooking.slot.unit.floor.name}</span>
+                                )}
                               </div>
                               <span className="h-4 w-px bg-violet-200" aria-hidden="true" />
                               <Badge variant="outline" className="border-violet-200 bg-white text-violet-700">

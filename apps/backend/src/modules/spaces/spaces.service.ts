@@ -25,10 +25,19 @@ const UNIT_REQUIRED_FIELDS = new Set([
   'status', 'isActive', 'isFlexibleArea', 'isCombined',
 ]);
 
+// These fields are owned by the leasing lifecycle. Generic Spaces edits must
+// never overwrite them, otherwise a live contract can be shown as BOOKING/VACANT.
+const UNIT_LIFECYCLE_FIELDS = new Set([
+  'mallId', 'status', 'tenantId', 'leaseStartDate', 'leaseEndDate',
+  'vacantSince', 'isActive', 'isCombined', 'mergedFromIds', 'mergedIntoId',
+]);
 function sanitizeUnitDto(dto: any): any {
   const out: any = {};
   for (const key of Object.keys(dto)) {
     if (UNIT_RELATION_FIELDS.has(key)) continue;
+    if (UNIT_LIFECYCLE_FIELDS.has(key)) {
+      throw new BadRequestException(`Trường "${key}" được quản lý bởi quy trình trạng thái và không thể sửa trực tiếp`);
+    }
     if (dto[key] === null && UNIT_REQUIRED_FIELDS.has(key)) {
       throw new BadRequestException(`Trường "${key}" không được để trống`);
     }
@@ -61,6 +70,22 @@ export class SpacesService {
     private prisma: PrismaService,
     private unitStatus: UnitStatusService,
   ) {}
+
+  private async validateUnitLocation(mallId: string, floorId?: string | null, zoneId?: string | null) {
+    const mall = await this.prisma.mall.findFirst({ where: { id: mallId, isActive: true }, select: { id: true } });
+    if (!mall) throw new BadRequestException('Mall không tồn tại hoặc đã ngừng hoạt động');
+    if (floorId) {
+      const floor = await this.prisma.floor.findFirst({ where: { id: floorId, mallId, isActive: true } });
+      if (!floor) throw new BadRequestException('Tầng không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+    }
+    if (zoneId) {
+      const zone = await this.prisma.zone.findFirst({ where: { id: zoneId, mallId, isActive: true } });
+      if (!zone) throw new BadRequestException('Zone không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+      if (floorId && zone.floorId && zone.floorId !== floorId) {
+        throw new BadRequestException('Zone không thuộc tầng đã chọn');
+      }
+    }
+  }
 
   // MALLS
   async getMalls() {
@@ -366,6 +391,7 @@ export class SpacesService {
   async createUnit(dto: CreateUnitDto) {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
+    await this.validateUnitLocation(mallId, dto.floorId, dto.zoneId);
 
     const existing = await this.prisma.unit.findUnique({
       where: { mallId_code: { mallId, code: dto.code } },
@@ -383,7 +409,19 @@ export class SpacesService {
   }
 
   async updateUnit(id: string, dto: any) {
-    await this.getUnit(id);
+    const current = await this.getUnit(id);
+    const nextFloorId = Object.prototype.hasOwnProperty.call(dto, 'floorId') ? dto.floorId : current.floorId;
+    const nextZoneId = Object.prototype.hasOwnProperty.call(dto, 'zoneId') ? dto.zoneId : current.zoneId;
+    await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+    if (dto.code && dto.code !== current.code) {
+      const duplicate = await this.prisma.unit.findUnique({
+        where: { mallId_code: { mallId: current.mallId, code: dto.code } },
+        select: { id: true },
+      });
+      if (duplicate && duplicate.id !== id) {
+        throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
+      }
+    }
     return this.prisma.unit.update({
       where: { id },
       data: sanitizeUnitDto(dto),
@@ -397,12 +435,46 @@ export class SpacesService {
 
   async updateUnitStatus(id: string, status: UnitStatus, userId?: string) {
     await this.getUnit(id);
-    return this.unitStatus.transition(id, status, { force: true, userId, reason: 'Manual status update' });
+    return this.unitStatus.transition(id, status, { userId, reason: 'Manual status update' });
   }
 
-  async deleteUnit(id: string) {
-    await this.getUnit(id);
-    await this.prisma.unit.update({ where: { id }, data: { isActive: false } });
+  async deleteUnit(id: string, userId?: string) {
+    const unit = await this.getUnit(id);
+    const [activeBookings, liveContracts, liveProposals, activeSlots] = await Promise.all([
+      this.prisma.unitBooking.count({
+        where: { unitId: id, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
+      }),
+      this.prisma.contract.count({
+        where: { unitId: id, isActive: true, deletedAt: null, status: { notIn: ['EXPIRED', 'TERMINATED'] } },
+      }),
+      this.prisma.proposal.count({
+        where: { unitId: id, status: { in: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED'] } },
+      }),
+      this.prisma.unitSlot.count({ where: { unitId: id, isActive: true } }),
+    ]);
+    const blockers = [
+      activeBookings && `${activeBookings} booking đang hiệu lực`,
+      liveContracts && `${liveContracts} hợp đồng đang hiệu lực`,
+      liveProposals && `${liveProposals} đề xuất đang xử lý`,
+      activeSlots && `${activeSlots} slot đang hoạt động`,
+    ].filter(Boolean);
+    if (blockers.length > 0) {
+      throw new BadRequestException(`Không thể xóa mặt bằng ${unit.code}: ${blockers.join(', ')}.`);
+    }
+    await this.prisma.$transaction([
+      this.prisma.unit.update({ where: { id }, data: { isActive: false } }),
+      this.prisma.unitHistory.create({
+        data: {
+          unitId: id,
+          changeType: UnitHistoryType.INFO_UPDATE,
+          fieldName: 'isActive',
+          oldValue: true,
+          newValue: false,
+          changedById: userId,
+          notes: 'Unit deactivated from Spaces',
+        },
+      }),
+    ]);
     return { message: 'Unit deactivated' };
   }
 
@@ -534,69 +606,52 @@ export class SpacesService {
 
   async updateUnitWithHistory(id: string, dto: any, userId?: string) {
     const current = await this.getUnit(id);
+    const { status, ...infoDto } = dto;
     const changes: { field: string; oldVal: any; newVal: any; type: UnitHistoryType }[] = [];
 
-    // Track status changes
-    if (dto.status && dto.status !== current.status) {
-      changes.push({
-        field: 'status',
-        oldVal: current.status,
-        newVal: dto.status,
-        type: UnitHistoryType.STATUS_CHANGE,
-      });
-      // Auto-set vacantSince when status changes to VACANT
-      if (dto.status === UnitStatus.VACANT && current.status !== UnitStatus.VACANT) {
-        dto.vacantSince = new Date();
-      }
-      // Clear vacantSince when no longer vacant
-      if (dto.status !== UnitStatus.VACANT && current.status === UnitStatus.VACANT) {
-        dto.vacantSince = null;
-      }
+    if (status && status !== current.status) {
+      await this.unitStatus.transition(id, status, { userId, reason: 'Status update from Spaces' });
     }
 
     // Track rent changes
     const rentFields = ['baseRentPerSqm', 'marketRentPerSqm', 'askingRentPerSqm', 'camPerSqm', 'escalationRate'];
     for (const field of rentFields) {
-      if (dto[field] !== undefined && dto[field] !== (current as any)[field]) {
+      if (infoDto[field] !== undefined && infoDto[field] !== (current as any)[field]) {
         changes.push({
           field,
           oldVal: (current as any)[field],
-          newVal: dto[field],
+          newVal: infoDto[field],
           type: UnitHistoryType.RENT_CHANGE,
         });
       }
     }
 
-    // Track tenant changes
-    if (dto.tenantId !== undefined && dto.tenantId !== current.tenantId) {
-      changes.push({
-        field: 'tenantId',
-        oldVal: current.tenantId,
-        newVal: dto.tenantId,
-        type: UnitHistoryType.TENANT_CHANGE,
-      });
-    }
-
     // Track condition changes
-    if (dto.condition !== undefined && dto.condition !== (current as any).condition) {
+    if (infoDto.condition !== undefined && infoDto.condition !== (current as any).condition) {
       changes.push({
         field: 'condition',
         oldVal: (current as any).condition,
-        newVal: dto.condition,
+        newVal: infoDto.condition,
         type: UnitHistoryType.CONDITION_CHANGE,
       });
     }
 
     // Perform update
-    const updated = await this.prisma.unit.update({
-      where: { id },
-      data: sanitizeUnitDto(dto),
-      include: {
-        floor: { select: { id: true, name: true, level: true } },
-        zone: { select: { id: true, name: true, code: true } },
-        tenant: { select: { id: true, brandName: true, companyName: true } },
-      },
-    });
+    let updated: any = status && status !== current.status ? await this.getUnit(id) : current;
+    if (Object.keys(infoDto).length > 0) {
+      const nextFloorId = Object.prototype.hasOwnProperty.call(infoDto, 'floorId') ? infoDto.floorId : current.floorId;
+      const nextZoneId = Object.prototype.hasOwnProperty.call(infoDto, 'zoneId') ? infoDto.zoneId : current.zoneId;
+      await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+      updated = await this.prisma.unit.update({
+        where: { id },
+        data: sanitizeUnitDto(infoDto),
+        include: {
+          floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true, code: true } },
+          tenant: { select: { id: true, brandName: true, companyName: true } },
+        },
+      });
+    }
 
     // Record history for each change
     for (const change of changes) {
@@ -1141,7 +1196,9 @@ export class SpacesService {
 
     // Prepare update data
     const updateData: any = {};
-    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.status !== undefined) {
+      throw new BadRequestException('Trạng thái mặt bằng được cập nhật tự động theo Booking, Hợp đồng và Fit-out; không thể đổi hàng loạt.');
+    }
     if (updates.category !== undefined) updateData.category = updates.category;
     if (updates.baseRentPerSqm !== undefined) updateData.baseRentPerSqm = updates.baseRentPerSqm;
     if (updates.camPerSqm !== undefined) updateData.camPerSqm = updates.camPerSqm;

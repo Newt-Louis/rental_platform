@@ -39,12 +39,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             className="pl-9"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter || 'ALL'} onValueChange={(value) => setStatusFilter(value === 'ALL' ? '' : value)}>
           <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder="Tất cả trạng thái" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Tất cả</SelectItem>
+            <SelectItem value="ALL">Tất cả</SelectItem>
             {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
               <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
             ))}
@@ -111,12 +111,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">Ngành hàng</label>
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <Select value={categoryFilter || 'ALL'} onValueChange={(value) => setCategoryFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả ngành hàng" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
                   {categoryNames.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
@@ -126,12 +126,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             {/* GAP #4 */}
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">Loại sảnh</label>
-              <Select value={spaceTypeFilter} onValueChange={setSpaceTypeFilter}>
+              <Select value={spaceTypeFilter || 'ALL'} onValueChange={(value) => setSpaceTypeFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả loại" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
                   {SPACE_TYPE_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
@@ -141,12 +141,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             {/* GAP #6 */}
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">Tier</label>
-              <Select value={tierFilter} onValueChange={setTierFilter}>
+              <Select value={tierFilter || 'ALL'} onValueChange={(value) => setTierFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả tier" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
                   {TIER_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
@@ -156,12 +156,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             {/* GAP #3 */}
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">Hình thức thuê</label>
-              <Select value={leaseTermFilter} onValueChange={setLeaseTermFilter}>
+              <Select value={leaseTermFilter || 'ALL'} onValueChange={(value) => setLeaseTermFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Tất cả" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tất cả</SelectItem>
+                  <SelectItem value="ALL">Tất cả</SelectItem>
                   {LEASE_TERM_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}

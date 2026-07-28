@@ -83,6 +83,9 @@ export default function SpacesPage() {
   useEffect(() => {
     if (isFirstMallRender.current) { isFirstMallRender.current = false; return; }
     setFloorFilter('');
+    setSelectedUnit(null);
+    setEditingUnit(null);
+    setDeletingUnit(null);
   }, [selectedMallId]);
 
   // Reset store state when leaving the page
@@ -121,6 +124,8 @@ export default function SpacesPage() {
       page: 1,
       limit: 300,
     }),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
@@ -135,11 +140,15 @@ export default function SpacesPage() {
   // Mutations
   const deleteMutation = useMutation({
     mutationFn: (id: string) => spacesApi.deleteUnit(id),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floors'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
+      qc.invalidateQueries({ queryKey: ['slot-summaries'] });
       toast({ title: t('deleteSuccess') });
       setDeletingUnit(null);
+      if (selectedUnit?.id === id) setSelectedUnit(null);
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('deleteFail'), variant: 'destructive' }),
   });
@@ -435,7 +444,7 @@ export default function SpacesPage() {
       <CreateEditUnitDialog
         open={!!editingUnit}
         unit={editingUnit}
-        mallId={selectedMallId ?? editingUnit?.mallId ?? ''}
+        mallId={editingUnit?.mallId ?? selectedMallId ?? ''}
         onClose={() => setEditingUnit(null)}
       />
 
