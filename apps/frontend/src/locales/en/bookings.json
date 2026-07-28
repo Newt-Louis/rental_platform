@@ -129,9 +129,12 @@
     "bookingCount": "{{count}} booking",
     "holdingCount": "{{count}} holding",
     "waitingCount": "{{count}} waiting",
+    "pendingConfirmationCount": "{{count}} awaiting confirmation",
+    "confirmedCount": "{{count}} confirmed",
     "ref": "Ref #",
     "type": "Type",
     "unitSlot": "Unit / Slot",
+    "slot": "Slot",
     "timeRange": "Time",
     "amount": "Amount"
   },

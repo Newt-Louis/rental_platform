@@ -129,9 +129,12 @@
     "bookingCount": "{{count}} booking",
     "holdingCount": "{{count}} đang giữ",
     "waitingCount": "{{count}} đang chờ",
+    "pendingConfirmationCount": "{{count}} chờ xác nhận",
+    "confirmedCount": "{{count}} đã xác nhận",
     "ref": "Ref #",
     "type": "Loại",
     "unitSlot": "Unit / Slot",
+    "slot": "Slot",
     "timeRange": "Thời gian",
     "amount": "Thành tiền"
   },
