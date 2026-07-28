@@ -316,54 +316,54 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
         </DialogHeader>
 
         {/* Mode selector */}
-        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-4">
+        <div className="mb-4 flex gap-2 rounded-xl bg-muted p-1">
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'lead' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => { setMode('lead'); setSelectedLeadId(''); setLeadSearch(''); }}
           >
             <Target size={14} /> {t('addDialog.modeLead')}
           </button>
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'customer' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'customer' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => setMode('customer')}
           >
             <Users size={14} /> {t('addDialog.modeCustomer')}
           </button>
         </div>
 
-        <p className="text-xs text-gray-400 -mt-2 mb-3 px-1">
+        <p className="-mt-2 mb-3 px-1 text-xs text-muted-foreground">
           {mode === 'lead' ? t('addDialog.leadDesc') : t('addDialog.customerDesc')}
         </p>
 
         <div className="space-y-3 text-sm">
           {mode === 'customer' && (
-            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 space-y-2">
+            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-800 dark:bg-blue-950/40">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <Label className="text-xs font-semibold text-blue-900">{t('addDialog.selectLeadTitle')}</Label>
-                  <p className="text-[11px] text-blue-700 mt-0.5">{t('addDialog.selectLeadHint')}</p>
+                  <Label className="text-xs font-semibold text-blue-900 dark:text-blue-100">{t('addDialog.selectLeadTitle')}</Label>
+                  <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">{t('addDialog.selectLeadHint')}</p>
                 </div>
                 {selectedLeadId && <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedLeadId('')}><X size={12} className="mr-1" />{t('addDialog.clearLead')}</Button>}
               </div>
               <div className="relative">
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <Input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder={t('addDialog.searchLeadPlaceholder')} className="h-9 bg-white pl-8" />
+                <Input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder={t('addDialog.searchLeadPlaceholder')} className="h-9 pl-8" />
               </div>
               {selectedLead ? (
-                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-card px-3 py-2 dark:border-blue-800">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-gray-900">{selectedLead.brandName}</div>
-                    <div className="truncate text-xs text-gray-500">{selectedLead.contactName}{selectedLead.phone ? ` · ${selectedLead.phone}` : ''}</div>
+                    <div className="truncate text-sm font-medium text-foreground">{selectedLead.brandName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{selectedLead.contactName}{selectedLead.phone ? ` · ${selectedLead.phone}` : ''}</div>
                   </div>
                   <Badge className="border-0 bg-blue-100 text-blue-700">{t('addDialog.leadSelected')}</Badge>
                 </div>
               ) : (
                 <div className="max-h-40 space-y-1 overflow-y-auto">
                   {isLoadingSelectableLeads ? <p className="py-3 text-center text-xs text-gray-400">{t('customersView.loading')}</p> : selectableLeads.length === 0 ? <p className="py-3 text-center text-xs text-gray-500">{t('addDialog.noSelectableLeads')}</p> : selectableLeads.map((lead) => (
-                    <button key={lead.id} type="button" onClick={() => selectLeadForCustomer(lead)} className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left hover:bg-blue-100/60">
+                    <button key={lead.id} type="button" onClick={() => selectLeadForCustomer(lead)} className="flex w-full items-center justify-between rounded-lg bg-card px-3 py-2 text-left text-card-foreground hover:bg-blue-100/60 dark:hover:bg-blue-900/40">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">{lead.brandName}</div>
-                        <div className="truncate text-xs text-gray-500">{lead.contactName}{lead.phone ? ` · ${lead.phone}` : ''}</div>
+                        <div className="truncate text-xs text-muted-foreground">{lead.contactName}{lead.phone ? ` · ${lead.phone}` : ''}</div>
                       </div>
                       <Plus size={13} className="shrink-0 text-blue-600" />
                     </button>
@@ -435,7 +435,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
               </div>
               <div>
                 <Label className="text-xs">{t('addDialog.fieldRating')}</Label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
                   {[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{'★'.repeat(v)} ({v}/5)</option>)}
                 </select>
               </div>
@@ -449,19 +449,19 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
           <div className="grid grid-cols-2 gap-3 border-t pt-3">
             <div>
               <Label className="text-xs">{t('addDialog.fieldSource')}</Label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.source} onChange={(e) => set('source', e.target.value)}>
+              <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.source} onChange={(e) => set('source', e.target.value)}>
                 {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldAssignee')}</Label>
               {isSelfOnlyAssignee ? (
-                <div className="mt-1 h-9 flex items-center px-3 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-600">
+                <div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
                   {user?.fullName}
                   <span className="ml-1 text-gray-400">({t('addDialog.fieldAssigneeSelfHint')})</span>
                 </div>
               ) : (
-                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
                   <option value="">{t('addDialog.fieldAssigneeNone')}</option>
                   {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                 </select>
@@ -470,7 +470,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
             <div className="col-span-2">
               <Label className="text-xs">{t('addDialog.fieldNotes')}</Label>
               <textarea
-                className="w-full border rounded-md p-2 text-sm resize-none h-16 mt-1"
+                className="mt-1 h-16 w-full resize-none rounded-md border border-input bg-background p-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={t('addDialog.fieldNotesPlaceholder')}
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}

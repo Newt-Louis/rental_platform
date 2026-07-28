@@ -237,6 +237,10 @@ export interface UnitBooking {
   requestedArea?: number;
   requestedTerm?: number;
   expectedRent?: number;
+  proposedRentPerSqm?: number;
+  proposedCamPerSqm?: number;
+  pricingSnapshot?: Record<string, unknown>;
+  priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   holdDays: number;
   expiresAt?: string;
   activatedAt?: string;
