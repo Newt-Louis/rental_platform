@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { parkingApi } from '@/api';
@@ -38,8 +38,8 @@ interface ParkingTransactionRow {
   cardCode?: string;
   entryLicensePlate?: string;
   exitLicensePlate?: string;
-  entryTime?: string;
-  exitTime?: string;
+  entryTime: string;
+  exitTime: string;
   totalTime?: string;
   parkingFee: number;
   cash: number;
@@ -72,9 +72,18 @@ export default function ParkingTransactionPage() {
   });
 
   const result = data?.data ?? data;
-  const items: ParkingTransactionRow[] = result?.items ?? [];
+  const rawItems: ParkingTransactionRow[] = result?.items ?? [];
   const totalPages = result?.totalPages ?? 0;
   const totalItems = result?.totalItems ?? 0;
+
+  const items = useMemo(() =>
+    rawItems.map((row) => ({
+      ...row,
+      entryTime: row.entryTime ? new Date(row.entryTime).toLocaleString('vi-VN') : '—',
+      exitTime: row.exitTime ? new Date(row.exitTime).toLocaleString('vi-VN') : '—',
+    })),
+    [rawItems],
+  );
 
   const handleSubmit = () => {
     setPageIndex(1);
@@ -185,8 +194,8 @@ export default function ParkingTransactionPage() {
                       <td className="py-2 pr-3">{row.cardCode}</td>
                       <td className="py-2 pr-3">{row.entryLicensePlate}</td>
                       <td className="py-2 pr-3">{row.exitLicensePlate}</td>
-                      <td className="py-2 pr-3">{row.entryTime ? new Date(row.entryTime).toLocaleString('vi-VN') : '—'}</td>
-                      <td className="py-2 pr-3">{row.exitTime ? new Date(row.exitTime).toLocaleString('vi-VN') : '—'}</td>
+                      <td className="py-2 pr-3">{row.entryTime}</td>
+                      <td className="py-2 pr-3">{row.exitTime}</td>
                       <td className="py-2 pr-3 text-right font-medium">{fmtVnd(row.totalAmount)}</td>
                       <td className="py-2 pr-3 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setPreviewRow(row)}>
