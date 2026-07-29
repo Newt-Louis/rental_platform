@@ -28,4 +28,4 @@ export * from './health';
 export * from './service-contracts';
 export * from './inventory';
 export * from './work-orders';
-export * from './parking';
+export * from './parking-dashboard';

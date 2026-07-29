@@ -59,10 +59,10 @@ const SalesPipelineStatsPage = lazy(
   () => import("@/pages/pipeline-stats/SalesPipelineStatsPage"),
 );
 const ParkingReportPage = lazy(
-  () => import("@/pages/parking/ParkingReportPage"),
+  () => import("@/pages/parking-dashboard/ParkingReportPage"),
 );
 const ParkingTransactionPage = lazy(
-  () => import("@/pages/parking/ParkingTransactionPage"),
+  () => import("@/pages/parking-dashboard/ParkingTransactionPage"),
 );
 const ProfilePage = lazy(() => import("@/pages/profile/ProfilePage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));

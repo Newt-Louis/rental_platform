@@ -19,7 +19,7 @@ import viAdmin from '@/locales/vi/admin.json';
 import viProfile from '@/locales/vi/profile.json';
 import viContracts from '@/locales/vi/contracts.json';
 import viServiceContracts from '@/locales/vi/serviceContracts.json';
-import viParking from '@/locales/vi/parking.json';
+import viParking from '@/locales/vi/parking-dashboard.json';
 
 import enCommon from '@/locales/en/common.json';
 import enNav from '@/locales/en/nav.json';
@@ -38,7 +38,7 @@ import enAdmin from '@/locales/en/admin.json';
 import enProfile from '@/locales/en/profile.json';
 import enContracts from '@/locales/en/contracts.json';
 import enServiceContracts from '@/locales/en/serviceContracts.json';
-import enParking from '@/locales/en/parking.json';
+import enParking from '@/locales/en/parking-dashboard.json';
 
 i18n
   .use(LanguageDetector)
