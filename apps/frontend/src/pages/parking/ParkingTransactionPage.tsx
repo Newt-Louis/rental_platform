@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ScanLine, Search, Download, ImageIcon, X } from 'lucide-react';
+import { formatDateTimeVN } from '@/lib/utils';
 
 const PARKING_LOTS = [
   { code: 'sKVuws6s', name: 'Sala' },
@@ -79,8 +80,8 @@ export default function ParkingTransactionPage() {
   const items = useMemo(() =>
     rawItems.map((row) => ({
       ...row,
-      entryTime: row.entryTime ? new Date(row.entryTime).toLocaleString('vi-VN') : '—',
-      exitTime: row.exitTime ? new Date(row.exitTime).toLocaleString('vi-VN') : '—',
+      entryTime: formatDateTimeVN(row.entryTime),
+      exitTime: formatDateTimeVN(row.exitTime),
     })),
     [rawItems],
   );
