@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingApi } from '@/api';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { ArrowRight } from 'lucide-react';
 import type { UnitBooking } from '@/types';
+import { buildProposalPrefill } from './proposal-prefill';
 
 export function ConvertToProposalDialog({ booking, open, onClose }: {
   booking: UnitBooking | null; open: boolean; onClose: () => void;
@@ -17,24 +18,20 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({
-    area: '', term: '36', startDate: '', rentPerSqm: '',
-    camPerSqm: '', deposit: '3', rentFree: '0', escalationPercent: '0', notes: '',
+    ...buildProposalPrefill(null),
     // GAP #91–94, #41
     utilityFee: '0', operatingHours: '', afterHoursFee: '0',
     paymentTermDays: '30', depositLease: '0', depositFitout: '0', fitoutFee: '0',
   });
 
-  const wasOpen = useRef(false);
-  if (open && !wasOpen.current && booking) {
-    wasOpen.current = true;
-    setForm((prev) => ({
-      ...prev,
-      area: booking.requestedArea?.toString() ?? '',
-      term: booking.requestedTerm?.toString() ?? '36',
-      rentPerSqm: booking.expectedRent?.toString() ?? '',
-    }));
-  }
-  if (!open) wasOpen.current = false;
+  useEffect(() => {
+    if (!open || !booking) return;
+    setForm({
+      ...buildProposalPrefill(booking),
+      utilityFee: '0', operatingHours: '', afterHoursFee: '0',
+      paymentTermDays: '30', depositLease: '0', depositFitout: '0', fitoutFee: '0',
+    });
+  }, [booking, open]);
 
   const mutation = useMutation({
     mutationFn: () => bookingApi.convertToProposal(booking!.id, {
@@ -57,7 +54,7 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       toast({ title: `Đã tạo Proposal ${data?.proposal?.proposalNumber ?? ''}` });
       onClose();
-      navigate('/proposals');
+      navigate(data?.proposal?.id ? `/proposals?id=${data.proposal.id}` : '/proposals');
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
@@ -74,12 +71,15 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
             Lập Đề xuất từ Booking {booking?.bookingNumber}
           </DialogTitle>
           {booking?.unit && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Unit: {booking.unit.code} · {booking.lead?.brandName ?? booking.customer?.companyName}
             </p>
           )}
         </DialogHeader>
         <div className="space-y-4 pt-1">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+            Đã kế thừa diện tích, thời hạn, giá thuê, CAM và ghi chú từ Booking. Bạn có thể điều chỉnh trước khi tạo Proposal.
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích (m²) *</label>

@@ -51,14 +51,29 @@ export class DashboardService {
     return ['overview'];
   }
 
+  /**
+   * healthScore chỉ được cộng từ các thành phần mà role đó thực sự nhận trong response
+   * (occupancy cho Leasing/Overview, collection cho Finance/Overview) — tránh tình trạng
+   * FE luôn áp công thức occupancy*0.55+collection*0.45 trong khi field bị shapeForRole lược bỏ.
+   */
+  private healthScoreForRole(role: string | undefined, occupancyRate: number, collectionRate: number): number | null {
+    if (!role || OVERVIEW_ROLES.has(role)) {
+      return Math.round(occupancyRate * 0.55 + collectionRate * 0.45);
+    }
+    if (role === 'FINANCE') return Math.round(collectionRate);
+    if (LEASING_ROLES.has(role)) return Math.round(occupancyRate);
+    return null;
+  }
+
   private shapeForRole(data: Record<string, any>, role?: string) {
     if (!role || OVERVIEW_ROLES.has(role)) return data;
-    const base = { mallId: data.mallId, focusAreas: data.focusAreas };
+    const base = { mallId: data.mallId, focusAreas: data.focusAreas, healthScore: data.healthScore };
     if (role === 'FINANCE') return {
       ...base,
       totalTenants: data.totalTenants,
       monthlyRevenue: data.monthlyRevenue,
       collectedRevenue: data.collectedRevenue,
+      collectionRate: data.collectionRate,
       overdueAmount: data.overdueAmount,
       overdueCount: data.overdueCount,
       expiringIn30: data.expiringIn30,
@@ -85,7 +100,7 @@ export class DashboardService {
     };
   }
 
-  async getDashboard(mallId?: string, user?: { id: string; role: string }) {
+  async getDashboard(mallId?: string, user?: { id: string; role: string }, forceRefresh = false) {
     const role = user?.role;
     let mallIds: string[] | null = mallId ? [mallId] : null;
     if (user) {
@@ -95,9 +110,11 @@ export class DashboardService {
 
     const scopeKey = mallId ?? (mallIds === null ? 'all' : `user:${user?.id ?? 'none'}`);
     const cacheKey = `dashboard:v2:${scopeKey}:${role ?? 'all'}`;
-    const cached = await this.redis.getJson<Awaited<ReturnType<DashboardService['buildDashboard']>>>(cacheKey);
-    if (cached) {
-      return { ...cached, fromCache: true };
+    if (!forceRefresh) {
+      const cached = await this.redis.getJson<Awaited<ReturnType<DashboardService['buildDashboard']>>>(cacheKey);
+      if (cached) {
+        return { ...cached, fromCache: true };
+      }
     }
 
     const result = this.shapeForRole(await this.buildDashboard(mallIds, mallId, role), role);
@@ -231,6 +248,7 @@ export class DashboardService {
       const paid = invoice.payments.reduce((value, payment) => value + payment.amount, 0);
       return sum + Math.max(0, invoice.totalAmount - paid);
     }, 0);
+    const collectionRate = monthlyRevenue > 0 ? Math.min(100, (collectedRevenue / monthlyRevenue) * 100) : 0;
 
     return {
       mallId: mallId ?? null,
@@ -242,12 +260,14 @@ export class DashboardService {
       totalTenants: tenantCount,
       monthlyRevenue,
       collectedRevenue,
+      collectionRate: +collectionRate.toFixed(1),
       overdueAmount,
       overdueCount: overdueInvoices.length,
       expiringIn30,
       expiringIn90,
       pendingApprovals,
       openTickets,
+      healthScore: this.healthScoreForRole(role, occupancyRate, collectionRate),
       bookingStats: {
         active: activeBookings,
         pending: pendingBookings,

@@ -4,16 +4,16 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:brightness-95 shadow',
         destructive: 'bg-red-600 text-white hover:bg-red-700 shadow-sm',
-        outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shadow-sm',
-        secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 shadow-sm',
-        ghost: 'text-gray-700 hover:bg-gray-100 hover:text-gray-900',
-        link: 'text-gray-900 underline-offset-4 hover:underline',
+        outline: 'border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground shadow-sm',
+        secondary: 'bg-secondary text-secondary-foreground hover:brightness-95 shadow-sm',
+        ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
+        link: 'text-foreground underline-offset-4 hover:underline',
         success: 'bg-green-600 text-white hover:bg-green-700 shadow-sm',
         warning: 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm',
       },

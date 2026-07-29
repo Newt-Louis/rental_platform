@@ -139,7 +139,7 @@ export default function SalesPipelineStatsPage() {
     { key: 'SUBMITTED', label: 'Đã gửi',    color: 'text-blue-600',   badge: 'bg-blue-100 text-blue-700' },
     { key: 'APPROVED',  label: 'Đã duyệt',  color: 'text-green-600',  badge: 'bg-green-100 text-green-700' },
     { key: 'REJECTED',  label: 'Từ chối',   color: 'text-red-500',    badge: 'bg-red-100 text-red-600' },
-    { key: 'CONVERTED', label: 'Đã ký HĐ', color: 'text-violet-600', badge: 'bg-violet-100 text-violet-700' },
+    { key: 'CONVERTED', label: 'Đã tạo HĐ', color: 'text-violet-600', badge: 'bg-violet-100 text-violet-700' },
   ];
 
   const funnelSteps: { label: string; sub: string; value: number; color: string; icon: React.ElementType }[] = [

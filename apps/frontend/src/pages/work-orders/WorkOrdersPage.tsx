@@ -71,6 +71,10 @@ export default function WorkOrdersPage() {
   const [mallId, setMallId] = useState(selectedMallId || ""),
     [search, setSearch] = useState(""),
     [status, setStatus] = useState("");
+  const [category, setCategory] = useState("");
+  const [priority, setPriority] = useState("");
+  const [alert, setAlert] = useState("");
+  const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false),
     [selectedId, setSelectedId] = useState<string | null>(null),
     [form, setForm] = useState<any>({ ...empty, mallId: selectedMallId || "" }),
@@ -85,13 +89,18 @@ export default function WorkOrdersPage() {
     queryFn: () => usersApi.listUsers({ limit: 200 }),
   });
   const listQ = useQuery({
-    queryKey: ["work-orders", mallId, status, search],
+    queryKey: ["work-orders", mallId, status, category, priority, alert, search, page],
     queryFn: () =>
       workOrdersApi.list({
         ...(mallId && { mallId }),
         ...(status && { status }),
+        ...(!status && !alert && { scope: "ACTIVE" }),
+        ...(category && { category }),
+        ...(priority && { priority }),
+        ...(alert && { alert }),
         ...(search && { search }),
-        limit: 100,
+        page,
+        limit: 25,
       }),
   });
   const summaryQ = useQuery({
@@ -110,6 +119,8 @@ export default function WorkOrdersPage() {
     (u: any) => u.role !== "TENANT",
   );
   const rows: any[] = (listQ.data as any)?.data || [];
+  const total = (listQ.data as any)?.total || 0;
+  const totalPages = (listQ.data as any)?.totalPages || 1;
   const summary: any = summaryQ.data || {};
   const item: any = detailQ.data;
   const refresh = () => {
@@ -189,6 +200,10 @@ export default function WorkOrdersPage() {
       const blob = await workOrdersApi.exportCsv({
         ...(mallId && { mallId }),
         ...(status && { status }),
+        ...(!status && !alert && { scope: "ACTIVE" }),
+        ...(category && { category }),
+        ...(priority && { priority }),
+        ...(alert && { alert }),
         ...(search && { search }),
       });
       const url = URL.createObjectURL(blob);
@@ -255,12 +270,20 @@ export default function WorkOrdersPage() {
           </div>
         ))}
       </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["DUE_SOON", "Sắp đến hạn trong 24h", summary.dueSoon || 0],
+          ["OVERDUE", "Công việc quá hạn", summary.overdue || 0],
+          ["UNASSIGNED", "Chưa phân công", summary.unassigned || 0],
+          ["CRITICAL", "Ưu tiên khẩn cấp", summary.critical || 0],
+        ].map(([key, title, count]) => <button key={String(key)} className={`rounded-lg border p-4 text-left hover:bg-muted/40 ${alert === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><div className="flex items-center justify-between text-sm"><span>{title}</span><AlertTriangle className="h-4 w-4" /></div><div className="mt-2 text-2xl font-bold">{String(count)}</div></button>)}
+      </div>
       <WorkOrderTemplates mallId={mallId} malls={malls} users={users} />
       <div className="flex flex-wrap gap-3 rounded-lg border p-4">
         <select
           className="h-10 min-w-64 rounded-md border px-3"
           value={mallId}
-          onChange={(e) => setMallId(e.target.value)}
+          onChange={(e) => { setMallId(e.target.value); setPage(1); }}
         >
           <option value="">Tất cả Mall</option>
           {malls.map((m) => (
@@ -272,7 +295,7 @@ export default function WorkOrdersPage() {
         <select
           className="h-10 rounded-md border px-3"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => { setStatus(e.target.value); setAlert(""); setPage(1); }}
         >
           <option value="">Tất cả trạng thái</option>
           {Object.entries(STATUS).map(([k, v]) => (
@@ -281,16 +304,19 @@ export default function WorkOrdersPage() {
             </option>
           ))}
         </select>
+        <select className="h-10 rounded-md border px-3" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm</option>{Object.entries(CATEGORIES).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select>
+        <select className="h-10 rounded-md border px-3" value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }}><option value="">Tất cả ưu tiên</option><option value="LOW">Thấp</option><option value="MEDIUM">Trung bình</option><option value="HIGH">Cao</option><option value="CRITICAL">Khẩn cấp</option></select>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
             placeholder="Tìm số phiếu, tiêu đề, vị trí..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
       </div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} công việc</span><div className="flex items-center gap-2"><span>Mặc định: công việc đang hoạt động</span>{(status || category || priority || alert) && <Button size="sm" variant="outline" onClick={() => { setStatus(""); setCategory(""); setPriority(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}</div></div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/60">
@@ -372,6 +398,7 @@ export default function WorkOrdersPage() {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm"><span>Trang {page} / {totalPages}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Trang trước</Button><Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)}>Trang sau</Button></div></div>}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

@@ -50,6 +50,7 @@ export class BookingController {
   @Get()
   @ApiOperation({ summary: 'Danh sách bookings với filter' })
   @ApiQuery({ name: 'unitId', required: false })
+  @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'leadId', required: false })
   @ApiQuery({ name: 'customerId', required: false })
   @ApiQuery({ name: 'assignedToId', required: false })

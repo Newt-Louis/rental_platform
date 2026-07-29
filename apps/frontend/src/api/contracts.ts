@@ -15,7 +15,7 @@ export const contractsApi = {
       })
       .then((r) => r.data);
   },
-  expiring: (mallId?: string) => api.get('/contracts/expiring', { params: { mallId } }).then((r) => r.data),
+  expiring: (mallId?: string, days?: number) => api.get('/contracts/expiring', { params: { mallId, days } }).then((r) => r.data),
   listTemplates: () => api.get('/contracts/templates').then((r) => r.data),
   getTemplate: (id: string) => api.get(`/contracts/templates/${id}`).then((r) => r.data),
   renderTemplate: (contractId: string, templateId: string) =>
@@ -35,6 +35,10 @@ export const contractsApi = {
   signFile: (contractId: string, fileId: string, body: { signerName: string; signerRole: string }) =>
     api.post(`/contracts/${contractId}/files/${fileId}/sign`, body).then((r) => r.data),
   verifyFile: (verifyCode: string) => api.get(`/contracts/verify/${verifyCode}`).then((r) => r.data),
+  getActivationReadiness: (contractId: string) =>
+    api.get(`/contracts/${contractId}/activation-readiness`).then((r) => r.data),
+  updateStatus: (contractId: string, status: string) =>
+    api.patch(`/contracts/${contractId}/status`, { status }).then((r) => r.data),
 };
 
 export const terminationApi = {

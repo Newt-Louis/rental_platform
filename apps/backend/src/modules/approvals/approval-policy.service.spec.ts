@@ -33,6 +33,13 @@ describe('ApprovalsService approval policy validation', () => {
     }) });
   });
 
+  it('clears predicate fields when the approval step is always required', async () => {
+    await service.createPolicyRule({ ...validRule, isRequired: true, matchValue: 'stale-value' });
+    expect(policy.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      isRequired: true, operator: null, threshold: null, matchValue: null,
+    }) });
+  });
+
   it.each([
     [{ ...validRule, operator: undefined }, 'operator'],
     [{ ...validRule, threshold: undefined }, 'threshold'],

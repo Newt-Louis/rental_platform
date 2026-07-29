@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus } from '@prisma/client';
+import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus, Prisma } from '@prisma/client';
 import {
   CreateBookingDto,
   UpdateBookingDto,
@@ -89,8 +89,10 @@ export class BookingService {
     // Validate proposed price if provided
     let priceApprovalStatus: PriceApprovalStatus | null = null;
     let priceDeviationPercent: number | null = null;
+    let pricingRuleId: string | null = null;
+    let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    if (dto.proposedRentPerSqm && unit.categoryId) {
+    if (dto.proposedRentPerSqm !== undefined && unit.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: unit.mallId,
         categoryId: unit.categoryId,
@@ -103,6 +105,16 @@ export class BookingService {
         priceApprovalStatus = PriceApprovalStatus.PENDING;
         priceDeviationPercent = validation.deviationPercent;
       }
+      pricingRuleId = validation.categoryPricing?.id ?? null;
+      pricingSnapshot = {
+        evaluatedAt: new Date().toISOString(),
+        proposedRentPerSqm: dto.proposedRentPerSqm,
+        minRentPerSqm: validation.minRentPerSqm,
+        maxRentPerSqm: validation.maxRentPerSqm,
+        suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
+        camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
+        sources: validation.categoryPricing?.sources ?? null,
+      };
     }
 
     const booking = await this.prisma.unitBooking.create({
@@ -120,6 +132,8 @@ export class BookingService {
         proposedCamPerSqm: dto.proposedCamPerSqm,
         priceApprovalStatus,
         priceDeviationPercent,
+        pricingRuleId,
+        pricingSnapshot,
         holdDays,
         expiresAt,
         activatedAt: priority === 1 ? new Date() : null,
@@ -163,6 +177,7 @@ export class BookingService {
 
   async findAll(query: {
     unitId?: string;
+    floorId?: string;
     leadId?: string;
     customerId?: string;
     status?: BookingStatus;
@@ -188,12 +203,17 @@ export class BookingService {
     if (filters.status) where.status = filters.status;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
     const scopedMallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
-    if (scopedMallIds) where.unit = {
-      OR: [
-        { mallId: { in: scopedMallIds } },
-        { floor: { mallId: { in: scopedMallIds } } },
-      ],
-    };
+    if (scopedMallIds || filters.floorId) {
+      where.unit = {
+        ...(scopedMallIds ? {
+          OR: [
+            { mallId: { in: scopedMallIds } },
+            { floor: { mallId: { in: scopedMallIds } } },
+          ],
+        } : {}),
+        ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      };
+    }
     if (expiringSoon) {
       const in7days = new Date();
       in7days.setDate(in7days.getDate() + 7);
@@ -213,6 +233,7 @@ export class BookingService {
       where.OR = [
         { bookingNumber: { contains: search, mode: 'insensitive' } },
         { unit: { code: { contains: search, mode: 'insensitive' } } },
+        { unit: { floor: { name: { contains: search, mode: 'insensitive' } } } },
         { lead: { brandName: { contains: search, mode: 'insensitive' } } },
         { lead: { contactName: { contains: search, mode: 'insensitive' } } },
         { customer: { companyName: { contains: search, mode: 'insensitive' } } },
@@ -225,7 +246,12 @@ export class BookingService {
         skip,
         take: l,
         include: this.defaultInclude(),
-        orderBy: { createdAt: 'desc' },
+        // Keep each unit queue together and make its priority order explicit.
+        orderBy: [
+          { unit: { code: 'asc' } },
+          { priority: 'asc' },
+          { createdAt: 'desc' },
+        ],
       }),
       this.prisma.unitBooking.count({ where }),
     ]);
@@ -313,9 +339,11 @@ export class BookingService {
 
     let priceApprovalStatus: PriceApprovalStatus | null | undefined = undefined;
     let priceDeviationPercent: number | null | undefined = undefined;
+    let pricingRuleId: string | null | undefined = undefined;
+    let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
     if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
-      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm) {
+      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!newUnitId) {
         const validation = await this.categoriesService.validateProposedPrice({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
@@ -331,6 +359,16 @@ export class BookingService {
           priceApprovalStatus = null;
           priceDeviationPercent = null;
         }
+        pricingRuleId = validation.categoryPricing?.id ?? null;
+        pricingSnapshot = {
+          evaluatedAt: new Date().toISOString(),
+          proposedRentPerSqm: dto.proposedRentPerSqm,
+          minRentPerSqm: validation.minRentPerSqm,
+          maxRentPerSqm: validation.maxRentPerSqm,
+          suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
+          camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
+          sources: validation.categoryPricing?.sources ?? null,
+        };
       }
     }
 
@@ -347,6 +385,8 @@ export class BookingService {
         proposedCamPerSqm: dto.proposedCamPerSqm,
         ...(priceApprovalStatus !== undefined && { priceApprovalStatus }),
         ...(priceDeviationPercent !== undefined && { priceDeviationPercent }),
+        ...(pricingRuleId !== undefined && { pricingRuleId }),
+        ...(pricingSnapshot !== undefined && { pricingSnapshot }),
         notes: dto.notes,
       },
       include: this.defaultInclude(),
@@ -443,6 +483,7 @@ export class BookingService {
     const where: any = {
       isActive: true,
       priceApprovalStatus: PriceApprovalStatus.PENDING,
+      status: { in: [BookingStatus.PENDING, BookingStatus.ACTIVE] },
     };
     if (mallIds) where.unit = {
       OR: [
@@ -476,7 +517,7 @@ export class BookingService {
             },
           },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.unitBooking.count({ where }),
     ]);
@@ -723,11 +764,13 @@ export class BookingService {
           deposit: depositMonths,
           rentFree: dto.rentFree ?? 0,
           escalationPercent: dto.escalationPercent ?? 0,
+          pricingRuleId: booking.pricingRuleId ?? undefined,
+          pricingSnapshot: booking.pricingSnapshot ?? undefined,
           monthlyRent,
           monthlyCAM,
           depositAmount,
           totalContractValue,
-          notes: dto.notes,
+          notes: dto.notes ?? booking.notes ?? undefined,
           businessModel: dto.businessModel,
           serviceFeeSqm: dto.serviceFeeSqm ?? 0,
           businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
@@ -956,7 +999,13 @@ export class BookingService {
           areaNLA: true,
           category: true,
           baseRentPerSqm: true,
-          floor: { select: { name: true, level: true } },
+          camPerSqm: true,
+          askingRentPerSqm: true,
+          escalationRate: true,
+          minLeaseTerm: true,
+          maxLeaseTerm: true,
+          spaceType: true,
+          floor: { select: { id: true, name: true, level: true } },
           mall: { select: { id: true, name: true, code: true } },
         },
       },

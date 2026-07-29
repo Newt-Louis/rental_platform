@@ -5,7 +5,6 @@ import { spacesApi, bookingApi, proposalsApi, slotsApi, categoriesApi } from '@/
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { FloorPlanEditor } from '@/components/FloorPlanEditor';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
@@ -24,7 +23,13 @@ import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
 import { UnitFormFields } from './dialogs/UnitFormFields';
-import { UNIT_FORM_DEFAULT_VALUES, seedUnitFormValues, buildUnitFormPayload } from './dialogs/unitFormHelpers';
+import {
+  UNIT_FORM_DEFAULT_VALUES,
+  seedUnitFormValues,
+  buildUnitFormPayload,
+  getUnitMutationError,
+  validateUnitFormValues,
+} from './dialogs/unitFormHelpers';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { useAuthStore } from '@/store/auth.store';
@@ -48,6 +53,7 @@ export function UnitDetailSheet({
   const [convertBooking, setConvertBooking] = useState<any | null>(null);
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [splitConfirmOpen, setSplitConfirmOpen] = useState(false);
+  const [updateInfoError, setUpdateInfoError] = useState<string | null>(null);
 
   const {
     register: editRegister, handleSubmit: handleEditSubmit, watch: editWatch,
@@ -59,11 +65,34 @@ export function UnitDetailSheet({
   const submitProposalMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
     onSuccess: () => {
+      setUpdateInfoError(null);
       qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
       toast({ title: 'Đã gửi phê duyệt' });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (error: any) => {
+      const message = getUnitMutationError(error, 'update');
+      setUpdateInfoError(message);
+      toast({ title: 'Không thể cập nhật mặt bằng', description: message, variant: 'destructive' });
+    },
   });
+
+  const submitUnitInfo = (data: any) => {
+    const currentStatus = (detail as any)?.status ?? unit?.status;
+    if (currentStatus !== 'VACANT') {
+      const message = `Chỉ có thể điều chỉnh thông tin khi mặt bằng đang trống (VACANT). Trạng thái hiện tại: ${currentStatus}.`;
+      setUpdateInfoError(message);
+      toast({ title: 'Không thể chỉnh sửa mặt bằng', description: message, variant: 'destructive' });
+      return;
+    }
+    const message = validateUnitFormValues(data, unit?.mallId ?? '');
+    if (message) {
+      setUpdateInfoError(message);
+      toast({ title: 'Thông tin chưa hợp lệ', description: message, variant: 'destructive' });
+      return;
+    }
+    setUpdateInfoError(null);
+    updateInfoMutation.mutate(data);
+  };
 
   const convertProposalMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.convertProposal(id),
@@ -120,20 +149,9 @@ export function UnitDetailSheet({
     onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
   });
 
-  const statusMutation = useMutation({
-    mutationFn: (status: string) => spacesApi.updateUnitWithHistory(detail?.id ?? unit!.id, { status }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['unit-detail', unit?.id] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: 'Đã cập nhật trạng thái' });
-    },
-    onError: () => toast({ title: 'Lỗi cập nhật trạng thái', variant: 'destructive' }),
-  });
-
   const updateInfoMutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = buildUnitFormPayload(data, unit!.mallId);
+      const payload = buildUnitFormPayload(data, unit!.mallId, true);
       return spacesApi.updateUnit(detail?.id ?? unit!.id, payload);
     },
     onSuccess: () => {
@@ -164,6 +182,7 @@ export function UnitDetailSheet({
 
   useEffect(() => {
     if (d) {
+      setUpdateInfoError(null);
       editReset(seedUnitFormValues(d));
     }
   }, [d]);
@@ -281,41 +300,35 @@ export function UnitDetailSheet({
             </div>
           )}
 
-          {/* Change status */}
-          {canManageSpaces && <div>
-            <label className="text-xs font-semibold tracking-wider text-gray-400 block mb-1.5">ĐỔI TRẠNG THÁI</label>
-            <Select
-              value={d.status}
-              onValueChange={(v) => statusMutation.mutate(v)}
-              disabled={statusMutation.isPending}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>}
-
           {/* Space info — always editable */}
           <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
             <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">THÔNG TIN MẶT BẰNG</div>
+            {canManageSpaces && d.status !== 'VACANT' && (
+              <div role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Thông tin đang được khóa vì mặt bằng ở trạng thái <strong>{d.status}</strong>. Chỉ được điều chỉnh khi mặt bằng đang trống (VACANT).
+              </div>
+            )}
+            {updateInfoError && (
+              <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p className="font-medium">Không thể lưu thay đổi</p>
+                <p className="mt-1">{updateInfoError}</p>
+              </div>
+            )}
             <form
               id="unit-info-edit-form"
-              onSubmit={handleEditSubmit((data) => updateInfoMutation.mutate(data))}
+              onSubmit={handleEditSubmit(submitUnitInfo)}
             >
-              <UnitFormFields
-                register={editRegister}
-                watch={editWatch}
-                setValue={editSetValue}
-                errors={editErrors}
-                floors={floors}
-                zones={zones}
-                categoryNames={categoryNames}
-              />
+              <fieldset disabled={!canManageSpaces || d.status !== 'VACANT'} className={d.status !== 'VACANT' ? 'opacity-60' : undefined}>
+                <UnitFormFields
+                  register={editRegister}
+                  watch={editWatch}
+                  setValue={editSetValue}
+                  errors={editErrors}
+                  floors={floors}
+                  zones={zones}
+                  categoryNames={categoryNames}
+                />
+              </fieldset>
             </form>
           </div>
 
@@ -421,7 +434,7 @@ export function UnitDetailSheet({
               type="submit"
               form="unit-info-edit-form"
               className="flex-1 gap-2"
-              disabled={updateInfoMutation.isPending}
+              disabled={updateInfoMutation.isPending || d.status !== 'VACANT'}
             >
               <Save size={14} /> {updateInfoMutation.isPending ? 'Đang lưu...' : 'Lưu'}
             </Button>}

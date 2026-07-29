@@ -10,6 +10,12 @@
     "CONVERTED": "Đã chuyển đề xuất",
     "CANCELLED": "Đã hủy"
   },
+  "slotStatus": {
+    "PENDING": "Chờ xác nhận",
+    "CONFIRMED": "Đã xác nhận",
+    "COMPLETED": "Hoàn thành",
+    "CANCELLED": "Đã hủy"
+  },
   "fields": {
     "unit": "Mặt bằng",
     "tenant": "Khách hàng",
@@ -126,9 +132,15 @@
     "createdAt": "Ngày tạo",
     "updatedAt": "Cập nhật",
     "sale": "Sale",
+    "bookingCount": "{{count}} booking",
+    "holdingCount": "{{count}} đang giữ",
+    "waitingCount": "{{count}} đang chờ",
+    "pendingConfirmationCount": "{{count}} chờ xác nhận",
+    "confirmedCount": "{{count}} đã xác nhận",
     "ref": "Ref #",
     "type": "Loại",
     "unitSlot": "Unit / Slot",
+    "slot": "Slot",
     "timeRange": "Thời gian",
     "amount": "Thành tiền"
   },
@@ -146,6 +158,13 @@
     "revenue": "Doanh thu"
   },
   "filterLabels": {
+    "bookingStatusTabs": "Lọc nhanh theo trạng thái booking",
+    "allFloors": "Tất cả tầng",
+    "allUnits": "Tất cả unit",
+    "allSlots": "Tất cả slot",
+    "floor": "Tầng",
+    "unit": "Unit",
+    "slot": "Slot",
     "all": "Tất cả",
     "expiringSoon": "Sắp hết hạn (7 ngày)",
     "searchUnit": "Tìm unit, lead, khách hàng...",

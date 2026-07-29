@@ -9,12 +9,12 @@ import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { UnitCard } from '@/components/spaces/UnitCard';
 import { CompareModal } from '@/components/spaces/CompareModal';
 import { MergeUnitsDialog } from '@/components/spaces/dialogs/MergeUnitsDialog';
-import { BulkStatusDialog, BulkCategoryDialog, BulkRentDialog } from '@/components/spaces/dialogs/BulkDialogs';
+import { BulkCategoryDialog, BulkRentDialog } from '@/components/spaces/dialogs/BulkDialogs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import {
-  Building2, Plus, Columns, RefreshCw, Filter, DollarSign, GitMerge,
+  Building2, Plus, Columns, Filter, DollarSign, GitMerge,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 
@@ -56,6 +56,7 @@ export function SpacesGrid({
     mergeDialogOpen,
     setMergeDialogOpen,
   } = useSpacesStore();
+  const selectedHasNonVacant = units.some((unit) => selectedIds.has(unit.id) && unit.status !== 'VACANT');
 
   const { gridRef, selectoRef, selectoProps, dialogOpen } = useDragSelect({
     onSelect: selectAll,
@@ -63,7 +64,7 @@ export function SpacesGrid({
     idAttribute: 'data-unit-id',
   });
 
-  const [bulkActionOpen, setBulkActionOpen] = useState<'status' | 'category' | 'rent' | null>(null);
+  const [bulkActionOpen, setBulkActionOpen] = useState<'category' | 'rent' | null>(null);
 
   const bulkMutation = useMutation({
     mutationFn: (params: { unitIds: string[]; updates: any }) => spacesApi.bulkUpdateUnits(params),
@@ -108,13 +109,24 @@ export function SpacesGrid({
               <GitMerge size={14} /> Gộp sảnh
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('status')}>
-            <RefreshCw size={14} /> Đổi trạng thái
-          </Button>
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('category')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
+            disabled={selectedHasNonVacant}
+            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            onClick={() => setBulkActionOpen('category')}
+          >
             <Filter size={14} /> Đổi ngành hàng
           </Button>
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setBulkActionOpen('rent')}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
+            disabled={selectedHasNonVacant}
+            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            onClick={() => setBulkActionOpen('rent')}
+          >
             <DollarSign size={14} /> Đổi giá thuê
           </Button>
         </BulkSelectionBar>
@@ -148,7 +160,7 @@ export function SpacesGrid({
         <div className="text-center py-16 text-gray-400">
           <Building2 size={48} className="mx-auto mb-3 opacity-20" />
           <p className="font-medium">Không tìm thấy mặt bằng</p>
-          {mallId && (
+          {isAdmin && mallId && (
             <Button
               variant="outline"
               size="sm"
@@ -162,13 +174,6 @@ export function SpacesGrid({
       )}
 
       {/* Bulk Action Dialogs */}
-      <BulkStatusDialog
-        open={bulkActionOpen === 'status'}
-        count={selectedIds.size}
-        onClose={() => setBulkActionOpen(null)}
-        onConfirm={(status) => bulkMutation.mutate({ unitIds: Array.from(selectedIds), updates: { status } })}
-        loading={bulkMutation.isPending}
-      />
       <BulkCategoryDialog
         open={bulkActionOpen === 'category'}
         count={selectedIds.size}

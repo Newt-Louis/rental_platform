@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
@@ -363,6 +363,8 @@ function ProposalDetailSheet({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showEditor, setShowEditor] = useState(false);
+  const [showTenantDialog, setShowTenantDialog] = useState(false);
+  const [tenantForm, setTenantForm] = useState<any>({ companyName: '', brandName: '', taxCode: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
 
   const submitMutation = useMutation({
     mutationFn: () => proposalsApi.submitProposal(p!.id),
@@ -375,9 +377,15 @@ function ProposalDetailSheet({
   });
 
   const convertMutation = useMutation({
-    mutationFn: () => proposalsApi.convertProposal(p!.id),
+    mutationFn: (tenant?: Record<string, unknown>) => proposalsApi.convertProposal(p!.id, tenant),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: t('proposals.actions.convertSuccess') });
       onClose();
     },
@@ -419,6 +427,22 @@ function ProposalDetailSheet({
     >
       {p && (
         <>
+          <Dialog open={showTenantDialog} onOpenChange={setShowTenantDialog}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader><DialogTitle>Tạo khách thuê và tài khoản Tenant Portal</DialogTitle></DialogHeader>
+              <p className="text-sm text-muted-foreground">Kiểm tra thông tin lấy từ Lead trước khi ký hợp đồng. Hệ thống sẽ gửi email kích hoạt tài khoản portal cho khách.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">Tên pháp nhân *<Input value={tenantForm.companyName} onChange={(e) => setTenantForm({ ...tenantForm, companyName: e.target.value })} /></label>
+                <label className="text-sm">Tên thương hiệu *<Input value={tenantForm.brandName} onChange={(e) => setTenantForm({ ...tenantForm, brandName: e.target.value })} /></label>
+                <label className="text-sm">Mã số thuế<Input value={tenantForm.taxCode} onChange={(e) => setTenantForm({ ...tenantForm, taxCode: e.target.value })} /></label>
+                <label className="text-sm">Người liên hệ *<Input value={tenantForm.contactName} onChange={(e) => setTenantForm({ ...tenantForm, contactName: e.target.value })} /></label>
+                <label className="text-sm">Email đăng nhập portal *<Input type="email" value={tenantForm.contactEmail} onChange={(e) => setTenantForm({ ...tenantForm, contactEmail: e.target.value })} /></label>
+                <label className="text-sm">Điện thoại<Input value={tenantForm.contactPhone} onChange={(e) => setTenantForm({ ...tenantForm, contactPhone: e.target.value })} /></label>
+                <label className="col-span-2 text-sm">Địa chỉ<Input value={tenantForm.address} onChange={(e) => setTenantForm({ ...tenantForm, address: e.target.value })} /></label>
+              </div>
+              <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowTenantDialog(false)}>Hủy</Button><Button disabled={convertMutation.isPending || !tenantForm.companyName.trim() || !tenantForm.brandName.trim() || !tenantForm.contactName.trim() || !tenantForm.contactEmail.trim()} onClick={() => convertMutation.mutate(tenantForm)}>Tạo khách thuê và ký hợp đồng</Button></div>
+            </DialogContent>
+          </Dialog>
           {/* Reject dialog — renders via portal, not clipped by sheet overflow */}
           <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
             <DialogContent className="max-w-sm">
@@ -477,7 +501,7 @@ function ProposalDetailSheet({
                     </div>
                     <button
                       className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                      onClick={() => { onClose(); navigate('/crm'); }}
+                      onClick={() => { onClose(); navigate(`/crm?leadId=${p.lead.id}`); }}
                     >
                       <div>
                         <div className="font-medium text-gray-900">{p.lead.brandName}</div>
@@ -491,24 +515,34 @@ function ProposalDetailSheet({
                   </div>
                 )}
 
-                {/* Contract result */}
-                {p.contract && (
-                  <div className="rounded-xl border border-green-200 bg-green-50 p-3">
-                    <div className="text-xs font-semibold text-green-600 mb-1.5 flex items-center gap-1">
-                      <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
-                    </div>
-                    <button
-                      className="flex items-center justify-between w-full text-sm hover:text-green-700 group"
-                      onClick={() => { onClose(); navigate('/contracts'); }}
-                    >
-                      <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
-                      <div className="flex items-center gap-1 text-xs text-green-600">
-                        <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
-                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                {/* Contract result — màu phản ánh đúng trạng thái thật của hợp đồng, không mặc định
+                    xanh lá (đã xong) ngay cả khi hợp đồng vẫn còn ở DRAFT/chưa ký. */}
+                {p.contract && (() => {
+                  const inForce = ['ACTIVE', 'EXPIRING'].includes(p.contract.status);
+                  const ended = ['EXPIRED', 'TERMINATED'].includes(p.contract.status);
+                  const tone = inForce
+                    ? { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-600', hover: 'hover:text-green-700' }
+                    : ended
+                    ? { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-500', hover: 'hover:text-gray-700' }
+                    : { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600', hover: 'hover:text-amber-700' };
+                  return (
+                    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3`}>
+                      <div className={`text-xs font-semibold ${tone.text} mb-1.5 flex items-center gap-1`}>
+                        <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
                       </div>
-                    </button>
-                  </div>
-                )}
+                      <button
+                        className={`flex items-center justify-between w-full text-sm ${tone.hover} group`}
+                        onClick={() => { onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
+                      >
+                        <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
+                        <div className={`flex items-center gap-1 text-xs ${tone.text}`}>
+                          <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
+                          <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Parties */}
                 <SheetSection label={t('proposals.sections.proposedFor')} className="bg-gray-50">
@@ -563,7 +597,17 @@ function ProposalDetailSheet({
                 {/* Approval workflow */}
                 {approvals.length > 0 && (
                   <div>
-                    <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">{t('proposals.sections.approvalWorkflow')}</div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-xs font-semibold tracking-wider text-gray-400">{t('proposals.sections.approvalWorkflow')}</div>
+                      {p.approvalWorkflow?.id && (
+                        <button
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                          onClick={() => { onClose(); navigate(`/approvals?workflowId=${p.approvalWorkflow.id}`); }}
+                        >
+                          {t('proposals.sections.viewApprovalWorkflow')} <ArrowRight size={11} />
+                        </button>
+                      )}
+                    </div>
                     <div className="space-y-2">
                       {approvals.map((a: any) => (
                         <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
@@ -618,7 +662,7 @@ function ProposalDetailSheet({
               {p.status === 'APPROVED' && (
                 <Button
                   className="w-full gap-2 bg-green-600 hover:bg-green-700"
-                  onClick={() => convertMutation.mutate()}
+                  onClick={() => { if (p.tenantId) convertMutation.mutate(undefined); else { setTenantForm({ companyName: p.lead?.company || p.lead?.brandName || '', brandName: p.lead?.brandName || '', taxCode: '', contactName: p.lead?.contactName || '', contactEmail: p.lead?.email || '', contactPhone: p.lead?.phone || '', address: '' }); setShowTenantDialog(true); } }}
                   disabled={convertMutation.isPending}
                 >
                   <FileText size={15} /> {t('proposals.actions.convert')}
@@ -673,11 +717,17 @@ const EMPTY_FILTERS = { search: '', status: '', floorId: '', unitId: '', dateFro
 
 export default function ProposalsPage() {
   const { t } = useTranslation('deals');
+  const [searchParams] = useSearchParams();
   // draft = what user is typing; applied = what's sent to API
   const [draft, setDraft] = useState(EMPTY_FILTERS);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id) setSelectedProposal({ id } as Proposal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const qc = useQueryClient();
@@ -775,6 +825,11 @@ export default function ProposalsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
       toast({ title: t('proposals.actions.convertSuccess') });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
@@ -1067,6 +1122,11 @@ export default function ProposalsPage() {
                       <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
                       <td className="px-4 py-3">
                         <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                        {p.status === 'CONVERTED' && p.contract && (
+                          <div className="mt-1 text-[11px] text-gray-400">
+                            {t(`contracts.status.${p.contract.status}`, p.contract.status as string)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
@@ -1088,7 +1148,7 @@ export default function ProposalsPage() {
                               onClick={(e) => { e.stopPropagation(); convertMutation.mutate(p.id); }}
                               disabled={convertMutation.isPending}
                             >
-                              <FileText size={12} /> {t('proposals.actions.signContract')}
+                              <FileText size={12} /> {t('proposals.actions.convert')}
                             </Button>
                           )}
                           {canEdit && p.status === 'DRAFT' && <Button

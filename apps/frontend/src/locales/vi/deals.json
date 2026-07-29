@@ -11,7 +11,7 @@
       "UNDER_REVIEW": "Đang xem",
       "APPROVED": "Đã duyệt",
       "REJECTED": "Từ chối",
-      "CONVERTED": "Đã ký HĐ",
+      "CONVERTED": "Đã tạo HĐ",
       "WITHDRAWN": "Rút lại",
       "EXPIRED": "Hết hạn"
     },
@@ -71,8 +71,9 @@
       "financials": "TÀI CHÍNH",
       "term": "THỜI HẠN",
       "approvalWorkflow": "QUY TRÌNH PHÊ DUYỆT",
+      "viewApprovalWorkflow": "Xem chi tiết duyệt",
       "leadSource": "LEAD NGUỒN",
-      "contractResult": "HỢP ĐỒNG ĐÃ KÝ"
+      "contractResult": "HỢP ĐỒNG LIÊN QUAN"
     },
     "tabs": {
       "detail": "Chi tiết",
@@ -253,6 +254,7 @@
       "rejected": "Hồ sơ đã bị từ chối",
       "inProgress": "Đang trong quy trình phê duyệt",
       "steps": "{{done}}/{{total}} bước",
+      "viewProposal": "Xem đề xuất gốc",
       "section": {
         "proposalInfo": "THÔNG TIN ĐỀ XUẤT",
         "financial": "ĐIỀU KIỆN TÀI CHÍNH",
@@ -294,7 +296,7 @@
     "edit": "Chỉnh sửa",
     "detail": "Chi tiết hợp đồng",
     "status": {
-      "DRAFT": "Draft",
+      "DRAFT": "Bản nháp",
       "PENDING_LEGAL": "Chờ Legal",
       "PENDING_SIGNATURE": "Chờ ký",
       "ACTIVE": "Hiệu lực",

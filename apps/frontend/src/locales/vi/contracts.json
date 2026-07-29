@@ -18,6 +18,19 @@
     "RENEWAL": "Gia hạn",
     "TERMINATION": "Chấm dứt HĐ"
   },
+  "workflow": {
+    "label": "Quy trình xử lý hợp đồng",
+    "notReadyForActive": "Chưa đủ điều kiện kích hoạt (ACTIVE) — cần xử lý:",
+    "updateSuccess": "Đã cập nhật trạng thái hợp đồng",
+    "moveTo": {
+      "PENDING_LEGAL": "Chuyển sang Chờ Legal",
+      "PENDING_SIGNATURE": "Chuyển sang Chờ ký",
+      "ACTIVE": "Kích hoạt hợp đồng",
+      "DRAFT": "Trả về Bản nháp",
+      "EXPIRING": "Đánh dấu Sắp hết hạn",
+      "EXPIRED": "Đánh dấu Hết hạn"
+    }
+  },
   "filters": {
     "searchPlaceholder": "Số HĐ / khách thuê / mặt bằng...",
     "allTypes": "Tất cả loại",
@@ -60,11 +73,13 @@
       "events": "Timeline",
       "amendments": "Phụ lục",
       "template": "Template",
+      "billing": "Thu tiền",
       "termination": "Chấm dứt"
     },
     "daysLeft": "Còn {{count}} ngày",
     "source": {
       "label": "NGUỒN GỐC",
+      "booking": "Booking: ",
       "proposal": "Đề xuất: ",
       "lead": "Lead: "
     },
@@ -152,14 +167,67 @@
     "deleteConfirm": "Xóa tài liệu"
   },
   "amendments": {
-    "createBtn": "Tạo phụ lục (+5% tiền thuê)",
+    "createBtn": "Tạo phụ lục",
     "createSuccess": "Đã tạo phụ lục bản nháp",
-    "reason": "Điều chỉnh tiền thuê +5%"
+    "submitSuccess": "Đã gửi phụ lục để duyệt",
+    "approveSuccess": "Đã duyệt và áp dụng phụ lục",
+    "submitBtn": "Gửi duyệt",
+    "approveBtn": "Duyệt",
+    "dialogTitle": "Tạo phụ lục hợp đồng",
+    "typeLabel": "Loại phụ lục",
+    "type": {
+      "RENT_CHANGE": "Điều chỉnh tiền thuê",
+      "CAM_CHANGE": "Điều chỉnh phí quản lý (CAM)",
+      "RENT_FREE_CHANGE": "Điều chỉnh số tháng miễn phí thuê",
+      "TERM_EXTENSION": "Gia hạn thời hạn hợp đồng",
+      "RENEWAL": "Tái ký / gia hạn mới",
+      "OTHER": "Khác"
+    },
+    "newRentLabel": "Tiền thuê mới (VND/tháng)",
+    "newCamLabel": "Phí CAM mới (VND/tháng)",
+    "newRentFreeLabel": "Số tháng miễn phí thuê mới",
+    "newEndDateLabel": "Ngày kết thúc mới",
+    "effectiveDateLabel": "Ngày hiệu lực",
+    "reasonLabel": "Lý do",
+    "reasonPlaceholder": "Mô tả lý do điều chỉnh...",
+    "cancel": "Hủy",
+    "submit": "Tạo phụ lục",
+    "noAmendments": "Chưa có phụ lục nào cho hợp đồng này."
   },
   "template": {
     "select": "Chọn mẫu hợp đồng...",
     "render": "Xuất hợp đồng",
     "renderSuccess": "Đã xuất mẫu hợp đồng"
+  },
+  "billingTab": {
+    "summary": {
+      "totalScheduled": "Tổng giá trị theo lịch",
+      "collected": "Đã thu",
+      "remaining": "Còn phải thu",
+      "collectionRate": "Tỷ lệ thu",
+      "periodCount": "{{count}} kỳ"
+    },
+    "rebuild": "Làm mới lịch thu",
+    "rebuildSuccess": "Đã làm mới lịch thu tiền theo hợp đồng",
+    "notActiveHint": "Lịch thu tiền chỉ tự tạo khi hợp đồng ở trạng thái Hiệu lực/Sắp hết hạn — bấm \"Làm mới lịch thu\" nếu cần tạo lại thủ công.",
+    "noSchedule": "Chưa có lịch thu tiền cho hợp đồng này.",
+    "table": {
+      "period": "Kỳ",
+      "rent": "Tiền thuê",
+      "cam": "CAM",
+      "total": "Tổng",
+      "dueDate": "Hạn thu",
+      "periodStatus": "Trạng thái kỳ",
+      "invoice": "Hóa đơn",
+      "collectedOfTotal": "{{collected}} / {{total}}"
+    },
+    "entryStatus": {
+      "PENDING": "Chờ lập hóa đơn",
+      "INVOICED": "Đã lập hóa đơn",
+      "SKIPPED": "Miễn thu (rent-free)"
+    },
+    "noInvoiceYet": "Chưa có hóa đơn",
+    "viewInvoice": "Xem hóa đơn"
   },
   "termination": {
     "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",

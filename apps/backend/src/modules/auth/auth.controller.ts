@@ -27,6 +27,12 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Post('activate-invitation')
+  @Public()
+  async activateInvitation(@Body() body: { token: string; password: string }) {
+    return this.authService.activateInvitation(body.token, body.password);
+  }
+
   @Post('logout')
   @Roles(...MODULE_ROLES.notifications)
   @ApiBearerAuth('JWT-auth')

@@ -108,7 +108,7 @@
   "stats": {
     "total": "Tổng lead",
     "active": "Đang xử lý",
-    "won": "Đã ký HĐ",
+    "won": "Đã chốt",
     "lost": "Thất bại"
   },
   "noLeads": "Không có lead nào",
@@ -216,12 +216,22 @@
     "OTHER": "Khác"
   },
   "proposalStatus": {
-    "DRAFT": "Draft",
+    "DRAFT": "Bản nháp",
     "SUBMITTED": "Chờ duyệt",
     "UNDER_REVIEW": "Đang xem",
     "APPROVED": "Đã duyệt",
     "REJECTED": "Từ chối",
-    "CONVERTED": "Đã ký HĐ"
+    "CONVERTED": "Đã tạo HĐ"
+  },
+  "contractStatus": {
+    "DRAFT": "Bản nháp",
+    "PENDING_LEGAL": "Chờ Legal",
+    "PENDING_SIGNATURE": "Chờ ký",
+    "ACTIVE": "Hiệu lực",
+    "EXPIRING": "Sắp hết hạn",
+    "EXPIRED": "Hết hạn",
+    "TERMINATING": "Đang chấm dứt",
+    "TERMINATED": "Đã chấm dứt"
   },
   "bookingStatus": {
     "PENDING": "Chờ duyệt",
@@ -398,6 +408,14 @@
     "confirm": "Xác nhận",
     "endCoopSuccess": "Đã kết thúc hợp tác",
     "endCoopLeads": "{{count}} lead liên kết → Thất bại",
+    "getInfoFromLead": "Lấy thông tin từ Lead",
+    "syncLeadDescription": "Chọn Lead để liên kết và cập nhật thông tin công ty, liên hệ, nhu cầu thuê và người phụ trách.",
+    "selectLead": "Chọn Lead...",
+    "noAvailableLeads": "Không có Lead nào có thể liên kết.",
+    "syncNow": "Liên kết & cập nhật",
+    "syncLeadSuccess": "Đã lấy thông tin từ Lead",
+    "syncLeadSuccessHint": "Lead đã được liên kết với hồ sơ khách hàng.",
+    "syncLeadError": "Không thể lấy thông tin từ Lead",
     "noLinkedLeads": "Chưa có leads liên kết",
     "addActivity": "Ghi nhận hoạt động"
   },
@@ -477,11 +495,20 @@
     "noActivities": "Chưa có hoạt động",
     "advancePipeline": "Pipeline → {{label}}",
     "customerSyncHint": "Hồ sơ KH → {{label}}",
+    "wonRequiresApprovedProposal": "Cần ít nhất 1 đề xuất (Proposal) đã được duyệt trước khi đánh dấu Đã chốt.",
     "markLost": "Đánh dấu thất bại",
     "markedLost": "Đã đánh dấu thất bại",
     "customerLostHint": "Hồ sơ KH → Không hợp tác",
     "advanceSuccess": "Pipeline → {{label}}",
-    "advanceSyncHint": "Hồ sơ KH đã cập nhật: {{label}}"
+    "advanceSyncHint": "Hồ sơ KH đã cập nhật: {{label}}",
+    "noLinkedCustomer": "Lead này chưa có hồ sơ khách hàng",
+    "createCustomerProfileHint": "Tạo hồ sơ với thông tin sẵn có từ Lead. Trạng thái pipeline sẽ được giữ nguyên.",
+    "createCustomerProfile": "Chuyển thành hồ sơ khách hàng",
+    "creatingCustomerProfile": "Đang tạo hồ sơ...",
+    "openCustomerProfile": "Mở hồ sơ KH",
+    "customerProfileReady": "Đã tạo hồ sơ khách hàng",
+    "customerProfileReadyHint": "Hồ sơ đã được liên kết với Lead.",
+    "customerProfileError": "Không thể tạo hồ sơ khách hàng"
   },
   "addDialog": {
     "title": "Thêm vào CRM",
@@ -489,6 +516,12 @@
     "modeCustomer": "Hồ sơ Khách hàng",
     "leadDesc": "Thêm cơ hội tiềm năng vào pipeline bán hàng. Theo dõi qua từng giai đoạn cho đến khi ký hợp đồng.",
     "customerDesc": "Đăng ký hồ sơ khách hàng đầy đủ với thông tin công ty, yêu cầu thuê và phân công nhân viên.",
+    "selectLeadTitle": "Chọn Lead để tạo hồ sơ (không bắt buộc)",
+    "selectLeadHint": "Tìm theo thương hiệu, công ty, người liên hệ hoặc email. Thông tin Lead sẽ được tự động điền vào biểu mẫu.",
+    "searchLeadPlaceholder": "Tìm Lead...",
+    "leadSelected": "Đã chọn",
+    "clearLead": "Bỏ chọn",
+    "noSelectableLeads": "Không tìm thấy Lead chưa liên kết phù hợp.",
     "fieldBrand": "Thương hiệu / Brand *",
     "fieldBrandPlaceholder": "VD: Highlands Coffee",
     "fieldCompany": "Tên công ty",

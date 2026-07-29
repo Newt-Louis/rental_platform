@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { contractsApi, terminationApi, spacesApi } from '@/api';
+import { contractsApi, terminationApi, spacesApi, billingApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,19 @@ const STATUS_MAP: Record<string, { color: string }> = {
 
 const TYPE_KEYS = ['LOI', 'LEASE_AGREEMENT', 'APPENDIX', 'RENEWAL', 'TERMINATION'] as const;
 
+// Transition hiển thị trên UI — khớp với CONTRACT_STATUS_TRANSITIONS ở backend
+// (contracts.service.ts), trừ nhánh TERMINATING/TERMINATED đã có tab "Chấm dứt hợp đồng" riêng.
+const CONTRACT_UI_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['PENDING_LEGAL', 'ACTIVE'],
+  PENDING_LEGAL: ['PENDING_SIGNATURE', 'DRAFT'],
+  PENDING_SIGNATURE: ['ACTIVE', 'PENDING_LEGAL'],
+  ACTIVE: ['EXPIRING'],
+  EXPIRING: ['ACTIVE', 'EXPIRED'],
+  EXPIRED: [],
+  TERMINATING: [],
+  TERMINATED: [],
+};
+
 function daysUntil(date: string) {
   return Math.floor((new Date(date).getTime() - Date.now()) / 86400000);
 }
@@ -57,6 +70,23 @@ function fmtDate(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
+function fmtCurrency(n?: number | null) {
+  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ₫`;
+}
+
+const BILLING_ENTRY_STATUS_COLOR: Record<string, string> = {
+  PENDING: 'border-gray-300 text-gray-600',
+  INVOICED: 'border-blue-300 text-blue-700',
+  SKIPPED: 'border-gray-200 text-gray-400',
+};
+const INVOICE_STATUS_COLOR: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-700',
+  ISSUED: 'bg-blue-100 text-blue-700',
+  PARTIALLY_PAID: 'bg-amber-100 text-amber-700',
+  PAID: 'bg-emerald-100 text-emerald-700',
+  OVERDUE: 'bg-red-100 text-red-700',
+  CANCELLED: 'bg-gray-200 text-gray-500',
+};
 function fmtBytes(b?: number | null) {
   if (!b) return '';
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -422,11 +452,56 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [templateId, setTemplateId] = useState('');
+  const [amendmentDialogOpen, setAmendmentDialogOpen] = useState(false);
+  const [amendmentForm, setAmendmentForm] = useState({
+    type: 'RENT_CHANGE',
+    newRent: '', newCam: '', newRentFree: '', newEndDate: '',
+    effectiveDate: '', reason: '',
+  });
 
   const { data: c, isLoading } = useQuery({
     queryKey: ['contract-detail', contractId],
     queryFn: () => contractsApi.getContract(contractId!),
     enabled: !!contractId,
+  });
+
+  const { data: readinessData } = useQuery({
+    queryKey: ['contract-activation-readiness', contractId],
+    queryFn: () => contractsApi.getActivationReadiness(contractId!),
+    enabled: !!contractId,
+  });
+  const readiness: any = readinessData?.data ?? readinessData;
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (status: string) => contractsApi.updateStatus(contractId!, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-events', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-activation-readiness', contractId] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      qc.invalidateQueries({ queryKey: ['units'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
+      qc.invalidateQueries({ queryKey: ['occupancy'] });
+      qc.invalidateQueries({ queryKey: ['floor-map'] });
+      toast({ title: t('workflow.updateSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
+    queryKey: ['contract-billing-schedule', contractId],
+    queryFn: () => billingApi.getSchedule(contractId!),
+    enabled: !!contractId,
+  });
+  const scheduleEntries: any[] = scheduleData?.data ?? scheduleData ?? [];
+
+  const buildScheduleMutation = useMutation({
+    mutationFn: () => billingApi.buildSchedule(contractId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-billing-schedule', contractId] });
+      toast({ title: t('billingTab.rebuildSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const { data: events } = useQuery({
@@ -462,6 +537,10 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
     qc.invalidateQueries({ queryKey: ['contract-termination', contractId] });
     qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
     qc.invalidateQueries({ queryKey: ['contracts'] });
+    qc.invalidateQueries({ queryKey: ['units'] });
+    qc.invalidateQueries({ queryKey: ['unit-detail'] });
+    qc.invalidateQueries({ queryKey: ['occupancy'] });
+    qc.invalidateQueries({ queryKey: ['floor-map'] });
   };
 
   const initiateTerminationMutation = useMutation({
@@ -501,16 +580,47 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   });
 
   const createAmendmentMutation = useMutation({
-    mutationFn: () => contractsApi.createAmendment(contractId!, {
-      type: 'RENT_CHANGE',
-      effectiveDate: new Date().toISOString(),
-      changes: { rent: (detail?.rent ?? 0) * 1.05 },
-      reason: t('amendments.reason'),
-    }),
+    mutationFn: () => {
+      const changes: Record<string, unknown> = {};
+      if (amendmentForm.type === 'RENT_CHANGE') changes.rent = +amendmentForm.newRent;
+      else if (amendmentForm.type === 'CAM_CHANGE') changes.cam = +amendmentForm.newCam;
+      else if (amendmentForm.type === 'RENT_FREE_CHANGE') changes.rentFree = +amendmentForm.newRentFree;
+      else if (amendmentForm.type === 'TERM_EXTENSION' || amendmentForm.type === 'RENEWAL') changes.endDate = amendmentForm.newEndDate;
+
+      return contractsApi.createAmendment(contractId!, {
+        type: amendmentForm.type,
+        effectiveDate: amendmentForm.effectiveDate ? new Date(amendmentForm.effectiveDate).toISOString() : new Date().toISOString(),
+        changes,
+        reason: amendmentForm.reason || undefined,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
       toast({ title: t('amendments.createSuccess') });
+      setAmendmentDialogOpen(false);
+      setAmendmentForm({ type: 'RENT_CHANGE', newRent: '', newCam: '', newRentFree: '', newEndDate: '', effectiveDate: '', reason: '' });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const submitAmendmentMutation = useMutation({
+    mutationFn: (amendmentId: string) => contractsApi.submitAmendment(contractId!, amendmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
+      toast({ title: t('amendments.submitSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const approveAmendmentMutation = useMutation({
+    mutationFn: (amendmentId: string) => contractsApi.approveAmendment(contractId!, amendmentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contract-amendments', contractId] });
+      qc.invalidateQueries({ queryKey: ['contract-detail', contractId] });
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      toast({ title: t('amendments.approveSuccess') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
   const st = detail ? STATUS_MAP[detail.status] ?? STATUS_MAP.DRAFT : null;
@@ -540,6 +650,9 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <TabsTrigger value="events">{t('sheet.tabs.events')}</TabsTrigger>
               <TabsTrigger value="amendments">{t('sheet.tabs.amendments')}</TabsTrigger>
               <TabsTrigger value="template">{t('sheet.tabs.template')}</TabsTrigger>
+              <TabsTrigger value="billing" className="gap-1.5">
+                <DollarSign size={13} /> {t('sheet.tabs.billing')}
+              </TabsTrigger>
               <TabsTrigger value="termination" className="gap-1.5">
                 <LogOut size={13} /> {t('sheet.tabs.termination')}
                 {term && term.status !== 'CANCELLED' && (
@@ -561,14 +674,57 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 )}
               </div>
 
+              {/* Quy trình xử lý — chuyển trạng thái thủ công, hiện điều kiện còn thiếu để kích hoạt */}
+              {CONTRACT_UI_TRANSITIONS[detail.status]?.length > 0 && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
+                  <div className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    <CheckCircle2 size={13} /> {t('workflow.label')}
+                  </div>
+                  {readiness && !readiness.ready && CONTRACT_UI_TRANSITIONS[detail.status].includes('ACTIVE') && (
+                    <div className="text-xs text-amber-800 bg-amber-100 rounded-lg p-2.5">
+                      <div className="font-medium mb-1">{t('workflow.notReadyForActive')}</div>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        {readiness.missing.map((m: string, i: number) => <li key={i}>{m}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {CONTRACT_UI_TRANSITIONS[detail.status].map((nextStatus) => {
+                      const blockedByReadiness = nextStatus === 'ACTIVE' && readiness && !readiness.ready;
+                      return (
+                        <Button
+                          key={nextStatus}
+                          size="sm"
+                          variant={nextStatus === 'ACTIVE' ? 'default' : 'outline'}
+                          disabled={updateStatusMutation.isPending || blockedByReadiness}
+                          onClick={() => updateStatusMutation.mutate(nextStatus)}
+                        >
+                          {t(`workflow.moveTo.${nextStatus}`)}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Source */}
               {detail.proposal && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
                   <div className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                     <Link2 size={11} /> {t('sheet.source.label')}
                   </div>
+                  {detail.proposal.booking && (
+                    <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                      onClick={() => { onClose(); navigate(`/bookings?id=${detail.proposal.booking.id}`); }}>
+                      <div>
+                        <span className="text-xs text-gray-500 font-medium">{t('sheet.source.booking')}</span>
+                        <span className="font-medium text-gray-900">{detail.proposal.booking.bookingNumber}</span>
+                      </div>
+                      <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  )}
                   <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                    onClick={() => { onClose(); navigate('/proposals'); }}>
+                    onClick={() => { onClose(); navigate(`/proposals?id=${detail.proposal.id}`); }}>
                     <div>
                       <span className="text-xs text-gray-500 font-medium">{t('sheet.source.proposal')}</span>
                       <span className="font-medium text-gray-900">{detail.proposal.proposalNumber}</span>
@@ -577,7 +733,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                   </button>
                   {detail.proposal.lead && (
                     <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
-                      onClick={() => { onClose(); navigate('/crm'); }}>
+                      onClick={() => { onClose(); navigate(`/crm?leadId=${detail.proposal.lead.id}`); }}>
                       <div>
                         <span className="text-xs text-gray-500 font-medium">{t('sheet.source.lead')}</span>
                         <span className="font-medium text-gray-900">{detail.proposal.lead.brandName}</span>
@@ -654,13 +810,30 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
             {/* ── Tab: Phụ lục ── */}
             <TabsContent value="amendments">
-              <Button size="sm" className="mb-3" onClick={() => createAmendmentMutation.mutate()}>
+              <Button size="sm" className="mb-3" onClick={() => setAmendmentDialogOpen(true)}>
                 <GitBranch size={14} className="mr-1" /> {t('amendments.createBtn')}
               </Button>
+              {(amendments?.data ?? amendments ?? []).length === 0 && (
+                <p className="text-sm text-gray-400">{t('amendments.noAmendments')}</p>
+              )}
               {(amendments?.data ?? amendments ?? []).map((a: any) => (
-                <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm">
-                  <div className="font-medium">{a.amendmentNumber} — {a.type}</div>
-                  <Badge variant="outline" className="mt-1">{a.status}</Badge>
+                <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{a.amendmentNumber} — {t(`amendments.type.${a.type}`, a.type)}</div>
+                    <Badge variant="outline" className="mt-1">{a.status}</Badge>
+                  </div>
+                  {a.status === 'DRAFT' && (
+                    <Button size="sm" variant="outline" disabled={submitAmendmentMutation.isPending}
+                      onClick={() => submitAmendmentMutation.mutate(a.id)}>
+                      {t('amendments.submitBtn')}
+                    </Button>
+                  )}
+                  {a.status === 'SUBMITTED' && (
+                    <Button size="sm" disabled={approveAmendmentMutation.isPending}
+                      onClick={() => approveAmendmentMutation.mutate(a.id)}>
+                      {t('amendments.approveBtn')}
+                    </Button>
+                  )}
                 </div>
               ))}
             </TabsContent>
@@ -677,6 +850,100 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
               <Button size="sm" disabled={!templateId} onClick={() => renderMutation.mutate()}>
                 {t('template.render')}
               </Button>
+            </TabsContent>
+
+            {/* ── Tab: Thu tiền theo kỳ ── */}
+            <TabsContent value="billing" className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-gray-500 max-w-md">{t('billingTab.notActiveHint')}</p>
+                <Button size="sm" variant="outline" disabled={buildScheduleMutation.isPending}
+                  onClick={() => buildScheduleMutation.mutate()}>
+                  <Calendar size={14} className="mr-1" /> {t('billingTab.rebuild')}
+                </Button>
+              </div>
+
+              {scheduleLoading ? (
+                <Skeleton className="h-40" />
+              ) : scheduleEntries.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">{t('billingTab.noSchedule')}</p>
+              ) : (() => {
+                const totalScheduled = scheduleEntries.reduce((s, e) => s + e.subtotal, 0);
+                const totalCollected = scheduleEntries.reduce((s, e) => s + (e.invoice?.collectedAmount ?? 0), 0);
+                const collectionRate = totalScheduled > 0 ? (totalCollected / totalScheduled) * 100 : 0;
+                return (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                        <div className="text-[11px] text-gray-500">{t('billingTab.summary.totalScheduled')}</div>
+                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled)}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">{t('billingTab.summary.periodCount', { count: scheduleEntries.length })}</div>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                        <div className="text-[11px] text-emerald-700">{t('billingTab.summary.collected')}</div>
+                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected)}</div>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="text-[11px] text-amber-700">{t('billingTab.summary.remaining')}</div>
+                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected))}</div>
+                      </div>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                        <div className="text-[11px] text-blue-700">{t('billingTab.summary.collectionRate')}</div>
+                        <div className="text-base font-semibold text-blue-700">{collectionRate.toFixed(1)}%</div>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.period')}</th>
+                            <th className="text-right px-3 py-2">{t('billingTab.table.total')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.dueDate')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.periodStatus')}</th>
+                            <th className="text-left px-3 py-2">{t('billingTab.table.invoice')}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {scheduleEntries.map((e: any) => (
+                            <tr key={e.id}>
+                              <td className="px-3 py-2 font-medium text-gray-800">{e.period}</td>
+                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal)}</td>
+                              <td className="px-3 py-2 text-gray-600">{fmtDate(e.dueDate)}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className={`${BILLING_ENTRY_STATUS_COLOR[e.status] ?? ''} text-xs`}>
+                                  {t(`billingTab.entryStatus.${e.status}`, e.status as string)}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                {e.invoice ? (
+                                  <button
+                                    className="flex flex-wrap items-center gap-1.5 text-left hover:underline"
+                                    onClick={() => { onClose(); navigate(`/billing?invoiceId=${e.invoice.id}`); }}
+                                    title={t('billingTab.viewInvoice')}
+                                  >
+                                    <span className="font-mono text-xs text-blue-700">{e.invoice.invoiceNumber}</span>
+                                    <Badge className={`${INVOICE_STATUS_COLOR[e.invoice.status] ?? ''} border-0 text-[10px]`}>
+                                      {t(`billing:status.${e.invoice.status}`, e.invoice.status as string)}
+                                    </Badge>
+                                    <span className="text-[11px] text-gray-400">
+                                      {t('billingTab.table.collectedOfTotal', {
+                                        collected: fmtCurrency(e.invoice.collectedAmount),
+                                        total: fmtCurrency(e.invoice.totalAmount),
+                                      })}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">{t('billingTab.noInvoiceYet')}</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             {/* ── Tab: Chấm dứt hợp đồng ── */}
@@ -779,6 +1046,73 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
           </Tabs>
         </div>
       )}
+
+      <Dialog open={amendmentDialogOpen} onOpenChange={setAmendmentDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('amendments.dialogTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.typeLabel')}</label>
+              <Select value={amendmentForm.type} onValueChange={(v) => setAmendmentForm((f) => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['RENT_CHANGE', 'CAM_CHANGE', 'RENT_FREE_CHANGE', 'TERM_EXTENSION', 'RENEWAL', 'OTHER'].map((tp) => (
+                    <SelectItem key={tp} value={tp}>{t(`amendments.type.${tp}`)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {amendmentForm.type === 'RENT_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel')}</label>
+                <Input type="number" value={amendmentForm.newRent}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newRent: e.target.value }))} />
+              </div>
+            )}
+            {amendmentForm.type === 'CAM_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel')}</label>
+                <Input type="number" value={amendmentForm.newCam}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newCam: e.target.value }))} />
+              </div>
+            )}
+            {amendmentForm.type === 'RENT_FREE_CHANGE' && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentFreeLabel')}</label>
+                <Input type="number" value={amendmentForm.newRentFree}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newRentFree: e.target.value }))} />
+              </div>
+            )}
+            {(amendmentForm.type === 'TERM_EXTENSION' || amendmentForm.type === 'RENEWAL') && (
+              <div>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newEndDateLabel')}</label>
+                <Input type="date" value={amendmentForm.newEndDate}
+                  onChange={(e) => setAmendmentForm((f) => ({ ...f, newEndDate: e.target.value }))} />
+              </div>
+            )}
+
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.effectiveDateLabel')}</label>
+              <Input type="date" value={amendmentForm.effectiveDate}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, effectiveDate: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">{t('amendments.reasonLabel')}</label>
+              <Textarea value={amendmentForm.reason} placeholder={t('amendments.reasonPlaceholder')}
+                onChange={(e) => setAmendmentForm((f) => ({ ...f, reason: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAmendmentDialogOpen(false)}>{t('amendments.cancel')}</Button>
+            <Button disabled={createAmendmentMutation.isPending} onClick={() => createAmendmentMutation.mutate()}>
+              {t('amendments.submit')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
@@ -788,15 +1122,17 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 export default function ContractsPage() {
   const { t } = useTranslation('contracts');
   const { selectedMallId } = useMallStore();
+  const [searchParams] = useSearchParams();
+  const expiringDays = searchParams.get('expiring') ? +searchParams.get('expiring')! : 90;
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(searchParams.get('status') ?? '');
   const [type, setType] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showExpiring, setShowExpiring] = useState(false);
-  const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const [showExpiring, setShowExpiring] = useState(searchParams.has('expiring'));
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(searchParams.get('id'));
   const [page, setPage] = useState(1);
 
   const hasFilter = !!(search || status || type || floorId || unitId || dateFrom || dateTo);
@@ -837,8 +1173,8 @@ export default function ContractsPage() {
   });
 
   const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
-    queryKey: ['contracts-expiring', selectedMallId],
-    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined),
+    queryKey: ['contracts-expiring', selectedMallId, expiringDays],
+    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays),
     enabled: showExpiring,
   });
 

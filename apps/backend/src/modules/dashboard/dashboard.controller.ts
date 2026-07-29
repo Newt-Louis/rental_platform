@@ -15,11 +15,13 @@ export class DashboardController {
   @Get()
   @ApiOperation({ summary: 'Get dashboard KPIs' })
   @ApiQuery({ name: 'mallId', required: false })
+  @ApiQuery({ name: 'refresh', required: false, description: 'Bypass Redis cache when true' })
   getDashboard(
     @Query('mallId') mallId?: string,
+    @Query('refresh') refresh?: string,
     @CurrentUser() user?: { id: string; role: string },
   ) {
-    return this.dashboardService.getDashboard(mallId, user);
+    return this.dashboardService.getDashboard(mallId, user, refresh === 'true');
   }
 
   @Get('cross-mall')

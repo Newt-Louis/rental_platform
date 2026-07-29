@@ -59,6 +59,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
 
-# Database migrations are an explicit deployment job in docker-compose.yml.
-# Keeping startup migration-free prevents concurrent replicas from racing.
-CMD ["node", "dist/main.js"]
+# Apply committed, non-destructive production migrations before accepting traffic.
+# Prisma serializes migrate deploy with a database advisory lock, while `exec`
+# keeps Node as the signal-receiving application process under dumb-init.
+CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main.js"]

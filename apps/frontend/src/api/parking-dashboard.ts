@@ -10,7 +10,7 @@ export interface ParkingTransactionFilter {
   licensePlate?: string;
 }
 
-export const parkingApi = {
+export const parkingDashboardApi = {
   revenueReport: (parkingCode: string) =>
     api.get('/parking-dashboard/revenue-report', { params: { parkingCode } }).then((r) => r.data),
   transactionChart: (parkingCode: string, startTime: string, finishTime: string) =>

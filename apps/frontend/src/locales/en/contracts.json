@@ -18,6 +18,19 @@
     "RENEWAL": "Renewal",
     "TERMINATION": "Termination"
   },
+  "workflow": {
+    "label": "Contract workflow",
+    "notReadyForActive": "Not ready for activation (ACTIVE) — needs:",
+    "updateSuccess": "Contract status updated",
+    "moveTo": {
+      "PENDING_LEGAL": "Move to Pending Legal",
+      "PENDING_SIGNATURE": "Move to Pending Signature",
+      "ACTIVE": "Activate contract",
+      "DRAFT": "Revert to Draft",
+      "EXPIRING": "Mark Expiring",
+      "EXPIRED": "Mark Expired"
+    }
+  },
   "filters": {
     "searchPlaceholder": "Contract no. / tenant / space...",
     "allTypes": "All types",
@@ -60,11 +73,13 @@
       "events": "Timeline",
       "amendments": "Amendments",
       "template": "Template",
+      "billing": "Billing",
       "termination": "Termination"
     },
     "daysLeft": "{{count}} days left",
     "source": {
       "label": "SOURCE",
+      "booking": "Booking: ",
       "proposal": "Proposal: ",
       "lead": "Lead: "
     },
@@ -152,14 +167,67 @@
     "deleteConfirm": "Delete document"
   },
   "amendments": {
-    "createBtn": "Create amendment (rent +5%)",
+    "createBtn": "Create amendment",
     "createSuccess": "Amendment draft created",
-    "reason": "Rent adjustment +5%"
+    "submitSuccess": "Amendment submitted for approval",
+    "approveSuccess": "Amendment approved and applied",
+    "submitBtn": "Submit",
+    "approveBtn": "Approve",
+    "dialogTitle": "Create contract amendment",
+    "typeLabel": "Amendment type",
+    "type": {
+      "RENT_CHANGE": "Rent adjustment",
+      "CAM_CHANGE": "CAM fee adjustment",
+      "RENT_FREE_CHANGE": "Rent-free months adjustment",
+      "TERM_EXTENSION": "Term extension",
+      "RENEWAL": "Renewal",
+      "OTHER": "Other"
+    },
+    "newRentLabel": "New rent (VND/month)",
+    "newCamLabel": "New CAM fee (VND/month)",
+    "newRentFreeLabel": "New rent-free months",
+    "newEndDateLabel": "New end date",
+    "effectiveDateLabel": "Effective date",
+    "reasonLabel": "Reason",
+    "reasonPlaceholder": "Describe the reason for this change...",
+    "cancel": "Cancel",
+    "submit": "Create amendment",
+    "noAmendments": "No amendments for this contract yet."
   },
   "template": {
     "select": "Select template...",
     "render": "Render contract",
     "renderSuccess": "Template rendered"
+  },
+  "billingTab": {
+    "summary": {
+      "totalScheduled": "Total scheduled value",
+      "collected": "Collected",
+      "remaining": "Remaining",
+      "collectionRate": "Collection rate",
+      "periodCount": "{{count}} periods"
+    },
+    "rebuild": "Rebuild schedule",
+    "rebuildSuccess": "Billing schedule rebuilt",
+    "notActiveHint": "Billing schedule is auto-generated only while the contract is Active/Expiring — click \"Rebuild schedule\" to regenerate manually if needed.",
+    "noSchedule": "No billing schedule for this contract yet.",
+    "table": {
+      "period": "Period",
+      "rent": "Rent",
+      "cam": "CAM",
+      "total": "Total",
+      "dueDate": "Due date",
+      "periodStatus": "Period status",
+      "invoice": "Invoice",
+      "collectedOfTotal": "{{collected}} / {{total}}"
+    },
+    "entryStatus": {
+      "PENDING": "Pending invoice",
+      "INVOICED": "Invoiced",
+      "SKIPPED": "Skipped (rent-free)"
+    },
+    "noInvoiceYet": "No invoice yet",
+    "viewInvoice": "View invoice"
   },
   "termination": {
     "noRequest": "No termination request exists for this contract.",

@@ -39,6 +39,8 @@ import { HealthController } from './health/health.controller';
 import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
+import { PatrolModule } from "./modules/patrol/patrol.module";
+import { ParkingModule } from "./modules/parking/parking.module";
 import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
 
 @Module({
@@ -88,6 +90,8 @@ import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dash
     InventoryModule,
     WorkOrdersModule,
     ParkingDashboardModule,
+    PatrolModule,
+    ParkingModule,
   ],
   controllers: [HealthController],
   providers: [

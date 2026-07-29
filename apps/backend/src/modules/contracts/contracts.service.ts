@@ -14,6 +14,40 @@ interface CurrentUser {
   tenantId?: string | null;
 }
 
+// Ma trận transition hợp lệ — chặn các bước nhảy vô lý (vd TERMINATED→DRAFT) khi đổi status
+// qua PATCH /contracts/:id/status. Termination có luồng riêng (ContractTerminationService) nên
+// không đi qua bảng này.
+const CONTRACT_STATUS_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
+  // DRAFT→ACTIVE trực tiếp vẫn được phép: UI hiện tại không có bước thao tác riêng cho
+  // PENDING_LEGAL/PENDING_SIGNATURE, hợp đồng thường được kích hoạt thẳng từ DRAFT.
+  [ContractStatus.DRAFT]: [ContractStatus.PENDING_LEGAL, ContractStatus.ACTIVE],
+  [ContractStatus.PENDING_LEGAL]: [ContractStatus.PENDING_SIGNATURE, ContractStatus.DRAFT],
+  [ContractStatus.PENDING_SIGNATURE]: [ContractStatus.ACTIVE, ContractStatus.PENDING_LEGAL],
+  [ContractStatus.ACTIVE]: [ContractStatus.EXPIRING, ContractStatus.EXPIRED, ContractStatus.TERMINATING],
+  [ContractStatus.EXPIRING]: [ContractStatus.ACTIVE, ContractStatus.EXPIRED, ContractStatus.TERMINATING],
+  [ContractStatus.EXPIRED]: [],
+  [ContractStatus.TERMINATING]: [ContractStatus.TERMINATED, ContractStatus.ACTIVE],
+  [ContractStatus.TERMINATED]: [],
+};
+
+const CONTRACT_PRE_ACTIVATION_STATUSES: ContractStatus[] = [
+  ContractStatus.DRAFT,
+  ContractStatus.PENDING_LEGAL,
+  ContractStatus.PENDING_SIGNATURE,
+];
+
+// Field luôn sửa được trực tiếp, không ảnh hưởng tài chính/pháp lý của hợp đồng.
+const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours'];
+
+// Field tài chính/thời hạn/đối tượng hợp đồng — chỉ sửa trực tiếp được khi hợp đồng chưa ACTIVE
+// (còn đang soạn thảo). Sau khi ACTIVE, mọi thay đổi phải đi qua workflow Amendment để có
+// audit trail và đồng bộ billing schedule.
+const CONTRACT_AMENDMENT_ONLY_FIELDS = [
+  'tenantId', 'unitId', 'type', 'proposalId', 'startDate', 'endDate', 'term',
+  'rent', 'cam', 'deposit', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent',
+  'depositLease', 'depositFitout', 'fitoutFee', 'utilityFee', 'afterHoursFee',
+];
+
 @Injectable()
 export class ContractsService {
   constructor(
@@ -141,6 +175,8 @@ export class ContractsService {
             proposalNumber: true,
             leadId: true,
             lead: { select: { id: true, brandName: true, contactName: true, status: true } },
+            bookingId: true,
+            booking: { select: { id: true, bookingNumber: true, status: true } },
           },
         },
         fitoutProject: { select: { id: true, status: true } },
@@ -233,7 +269,43 @@ export class ContractsService {
 
   async update(id: string, dto: Partial<CreateContractDto>, userId?: string) {
     const before = await this.findOne(id);
-    const updated = await this.prisma.contract.update({ where: { id }, data: dto as any });
+
+    const isPreActivation = CONTRACT_PRE_ACTIVATION_STATUSES.includes(before.status);
+    const allowedKeys = new Set([
+      ...CONTRACT_ALWAYS_EDITABLE_FIELDS,
+      ...(isPreActivation ? CONTRACT_AMENDMENT_ONLY_FIELDS : []),
+    ]);
+    const rejectedKeys = Object.keys(dto).filter((key) => !allowedKeys.has(key));
+    if (rejectedKeys.length) {
+      throw new BadRequestException(
+        isPreActivation
+          ? `Không thể sửa trực tiếp các trường: ${rejectedKeys.join(', ')}`
+          : `Hợp đồng đã ${before.status} — không thể sửa trực tiếp các trường: ${rejectedKeys.join(', ')}. Vui lòng tạo phụ lục (amendment).`,
+      );
+    }
+
+    if (dto.unitId && dto.unitId !== before.unitId) {
+      const conflict = await this.prisma.contract.findFirst({
+        where: {
+          id: { not: id },
+          unitId: dto.unitId,
+          isActive: true,
+          deletedAt: null,
+          status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+        },
+      });
+      if (conflict) {
+        throw new BadRequestException(
+          `Mặt bằng này đã có hợp đồng đang hiệu lực (${conflict.contractNumber}).`,
+        );
+      }
+    }
+
+    const data: Record<string, unknown> = { ...dto };
+    if (dto.startDate) data.startDate = new Date(dto.startDate);
+    if (dto.endDate) data.endDate = new Date(dto.endDate);
+
+    const updated = await this.prisma.contract.update({ where: { id }, data: data as any });
 
     await this.events.logEvent({
       contractId: id,
@@ -259,6 +331,12 @@ export class ContractsService {
     }
 
     const before = readiness?.contract ?? await this.findOne(id);
+    if (before.status !== status) {
+      const allowed = CONTRACT_STATUS_TRANSITIONS[before.status] ?? [];
+      if (!allowed.includes(status)) {
+        throw new BadRequestException(`Không thể chuyển hợp đồng từ ${before.status} sang ${status}.`);
+      }
+    }
     const updated = before.status === status
       ? before
       : await this.prisma.$transaction(async (tx) => {
@@ -315,7 +393,46 @@ export class ContractsService {
     return updated;
   }
 
+  /**
+   * Tự động chuyển ACTIVE→EXPIRING (còn ≤90 ngày) và ACTIVE/EXPIRING→EXPIRED (đã qua endDate).
+   * Gọi từ ContractExpiryStatusScheduler mỗi ngày — trước đây không có gì thực hiện việc này,
+   * khiến hợp đồng hết hạn vẫn giữ status ACTIVE vô thời hạn.
+   */
+  async autoTransitionExpiryStatuses(): Promise<{ toExpiring: number; toExpired: number }> {
+    const now = new Date();
+    const expiringThreshold = new Date(now);
+    expiringThreshold.setDate(expiringThreshold.getDate() + 90);
+
+    const toExpiring = await this.prisma.contract.findMany({
+      where: {
+        isActive: true,
+        status: ContractStatus.ACTIVE,
+        endDate: { gte: now, lte: expiringThreshold },
+      },
+      select: { id: true },
+    });
+    for (const c of toExpiring) {
+      await this.updateStatus(c.id, ContractStatus.EXPIRING);
+    }
+
+    const toExpired = await this.prisma.contract.findMany({
+      where: {
+        isActive: true,
+        status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
+        endDate: { lt: now },
+      },
+      select: { id: true },
+    });
+    for (const c of toExpired) {
+      await this.updateStatus(c.id, ContractStatus.EXPIRED);
+    }
+
+    return { toExpiring: toExpiring.length, toExpired: toExpired.length };
+  }
+
   async getExpiring(days = 90, mallIds?: string[]) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + days);
 
@@ -323,7 +440,7 @@ export class ContractsService {
       where: {
         isActive: true,
         status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
-        endDate: { lte: cutoff },
+        endDate: { gte: today, lte: cutoff },
         ...(mallIds ? { OR: [
           { unit: { mallId: { in: mallIds } } },
           { unit: { floor: { mallId: { in: mallIds } } } },
@@ -374,6 +491,9 @@ export class ContractsService {
   async deleteFile(contractId: string, fileId: string) {
     const file = await this.prisma.contractFile.findFirst({ where: { id: fileId, contractId } });
     if (!file) throw new NotFoundException('File not found');
+    if (file.signedAt) {
+      throw new BadRequestException('Không thể xóa tài liệu đã ký điện tử.');
+    }
 
     try {
       const fs = await import('fs/promises');
@@ -386,14 +506,25 @@ export class ContractsService {
     return { deleted: true };
   }
 
+  private async hashFileOnDisk(filePath: string): Promise<string> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const abs = path.join(process.env.UPLOAD_DIR?.replace('/unit-media', '') ?? 'uploads', filePath.replace('/uploads/', ''));
+    const bytes = await fs.readFile(abs);
+    return crypto.createHash('sha256').update(bytes).digest('hex');
+  }
+
   async signFile(contractId: string, fileId: string, signerName: string, signerRole: string, signedById: string) {
     const file = await this.prisma.contractFile.findFirst({ where: { id: fileId, contractId } });
     if (!file) throw new NotFoundException('Contract file not found');
+    if (file.signedAt) {
+      throw new BadRequestException('Tài liệu đã được ký trước đó — không thể ký lại hoặc ghi đè chữ ký.');
+    }
 
+    // Hash tính từ nội dung byte thực của file (không phải từ metadata) — nếu file vật lý bị
+    // thay thế sau khi ký, verifySignature() dưới đây sẽ phát hiện sai lệch hash.
+    const sha256Hash = await this.hashFileOnDisk(file.filePath);
     const signedAt = new Date();
-    // SHA-256 hash: combines fileId + contractId + signer + timestamp for immutability
-    const payload = `${fileId}:${contractId}:${signerName}:${signedById}:${signedAt.toISOString()}`;
-    const sha256Hash = crypto.createHash('sha256').update(payload).digest('hex');
     const verifyCode = crypto.randomBytes(8).toString('hex').toUpperCase();
 
     return this.prisma.contractFile.update({
@@ -410,6 +541,20 @@ export class ContractsService {
     if (!file) {
       return { valid: false, message: 'Mã xác thực không tồn tại hoặc đã hết hiệu lực' };
     }
+
+    let currentHash: string | null = null;
+    try {
+      currentHash = await this.hashFileOnDisk(file.filePath);
+    } catch {
+      currentHash = null;
+    }
+    if (currentHash !== file.sha256Hash) {
+      return {
+        valid: false,
+        message: 'Nội dung tài liệu đã bị thay đổi sau khi ký hoặc không đọc được file gốc — chữ ký không còn hợp lệ',
+      };
+    }
+
     return {
       valid: true,
       fileName: file.fileName,

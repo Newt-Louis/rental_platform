@@ -3,7 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import BookingsPage from './BookingsPage';
+import { MemoryRouter } from 'react-router-dom';
+import BookingsPage, {
+  countSlotBookingStatuses,
+  countUnitBookingStatuses,
+  filterSlotBookings,
+  groupSlotBookings,
+  groupUnitBookings,
+} from './BookingsPage';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,10 @@ vi.mock('@/api', () => ({
       },
     ]),
     deleteSlotBooking: (...args: any[]) => mockDeleteSlotBooking(...args),
+  },
+  spacesApi: {
+    listFloors: vi.fn().mockResolvedValue([]),
+    listUnits: vi.fn().mockResolvedValue({ data: [] }),
   },
   authApi: {
     me: vi.fn().mockResolvedValue({ id: 'u1', role: 'LEASING_EXECUTIVE', fullName: 'Test User' }),
@@ -130,17 +141,87 @@ const CANCELLED_BOOKING = {
   assignedTo: null,
 };
 
+describe('groupUnitBookings', () => {
+  it('sorts unit codes naturally and keeps each queue in priority order', () => {
+    const groups = groupUnitBookings([
+      { ...ACTIVE_BOOKING, id: 'b10', unitId: 'u10', unit: { code: 'A-10' }, priority: 1 },
+      { ...ACTIVE_BOOKING, id: 'b2-p2', unitId: 'u2', unit: { code: 'A-2' }, priority: 2 },
+      { ...ACTIVE_BOOKING, id: 'b2-p1', unitId: 'u2', unit: { code: 'A-2' }, priority: 1 },
+    ] as any);
+
+    expect(groups.map((group) => group.bookings[0].unit?.code)).toEqual(['A-2', 'A-10']);
+    expect(groups[0].bookings.map((booking) => booking.priority)).toEqual([1, 2]);
+  });
+
+  it('counts held and waiting bookings separately for a unit', () => {
+    const counts = countUnitBookingStatuses([
+      ACTIVE_BOOKING,
+      { ...ACTIVE_BOOKING, id: 'b-pending-1', status: 'PENDING' },
+      { ...ACTIVE_BOOKING, id: 'b-pending-2', status: 'PENDING' },
+    ] as any);
+
+    expect(counts).toEqual({ total: 3, active: 1, pending: 2 });
+  });
+});
+
+describe('groupSlotBookings', () => {
+  it('sorts naturally by unit, then slot and booking time', () => {
+    const groups = groupSlotBookings([
+      { id: '3', startDatetime: '2026-08-03', slot: { code: 'S-1', unit: { id: 'u10', code: 'A-10' } } },
+      { id: '2', startDatetime: '2026-08-02', slot: { code: 'S-10', unit: { id: 'u2', code: 'A-2' } } },
+      { id: '1', startDatetime: '2026-08-01', slot: { code: 'S-2', unit: { id: 'u2', code: 'A-2' } } },
+    ]);
+
+    expect(groups.map((group) => group.bookings[0].slot.unit.code)).toEqual(['A-2', 'A-10']);
+    expect(groups[0].bookings.map((booking) => booking.slot.code)).toEqual(['S-2', 'S-10']);
+  });
+
+  it('counts pending and confirmed short-term bookings separately', () => {
+    expect(countSlotBookingStatuses([
+      { status: 'PENDING' },
+      { status: 'PENDING' },
+      { status: 'CONFIRMED' },
+      { status: 'CANCELLED' },
+    ])).toEqual({ total: 4, pending: 2, confirmed: 1 });
+  });
+
+  it('filters short-term bookings by floor, slot and floor-name search', () => {
+    const bookings = [
+      {
+        id: 'booking-1', bookingRef: 'SB-001',
+        slot: { id: 'slot-1', code: 'S-01', unit: { code: 'A-01', floor: { id: 'floor-1', name: 'Tầng 1' } } },
+      },
+      {
+        id: 'booking-2', bookingRef: 'SB-002',
+        slot: { id: 'slot-2', code: 'S-02', unit: { code: 'A-02', floor: { id: 'floor-2', name: 'Tầng 2' } } },
+      },
+    ];
+
+    expect(filterSlotBookings(bookings, { floorId: 'floor-2' }).map((booking) => booking.id)).toEqual(['booking-2']);
+    expect(filterSlotBookings(bookings, { slotId: 'slot-1' }).map((booking) => booking.id)).toEqual(['booking-1']);
+    expect(filterSlotBookings(bookings, { search: 'tầng 2' }).map((booking) => booking.id)).toEqual(['booking-2']);
+  });
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function Wrapper({ children }: { children: React.ReactNode }) {
+function TestProviders({ children, initialEntry = '/bookings' }: { children: React.ReactNode; initialEntry?: string }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  return (
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    </MemoryRouter>
+  );
 }
 
-function renderPage() {
-  return render(<BookingsPage />, { wrapper: Wrapper });
+function renderPage(initialEntry = '/bookings') {
+  return render(
+    <TestProviders initialEntry={initialEntry}>
+      <BookingsPage />
+    </TestProviders>,
+  );
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -171,6 +252,17 @@ describe('BookingsPage — render', () => {
       expect(screen.getByText('BK-001')).toBeInTheDocument();
       expect(screen.getByText('Pizza Hut')).toBeInTheDocument();
       expect(screen.getByText('A1-01')).toBeInTheDocument();
+    });
+  });
+
+  it('applies expiringSoon filter from the URL', async () => {
+    renderPage('/bookings?expiringSoon=true');
+
+    await waitFor(() => {
+      expect(mockListBookings).toHaveBeenCalledWith(expect.objectContaining({
+        expiringSoon: true,
+        page: 1,
+      }));
     });
   });
 

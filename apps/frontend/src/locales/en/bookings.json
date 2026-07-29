@@ -10,6 +10,12 @@
     "CONVERTED": "Converted to proposal",
     "CANCELLED": "Cancelled"
   },
+  "slotStatus": {
+    "PENDING": "Awaiting confirmation",
+    "CONFIRMED": "Confirmed",
+    "COMPLETED": "Completed",
+    "CANCELLED": "Cancelled"
+  },
   "fields": {
     "unit": "Space",
     "tenant": "Customer",
@@ -126,9 +132,15 @@
     "createdAt": "Created",
     "updatedAt": "Updated",
     "sale": "Sale",
+    "bookingCount": "{{count}} booking",
+    "holdingCount": "{{count}} holding",
+    "waitingCount": "{{count}} waiting",
+    "pendingConfirmationCount": "{{count}} awaiting confirmation",
+    "confirmedCount": "{{count}} confirmed",
     "ref": "Ref #",
     "type": "Type",
     "unitSlot": "Unit / Slot",
+    "slot": "Slot",
     "timeRange": "Time",
     "amount": "Amount"
   },
@@ -146,6 +158,13 @@
     "revenue": "Revenue"
   },
   "filterLabels": {
+    "bookingStatusTabs": "Quick booking status filters",
+    "allFloors": "All floors",
+    "allUnits": "All units",
+    "allSlots": "All slots",
+    "floor": "Floor",
+    "unit": "Unit",
+    "slot": "Slot",
     "all": "All",
     "expiringSoon": "Expiring soon (7 days)",
     "searchUnit": "Search unit, lead, customer...",

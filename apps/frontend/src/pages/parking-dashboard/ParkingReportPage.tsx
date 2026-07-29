@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { parkingApi } from '@/api';
+import { parkingDashboardApi } from '@/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
@@ -41,17 +41,17 @@ export default function ParkingReportPage() {
 
   const { data: kpi, isLoading: kpiLoading, isError: kpiError, refetch: refetchKpi } = useQuery({
     queryKey: ['parking-revenue-report', parkingCode],
-    queryFn: () => parkingApi.revenueReport(parkingCode),
+    queryFn: () => parkingDashboardApi.revenueReport(parkingCode),
   });
 
   const { data: revenueChart, isLoading: revenueLoading, isError: revenueError, refetch: refetchRevenue } = useQuery({
     queryKey: ['parking-revenue-chart', parkingCode, revenueRange.startTime, revenueRange.finishTime],
-    queryFn: () => parkingApi.revenueChart(parkingCode, revenueRange.startTime, revenueRange.finishTime),
+    queryFn: () => parkingDashboardApi.revenueChart(parkingCode, revenueRange.startTime, revenueRange.finishTime),
   });
 
   const { data: trafficChart, isLoading: trafficLoading, isError: trafficError, refetch: refetchTraffic } = useQuery({
     queryKey: ['parking-transaction-chart', parkingCode, trafficRange.startTime, trafficRange.finishTime],
-    queryFn: () => parkingApi.transactionChart(parkingCode, trafficRange.startTime, trafficRange.finishTime),
+    queryFn: () => parkingDashboardApi.transactionChart(parkingCode, trafficRange.startTime, trafficRange.finishTime),
   });
 
   const k = kpi?.data ?? kpi;

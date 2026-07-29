@@ -63,13 +63,33 @@ export class BillingScheduleService {
     const contract = await this.prisma.contract.findUnique({ where: { id: contractId } });
     if (!contract) throw new NotFoundException('Contract not found');
 
-    return this.prisma.billingScheduleEntry.findMany({
+    const entries = await this.prisma.billingScheduleEntry.findMany({
       where: { contractId },
       orderBy: { period: 'asc' },
       include: {
-        invoice: { select: { id: true, invoiceNumber: true, status: true } },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            status: true,
+            totalAmount: true,
+            payments: { where: { reversedAt: null }, select: { amount: true } },
+          },
+        },
       },
     });
+
+    // Đính kèm số tiền đã thu thực tế của từng kỳ — để FE hiện "đã thu X / tổng Y" ngay trên
+    // thẻ kỳ thay vì phải mở từng hóa đơn để cộng payments thủ công.
+    return entries.map((entry) => ({
+      ...entry,
+      invoice: entry.invoice
+        ? {
+            ...entry.invoice,
+            collectedAmount: entry.invoice.payments.reduce((sum, p) => sum + p.amount, 0),
+          }
+        : null,
+    }));
   }
 
   async generateDueInvoices(asOf: Date = new Date()) {

@@ -82,10 +82,10 @@ export interface CategoryMallPricing {
   floor?: Floor;
   zoneId?: string;
   zone?: Zone;
-  minRentPerSqm: number;
-  maxRentPerSqm: number;
-  suggestedRent?: number;
-  camPerSqm: number;
+  minRentPerSqm: number | null;
+  maxRentPerSqm: number | null;
+  suggestedRent?: number | null;
+  camPerSqm: number | null;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -105,6 +105,7 @@ export interface PriceValidationResult {
   requiresApproval: boolean;
   approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
   message: string;
+  sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
 
 export interface Tenant {
@@ -236,6 +237,10 @@ export interface UnitBooking {
   requestedArea?: number;
   requestedTerm?: number;
   expectedRent?: number;
+  proposedRentPerSqm?: number;
+  proposedCamPerSqm?: number;
+  pricingSnapshot?: Record<string, unknown>;
+  priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   holdDays: number;
   expiresAt?: string;
   activatedAt?: string;
@@ -427,6 +432,7 @@ export interface Proposal {
   depositFitout: number;
   fitoutFee: number;
   createdAt: string;
+  contract?: { id: string; contractNumber: string; status: string };
 }
 
 export interface Contract {
@@ -456,8 +462,15 @@ export interface Contract {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  tenant: Tenant;
-  contract: Contract;
+  tenant?: Tenant;
+  contract?: Contract;
+  serviceContractPayment?: {
+    milestone?: string;
+    contract?: { id: string; contractNumber: string; title?: string };
+  };
+  billingParty?: { id: string; name: string; taxCode?: string };
+  sourceType?: string;
+  sourceId?: string;
   period: string;
   type: string;
   status: InvoiceStatus;
@@ -465,6 +478,9 @@ export interface Invoice {
   dueDate: string;
   issuedAt?: string;
   paidAt?: string;
+  totalPaid?: number;
+  balance?: number;
+  daysOverdue?: number;
 }
 
 export interface Ticket {
@@ -556,7 +572,9 @@ export interface Notification {
 }
 
 export interface ArAgingRow {
-  tenant: Tenant;
+  tenant?: Tenant;
+  billingParty?: { id: string; name: string; taxCode?: string };
+  counterpartyName?: string;
   current: number;
   days30: number;
   days60: number;

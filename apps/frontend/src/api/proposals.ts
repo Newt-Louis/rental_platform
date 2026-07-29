@@ -11,8 +11,8 @@ export const proposalsApi = {
     api.put(`/proposals/${id}`, data).then((r) => r.data),
   submitProposal: (id: string) =>
     api.post(`/proposals/${id}/submit`).then((r) => r.data),
-  convertProposal: (id: string) =>
-    api.post(`/proposals/${id}/convert`).then((r) => r.data),
+  convertProposal: (id: string, tenant?: Record<string, unknown>) =>
+    api.post(`/proposals/${id}/convert`, tenant ? { tenant } : {}).then((r) => r.data),
   exportPdf: (id: string) =>
     api.get(`/proposals/${id}/pdf`, { responseType: 'blob' }).then((r) => r.data),
   listVersions: (id: string) => api.get(`/proposals/${id}/versions`).then((r) => r.data),

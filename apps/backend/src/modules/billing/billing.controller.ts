@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { InvoiceStatus } from '@prisma/client';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { AddInvoiceLineDto, CreateInvoiceDto, UpdateInvoiceLineDto } from './dto/invoice.dto';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('Billing & AR')
 @ApiBearerAuth('JWT-auth')
@@ -26,6 +27,7 @@ export class BillingController {
     private readonly arDunningService: ArDunningService,
     private readonly penaltyService: PenaltyInterestService,
     private readonly collectionKpiService: CollectionKpiService,
+    private readonly mallAccess: MallAccessService,
   ) {}
 
   @Get('invoices')
@@ -36,8 +38,40 @@ export class BillingController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.billingService.findAllInvoices(query, user);
+  async findAll(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.billingService.findAllInvoices(query, user, mallIds ?? undefined);
+  }
+
+  @Get('receivables/pending')
+  @ApiOperation({ summary: 'List contract receivables waiting for invoice creation' })
+  @Roles(...MODULE_ROLES.billingStaff)
+  async getPendingReceivables(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.billingService.getPendingReceivables(query, mallIds ?? undefined);
+  }
+
+  @Post('receivables/pending/:sourceType/:id/create-invoice')
+  @ApiOperation({ summary: 'Create a draft invoice from a pending contract receivable' })
+  @Roles(...MODULE_ROLES.billingStaff)
+  async createInvoiceFromPending(
+    @Param('sourceType') sourceType: string,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+  ) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.billingService.createInvoiceFromPending(sourceType, id, user.id, mallIds ?? undefined);
+  }
+
+  @Post('receivables/pending/create-due-invoices')
+  @ApiOperation({ summary: 'Create draft invoices for due contract receivables in the current filter' })
+  @Roles(...MODULE_ROLES.billingStaff)
+  async createDueInvoicesFromPending(@Body() body: any, @CurrentUser() user: any) {
+    if (body.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, body.mallId);
+    const mallIds = body.mallId ? [body.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.billingService.createDueInvoicesFromPending(body, user.id, mallIds ?? undefined);
   }
 
   @Get('invoices/export')
@@ -58,8 +92,10 @@ export class BillingController {
   @Get('ar-aging')
   @ApiOperation({ summary: 'Get AR aging report' })
   @Roles(...MODULE_ROLES.billingStaff)
-  getArAging() {
-    return this.billingService.getArAging();
+  async getArAging(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.billingService.getArAging(mallIds ?? undefined);
   }
 
   @Get('invoices/:id')
@@ -178,8 +214,10 @@ export class BillingController {
   @Get('collection-kpi')
   @ApiOperation({ summary: 'Collection KPI dashboard data' })
   @Roles(...MODULE_ROLES.billingStaff)
-  getCollectionKpi(@Query('months') months?: number) {
-    return this.collectionKpiService.getKpis(months ? +months : 6);
+  async getCollectionKpi(@Query('months') months: number | undefined, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.collectionKpiService.getKpis(months ? +months : 6, mallIds ?? undefined);
   }
 
   @Get('penalty/policies')

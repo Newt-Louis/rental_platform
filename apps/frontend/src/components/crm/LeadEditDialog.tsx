@@ -47,7 +47,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     expectedRent: lead?.expectedRent?.toString() ?? '',
     notes: lead?.notes ?? '',
     assignedToId: lead?.assignedToId ?? '',
-    company: lead?.company ?? '',
+    company: lead?.customer?.companyName ?? lead?.company ?? '',
     contactTitle: lead?.customer?.contactTitle ?? '',
     website: lead?.customer?.website ?? '',
     budgetMin: lead?.customer?.budgetMin?.toString() ?? '',
@@ -78,7 +78,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         expectedRent: lead.expectedRent?.toString() ?? '',
         notes: lead.notes ?? '',
         assignedToId: lead.assignedToId ?? '',
-        company: lead.company ?? '',
+        company: lead.customer?.companyName ?? lead.company ?? '',
         contactTitle: lead.customer?.contactTitle ?? '',
         website: lead.customer?.website ?? '',
         budgetMin: lead.customer?.budgetMin?.toString() ?? '',
@@ -117,8 +117,12 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
       };
       await crmApi.updateLead(lead.id, payload);
       const customerId = lead.customerId ?? lead.customer?.id;
-      if (customerId && (form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
+      // Sau khi đã có Customer (post-conversion), "Tên công ty" hiển thị trong sheet đọc từ
+      // customer.companyName chứ không phải lead.company — phải đồng bộ cả 2 khi sửa, nếu không
+      // sửa xong người dùng thấy "Lưu thành công" nhưng dữ liệu hiển thị không đổi.
+      if (customerId && (form.company || form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
         await customersApi.updateCustomer(customerId, {
+          companyName: form.company.trim() || undefined,
           contactTitle: form.contactTitle || undefined,
           website: form.website || undefined,
           budgetMin: form.budgetMin ? +form.budgetMin : undefined,

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomerStatus, ActivityType, LeadSource } from '@prisma/client';
 
 export interface CreateCustomerDto {
+  leadId?: string;
   companyName: string;
   brandName?: string;
   taxCode?: string;
@@ -163,11 +164,28 @@ export class CustomersService {
   }
 
   async create(dto: CreateCustomerDto, userId: string) {
+    const { leadId, ...customerDto } = dto;
+    let lead: any = null;
+    if (leadId) {
+      lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+      if (!lead || !lead.isActive || lead.deletedAt) {
+        throw new NotFoundException('Không tìm thấy Lead đã chọn.');
+      }
+      if (lead.customerId) {
+        throw new ConflictException('Lead đã được liên kết với một hồ sơ khách hàng khác.');
+      }
+    }
     const customerCode = await this.generateCustomerCode();
     return this.prisma.customer.create({
-      data: { ...dto, customerCode, createdById: userId },
+      data: {
+        ...customerDto,
+        customerCode,
+        createdById: userId,
+        ...(leadId ? { leads: { connect: { id: leadId } } } : {}),
+      } as any,
       include: {
         assignedTo: { select: { id: true, fullName: true } },
+        leads: { select: { id: true, brandName: true, contactName: true, status: true } },
       },
     });
   }
@@ -239,40 +257,61 @@ export class CustomersService {
     });
   }
 
-  async createFromLead(leadId: string, userId: string): Promise<any> {
+  private customerStatusFromLead(status: string): CustomerStatus {
+    if (status === 'WON') return CustomerStatus.ACTIVE;
+    if (status === 'LOST') return CustomerStatus.INACTIVE;
+    if (['PROPOSAL', 'NEGOTIATION'].includes(status)) return CustomerStatus.NEGOTIATING;
+    return CustomerStatus.PROSPECT;
+  }
+
+  private customerDataFromLead(lead: any) {
+    const data: any = {};
+    const mappedFields: Array<[string, unknown]> = [
+      ['companyName', lead.company || lead.brandName],
+      ['brandName', lead.brandName],
+      ['contactName', lead.contactName],
+      ['phone', lead.phone],
+      ['email', lead.email],
+      ['preferredCategory', lead.preferredCategory || lead.category],
+      ['expectedArea', lead.expectedArea],
+      ['budgetMin', lead.expectedRent],
+      ['source', lead.source],
+      ['notes', lead.notes],
+      ['assignedToId', lead.assignedToId],
+    ];
+    for (const [key, value] of mappedFields) {
+      if (value !== undefined && value !== null && value !== '') data[key] = value;
+    }
+    return data;
+  }
+
+  async createFromLead(leadId: string, userId: string, activate = true): Promise<any> {
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
       include: { customer: true },
     });
-    if (!lead) return null;
+    if (!lead || !lead.isActive || lead.deletedAt) {
+      throw new NotFoundException('Không tìm thấy Lead để tạo hồ sơ khách hàng.');
+    }
 
     if (lead.customerId && lead.customer) {
-      if (lead.customer.status !== CustomerStatus.ACTIVE) {
+      if (activate && lead.customer.status !== CustomerStatus.ACTIVE) {
         await this.prisma.customer.update({
           where: { id: lead.customerId },
           data: { status: CustomerStatus.ACTIVE, wonAt: new Date() },
         });
       }
-      return lead.customer;
+      return this.findOne(lead.customerId);
     }
 
     const customerCode = await this.generateCustomerCode();
     const customer = await this.prisma.customer.create({
       data: {
         customerCode,
-        companyName: lead.company || lead.brandName,
-        brandName: lead.brandName,
-        contactName: lead.contactName,
-        phone: lead.phone,
-        email: lead.email,
-        preferredCategory: lead.preferredCategory || lead.category,
-        expectedArea: lead.expectedArea,
-        budgetMin: lead.expectedRent,
-        source: (lead.source as LeadSource),
-        notes: lead.notes,
-        assignedToId: lead.assignedToId,
-        status: CustomerStatus.ACTIVE,
-        wonAt: new Date(),
+        ...this.customerDataFromLead(lead),
+        status: activate ? CustomerStatus.ACTIVE : this.customerStatusFromLead(lead.status),
+        wonAt: activate || lead.status === 'WON' ? new Date() : undefined,
+        lostAt: !activate && lead.status === 'LOST' ? new Date() : undefined,
         createdById: userId,
       },
     });
@@ -282,7 +321,34 @@ export class CustomersService {
       data: { customerId: customer.id },
     });
 
-    return customer;
+    return this.findOne(customer.id);
+  }
+
+  async createProfileFromLead(leadId: string, userId: string) {
+    return this.createFromLead(leadId, userId, false);
+  }
+
+  async syncFromLead(customerId: string, leadId: string) {
+    await this.findOne(customerId);
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead || !lead.isActive || lead.deletedAt) {
+      throw new NotFoundException('Không tìm thấy Lead để đồng bộ.');
+    }
+    if (lead.customerId && lead.customerId !== customerId) {
+      throw new ConflictException('Lead này đã liên kết với một hồ sơ khách hàng khác.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.customer.update({
+        where: { id: customerId },
+        data: this.customerDataFromLead(lead),
+      }),
+      this.prisma.lead.update({
+        where: { id: leadId },
+        data: { customerId },
+      }),
+    ]);
+    return this.findOne(customerId);
   }
 
   async linkTenant(customerId: string, tenantId: string) {

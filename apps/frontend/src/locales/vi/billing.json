@@ -102,6 +102,7 @@
     "stepCollect": "Thu tiền"
   },
   "detail": {
+    "viewContract": "Xem hợp đồng {{number}}",
     "fixedCosts": "Chi phí cố định",
     "variableCosts": "Chi phí biến đổi",
     "noFixedLines": "Chưa có dòng chi phí cố định",

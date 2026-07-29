@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { bookingApi } from '@/api';
@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { buildProposalPrefill } from '@/pages/bookings/proposal-prefill';
 
 export function ConvertBookingDialog({
   booking, onClose,
@@ -16,26 +17,13 @@ export function ConvertBookingDialog({
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
-    defaultValues: {
-      area: booking?.requestedArea?.toString() ?? '',
-      term: booking?.requestedTerm?.toString() ?? '12',
-      startDate: new Date().toISOString().split('T')[0],
-      rentPerSqm: booking?.expectedRent?.toString() ?? '',
-      camPerSqm: '',
-      deposit: '3',
-      rentFree: '0',
-      escalationPercent: '5',
-      rentCurrency: 'VND',
-      businessModel: '',
-      serviceFeeSqm: '',
-      businessSupportFeeSqm: '',
-      fitoutDays: '90',
-      handoverDate: '',
-      openingDate: '',
-      specialConditions: '',
-    },
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm({
+    defaultValues: buildProposalPrefill(null),
   });
+
+  useEffect(() => {
+    if (booking) reset(buildProposalPrefill(booking));
+  }, [booking, reset]);
 
   const mutation = useMutation({
     mutationFn: (data: any) => bookingApi.convertToProposal(booking!.id, {
@@ -77,6 +65,9 @@ export function ConvertBookingDialog({
           <DialogTitle>Lập Tờ Trình Đề xuất từ Booking #{booking?.bookingNumber}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2 text-sm">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+            Đã kế thừa mặt bằng, khách hàng, diện tích, thời hạn, giá thuê, CAM và ghi chú từ Booking. Bạn có thể điều chỉnh trước khi lập đề xuất.
+          </div>
 
           {/* ── Điều khoản cơ bản ── */}
           <div className="font-medium text-xs text-gray-400 uppercase tracking-wider pt-1">Mặt bằng & Thời hạn</div>
@@ -112,7 +103,7 @@ export function ConvertBookingDialog({
 
           {/* ── Giá thuê ── */}
           <div className="font-medium text-xs text-gray-400 uppercase tracking-wider pt-1">Điều khoản Tài chính</div>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
               <Select value={currency} onValueChange={(v) => setValue('rentCurrency', v)}>
@@ -126,6 +117,10 @@ export function ConvertBookingDialog({
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">Giá thuê/m² ({currency}) *</label>
               <Input {...register('rentPerSqm', { required: true })} type="number" step="0.01" placeholder="0" className={errors.rentPerSqm ? 'border-red-400' : ''} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">CAM/m²</label>
+              <Input {...register('camPerSqm')} type="number" step="0.01" placeholder="0" />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">Phí Dịch vụ/m²</label>
@@ -157,7 +152,7 @@ export function ConvertBookingDialog({
             const r = Number(watch('rentPerSqm') || 0);
             const s = Number(watch('serviceFeeSqm') || 0);
             const b = Number(watch('businessSupportFeeSqm') || 0);
-            const total = a * (r + s + b);
+            const total = a * (r + cam + s + b);
             if (total <= 0) return null;
             return (
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center">

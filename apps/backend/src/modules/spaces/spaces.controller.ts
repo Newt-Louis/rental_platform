@@ -8,6 +8,7 @@ import { SpacesService, MergeUnitDto } from './spaces.service';
 import { UnitMediaService } from './unit-media.service';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
+import { UpdateUnitDto } from './dto/update-unit.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
@@ -272,7 +273,7 @@ export class SpacesController {
   @Patch('units/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit' })
-  updateUnit(@Param('id') id: string, @Body() dto: any) {
+  updateUnit(@Param('id') id: string, @Body() dto: UpdateUnitDto) {
     return this.spacesService.updateUnit(id, dto);
   }
 
@@ -286,8 +287,8 @@ export class SpacesController {
   @Delete('units/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete unit' })
-  deleteUnit(@Param('id') id: string) {
-    return this.spacesService.deleteUnit(id);
+  deleteUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.spacesService.deleteUnit(id, user?.id);
   }
 
   // ─── Unit Media ───────────────────────────────────────────────────────────

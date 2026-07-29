@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, Search, Upload, X } from "lucide-react";
+import { AlertTriangle, Clock, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { useTranslation } from "react-i18next";
+import { usePermission } from "@/hooks/usePermission";
+import type { Role } from "@/types";
 
 const STATUSES = [
   "DRAFT",
@@ -21,6 +23,18 @@ const STATUSES = [
   "RENEWED",
   "CANCELLED",
 ];
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["PROPOSAL", "UNDER_REVIEW", "CANCELLED"],
+  PROPOSAL: ["DRAFT", "UNDER_REVIEW", "PENDING_SIGNATURE", "CANCELLED"],
+  UNDER_REVIEW: ["DRAFT", "PROPOSAL", "PENDING_SIGNATURE", "CANCELLED"],
+  PENDING_SIGNATURE: ["UNDER_REVIEW", "ACTIVE", "CANCELLED"],
+  ACTIVE: ["EXPIRING", "EXPIRED", "TERMINATED"],
+  EXPIRING: ["ACTIVE", "EXPIRED", "TERMINATED"],
+  EXPIRED: [],
+  TERMINATED: [],
+  RENEWED: [],
+  CANCELLED: [],
+};
 const TYPES = [
   "SERVICE",
   "SUPPLY",
@@ -52,29 +66,53 @@ const labels: Record<string, string> = {
 export default function ServiceContractsPage() {
   const { t } = useTranslation("serviceContracts");
   const { selectedMallId } = useMallStore();
+  const { hasRole } = usePermission();
+  const canEdit = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION"] as Role[]);
+  const canTransferToBilling = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION", "FINANCE"] as Role[]);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
+  const [paymentDirection, setPaymentDirection] = useState("");
+  const [alert, setAlert] = useState("");
+  const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showRenew, setShowRenew] = useState(false);
+  useEffect(() => {
+    setSelectedId(null);
+    setShowEdit(false);
+    setShowRenew(false);
+    setPage(1);
+  }, [selectedMallId]);
   const list = useQuery({
-    queryKey: ["service-contracts", selectedMallId, search, status],
+    queryKey: ["service-contracts", selectedMallId, search, status, type, paymentDirection, alert, page],
     queryFn: () =>
       serviceContractsApi.list({
         mallId: selectedMallId || undefined,
         search: search || undefined,
         status: status || undefined,
-        limit: 100,
+        type: type || undefined,
+        paymentDirection: paymentDirection || undefined,
+        alert: alert || undefined,
+        alertDays: 30,
+        page,
+        limit: 25,
       }),
     enabled: !!selectedMallId,
   });
+  const alertSummary = useQuery({ queryKey: ["service-contract-alerts", selectedMallId], queryFn: () => serviceContractsApi.alerts(30, selectedMallId || undefined), enabled: !!selectedMallId });
   const detail = useQuery({
     queryKey: ["service-contract", selectedId],
     queryFn: () => serviceContractsApi.detail(selectedId!),
     enabled: !!selectedId,
   });
   const rows = (list.data as any)?.data ?? [];
+  const total = (list.data as any)?.total ?? 0;
+  const totalPages = (list.data as any)?.totalPages ?? 1;
+  const alertData = (alertSummary.data as any)?.data ?? alertSummary.data ?? {};
   // Axios unwraps non-paginated API responses, while paginated lists keep `data`.
   const item = (detail.data as any)?.data ?? detail.data;
   const refresh = () => {
@@ -84,9 +122,17 @@ export default function ServiceContractsPage() {
   const create = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       serviceContractsApi.create(data),
-    onSuccess: () => {
+    onSuccess: (response: any) => {
+      const created = response?.data ?? response;
+      setSearch("");
+      setStatus(created?.status || "DRAFT");
+      setType("");
+      setPaymentDirection("");
+      setAlert("");
+      setPage(1);
       refresh();
       setShowCreate(false);
+      if (created?.id) setSelectedId(created.id);
       toast({ title: "Đã tạo hợp đồng dịch vụ" });
     },
     onError: (e: any) =>
@@ -107,6 +153,36 @@ export default function ServiceContractsPage() {
         variant: "destructive",
       }),
   });
+  const update = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      serviceContractsApi.update(selectedId!, data),
+    onSuccess: () => {
+      refresh();
+      setShowEdit(false);
+      toast({ title: "Đã cập nhật hợp đồng dịch vụ" });
+    },
+    onError: (e: any) =>
+      toast({
+        title: "Không thể cập nhật hợp đồng",
+        description: e?.response?.data?.message,
+        variant: "destructive",
+      }),
+  });
+  const renew = useMutation({
+    mutationFn: (data: Record<string, unknown>) => serviceContractsApi.renew(selectedId!, data),
+    onSuccess: (response: any) => {
+      const renewed = response?.data ?? response;
+      refresh();
+      setShowRenew(false);
+      if (renewed?.id) setSelectedId(renewed.id);
+      toast({ title: "Đã tạo hợp đồng gia hạn" });
+    },
+    onError: (e: any) => toast({
+      title: "Không thể gia hạn hợp đồng",
+      description: e?.response?.data?.message,
+      variant: "destructive",
+    }),
+  });
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
@@ -116,6 +192,22 @@ export default function ServiceContractsPage() {
     if (data.totalValue !== undefined)
       data.totalValue = Number(data.totalValue);
     create.mutate(data);
+  }
+  function submitEdit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
+    for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
+      if (data[key] !== undefined) data[key] = Number(data[key]);
+    }
+    update.mutate(data);
+  }
+  function submitRenew(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
+    if (data.totalValue !== undefined) data.totalValue = Number(data.totalValue);
+    renew.mutate(data);
   }
   async function upload(file?: File) {
     if (!file || !selectedId) return;
@@ -131,17 +223,28 @@ export default function ServiceContractsPage() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId}>
+        {canEdit && <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId}>
           <Plus size={16} className="mr-2" />
           {t("create")}
-        </Button>
+        </Button>}
       </div>
       {!selectedMallId && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
           {t("selectMall")}
         </div>
       )}
-      <div className="flex gap-3">
+      {selectedMallId && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["EXPIRING", "Sắp hết hạn", alertData.expiring || 0, "border-amber-200 bg-amber-50 text-amber-800"],
+          ["RECEIVABLE", "Kỳ phải thu sắp đến", alertData.receivableDue || 0, "border-emerald-200 bg-emerald-50 text-emerald-800"],
+          ["PAYABLE", "Kỳ phải trả sắp đến", alertData.payableDue || 0, "border-blue-200 bg-blue-50 text-blue-800"],
+          ["OVERDUE", "Kỳ đã quá hạn", alertData.overdue || 0, "border-red-200 bg-red-50 text-red-800"],
+        ].map(([key, title, count, color]) => <button key={String(key)} className={`rounded-lg border p-4 text-left ${color} ${alert === key || paymentDirection === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setPage(1); setStatus(""); if (key === "RECEIVABLE" || key === "PAYABLE") { setPaymentDirection(String(key)); setAlert("PAYMENT_DUE"); } else { setPaymentDirection(""); setAlert(String(key)); } }}>
+          <div className="flex items-center justify-between text-sm font-medium"><span>{title}</span>{key === "OVERDUE" ? <AlertTriangle size={18} /> : <Clock size={18} />}</div>
+          <div className="mt-2 text-2xl font-semibold">{String(count)}</div><div className="text-xs opacity-75">Trong 30 ngày tới</div>
+        </button>)}
+      </div>}
+      <div className="flex flex-wrap gap-3">
         <div className="relative max-w-md flex-1">
           <Search
             className="absolute left-3 top-2.5 text-muted-foreground"
@@ -151,13 +254,13 @@ export default function ServiceContractsPage() {
             className="pl-9"
             placeholder={t("search")}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
         <select
           className="rounded-md border bg-background px-3 text-sm"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => { setStatus(e.target.value); setAlert(""); setPage(1); }}
         >
           <option value="">{t("allStatuses")}</option>
           {STATUSES.map((s) => (
@@ -166,7 +269,11 @@ export default function ServiceContractsPage() {
             </option>
           ))}
         </select>
+        <select className="rounded-md border bg-background px-3 text-sm" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}><option value="">Tất cả loại hợp đồng</option>{TYPES.map(value => <option key={value} value={value}>{value}</option>)}</select>
+        <select className="rounded-md border bg-background px-3 text-sm" value={paymentDirection} onChange={(e) => { setPaymentDirection(e.target.value); setAlert(""); setPage(1); }}><option value="">Tất cả phải thu / phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option><option value="PAYABLE">Hợp đồng phải trả</option></select>
+        {(alert || type || paymentDirection || status) && <Button variant="outline" onClick={() => { setStatus(""); setType(""); setPaymentDirection(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}
       </div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} hợp đồng</span><span>Mặc định: tất cả trạng thái</span></div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left">
@@ -221,6 +328,7 @@ export default function ServiceContractsPage() {
           </div>
         )}
       </div>
+      {totalPages > 1 && <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm"><span>Trang {page} / {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Trang trước</Button><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)}>Trang sau</Button></div></div>}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
@@ -303,9 +411,11 @@ export default function ServiceContractsPage() {
                 </div>
                 <h2 className="text-xl font-semibold">{item.title}</h2>
               </div>
-              <button onClick={() => setSelectedId(null)}>
-                <X />
-              </button>
+              <div className="flex gap-2">
+                {canEdit && <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}><Pencil size={14} className="mr-2" />Chỉnh sửa</Button>}
+                {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>}
+                <button onClick={() => setSelectedId(null)}><X /></button>
+              </div>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
               <div>
@@ -341,9 +451,10 @@ export default function ServiceContractsPage() {
               <select
                 className="w-full rounded-md border bg-background p-2"
                 value={item.status}
+                disabled={!canEdit}
                 onChange={(e) => changeStatus.mutate(e.target.value)}
               >
-                {STATUSES.map((s) => (
+                {[item.status, ...(ALLOWED_TRANSITIONS[item.status] || [])].map((s) => (
                   <option key={s} value={s}>
                     {labels[s]}
                   </option>
@@ -353,7 +464,7 @@ export default function ServiceContractsPage() {
             <div className="mt-6">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="font-semibold">Tài liệu hợp đồng</h3>
-                <label className="cursor-pointer rounded-md border px-3 py-2 text-sm">
+                {canEdit && <label className="cursor-pointer rounded-md border px-3 py-2 text-sm">
                   <Upload className="mr-2 inline" size={14} />
                   Upload
                   <input
@@ -362,7 +473,7 @@ export default function ServiceContractsPage() {
                     accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                     onChange={(e) => upload(e.target.files?.[0])}
                   />
-                </label>
+                </label>}
               </div>
               <div className="divide-y rounded-lg border">
                 {item.documents?.map((d: any) => (
@@ -386,7 +497,7 @@ export default function ServiceContractsPage() {
                 )}
               </div>
             </div>
-            <ContractOperations item={item} onChanged={refresh} />
+            <ContractOperations item={item} onChanged={refresh} canEdit={canEdit} canTransferToBilling={canTransferToBilling} />
             <div className="mt-6">
               <h3 className="mb-2 font-semibold">Lịch sử</h3>
               <div className="space-y-2">
@@ -403,6 +514,59 @@ export default function ServiceContractsPage() {
           </div>
         </div>
       )}
+      {showEdit && item && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <form onSubmit={submitEdit} className="grid max-h-[90vh] w-full max-w-3xl grid-cols-2 gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl">
+            <div className="col-span-2 flex items-center justify-between">
+              <div><h2 className="text-xl font-semibold">Chỉnh sửa hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">{item.contractNumber}</p></div>
+              <button type="button" onClick={() => setShowEdit(false)}><X /></button>
+            </div>
+            <label className="text-sm">Số hợp đồng<Input name="contractNumber" defaultValue={item.contractNumber || ""} required /></label>
+            <label className="text-sm">Tên hợp đồng<Input name="title" defaultValue={item.title || ""} required /></label>
+            <label className="text-sm">Tên đối tác<Input name="counterpartyName" defaultValue={item.counterpartyName || ""} required /></label>
+            <label className="text-sm">Mã số thuế<Input name="counterpartyTax" defaultValue={item.counterpartyTax || ""} /></label>
+            <label className="text-sm">Email<Input name="counterpartyEmail" type="email" defaultValue={item.counterpartyEmail || ""} /></label>
+            <label className="text-sm">Điện thoại<Input name="counterpartyPhone" defaultValue={item.counterpartyPhone || ""} /></label>
+            <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" defaultValue={item.billingParty?.address || ""} /></label>
+            <label className="text-sm">Loại hợp đồng<select name="type" defaultValue={item.type} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label className="text-sm">Chiều thanh toán<select name="paymentDirection" defaultValue={item.paymentDirection} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Phải trả</option><option value="RECEIVABLE">Phải thu</option></select></label>
+            <label className="text-sm">Sản phẩm / dịch vụ<Input name="productName" defaultValue={item.productName || ""} /></label>
+            <label className="text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
+            <label className="text-sm">Ngày ký<Input name="signedDate" type="date" defaultValue={item.signedDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày kết thúc<Input name="endDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Tiền tệ<Input name="currency" defaultValue={item.currency || "VND"} /></label>
+            {item.paymentDirection === "RECEIVABLE" && <>
+              <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={item.invoiceLeadDays ?? 7} /></label>
+              <label className="text-sm">VAT mặc định (%)<Input name="defaultVatRate" type="number" min="0" defaultValue={item.defaultVatRate ?? 10} /></label>
+              <label className="text-sm">Hạn thanh toán (ngày)<Input name="paymentTermDays" type="number" min="0" defaultValue={item.paymentTermDays ?? 15} /></label>
+            </>}
+            <label className="col-span-2 text-sm">Ghi chú<textarea name="notes" defaultValue={item.notes || ""} className="mt-1 min-h-24 w-full rounded-md border bg-background p-3" /></label>
+            <input type="hidden" name="mallId" value={item.mallId} />
+            <div className="col-span-2 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setShowEdit(false)}>Hủy</Button><Button disabled={update.isPending}>{update.isPending ? "Đang lưu..." : "Lưu thay đổi"}</Button></div>
+          </form>
+        </div>
+      )}
+      {showRenew && item && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <form onSubmit={submitRenew} className="grid w-full max-w-xl grid-cols-2 gap-4 rounded-xl bg-background p-6 shadow-xl">
+            <div className="col-span-2 flex items-center justify-between">
+              <div><h2 className="text-xl font-semibold">Gia hạn hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">Từ {item.contractNumber}</p></div>
+              <button type="button" onClick={() => setShowRenew(false)}><X /></button>
+            </div>
+            <label className="col-span-2 text-sm">Số hợp đồng mới<Input name="contractNumber" placeholder="Để trống để hệ thống tự sinh" /></label>
+            <label className="col-span-2 text-sm">Tên hợp đồng<Input name="title" defaultValue={item.title} /></label>
+            <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày kết thúc mới *<Input name="endDate" type="date" required /></label>
+            <label className="col-span-2 text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
+            <label className="col-span-2 text-sm">Ghi chú<textarea name="notes" className="mt-1 min-h-20 w-full rounded-md border bg-background p-3" /></label>
+            <div className="col-span-2 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowRenew(false)}>Hủy</Button>
+              <Button disabled={renew.isPending}>{renew.isPending ? "Đang gia hạn..." : "Tạo hợp đồng gia hạn"}</Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -410,9 +574,13 @@ export default function ServiceContractsPage() {
 function ContractOperations({
   item,
   onChanged,
+  canEdit,
+  canTransferToBilling,
 }: {
   item: any;
   onChanged: () => void;
+  canEdit: boolean;
+  canTransferToBilling: boolean;
 }) {
   const { toast } = useToast();
   const [tab, setTab] = useState("payments");
@@ -471,7 +639,7 @@ function ContractOperations({
               ? "Hợp đồng phải thu — hệ thống sẽ nhắc người phụ trách chuẩn bị thu."
               : "Hợp đồng phải trả — hệ thống sẽ nhắc người phụ trách chuẩn bị thanh toán."}
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          {canEdit && <><div className="grid grid-cols-3 gap-2">
             <Input
               placeholder="Đợt thanh toán"
               value={payment.milestone}
@@ -586,6 +754,7 @@ function ContractOperations({
               Tạo các kỳ
             </Button>
           </details>
+          </>}
           {item.payments?.map((p: any) => (
             <div key={p.id} className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
@@ -604,10 +773,10 @@ function ContractOperations({
                     </div>
                   )}
                 </div>
-                <Button
+                {canEdit && <Button
                   size="sm"
                   variant="outline"
-                  disabled={p.status === "PAID"}
+                  disabled={p.status === "PAID" || Boolean(p.invoiceId)}
                   onClick={() =>
                     run(
                       serviceContractsApi.updatePayment(item.id, p.id, {
@@ -625,10 +794,21 @@ function ContractOperations({
                     : item.paymentDirection === "RECEIVABLE"
                       ? "Ghi nhận đã thu"
                       : "Ghi nhận đã trả"}
-                </Button>
+                </Button>}
               </div>
+              {item.paymentDirection === "RECEIVABLE" && (
+                <div className="mt-2 flex items-center gap-2">
+                  {p.invoiceId ? (
+                    <span className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                      {p.invoiceNumber} · {p.billingStatus || "INVOICE_DRAFT"}
+                    </span>
+                  ) : canTransferToBilling ? (
+                    <Button size="sm" onClick={() => run(serviceContractsApi.transferToBilling(item.id, p.id), "Đã chuyển kỳ thu sang Billing")}>Chuyển kế toán</Button>
+                  ) : null}
+                </div>
+              )}
               <div className="mt-2 flex gap-2">
-                <label className="cursor-pointer rounded border px-2 py-1 text-xs">
+                {canEdit && <label className="cursor-pointer rounded border px-2 py-1 text-xs">
                   <Upload className="mr-1 inline" size={12} />
                   Lưu hóa đơn
                   <input
@@ -649,8 +829,8 @@ function ContractOperations({
                         );
                     }}
                   />
-                </label>
-                <label className="cursor-pointer rounded border px-2 py-1 text-xs">
+                </label>}
+                {canEdit && <label className="cursor-pointer rounded border px-2 py-1 text-xs">
                   <Upload className="mr-1 inline" size={12} />
                   Chứng từ thanh toán
                   <input
@@ -671,7 +851,7 @@ function ContractOperations({
                         );
                     }}
                   />
-                </label>
+                </label>}
                 {p.documents?.map((d: any) => (
                   <a
                     className="px-2 py-1 text-xs text-primary underline"
@@ -690,7 +870,7 @@ function ContractOperations({
       )}
       {tab === "checklist" && (
         <div className="space-y-3 pt-3">
-          <div className="flex gap-2">
+          {canEdit && <div className="flex gap-2">
             <Input
               placeholder="Nội dung checklist"
               value={task}
@@ -708,7 +888,7 @@ function ContractOperations({
             >
               Thêm
             </Button>
-          </div>
+          </div>}
           {item.checklist?.map((c: any) => (
             <label
               key={c.id}
@@ -717,6 +897,7 @@ function ContractOperations({
               <input
                 type="checkbox"
                 checked={c.isCompleted}
+                disabled={!canEdit}
                 onChange={(e) =>
                   run(
                     serviceContractsApi.updateChecklist(item.id, c.id, {
@@ -739,7 +920,7 @@ function ContractOperations({
       )}
       {tab === "milestones" && (
         <div className="space-y-3 pt-3">
-          <div className="flex gap-2">
+          {canEdit && <div className="flex gap-2">
             <Input
               placeholder="Tên mốc thực hiện"
               value={milestone}
@@ -759,7 +940,7 @@ function ContractOperations({
             >
               Thêm
             </Button>
-          </div>
+          </div>}
           {item.milestones?.map((m: any) => (
             <div
               key={m.id}
@@ -774,7 +955,7 @@ function ContractOperations({
               >
                 {m.title}
               </span>
-              <Button
+              {canEdit && <Button
                 size="sm"
                 variant="outline"
                 onClick={() =>
@@ -787,7 +968,7 @@ function ContractOperations({
                 }
               >
                 {m.status === "DONE" ? "Mở lại" : "Hoàn thành"}
-              </Button>
+              </Button>}
             </div>
           ))}
         </div>

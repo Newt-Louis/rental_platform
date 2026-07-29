@@ -666,9 +666,9 @@ export default function TicketsPage() {
   const isStaff = user?.role !== 'TENANT';
   const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(searchParams.get('status') ?? '');
   const [priority, setPriority] = useState('');
-  const [queue, setQueue] = useState('open');
+  const [queue, setQueue] = useState(searchParams.get('queue') ?? 'open');
   const [showCreate, setShowCreate] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [page, setPage] = useState(1);

@@ -5,10 +5,15 @@ import { spacesApi, categoriesApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { STATUS_CONFIG, CATEGORIES } from '@/pages/spaces/spaces.constants';
+import { CATEGORIES } from '@/pages/spaces/spaces.constants';
 import { UnitFormFields } from './UnitFormFields';
-import { UNIT_FORM_DEFAULT_VALUES, seedUnitFormValues, buildUnitFormPayload } from './unitFormHelpers';
+import {
+  UNIT_FORM_DEFAULT_VALUES,
+  seedUnitFormValues,
+  buildUnitFormPayload,
+  getUnitMutationError,
+  validateUnitFormValues,
+} from './unitFormHelpers';
 
 export function CreateEditUnitDialog({
   open, unit, mallId, defaultFloorId, onClose,
@@ -22,14 +27,15 @@ export function CreateEditUnitDialog({
   const qc = useQueryClient();
   const { toast } = useToast();
   const isEdit = !!unit;
+  const canModify = !isEdit || unit?.status === 'VACANT';
 
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { register, handleSubmit, watch, setValue, reset, formState: { errors, isDirty } } = useForm({
     defaultValues: {
       ...UNIT_FORM_DEFAULT_VALUES,
       floorId: defaultFloorId ?? '',
-      status: 'VACANT',
     },
   });
 
@@ -37,13 +43,12 @@ export function CreateEditUnitDialog({
 
   useEffect(() => {
     if (open) {
+      setSubmitError(null);
       reset(unit ? {
         ...seedUnitFormValues(unit, defaultFloorId),
-        status: unit.status ?? 'VACANT',
       } : {
         ...UNIT_FORM_DEFAULT_VALUES,
         floorId: defaultFloorId ?? '',
-        status: 'VACANT',
       });
     }
   }, [open, unit, defaultFloorId]);
@@ -85,18 +90,46 @@ export function CreateEditUnitDialog({
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = buildUnitFormPayload(data, mallId);
+      const payload = buildUnitFormPayload(data, mallId, isEdit);
       return isEdit ? spacesApi.updateUnit(unit.id, payload) : spacesApi.createUnit(payload);
     },
     onSuccess: () => {
+      setSubmitError(null);
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
       qc.invalidateQueries({ queryKey: ['floor-map'] });
+      qc.invalidateQueries({ queryKey: ['floors'] });
+      qc.invalidateQueries({ queryKey: ['unit-detail'] });
       toast({ title: isEdit ? 'Đã cập nhật mặt bằng' : 'Đã tạo mặt bằng mới' });
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (error: any) => {
+      const message = getUnitMutationError(error, isEdit ? 'update' : 'create');
+      setSubmitError(message);
+      toast({
+        title: isEdit ? 'Không thể cập nhật mặt bằng' : 'Không thể tạo mặt bằng',
+        description: message,
+        variant: 'destructive',
+      });
+    },
   });
+
+  const submitForm = (data: any) => {
+    if (!canModify) {
+      const message = `Chỉ có thể điều chỉnh thông tin khi mặt bằng đang trống (VACANT). Trạng thái hiện tại: ${unit?.status}.`;
+      setSubmitError(message);
+      toast({ title: 'Không thể chỉnh sửa mặt bằng', description: message, variant: 'destructive' });
+      return;
+    }
+    const message = validateUnitFormValues(data, mallId);
+    if (message) {
+      setSubmitError(message);
+      toast({ title: 'Thông tin chưa hợp lệ', description: message, variant: 'destructive' });
+      return;
+    }
+    setSubmitError(null);
+    mutation.mutate(data);
+  };
 
   return (
     <>
@@ -122,37 +155,36 @@ export function CreateEditUnitDialog({
           <DialogHeader>
             <DialogTitle>{isEdit ? `Sửa mặt bằng: ${unit.code}` : 'Thêm mặt bằng mới'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4 pb-2">
+          <form onSubmit={handleSubmit(submitForm)} className="space-y-4 pb-2">
 
-            {/* Status */}
-            <div className="max-w-xs">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Trạng thái</label>
-              <Select value={watch('status')} onValueChange={(v) => setValue('status', v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" {...register('status')} />
-            </div>
+            {submitError && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <p className="font-medium">Không thể lưu mặt bằng</p>
+                <p className="mt-1">{submitError}</p>
+              </div>
+            )}
 
-            <UnitFormFields
-              register={register}
-              watch={watch}
-              setValue={setValue}
-              errors={errors}
-              floors={floors}
-              zones={zones}
-              categoryNames={categoryNames}
-            />
+            {!canModify && (
+              <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Mặt bằng đang ở trạng thái <strong>{unit?.status}</strong>. Chỉ mặt bằng đang trống (VACANT) mới được điều chỉnh thông tin.
+              </div>
+            )}
+
+            <fieldset disabled={!canModify} className={!canModify ? 'opacity-60' : undefined}>
+              <UnitFormFields
+                register={register}
+                watch={watch}
+                setValue={setValue}
+                errors={errors}
+                floors={floors}
+                zones={zones}
+                categoryNames={categoryNames}
+              />
+            </fieldset>
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose}>Hủy</Button>
-              <Button type="submit" disabled={mutation.isPending}>
+              <Button type="submit" disabled={mutation.isPending || !canModify}>
                 {mutation.isPending ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo mặt bằng'}
               </Button>
             </DialogFooter>

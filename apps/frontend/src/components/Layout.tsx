@@ -42,6 +42,8 @@ import {
   Warehouse,
   ParkingCircle,
   ScanLine,
+  ShieldCheck,
+  Car,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
@@ -75,6 +77,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   "/service-contracts": FileText,
   "/inventory": Warehouse,
   "/work-orders": CheckSquare,
+  "/patrol": ShieldCheck,
+  "/parking": Car,
   "/tenants": Store,
   "/fitout": Hammer,
   "/tickets": Ticket,

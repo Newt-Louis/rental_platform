@@ -155,12 +155,12 @@ const LEAD_CATEGORIES = [
 ];
 
 const PROPOSAL_STATUS: Record<string, { label: string; color: string }> = {
-  DRAFT:        { label: 'Draft',      color: 'bg-gray-100 text-gray-600' },
+  DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
   SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
   UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-gray-700' },
   APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
   REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã ký HĐ', color: 'bg-purple-100 text-purple-700' },
+  CONVERTED:    { label: 'Đã tạo HĐ', color: 'bg-purple-100 text-purple-700' },
 };
 
 const BOOKING_STATUS_CFG: Record<string, { label: string; color: string }> = {
@@ -216,8 +216,34 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
   }, [categoryOptions]);
   const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
+  const { data: selectableLeadsRaw, isLoading: isLoadingSelectableLeads } = useQuery({
+    queryKey: ['selectable-customer-leads', leadSearch, selectedMallId],
+    queryFn: () => crmApi.listLeads({ search: leadSearch || undefined, limit: 50, mallId: selectedMallId ?? undefined }),
+    enabled: open && mode === 'customer',
+  });
+  const selectableLeads: Lead[] = (selectableLeadsRaw?.data ?? selectableLeadsRaw ?? []).filter((lead: Lead) => !lead.customerId);
+  const selectedLead = selectableLeads.find((lead) => lead.id === selectedLeadId);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const selectLeadForCustomer = (lead: Lead) => {
+    setSelectedLeadId(lead.id);
+    setForm((current) => ({
+      ...current,
+      brandName: lead.brandName || current.brandName,
+      companyName: lead.company || lead.brandName || current.companyName,
+      contactName: lead.contactName || current.contactName,
+      phone: lead.phone || current.phone,
+      email: lead.email || current.email,
+      category: lead.category || current.category,
+      expectedArea: lead.expectedArea != null ? String(lead.expectedArea) : current.expectedArea,
+      budgetMin: lead.expectedRent != null ? String(lead.expectedRent) : current.budgetMin,
+      source: lead.source || current.source,
+      notes: lead.notes || current.notes,
+    }));
+    if (lead.assignedTo?.id && !isSelfOnlyAssignee) setAssignedToId(lead.assignedTo.id);
+  };
 
   const createLead = useMutation({
     mutationFn: () => crmApi.createLead({
@@ -247,6 +273,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
 
   const createCustomer = useMutation({
     mutationFn: () => customersApi.createCustomer({
+      leadId: selectedLeadId || undefined,
       companyName: form.companyName || form.brandName,
       brandName: form.brandName || undefined,
       contactName: form.contactName,
@@ -266,7 +293,11 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
       qc.invalidateQueries({ queryKey: ['customers-stats'] });
+      qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
+      if (selectedLeadId) qc.invalidateQueries({ queryKey: ['lead-detail', selectedLeadId] });
       toast({ title: t('addDialog.customerSuccess') });
+      setSelectedLeadId('');
+      setLeadSearch('');
       onClose();
     },
     onError: (err: any) => {
@@ -285,26 +316,62 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
         </DialogHeader>
 
         {/* Mode selector */}
-        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-4">
+        <div className="mb-4 flex gap-2 rounded-xl bg-muted p-1">
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setMode('lead')}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'lead' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => { setMode('lead'); setSelectedLeadId(''); setLeadSearch(''); }}
           >
             <Target size={14} /> {t('addDialog.modeLead')}
           </button>
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'customer' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'customer' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => setMode('customer')}
           >
             <Users size={14} /> {t('addDialog.modeCustomer')}
           </button>
         </div>
 
-        <p className="text-xs text-gray-400 -mt-2 mb-3 px-1">
+        <p className="-mt-2 mb-3 px-1 text-xs text-muted-foreground">
           {mode === 'lead' ? t('addDialog.leadDesc') : t('addDialog.customerDesc')}
         </p>
 
         <div className="space-y-3 text-sm">
+          {mode === 'customer' && (
+            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-800 dark:bg-blue-950/40">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label className="text-xs font-semibold text-blue-900 dark:text-blue-100">{t('addDialog.selectLeadTitle')}</Label>
+                  <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">{t('addDialog.selectLeadHint')}</p>
+                </div>
+                {selectedLeadId && <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedLeadId('')}><X size={12} className="mr-1" />{t('addDialog.clearLead')}</Button>}
+              </div>
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder={t('addDialog.searchLeadPlaceholder')} className="h-9 pl-8" />
+              </div>
+              {selectedLead ? (
+                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-card px-3 py-2 dark:border-blue-800">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">{selectedLead.brandName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{selectedLead.contactName}{selectedLead.phone ? ` · ${selectedLead.phone}` : ''}</div>
+                  </div>
+                  <Badge className="border-0 bg-blue-100 text-blue-700">{t('addDialog.leadSelected')}</Badge>
+                </div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {isLoadingSelectableLeads ? <p className="py-3 text-center text-xs text-gray-400">{t('customersView.loading')}</p> : selectableLeads.length === 0 ? <p className="py-3 text-center text-xs text-gray-500">{t('addDialog.noSelectableLeads')}</p> : selectableLeads.map((lead) => (
+                    <button key={lead.id} type="button" onClick={() => selectLeadForCustomer(lead)} className="flex w-full items-center justify-between rounded-lg bg-card px-3 py-2 text-left text-card-foreground hover:bg-blue-100/60 dark:hover:bg-blue-900/40">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{lead.brandName}</div>
+                        <div className="truncate text-xs text-muted-foreground">{lead.contactName}{lead.phone ? ` · ${lead.phone}` : ''}</div>
+                      </div>
+                      <Plus size={13} className="shrink-0 text-blue-600" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Shared fields */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -368,7 +435,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
               </div>
               <div>
                 <Label className="text-xs">{t('addDialog.fieldRating')}</Label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
                   {[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{'★'.repeat(v)} ({v}/5)</option>)}
                 </select>
               </div>
@@ -382,19 +449,19 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
           <div className="grid grid-cols-2 gap-3 border-t pt-3">
             <div>
               <Label className="text-xs">{t('addDialog.fieldSource')}</Label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.source} onChange={(e) => set('source', e.target.value)}>
+              <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.source} onChange={(e) => set('source', e.target.value)}>
                 {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldAssignee')}</Label>
               {isSelfOnlyAssignee ? (
-                <div className="mt-1 h-9 flex items-center px-3 text-sm rounded-md border border-gray-200 bg-gray-50 text-gray-600">
+                <div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
                   {user?.fullName}
                   <span className="ml-1 text-gray-400">({t('addDialog.fieldAssigneeSelfHint')})</span>
                 </div>
               ) : (
-                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
                   <option value="">{t('addDialog.fieldAssigneeNone')}</option>
                   {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
                 </select>
@@ -403,7 +470,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
             <div className="col-span-2">
               <Label className="text-xs">{t('addDialog.fieldNotes')}</Label>
               <textarea
-                className="w-full border rounded-md p-2 text-sm resize-none h-16 mt-1"
+                className="mt-1 h-16 w-full resize-none rounded-md border border-input bg-background p-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder={t('addDialog.fieldNotesPlaceholder')}
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
@@ -430,7 +497,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
 
 // ─── Lead Detail Sheet ─────────────────────────────────────────────────────────
 
-function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null; onClose: () => void; onOpenCustomer?: (customerId: string) => void }) {
   const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -452,6 +519,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     enabled: !!lead?.id,
   });
   const [newFollowUp, setNewFollowUp] = useState({ dueDate: '', note: '' });
+
+  // Sheet dùng chung 1 instance cho mọi lead (không remount) — nếu không reset thủ công, tab đang
+  // mở và nội dung follow-up nháp của lead trước sẽ còn nguyên khi chuyển sang xem lead khác.
+  useEffect(() => {
+    setActiveTab('profile');
+    setNewFollowUp({ dueDate: '', note: '' });
+  }, [lead?.id]);
 
   const displayLead: any = fullLead ?? lead;
   const customer: any = fullLead?.customer ?? null;
@@ -478,11 +552,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
   const completeFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.complete(id),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.completeFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const deleteFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.delete(id),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.deleteFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const invalidateAll = () => {
@@ -504,6 +580,7 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
         description: customer && syncedTo ? t('leadSheet.advanceSyncHint', { label: syncedTo }) : undefined,
       });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const lostMutation = useMutation({
@@ -516,6 +593,17 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
       });
       onClose();
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
+  });
+
+  const customerProfileMutation = useMutation({
+    mutationFn: () => crmApi.createCustomerProfile(lead!.id),
+    onSuccess: (createdCustomer: any) => {
+      invalidateAll();
+      toast({ title: t('leadSheet.customerProfileReady'), description: t('leadSheet.customerProfileReadyHint') });
+      onOpenCustomer?.(createdCustomer.id);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('leadSheet.customerProfileError'), variant: 'destructive' }),
   });
 
   return (
@@ -595,7 +683,11 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
 
                 {/* Customer company profile (nếu đã đăng ký) */}
                 {customer && (
-                  <SheetSection label={t('leadSheet.companyProfile')} className="bg-blue-50">
+                  <SheetSection
+                    label={t('leadSheet.companyProfile')}
+                    className="bg-blue-50"
+                    action={<button onClick={() => onOpenCustomer?.(customer.id)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">{t('leadSheet.openCustomerProfile')} <ArrowRight size={11} /></button>}
+                  >
                     {customer.companyName && <SheetRow label={t('leadSheet.fieldCompany')} value={customer.companyName} icon={Building2} />}
                     {customer.taxCode && <SheetRow label={t('leadSheet.fieldTaxCode')} value={customer.taxCode} icon={Hash} />}
                     {customer.industry && <SheetRow label={t('leadSheet.fieldIndustry')} value={customer.industry} icon={Briefcase} />}
@@ -637,15 +729,36 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                   </div>
                 )}
 
+                {!customer && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+                    <div className="text-sm font-semibold text-blue-900">{t('leadSheet.noLinkedCustomer')}</div>
+                    <p className="text-xs text-blue-700">{t('leadSheet.createCustomerProfileHint')}</p>
+                    <Button className="w-full gap-2" onClick={() => customerProfileMutation.mutate()} disabled={customerProfileMutation.isPending}>
+                      <UserPlus size={14} /> {customerProfileMutation.isPending ? t('leadSheet.creatingCustomerProfile') : t('leadSheet.createCustomerProfile')}
+                    </Button>
+                  </div>
+                )}
+
                 {/* Pipeline advance actions */}
                 {!['WON', 'LOST'].includes(displayLead.status) && (
                   <div className="space-y-2 pt-1">
-                    {nextStage && (
-                      <Button className="w-full flex-col h-auto py-2.5" onClick={() => advanceMutation.mutate(nextStage.key)} disabled={advanceMutation.isPending}>
-                        <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> {t('leadSheet.advancePipeline', { label: nextStage.label })}</span>
-                        {customer && <span className="text-[10px] opacity-75 mt-0.5">{t('leadSheet.customerSyncHint', { label: LEAD_TO_CUSTOMER_LABEL[nextStage.key] })}</span>}
-                      </Button>
-                    )}
+                    {nextStage && (() => {
+                      const needsApprovedProposal = nextStage.key === 'WON'
+                        && !proposals.some((p: any) => ['APPROVED', 'CONVERTED'].includes(p.status));
+                      return (
+                        <>
+                          <Button className="w-full flex-col h-auto py-2.5"
+                            onClick={() => advanceMutation.mutate(nextStage.key)}
+                            disabled={advanceMutation.isPending || needsApprovedProposal}>
+                            <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> {t('leadSheet.advancePipeline', { label: nextStage.label })}</span>
+                            {customer && <span className="text-[10px] opacity-75 mt-0.5">{t('leadSheet.customerSyncHint', { label: LEAD_TO_CUSTOMER_LABEL[nextStage.key] })}</span>}
+                          </Button>
+                          {needsApprovedProposal && (
+                            <p className="text-xs text-amber-600">{t('leadSheet.wonRequiresApprovedProposal')}</p>
+                          )}
+                        </>
+                      );
+                    })()}
                     <Button variant="outline" className="w-full text-red-500 border-red-200 hover:bg-red-50" onClick={() => lostMutation.mutate()} disabled={lostMutation.isPending}>
                       {t('sheet.markLost')}
                     </Button>
@@ -679,7 +792,10 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         const bcfg = BOOKING_STATUS_CFG[b.status] ?? BOOKING_STATUS_CFG.PENDING;
                         const dl = b.expiresAt ? Math.max(0, Math.ceil((new Date(b.expiresAt).getTime() - Date.now()) / 86400000)) : null;
                         return (
-                          <div key={b.id} className={`rounded-xl border p-3 ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+                          <div key={b.id}
+                            className={`rounded-xl border p-3 cursor-pointer hover:border-blue-300 transition-colors ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}
+                            onClick={() => { onClose(); navigate(`/bookings?id=${b.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${b.priority === 1 ? 'bg-amber-400 text-white' : 'bg-gray-200 text-gray-600'}`}>{b.priority}</span>
@@ -693,14 +809,18 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                                   <span className={`text-xs ${dl <= 7 ? 'text-red-500' : 'text-gray-400'}`}><Clock size={10} className="inline" /> {dl}d</span>
                                 )}
                                 <Badge className={`text-xs border-0 ${bcfg.color}`}>{t(`bookingStatus.${b.status}`, { defaultValue: bcfg.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
                               </div>
                             </div>
                             {b.proposal && (
-                              <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8">
+                              <button
+                                className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8 hover:text-blue-600"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/proposals?id=${b.proposal.id}`); }}
+                              >
                                 <ArrowRight size={10} />
                                 <span className="font-mono">{b.proposal.proposalNumber}</span>
                                 <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{t(`proposalStatus.${b.proposal.status}`, { defaultValue: PROPOSAL_STATUS[b.proposal.status]?.label })}</Badge>
-                              </div>
+                              </button>
                             )}
                           </div>
                         );
@@ -723,19 +843,25 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         const ps = PROPOSAL_STATUS[p.status] ?? PROPOSAL_STATUS.DRAFT;
                         const steps: any[] = p.approvalWorkflow?.steps ?? [];
                         return (
-                          <div key={p.id} className={`rounded-xl border p-3 space-y-2 ${
+                          <div key={p.id}
+                            className={`rounded-xl border p-3 space-y-2 cursor-pointer hover:border-blue-300 transition-colors ${
                             p.status === 'APPROVED' ? 'border-green-200 bg-green-50' :
                             p.status === 'REJECTED' ? 'border-red-100 bg-red-50/40' :
                             p.status === 'CONVERTED' ? 'border-purple-100 bg-purple-50/30' :
                             p.status === 'SUBMITTED' || p.status === 'UNDER_REVIEW' ? 'border-yellow-200 bg-yellow-50/40' :
                             'border-gray-200 bg-white'
-                          }`}>
+                          }`}
+                            onClick={() => { onClose(); navigate(`/proposals?id=${p.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div>
                                 <span className="text-sm font-mono font-semibold">{p.proposalNumber}</span>
                                 {p.unit && <span className="text-xs text-gray-400 ml-2">{p.unit.code}</span>}
                               </div>
-                              <Badge className={`text-xs border-0 ${ps.color}`}>{t(`proposalStatus.${p.status}`, { defaultValue: ps.label })}</Badge>
+                              <div className="flex items-center gap-1.5">
+                                <Badge className={`text-xs border-0 ${ps.color}`}>{t(`proposalStatus.${p.status}`, { defaultValue: ps.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
+                              </div>
                             </div>
                             {(p.monthlyRent || p.totalContractValue) && (
                               <div className="grid grid-cols-2 gap-x-4 text-xs">
@@ -761,11 +887,17 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                               </div>
                             )}
                             {p.contract && (
-                              <div className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2">
+                              <button
+                                className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2 w-full hover:border-purple-300"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
+                              >
                                 <FileText size={11} className="text-purple-500" />
                                 <span className="font-mono font-medium">{p.contract.contractNumber}</span>
-                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">{p.contract.status}</Badge>
-                              </div>
+                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
+                                  {t(`contractStatus.${p.contract.status}`, { defaultValue: p.contract.status })}
+                                </Badge>
+                                <ArrowRight size={11} className="text-purple-300" />
+                              </button>
                             )}
                           </div>
                         );
@@ -802,11 +934,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
-                            title={t('followUpsWorkspace.complete')} onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            title={t('followUpsWorkspace.complete')} disabled={completeFollowUpMutation.isPending}
+                            onClick={() => completeFollowUpMutation.mutate(f.id)}>
                             <CheckCircle size={13} />
                           </Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
-                            title={t('lead.delete')} onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            title={t('lead.delete')} disabled={deleteFollowUpMutation.isPending}
+                            onClick={() => deleteFollowUpMutation.mutate(f.id)}>
                             <X size={13} />
                           </Button>
                         </div>
@@ -1095,7 +1229,7 @@ interface PipelineFilters {
 
 // ─── Pipeline View (Kanban + List) ─────────────────────────────────────────────
 
-function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onOpenCustomers?: () => void }) {
+function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew: () => void; onOpenCustomers?: () => void; onOpenCustomer?: (customerId: string) => void }) {
   const { t } = useTranslation('crm');
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -1794,7 +1928,7 @@ function PipelineView({ onAddNew, onOpenCustomers }: { onAddNew: () => void; onO
         </div>
       )}
 
-      <LeadDetailSheet lead={selectedLead} onClose={() => {
+      <LeadDetailSheet lead={selectedLead} onOpenCustomer={onOpenCustomer} onClose={() => {
         setSelectedLead(null);
         setSearchParams((previous) => {
           const next = new URLSearchParams(previous);
@@ -2120,6 +2254,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const [showActivity, setShowActivity] = useState(false);
   const [showInactiveReason, setShowInactiveReason] = useState(false);
   const [inactiveReason, setInactiveReason] = useState('');
+  const [showLeadSync, setShowLeadSync] = useState(false);
+  const [syncLeadId, setSyncLeadId] = useState('');
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2132,6 +2268,13 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const statusInfo = CUSTOMER_STATUSES.find((s) => s.key === customer?.status);
   const nextStatusKey = customer?.status === 'PROSPECT' ? 'NEGOTIATING' : customer?.status === 'NEGOTIATING' ? 'ACTIVE' : null;
   const nextStatusInfo = nextStatusKey ? CUSTOMER_STATUSES.find((s) => s.key === nextStatusKey) : null;
+
+  const { data: leadOptionsRaw, isLoading: isLoadingLeads } = useQuery({
+    queryKey: ['customer-sync-leads'],
+    queryFn: () => crmApi.listLeads({ limit: 200 }),
+    enabled: showLeadSync,
+  });
+  const leadOptions: Lead[] = (leadOptionsRaw?.data ?? leadOptionsRaw ?? []).filter((item: Lead) => !item.customerId || item.customerId === customerId);
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['customer', customerId] });
@@ -2170,6 +2313,17 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
       });
       setShowInactiveReason(false);
     },
+  });
+
+  const syncLeadMutation = useMutation({
+    mutationFn: () => crmApi.syncLeadToCustomer(syncLeadId, customer!.id),
+    onSuccess: () => {
+      invalidateAll();
+      setShowLeadSync(false);
+      setSyncLeadId('');
+      toast({ title: t('customerDetail.syncLeadSuccess'), description: t('customerDetail.syncLeadSuccessHint') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('customerDetail.syncLeadError'), variant: 'destructive' }),
   });
 
   return (
@@ -2302,6 +2456,9 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
 
             {detailTab === 'leads' && (
               <div className="space-y-2">
+                <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowLeadSync(true)}>
+                  <RefreshCw size={13} /> {t('customerDetail.getInfoFromLead')}
+                </Button>
                 {(customer.leads ?? []).length === 0 ? (
                   <div className="text-center py-8 text-gray-400 text-sm"><Target size={28} className="mx-auto mb-2 opacity-20" />{t('customerDetail.noLinkedLeads')}</div>
                 ) : (customer.leads ?? []).map((lead: any) => {
@@ -2340,17 +2497,42 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={showLeadSync} onOpenChange={(open) => { setShowLeadSync(open); if (!open) setSyncLeadId(''); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('customerDetail.getInfoFromLead')}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">{t('customerDetail.syncLeadDescription')}</p>
+            <Select value={syncLeadId} onValueChange={setSyncLeadId} disabled={isLoadingLeads}>
+              <SelectTrigger><SelectValue placeholder={isLoadingLeads ? t('customersView.loading') : t('customerDetail.selectLead')} /></SelectTrigger>
+              <SelectContent>
+                {leadOptions.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.brandName} — {item.contactName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isLoadingLeads && leadOptions.length === 0 && <p className="text-sm text-amber-600">{t('customerDetail.noAvailableLeads')}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLeadSync(false)}>{t('customerDetail.cancel')}</Button>
+              <Button disabled={!syncLeadId || syncLeadMutation.isPending} onClick={() => syncLeadMutation.mutate()}>{t('customerDetail.syncNow')}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
 // ─── Customers View ────────────────────────────────────────────────────────────
 
-function CustomersView({ onAddNew }: { onAddNew: () => void }) {
+function CustomersView({ onAddNew, requestedCustomerId, onCustomerClosed }: { onAddNew: () => void; requestedCustomerId?: string | null; onCustomerClosed?: () => void }) {
   const { t } = useTranslation('crm');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (requestedCustomerId) setSelectedId(requestedCustomerId);
+  }, [requestedCustomerId]);
 
   const { data: statsData } = useQuery({
     queryKey: ['customers-stats'],
@@ -2460,7 +2642,7 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
         </div>
       </div>
 
-      <CustomerDetailSheet customerId={selectedId} onClose={() => setSelectedId(null)} />
+      <CustomerDetailSheet customerId={selectedId} onClose={() => { setSelectedId(null); onCustomerClosed?.(); }} />
     </div>
   );
 }
@@ -2672,6 +2854,12 @@ export default function CrmPage() {
     requestedSection === 'followups' || requestedSection === 'customers' ? requestedSection : 'leads',
   );
   const [showAdd, setShowAdd] = useState(false);
+  const [customerToOpen, setCustomerToOpen] = useState<string | null>(searchParams.get('customerId'));
+
+  const openCustomerProfile = (customerId: string) => {
+    setCustomerToOpen(customerId);
+    setActiveTab('customers');
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -2691,10 +2879,10 @@ export default function CrmPage() {
           </TabsList>
         </div>
         <TabsContent value="leads" className="mt-0 flex-1 overflow-y-auto pb-4">
-          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} />
+          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} onOpenCustomer={openCustomerProfile} />
         </TabsContent>
         <TabsContent value="followups" className="mt-0 flex-1 overflow-y-auto pb-4"><FollowUpsWorkspace /></TabsContent>
-        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} /></TabsContent>
+        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} requestedCustomerId={customerToOpen} onCustomerClosed={() => setCustomerToOpen(null)} /></TabsContent>
       </Tabs>
       <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
     </div>

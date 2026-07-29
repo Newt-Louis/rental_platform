@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { parkingApi } from '@/api';
+import { parkingDashboardApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,7 +69,7 @@ export default function ParkingTransactionPage() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['parking-transactions', appliedFilter, pageIndex, pageSize],
     queryFn: () =>
-      parkingApi.getTransactions({ ...appliedFilter, pageIndex, pageSize }),
+      parkingDashboardApi.getTransactions({ ...appliedFilter, pageIndex, pageSize }),
   });
 
   const result = data?.data ?? data;
@@ -94,7 +94,7 @@ export default function ParkingTransactionPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const blob = await parkingApi.exportTransactions({ ...appliedFilter, pageIndex: 1, pageSize: 10000 });
+      const blob = await parkingDashboardApi.exportTransactions({ ...appliedFilter, pageIndex: 1, pageSize: 10000 });
       const url = URL.createObjectURL(blob as Blob);
       const a = document.createElement('a');
       a.href = url;

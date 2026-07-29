@@ -250,6 +250,8 @@ export class WorkOrdersService {
   async list(query: any, mallIds?: string[]) {
     const page = Math.max(1, Number(query.page) || 1),
       limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const now = new Date();
+    const dueSoon = new Date(now.getTime() + Math.min(168, Math.max(1, Number(query.dueHours) || 24)) * 3600000);
     const where: Prisma.WorkOrderWhereInput = {
       isActive: true,
       ...(query.mallId
@@ -258,6 +260,7 @@ export class WorkOrdersService {
           ? { mallId: { in: mallIds } }
           : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(!query.status && query.scope === "ACTIVE" ? { status: { in: ["NEW", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "WAITING_REVIEW"] } } : {}),
       ...(query.category ? { category: query.category } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
       ...(query.department ? { assignedDepartment: query.department } : {}),
@@ -268,6 +271,10 @@ export class WorkOrdersService {
             status: { notIn: ["COMPLETED", "CANCELLED"] },
           }
         : {}),
+      ...(query.alert === "DUE_SOON" ? { dueDate: { gte: now, lte: dueSoon }, status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
+      ...(query.alert === "OVERDUE" ? { dueDate: { lt: now }, status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
+      ...(query.alert === "UNASSIGNED" ? { assigneeId: null, status: { in: ["NEW", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"] } } : {}),
+      ...(query.alert === "CRITICAL" ? { priority: "CRITICAL", status: { notIn: ["COMPLETED", "CANCELLED"] } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -586,7 +593,8 @@ export class WorkOrdersService {
       isActive: true,
       ...(mallId ? { mallId } : mallIds ? { mallId: { in: mallIds } } : {}),
     };
-    const [total, grouped, overdue, pendingReview] = await Promise.all([
+    const dueSoonAt = new Date(Date.now() + 24 * 3600000);
+    const [total, grouped, overdue, pendingReview, dueSoon, unassigned, critical] = await Promise.all([
       this.prisma.workOrder.count({ where }),
       this.prisma.workOrder.groupBy({ by: ["status"], where, _count: true }),
       this.prisma.workOrder.count({
@@ -599,16 +607,24 @@ export class WorkOrdersService {
       this.prisma.workOrder.count({
         where: { ...where, status: "WAITING_REVIEW" },
       }),
+      this.prisma.workOrder.count({ where: { ...where, dueDate: { gte: new Date(), lte: dueSoonAt }, status: { notIn: ["COMPLETED", "CANCELLED"] } } }),
+      this.prisma.workOrder.count({ where: { ...where, assigneeId: null, status: { in: ["NEW", "ASSIGNED", "IN_PROGRESS", "ON_HOLD"] } } }),
+      this.prisma.workOrder.count({ where: { ...where, priority: "CRITICAL", status: { notIn: ["COMPLETED", "CANCELLED"] } } }),
     ]);
     return {
       total,
       overdue,
       pendingReview,
+      dueSoon,
+      unassigned,
+      critical,
       byStatus: Object.fromEntries(grouped.map((x) => [x.status, x._count])),
     };
   }
   async exportCsv(query: any, mallIds?: string[]) {
-    const result = await this.list({ ...query, page: 1, limit: 100 }, mallIds);
+    const first = await this.list({ ...query, page: 1, limit: 100 }, mallIds);
+    const data = [...first.data];
+    for (let page = 2; page <= first.totalPages; page++) data.push(...(await this.list({ ...query, page, limit: 100 }, mallIds)).data);
     const esc = (value: unknown) =>
       `"${String(value ?? "").replace(/"/g, '""')}"`;
     const headers = [
@@ -624,7 +640,7 @@ export class WorkOrdersService {
       "Hạn hoàn thành",
       "Ngày tạo",
     ];
-    const lines = result.data.map((x) =>
+    const lines = data.map((x) =>
       [
         x.workOrderNumber,
         x.mall.name,
@@ -659,6 +675,7 @@ export class WorkOrdersService {
         status: { notIn: ["COMPLETED", "CANCELLED"] },
       },
     });
+    const dueSoonRows = await this.prisma.workOrder.findMany({ where: { isActive: true, assigneeId: { not: null }, dueDate: { gte: now, lte: new Date(now.getTime() + 24 * 3600000) }, status: { notIn: ["COMPLETED", "CANCELLED"] } } });
     let sent = 0;
     for (const row of rows) {
       const exists = await this.prisma.notification.findFirst({
@@ -680,6 +697,10 @@ export class WorkOrdersService {
         });
         sent++;
       }
+    }
+    for (const row of dueSoonRows) {
+      const exists = await this.prisma.notification.findFirst({ where: { userId: row.assigneeId!, entityType: "WORK_ORDER_DUE_SOON", entityId: row.id, createdAt: { gte: since } } });
+      if (!exists) { await this.notifications.create({ userId: row.assigneeId!, title: "Công việc sắp đến hạn", body: `${row.workOrderNumber} · ${row.title} · hạn ${row.dueDate?.toLocaleString("vi-VN")}`, type: "WORK_ORDER", entityType: "WORK_ORDER_DUE_SOON", entityId: row.id }); sent++; }
     }
     return { sent };
   }

@@ -6,7 +6,7 @@ import { InvoiceStatus } from '@prisma/client';
 export class CollectionKpiService {
   constructor(private prisma: PrismaService) {}
 
-  async getKpis(months = 6) {
+  async getKpis(months = 6, mallIds?: string[]) {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
@@ -15,6 +15,7 @@ export class CollectionKpiService {
         isActive: true,
         createdAt: { gte: start },
         status: { not: InvoiceStatus.CANCELLED },
+        ...(mallIds ? { OR: [{ contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
       },
       include: { payments: true },
     });
@@ -47,7 +48,7 @@ export class CollectionKpiService {
     const collectionRate = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 1000) / 10 : 0;
     const dso = paidCount > 0 ? Math.round(weightedDays / paidCount) : 0;
 
-    const agingTrend = await this.buildAgingTrend(months);
+    const agingTrend = await this.buildAgingTrend(months, mallIds);
 
     return {
       dso,
@@ -59,7 +60,7 @@ export class CollectionKpiService {
     };
   }
 
-  private async buildAgingTrend(months: number) {
+  private async buildAgingTrend(months: number, mallIds?: string[]) {
     const trend: { period: string; current: number; overdue: number }[] = [];
     const now = new Date();
 
@@ -73,6 +74,7 @@ export class CollectionKpiService {
           isActive: true,
           createdAt: { lte: end },
           status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE, InvoiceStatus.PAID] },
+          ...(mallIds ? { OR: [{ contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
         },
         include: { payments: true },
       });

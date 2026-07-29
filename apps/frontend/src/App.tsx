@@ -9,6 +9,7 @@ import { Navigate } from "react-router-dom";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
+const ActivateInvitationPage = lazy(() => import("@/pages/auth/ActivateInvitationPage"));
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage"));
 const SpacesPage = lazy(() => import("@/pages/spaces/SpacesPage"));
 const CrmPage = lazy(() => import("@/pages/crm/CrmPage"));
@@ -21,6 +22,8 @@ const ServiceContractsPage = lazy(
 );
 const InventoryPage = lazy(() => import("@/pages/inventory/InventoryPage"));
 const WorkOrdersPage = lazy(() => import("@/pages/work-orders/WorkOrdersPage"));
+const PatrolPage = lazy(() => import("@/pages/patrol/PatrolPage"));
+const ParkingPage = lazy(() => import("@/pages/parking/ParkingPage"));
 const FitoutPage = lazy(() => import("@/pages/fitout/FitoutPage"));
 const FitoutSettingsPage = lazy(
   () => import("@/pages/fitout/FitoutSettingsPage"),
@@ -106,6 +109,7 @@ export default function App() {
             <Suspense fallback={<AppLoading />}>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/activate" element={<ActivateInvitationPage />} />
                 <Route
                   path="/"
                   element={
@@ -224,6 +228,22 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <WorkOrdersPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="patrol"
+                    element={
+                      <RoleRoute>
+                        <PatrolPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="parking"
+                    element={
+                      <RoleRoute>
+                        <ParkingPage />
                       </RoleRoute>
                     }
                   />
