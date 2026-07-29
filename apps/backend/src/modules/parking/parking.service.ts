@@ -31,12 +31,17 @@ export interface ChartPoint {
   label: string;
   value: number;
 }
-
+interface RevenueReportRow {
+  TodayRevenue: number;
+  TotalTodayTransaction: number;
+  TotalRevenueLastMonth: number;
+  TotalTransactionLastMonth: number;
+}
 @Injectable()
 export class ParkingService {
   private readonly logger = new Logger(ParkingService.name);
 
-  constructor(private readonly prismaMssql: PrismaMssqlService) {}
+  constructor(private readonly prismaMssql: PrismaMssqlService) { }
 
   private ensureConfigured() {
     if (!this.prismaMssql.isConfigured) {
@@ -48,55 +53,68 @@ export class ParkingService {
 
   async getRevenueReport(parkingCode: string) {
     this.ensureConfigured();
-    const rows = await this.prismaMssql.$queryRaw<Record<string, unknown>[]>`
-      EXEC dbo.SP_GetRevenueReport @parkingCode = ${parkingCode}
-    `;
-    const row = rows[0] ?? {};
+    const rows = await this.prismaMssql.$queryRaw<RevenueReportRow[]>`
+    EXEC dbo.SP_GetRevenueReportOptimized @ParkingCode = ${parkingCode};
+  `;
+    const row = rows[0];
     return {
-      todayRevenue: toNumber(pick(row, 'TodayRevenue', 'todayRevenue')),
-      totalTodayTransaction: toNumber(pick(row, 'TotalTodayTransaction', 'totalTodayTransaction')),
-      totalRevenueLastMonth: toNumber(pick(row, 'TotalRevenueLastMonth', 'totalRevenueLastMonth')),
-      totalTransactionLastMonth: toNumber(pick(row, 'TotalTransactionLastMonth', 'totalTransactionLastMonth')),
+      todayRevenue: toNumber(row?.TodayRevenue),
+      totalTodayTransaction: toNumber(row?.TotalTodayTransaction),
+      totalRevenueLastMonth: toNumber(row?.TotalRevenueLastMonth),
+      totalTransactionLastMonth: toNumber(row?.TotalTransactionLastMonth),
     };
   }
 
   async getTransactionChart(parkingCode: string, startTime: string, finishTime: string): Promise<ChartPoint[]> {
     this.ensureConfigured();
-    const points: ChartPoint[] = [];
-    let cursor = new Date(startTime);
-    const end = new Date(finishTime);
-    while (cursor <= end) {
-      const next = addDays(cursor, 1);
-      const rows = await this.prismaMssql.$queryRaw<Record<string, unknown>[]>`
-        DECLARE @Total INT;
-        EXEC dbo.SP_GetNumberOfTransactionByTime
-          @startTime = ${cursor}, @endTime = ${next}, @parkingCode = ${parkingCode},
-          @NumberOfTransaction = @Total OUTPUT;
-        SELECT @Total AS total;
-      `;
-      points.push({ label: formatDay(cursor), value: toNumber(rows[0]?.total) });
-      cursor = next;
-    }
-    return points;
-  }
 
+    // Execute single procedure call returning all dates in one round-trip
+    const rows = await this.prismaMssql.$queryRaw<Array<{ TransactionDate: Date; TransactionCount: number }>>`
+    EXEC dbo.SP_GetTransactionCountEachByDateRange
+      @StartTime = ${new Date(startTime)},
+      @EndTime = ${new Date(finishTime)},
+      @ParkingCode = ${parkingCode};
+  `;
+
+    // Map database result rows directly to ChartPoint objects
+    return rows.map((row) => ({
+      label: formatDay(row.TransactionDate),
+      value: toNumber(row.TransactionCount),
+    }));
+  }
   async getRevenueChart(parkingCode: string, startTime: string, finishTime: string): Promise<ChartPoint[]> {
     this.ensureConfigured();
-    const points: ChartPoint[] = [];
-    let cursor = new Date(startTime);
+
+    const start = new Date(startTime);
     const end = new Date(finishTime);
-    while (cursor <= end) {
-      const next = addDays(cursor, 1);
-      const rows = await this.prismaMssql.$queryRaw<Record<string, unknown>[]>`
-        DECLARE @Total INT;
-        EXEC dbo.SP_GetTotalAmountByTime
-          @startTime = ${cursor}, @endTime = ${next}, @parkingCode = ${parkingCode},
-          @TotalAmount = @Total OUTPUT;
-        SELECT @Total AS total;
-      `;
-      points.push({ label: formatDay(cursor), value: toNumber(rows[0]?.total) });
-      cursor = next;
+
+    // 1. Single database round-trip for the entire date range
+    const rows = await this.prismaMssql.$queryRaw<Array<{ TransactionDate: Date; TotalAmount: number }>>`
+    EXEC dbo.SP_GetTotalAmountEachByDateRange
+      @StartTime = ${start},
+      @EndTime = ${end},
+      @ParkingCode = ${parkingCode};
+  `;
+
+    // 2. Build a quick lookup map: "DD-MM" -> TotalAmount
+    const revenueMap = new Map<string, number>();
+    for (let i = 0; i < rows.length; i++) {
+      revenueMap.set(formatDay(rows[i].TransactionDate), toNumber(rows[i].TotalAmount));
     }
+
+    // 3. Fill in missing dates with pre-allocated array for performance
+    const dayMs = 86400000;
+    const dayCount = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1;
+    const points = new Array<ChartPoint>(dayCount);
+
+    let cursor = start.getTime();
+    for (let i = 0; i < dayCount; i++) {
+      const date = new Date(cursor);
+      const key = formatDay(date);
+      points[i] = { label: key, value: revenueMap.get(key) ?? 0 };
+      cursor += dayMs;
+    }
+
     return points;
   }
 
