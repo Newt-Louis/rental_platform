@@ -70,6 +70,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-THISO Leasing <noreply@thiso.com.vn>}
+      MSSQL_ENABLED: ${MSSQL_ENABLED:-false}
+      MSSQL_DATABASE_URL: ${MSSQL_DATABASE_URL:-}
       NODE_ENV: production
       PORT: 3000
       TZ: Asia/Ho_Chi_Minh
