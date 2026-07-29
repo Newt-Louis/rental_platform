@@ -11,7 +11,7 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.parking)
-@Controller('parking')
+@Controller('parking-dashboard')
 export class ParkingDashboardController {
   constructor(private readonly parkingService: ParkingDashboardService) {}
 
