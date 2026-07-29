@@ -39,7 +39,7 @@ import { HealthController } from './health/health.controller';
 import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
-import { ParkingModule } from './modules/parking/parking.module';
+import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
 
 @Module({
   imports: [
@@ -87,7 +87,7 @@ import { ParkingModule } from './modules/parking/parking.module';
     ServiceContractsModule,
     InventoryModule,
     WorkOrdersModule,
-    ParkingModule,
+    ParkingDashboardModule,
   ],
   controllers: [HealthController],
   providers: [

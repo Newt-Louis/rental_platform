@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { ParkingService } from './parking.service';
+import { ParkingDashboardService } from './parking-dashboard.service';
 import { ParkingTransactionFilterDto } from './dto/parking-transaction-filter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -12,8 +12,8 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.parking)
 @Controller('parking')
-export class ParkingController {
-  constructor(private readonly parkingService: ParkingService) {}
+export class ParkingDashboardController {
+  constructor(private readonly parkingService: ParkingDashboardService) {}
 
   @Get('revenue-report')
   @ApiOperation({ summary: 'KPI doanh thu bãi đỗ xe hôm nay / tháng trước' })

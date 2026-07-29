@@ -38,8 +38,8 @@ interface RevenueReportRow {
   TotalTransactionLastMonth: number;
 }
 @Injectable()
-export class ParkingService {
-  private readonly logger = new Logger(ParkingService.name);
+export class ParkingDashboardService {
+  private readonly logger = new Logger(ParkingDashboardService.name);
 
   constructor(private readonly prismaMssql: PrismaMssqlService) { }
 
