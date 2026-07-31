@@ -10,6 +10,12 @@ export interface ParkingTransactionFilter {
   licensePlate?: string;
 }
 
+export interface ParkingTransactionExportFilter {
+  parkingCode: string;
+  startDate: string;
+  endDate: string;
+}
+
 export const parkingDashboardApi = {
   revenueReport: (parkingCode: string) =>
     api.get('/parking-dashboard/revenue-report', { params: { parkingCode } }).then((r) => r.data),
@@ -21,6 +27,6 @@ export const parkingDashboardApi = {
     api.get('/parking-dashboard/revenue-chart-by-year', { params: { parkingCode, year } }).then((r) => r.data),
   getTransactions: (filter: ParkingTransactionFilter) =>
     api.post('/parking-dashboard/transactions', filter).then((r) => r.data),
-  exportTransactions: (filter: ParkingTransactionFilter) =>
+  exportTransactions: (filter: ParkingTransactionExportFilter) =>
     api.post('/parking-dashboard/transactions/export', filter, { responseType: 'blob' }).then((r) => r.data),
 };

@@ -23,3 +23,14 @@ export class ParkingTransactionFilterDto {
   @IsOptional() @IsString() @MaxLength(50)
   licensePlate?: string;
 }
+
+export class ParkingTransactionExportFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @IsDateString()
+  startDate!: string;
+
+  @IsDateString()
+  endDate!: string;
+}

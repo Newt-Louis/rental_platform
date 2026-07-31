@@ -1,6 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaMssqlService } from '../../prisma-mssql/prisma-mssql.service';
-import { ParkingTransactionFilterDto } from './dto/parking-transaction-filter.dto';
+import { ParkingTransactionFilterDto, ParkingTransactionExportFilterDto } from './dto/parking-transaction-filter.dto';
 
 // SP trên NewParkingDB trả cột theo tên property C# gốc (Dapper auto-map) — không đảm bảo casing
 // đồng nhất giữa các SP, nên đọc phòng thủ bằng nhiều alias thay vì chỉ 1 key cố định.
@@ -169,27 +169,19 @@ export class ParkingDashboardService {
     };
   }
 
-  async exportTransactions(filter: ParkingTransactionFilterDto) {
+  async exportTransactions(filter: ParkingTransactionExportFilterDto) {
     this.ensureConfigured();
-    const cardCode = filter.cardCode?.trim() || null;
-    const licensePlate = filter.licensePlate?.trim() || null;
-    const ROW_CAP = 10_000;
 
     const rows = await this.prismaMssql.$queryRawUnsafe<Record<string, unknown>[]>(
-      `EXEC dbo.SP_GetParkingTransactions @StartDate=@P1, @EndDate=@P2, @ParkingCode=@P3, @PageIndex=@P4, @PageSize=@P5, @LicensePlate=@P6, @CardCode=@P7`,
+      `EXEC dbo.SP_GetParkingTransactionsRanged @StartDate=@P1, @EndDate=@P2`,
       filter.startDate,
       filter.endDate,
-      filter.parkingCode,
-      1,
-      ROW_CAP,
-      licensePlate,
-      cardCode,
     );
 
     const overviewRows = await this.prismaMssql.$queryRaw<Record<string, unknown>[]>`
       EXEC dbo.SP_GetOverviewReport
         @StartDate = ${filter.startDate}, @EndDate = ${filter.endDate}, @ParkingCode = ${filter.parkingCode},
-        @LicensePlate = ${licensePlate}, @CardCode = ${cardCode}
+        @LicensePlate = ${null}, @CardCode = ${null}
     `;
 
     return buildTransactionWorkbook(
@@ -288,31 +280,27 @@ async function buildTransactionWorkbook(
   ];
   overview.forEach((row) => overviewSheet.addRow(row));
 
-  const PAGE_SIZE = 1000;
-  for (let i = 0; i < transactions.length; i += PAGE_SIZE) {
-    const page = transactions.slice(i, i + PAGE_SIZE);
-    const sheet = workbook.addWorksheet(`ReportParkingHistory_Page${Math.floor(i / PAGE_SIZE) + 1}`);
-    sheet.columns = [
-      { header: 'STT', key: 'stt', width: 6 },
-      { header: 'Mã', key: 'recordId', width: 12 },
-      { header: 'Loại Xe', key: 'vehicleTypeName', width: 14 },
-      { header: 'Loại Thẻ', key: 'cardTypeName', width: 14 },
-      { header: 'Mã Thẻ', key: 'cardCode', width: 14 },
-      { header: 'Biển Số Vào', key: 'entryLicensePlate', width: 14 },
-      { header: 'Biển Số Ra', key: 'exitLicensePlate', width: 14 },
-      { header: 'Thời Gian Vào', key: 'entryTime', width: 18 },
-      { header: 'Thời Gian Ra', key: 'exitTime', width: 18 },
-      { header: 'Tổng Thời Gian', key: 'totalTime', width: 14 },
-      { header: 'Loại Voucher', key: 'voucherTypeName', width: 14 },
-      { header: 'Mã Voucher', key: 'voucherCode', width: 14 },
-      { header: 'Giá Trị Voucher', key: 'voucherValue', width: 14 },
-      { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14 },
-      { header: 'Tiền Mặt', key: 'cash', width: 14 },
-      { header: 'Ngân Lượng', key: 'bankTransfer', width: 14 },
-      { header: 'Tổng Thu', key: 'totalAmount', width: 14 },
-    ];
-    page.forEach((row, idx) => sheet.addRow({ stt: i + idx + 1, ...row }));
-  }
+  const sheet = workbook.addWorksheet('ReportParkingHistory');
+  sheet.columns = [
+    { header: 'STT', key: 'stt', width: 6 },
+    { header: 'Mã', key: 'recordId', width: 12 },
+    { header: 'Loại Xe', key: 'vehicleTypeName', width: 14 },
+    { header: 'Loại Thẻ', key: 'cardTypeName', width: 14 },
+    { header: 'Mã Thẻ', key: 'cardCode', width: 14 },
+    { header: 'Biển Số Vào', key: 'entryLicensePlate', width: 14 },
+    { header: 'Biển Số Ra', key: 'exitLicensePlate', width: 14 },
+    { header: 'Thời Gian Vào', key: 'entryTime', width: 18 },
+    { header: 'Thời Gian Ra', key: 'exitTime', width: 18 },
+    { header: 'Tổng Thời Gian', key: 'totalTime', width: 14 },
+    { header: 'Loại Voucher', key: 'voucherTypeName', width: 14 },
+    { header: 'Mã Voucher', key: 'voucherCode', width: 14 },
+    { header: 'Giá Trị Voucher', key: 'voucherValue', width: 14 },
+    { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14 },
+    { header: 'Tiền Mặt', key: 'cash', width: 14 },
+    { header: 'Ngân Lượng', key: 'bankTransfer', width: 14 },
+    { header: 'Tổng Thu', key: 'totalAmount', width: 14 },
+  ];
+  transactions.forEach((row, idx) => sheet.addRow({ stt: idx + 1, ...row }));
 
   return workbook.xlsx.writeBuffer();
 }

@@ -42,6 +42,7 @@ interface ParkingTransactionRow {
   entryTime: string;
   exitTime: string;
   totalTime?: string;
+  voucherCode?: string;
   parkingFee: number;
   cash: number;
   bankTransfer: number;
@@ -94,7 +95,11 @@ export default function ParkingTransactionPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const blob = await parkingDashboardApi.exportTransactions({ ...appliedFilter, pageIndex: 1, pageSize: 10000 });
+      const blob = await parkingDashboardApi.exportTransactions({
+        parkingCode: appliedFilter.parkingCode,
+        startDate: appliedFilter.startDate,
+        endDate: appliedFilter.endDate,
+      });
       const url = URL.createObjectURL(blob as Blob);
       const a = document.createElement('a');
       a.href = url;
@@ -183,6 +188,9 @@ export default function ParkingTransactionPage() {
                     <th className="py-2 pr-3">{t('transaction.col.exitPlate', 'Biển ra')}</th>
                     <th className="py-2 pr-3">{t('transaction.col.entryTime', 'Giờ vào')}</th>
                     <th className="py-2 pr-3">{t('transaction.col.exitTime', 'Giờ ra')}</th>
+                    <th className="py-2 pr-3">{t('transaction.col.voucherCode', 'Mã voucher')}</th>
+                    <th className="py-2 pr-3 text-right">{t('transaction.col.cash', 'Tiền mặt')}</th>
+                    <th className="py-2 pr-3 text-right">{t('transaction.col.bankTransfer', 'Chuyển khoản')}</th>
                     <th className="py-2 pr-3 text-right">{t('transaction.col.totalAmount', 'Tổng thu')}</th>
                     <th className="py-2 pr-3 text-center">{t('transaction.col.image', 'Ảnh')}</th>
                   </tr>
@@ -197,6 +205,9 @@ export default function ParkingTransactionPage() {
                       <td className="py-2 pr-3">{row.exitLicensePlate}</td>
                       <td className="py-2 pr-3">{row.entryTime}</td>
                       <td className="py-2 pr-3">{row.exitTime}</td>
+                      <td className="py-2 pr-3">{row.voucherCode}</td>
+                      <td className="py-2 pr-3 text-right">{fmtVnd(row.cash)}</td>
+                      <td className="py-2 pr-3 text-right">{fmtVnd(row.bankTransfer)}</td>
                       <td className="py-2 pr-3 text-right font-medium">{fmtVnd(row.totalAmount)}</td>
                       <td className="py-2 pr-3 text-center">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setPreviewRow(row)}>

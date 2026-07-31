@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/comm
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ParkingDashboardService } from './parking-dashboard.service';
-import { ParkingTransactionFilterDto } from './dto/parking-transaction-filter.dto';
+import { ParkingTransactionFilterDto, ParkingTransactionExportFilterDto } from './dto/parking-transaction-filter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
@@ -64,7 +64,7 @@ export class ParkingDashboardController {
 
   @Post('transactions/export')
   @ApiOperation({ summary: 'Xuất Excel danh sách giao dịch bãi đỗ xe theo bộ lọc' })
-  async exportTransactions(@Body() filter: ParkingTransactionFilterDto, @Res() res: Response) {
+  async exportTransactions(@Body() filter: ParkingTransactionExportFilterDto, @Res() res: Response) {
     const buffer = await this.parkingService.exportTransactions(filter);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="ParkingHistory.xlsx"');
