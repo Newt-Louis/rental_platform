@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { summarizeOccupancyByLeaseTerm, summarizeShortBookingPipeline } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class ComplianceService {
@@ -171,6 +172,20 @@ export class ComplianceService {
       const units = await this.prisma.unit.findMany({
         where: { mallId: mall.id, isActive: true },
       });
+      const shortBookings = await this.prisma.slotBooking.findMany({
+        where: { slot: { unit: { mallId: mall.id, leaseTermType: 'SHORT' } } },
+        select: {
+          status: true,
+          installationStartDatetime: true,
+          dismantlingEndDatetime: true,
+          startDatetime: true,
+          endDatetime: true,
+          totalAmount: true,
+          slot: { select: { id: true, unitId: true, area: true } },
+        },
+      });
+      const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
+      const shortPipeline = summarizeShortBookingPipeline(shortBookings);
 
       const totalUnits = units.length;
       const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
@@ -209,6 +224,25 @@ export class ComplianceService {
         revenuePerSqm: occupiedArea > 0 ? (revenue._sum.subtotal ?? 0) / occupiedArea : 0,
         hasPolicy: !!policy,
         kpiTargets: policy?.kpiTargets ?? null,
+        byLeaseTerm: {
+          LONG: {
+            ...occupancyByLeaseTerm.LONG,
+            activeContracts: contracts,
+            monthlyRevenue: revenue._sum.subtotal ?? 0,
+            revenuePerSqm: occupancyByLeaseTerm.LONG.occupiedArea > 0
+              ? (revenue._sum.subtotal ?? 0) / occupancyByLeaseTerm.LONG.occupiedArea
+              : 0,
+          },
+          SHORT: {
+            ...occupancyByLeaseTerm.SHORT,
+            activeContracts: 0,
+            monthlyRevenue: shortPipeline.revenue,
+            revenuePerSqm: occupancyByLeaseTerm.SHORT.occupiedArea > 0
+              ? shortPipeline.revenue / occupancyByLeaseTerm.SHORT.occupiedArea
+              : 0,
+            bookingStats: shortPipeline,
+          },
+        },
       });
     }
 

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEmail, IsNumber, IsEnum, IsDateString, IsInt, IsNotEmpty, MinLength, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { LeadSource, LeadStatus, LeadPriority } from '@prisma/client';
+import { LeadSource, LeadStatus, LeadPriority, UnitLeaseTermType } from '@prisma/client';
 
 export class CreateLeadDto {
   @ApiProperty()
@@ -56,6 +56,11 @@ export class CreateLeadDto {
   @IsOptional()
   @IsString()
   mallId?: string;
+
+  @ApiPropertyOptional({ enum: UnitLeaseTermType, default: UnitLeaseTermType.LONG })
+  @IsOptional()
+  @IsEnum(UnitLeaseTermType)
+  leaseTermType?: UnitLeaseTermType;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -167,6 +172,11 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   assignedToId?: string;
+
+  @ApiPropertyOptional({ enum: UnitLeaseTermType })
+  @IsOptional()
+  @IsEnum(UnitLeaseTermType)
+  leaseTermType?: UnitLeaseTermType;
 
   @ApiPropertyOptional()
   @IsOptional()

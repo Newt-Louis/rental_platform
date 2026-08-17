@@ -267,6 +267,16 @@ export class SlotsService {
     if (unit?.leaseTermType !== 'SHORT') {
       throw new BadRequestException('Chỉ có thể tạo booking ngắn hạn trên mặt bằng thuộc khu cho thuê ngắn hạn');
     }
+    if (dto.leadId) {
+      const lead = await this.prisma.lead.findUnique({
+        where: { id: dto.leadId },
+        select: { leaseTermType: true },
+      });
+      if (!lead) throw new NotFoundException('Lead not found');
+      if (lead.leaseTermType !== 'SHORT') {
+        throw new BadRequestException('Short-term slot booking requires a short-term lead');
+      }
+    }
     if (unit && this.unitStatus.isCommittedToTenant(unit.status)) {
       throw new BadRequestException(
         `Không thể tạo booking ô nhỏ: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,

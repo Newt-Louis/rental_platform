@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ContractStatus } from '@prisma/client';
 import { BillingService } from '../billing/billing.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { summarizeOccupancyByLeaseTerm, summarizeShortBookingPipeline } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class ReportsService {
@@ -24,6 +25,20 @@ export class ReportsService {
       },
     });
 
+    const slotBookings = await this.prisma.slotBooking.findMany({
+      where: { slot: { unit: { ...where, leaseTermType: 'SHORT' } } },
+      select: {
+        status: true,
+        installationStartDatetime: true,
+        dismantlingEndDatetime: true,
+        startDatetime: true,
+        endDatetime: true,
+        totalAmount: true,
+        slot: { select: { id: true, unitId: true, area: true } },
+      },
+    });
+    const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
+
     const byStatus = units.reduce((acc, u) => {
       acc[u.status] = (acc[u.status] || 0) + 1;
       return acc;
@@ -38,7 +53,31 @@ export class ReportsService {
       return acc;
     }, {} as Record<string, any>);
 
-    return { byStatus, byFloor, total: units.length };
+    const buildSegment = (leaseTermType: 'LONG' | 'SHORT') => ({
+      ...occupancyByLeaseTerm[leaseTermType],
+      byStatus: units.filter((unit) => unit.leaseTermType === leaseTermType).reduce((acc, unit) => {
+        acc[unit.status] = (acc[unit.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+      byFloor: units.filter((unit) => unit.leaseTermType === leaseTermType).reduce((acc, unit) => {
+        const floor = unit.floor?.name ?? 'Unknown';
+        if (!acc[floor]) acc[floor] = { total: 0, occupied: 0, area: 0 };
+        acc[floor].total++;
+        acc[floor].area += unit.areaNLA;
+        if (unit.status === 'OCCUPIED') acc[floor].occupied++;
+        return acc;
+      }, {} as Record<string, { total: number; occupied: number; area: number }>),
+    });
+
+    return {
+      byStatus,
+      byFloor,
+      total: units.length,
+      byLeaseTerm: {
+        LONG: buildSegment('LONG'),
+        SHORT: { ...buildSegment('SHORT'), bookingStats: summarizeShortBookingPipeline(slotBookings) },
+      },
+    };
   }
 
   async pipelineReport() {
@@ -55,7 +94,25 @@ export class ReportsService {
       _sum: { totalContractValue: true },
     });
 
-    return { leads, proposals };
+    const leadRows = await this.prisma.lead.findMany({
+      where: { isActive: true },
+      select: { status: true, leaseTermType: true },
+    });
+    const groupLeads = (leaseTermType: 'LONG' | 'SHORT') => Object.entries(
+      leadRows.filter((lead) => lead.leaseTermType === leaseTermType).reduce((acc, lead) => {
+        acc[lead.status] = (acc[lead.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+    ).map(([status, count]) => ({ status, _count: count }));
+
+    return {
+      leads,
+      proposals,
+      byLeaseTerm: {
+        LONG: { leads: groupLeads('LONG'), proposals },
+        SHORT: { leads: groupLeads('SHORT'), proposals: [] },
+      },
+    };
   }
 
   async revenueReport(params: { year?: number; month?: number }) {

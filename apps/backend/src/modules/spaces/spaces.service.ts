@@ -7,6 +7,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as sharp from 'sharp';
+import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
 // Relation fields and read-only fields that must never be written directly to Prisma
 const UNIT_RELATION_FIELDS = new Set([
@@ -508,7 +509,7 @@ export class SpacesService {
 
     const units = await this.prisma.unit.findMany({
       where,
-      select: { status: true, areaNLA: true, leaseTermType: true },
+      select: { id: true, status: true, areaNLA: true, leaseTermType: true },
     });
     const shortBookings = await this.prisma.slotBooking.findMany({
       where: {
@@ -522,6 +523,7 @@ export class SpacesService {
         },
       },
       select: {
+        status: true,
         installationStartDatetime: true,
         dismantlingEndDatetime: true,
         startDatetime: true,
@@ -530,18 +532,7 @@ export class SpacesService {
       },
     });
 
-    const now = new Date();
-    const occupiedShortSlots = new Map<string, { unitId: string; area: number }>();
-    for (const bookingItem of shortBookings) {
-      const occupiedFrom = bookingItem.installationStartDatetime ?? bookingItem.startDatetime;
-      const occupiedTo = bookingItem.dismantlingEndDatetime ?? bookingItem.endDatetime;
-      if (occupiedFrom <= now && occupiedTo >= now) {
-        occupiedShortSlots.set(bookingItem.slot.id, {
-          unitId: bookingItem.slot.unitId,
-          area: bookingItem.slot.area,
-        });
-      }
-    }
+    const byLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
 
     const totalArea = units.reduce((sum, u) => sum + u.areaNLA, 0);
     const vacantArea = units
@@ -550,31 +541,6 @@ export class SpacesService {
     const leasedArea = units
       .filter((u) => u.status === UnitStatus.OCCUPIED)
       .reduce((sum, u) => sum + u.areaNLA, 0);
-
-    const summarizeZone = (leaseTermType: 'LONG' | 'SHORT', label: string) => {
-      const zoneUnits = units.filter((unit) => unit.leaseTermType === leaseTermType);
-      const zoneTotalArea = zoneUnits.reduce((sum, unit) => sum + unit.areaNLA, 0);
-      const occupiedUnits = zoneUnits.filter((unit) => unit.status === UnitStatus.OCCUPIED);
-      const bookedUnitIds = new Set(Array.from(occupiedShortSlots.values()).map((slot) => slot.unitId));
-      const occupiedCount = leaseTermType === 'SHORT' ? bookedUnitIds.size : occupiedUnits.length;
-      const occupiedArea = leaseTermType === 'SHORT'
-        ? Math.min(zoneTotalArea, Array.from(occupiedShortSlots.values()).reduce((sum, slot) => sum + slot.area, 0))
-        : occupiedUnits.reduce((sum, unit) => sum + unit.areaNLA, 0);
-      const vacantUnits = leaseTermType === 'SHORT'
-        ? zoneUnits.length - occupiedCount
-        : zoneUnits.filter((unit) => unit.status === UnitStatus.VACANT).length;
-      return {
-        leaseTermType,
-        label,
-        total: zoneUnits.length,
-        occupied: occupiedCount,
-        vacant: vacantUnits,
-        totalArea: zoneTotalArea,
-        occupiedArea,
-        vacantArea: Math.max(0, zoneTotalArea - occupiedArea),
-        occupancyRate: zoneTotalArea > 0 ? Math.round((occupiedArea / zoneTotalArea) * 1000) / 10 : 0,
-      };
-    };
 
     return {
       total,
@@ -588,10 +554,7 @@ export class SpacesService {
       totalArea,
       vacantArea,
       leasedArea,
-      byLeaseTerm: {
-        LONG: summarizeZone('LONG', 'Cho thuê dài hạn'),
-        SHORT: summarizeZone('SHORT', 'Cho thuê ngắn hạn'),
-      },
+      byLeaseTerm,
     };
   }
 

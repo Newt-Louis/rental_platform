@@ -30,6 +30,9 @@ export class BookingService {
 
   async create(dto: CreateBookingDto, createdById: string) {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
+    if (unit?.leaseTermType && unit.leaseTermType !== 'LONG') {
+      throw new BadRequestException('Booking dai han chi ap dung cho mat bang thuoc khu cho thue dai han');
+    }
     if (!unit || !unit.isActive) throw new NotFoundException('Unit không tồn tại');
 
     // GAP #20: Chặn booking khi unit đang bị khoá hoàn toàn —
@@ -43,6 +46,9 @@ export class BookingService {
 
     if (dto.leadId) {
       const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId } });
+      if (lead?.leaseTermType && lead.leaseTermType !== 'LONG') {
+        throw new BadRequestException('Lead ngan han phai su dung booking o ngan han');
+      }
       if (!lead) throw new NotFoundException('Lead không tồn tại');
     }
     if (dto.customerId) {
@@ -319,6 +325,9 @@ export class BookingService {
 
     if (dto.unitId !== undefined && dto.unitId !== booking.unitId) {
       const newUnit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
+      if (newUnit?.leaseTermType && newUnit.leaseTermType !== 'LONG') {
+        throw new BadRequestException('Booking dai han chi ap dung cho mat bang thuoc khu cho thue dai han');
+      }
       if (!newUnit || !newUnit.isActive) throw new NotFoundException('Mặt bằng không tồn tại');
       if (this.unitStatus.isLockedForBooking(newUnit.status)) {
         throw new BadRequestException(`Không thể chuyển sang mặt bằng này (trạng thái ${newUnit.status})`);

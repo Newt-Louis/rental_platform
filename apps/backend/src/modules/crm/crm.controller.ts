@@ -44,8 +44,8 @@ export class CrmController {
   @ApiOperation({ summary: 'Get leads grouped by status (Kanban)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Max leads per column (default 100)' })
   @ApiQuery({ name: 'mallId', required: false })
-  async getPipeline(@Query('limit') limit: string | undefined, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
-    return this.crmService.getPipeline(limit ? +limit : 100, await this.scope(user, mallId));
+  async getPipeline(@Query('limit') limit: string | undefined, @Query('mallId') mallId: string | undefined, @Query('leaseTermType') leaseTermType: any, @CurrentUser() user: any) {
+    return this.crmService.getPipeline(limit ? +limit : 100, await this.scope(user, mallId), leaseTermType);
   }
 
   @Get('deals')

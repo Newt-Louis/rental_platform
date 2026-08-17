@@ -117,10 +117,11 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
       prisma.unit.findMany.mockResolvedValue([
         makeUnit({ leaseTermType: 'LONG', status: UnitStatus.OCCUPIED, areaNLA: 100 }),
         makeUnit({ leaseTermType: 'LONG', status: UnitStatus.VACANT, areaNLA: 100 }),
-        makeUnit({ leaseTermType: 'SHORT', status: UnitStatus.OCCUPIED, areaNLA: 30 }),
+        makeUnit({ id: 'short-unit-1', leaseTermType: 'SHORT', status: UnitStatus.OCCUPIED, areaNLA: 30 }),
         makeUnit({ leaseTermType: 'SHORT', status: UnitStatus.VACANT, areaNLA: 70 }),
       ]);
       prisma.slotBooking.findMany.mockResolvedValue([{
+        status: 'CONFIRMED',
         installationStartDatetime: new Date(now - 3_600_000),
         dismantlingEndDatetime: new Date(now + 3_600_000),
         startDatetime: new Date(now - 1_800_000),

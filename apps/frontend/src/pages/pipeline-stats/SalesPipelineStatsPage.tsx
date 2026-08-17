@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { bookingApi, crmApi, slotsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
@@ -64,6 +65,7 @@ function SectionHeading({ icon: Icon, children }: { icon: React.ElementType; chi
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SalesPipelineStatsPage() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { selectedMallId } = useMallStore();
 
   const { data: bookingStatsData, refetch: refetchBooking, isFetching: fetchingBooking, isError: bookingError } = useQuery({
@@ -93,8 +95,9 @@ export default function SalesPipelineStatsPage() {
     refetchSlot();
   }
 
-  const bs = bookingStatsData?.data ?? bookingStatsData;
-  const ps = pipelineStatsData?.data ?? pipelineStatsData;
+  const longBookingStats = bookingStatsData?.data ?? bookingStatsData;
+  const rawPipelineStats = pipelineStatsData?.data ?? pipelineStatsData;
+  const ps = rawPipelineStats?.byLeaseTerm?.[leaseTermType] ?? rawPipelineStats;
 
   const allSlotBookings: any[] = slotBookingsData?.data ?? slotBookingsData ?? [];
   const slotStats = {
@@ -104,6 +107,12 @@ export default function SalesPipelineStatsPage() {
     revenue:   allSlotBookings
       .filter((b) => ['CONFIRMED', 'COMPLETED'].includes(b.status))
       .reduce((sum: number, b: any) => sum + (b.totalAmount ?? 0), 0),
+  };
+  const bs = leaseTermType === 'LONG' ? longBookingStats : {
+    active: slotStats.confirmed,
+    pending: slotStats.pending,
+    completed: slotStats.completed,
+    revenue: slotStats.revenue,
   };
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -193,6 +202,13 @@ export default function SalesPipelineStatsPage() {
           <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} /> Làm mới
         </Button>
       </div>
+
+      <Tabs value={leaseTermType} onValueChange={(value) => setLeaseTermType(value as 'LONG' | 'SHORT')}>
+        <TabsList>
+          <TabsTrigger value="LONG">Cho thuê dài hạn</TabsTrigger>
+          <TabsTrigger value="SHORT">Cho thuê ngắn hạn</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* ─── Funnel ───────────────────────────────────────────────────────────── */}
       <div>

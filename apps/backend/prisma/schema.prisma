@@ -1278,7 +1278,7 @@ model Tenant {
 }
 
 model Lead {
-  id                String       @id @default(cuid())
+  id                String            @id @default(cuid())
   brandName         String
   company           String?
   contactName       String
@@ -1286,31 +1286,32 @@ model Lead {
   email             String?
   category          String? // Legacy: free text
   categoryId        String? // NEW: FK to Category master
-  categoryRef       Category?    @relation(fields: [categoryId], references: [id])
-  source            LeadSource   @default(WALK_IN)
-  status            LeadStatus   @default(NEW)
-  priority          LeadPriority @default(WARM)
+  categoryRef       Category?         @relation(fields: [categoryId], references: [id])
+  source            LeadSource        @default(WALK_IN)
+  status            LeadStatus        @default(NEW)
+  priority          LeadPriority      @default(WARM)
   assignedToId      String?
-  assignedTo        User?        @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  assignedTo        User?             @relation("AssignedLeads", fields: [assignedToId], references: [id])
   tenantId          String?
-  tenant            Tenant?      @relation(fields: [tenantId], references: [id])
+  tenant            Tenant?           @relation(fields: [tenantId], references: [id])
   customerId        String?
-  customer          Customer?    @relation(fields: [customerId], references: [id])
+  customer          Customer?         @relation(fields: [customerId], references: [id])
   mallId            String?
-  mall              Mall?        @relation(fields: [mallId], references: [id])
+  mall              Mall?             @relation(fields: [mallId], references: [id])
+  leaseTermType     UnitLeaseTermType @default(LONG)
   notes             String?
   expectedRent      Float?
   expectedArea      Float?
   estimatedValue    Float?
   expectedCloseDate DateTime?
   preferredCategory String?
-  position          Int          @default(0)
+  position          Int               @default(0)
   lastActivityAt    DateTime?
   lostReason        String?
-  isActive          Boolean      @default(true)
+  isActive          Boolean           @default(true)
   deletedAt         DateTime?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   activities   LeadActivity[]
   proposals    Proposal[]
@@ -2640,24 +2641,25 @@ model TicketEscalation {
 // ===============================================================================
 
 model OccupancySnapshot {
-  id              String   @id @default(cuid())
+  id              String            @id @default(cuid())
   mallId          String
-  mall            Mall     @relation(fields: [mallId], references: [id])
+  mall            Mall              @relation(fields: [mallId], references: [id])
   floorId         String?
   category        String?
+  leaseTermType   UnitLeaseTermType @default(LONG)
   period          String
   snapshotDate    DateTime
   totalUnits      Int
   occupiedUnits   Int
   vacantUnits     Int
-  underFitout     Int      @default(0)
+  underFitout     Int               @default(0)
   totalAreaSqm    Float
   occupiedAreaSqm Float
   occupancyRate   Float
   revenuePerSqm   Float?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime          @default(now())
 
-  @@unique([mallId, floorId, category, period])
+  @@unique([mallId, floorId, category, leaseTermType, period])
   @@index([mallId, period])
 }
 

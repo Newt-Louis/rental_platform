@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { LeadStatus, Role } from '@prisma/client';
+import { LeadStatus, Role, UnitLeaseTermType } from '@prisma/client';
 import { CustomersService } from './customers.service';
 
 @Injectable()
@@ -40,12 +40,13 @@ export class CrmService {
     statuses?: string;
     assignedToId?: string;
     customerId?: string;
+    leaseTermType?: UnitLeaseTermType;
     search?: string;
     page?: number;
     limit?: number;
     scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
-    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId } = query;
+    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, leaseTermType } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null, ...this.leadScope(query.scope) };
@@ -65,6 +66,7 @@ export class CrmService {
     }
     if (assignedToId) where.assignedToId = assignedToId;
     if (customerId) where.customerId = customerId;
+    if (leaseTermType) where.leaseTermType = leaseTermType;
     if (search) {
       where.OR = [
         { brandName: { contains: search, mode: 'insensitive' } },
@@ -93,7 +95,7 @@ export class CrmService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async getPipeline(limit = 100, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+  async getPipeline(limit = 100, scope?: { userId: string; role: Role; mallIds?: string[] }, leaseTermType?: UnitLeaseTermType) {
     const statuses = Object.values(LeadStatus);
     const pipeline: Record<string, { leads: any[]; total: number; hasMore: boolean }> = {};
 
@@ -101,7 +103,7 @@ export class CrmService {
       statuses.map(async (status) => {
         const [leads, total] = await Promise.all([
           this.prisma.lead.findMany({
-            where: { status, isActive: true, deletedAt: null, ...this.leadScope(scope) },
+            where: { status, isActive: true, deletedAt: null, ...(leaseTermType ? { leaseTermType } : {}), ...this.leadScope(scope) },
             include: {
               assignedTo: { select: { id: true, fullName: true, avatar: true } },
               customer: { select: { id: true, customerCode: true } },
@@ -114,7 +116,7 @@ export class CrmService {
             ],
             take: limit,
           }),
-          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null, ...this.leadScope(scope) } }),
+          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null, ...(leaseTermType ? { leaseTermType } : {}), ...this.leadScope(scope) } }),
         ]);
         pipeline[status] = { leads, total, hasMore: total > limit };
       }),
@@ -290,6 +292,7 @@ export class CrmService {
     if (dto.source !== undefined) updateData.source = dto.source;
     if (dto.status !== undefined) updateData.status = dto.status;
     if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.leaseTermType !== undefined) updateData.leaseTermType = dto.leaseTermType;
     if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
     if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
     if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
@@ -533,6 +536,7 @@ export class CrmService {
         estimatedValue: true,
         expectedRent: true,
         expectedArea: true,
+        leaseTermType: true,
       },
     });
 
@@ -629,6 +633,39 @@ export class CrmService {
     const lostThisMonth = leads.filter(l => l.status === 'LOST' && new Date(l.updatedAt) >= startOfMonth).length;
     const newThisMonth = leads.filter(l => new Date(l.createdAt) >= startOfMonth).length;
 
+    const summarizeLeaseTerm = (leaseTermType: UnitLeaseTermType) => {
+      const segment = leads.filter((lead) => lead.leaseTermType === leaseTermType);
+      const byStatus: Record<string, number> = {};
+      const valueByStatus: Record<string, number> = {};
+      const byPriority: Record<string, number> = {};
+      segment.forEach((lead) => {
+        byStatus[lead.status] = (byStatus[lead.status] || 0) + 1;
+        valueByStatus[lead.status] = (valueByStatus[lead.status] || 0)
+          + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0)));
+        byPriority[lead.priority] = (byPriority[lead.priority] || 0) + 1;
+      });
+      const won = byStatus.WON || 0;
+      const lost = byStatus.LOST || 0;
+      return {
+        summary: {
+          total: segment.length,
+          totalActive: segment.length - won - lost,
+          totalWon: won,
+          totalLost: lost,
+          totalPipelineValue: segment
+            .filter((lead) => !['WON', 'LOST'].includes(lead.status))
+            .reduce((sum, lead) => sum + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0))), 0),
+          wonThisMonth: segment.filter((lead) => lead.status === 'WON' && new Date(lead.updatedAt) >= startOfMonth).length,
+          lostThisMonth: segment.filter((lead) => lead.status === 'LOST' && new Date(lead.updatedAt) >= startOfMonth).length,
+          newThisMonth: segment.filter((lead) => new Date(lead.createdAt) >= startOfMonth).length,
+        },
+        byStatus,
+        valueByStatus,
+        byPriority,
+        conversionRates: { overallWinRate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0 },
+      };
+    };
+
     return {
       summary: {
         total: leads.length,
@@ -649,6 +686,10 @@ export class CrmService {
       conversionRates,
       winLossBySource,
       winLossByCategory,
+      byLeaseTerm: {
+        LONG: summarizeLeaseTerm(UnitLeaseTermType.LONG),
+        SHORT: summarizeLeaseTerm(UnitLeaseTermType.SHORT),
+      },
     };
   }
 

@@ -6,6 +6,7 @@ describe('DashboardService', () => {
     approvalWorkflow: { count: jest.fn() }, ticket: { count: jest.fn() },
     invoice: { findMany: jest.fn() }, tenant: { count: jest.fn() },
     unitBooking: { count: jest.fn() },
+    slotBooking: { findMany: jest.fn() },
   };
   const redis = { getJson: jest.fn(), setJson: jest.fn() };
   const mallAccess = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
@@ -17,19 +18,21 @@ describe('DashboardService', () => {
     redis.setJson.mockResolvedValue(undefined);
     mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
     prisma.unit.findMany.mockResolvedValue([
-      { status: 'OCCUPIED', areaNLA: 80 }, { status: 'VACANT', areaNLA: 20 },
+      { id: 'unit-1', status: 'OCCUPIED', areaNLA: 80, leaseTermType: 'LONG' },
+      { id: 'unit-2', status: 'VACANT', areaNLA: 20, leaseTermType: 'LONG' },
     ]);
     prisma.contract.count.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
     prisma.approvalWorkflow.count.mockResolvedValue(3);
     prisma.ticket.count.mockResolvedValue(4);
     prisma.invoice.findMany
       .mockResolvedValueOnce([
-        { totalAmount: 1000, status: 'PARTIALLY_PAID', payments: [{ amount: 250 }] },
-        { totalAmount: 500, status: 'PAID', payments: [{ amount: 500 }, { amount: 100 }] },
+        { totalAmount: 1000, status: 'PARTIALLY_PAID', payments: [{ amount: 250 }], contract: { unit: { leaseTermType: 'LONG' } } },
+        { totalAmount: 500, status: 'PAID', payments: [{ amount: 500 }, { amount: 100 }], contract: { unit: { leaseTermType: 'LONG' } } },
       ])
       .mockResolvedValueOnce([{ totalAmount: 1000, payments: [{ amount: 250 }] }]);
     prisma.tenant.count.mockResolvedValue(5);
     prisma.unitBooking.count.mockResolvedValueOnce(6).mockResolvedValueOnce(7).mockResolvedValueOnce(8);
+    prisma.slotBooking.findMany.mockResolvedValue([]);
     service = new DashboardService(prisma, redis as any, mallAccess as any);
   });
 

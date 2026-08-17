@@ -43,6 +43,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     category: lead?.category ?? '',
     source: lead?.source ?? '',
     priority: lead?.priority ?? '',
+    leaseTermType: lead?.leaseTermType ?? 'LONG',
     expectedArea: lead?.expectedArea?.toString() ?? '',
     expectedRent: lead?.expectedRent?.toString() ?? '',
     notes: lead?.notes ?? '',
@@ -74,6 +75,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         category: lead.category ?? '',
         source: lead.source ?? '',
         priority: lead.priority ?? '',
+        leaseTermType: lead.leaseTermType ?? 'LONG',
         expectedArea: lead.expectedArea?.toString() ?? '',
         expectedRent: lead.expectedRent?.toString() ?? '',
         notes: lead.notes ?? '',
@@ -110,6 +112,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         category: form.category || undefined,
         source: form.source || undefined,
         priority: form.priority || undefined,
+        leaseTermType: form.leaseTermType,
         expectedArea: form.expectedArea && form.expectedArea.trim() ? +form.expectedArea : undefined,
         expectedRent: form.expectedRent && form.expectedRent.trim() ? +form.expectedRent : undefined,
         notes: form.notes.trim() || undefined,
@@ -291,6 +294,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.area')}</label>
                 <Input type="number" value={form.expectedArea} onChange={(e) => set('expectedArea', e.target.value)} placeholder="100" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Loại hình cho thuê</label>
+                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white" value={form.leaseTermType} onChange={(e) => set('leaseTermType', e.target.value)}>
+                  <option value="LONG">Cho thuê dài hạn</option>
+                  <option value="SHORT">Cho thuê ngắn hạn</option>
+                </select>
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.expectedRent')}</label>

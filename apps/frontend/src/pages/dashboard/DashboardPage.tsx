@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { dashboardApi } from '@/api';
@@ -251,6 +252,7 @@ function ActionItems({ items }: {
 }
 
 export default function DashboardPage() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { t } = useTranslation(['dashboard', 'common']);
   const { selectedMallId, selectedMallName } = useMallStore();
   const { user } = useAuthStore();
@@ -266,7 +268,10 @@ export default function DashboardPage() {
     queryKey,
     queryFn: () => dashboardApi.getDashboard(selectedMallId ?? undefined, true),
   });
-  const d = data?.data ?? data;
+  const rawDashboard = data?.data ?? data;
+  const d = rawDashboard?.byLeaseTerm?.[leaseTermType]
+    ? { ...rawDashboard, ...rawDashboard.byLeaseTerm[leaseTermType] }
+    : rawDashboard;
   const bookingStats = d?.bookingStats;
   const focusAreas: string[] = d?.focusAreas ?? ['overview'];
   const linkTo = (path: string) => (canAccessPath(user?.role, path) ? path : undefined);
@@ -370,6 +375,14 @@ export default function DashboardPage() {
           <p className="mt-1 text-xs text-slate-500">{t('roleDataRefresh', { role: user?.role?.replace(/_/g, ' ') })}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+            {(['LONG', 'SHORT'] as const).map((term) => (
+              <button key={term} type="button" onClick={() => setLeaseTermType(term)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+                {term === 'LONG' ? 'Dài hạn' : 'Ngắn hạn'}
+              </button>
+            ))}
+          </div>
           {focusAreas.filter((f) => f !== 'overview').slice(0, 3).map((f) => (
             <Badge key={f} variant="outline" className="border-slate-200 bg-white text-xs text-slate-600">
               {t(`focusAreas.${f}`, f)}

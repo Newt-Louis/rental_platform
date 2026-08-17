@@ -18,14 +18,28 @@ import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucid
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+function LeaseTermSelector({ value, onChange }: { value: 'LONG' | 'SHORT'; onChange: (value: 'LONG' | 'SHORT') => void }) {
+  return (
+    <div className="inline-flex rounded-lg border bg-white p-1">
+      {(['LONG', 'SHORT'] as const).map((term) => (
+        <button key={term} type="button" onClick={() => onChange(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${value === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+          {term === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function OccupancyReport() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-occupancy'],
     queryFn: () => reportsApi.occupancyReport(),
   });
 
-  const d = data?.data ?? data;
+  const raw = data?.data ?? data;
+  const d = raw?.byLeaseTerm?.[leaseTermType] ?? raw;
   const statusData = d?.byStatus
     ? Object.entries(d.byStatus).map(([k, v]: any) => ({ name: k, value: v }))
     : [];
@@ -48,7 +62,9 @@ function OccupancyReport() {
     emptyTitle={t('occupancy.empty')}
     emptyDescription={t('occupancy.emptyDesc')}
   >(
-    <div className="grid md:grid-cols-2 gap-6">
+    <div className="space-y-4">
+      <LeaseTermSelector value={leaseTermType} onChange={setLeaseTermType} />
+      <div className="grid md:grid-cols-2 gap-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">{t('occupancy.byStatus')}</CardTitle></CardHeader>
         <CardContent>
@@ -76,6 +92,7 @@ function OccupancyReport() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+      </div>
     </div>
   )</AsyncState>;
 }
@@ -111,20 +128,24 @@ function RevenueReport() {
 }
 
 function PipelineReport() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { t } = useTranslation('reports');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['report-pipeline'],
     queryFn: reportsApi.pipelineReport,
   });
 
-  const d = data?.data ?? data;
+  const raw = data?.data ?? data;
+  const d = raw?.byLeaseTerm?.[leaseTermType] ?? raw;
   const leads = d?.leads ?? [];
   const proposals = d?.proposals ?? [];
 
   return <AsyncState isLoading={isLoading} isError={isError}
     isEmpty={leads.length === 0 && proposals.length === 0} onRetry={refetch}
     loading={<Skeleton className="h-64" />} emptyTitle={t('pipeline.empty')}>
-    <div className="grid md:grid-cols-2 gap-6">
+    <div className="space-y-4">
+      <LeaseTermSelector value={leaseTermType} onChange={setLeaseTermType} />
+      <div className="grid md:grid-cols-2 gap-6">
       <Card>
         <CardHeader><CardTitle className="text-sm">{t('pipeline.leadsByStatus')}</CardTitle></CardHeader>
         <CardContent>
@@ -158,6 +179,7 @@ function PipelineReport() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   </AsyncState>;
 }

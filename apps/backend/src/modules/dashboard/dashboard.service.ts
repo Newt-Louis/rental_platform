@@ -8,6 +8,10 @@ import {
   TicketStatus,
   WorkflowStatus,
 } from '@prisma/client';
+import {
+  summarizeOccupancyByLeaseTerm,
+  summarizeShortBookingPipeline,
+} from '../../common/utils/lease-term-analytics';
 
 const LEASING_ROLES = new Set([
   'LEASING_EXECUTIVE',
@@ -97,6 +101,7 @@ export class DashboardService {
       expiringIn90: data.expiringIn90,
       pendingApprovals: data.pendingApprovals,
       bookingStats: data.bookingStats,
+      byLeaseTerm: data.byLeaseTerm,
     };
   }
 
@@ -109,7 +114,7 @@ export class DashboardService {
     }
 
     const scopeKey = mallId ?? (mallIds === null ? 'all' : `user:${user?.id ?? 'none'}`);
-    const cacheKey = `dashboard:v2:${scopeKey}:${role ?? 'all'}`;
+    const cacheKey = `dashboard:v3:${scopeKey}:${role ?? 'all'}`;
     if (!forceRefresh) {
       const cached = await this.redis.getJson<Awaited<ReturnType<DashboardService['buildDashboard']>>>(cacheKey);
       if (cached) {
@@ -146,10 +151,11 @@ export class DashboardService {
       activeBookings,
       pendingBookings,
       expiringBookings,
+      slotBookings,
     ] = await Promise.all([
       this.prisma.unit.findMany({
         where: unitWhere,
-        select: { status: true, areaNLA: true },
+        select: { id: true, status: true, areaNLA: true, leaseTermType: true },
       }),
       this.prisma.contract.count({
         where: {
@@ -190,6 +196,7 @@ export class DashboardService {
           totalAmount: true,
           status: true,
           payments: { where: { reversedAt: null }, select: { amount: true } },
+          contract: { select: { unit: { select: { leaseTermType: true } } } },
         },
       }),
       this.prisma.invoice.findMany({
@@ -201,6 +208,7 @@ export class DashboardService {
         select: {
           totalAmount: true,
           payments: { where: { reversedAt: null }, select: { amount: true } },
+          contract: { select: { unit: { select: { leaseTermType: true } } } },
         },
       }),
       mallIds !== null
@@ -232,7 +240,24 @@ export class DashboardService {
           ...relationScope,
         },
       }),
+      this.prisma.slotBooking.findMany({
+        where: {
+          ...(mallIds === null ? {} : { slot: { unit: unitScope } }),
+        },
+        select: {
+          status: true,
+          installationStartDatetime: true,
+          dismantlingEndDatetime: true,
+          startDatetime: true,
+          endDatetime: true,
+          totalAmount: true,
+          slot: { select: { id: true, unitId: true, area: true } },
+        },
+      }),
     ]);
+
+    const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
+    const shortBookingStats = summarizeShortBookingPipeline(slotBookings);
 
     const totalArea = units.reduce((s, u) => s + u.areaNLA, 0);
     const vacantArea = units.filter((u) => u.status === 'VACANT').reduce((s, u) => s + u.areaNLA, 0);
@@ -249,6 +274,17 @@ export class DashboardService {
       return sum + Math.max(0, invoice.totalAmount - paid);
     }, 0);
     const collectionRate = monthlyRevenue > 0 ? Math.min(100, (collectedRevenue / monthlyRevenue) * 100) : 0;
+    const longMonthInvoices = monthInvoices.filter((invoice) => invoice.contract?.unit.leaseTermType === 'LONG');
+    const longMonthlyRevenue = longMonthInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+    const longCollectedRevenue = longMonthInvoices.reduce(
+      (sum, invoice) => sum + invoice.payments.reduce((paid, payment) => paid + payment.amount, 0),
+      0,
+    );
+    const longBookingStats = {
+      active: activeBookings,
+      pending: pendingBookings,
+      expiringSoon: expiringBookings,
+    };
 
     return {
       mallId: mallId ?? null,
@@ -269,9 +305,27 @@ export class DashboardService {
       openTickets,
       healthScore: this.healthScoreForRole(role, occupancyRate, collectionRate),
       bookingStats: {
-        active: activeBookings,
-        pending: pendingBookings,
-        expiringSoon: expiringBookings,
+        ...longBookingStats,
+      },
+      byLeaseTerm: {
+        LONG: {
+          ...occupancyByLeaseTerm.LONG,
+          leasedArea: occupancyByLeaseTerm.LONG.occupiedArea,
+          bookingStats: longBookingStats,
+          monthlyRevenue: longMonthlyRevenue,
+          collectedRevenue: longCollectedRevenue,
+          expiringIn30,
+          expiringIn90,
+        },
+        SHORT: {
+          ...occupancyByLeaseTerm.SHORT,
+          leasedArea: occupancyByLeaseTerm.SHORT.occupiedArea,
+          bookingStats: shortBookingStats,
+          monthlyRevenue: shortBookingStats.revenue,
+          collectedRevenue: shortBookingStats.revenue,
+          expiringIn30: 0,
+          expiringIn90: 0,
+        },
       },
     };
   }
@@ -283,7 +337,7 @@ export class DashboardService {
         floors: {
           include: {
             units: {
-              select: { status: true, areaNLA: true },
+              select: { id: true, status: true, areaNLA: true, leaseTermType: true },
             },
           },
         },
@@ -300,14 +354,18 @@ export class DashboardService {
         const vacantArea = units.filter((u) => u.status === 'VACANT').reduce((s, u) => s + u.areaNLA, 0);
         const occupancyRate = totalArea > 0 ? (leasedArea / totalArea) * 100 : 0;
 
-        const [invoices, overdueCount, openTickets, expiringIn30] = await Promise.all([
+        const [invoices, overdueCount, openTickets, expiringIn30, slotBookings] = await Promise.all([
           this.prisma.invoice.findMany({
             where: {
               isActive: true,
               period: { startsWith: currentMonth },
               contract: { unit: { floor: { mallId: mall.id } } },
             },
-            select: { totalAmount: true, status: true },
+            select: {
+              totalAmount: true,
+              status: true,
+              contract: { select: { unit: { select: { leaseTermType: true } } } },
+            },
           }),
           this.prisma.invoice.count({
             where: {
@@ -331,7 +389,27 @@ export class DashboardService {
               unit: { floor: { mallId: mall.id } },
             },
           }),
+          this.prisma.slotBooking.findMany({
+            where: { slot: { unit: { mallId: mall.id, leaseTermType: 'SHORT' } } },
+            select: {
+              status: true,
+              installationStartDatetime: true,
+              dismantlingEndDatetime: true,
+              startDatetime: true,
+              endDatetime: true,
+              totalAmount: true,
+              slot: { select: { id: true, unitId: true, area: true } },
+            },
+          }),
         ]);
+
+        const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
+        const shortBookingStats = summarizeShortBookingPipeline(slotBookings);
+        const longInvoices = invoices.filter((invoice) => invoice.contract?.unit.leaseTermType === 'LONG');
+        const longMonthlyRevenue = longInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+        const longCollectedRevenue = longInvoices
+          .filter((invoice) => invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID')
+          .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
 
         const monthlyRevenue = invoices.reduce((s, i) => s + i.totalAmount, 0);
         const collectedRevenue = invoices
@@ -351,6 +429,27 @@ export class DashboardService {
           overdueCount,
           openTickets,
           expiringIn30,
+          byLeaseTerm: {
+            LONG: {
+              ...occupancyByLeaseTerm.LONG,
+              leasedArea: occupancyByLeaseTerm.LONG.occupiedArea,
+              monthlyRevenue: longMonthlyRevenue,
+              collectedRevenue: longCollectedRevenue,
+              collectionRate: longMonthlyRevenue > 0 ? +((longCollectedRevenue / longMonthlyRevenue) * 100).toFixed(1) : 0,
+              unitCount: occupancyByLeaseTerm.LONG.total,
+              expiringIn30,
+            },
+            SHORT: {
+              ...occupancyByLeaseTerm.SHORT,
+              leasedArea: occupancyByLeaseTerm.SHORT.occupiedArea,
+              monthlyRevenue: shortBookingStats.revenue,
+              collectedRevenue: shortBookingStats.revenue,
+              bookingStats: shortBookingStats,
+              collectionRate: shortBookingStats.revenue > 0 ? 100 : 0,
+              unitCount: occupancyByLeaseTerm.SHORT.total,
+              expiringIn30: 0,
+            },
+          },
         };
       }),
     );
@@ -364,14 +463,65 @@ export class DashboardService {
         overdueCount: acc.overdueCount + m.overdueCount,
         openTickets: acc.openTickets + m.openTickets,
         expiringIn30: acc.expiringIn30 + m.expiringIn30,
+        byLeaseTerm: {
+          LONG: {
+            totalArea: acc.byLeaseTerm.LONG.totalArea + m.byLeaseTerm.LONG.totalArea,
+            occupiedArea: acc.byLeaseTerm.LONG.occupiedArea + m.byLeaseTerm.LONG.occupiedArea,
+            total: acc.byLeaseTerm.LONG.total + m.byLeaseTerm.LONG.total,
+            occupied: acc.byLeaseTerm.LONG.occupied + m.byLeaseTerm.LONG.occupied,
+            monthlyRevenue: acc.byLeaseTerm.LONG.monthlyRevenue + m.byLeaseTerm.LONG.monthlyRevenue,
+            collectedRevenue: acc.byLeaseTerm.LONG.collectedRevenue + m.byLeaseTerm.LONG.collectedRevenue,
+            expiringIn30: acc.byLeaseTerm.LONG.expiringIn30 + m.byLeaseTerm.LONG.expiringIn30,
+          },
+          SHORT: {
+            totalArea: acc.byLeaseTerm.SHORT.totalArea + m.byLeaseTerm.SHORT.totalArea,
+            occupiedArea: acc.byLeaseTerm.SHORT.occupiedArea + m.byLeaseTerm.SHORT.occupiedArea,
+            total: acc.byLeaseTerm.SHORT.total + m.byLeaseTerm.SHORT.total,
+            occupied: acc.byLeaseTerm.SHORT.occupied + m.byLeaseTerm.SHORT.occupied,
+            monthlyRevenue: acc.byLeaseTerm.SHORT.monthlyRevenue + m.byLeaseTerm.SHORT.monthlyRevenue,
+            collectedRevenue: acc.byLeaseTerm.SHORT.collectedRevenue + m.byLeaseTerm.SHORT.collectedRevenue,
+            expiringIn30: 0,
+          },
+        },
       }),
-      { totalArea: 0, leasedArea: 0, monthlyRevenue: 0, collectedRevenue: 0, overdueCount: 0, openTickets: 0, expiringIn30: 0 },
+      {
+        totalArea: 0, leasedArea: 0, monthlyRevenue: 0, collectedRevenue: 0,
+        overdueCount: 0, openTickets: 0, expiringIn30: 0,
+        byLeaseTerm: {
+          LONG: { totalArea: 0, occupiedArea: 0, total: 0, occupied: 0, monthlyRevenue: 0, collectedRevenue: 0, expiringIn30: 0 },
+          SHORT: { totalArea: 0, occupiedArea: 0, total: 0, occupied: 0, monthlyRevenue: 0, collectedRevenue: 0, expiringIn30: 0 },
+        },
+      },
     );
 
     return {
       malls: mallData,
       totals: {
         ...totals,
+        byLeaseTerm: {
+          LONG: {
+            ...totals.byLeaseTerm.LONG,
+            leasedArea: totals.byLeaseTerm.LONG.occupiedArea,
+            vacantArea: Math.max(0, totals.byLeaseTerm.LONG.totalArea - totals.byLeaseTerm.LONG.occupiedArea),
+            collectionRate: totals.byLeaseTerm.LONG.monthlyRevenue > 0
+              ? +((totals.byLeaseTerm.LONG.collectedRevenue / totals.byLeaseTerm.LONG.monthlyRevenue) * 100).toFixed(1)
+              : 0,
+            occupancyRate: totals.byLeaseTerm.LONG.totalArea > 0
+              ? +((totals.byLeaseTerm.LONG.occupiedArea / totals.byLeaseTerm.LONG.totalArea) * 100).toFixed(1)
+              : 0,
+          },
+          SHORT: {
+            ...totals.byLeaseTerm.SHORT,
+            leasedArea: totals.byLeaseTerm.SHORT.occupiedArea,
+            vacantArea: Math.max(0, totals.byLeaseTerm.SHORT.totalArea - totals.byLeaseTerm.SHORT.occupiedArea),
+            collectionRate: totals.byLeaseTerm.SHORT.monthlyRevenue > 0
+              ? +((totals.byLeaseTerm.SHORT.collectedRevenue / totals.byLeaseTerm.SHORT.monthlyRevenue) * 100).toFixed(1)
+              : 0,
+            occupancyRate: totals.byLeaseTerm.SHORT.totalArea > 0
+              ? +((totals.byLeaseTerm.SHORT.occupiedArea / totals.byLeaseTerm.SHORT.totalArea) * 100).toFixed(1)
+              : 0,
+          },
+        },
         occupancyRate: totals.totalArea > 0 ? +((totals.leasedArea / totals.totalArea) * 100).toFixed(1) : 0,
         collectionRate: totals.monthlyRevenue > 0 ? +((totals.collectedRevenue / totals.monthlyRevenue) * 100).toFixed(1) : 0,
       },

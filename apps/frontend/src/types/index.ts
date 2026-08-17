@@ -328,6 +328,7 @@ export interface Lead {
   source: string;
   status: LeadStatus;
   priority: LeadPriority;
+  leaseTermType: 'LONG' | 'SHORT';
   assignedTo?: User & { avatar?: string };
   customer?: { id: string; customerCode: string; companyName: string };
   customerId?: string;

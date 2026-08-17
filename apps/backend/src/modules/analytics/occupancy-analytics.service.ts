@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatus } from '@prisma/client';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class OccupancyAnalyticsService {
@@ -44,6 +45,7 @@ export class OccupancyAnalyticsService {
         },
       },
       select: {
+        status: true,
         installationStartDatetime: true,
         dismantlingEndDatetime: true,
         startDatetime: true,
@@ -51,18 +53,7 @@ export class OccupancyAnalyticsService {
         slot: { select: { id: true, unitId: true, area: true } },
       },
     });
-    const now = new Date();
-    const occupiedShortSlots = new Map<string, { unitId: string; area: number }>();
-    for (const bookingItem of shortBookings) {
-      const occupiedFrom = bookingItem.installationStartDatetime ?? bookingItem.startDatetime;
-      const occupiedTo = bookingItem.dismantlingEndDatetime ?? bookingItem.endDatetime;
-      if (occupiedFrom <= now && occupiedTo >= now) {
-        occupiedShortSlots.set(bookingItem.slot.id, {
-          unitId: bookingItem.slot.unitId,
-          area: bookingItem.slot.area,
-        });
-      }
-    }
+    const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
 
     const totalUnits = units.length;
     const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
@@ -91,28 +82,16 @@ export class OccupancyAnalyticsService {
 
     const byCategory = this.groupByField(units, 'category');
     const byFloor = this.groupByFieldWithRent(units, 'floor');
-    const byLeaseTerm = ['LONG', 'SHORT'].map((leaseTermType) => {
-      const zoneUnits = units.filter((unit) => unit.leaseTermType === leaseTermType);
-      const area = zoneUnits.reduce((sum, unit) => sum + (unit.areaNLA ?? 0), 0);
-      const occupiedUnits = zoneUnits.filter((unit) => unit.status === UnitStatus.OCCUPIED);
-      const bookedUnitIds = new Set(Array.from(occupiedShortSlots.values()).map((slot) => slot.unitId));
-      const occupiedCount = leaseTermType === 'SHORT' ? bookedUnitIds.size : occupiedUnits.length;
-      const occupiedArea = leaseTermType === 'SHORT'
-        ? Math.min(area, Array.from(occupiedShortSlots.values()).reduce((sum, slot) => sum + slot.area, 0))
-        : occupiedUnits.reduce((sum, unit) => sum + (unit.areaNLA ?? 0), 0);
-      return {
-        leaseTermType,
-        name: leaseTermType === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn',
-        total: zoneUnits.length,
-        occupied: occupiedCount,
-        vacant: leaseTermType === 'SHORT'
-          ? zoneUnits.length - occupiedCount
-          : zoneUnits.filter((unit) => unit.status === UnitStatus.VACANT).length,
-        area,
-        occupiedArea,
-        occupancyRate: area > 0 ? Math.round((occupiedArea / area) * 1000) / 10 : 0,
-      };
-    });
+    const byLeaseTerm = Object.values(occupancyByLeaseTerm).map((zone) => ({
+      leaseTermType: zone.leaseTermType,
+      name: zone.label,
+      total: zone.total,
+      occupied: zone.occupied,
+      vacant: zone.vacant,
+      area: zone.totalArea,
+      occupiedArea: zone.occupiedArea,
+      occupancyRate: zone.occupancyRate,
+    }));
 
     return {
       summary: {
@@ -260,6 +239,7 @@ export class OccupancyAnalyticsService {
       occupiedUnits: s.occupiedUnits,
       vacantUnits: s.vacantUnits,
       revenuePerSqm: s.revenuePerSqm,
+      leaseTermType: s.leaseTermType,
     }));
   }
 
@@ -280,13 +260,18 @@ export class OccupancyAnalyticsService {
         where: { mallId: mall.id, isActive: true },
       });
 
-      const totalUnits = units.length;
-      const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
-      const occupied = units.filter((u) => u.status === UnitStatus.OCCUPIED);
-      const occupiedArea = occupied.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
-      const vacant = units.filter((u) => u.status === UnitStatus.VACANT);
-      const underFitout = units.filter((u) => u.status === UnitStatus.UNDER_FITOUT);
-
+      const shortBookings = await this.prisma.slotBooking.findMany({
+        where: { slot: { unit: { mallId: mall.id, leaseTermType: 'SHORT' } } },
+        select: {
+          status: true,
+          installationStartDatetime: true,
+          dismantlingEndDatetime: true,
+          startDatetime: true,
+          endDatetime: true,
+          slot: { select: { id: true, unitId: true, area: true } },
+        },
+      });
+      const occupancy = summarizeOccupancyByLeaseTerm(units, shortBookings, now);
       const monthInvoices = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
@@ -295,43 +280,50 @@ export class OccupancyAnalyticsService {
         },
         _sum: { subtotal: true },
       });
-      const monthlyRevenue = monthInvoices._sum.subtotal ?? 0;
-      const revenuePerSqm = occupiedArea > 0 ? monthlyRevenue / occupiedArea : 0;
+      const longRevenue = monthInvoices._sum.subtotal ?? 0;
 
-      await this.prisma.occupancySnapshot.upsert({
+      for (const leaseTermType of ['LONG', 'SHORT'] as const) {
+        const segment = occupancy[leaseTermType];
+        const underFitout = units.filter((unit) => unit.leaseTermType === leaseTermType && unit.status === UnitStatus.UNDER_FITOUT).length;
+        const revenue = leaseTermType === 'LONG' ? longRevenue : 0;
+        const revenuePerSqm = segment.occupiedArea > 0 ? revenue / segment.occupiedArea : 0;
+        await this.prisma.occupancySnapshot.upsert({
         where: {
-          mallId_floorId_category_period: {
+          mallId_floorId_category_leaseTermType_period: {
             mallId: mall.id,
             floorId: null as any,
             category: null as any,
+            leaseTermType,
             period,
           },
         },
         create: {
           mallId: mall.id,
+          leaseTermType,
           period,
           snapshotDate: now,
-          totalUnits,
-          occupiedUnits: occupied.length,
-          vacantUnits: vacant.length,
-          underFitout: underFitout.length,
-          totalAreaSqm: totalArea,
-          occupiedAreaSqm: occupiedArea,
-          occupancyRate: totalArea > 0 ? (occupiedArea / totalArea) * 100 : 0,
+          totalUnits: segment.total,
+          occupiedUnits: segment.occupied,
+          vacantUnits: segment.vacant,
+          underFitout,
+          totalAreaSqm: segment.totalArea,
+          occupiedAreaSqm: segment.occupiedArea,
+          occupancyRate: segment.occupancyRate,
           revenuePerSqm,
         },
         update: {
           snapshotDate: now,
-          totalUnits,
-          occupiedUnits: occupied.length,
-          vacantUnits: vacant.length,
-          underFitout: underFitout.length,
-          totalAreaSqm: totalArea,
-          occupiedAreaSqm: occupiedArea,
-          occupancyRate: totalArea > 0 ? (occupiedArea / totalArea) * 100 : 0,
+          totalUnits: segment.total,
+          occupiedUnits: segment.occupied,
+          vacantUnits: segment.vacant,
+          underFitout,
+          totalAreaSqm: segment.totalArea,
+          occupiedAreaSqm: segment.occupiedArea,
+          occupancyRate: segment.occupancyRate,
           revenuePerSqm,
         },
       });
+      }
     }
 
     this.logger.log(`Occupancy snapshot taken for ${malls.length} malls`);

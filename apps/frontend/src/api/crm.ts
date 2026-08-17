@@ -8,7 +8,7 @@ export const crmApi = {
   updateLead: (id: string, data: Record<string, unknown>) =>
     api.put(`/crm/leads/${id}`, data).then((r) => r.data),
   deleteLead: (id: string) => api.delete(`/crm/leads/${id}`).then((r) => r.data),
-  pipeline: (limit?: number, mallId?: string) => api.get('/crm/pipeline', { params: { limit, mallId } }).then((r) => r.data),
+  pipeline: (limit?: number, mallId?: string, leaseTermType?: 'LONG' | 'SHORT') => api.get('/crm/pipeline', { params: { limit, mallId, leaseTermType } }).then((r) => r.data),
   stats: (mallId?: string) => api.get('/crm/stats', { params: { mallId } }).then((r) => r.data),
   getLead: (id: string) => api.get(`/crm/leads/${id}`).then((r) => r.data),
   getLeadTimeline: (id: string) => api.get(`/crm/leads/${id}/timeline`).then((r) => r.data),

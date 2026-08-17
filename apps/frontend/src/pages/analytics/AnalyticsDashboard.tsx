@@ -267,6 +267,7 @@ function RenewalRiskTab({ mallId }: { mallId?: string }) {
 }
 
 function MultiMallTab() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-multi-mall'],
     queryFn: () => analyticsApi.getMultiMallComparison(),
@@ -275,10 +276,20 @@ function MultiMallTab() {
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
   if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích liên trung tâm"><div /></AsyncState>;
 
-  const malls = (data ?? []) as any[];
+  const malls = ((data ?? []) as any[]).map((mall) => {
+    const segment = mall.byLeaseTerm?.[leaseTermType];
+    return segment ? { ...mall, ...segment, totalUnits: segment.total, occupiedUnits: segment.occupied } : mall;
+  });
 
   return (
     <div className="space-y-6">
+      <div className="inline-flex rounded-lg border bg-white p-1">
+        {(['LONG', 'SHORT'] as const).map((term) => (
+          <button key={term} type="button" onClick={() => setLeaseTermType(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+            {term === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn'}
+          </button>
+        ))}
+      </div>
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">So sánh hiệu suất các TTTM</CardTitle>
