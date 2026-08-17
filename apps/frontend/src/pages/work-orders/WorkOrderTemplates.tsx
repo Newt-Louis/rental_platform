@@ -43,7 +43,7 @@ const blank = {
   checklistText: "",
 };
 
-export default function WorkOrderTemplates({ mallId, malls, users }: any) {
+export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
   const qc = useQueryClient(),
     { toast } = useToast();
   const [expanded, setExpanded] = useState(false),
@@ -129,7 +129,11 @@ export default function WorkOrderTemplates({ mallId, malls, users }: any) {
         <Button
           size="sm"
           onClick={() => {
-            setForm({ ...blank, mallId: mallId || malls[0]?.id || "" });
+            if (!mallId) {
+              toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+              return;
+            }
+            setForm({ ...blank, mallId });
             setOpen(true);
             setExpanded(true);
           }}
@@ -210,18 +214,9 @@ export default function WorkOrderTemplates({ mallId, malls, users }: any) {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
               Trung tâm thương mại *
-              <select
-                className="mt-1 h-10 w-full rounded-md border px-3"
-                value={form.mallId}
-                onChange={(e) => setForm({ ...form, mallId: e.target.value })}
-              >
-                <option value="">Chọn Mall</option>
-                {malls.map((x: any) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                  </option>
-                ))}
-              </select>
+              <span className="mt-1 flex h-10 w-full items-center rounded-md border bg-muted/40 px-3">
+                {mallName}
+              </span>
             </label>
             <label className="text-sm">
               Tên mẫu *

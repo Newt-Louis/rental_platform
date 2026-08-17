@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
 import { UnitStatus, UnitMediaType } from '@prisma/client';
 
 @ApiTags('Spaces')
@@ -24,14 +25,16 @@ export class SpacesController {
   constructor(
     private readonly spacesService: SpacesService,
     private readonly unitMediaService: UnitMediaService,
+    private readonly mallAccess: MallAccessService,
   ) {}
 
   // ─── Malls ────────────────────────────────────────────────────────────────
 
   @Get('malls')
   @ApiOperation({ summary: 'List all malls' })
-  getMalls() {
-    return this.spacesService.getMalls();
+  async getMalls(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getMalls(mallIds ?? undefined);
   }
 
   @Post('malls')

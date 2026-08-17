@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -10,7 +10,7 @@ import {
   Search,
   Warehouse,
 } from "lucide-react";
-import { inventoryApi, spacesApi } from "@/api";
+import { inventoryApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { useAuthStore } from "@/store/auth.store";
 import { useToast } from "@/components/ui/use-toast";
@@ -74,8 +74,8 @@ export default function InventoryPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
-  const selectedMallId = useMallStore((s) => s.selectedMallId);
-  const [mallId, setMallId] = useState(selectedMallId || "");
+  const mallId = useMallStore((s) => s.selectedMallId) || "";
+  const openMallContextModal = useMallStore((s) => s.openMallContextModal);
   const [type, setType] = useState("");
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -85,13 +85,16 @@ export default function InventoryPage() {
   const [categoryForm, setCategoryForm] = useState<any>(emptyCategory);
   const [itemForm, setItemForm] = useState<any>(emptyItem);
   const [txForm, setTxForm] = useState<any>(emptyTx);
+
+  useEffect(() => {
+    setModal(null);
+    setCategoryForm(emptyCategory);
+    setItemForm(emptyItem);
+    setTxForm(emptyTx);
+  }, [mallId]);
   const canEdit = ["ADMIN", "MALL_DIRECTOR", "OPERATION"].includes(
     user?.role || "",
   );
-  const mallsQ = useQuery({
-    queryKey: ["malls"],
-    queryFn: spacesApi.listMalls,
-  });
   const categoriesQ = useQuery({
     queryKey: ["inventory-categories", mallId],
     queryFn: () => inventoryApi.categories(mallId ? { mallId } : undefined),
@@ -115,9 +118,6 @@ export default function InventoryPage() {
     queryKey: ["inventory-summary", mallId],
     queryFn: () => inventoryApi.summary(mallId || null),
   });
-  const malls: any[] = Array.isArray(mallsQ.data)
-    ? mallsQ.data
-    : (mallsQ.data as any)?.data || [];
   const categories: any[] = Array.isArray(categoriesQ.data)
     ? categoriesQ.data
     : (categoriesQ.data as any)?.data || [];
@@ -159,8 +159,9 @@ export default function InventoryPage() {
   });
   const requireMall = () => {
     if (!mallId) {
+      openMallContextModal();
       toast({
-        title: "Vui lòng chọn trung tâm thương mại",
+        title: "Vui lòng chọn Mall tại bộ chọn chung",
         variant: "destructive",
       });
       return false;
@@ -242,18 +243,6 @@ export default function InventoryPage() {
         </div>
       </div>
       <div className="flex flex-wrap gap-3 rounded-lg border bg-card p-4">
-        <select
-          className="h-10 min-w-64 rounded-md border bg-background px-3"
-          value={mallId}
-          onChange={(e) => setMallId(e.target.value)}
-        >
-          <option value="">Tất cả trung tâm thương mại</option>
-          {malls.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.code} — {m.name}
-            </option>
-          ))}
-        </select>
         <select
           className="h-10 rounded-md border bg-background px-3"
           value={type}

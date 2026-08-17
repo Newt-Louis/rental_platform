@@ -2,11 +2,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { spacesApi, usersApi, workOrdersApi } from '@/api';
+import { usersApi, workOrdersApi } from '@/api';
 import WorkOrdersPage from './WorkOrdersPage';
 
 vi.mock('@/api', () => ({
-  spacesApi: { listMalls: vi.fn() },
   usersApi: { listUsers: vi.fn() },
   workOrdersApi: {
     list: vi.fn(), summary: vi.fn(), detail: vi.fn(), create: vi.fn(), update: vi.fn(),
@@ -17,13 +16,20 @@ vi.mock('@/api', () => ({
 }));
 
 vi.mock('@/store/mall.store', () => ({
-  useMallStore: (selector: (state: { selectedMallId: null }) => unknown) => selector({ selectedMallId: null }),
+  useMallStore: (selector: (state: {
+    selectedMallId: string;
+    selectedMallName: string;
+    openMallContextModal: () => void;
+  }) => unknown) => selector({
+    selectedMallId: 'mall-1',
+    selectedMallName: 'Thiso Mall Sala',
+    openMallContextModal: vi.fn(),
+  }),
 }));
 
 describe('WorkOrdersPage departments and images', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(spacesApi.listMalls).mockResolvedValue([{ id: 'mall-1', code: 'SALA', name: 'Thiso Mall Sala' }] as never);
     vi.mocked(usersApi.listUsers).mockResolvedValue({ data: [
       { id: 'user-2', fullName: 'Trần Kỹ Thuật', role: 'OPERATION', department: 'Kỹ thuật' },
     ] } as never);
@@ -62,7 +68,7 @@ describe('WorkOrdersPage departments and images', () => {
 
     await screen.findByText('WO-001');
     await user.click(screen.getByRole('button', { name: 'Tạo công việc' }));
-    fireEvent.change(screen.getByLabelText('Trung tâm thương mại'), { target: { value: 'mall-1' } });
+    expect(screen.getByText('Thiso Mall Sala')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Tiêu đề'), 'Kiểm tra máy lạnh');
     fireEvent.change(screen.getByLabelText('Bộ phận xử lý'), { target: { value: 'Kỹ thuật' } });
     const first = new File(['one'], 'hinh-1.jpg', { type: 'image/jpeg' });

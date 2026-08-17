@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { crmApi, spacesApi } from '@/api';
+import { crmApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -38,12 +38,7 @@ export default function DealPipelinePage() {
   const [stageFilter, setStageFilter] = useState<string>('ALL');
   const [timelineLead, setTimelineLead] = useState<{ id: string; brandName: string } | null>(null);
 
-  const { data: mallsData } = useQuery({
-    queryKey: ['malls'],
-    queryFn: spacesApi.listMalls,
-  });
-  const malls: any[] = mallsData?.data ?? mallsData ?? [];
-  const mallId = selectedMallId || malls[0]?.id;
+  const mallId = selectedMallId || undefined;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['deal-pipeline', mallId, search, stageFilter],

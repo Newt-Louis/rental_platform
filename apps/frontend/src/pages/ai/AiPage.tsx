@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { aiApi, floorPlanApi, spacesApi } from '@/api';
+import { aiApi, floorPlanApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -665,16 +665,16 @@ function FloorPlanTab() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const { data: mallsData, isError: mallsError, refetch: refetchMalls } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: { id: string; name: string; code: string }[] = mallsData?.data ?? mallsData ?? [];
-
   useEffect(() => {
-    if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
-  }, [malls, selectedMallId]);
+    setSelectedAnalysisId(null);
+    setPendingId(null);
+  }, [selectedMallId]);
 
   const { data: analysesData, isError: analysesError, refetch: refetchAnalyses } = useQuery({
     queryKey: ['floor-plan-analyses', selectedMallId],
@@ -726,9 +726,13 @@ function FloorPlanTab() {
   });
 
   const handleFile = useCallback((file: File) => {
-    if (!selectedMallId) { toast({ title: 'Vui lòng chọn mall trước', variant: 'destructive' }); return; }
+    if (!selectedMallId) {
+      openMallContextModal();
+      toast({ title: 'Vui lòng chọn Mall tại bộ chọn chung', variant: 'destructive' });
+      return;
+    }
     uploadMutation.mutate(file);
-  }, [selectedMallId, uploadMutation, toast]);
+  }, [selectedMallId, uploadMutation, toast, openMallContextModal]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -743,19 +747,12 @@ function FloorPlanTab() {
     <div className="flex h-full flex-col gap-4 lg:flex-row">
       {/* Left panel: upload + history */}
       <div className="flex max-h-72 w-full shrink-0 flex-col gap-4 overflow-y-auto lg:max-h-none lg:w-72">
-        {mallsError && (
-          <AsyncState isLoading={false} isError onRetry={refetchMalls} errorTitle="Không thể tải danh sách trung tâm thương mại"><div /></AsyncState>
-        )}
-        {/* Mall selector */}
+        {/* Mall context comes from the global selector */}
         <div>
           <label className="text-xs font-medium text-gray-500 mb-1 block">THISO Mall</label>
-          <select
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={selectedMallId}
-            onChange={(e) => setSelectedMallId(e.target.value)}
-          >
-            {malls.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            {selectedMallName}
+          </div>
         </div>
 
         {/* Upload area */}

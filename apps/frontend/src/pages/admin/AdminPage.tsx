@@ -1116,15 +1116,11 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
 function SpaceStructureTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [showAddFloor, setShowAddFloor] = useState(false);
   const { register, handleSubmit, reset } = useForm();
-
-  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: any[] = mallsData?.data ?? mallsData ?? [];
-
-  // Auto-select first mall
-  if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
 
   const { data: floorsData } = useQuery({
     queryKey: ['floors', selectedMallId],
@@ -1150,13 +1146,13 @@ function SpaceStructureTab() {
 
   return (
     <div>
-      {/* Mall selector */}
       <div className="flex items-center gap-3 mb-5">
-        <Label className="shrink-0 text-sm">Chọn Mall:</Label>
-        <select value={selectedMallId} onChange={(e) => setSelectedMallId(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 max-w-xs">
-          {malls.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        <Button onClick={() => setShowAddFloor(true)} className="gap-2 ml-auto"><Plus size={15} /> Thêm tầng</Button>
+        <Label className="shrink-0 text-sm">Mall hiện tại:</Label>
+        <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm">{selectedMallName}</div>
+        <Button
+          onClick={() => selectedMallId ? setShowAddFloor(true) : openMallContextModal()}
+          className="gap-2 ml-auto"
+        ><Plus size={15} /> Thêm tầng</Button>
       </div>
 
       {/* Add floor form */}

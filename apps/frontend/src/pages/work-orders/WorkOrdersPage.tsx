@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -12,7 +12,7 @@ import {
   MessageSquare,
   History,
 } from "lucide-react";
-import { spacesApi, usersApi, workOrdersApi } from "@/api";
+import { usersApi, workOrdersApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -67,9 +67,11 @@ const err = (e: any) =>
 export default function WorkOrdersPage() {
   const qc = useQueryClient(),
     { toast } = useToast(),
-    selectedMallId = useMallStore((s) => s.selectedMallId);
-  const [mallId, setMallId] = useState(selectedMallId || ""),
-    [search, setSearch] = useState(""),
+    selectedMallId = useMallStore((s) => s.selectedMallId),
+    selectedMallName = useMallStore((s) => s.selectedMallName),
+    openMallContextModal = useMallStore((s) => s.openMallContextModal);
+  const mallId = selectedMallId || "";
+  const [search, setSearch] = useState(""),
     [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("");
@@ -82,10 +84,14 @@ export default function WorkOrdersPage() {
     [createImages, setCreateImages] = useState<File[]>([]),
     [comment, setComment] = useState(""),
     [newChecklist, setNewChecklist] = useState("");
-  const mallsQ = useQuery({
-    queryKey: ["malls"],
-    queryFn: spacesApi.listMalls,
-  });
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedId(null);
+    setCreateOpen(false);
+    setForm({ ...empty, mallId });
+    setCreateImages([]);
+  }, [mallId]);
   const usersQ = useQuery({
     queryKey: ["work-order-users"],
     queryFn: () => usersApi.listUsers({ limit: 200 }),
@@ -115,9 +121,6 @@ export default function WorkOrdersPage() {
     queryFn: () => workOrdersApi.detail(selectedId!),
     enabled: !!selectedId,
   });
-  const malls: any[] = Array.isArray(mallsQ.data)
-    ? mallsQ.data
-    : (mallsQ.data as any)?.data || [];
   const users: any[] = ((usersQ.data as any)?.data || usersQ.data || []).filter(
     (u: any) => u.role !== "TENANT",
   );
@@ -268,7 +271,11 @@ export default function WorkOrdersPage() {
           </Button>
           <Button
             onClick={() => {
-              setForm({ ...empty, mallId: mallId || selectedMallId || "" });
+              if (!mallId) {
+                openMallContextModal();
+                return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+              }
+              setForm({ ...empty, mallId });
               setCreateImages([]);
               setCreateOpen(true);
             }}
@@ -307,20 +314,8 @@ export default function WorkOrdersPage() {
           ["CRITICAL", "Ưu tiên khẩn cấp", summary.critical || 0],
         ].map(([key, title, count]) => <button key={String(key)} className={`rounded-lg border p-4 text-left hover:bg-muted/40 ${alert === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><div className="flex items-center justify-between text-sm"><span>{title}</span><AlertTriangle className="h-4 w-4" /></div><div className="mt-2 text-2xl font-bold">{String(count)}</div></button>)}
       </div>
-      <WorkOrderTemplates mallId={mallId} malls={malls} users={users} />
+      <WorkOrderTemplates mallId={mallId} mallName={selectedMallName} users={users} />
       <div className="flex flex-wrap gap-3 rounded-lg border p-4">
-        <select
-          className="h-10 min-w-64 rounded-md border px-3"
-          value={mallId}
-          onChange={(e) => { setMallId(e.target.value); setPage(1); }}
-        >
-          <option value="">Tất cả Mall</option>
-          {malls.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.code} — {m.name}
-            </option>
-          ))}
-        </select>
         <select
           className="h-10 rounded-md border px-3"
           value={status}
@@ -438,19 +433,9 @@ export default function WorkOrdersPage() {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <F label="Trung tâm thương mại">
-              <select
-                required
-                className="h-10 rounded-md border px-3"
-                value={form.mallId}
-                onChange={(e) => setForm({ ...form, mallId: e.target.value })}
-              >
-                <option value="">Chọn Mall</option>
-                {malls.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                {selectedMallName}
+              </div>
             </F>
             <F label="Nhóm công việc">
               <select

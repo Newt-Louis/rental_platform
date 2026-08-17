@@ -11,15 +11,34 @@ export function MallSelector() {
   const { user } = useAuthStore();
   const { selectedMallId, selectedMallName, setSelectedMall, openMallContextModal } = useMallStore();
 
-  const { data: malls } = useQuery({
+  const { data: malls, isSuccess } = useQuery({
     queryKey: ['malls'],
     queryFn: spacesApi.listMalls,
   });
   const mallList: any[] = malls?.data ?? malls ?? [];
 
-  // Auto-select first mall for non-admin on first login (no activeMallId yet)
+  // Reconcile persisted context with the permission-filtered Mall list.
   useEffect(() => {
-    if (mallList.length === 0 || selectedMallId !== null || user?.role === 'ADMIN') return;
+    if (!isSuccess || !user) return;
+
+    const selectedMall = mallList.find((mall) => mall.id === selectedMallId);
+    if (selectedMall) {
+      if (selectedMall.name !== selectedMallName) {
+        setSelectedMall(selectedMall.id, selectedMall.name);
+      }
+      return;
+    }
+
+    if (user.role === 'ADMIN' && selectedMallId === null) return;
+
+    if (mallList.length === 0) {
+      if (selectedMallId !== null) {
+        setSelectedMall(null);
+        void authApi.setActiveMall(null);
+      }
+      return;
+    }
+
     const first = mallList[0];
     let cancelled = false;
     void authApi.setActiveMall(first.id).then(() => {
@@ -28,7 +47,19 @@ export function MallSelector() {
       qc.invalidateQueries();
     });
     return () => { cancelled = true; };
-  }, [mallList]);
+  }, [isSuccess, mallList, qc, selectedMallId, selectedMallName, setSelectedMall, user]);
+
+  if (isSuccess && mallList.length === 0) {
+    return (
+      <button
+        onClick={openMallContextModal}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-amber-700 hover:bg-amber-50"
+      >
+        <Building2 size={14} />
+        Chưa được cấp Mall
+      </button>
+    );
+  }
 
   if (mallList.length === 0) return null;
 

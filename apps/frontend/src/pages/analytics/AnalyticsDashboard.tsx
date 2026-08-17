@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { analyticsApi, spacesApi } from '@/api';
+import { analyticsApi } from '@/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
+import { useMallStore } from '@/store/mall.store';
 import {
   TrendingUp, TrendingDown, Building2, AlertTriangle, DollarSign,
   Calendar, Percent, Users, Clock, Shield, RefreshCw,
@@ -460,13 +460,7 @@ function ComplianceTab({ mallId }: { mallId?: string }) {
 }
 
 export default function AnalyticsDashboard() {
-  const [selectedMall, setSelectedMall] = useState<string>('');
-
-  const { data: mallsData } = useQuery({
-    queryKey: ['malls'],
-    queryFn: () => spacesApi.listMalls(),
-  });
-  const malls = (mallsData ?? []) as any[];
+  const selectedMall = useMallStore((state) => state.selectedMallId) || '';
 
   return (
     <div>
@@ -475,17 +469,6 @@ export default function AnalyticsDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
           <p className="text-gray-500 text-sm">Phân tích hiệu suất và rủi ro</p>
         </div>
-        <Select value={selectedMall} onValueChange={setSelectedMall}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Tất cả TTTM" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">Tất cả TTTM</SelectItem>
-            {malls.map((m: any) => (
-              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       <Tabs defaultValue="occupancy">

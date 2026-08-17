@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -12,7 +12,7 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { parkingApi, spacesApi, tenantsApi } from "@/api";
+import { parkingApi, tenantsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -63,18 +63,22 @@ const money = (v: number) =>
 export default function ParkingPage() {
   const qc = useQueryClient(),
     { toast } = useToast(),
-    selectedMallId = useMallStore((s) => s.selectedMallId);
-  const [mallId, setMallId] = useState(selectedMallId || ""),
-    [view, setView] = useState<"contracts" | "debt" | "alerts">("contracts"),
+    selectedMallId = useMallStore((s) => s.selectedMallId),
+    selectedMallName = useMallStore((s) => s.selectedMallName),
+    openMallContextModal = useMallStore((s) => s.openMallContextModal);
+  const mallId = selectedMallId || "";
+  const [view, setView] = useState<"contracts" | "debt" | "alerts">("contracts"),
     [open, setOpen] = useState(false),
     [selectedId, setSelectedId] = useState<string | null>(null),
     [form, setForm] = useState<any>(empty),
     [period, setPeriod] = useState(new Date().toISOString().slice(0, 7));
-  const mallsQ = useQuery({
-      queryKey: ["malls"],
-      queryFn: spacesApi.listMalls,
-    }),
-    tenantsQ = useQuery({
+
+  useEffect(() => {
+    setSelectedId(null);
+    setOpen(false);
+    setForm({ ...empty, mallId });
+  }, [mallId]);
+  const tenantsQ = useQuery({
       queryKey: ["parking-tenants"],
       queryFn: () => tenantsApi.listTenants({ limit: 500 }),
     }),
@@ -107,10 +111,7 @@ export default function ParkingPage() {
       queryFn: () => parkingApi.contract(selectedId!),
       enabled: !!selectedId,
     });
-  const malls: any[] = Array.isArray(mallsQ.data)
-      ? mallsQ.data
-      : (mallsQ.data as any)?.data || [],
-    tenants: any[] = (tenantsQ.data as any)?.data || tenantsQ.data || [],
+  const tenants: any[] = (tenantsQ.data as any)?.data || tenantsQ.data || [],
     contracts: any[] = contractsQ.data || [],
     debts: any[] = debtQ.data || [],
     dash: any = dashQ.data || {},
@@ -211,7 +212,11 @@ export default function ParkingPage() {
           </Button>
           <Button
             onClick={() => {
-              setForm({ ...empty, mallId: mallId || malls[0]?.id || "" });
+              if (!mallId) {
+                openMallContextModal();
+                return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+              }
+              setForm({ ...empty, mallId });
               setOpen(true);
             }}
           >
@@ -237,18 +242,6 @@ export default function ParkingPage() {
         ))}
       </div>
       <div className="flex flex-wrap gap-3">
-        <select
-          className="h-10 min-w-64 rounded-md border px-3"
-          value={mallId}
-          onChange={(e) => setMallId(e.target.value)}
-        >
-          <option value="">Tất cả Mall</option>
-          {malls.map((x: any) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-            </option>
-          ))}
-        </select>
         <Input
           className="w-44"
           type="month"
@@ -427,12 +420,11 @@ export default function ParkingPage() {
             <DialogTitle>Tạo hợp đồng dịch vụ giữ xe</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Select
-              label="Mall *"
-              value={form.mallId}
-              set={(v: string) => setForm({ ...form, mallId: v })}
-              options={malls.map((x: any) => [x.id, x.name])}
-            />
+            <Label t="Mall *">
+              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                {selectedMallName}
+              </div>
+            </Label>
             <Select
               label="Khách thuê *"
               value={form.tenantId}

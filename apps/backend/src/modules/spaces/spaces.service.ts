@@ -97,9 +97,12 @@ export class SpacesService {
   }
 
   // MALLS
-  async getMalls() {
+  async getMalls(mallIds?: string[]) {
     return this.prisma.mall.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(mallIds ? { id: { in: mallIds } } : {}),
+      },
       include: {
         _count: {
           select: { units: true, buildings: true, floors: true },

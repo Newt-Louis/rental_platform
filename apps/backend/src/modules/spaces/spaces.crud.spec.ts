@@ -4,7 +4,7 @@ import { SpacesService } from './spaces.service';
 
 describe('SpacesService unit CRUD safeguards', () => {
   const prisma: any = {
-    mall: { findFirst: jest.fn() },
+    mall: { findFirst: jest.fn(), findMany: jest.fn() },
     floor: { findFirst: jest.fn() },
     zone: { findFirst: jest.fn() },
     unit: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
@@ -33,6 +33,26 @@ describe('SpacesService unit CRUD safeguards', () => {
     prisma.unit.update.mockResolvedValue({ ...unit, name: 'Updated' });
     prisma.unitHistory.create.mockResolvedValue({ id: 'history-1' });
     prisma.$transaction.mockImplementation((operations: Promise<unknown>[]) => Promise.all(operations));
+  });
+
+  it('limits the Mall list to the permission scope', async () => {
+    prisma.mall.findMany.mockResolvedValue([]);
+
+    await service.getMalls(['mall-1', 'mall-2']);
+
+    expect(prisma.mall.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isActive: true, id: { in: ['mall-1', 'mall-2'] } },
+    }));
+  });
+
+  it('returns no Mall when a user has no Mall permission', async () => {
+    prisma.mall.findMany.mockResolvedValue([]);
+
+    await service.getMalls([]);
+
+    expect(prisma.mall.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isActive: true, id: { in: [] } },
+    }));
   });
 
   it('rejects lifecycle fields on generic edit', async () => {
