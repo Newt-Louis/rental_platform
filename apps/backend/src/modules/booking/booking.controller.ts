@@ -174,9 +174,10 @@ export class BookingController {
     @Query('mallId') mallId?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('leaseTermType') leaseTermType?: string,
     @CurrentUser() user?: any,
   ) {
-    const scope = await this.scopedQuery({ mallId, page, limit }, user);
+    const scope = await this.scopedQuery({ mallId, page, limit, leaseTermType }, user);
     return this.bookingService.getBookingsPendingPriceApproval(scope);
   }
 

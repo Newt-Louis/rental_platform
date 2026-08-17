@@ -713,7 +713,7 @@ function ProposalDetailSheet({
   );
 }
 
-const EMPTY_FILTERS = { search: '', status: '', floorId: '', unitId: '', dateFrom: '', dateTo: '' };
+const EMPTY_FILTERS = { search: '', status: '', leaseTermType: '', floorId: '', unitId: '', dateFrom: '', dateTo: '' };
 
 export default function ProposalsPage() {
   const { t } = useTranslation('deals');
@@ -784,7 +784,7 @@ export default function ProposalsPage() {
 
   const hasApplied = Object.values(applied).some(Boolean);
   const isDirty = Object.keys(draft).some((key) => draft[key as keyof typeof draft] !== applied[key as keyof typeof applied]);
-  const appliedFilterCount = [applied.status, applied.floorId, applied.unitId, applied.dateFrom || applied.dateTo].filter(Boolean).length;
+  const appliedFilterCount = [applied.status, applied.leaseTermType, applied.floorId, applied.unitId, applied.dateFrom || applied.dateTo].filter(Boolean).length;
 
   function applyFilters() { setApplied({ ...draft }); setPage(1); }
   function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
@@ -794,6 +794,7 @@ export default function ProposalsPage() {
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
       status: applied.status || undefined,
+      leaseTermType: applied.leaseTermType || undefined,
       floorId: applied.floorId || undefined,
       unitId: applied.unitId || undefined,
       dateFrom: applied.dateFrom || undefined,
@@ -805,8 +806,8 @@ export default function ProposalsPage() {
   });
 
   const { data: statsResponse, isError: statsError, refetch: refetchStats } = useQuery({
-    queryKey: ['proposal-stats', selectedMallId],
-    queryFn: () => proposalsApi.getStats(selectedMallId || undefined),
+    queryKey: ['proposal-stats', selectedMallId, applied.leaseTermType],
+    queryFn: () => proposalsApi.getStats(selectedMallId || undefined, applied.leaseTermType || undefined),
   });
   const stats = statsResponse?.data ?? statsResponse ?? {};
 
@@ -933,15 +934,25 @@ export default function ProposalsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
+          <button key={key || 'ALL'} onClick={() => { const next = { ...draft, leaseTermType: key }; setDraft(next); setApplied({ ...applied, leaseTermType: key }); setPage(1); }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${applied.leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
         {[
           { key: '', label: t('proposals.stats.total'), value: stats.total ?? 0, color: 'text-gray-900' },
           { key: 'DRAFT', label: t('proposals.stats.draft'), value: stats.DRAFT ?? 0, color: 'text-gray-700' },
-          { key: 'SUBMITTED', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
+          { key: 'PENDING_APPROVAL', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
           { key: 'APPROVED', label: t('proposals.stats.approved'), value: stats.APPROVED ?? 0, color: 'text-green-600' },
+          { key: 'REJECTED', label: t('proposals.status.REJECTED'), value: stats.REJECTED ?? 0, color: 'text-red-600' },
           { key: 'CONVERTED', label: t('proposals.stats.converted'), value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
         ].map((item) => (
-          <Card key={item.label} className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
+          <Card key={item.label} className={`cursor-pointer transition-all hover:border-blue-300 hover:shadow-sm ${applied.status === item.key ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
             <CardContent className="p-4"><p className="text-xs text-gray-500">{item.label}</p><p className={`text-2xl font-semibold mt-1 ${item.color}`}>{item.value}</p></CardContent>
           </Card>
         ))}
@@ -1116,6 +1127,7 @@ export default function ProposalsPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-800">{p.unit?.code}</div>
                         <div className="text-xs text-gray-400">{p.unit?.floor?.name ?? 'Chưa xác định tầng'}</div>
+                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${p.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{p.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>
                       </td>
                       <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
                       <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>

@@ -53,10 +53,11 @@ export class ApprovalsService {
     ] };
   }
 
-  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string }) {
+  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string; leaseTermType?: string }) {
     const AND: any[] = [];
     if (query.floorId) AND.push({ proposal: { unit: { floorId: query.floorId } } });
     if (query.unitId) AND.push({ proposal: { unitId: query.unitId } });
+    if (query.leaseTermType) AND.push({ proposal: { unit: { leaseTermType: query.leaseTermType } } });
     if (query.search?.trim()) {
       const search = query.search.trim();
       AND.push({ OR: [
@@ -69,7 +70,7 @@ export class ApprovalsService {
     return AND.length ? { AND } : {};
   }
 
-  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string } = {}, mallIds?: string[]) {
+  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string; leaseTermType?: string } = {}, mallIds?: string[]) {
     const { page = 1, limit = 15 } = query;
 
     const where: any = {
@@ -90,7 +91,7 @@ export class ApprovalsService {
           include: {
             proposal: {
               include: {
-                unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true } } } },
+                unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true } } } },
                 tenant: { select: { id: true, brandName: true } },
               },
             },
@@ -309,7 +310,7 @@ export class ApprovalsService {
     return { message: 'Step rejected' };
   }
 
-  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string; floorId?: string; unitId?: string; search?: string }, mallIds?: string[]) {
+  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string; floorId?: string; unitId?: string; search?: string; leaseTermType?: string }, mallIds?: string[]) {
     const { page = 1, limit = 25, status } = query;
     const skip = (page - 1) * +limit;
 
@@ -331,7 +332,7 @@ export class ApprovalsService {
               proposal: {
                 include: {
                   tenant: { select: { id: true, brandName: true } },
-                  unit: { select: { id: true, code: true, floor: { select: { name: true } } } },
+                  unit: { select: { id: true, code: true, leaseTermType: true, floor: { select: { name: true } } } },
                 },
               },
             },

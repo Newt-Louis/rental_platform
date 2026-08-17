@@ -243,6 +243,7 @@ export default function ApprovalsPage() {
   const [search, setSearch] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
+  const [leaseTermType, setLeaseTermType] = useState('');
 
   const { data: floorsResponse } = useQuery({
     queryKey: ['approval-filter-floors', selectedMallId],
@@ -257,7 +258,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     setProposalPage(1); setHistoryPage(1); setSelectedWorkflowId(null);
-    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId('');
+    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType('');
   }, [selectedMallId]);
 
   // ── Selection state ──
@@ -284,12 +285,12 @@ export default function ApprovalsPage() {
 
   // ── Queries ──
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['pending-approvals', proposalPage, selectedMallId, search, floorId, unitId],
-    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined, search: search || undefined, floorId: floorId || undefined, unitId: unitId || undefined }),
+    queryKey: ['pending-approvals', proposalPage, selectedMallId, search, floorId, unitId, leaseTermType],
+    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined, search: search || undefined, floorId: floorId || undefined, unitId: unitId || undefined, leaseTermType: leaseTermType || undefined }),
     refetchInterval: 30_000,
   });
   const { data: historyData, isLoading: loadingHistory, isError: historyError, refetch: refetchHistory } = useQuery({
-    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId, search, floorId, unitId],
+    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId, search, floorId, unitId, leaseTermType],
     queryFn: () => approvalsApi.history({
       page: historyPage,
       limit: 25,
@@ -298,13 +299,13 @@ export default function ApprovalsPage() {
       search: search || undefined,
       floorId: floorId || undefined,
       unitId: unitId || undefined,
+      leaseTermType: leaseTermType || undefined,
     }),
-    enabled: view === 'history',
   });
 
   const { data: priceApprovalsData, isLoading: loadingPriceApprovals, isError: priceError, refetch: refetchPrices } = useQuery({
-    queryKey: ['pending-price-approvals', pricePage, selectedMallId],
-    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25, mallId: selectedMallId || undefined }),
+    queryKey: ['pending-price-approvals', pricePage, selectedMallId, leaseTermType],
+    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25, mallId: selectedMallId || undefined, leaseTermType: leaseTermType || undefined }),
     refetchInterval: 30_000,
     enabled: canApprovePrices,
   });
@@ -484,29 +485,31 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {/* ── Tab toggle ── */}
-      <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-1 w-fit">
+      {/* ── Status cards ── */}
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <button
           onClick={() => { setView('proposals'); setProposalPage(1); setSelectedPriceIds(new Set()); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'proposals' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'proposals' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-blue-200 bg-white'}`}
         >
-          <CheckSquare size={14} className="inline mr-1.5" />
-          {t('approvals.views.proposals')} ({proposalTotal})
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-700"><CheckSquare size={15} />{t('approvals.views.proposals')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{proposalTotal}</div>
         </button>
         {canApprovePrices && <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'prices' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'prices' ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100' : 'border-amber-200 bg-white'}`}
         >
-          <DollarSign size={14} className="inline mr-1.5" />
-          {t('approvals.views.prices')} ({priceTotal})
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-700"><DollarSign size={15} />{t('approvals.views.prices')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{priceTotal}</div>
         </button>}
         <button
           onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'history' ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-emerald-200 bg-white'}`}
         >
-          <History size={14} className="inline mr-1.5" />
-          {t('approvals.views.history')}
+          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700"><History size={15} />{t('approvals.views.history')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{historyTotal}</div>
         </button>
+      </div>
+
+      <div className="mb-5 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setProposalPage(1); setPricePage(1); setHistoryPage(1); }}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>{label}</button>)}
       </div>
 
       {view !== 'prices' && (
@@ -605,6 +608,7 @@ export default function ApprovalsPage() {
                               {proposal?.proposalNumber ?? '—'}
                             </span>
                             {isNew && <Badge className="ml-2 gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> Mới</Badge>}
+                            {proposal?.unit?.leaseTermType && <div><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap"><div className={`flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}><Clock3 size={13} />{approvalAge(createdAt)}</div><div className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(createdAt)}</div></td>
                           <td className="px-4 py-3">
@@ -775,6 +779,7 @@ export default function ApprovalsPage() {
                               {unit?.floor?.name && <span className="text-xs text-gray-400">{unit.floor.name}</span>}
                             </div>
                             {unit?.mall?.name && <div className="text-xs text-gray-400 mt-0.5 pl-5">{unit.mall.name}</div>}
+                            {unit?.leaseTermType && <span className={`ml-5 mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>}
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{booking.lead?.brandName ?? booking.customer?.companyName ?? '—'}</div>
@@ -918,6 +923,7 @@ export default function ApprovalsPage() {
                               {proposal.unit.floor?.name && ` · ${proposal.unit.floor.name}`}
                             </div>
                           )}
+                          {proposal?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm font-medium text-gray-800">{step.stepName}</div>

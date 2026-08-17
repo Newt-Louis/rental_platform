@@ -23,7 +23,7 @@ export const bookingApi = {
   convertToProposal: (id: string, data: Record<string, unknown>) =>
     api.post(`/bookings/${id}/convert-to-proposal`, data).then((r) => r.data),
   // Price approval
-  getPendingPriceApproval: (params?: { mallId?: string; page?: number; limit?: number }) =>
+  getPendingPriceApproval: (params?: { mallId?: string; page?: number; limit?: number; leaseTermType?: string }) =>
     api.get('/bookings/price-approval/pending', { params }).then((r) => {
       const response = r.data;
       // Handle both array and paginated object responses

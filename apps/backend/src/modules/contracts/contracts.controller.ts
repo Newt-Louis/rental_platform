@@ -81,10 +81,10 @@ export class ContractsController {
   @ApiOperation({ summary: 'Get contracts expiring soon' })
   @ApiQuery({ name: 'days', required: false })
   @ApiQuery({ name: 'mallId', required: false })
-  async getExpiring(@Query('days') days: number | undefined, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+  async getExpiring(@Query('days') days: number | undefined, @Query('mallId') mallId: string | undefined, @Query('leaseTermType') leaseTermType: string | undefined, @CurrentUser() user: any) {
     if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
-    return this.contractsService.getExpiring(days ? +days : 90, mallIds ?? undefined);
+    return this.contractsService.getExpiring(days ? +days : 90, mallIds ?? undefined, leaseTermType);
   }
 
   @Get(':id/events')

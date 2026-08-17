@@ -55,13 +55,13 @@ export class ProposalsController {
 
   @Get('stats/overview')
   @ApiOperation({ summary: 'Proposal KPI by status' })
-  async stats(@CurrentUser() user: any, @Query('mallId') requestedMallId?: string) {
+  async stats(@CurrentUser() user: any, @Query('mallId') requestedMallId?: string, @Query('leaseTermType') leaseTermType?: string) {
     const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
     if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     const mallIds = mallId
       ? [mallId]
       : (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
-    return this.proposalsService.getStats(mallIds);
+    return this.proposalsService.getStats(mallIds, leaseTermType);
   }
 
   @Get(':id')

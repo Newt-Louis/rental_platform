@@ -190,6 +190,7 @@ export class BookingService {
     assignedToId?: string;
     mallId?: string;
     mallIds?: string[];
+    leaseTermType?: string;
     expiringSoon?: boolean;
     search?: string;
     createdFrom?: string;
@@ -481,6 +482,7 @@ export class BookingService {
   async getBookingsPendingPriceApproval(query: {
     mallId?: string;
     mallIds?: string[];
+    leaseTermType?: string;
     page?: number;
     limit?: number;
   }) {
@@ -494,11 +496,12 @@ export class BookingService {
       priceApprovalStatus: PriceApprovalStatus.PENDING,
       status: { in: [BookingStatus.PENDING, BookingStatus.ACTIVE] },
     };
-    if (mallIds) where.unit = {
-      OR: [
+    if (mallIds || query.leaseTermType) where.unit = {
+      ...(mallIds ? { OR: [
         { mallId: { in: mallIds } },
         { floor: { mallId: { in: mallIds } } },
-      ],
+      ] } : {}),
+      ...(query.leaseTermType ? { leaseTermType: query.leaseTermType } : {}),
     };
 
     const [data, total] = await Promise.all([
@@ -517,6 +520,7 @@ export class BookingService {
               areaGFA: true,
               areaNLA: true,
               category: true,
+              leaseTermType: true,
               categoryId: true,
               categoryRef: { select: { id: true, code: true, name: true } },
               baseRentPerSqm: true,

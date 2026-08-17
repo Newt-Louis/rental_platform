@@ -100,6 +100,7 @@ export class ContractsService {
 
   async findAll(query: {
     status?: ContractStatus;
+    leaseTermType?: string;
     type?: string;
     tenantId?: string;
     unitId?: string;
@@ -117,7 +118,9 @@ export class ContractsService {
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null };
-    if (filters.status) where.status = filters.status;
+    if (filters.status === 'PRE_ACTIVE' as any) where.status = { in: [ContractStatus.DRAFT, ContractStatus.PENDING_LEGAL, ContractStatus.PENDING_SIGNATURE] };
+    else if (filters.status === 'ENDED' as any) where.status = { in: [ContractStatus.EXPIRED, ContractStatus.TERMINATING, ContractStatus.TERMINATED] };
+    else if (filters.status) where.status = filters.status;
     if (filters.type) where.type = filters.type;
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
@@ -126,9 +129,10 @@ export class ContractsService {
       where.tenantId = filters.tenantId;
     }
     if (filters.unitId) where.unitId = filters.unitId;
-    if (query.mallIds || filters.floorId) where.unit = {
+    if (query.mallIds || filters.floorId || filters.leaseTermType) where.unit = {
       ...(query.mallIds ? { mallId: { in: query.mallIds } } : {}),
       ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      ...(filters.leaseTermType ? { leaseTermType: filters.leaseTermType } : {}),
     };
     if (query.startDateFrom || query.startDateTo) {
       where.startDate = {};
@@ -143,22 +147,30 @@ export class ContractsService {
       ];
     }
 
-    const [data, total] = await Promise.all([
+    const summaryWhere = { ...where };
+    delete summaryWhere.status;
+    const [data, total, groupedStatuses] = await Promise.all([
       this.prisma.contract.findMany({
         where,
         skip,
         take: +limit,
         include: {
           tenant: { select: { id: true, brandName: true, companyName: true } },
-          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
+          unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true, level: true } } } },
           managedBy: { select: { id: true, fullName: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.contract.count({ where }),
+      this.prisma.contract.groupBy({ by: ['status'], where: summaryWhere, _count: { _all: true } }),
     ]);
 
-    return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
+    const byStatus = Object.fromEntries(Object.values(ContractStatus).map((value) => [value, 0]));
+    groupedStatuses.forEach((row: any) => { byStatus[row.status] = row._count._all; });
+    return {
+      data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit),
+      summary: { total: groupedStatuses.reduce((sum: number, row: any) => sum + row._count._all, 0), byStatus },
+    };
   }
 
   async findOne(id: string, currentUser?: CurrentUser) {
@@ -430,7 +442,7 @@ export class ContractsService {
     return { toExpiring: toExpiring.length, toExpired: toExpired.length };
   }
 
-  async getExpiring(days = 90, mallIds?: string[]) {
+  async getExpiring(days = 90, mallIds?: string[], leaseTermType?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const cutoff = new Date();
@@ -441,6 +453,7 @@ export class ContractsService {
         isActive: true,
         status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
         endDate: { gte: today, lte: cutoff },
+        ...(leaseTermType ? { unit: { leaseTermType: leaseTermType as any } } : {}),
         ...(mallIds ? { OR: [
           { unit: { mallId: { in: mallIds } } },
           { unit: { floor: { mallId: { in: mallIds } } } },
@@ -448,7 +461,7 @@ export class ContractsService {
       },
       include: {
         tenant: { select: { id: true, brandName: true, contactEmail: true, contactPhone: true } },
-        unit: { select: { id: true, code: true, name: true } },
+        unit: { select: { id: true, code: true, name: true, leaseTermType: true } },
       },
       orderBy: { endDate: 'asc' },
     });

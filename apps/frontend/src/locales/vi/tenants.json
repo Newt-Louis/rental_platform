@@ -89,7 +89,30 @@
     "granted": "Đã cấp",
     "notGranted": "Chưa cấp",
     "grantedNote": "Để cấp đăng nhập, vào Quản trị → Tài khoản, tạo tài khoản vai trò \"Khách thuê\" và liên kết với khách thuê này.",
-    "notGrantedNote": "Bật quyền Portal trong phần Chỉnh sửa, sau đó tạo tài khoản đăng nhập trong Quản trị → Tài khoản."
+    "notGrantedNote": "Khách thuê này chưa có tài khoản Portal. Các khách thuê mới sẽ được tạo tài khoản tự động.",
+    "loginEmail": "Email đăng nhập",
+    "accountStatus": "Trạng thái tài khoản",
+    "active": "Đang hoạt động",
+    "locked": "Đã khóa",
+    "resetPassword": "Gửi link đặt lại mật khẩu",
+    "setPassword": "Đặt mật khẩu",
+    "sending": "Đang gửi...",
+    "resetSuccess": "Đã vô hiệu hóa mật khẩu cũ",
+    "invitationSent": "Link kích hoạt đã gửi đến {{email}}",
+    "invitationNotSent": "Chưa gửi được email đến {{email}}. Quản trị viên có thể dùng chức năng Đặt mật khẩu.",
+    "setPasswordTitle": "Đặt mật khẩu Tenant Portal",
+    "newPassword": "Mật khẩu mới",
+    "confirmPassword": "Nhập lại mật khẩu",
+    "passwordRule": "Mật khẩu phải có ít nhất 8 ký tự.",
+    "savePassword": "Lưu mật khẩu",
+    "passwordUpdated": "Đã cập nhật mật khẩu Portal",
+    "passwordMin": "Mật khẩu phải có ít nhất 8 ký tự",
+    "passwordMismatch": "Mật khẩu nhập lại không khớp",
+    "actionFailed": "Không thể cập nhật tài khoản Portal",
+    "createAccount": "Tạo tài khoản Portal",
+    "creating": "Đang tạo...",
+    "accountCreated": "Đã tạo tài khoản Portal",
+    "emailRequiredForLegacy": "Hãy cập nhật email liên hệ trước khi tạo tài khoản."
   },
   "form": {
     "addTitle": "Thêm khách thuê mới",
@@ -107,7 +130,9 @@
     "contactPhone": "Điện thoại",
     "address": "Địa chỉ",
     "portalAccess": "Khách thuê có quyền truy cập Tenant Portal",
-    "portalNote": "Để cấp đăng nhập thật, vào Quản trị → Tài khoản, tạo tài khoản vai trò \"Khách thuê\" và liên kết với khách thuê này.",
+    "portalNote": "Tài khoản Portal được quản lý trực tiếp tại hồ sơ khách thuê.",
+    "portalAutoTitle": "Tự động tạo tài khoản Tenant Portal",
+    "portalAutoNote": "Email liên hệ sẽ là email đăng nhập. Hệ thống tạo tài khoản và gửi link để khách thuê tự đặt mật khẩu.",
     "saving": "Đang lưu...",
     "update": "Cập nhật",
     "create": "Tạo khách thuê",
@@ -143,6 +168,7 @@
     "emailInvalid": "Email không đúng định dạng",
     "phoneInvalid": "SĐT không hợp lệ (VD: 0912345678)",
     "contactNameMaxLength": "Tối đa 100 ký tự",
-    "addressMaxLength": "Tối đa 500 ký tự"
+    "addressMaxLength": "Tối đa 500 ký tự",
+    "portalEmailRequired": "Bắt buộc nhập email để tạo tài khoản Portal"
   }
 }

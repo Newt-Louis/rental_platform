@@ -94,20 +94,22 @@ export class ProposalsService {
     };
   }
 
-  async findAll(query: { status?: ProposalStatus; unitId?: string; floorId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
+  async findAll(query: { status?: ProposalStatus; leaseTermType?: string; unitId?: string; floorId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
     const { ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null };
-    if (filters.status) where.status = filters.status;
+    if (filters.status === 'PENDING_APPROVAL' as any) where.status = { in: [ProposalStatus.SUBMITTED, ProposalStatus.UNDER_REVIEW] };
+    else if (filters.status) where.status = filters.status;
     if (filters.unitId) where.unitId = filters.unitId;
     if (filters.tenantId) where.tenantId = filters.tenantId;
     const mallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
-    if (mallIds || filters.floorId) where.unit = {
+    if (mallIds || filters.floorId || filters.leaseTermType) where.unit = {
       ...(mallIds ? { mallId: { in: mallIds } } : {}),
       ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      ...(filters.leaseTermType ? { leaseTermType: filters.leaseTermType } : {}),
     };
     if (filters.search?.trim()) {
       const search = filters.search.trim();
@@ -130,7 +132,7 @@ export class ProposalsService {
         skip,
         take: +limit,
         include: {
-          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
+          unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true, level: true } } } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
           lead: { select: { id: true, brandName: true, contactName: true } },
           booking: {
@@ -150,9 +152,12 @@ export class ProposalsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async getStats(mallIds?: string[]) {
+  async getStats(mallIds?: string[], leaseTermType?: string) {
     const base: any = { isActive: true, deletedAt: null };
-    if (mallIds) base.unit = { mallId: { in: mallIds } };
+    if (mallIds || leaseTermType) base.unit = {
+      ...(mallIds ? { mallId: { in: mallIds } } : {}),
+      ...(leaseTermType ? { leaseTermType } : {}),
+    };
     const statuses = Object.values(ProposalStatus);
     const grouped = await this.prisma.proposal.groupBy({ by: ['status'], where: base, _count: { _all: true } });
     const counts = Object.fromEntries(statuses.map((status) => [status, 0]));

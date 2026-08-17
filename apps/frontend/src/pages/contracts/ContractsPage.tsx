@@ -1126,6 +1126,7 @@ export default function ContractsPage() {
   const expiringDays = searchParams.get('expiring') ? +searchParams.get('expiring')! : 90;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
+  const [leaseTermType, setLeaseTermType] = useState('');
   const [type, setType] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
@@ -1135,8 +1136,8 @@ export default function ContractsPage() {
   const [selectedContractId, setSelectedContractId] = useState<string | null>(searchParams.get('id'));
   const [page, setPage] = useState(1);
 
-  const hasFilter = !!(search || status || type || floorId || unitId || dateFrom || dateTo);
-  const filterCount = [status, type, floorId, unitId, dateFrom || dateTo].filter(Boolean).length;
+  const hasFilter = !!(search || status || leaseTermType || type || floorId || unitId || dateFrom || dateTo);
+  const filterCount = [status, leaseTermType, type, floorId, unitId, dateFrom || dateTo].filter(Boolean).length;
 
   const { data: floorsResponse } = useQuery({
     queryKey: ['contract-filter-floors', selectedMallId],
@@ -1149,17 +1150,18 @@ export default function ContractsPage() {
   });
   const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
 
-  useEffect(() => { setPage(1); setSelectedContractId(null); }, [search, status, type, floorId, unitId, dateFrom, dateTo, selectedMallId]);
+  useEffect(() => { setPage(1); setSelectedContractId(null); }, [search, status, leaseTermType, type, floorId, unitId, dateFrom, dateTo, selectedMallId]);
 
   function clearFilters() {
-    setSearch(''); setStatus(''); setType(''); setFloorId(''); setUnitId(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setStatus(''); setLeaseTermType(''); setType(''); setFloorId(''); setUnitId(''); setDateFrom(''); setDateTo('');
   }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['contracts', { search, status, type, floorId, unitId, dateFrom, dateTo, page, selectedMallId }],
+    queryKey: ['contracts', { search, status, leaseTermType, type, floorId, unitId, dateFrom, dateTo, page, selectedMallId }],
     queryFn: () => contractsApi.listContracts({
       search: search || undefined,
       status: status || undefined,
+      leaseTermType: leaseTermType || undefined,
       type: type || undefined,
       floorId: floorId || undefined,
       unitId: unitId || undefined,
@@ -1173,8 +1175,8 @@ export default function ContractsPage() {
   });
 
   const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
-    queryKey: ['contracts-expiring', selectedMallId, expiringDays],
-    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays),
+    queryKey: ['contracts-expiring', selectedMallId, expiringDays, leaseTermType],
+    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays, leaseTermType || undefined),
     enabled: showExpiring,
   });
 
@@ -1183,6 +1185,7 @@ export default function ContractsPage() {
     : (data?.data ?? []);
   const totalPages: number = data?.totalPages ?? 1;
   const total: number = data?.total ?? 0;
+  const contractSummary = data?.summary ?? { total: 0, byStatus: {} };
 
   return (
     <div>
@@ -1197,6 +1200,28 @@ export default function ContractsPage() {
           {showExpiring ? t('actions.showAll') : t('actions.showExpiring')}
         </Button>
       </div>
+
+      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
+          <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setPage(1); }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {!showExpiring && <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+        {[
+          ['', 'Tất cả hợp đồng', contractSummary.total || 0, 'border-slate-200 bg-white text-slate-800'],
+          ['PRE_ACTIVE', 'Đang chuẩn bị', (contractSummary.byStatus?.DRAFT || 0) + (contractSummary.byStatus?.PENDING_LEGAL || 0) + (contractSummary.byStatus?.PENDING_SIGNATURE || 0), 'border-amber-200 bg-amber-50 text-amber-800'],
+          ['ACTIVE', 'Đang hiệu lực', contractSummary.byStatus?.ACTIVE || 0, 'border-emerald-200 bg-emerald-50 text-emerald-800'],
+          ['EXPIRING', 'Sắp hết hạn', contractSummary.byStatus?.EXPIRING || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
+          ['ENDED', 'Đã kết thúc', (contractSummary.byStatus?.EXPIRED || 0) + (contractSummary.byStatus?.TERMINATING || 0) + (contractSummary.byStatus?.TERMINATED || 0), 'border-red-200 bg-red-50 text-red-800'],
+        ].map(([key, label, count, color]) => <button key={String(key)} onClick={() => { setStatus(String(key)); setPage(1); }}
+          className={`rounded-xl border p-3 text-left transition hover:shadow-sm ${color} ${status === key ? 'ring-2 ring-slate-700' : ''}`}>
+          <div className="text-xs font-medium">{label}</div><div className="mt-1 text-2xl font-bold">{count}</div>
+        </button>)}
+      </div>}
 
       {!showExpiring && (
         <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
@@ -1319,7 +1344,7 @@ export default function ContractsPage() {
                     <td className="px-4 py-3 font-medium">{c.tenant?.brandName}</td>
                     <td className="px-4 py-3"><div className="font-medium text-gray-800">{c.unit?.code}</div><div className="text-xs text-gray-400">{c.unit?.floor?.name ?? 'Chưa xác định tầng'}</div></td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-xs">{c.type}</Badge>
+                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{c.type}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)} VNĐ

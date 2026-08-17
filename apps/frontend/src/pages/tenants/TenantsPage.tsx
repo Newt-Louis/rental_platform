@@ -17,7 +17,7 @@ import {
   Search, Building2, Phone, Mail, FileText, Receipt, Ticket,
   Plus, Edit2, Globe, Shield, MapPin, Hash, User, X,
   TrendingUp, CheckCircle, Clock, XCircle, AlertCircle,
-  ChevronRight, CalendarDays, Banknote, MoreHorizontal,
+  ChevronRight, CalendarDays, Banknote, MoreHorizontal, KeyRound, RotateCcw,
 } from 'lucide-react';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ function daysUntil(d?: string | null) {
 const EMPTY_FORM = {
   brandName: '', companyName: '', taxCode: '', contactName: '',
   contactEmail: '', contactPhone: '', address: '', category: '',
-  isPortalUser: false,
+  isPortalUser: true,
 };
 
 const PHONE_RE = /^(0|\+84)[0-9]{8,10}$/;
@@ -149,10 +149,17 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
     mutationFn: () => tenant
       ? tenantsApi.updateTenant(tenant.id, form)
       : tenantsApi.createTenant(form),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ['tenants'] });
       if (tenant) qc.invalidateQueries({ queryKey: ['tenant', tenant.id] });
-      toast({ title: tenant ? t('tenants:updateSuccess') : t('tenants:createSuccess') });
+      toast({
+        title: tenant ? t('tenants:updateSuccess') : t('tenants:createSuccess'),
+        description: !tenant && result?.portalAccount
+          ? (result.portalAccount.emailSent
+            ? t('tenants:portal.invitationSent', { email: result.portalAccount.email })
+            : t('tenants:portal.invitationNotSent', { email: result.portalAccount.email }))
+          : undefined,
+      });
       if (!tenant) onCreated?.();
       onClose();
     },
@@ -167,6 +174,7 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
       const err = validateField(k, v, (key) => t(key));
       if (err) allErrors[k] = err;
     }
+    if (!tenant && !form.contactEmail.trim()) allErrors.contactEmail = t('tenants:validation.portalEmailRequired');
     setFieldErrors(allErrors);
     if (Object.keys(allErrors).length > 0) return;
     mutation.mutate();
@@ -276,17 +284,14 @@ function TenantFormDialog({ open, onClose, onCreated, tenant }: { open: boolean;
               {fe.address && <p className="text-xs text-red-500 mt-1">{fe.address}</p>}
             </div>
           </div>
-          <div className="border-t pt-3">
-            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
-              <input type="checkbox" checked={form.isPortalUser} onChange={(e) => set('isPortalUser', e.target.checked)} />
-              {t('tenants:form.portalAccess')}
-            </label>
-            {form.isPortalUser && (
-              <p className="text-xs text-gray-500 mt-2">
-                {t('tenants:form.portalNote')}
-              </p>
-            )}
-          </div>
+          {!tenant && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-blue-900">
+                <Globe size={15} /> {t('tenants:form.portalAutoTitle')}
+              </div>
+              <p className="mt-1 text-xs text-blue-700">{t('tenants:form.portalAutoNote')}</p>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={onClose}>{t('tenants:form.cancel')}</Button>
             <Button disabled={mutation.isPending} onClick={handleSubmit}>
@@ -306,6 +311,11 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
 }) {
   const { t } = useTranslation('tenants');
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['tenant', tenantId],
@@ -314,6 +324,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
   });
 
   const td = data;
+  const portalUser = td?.portalUsers?.[0];
   const contracts: any[] = td?.contracts ?? [];
   const invoices: any[] = td?.invoices ?? [];
   const tickets: any[] = td?.tickets ?? [];
@@ -324,6 +335,53 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
   const monthlyRent = activeContract ? (activeContract.rent ?? 0) + (activeContract.cam ?? 0) : 0;
 
   const catMeta = td?.category ? CATEGORY_META[td.category] : null;
+
+  const resetPortal = useMutation({
+    mutationFn: () => tenantsApi.resetPortalPassword(tenantId),
+    onSuccess: (result: any) => {
+      qc.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      toast({
+        title: t('portal.resetSuccess'),
+        description: result?.emailSent
+          ? t('portal.invitationSent', { email: result.email })
+          : t('portal.invitationNotSent', { email: result?.email }),
+      });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('portal.actionFailed'), variant: 'destructive' }),
+  });
+
+  const createPortal = useMutation({
+    mutationFn: () => tenantsApi.createPortalAccount(tenantId),
+    onSuccess: (result: any) => {
+      qc.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      qc.invalidateQueries({ queryKey: ['tenants'] });
+      toast({
+        title: t('portal.accountCreated'),
+        description: result?.emailSent
+          ? t('portal.invitationSent', { email: result.email })
+          : t('portal.invitationNotSent', { email: result?.email }),
+      });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('portal.actionFailed'), variant: 'destructive' }),
+  });
+
+  const setPortalPassword = useMutation({
+    mutationFn: () => tenantsApi.setPortalPassword(tenantId, newPassword),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      setPasswordOpen(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      toast({ title: t('portal.passwordUpdated') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('portal.actionFailed'), variant: 'destructive' }),
+  });
+
+  const submitPassword = () => {
+    if (newPassword.length < 8) return toast({ title: t('portal.passwordMin'), variant: 'destructive' });
+    if (newPassword !== confirmPassword) return toast({ title: t('portal.passwordMismatch'), variant: 'destructive' });
+    setPortalPassword.mutate();
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -605,26 +663,53 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                     <div className="text-xs text-gray-400">{t('portal.subtitle')}</div>
                   </div>
                   <div className="ml-auto">
-                    {td?.isPortalUser
+                    {portalUser
                       ? <Badge className="bg-green-100 text-green-700 border-0 gap-1"><CheckCircle size={10} />{t('portal.granted')}</Badge>
                       : <Badge variant="outline" className="text-gray-400 gap-1"><XCircle size={10} />{t('portal.notGranted')}</Badge>
                     }
                   </div>
                 </div>
-                {td?.isPortalUser ? (
-                  <p className="text-xs text-gray-500 border-t pt-3">
-                    {t('portal.grantedNote')}
-                  </p>
+                {portalUser ? (
+                  <div className="space-y-3 border-t pt-3">
+                    <div className="grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
+                      <div><span className="text-gray-400">{t('portal.loginEmail')}</span><div className="font-medium text-gray-800">{portalUser.email}</div></div>
+                      <div><span className="text-gray-400">{t('portal.accountStatus')}</span><div className="font-medium text-gray-800">{portalUser.isActive ? t('portal.active') : t('portal.locked')}</div></div>
+                    </div>
+                    {canEdit && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" className="gap-1.5" disabled={resetPortal.isPending}
+                          onClick={() => resetPortal.mutate()}>
+                          <RotateCcw size={13} /> {resetPortal.isPending ? t('portal.sending') : t('portal.resetPassword')}
+                        </Button>
+                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setPasswordOpen(true)}>
+                          <KeyRound size={13} /> {t('portal.setPassword')}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <p className="text-xs text-gray-400 border-t pt-3">
-                    {t('portal.notGrantedNote')}
-                  </p>
+                  <div className="space-y-3 border-t pt-3">
+                    <p className="text-xs text-gray-400">{t('portal.notGrantedNote')}</p>
+                    {canEdit && <Button size="sm" className="gap-1.5" disabled={createPortal.isPending || !td?.contactEmail} onClick={() => createPortal.mutate()}><Globe size={13} />{createPortal.isPending ? t('portal.creating') : t('portal.createAccount')}</Button>}
+                    {canEdit && !td?.contactEmail && <p className="text-xs text-amber-600">{t('portal.emailRequiredForLegacy')}</p>}
+                  </div>
                 )}
               </div>
             </TabsContent>
           </Tabs>
         )}
       </div>
+      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>{t('portal.setPasswordTitle')}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><label className="mb-1 block text-xs text-gray-500">{t('portal.newPassword')}</label><Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></div>
+            <div><label className="mb-1 block text-xs text-gray-500">{t('portal.confirmPassword')}</label><Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
+            <p className="text-xs text-gray-400">{t('portal.passwordRule')}</p>
+            <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setPasswordOpen(false)}>{t('form.cancel')}</Button><Button disabled={setPortalPassword.isPending} onClick={submitPassword}>{t('portal.savePassword')}</Button></div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -669,6 +754,7 @@ function TenantCard({ tenant, selected, onSelect, onEdit, canEdit }: {
           {tenant.companyName && (
             <div className="text-xs text-gray-400 mt-0.5 truncate">{tenant.companyName}</div>
           )}
+          {activeContract?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${activeContract.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{activeContract.unit.leaseTermType === 'SHORT' ? 'Thuê ngắn hạn' : 'Thuê dài hạn'}</span>}
 
           <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
             <span className="flex items-center gap-0.5">
@@ -705,6 +791,8 @@ export default function TenantsPage() {
   const canManage = hasRole(['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR']);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  const [tenancyStatus, setTenancyStatus] = useState('');
+  const [leaseTermType, setLeaseTermType] = useState('');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -713,13 +801,15 @@ export default function TenantsPage() {
   useEffect(() => {
     setPage(1);
     setSelectedId(null);
-  }, [search, category, selectedMallId]);
+  }, [search, category, tenancyStatus, leaseTermType, selectedMallId]);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['tenants', search, category, page, selectedMallId],
+    queryKey: ['tenants', search, category, tenancyStatus, leaseTermType, page, selectedMallId],
     queryFn: () => tenantsApi.listTenants({
       search: search || undefined,
       category: category || undefined,
+      tenancyStatus: tenancyStatus || undefined,
+      leaseTermType: leaseTermType || undefined,
       mallId: selectedMallId || undefined,
       page,
       limit: 25,
@@ -741,6 +831,7 @@ export default function TenantsPage() {
 
   // Stats
   const activeCount: number = data?.activeCount ?? 0;
+  const tenantSummary = data?.summary ?? { total, activeContract: activeCount, noActiveContract: Math.max(0, total - activeCount) };
 
   return (
     <div className="flex gap-0 h-full -mx-6 -my-6">
@@ -778,6 +869,20 @@ export default function TenantsPage() {
                 <option key={k} value={k}>{v.emoji} {t('category.' + k)}</option>
               ))}
             </select>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              ['', 'Tất cả', tenantSummary.total],
+              ['ACTIVE_CONTRACT', 'Đang thuê', tenantSummary.activeContract],
+              ['NO_ACTIVE_CONTRACT', 'Chưa hiệu lực', tenantSummary.noActiveContract],
+            ].map(([key, label, count]) => <button key={String(key)} onClick={() => setTenancyStatus(String(key))}
+              className={`rounded-lg border px-2 py-2 text-left transition ${tenancyStatus === key ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+              <div className="text-[10px] font-medium text-slate-500">{label}</div><div className="text-lg font-bold text-slate-800">{count}</div>
+            </button>)}
+          </div>
+          <div className="mt-2 flex gap-1 rounded-lg bg-slate-100 p-1">
+            {[['', 'Tất cả'], ['LONG', 'Dài hạn'], ['SHORT', 'Ngắn hạn']].map(([key, label]) => <button key={key || 'ALL'} onClick={() => setLeaseTermType(key)}
+              className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${leaseTermType === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{label}</button>)}
           </div>
         </div>
 
