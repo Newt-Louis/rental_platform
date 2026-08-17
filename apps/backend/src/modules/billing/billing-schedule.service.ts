@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ContractStatus, InvoiceStatus } from '@prisma/client';
-import * as crypto from 'crypto';
+import { ContractStatus, InvoiceStatus, Prisma } from '@prisma/client';
 import {
   generateBillingPeriods,
   periodsDueForInvoicing,
@@ -27,8 +26,16 @@ export class BillingScheduleService {
       billingCycle: contract.billingCycle,
     });
 
+    const existingEntries = await this.prisma.billingScheduleEntry.findMany({ where: { contractId } });
+    const existingByPeriod = new Map(existingEntries.map((entry) => [entry.period, entry]));
+    const generatedPeriods = new Set(periods.map((period) => period.period));
     const results = [];
     for (const period of periods) {
+      const existing = existingByPeriod.get(period.period);
+      if (existing?.invoiceId || existing?.status === 'INVOICED') {
+        results.push(existing);
+        continue;
+      }
       const entry = await this.prisma.billingScheduleEntry.upsert({
         where: {
           contractId_period: { contractId, period: period.period },
@@ -55,6 +62,15 @@ export class BillingScheduleService {
       });
       results.push(entry);
     }
+
+    await this.prisma.billingScheduleEntry.deleteMany({
+      where: {
+        contractId,
+        invoiceId: null,
+        status: { in: ['PENDING', 'SKIPPED'] },
+        period: { notIn: Array.from(generatedPeriods) },
+      },
+    });
 
     return { contractId, periodsGenerated: results.length, entries: results };
   }
@@ -92,14 +108,17 @@ export class BillingScheduleService {
     }));
   }
 
-  async generateDueInvoices(asOf: Date = new Date()) {
+  async generateDueInvoices(asOf: Date = new Date(), mallIds?: string[]) {
     const contracts = await this.prisma.contract.findMany({
       where: {
         isActive: true,
         status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
+        ...(mallIds ? { unit: { mallId: { in: mallIds } } } : {}),
       },
+      include: { unit: true, tenant: true },
     });
 
+    const config = await this.prisma.billingConfig.findFirst();
     let created = 0;
     const details: { contractId: string; period: string; invoiceId: string }[] = [];
 
@@ -129,18 +148,22 @@ export class BillingScheduleService {
         const scheduleRow = pending.find((p) => p.period === period.period);
         if (!scheduleRow) continue;
 
-        const year = asOf.getFullYear();
-        const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
-        const invoiceNumber = `INV-${year}-${rand}`;
+        const invoiceNumber = `INV-SCHEDULE-${scheduleRow.id}`;
         const vatRate = 10;
         const vatAmount = scheduleRow.subtotal * (vatRate / 100);
         const totalAmount = scheduleRow.subtotal + vatAmount;
 
-        const invoice = await this.prisma.invoice.create({
-          data: {
+        let invoice;
+        try {
+          invoice = await this.prisma.$transaction(async (tx) => {
+            const createdInvoice = await tx.invoice.create({
+              data: {
             invoiceNumber,
             contractId: contract.id,
             tenantId: contract.tenantId,
+            mallId: contract.unit.mallId,
+            counterpartyName: contract.tenant.companyName,
+            counterpartyTaxCode: contract.tenant.taxCode,
             period: scheduleRow.period,
             type: 'MONTHLY_RENT',
             status: InvoiceStatus.DRAFT,
@@ -149,6 +172,8 @@ export class BillingScheduleService {
             vatAmount,
             totalAmount,
             dueDate: scheduleRow.dueDate,
+            sourceType: 'LEASE_CONTRACT',
+            sourceId: scheduleRow.id,
             notes: `Auto-generated from billing schedule ${scheduleRow.period}`,
             lines: {
               create: [
@@ -170,21 +195,31 @@ export class BillingScheduleService {
                 },
               ],
             },
-          },
-        });
-
-        const config = await this.prisma.billingConfig.findFirst();
-        if (config?.autoIssueInvoices) {
-          await this.prisma.invoice.update({
-            where: { id: invoice.id },
-            data: { status: InvoiceStatus.ISSUED, issuedAt: asOf },
+              },
+            });
+            if (config?.autoIssueInvoices) {
+              await tx.invoice.update({
+                where: { id: createdInvoice.id },
+                data: { status: InvoiceStatus.ISSUED, issuedAt: asOf },
+              });
+            }
+            await tx.billingScheduleEntry.update({
+              where: { id: scheduleRow.id },
+              data: { status: 'INVOICED', invoiceId: createdInvoice.id },
+            });
+            return createdInvoice;
+          }, { isolationLevel: 'Serializable' });
+        } catch (error) {
+          const duplicate = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+          if (!duplicate) throw error;
+          const existingInvoice = await this.prisma.invoice.findUnique({ where: { invoiceNumber } });
+          if (!existingInvoice) throw error;
+          await this.prisma.billingScheduleEntry.update({
+            where: { id: scheduleRow.id },
+            data: { status: 'INVOICED', invoiceId: existingInvoice.id },
           });
+          invoice = existingInvoice;
         }
-
-        await this.prisma.billingScheduleEntry.update({
-          where: { id: scheduleRow.id },
-          data: { status: 'INVOICED', invoiceId: invoice.id },
-        });
 
         created++;
         details.push({ contractId: contract.id, period: scheduleRow.period, invoiceId: invoice.id });

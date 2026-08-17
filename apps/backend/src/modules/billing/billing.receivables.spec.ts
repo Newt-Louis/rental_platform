@@ -5,11 +5,16 @@ describe('BillingService receivables workbench', () => {
     invoice: { findMany: jest.fn(), count: jest.fn() },
     billingScheduleEntry: { findMany: jest.fn() },
     serviceContractPayment: { findMany: jest.fn() },
+    slotBooking: { findMany: jest.fn() },
+    parkingMonthlyStatement: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   } as any;
   let service: BillingService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.invoice.findMany.mockResolvedValue([]);
+    prisma.slotBooking.findMany.mockResolvedValue([]);
+    prisma.parkingMonthlyStatement.findMany.mockResolvedValue([]);
     service = new BillingService(prisma);
   });
 
@@ -89,5 +94,60 @@ describe('BillingService receivables workbench', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith('SERVICE_CONTRACT', 'due-2', 'user-1', ['mall-1']);
     expect(result).toMatchObject({ requested: 1, created: 1, failed: 0 });
+  });
+
+  it('adds confirmed short-term bookings and excludes bookings already invoiced', async () => {
+    const start = new Date(Date.now() + 2 * 86400000);
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.serviceContractPayment.findMany.mockResolvedValue([]);
+    prisma.slotBooking.findMany.mockResolvedValue([
+      {
+        id: 'booking-new', bookingRef: 'ST-001', totalAmount: 1_000,
+        startDatetime: start, createdAt: new Date(),
+        customer: { companyName: 'Short Tenant', brandName: null, taxCode: 'TAX-1', tenantId: null },
+        lead: null,
+        slot: { code: 'S01', name: 'Atrium', unit: { mallId: 'mall-1', code: 'A1' } },
+      },
+      {
+        id: 'booking-billed', bookingRef: 'ST-002', totalAmount: 2_000,
+        startDatetime: start, createdAt: new Date(),
+        customer: null, lead: { brandName: 'Existing', company: null, tenantId: null },
+        slot: { code: 'S02', name: 'Lobby', unit: { mallId: 'mall-1', code: 'A2' } },
+      },
+    ]);
+    prisma.invoice.findMany.mockResolvedValue([{ sourceId: 'booking-billed' }]);
+
+    const result = await service.getPendingReceivables({}, ['mall-1']);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'booking-new', sourceType: 'SHORT_TERM_BOOKING', counterpartyName: 'Short Tenant',
+      mallId: 'mall-1', totalAmount: 1_100,
+    });
+  });
+
+  it('adds uninvoiced parking statements to pending receivables', async () => {
+    const issueDate = new Date(Date.now() - 86400000);
+    const dueDate = new Date(Date.now() + 10 * 86400000);
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.serviceContractPayment.findMany.mockResolvedValue([]);
+    prisma.parkingMonthlyStatement.findMany.mockResolvedValue([{
+      id: 'parking-2026-08', contractId: 'parking-contract', period: '2026-08',
+      issueDate, dueDate, totalAmount: 1_000,
+      contract: {
+        contractNumber: 'PK-001', mallId: 'mall-1',
+        tenant: { brandName: 'Tenant Parking', companyName: 'Tenant Parking Co', taxCode: 'PK-TAX' },
+      },
+      lines: [],
+    }]);
+
+    const result = await service.getPendingReceivables({ sourceType: 'PARKING' }, ['mall-1']);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'parking-2026-08', sourceType: 'PARKING', counterpartyName: 'Tenant Parking',
+      mallId: 'mall-1', subtotal: 1_000, totalAmount: 1_100,
+    });
+    expect(result.summary.bySource.PARKING).toEqual({ count: 1, amount: 1_100 });
   });
 });

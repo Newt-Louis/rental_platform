@@ -6,7 +6,7 @@ import { UnitStatus, UnitHistoryType, Prisma } from '@prisma/client';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
 // Relation fields and read-only fields that must never be written directly to Prisma

@@ -15,7 +15,7 @@ export class CollectionKpiService {
         isActive: true,
         createdAt: { gte: start },
         status: { not: InvoiceStatus.CANCELLED },
-        ...(mallIds ? { OR: [{ contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
+        ...(mallIds ? { OR: [{ mallId: { in: mallIds } }, { contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
       },
       include: { payments: true },
     });
@@ -27,12 +27,13 @@ export class CollectionKpiService {
     let paidCount = 0;
 
     for (const inv of invoices) {
-      totalBilled += inv.totalAmount;
-      const collected = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
+      const adjustedTotal = Math.max(0, inv.totalAmount + inv.adjustmentAmount);
+      const collected = Math.max(0, inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0) - inv.refundedAmount);
+      totalBilled += adjustedTotal;
       totalCollected += collected;
 
       if ([InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE].includes(inv.status as any)) {
-        outstandingAr += inv.totalAmount - collected;
+        outstandingAr += Math.max(0, adjustedTotal - collected);
       }
 
       if (inv.paidAt && inv.issuedAt) {
@@ -74,7 +75,7 @@ export class CollectionKpiService {
           isActive: true,
           createdAt: { lte: end },
           status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE, InvoiceStatus.PAID] },
-          ...(mallIds ? { OR: [{ contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
+          ...(mallIds ? { OR: [{ mallId: { in: mallIds } }, { contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
         },
         include: { payments: true },
       });
@@ -82,8 +83,8 @@ export class CollectionKpiService {
       let current = 0;
       let overdue = 0;
       for (const inv of invoices) {
-        const collected = inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
-        const balance = inv.totalAmount - collected;
+        const collected = Math.max(0, inv.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0) - inv.refundedAmount);
+        const balance = Math.max(0, inv.totalAmount + inv.adjustmentAmount) - collected;
         if (balance <= 0) continue;
         if (inv.status === InvoiceStatus.OVERDUE || new Date(inv.dueDate) < end) {
           overdue += balance;

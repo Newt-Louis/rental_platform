@@ -21,6 +21,7 @@ describe('billing-schedule.util', () => {
     const jan = entries.find((e) => e.period === '2026-01');
     const feb = entries.find((e) => e.period === '2026-02');
     expect(jan?.rentAmount).toBe(0);
+    expect(jan?.camAmount).toBeCloseTo((10000000 * 17) / 31, 0);
     expect(feb?.rentAmount).toBe(100000000);
     expect(feb?.subtotal).toBe(110000000);
   });
@@ -71,5 +72,40 @@ describe('billing-schedule.util', () => {
     });
     expect(entries.length).toBeGreaterThanOrEqual(4);
     expect(entries[0].rentAmount).toBe(300);
+  });
+
+  it('applies rent-free per month inside a quarterly cycle', () => {
+    const entries = generateBillingPeriods({
+      startDate: new Date('2026-01-01'),
+      endDate: new Date('2026-03-31'),
+      rent: 100,
+      cam: 10,
+      rentFree: 1,
+      escalationPercent: 0,
+      paymentTerm: 0,
+      billingCycle: 'QUARTERLY',
+    });
+
+    expect(entries[0].rentAmount).toBe(200);
+    expect(entries[0].camAmount).toBe(30);
+  });
+
+  it('prorates both ends of a billing period by calendar days', () => {
+    const entries = generateBillingPeriods({
+      startDate: new Date('2026-01-16'),
+      endDate: new Date('2026-02-14'),
+      rent: 310,
+      cam: 31,
+      rentFree: 0,
+      escalationPercent: 0,
+      paymentTerm: 0,
+      billingCycle: 'QUARTERLY',
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].periodStart.getDate()).toBe(16);
+    expect(entries[0].periodEnd.getDate()).toBe(14);
+    expect(entries[0].rentAmount).toBeCloseTo((310 * 16) / 31 + (310 * 14) / 28, 2);
+    expect(entries[0].camAmount).toBeCloseTo((31 * 16) / 31 + (31 * 14) / 28, 2);
   });
 });

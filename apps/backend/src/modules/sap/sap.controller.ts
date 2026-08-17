@@ -7,6 +7,8 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { SapStatus } from '@prisma/client';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 @ApiTags('SAP Integration')
 @ApiBearerAuth('JWT-auth')
@@ -18,6 +20,7 @@ export class SapController {
     private readonly sapService: SapService,
     private readonly reconciliationService: SapReconciliationService,
     private readonly mappingService: SapEntityMappingService,
+    private readonly mallAccess: MallAccessService,
   ) {}
 
   @Get('logs')
@@ -44,7 +47,8 @@ export class SapController {
 
   @Post('sync/invoice')
   @ApiOperation({ summary: 'Sync invoice to SAP FI' })
-  syncInvoice(@Body('invoiceId') invoiceId: string) {
+  async syncInvoice(@Body('invoiceId') invoiceId: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { invoiceId });
     return this.sapService.syncInvoice(invoiceId);
   }
 

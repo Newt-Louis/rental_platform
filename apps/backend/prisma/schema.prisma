@@ -389,6 +389,18 @@ enum SapStatus {
   RETRYING
 }
 
+enum InvoiceAdjustmentType {
+  CREDIT_NOTE
+  DEBIT_NOTE
+  WRITE_OFF
+  REFUND
+}
+
+enum InvoiceAdjustmentStatus {
+  APPROVED
+  CANCELLED
+}
+
 model User {
   id                 String    @id @default(cuid())
   email              String    @unique
@@ -522,6 +534,7 @@ model Mall {
   parkingIncidents      ParkingIncident[]
   parkingContracts      ParkingCustomerContract[]
   billingParties        BillingParty[]
+  invoices              Invoice[]
 }
 
 enum InventoryItemType {
@@ -2127,6 +2140,10 @@ model Invoice {
   tenant         Tenant?       @relation(fields: [tenantId], references: [id])
   billingPartyId String?
   billingParty   BillingParty? @relation(fields: [billingPartyId], references: [id])
+  mallId         String?
+  mall           Mall?         @relation(fields: [mallId], references: [id])
+  counterpartyName    String?
+  counterpartyTaxCode String?
   sourceType     String        @default("LEASE_CONTRACT")
   sourceId       String?
   period         String
@@ -2136,10 +2153,17 @@ model Invoice {
   vatRate        Float         @default(10)
   vatAmount      Float
   totalAmount    Float
+  adjustmentAmount Float       @default(0)
+  refundedAmount   Float       @default(0)
   dueDate        DateTime
   issuedAt       DateTime?
   paidAt         DateTime?
   notes          String?
+  electronicInvoiceStatus   String    @default("NOT_SENT")
+  electronicInvoiceRef      String?
+  electronicInvoiceIssuedAt DateTime?
+  electronicInvoiceError    String?
+  legalInvoiceNumber        String?
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -2155,9 +2179,31 @@ model Invoice {
   billingSchedule        BillingScheduleEntry?
   arDunningLogs          ArDunningLog[]
   serviceContractPayment ServiceContractPayment?
+  adjustments            InvoiceAdjustment[]
 
   @@index([sourceType, sourceId])
+  @@index([mallId, status, dueDate])
+  @@index([electronicInvoiceStatus])
   @@index([billingPartyId, status, dueDate])
+}
+
+model InvoiceAdjustment {
+  id            String                  @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice                 @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type          InvoiceAdjustmentType
+  status        InvoiceAdjustmentStatus @default(APPROVED)
+  amount        Float
+  reason        String
+  reference     String?
+  createdById   String
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([invoiceId, status, createdAt])
 }
 
 model BillingParty {

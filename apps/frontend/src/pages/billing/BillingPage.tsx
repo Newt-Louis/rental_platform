@@ -45,6 +45,7 @@ const SOURCE_LABELS: Record<string, string> = {
   REVENUE_SHARE: 'Chia sẻ doanh thu',
   UTILITY: 'Điện nước',
   PENALTY: 'Phí phạt',
+  SHORT_TERM_BOOKING: 'Thuê ngắn hạn',
 };
 
 const LINE_TYPE_CONFIG: Record<string, { icon: React.ElementType; unit?: string; isFixed?: boolean }> = {
@@ -155,7 +156,7 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
           </DialogTitle>
           {invoice && (
             <p className="text-sm text-gray-500">
-              {invoice.invoiceNumber} · {invoice.tenant?.brandName || invoice.billingParty?.name} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
+              {invoice.invoiceNumber} · {invoice.counterpartyName || invoice.tenant?.brandName || invoice.billingParty?.name} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
             </p>
           )}
         </DialogHeader>
@@ -224,6 +225,9 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
   const { user } = useAuthStore();
   const isStaff = user?.role !== 'TENANT';
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const canSyncSap = ['ADMIN', 'FINANCE'].includes(user?.role ?? '');
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  const [adjustmentForm, setAdjustmentForm] = useState({ type: 'CREDIT_NOTE', amount: '', reason: '', reference: '' });
   const [confirmIssue, setConfirmIssue] = useState(false);
   const [editLineId, setEditLineId] = useState<string | null>(null);
   const [removeLineId, setRemoveLineId] = useState<string | null>(null);
@@ -311,6 +315,45 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
+  const { data: invoiceDocuments = [] } = useQuery({
+    queryKey: ['invoice-documents', invoiceId],
+    queryFn: () => billingApi.listInvoiceDocuments(invoiceId!),
+    enabled: !!invoiceId,
+  });
+  const uploadDocumentMutation = useMutation({
+    mutationFn: (file: File) => billingApi.uploadInvoiceDocument(invoiceId!, file),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice-documents', invoiceId] });
+      toast({ title: 'Đã tải tài liệu hóa đơn lên' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tải tài liệu', variant: 'destructive' }),
+  });
+
+  const adjustmentMutation = useMutation({
+    mutationFn: () => billingApi.createAdjustment(invoiceId!, { ...adjustmentForm, amount: Number(adjustmentForm.amount) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
+      qc.invalidateQueries({ queryKey: ['invoices'] });
+      setAdjustmentOpen(false);
+      setAdjustmentForm({ type: 'CREDIT_NOTE', amount: '', reason: '', reference: '' });
+      toast({ title: 'Đã ghi nhận bút toán điều chỉnh' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể tạo bút toán', variant: 'destructive' }),
+  });
+  const eInvoiceMutation = useMutation({
+    mutationFn: () => billingApi.requestElectronicInvoice(invoiceId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['invoice-summary', invoiceId] });
+      toast({ title: 'Đã đưa hóa đơn vào hàng đợi hóa đơn điện tử' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể gửi hóa đơn điện tử', variant: 'destructive' }),
+  });
+
+  const sapMutation = useMutation({
+    mutationFn: () => billingApi.syncInvoiceToSap(invoiceId!),
+    onSuccess: () => toast({ title: 'Đã đồng bộ hoặc đưa hóa đơn vào hàng đợi SAP' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể đồng bộ SAP', variant: 'destructive' }),
+  });
 
   const handleVoid = () => {
     setReasonAction({ type: 'void' });
@@ -324,15 +367,15 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 
   const isDraft = inv?.status === 'DRAFT';
   const isCancelled = inv?.status === 'CANCELLED';
-  const canPay = ['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'].includes(inv?.status ?? '');
+  const canPay = isStaff && ['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'].includes(inv?.status ?? '');
   const statusCfg = STATUS_MAP[inv?.status ?? ''] ?? STATUS_MAP.DRAFT;
   const lines = inv?.lines ?? [];
   const fixedLines = lines.filter((l: any) => ['RENT', 'CAM', 'DEPOSIT'].includes(l.type?.toUpperCase()));
   const variableLines = lines.filter((l: any) => !['RENT', 'CAM', 'DEPOSIT'].includes(l.type?.toUpperCase()));
   const payments = inv?.payments ?? [];
   const activePayments = payments.filter((p: any) => !p.reversedAt);
-  const totalPaid = activePayments.reduce((s: number, p: any) => s + p.amount, 0);
-  const balance = (inv?.totalAmount ?? 0) - totalPaid;
+  const totalPaid = inv?.totalPaid ?? activePayments.reduce((s: number, p: any) => s + p.amount, 0);
+  const balance = inv?.balance ?? ((inv?.totalAmount ?? 0) - totalPaid);
   const canVoid = !isCancelled && activePayments.length === 0;
 
   const startEdit = (line: any) => {
@@ -447,7 +490,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-bold tracking-wider text-gray-400 uppercase">{t('billing:detail.variableCosts')}</div>
-                {isDraft && (
+                {isStaff && isDraft && (
                   <button
                     onClick={() => setAddForm(p => ({ ...p, showForm: !p.showForm }))}
                     className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
@@ -457,7 +500,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
               </div>
 
               {/* Add cost form */}
-              {isDraft && addForm.showForm && (
+              {isStaff && isDraft && addForm.showForm && (
                 <div className="border border-blue-200 bg-blue-50/50 rounded-lg p-3 mb-3 space-y-2">
                   <div className="text-xs font-semibold text-blue-700 mb-2">➕ {t('billing:detail.addCostLine')}</div>
                   <Select value={addForm.type}
@@ -527,7 +570,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                         <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.qty')}</th>
                         <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.unitPrice')}</th>
                         <th className="text-right px-3 py-2 text-xs text-gray-500">{t('billing:detail.amount')}</th>
-                        {isDraft && <th className="px-2 py-2" />}
+                        {isStaff && isDraft && <th className="px-2 py-2" />}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -571,7 +614,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                                 : fmtMoney(line.amount)
                               }
                             </td>
-                            {isDraft && (
+                            {isStaff && isDraft && (
                               <td className="px-2 py-2">
                                 {isEditing ? (
                                   <div className="flex gap-1">
@@ -624,9 +667,11 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                 <span className="text-gray-500">{t('billing:detail.vat', { rate: inv?.vatRate ?? 10 })}</span>
                 <span>{fmtMoney(inv?.vatAmount)}</span>
               </div>
+              {!!inv?.adjustmentAmount && <div className={`flex justify-between text-sm ${inv.adjustmentAmount < 0 ? 'text-emerald-700' : 'text-orange-700'}`}><span>Điều chỉnh công nợ</span><span>{inv.adjustmentAmount > 0 ? '+' : ''}{fmtMoney(inv.adjustmentAmount)}</span></div>}
+              {!!inv?.refundedAmount && <div className="flex justify-between text-sm text-violet-700"><span>Đã hoàn tiền</span><span>{fmtMoney(inv.refundedAmount)}</span></div>}
               <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2">
                 <span>{t('billing:detail.totalSection')}</span>
-                <span className="text-gray-900">{fmtMoney(inv?.totalAmount)}</span>
+                <span className="text-gray-900">{fmtMoney(inv?.adjustedTotal ?? inv?.totalAmount)}</span>
               </div>
               {payments.length > 0 && (
                 <>
@@ -641,6 +686,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                 </>
               )}
             </div>
+
+            {!!inv?.adjustments?.length && <div><div className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Bút toán điều chỉnh</div><div className="space-y-2">{inv.adjustments.map((item: any) => <div key={item.id} className={`rounded-lg border px-3 py-2.5 ${item.status === 'CANCELLED' ? 'bg-gray-50 opacity-60' : 'bg-violet-50 border-violet-100'}`}><div className="flex justify-between gap-3"><div><div className="text-sm font-medium text-violet-900">{{ CREDIT_NOTE: 'Credit note', DEBIT_NOTE: 'Debit note', WRITE_OFF: 'Xóa nợ', REFUND: 'Hoàn tiền' }[item.type as string] || item.type}</div><div className="text-xs text-gray-500">{item.reason}{item.reference ? ` · ${item.reference}` : ''}</div></div><div className="text-right"><div className="font-semibold">{fmtMoney(item.amount)}</div><div className="text-[11px] text-gray-400">{fmtDate(item.createdAt)}</div></div></div></div>)}</div></div>}
+
+            <div><div className="mb-2 flex items-center justify-between"><div className="text-xs font-bold uppercase tracking-wider text-gray-400">Tài liệu hóa đơn</div>{isStaff && <label className="cursor-pointer text-xs font-medium text-blue-600 hover:underline"><input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx" disabled={uploadDocumentMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadDocumentMutation.mutate(file); event.target.value = ''; }} />{uploadDocumentMutation.isPending ? 'Đang tải...' : '+ Tải tài liệu'}</label>}</div>{invoiceDocuments.length ? <div className="space-y-2">{invoiceDocuments.map((document: any) => <a key={document.id} href={`/uploads/${document.filePath}`} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"><div className="flex min-w-0 items-center gap-2"><FileText size={14} className="shrink-0 text-blue-500" /><div className="min-w-0"><div className="truncate text-sm font-medium">{document.fileName}</div><div className="text-[11px] text-slate-400">{document.documentType} · phiên bản {document.version}</div></div></div><Download size={13} className="text-slate-400" /></a>)}</div> : <div className="rounded-lg border border-dashed p-4 text-center text-xs text-slate-400">Chưa có tài liệu đính kèm</div>}</div>
 
             {/* ── PAYMENT HISTORY ── */}
             {payments.length > 0 && (
@@ -683,7 +732,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 
       {/* Footer actions */}
       <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 space-y-2">
-        {isDraft && (
+        {isStaff && isDraft && (
           <>
             <p className="text-xs text-amber-600 flex items-center gap-1.5 mb-3">
               <AlertTriangle size={12} /> {t('billing:detail.checkBeforeSend')}
@@ -702,6 +751,10 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             <Banknote size={15} /> {t('billing:invoice.actions.recordPayment')}
           </Button>
         )}
+        {isStaff && !isDraft && !isCancelled && <Button variant="outline" className="w-full gap-2 border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => setAdjustmentOpen(true)}><Edit2 size={14} />Tạo bút toán điều chỉnh</Button>}
+        {isStaff && !isDraft && !isCancelled && inv?.electronicInvoiceStatus !== 'ISSUED' && <Button variant="outline" className="w-full gap-2 border-blue-200 text-blue-700 hover:bg-blue-50" disabled={eInvoiceMutation.isPending || inv?.electronicInvoiceStatus === 'PENDING'} onClick={() => eInvoiceMutation.mutate()}><Send size={14} />{inv?.electronicInvoiceStatus === 'PENDING' ? 'Đang chờ HĐ điện tử' : inv?.electronicInvoiceStatus === 'FAILED' ? 'Gửi lại HĐ điện tử' : 'Gửi HĐ điện tử'}</Button>}
+        {inv?.electronicInvoiceStatus === 'ISSUED' && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700"><ShieldCheck size={14} className="mr-1 inline" />HĐ điện tử {inv.legalInvoiceNumber || inv.electronicInvoiceRef}</div>}
+        {canSyncSap && !isDraft && !isCancelled && <Button variant="outline" className="w-full gap-2" disabled={sapMutation.isPending} onClick={() => sapMutation.mutate()}><Activity size={14} />{sapMutation.isPending ? 'Đang đồng bộ SAP...' : 'Đồng bộ SAP'}</Button>}
         {inv?.status === 'PAID' && (
           <div className="flex items-center justify-center gap-2 py-2 text-green-600 font-medium">
             <CheckCircle2 size={16} /> {t('billing:detail.invoicePaidFull')}
@@ -726,6 +779,14 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
         open={paymentOpen}
         onClose={() => setPaymentOpen(false)}
       />
+      <Dialog open={adjustmentOpen} onOpenChange={setAdjustmentOpen}>
+        <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Bút toán điều chỉnh hóa đơn</DialogTitle></DialogHeader><div className="space-y-3">
+          <div><label className="mb-1 block text-sm font-medium">Loại bút toán</label><Select value={adjustmentForm.type} onValueChange={(type) => setAdjustmentForm((current) => ({ ...current, type }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CREDIT_NOTE">Credit note — giảm phải thu</SelectItem><SelectItem value="DEBIT_NOTE">Debit note — tăng phải thu</SelectItem><SelectItem value="WRITE_OFF">Xóa nợ</SelectItem><SelectItem value="REFUND">Hoàn tiền đã thu</SelectItem></SelectContent></Select></div>
+          <div><label className="mb-1 block text-sm font-medium">Số tiền</label><Input type="number" min="1" value={adjustmentForm.amount} onChange={(event) => setAdjustmentForm((current) => ({ ...current, amount: event.target.value }))} /></div>
+          <div><label className="mb-1 block text-sm font-medium">Lý do bắt buộc</label><Input value={adjustmentForm.reason} onChange={(event) => setAdjustmentForm((current) => ({ ...current, reason: event.target.value }))} /></div>
+          <div><label className="mb-1 block text-sm font-medium">Số tham chiếu/chứng từ</label><Input value={adjustmentForm.reference} onChange={(event) => setAdjustmentForm((current) => ({ ...current, reference: event.target.value }))} /></div>
+        </div><DialogFooter><Button variant="outline" onClick={() => setAdjustmentOpen(false)}>Hủy</Button><Button disabled={!adjustmentForm.amount || !adjustmentForm.reason.trim() || adjustmentMutation.isPending} onClick={() => adjustmentMutation.mutate()}>{adjustmentMutation.isPending ? 'Đang lưu...' : 'Ghi nhận bút toán'}</Button></DialogFooter></DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={confirmIssue}
         title={t('billing:confirmIssue.title')}
@@ -759,6 +820,8 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 function InvoicesTab() {
   const { t } = useTranslation(['billing', 'common']);
   const { selectedMallId } = useMallStore();
+  const { user } = useAuthStore();
+  const isStaff = user?.role !== 'TENANT';
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
@@ -766,22 +829,24 @@ function InvoicesTab() {
   const [sourceType, setSourceType] = useState('');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('invoiceId'));
+  const [pendingDetail, setPendingDetail] = useState<any | null>(null);
   const [selectedPending, setSelectedPending] = useState<Set<string>>(new Set());
   const [confirmBulkPending, setConfirmBulkPending] = useState(false);
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
 
-  const handleExportCsv = async () => {
+  const handleExportExcel = async () => {
     setExporting(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (status) params.set('status', status);
+      if (selectedMallId) params.set('mallId', selectedMallId);
       const response = await api.get(`/billing/invoices/export?${params.toString()}`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
+      const url = URL.createObjectURL(new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `invoices_${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -794,7 +859,6 @@ function InvoicesTab() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['invoices', { selectedMallId, search, status, bucket, sourceType, page }],
     queryFn: () => billingApi.listInvoices({ mallId: selectedMallId || undefined, search: search || undefined, status: status || undefined, bucket: bucket || undefined, sourceType: sourceType || undefined, page, limit: 25 }),
-    enabled: !!selectedMallId,
   });
 
   const { data: pendingData, isLoading: isPendingLoading } = useQuery({
@@ -804,7 +868,7 @@ function InvoicesTab() {
       search: search || undefined,
       sourceType: sourceType || undefined,
     }),
-    enabled: !!selectedMallId,
+    enabled: isStaff,
   });
 
   const qc = useQueryClient();
@@ -912,8 +976,8 @@ function InvoicesTab() {
                 </tr></thead>
                 <tbody className="divide-y divide-gray-100">
                   {pendingRows.map((row) => (
-                    <tr key={`${row.sourceType}-${row.id}`} className={row.isDueForInvoice ? 'bg-red-50/40' : ''}>
-                      <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Chọn ${row.contractNumber}`} disabled={!row.isDueForInvoice} checked={selectedPending.has(`${row.sourceType}:${row.id}`)} onChange={(event) => setSelectedPending((current) => { const next = new Set(current); const key = `${row.sourceType}:${row.id}`; event.target.checked ? next.add(key) : next.delete(key); return next; })} /></td>
+                    <tr key={`${row.sourceType}-${row.id}`} onClick={() => setPendingDetail(row)} className={`cursor-pointer hover:bg-violet-50 ${row.isDueForInvoice ? 'bg-red-50/40' : ''}`}>
+                      <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Chọn ${row.contractNumber}`} disabled={!row.isDueForInvoice} checked={selectedPending.has(`${row.sourceType}:${row.id}`)} onClick={(event) => event.stopPropagation()} onChange={(event) => setSelectedPending((current) => { const next = new Set(current); const key = `${row.sourceType}:${row.id}`; event.target.checked ? next.add(key) : next.delete(key); return next; })} /></td>
                       <td className="px-4 py-3"><div className="font-medium text-gray-800">{row.counterpartyName}</div><div className="text-xs text-gray-400">{row.taxCode || row.unitCode || '—'}</div></td>
                       <td className="px-4 py-3"><div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[row.sourceType] || row.sourceType}</div><div className="font-mono text-[11px] text-slate-400">{row.contractNumber}</div></td>
                       <td className="px-4 py-3"><div className="text-gray-700">{row.milestone}</div><div className="text-xs text-gray-400">{row.period || 'Theo mốc hợp đồng'}</div></td>
@@ -923,7 +987,7 @@ function InvoicesTab() {
                         ? <Badge className="border border-red-200 bg-red-100 text-red-700">{row.daysInvoiceOverdue ? `Treo ${row.daysInvoiceOverdue} ngày` : 'Đến hạn xuất'}</Badge>
                         : <Badge className="border border-violet-200 bg-violet-100 text-violet-700">Dự kiến sau {Math.max(1, row.daysUntilInvoice)} ngày</Badge>}
                       </td>
-                      <td className="px-4 py-3 text-right"><Button size="sm" variant={row.isDueForInvoice ? 'default' : 'outline'} className="gap-1.5" disabled={createPendingInvoice.isPending} onClick={() => createPendingInvoice.mutate(row)}><FileText size={13} /> Tạo hóa đơn nháp</Button></td>
+                      <td className="px-4 py-3 text-right"><Button size="sm" variant={row.isDueForInvoice ? 'default' : 'outline'} className="gap-1.5" disabled={createPendingInvoice.isPending} onClick={(event) => { event.stopPropagation(); createPendingInvoice.mutate(row); }}><FileText size={13} /> Tạo hóa đơn nháp</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -959,8 +1023,8 @@ function InvoicesTab() {
             </button>
           ))}
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={handleExportCsv} disabled={exporting}>
-          <Download size={13} /> {exporting ? t('billing:list.exporting') : 'CSV'}
+        <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={handleExportExcel} disabled={exporting}>
+          <Download size={13} /> {exporting ? t('billing:list.exporting') : 'Excel'}
         </Button>
       </div>
 
@@ -998,7 +1062,7 @@ function InvoicesTab() {
                     }`}
                     onClick={() => setSelectedId(isSelected ? null : inv.id)}>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{inv.invoiceNumber}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{inv.tenant?.brandName || inv.billingParty?.name}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">{inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name}</td>
                     <td className="px-4 py-3">
                       <div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[inv.sourceType || ''] || inv.type}</div>
                       <div className="text-[11px] text-slate-400">{inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
@@ -1046,6 +1110,22 @@ function InvoicesTab() {
         </>
       )}
 
+      <Dialog open={!!pendingDetail} onOpenChange={(open) => !open && setPendingDetail(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Chi tiết khoản chờ xuất hóa đơn</DialogTitle></DialogHeader>
+          {pendingDetail && <div className="space-y-3 text-sm">
+            <div className="rounded-lg bg-violet-50 p-4"><div className="font-semibold text-violet-900">{pendingDetail.counterpartyName}</div><div className="mt-1 text-xs text-violet-700">{SOURCE_LABELS[pendingDetail.sourceType] || pendingDetail.sourceType} · {pendingDetail.contractNumber}</div></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><div className="text-xs text-slate-400">Nội dung / kỳ thu</div><div className="font-medium">{pendingDetail.milestone || pendingDetail.period || 'Theo hợp đồng'}</div></div>
+              <div><div className="text-xs text-slate-400">Số tiền dự kiến</div><div className="font-bold">{fmtMoney(pendingDetail.totalAmount)}</div></div>
+              <div><div className="text-xs text-slate-400">Ngày dự kiến xuất</div><div>{fmtDate(pendingDetail.invoicePlannedDate)}</div></div>
+              <div><div className="text-xs text-slate-400">Hạn thanh toán</div><div>{fmtDate(pendingDetail.dueDate)}</div></div>
+            </div>
+          </div>}
+          <DialogFooter><Button variant="outline" onClick={() => setPendingDetail(null)}>Đóng</Button>{isStaff && pendingDetail && <Button disabled={createPendingInvoice.isPending} onClick={() => { createPendingInvoice.mutate(pendingDetail); setPendingDetail(null); }}><FileText size={13} className="mr-1" />Tạo hóa đơn nháp</Button>}</DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={confirmBulkPending}
         title="Tạo hóa đơn nháp hàng loạt"
@@ -1065,7 +1145,7 @@ function InvoicesTab() {
 function ArAgingTab() {
   const { t } = useTranslation('billing');
   const { selectedMallId } = useMallStore();
-  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging', selectedMallId], queryFn: () => billingApi.arAging(selectedMallId || undefined), enabled: !!selectedMallId });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging', selectedMallId], queryFn: () => billingApi.arAging(selectedMallId || undefined) });
   const rows: ArAgingRow[] = data?.data ?? data ?? [];
   const total = rows.reduce((s, r) => s + r.total, 0);
 
@@ -1136,7 +1216,9 @@ function ArAgingTab() {
 export default function BillingPage() {
   const { t } = useTranslation('billing');
   const { selectedMallId } = useMallStore();
-  const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi', selectedMallId], queryFn: () => billingApi.getCollectionKpi(6, selectedMallId || undefined), enabled: !!selectedMallId });
+  const { user } = useAuthStore();
+  const isStaff = user?.role !== 'TENANT';
+  const { data: executiveKpi } = useQuery({ queryKey: ['collection-kpi', selectedMallId], queryFn: () => billingApi.getCollectionKpi(6, selectedMallId || undefined), enabled: isStaff });
   const kpi = executiveKpi?.data ?? executiveKpi ?? {};
   return (
     <div className="space-y-6">
@@ -1155,16 +1237,16 @@ export default function BillingPage() {
       <Tabs defaultValue="invoices">
         <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
           <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-lg"><Receipt size={13} /> {t('tabs.invoices')}</TabsTrigger>
-          <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> {t('tabs.arAging')}</TabsTrigger>
-          <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> {t('tabs.schedule')}</TabsTrigger>
-          <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> {t('tabs.dunning')}</TabsTrigger>
-          <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> {t('tabs.kpi')}</TabsTrigger>
+          {isStaff && <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> {t('tabs.arAging')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> {t('tabs.schedule')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> {t('tabs.dunning')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> {t('tabs.kpi')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="invoices"><InvoicesTab /></TabsContent>
-        <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>
-        <TabsContent value="schedule"><ScheduleTab /></TabsContent>
-        <TabsContent value="dunning"><DunningTab /></TabsContent>
-        <TabsContent value="kpi"><CollectionKpiTab /></TabsContent>
+        {isStaff && <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>}
+        {isStaff && <TabsContent value="schedule"><ScheduleTab /></TabsContent>}
+        {isStaff && <TabsContent value="dunning"><DunningTab /></TabsContent>}
+        {isStaff && <TabsContent value="kpi"><CollectionKpiTab /></TabsContent>}
       </Tabs>
     </div>
   );

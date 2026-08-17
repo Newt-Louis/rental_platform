@@ -102,9 +102,7 @@ export default function App() {
   return (
     <AppErrorBoundary>
       <ThemeProvider>
-        <BrowserRouter
-          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-        >
+        <BrowserRouter>
           <AppHydrator>
             <Suspense fallback={<AppLoading />}>
               <Routes>

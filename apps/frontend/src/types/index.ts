@@ -472,6 +472,8 @@ export interface Invoice {
   billingParty?: { id: string; name: string; taxCode?: string };
   sourceType?: string;
   sourceId?: string;
+  counterpartyName?: string;
+  counterpartyTaxCode?: string;
   period: string;
   type: string;
   status: InvoiceStatus;

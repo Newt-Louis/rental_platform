@@ -10,6 +10,7 @@ describe('BillingScheduleService integration (mocked DB)', () => {
       upsert: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      deleteMany: jest.fn(),
     },
     invoice: { create: jest.fn() },
     billingConfig: { findFirst: jest.fn() },
@@ -39,6 +40,8 @@ describe('BillingScheduleService integration (mocked DB)', () => {
       paymentTerm: 15,
       billingCycle: 'MONTHLY',
     });
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.billingScheduleEntry.deleteMany.mockResolvedValue({ count: 0 });
     prisma.billingScheduleEntry.upsert.mockImplementation(({ create }) =>
       Promise.resolve({ ...create, id: `e-${create.period}` }),
     );

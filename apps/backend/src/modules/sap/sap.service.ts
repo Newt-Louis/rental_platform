@@ -83,20 +83,28 @@ export class SapService {
   async syncInvoice(invoiceId: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { tenant: true },
+      include: { tenant: true, billingParty: true, lines: true },
     });
     if (!invoice) throw new Error('Invoice not found');
+    if (!invoice.issuedAt || ['DRAFT', 'CANCELLED'].includes(invoice.status)) {
+      throw new Error('Only issued and active invoices can be synchronized to SAP');
+    }
 
     const endpoint = '/AccountingDocumentItem';
     const payload = JSON.stringify({
       action: 'CREATE_INVOICE',
       data: {
         invoiceNumber: invoice.invoiceNumber,
-        customerId: invoice.tenantId,
-        amount: invoice.totalAmount,
+        customerId: invoice.tenantId || invoice.billingPartyId,
+        customerName: invoice.counterpartyName || invoice.tenant?.companyName || invoice.billingParty?.name,
+        taxCode: invoice.counterpartyTaxCode || invoice.tenant?.taxCode || invoice.billingParty?.taxCode,
+        mallId: invoice.mallId,
+        amount: invoice.totalAmount + invoice.adjustmentAmount,
         vatAmount: invoice.vatAmount,
         period: invoice.period,
         dueDate: invoice.dueDate,
+        legalInvoiceNumber: invoice.legalInvoiceNumber,
+        lines: invoice.lines.map((line) => ({ description: line.description, quantity: line.qty, unitPrice: line.unitPrice, amount: line.amount })),
       },
     });
 

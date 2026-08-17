@@ -60,6 +60,8 @@ export class MallAccessService {
       fitoutSubmittalId?: string;
       fitoutIssueId?: string;
       invoiceId?: string;
+      paymentId?: string;
+      invoiceAdjustmentId?: string;
       bookingId?: string;
       slotId?: string;
       slotBookingId?: string;
@@ -128,9 +130,56 @@ export class MallAccessService {
     if (!mallId && sources.invoiceId) {
       const invoice = await this.prisma.invoice.findUnique({
         where: { id: sources.invoiceId },
-        select: { contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+        select: {
+          mallId: true,
+          contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          billingParty: { select: { mallId: true } },
+        },
       });
-      mallId = invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId;
+      mallId = invoice?.mallId ?? invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId ?? invoice?.billingParty?.mallId ?? undefined;
+      if (invoice && !mallId) {
+        throw new ForbiddenException('Invoice is not assigned to an accessible mall');
+      }
+    }
+
+    if (!mallId && sources.paymentId) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: sources.paymentId },
+        select: {
+          invoice: {
+            select: {
+              mallId: true,
+              contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+              billingParty: { select: { mallId: true } },
+            },
+          },
+        },
+      });
+      mallId = payment?.invoice?.mallId
+        ?? payment?.invoice?.contract?.unit?.mallId
+        ?? payment?.invoice?.contract?.unit?.floor?.mallId
+        ?? payment?.invoice?.billingParty?.mallId
+        ?? undefined;
+      if (payment && !mallId) {
+        throw new ForbiddenException('Payment is not assigned to an accessible mall');
+      }
+    }
+
+    if (!mallId && sources.invoiceAdjustmentId) {
+      const adjustment = await this.prisma.invoiceAdjustment.findUnique({
+        where: { id: sources.invoiceAdjustmentId },
+        select: { invoice: { select: {
+          mallId: true,
+          contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          billingParty: { select: { mallId: true } },
+        } } },
+      });
+      mallId = adjustment?.invoice.mallId
+        ?? adjustment?.invoice.contract?.unit?.mallId
+        ?? adjustment?.invoice.contract?.unit?.floor?.mallId
+        ?? adjustment?.invoice.billingParty?.mallId
+        ?? undefined;
+      if (adjustment && !mallId) throw new ForbiddenException('Adjustment is not assigned to an accessible mall');
     }
 
     if (!mallId && sources.bookingId) {
