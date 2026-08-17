@@ -150,6 +150,7 @@ export default function ServiceContractsPage() {
   const item = (detail.data as any)?.data ?? detail.data;
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["service-contracts"] });
+    qc.invalidateQueries({ queryKey: ["service-contract-alerts"] });
     qc.invalidateQueries({ queryKey: ["service-contract"] });
   };
   const create = useMutation({

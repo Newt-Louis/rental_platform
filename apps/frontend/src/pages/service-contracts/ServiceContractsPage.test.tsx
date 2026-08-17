@@ -137,5 +137,6 @@ describe('ServiceContractsPage all-mall view', () => {
       mallId: 'mall-1',
     })));
     await waitFor(() => expect(serviceContractsApi.upload).toHaveBeenCalledWith('contract-created', original, 'CONTRACT'));
+    await waitFor(() => expect(serviceContractsApi.alerts).toHaveBeenCalledTimes(2));
   });
 });

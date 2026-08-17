@@ -3,8 +3,8 @@ import { ServiceContractsService } from './service-contracts.service';
 
 describe('ServiceContractsService data boundaries', () => {
   const prisma = {
-    serviceContract: { findFirst: jest.fn(), findUnique: jest.fn() },
-    serviceContractPayment: { findFirst: jest.fn(), delete: jest.fn() },
+    serviceContract: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    serviceContractPayment: { findFirst: jest.fn(), delete: jest.fn(), count: jest.fn() },
     serviceContractChecklistItem: { findFirst: jest.fn(), update: jest.fn() },
     serviceContractMilestone: { findFirst: jest.fn(), update: jest.fn() },
     serviceContractDocument: { aggregate: jest.fn(), create: jest.fn() },
@@ -101,5 +101,35 @@ describe('ServiceContractsService data boundaries', () => {
       'user-1',
     )).rejects.toBeInstanceOf(BadRequestException);
     expect(storage.saveFile).not.toHaveBeenCalled();
+  });
+
+  it('includes draft contracts in the expiring-soon list filter', async () => {
+    prisma.serviceContract.findMany.mockResolvedValue([]);
+    prisma.serviceContract.count.mockResolvedValue(0);
+
+    await service.findAll({ alert: 'EXPIRING', alertDays: 30 }, ['mall-1']);
+
+    expect(prisma.serviceContract.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        mallId: { in: ['mall-1'] },
+        status: { in: expect.arrayContaining(['DRAFT', 'PENDING_SIGNATURE', 'ACTIVE', 'EXPIRING']) },
+        endDate: { gte: expect.any(Date), lte: expect.any(Date) },
+      }),
+    }));
+  });
+
+  it('counts draft contracts in the 30-day expiry alert without enabling draft payment alerts', async () => {
+    prisma.serviceContract.count.mockResolvedValue(1);
+    prisma.serviceContractPayment.count.mockResolvedValue(0);
+
+    const result = await service.alerts(['mall-1'], 30);
+
+    expect(result.expiring).toBe(1);
+    expect(prisma.serviceContract.count).toHaveBeenCalledWith({ where: expect.objectContaining({
+      status: { in: expect.arrayContaining(['DRAFT', 'ACTIVE', 'EXPIRING']) },
+    }) });
+    expect(prisma.serviceContractPayment.count).toHaveBeenCalledWith({ where: expect.objectContaining({
+      contract: expect.objectContaining({ status: { in: ['ACTIVE', 'EXPIRING'] } }),
+    }) });
   });
 });

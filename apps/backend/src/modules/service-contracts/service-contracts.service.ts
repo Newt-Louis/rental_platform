@@ -21,6 +21,9 @@ const ALLOWED_TRANSITIONS: Record<ServiceContractStatus, ServiceContractStatus[]
   EXPIRING: ['ACTIVE', 'EXPIRED', 'TERMINATED'], EXPIRED: [], TERMINATED: [], RENEWED: [], CANCELLED: [],
 };
 const DOCUMENT_TYPES = ['CONTRACT', 'APPENDIX', 'INVOICE', 'PAYMENT_PROOF', 'OTHER'];
+const EXPIRY_ALERT_STATUSES: ServiceContractStatus[] = [
+  'DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE', 'ACTIVE', 'EXPIRING',
+];
 
 @Injectable()
 export class ServiceContractsService {
@@ -39,7 +42,7 @@ export class ServiceContractsService {
     const now = new Date();
     const alertDays = Math.min(365, Math.max(1, Number(query.alertDays) || 30));
     const horizon = new Date(now.getTime() + alertDays * 86400000);
-    if (query.alert === 'EXPIRING') { where.endDate = { gte: now, lte: horizon }; where.status = { in: ['ACTIVE', 'EXPIRING'] }; }
+    if (query.alert === 'EXPIRING') { where.endDate = { gte: now, lte: horizon }; where.status = { in: EXPIRY_ALERT_STATUSES }; }
     if (query.alert === 'PAYMENT_DUE') where.payments = { some: { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon } } };
     if (query.alert === 'OVERDUE') where.payments = { some: { OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } };
     if (query.search) where.OR = [
@@ -152,7 +155,7 @@ export class ServiceContractsService {
       this.prisma.serviceContract.count({ where }), this.prisma.serviceContract.groupBy({ by: ['status'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['serviceCategory'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['valueBasis'], where, _count: true }),
-      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: ['ACTIVE', 'PENDING_SIGNATURE', 'EXPIRING'] } } }),
+      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: EXPIRY_ALERT_STATUSES } } }),
       this.prisma.serviceContract.aggregate({ where, _sum: { totalValue: true } }),
     ]);
     return {
@@ -188,12 +191,13 @@ export class ServiceContractsService {
 
   async alerts(mallIds?: string[], days = 30) {
     const now = new Date(); const horizon = new Date(now.getTime() + Math.min(365, Math.max(1, days)) * 86400000);
-    const contractWhere: Prisma.ServiceContractWhereInput = { isDeleted: false, status: { in: ['ACTIVE', 'EXPIRING'] }, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
-    const paymentBase: Prisma.ServiceContractPaymentWhereInput = { contract: contractWhere };
+    const accessibleContracts: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
+    const activeContractWhere: Prisma.ServiceContractWhereInput = { ...accessibleContracts, status: { in: ['ACTIVE', 'EXPIRING'] } };
+    const paymentBase: Prisma.ServiceContractPaymentWhereInput = { contract: activeContractWhere };
     const [expiring, receivableDue, payableDue, overdue] = await Promise.all([
-      this.prisma.serviceContract.count({ where: { ...contractWhere, endDate: { gte: now, lte: horizon } } }),
-      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...contractWhere, paymentDirection: 'RECEIVABLE' } } }),
-      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...contractWhere, paymentDirection: 'PAYABLE' } } }),
+      this.prisma.serviceContract.count({ where: { ...accessibleContracts, status: { in: EXPIRY_ALERT_STATUSES }, endDate: { gte: now, lte: horizon } } }),
+      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'RECEIVABLE' } } }),
+      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'PAYABLE' } } }),
       this.prisma.serviceContractPayment.count({ where: { ...paymentBase, OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } }),
     ]);
     return { days, expiring, receivableDue, payableDue, overdue };
