@@ -10,7 +10,16 @@ import { useToast } from '@/components/ui/use-toast';
 import { Building2, User, Calendar, DollarSign, CheckCircle2, X, Pencil } from 'lucide-react';
 import { SLOT_TYPE_CONFIG, SLOT_STATUS_CONFIG, fmtDatetime, fmtMoney, toDatetimeLocal } from './bookings-constants';
 
-type SlotEditForm = { startDatetime: string; endDatetime: string; discountPct: string; notes: string };
+type SlotEditForm = {
+  installationStartDatetime: string;
+  installationEndDatetime: string;
+  startDatetime: string;
+  endDatetime: string;
+  dismantlingStartDatetime: string;
+  dismantlingEndDatetime: string;
+  discountPct: string;
+  notes: string;
+};
 
 export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEditing }: {
   booking: any | null; onClose: () => void; scrollTo?: string; initialEditing?: boolean;
@@ -19,15 +28,26 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
   const { toast } = useToast();
   const [lastBooking, setLastBooking] = useState<any | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [ef, setEf] = useState<SlotEditForm>({ startDatetime: '', endDatetime: '', discountPct: '0', notes: '' });
+  const [ef, setEf] = useState<SlotEditForm>({
+    installationStartDatetime: '', installationEndDatetime: '',
+    startDatetime: '', endDatetime: '',
+    dismantlingStartDatetime: '', dismantlingEndDatetime: '',
+    discountPct: '0', notes: '',
+  });
 
   useEffect(() => {
     if (booking) {
       setLastBooking(booking);
       setIsEditing(!!initialEditing);
+      const rentalStartMs = new Date(booking.startDatetime).getTime();
+      const rentalEndMs = new Date(booking.endDatetime).getTime();
       setEf({
+        installationStartDatetime: toDatetimeLocal(booking.installationStartDatetime ?? new Date(rentalStartMs - 3_600_000).toISOString()),
+        installationEndDatetime: toDatetimeLocal(booking.installationEndDatetime ?? booking.startDatetime),
         startDatetime: toDatetimeLocal(booking.startDatetime),
         endDatetime: toDatetimeLocal(booking.endDatetime),
+        dismantlingStartDatetime: toDatetimeLocal(booking.dismantlingStartDatetime ?? booking.endDatetime),
+        dismantlingEndDatetime: toDatetimeLocal(booking.dismantlingEndDatetime ?? new Date(rentalEndMs + 3_600_000).toISOString()),
         discountPct: String(booking.discountPct ?? 0),
         notes: booking.notes ?? '',
       });
@@ -50,8 +70,12 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
 
   const updateMutation = useMutation({
     mutationFn: () => slotsApi.updateSlotBooking(d?.id, {
+      installationStartDatetime: new Date(ef.installationStartDatetime).toISOString(),
+      installationEndDatetime: new Date(ef.installationEndDatetime).toISOString(),
       startDatetime: ef.startDatetime ? new Date(ef.startDatetime).toISOString() : undefined,
       endDatetime: ef.endDatetime ? new Date(ef.endDatetime).toISOString() : undefined,
+      dismantlingStartDatetime: new Date(ef.dismantlingStartDatetime).toISOString(),
+      dismantlingEndDatetime: new Date(ef.dismantlingEndDatetime).toISOString(),
       discountPct: ef.discountPct !== '' ? Number(ef.discountPct) : undefined,
       notes: ef.notes,
     }),
@@ -117,14 +141,19 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
               <p className="text-xs text-gray-400 mt-0.5">{d.slot?.area} m² · {typeCfg.label}</p>
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Bắt đầu</label>
-              <Input type="datetime-local" value={ef.startDatetime} onChange={setEfField('startDatetime')} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Kết thúc</label>
-              <Input type="datetime-local" value={ef.endDatetime} onChange={setEfField('endDatetime')} />
-            </div>
+            {([
+              ['Lắp đặt', 'installationStartDatetime', 'installationEndDatetime'],
+              ['Thời gian thuê', 'startDatetime', 'endDatetime'],
+              ['Tháo dỡ', 'dismantlingStartDatetime', 'dismantlingEndDatetime'],
+            ] as const).map(([label, startKey, endKey]) => (
+              <div key={label} className="rounded-lg border border-gray-100 p-3">
+                <div className="mb-2 text-xs font-semibold text-gray-600">{label}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Input type="datetime-local" value={ef[startKey]} onChange={setEfField(startKey)} />
+                  <Input type="datetime-local" value={ef[endKey]} onChange={setEfField(endKey)} />
+                </div>
+              </div>
+            ))}
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Chiết khấu (%)</label>
               <Input type="number" min={0} max={100} value={ef.discountPct} onChange={setEfField('discountPct')} className="w-28" />
@@ -158,9 +187,13 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
               <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
             </SheetSection>
 
-            <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50" id="sbs-timeline">
-              <SheetRow label="Bắt đầu"  value={fmtDatetime(d.startDatetime)} icon={Calendar} />
-              <SheetRow label="Kết thúc" value={fmtDatetime(d.endDatetime)}   icon={Calendar} />
+            <SheetSection label="THỜI GIAN BOOKING" className="bg-violet-50" id="sbs-timeline">
+              <SheetRow label="Bắt đầu lắp đặt" value={d.installationStartDatetime ? fmtDatetime(d.installationStartDatetime) : '—'} icon={Calendar} />
+              <SheetRow label="Hoàn tất lắp đặt" value={d.installationEndDatetime ? fmtDatetime(d.installationEndDatetime) : '—'} icon={Calendar} />
+              <SheetRow label="Bắt đầu thuê" value={fmtDatetime(d.startDatetime)} icon={Calendar} />
+              <SheetRow label="Kết thúc thuê" value={fmtDatetime(d.endDatetime)} icon={Calendar} />
+              <SheetRow label="Bắt đầu tháo dỡ" value={d.dismantlingStartDatetime ? fmtDatetime(d.dismantlingStartDatetime) : '—'} icon={Calendar} />
+              <SheetRow label="Hoàn tất tháo dỡ" value={d.dismantlingEndDatetime ? fmtDatetime(d.dismantlingEndDatetime) : '—'} icon={Calendar} />
             </SheetSection>
 
             <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">

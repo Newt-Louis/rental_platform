@@ -59,8 +59,9 @@ export default function SpacesPage() {
     categoryFilter,
     spaceTypeFilter,
     tierFilter,
-    leaseTermFilter,
+    leaseTermFilter, setLeaseTermFilter,
   } = useSpacesFilters();
+  const rentalZone = leaseTermFilter === 'SHORT' ? 'SHORT' : 'LONG';
 
   // Shared UI state from store
   const {
@@ -107,7 +108,7 @@ export default function SpacesPage() {
   }, [categoryOptions]);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: leaseTermFilter }],
+    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone }],
     queryFn: () => spacesApi.listUnits({
       search: search || undefined,
       status: statusFilter || undefined,
@@ -120,7 +121,7 @@ export default function SpacesPage() {
       category: categoryFilter || undefined,
       spaceType: spaceTypeFilter || undefined,
       tier: tierFilter || undefined,
-      leaseTermType: leaseTermFilter || undefined,
+      leaseTermType: rentalZone,
       page: 1,
       limit: 300,
     }),
@@ -219,6 +220,34 @@ export default function SpacesPage() {
           )}
         </div>
       </div>
+
+      {view !== 'analytics' && (
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
+          <div className="grid grid-cols-2 gap-1.5" role="tablist" aria-label="Khu mặt bằng theo hình thức thuê">
+            {([
+              ['LONG', 'Khu cho thuê dài hạn', 'Hợp đồng thuê dài hạn'],
+              ['SHORT', 'Khu cho thuê ngắn hạn', 'Booking và tờ trình ngắn hạn'],
+            ] as const).map(([value, label, description]) => {
+              const active = rentalZone === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setLeaseTermFilter(value)}
+                  className={`rounded-lg px-3 py-2 text-left transition-colors ${active
+                    ? value === 'LONG' ? 'bg-blue-600 text-white' : 'bg-violet-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  <div className="text-sm font-semibold">{label}</div>
+                  <div className={`text-xs ${active ? 'text-white/75' : 'text-gray-400'}`}>{description}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Floor tabs */}
       {(floors.length > 0 || (isAdmin && selectedMallId)) && (

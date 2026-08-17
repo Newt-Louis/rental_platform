@@ -76,6 +76,7 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
   const s = occupancy?.summary ?? {};
   const byCategory = occupancy?.byCategory ?? [];
   const byFloor = occupancy?.byFloor ?? [];
+  const byLeaseTerm = occupancy?.byLeaseTerm ?? [];
   const trendData = trend as any[];
   const vacancySummary = vacancy?.summary ?? {};
 
@@ -90,6 +91,29 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
           icon={AlertTriangle} subtitle={`${s.vacantUnits ?? 0} units`} />
         <StatCard title="Ước tính thất thu" value={`${Math.round((vacancySummary.totalEstimatedLoss ?? 0) / 1_000_000).toLocaleString()}M`}
           icon={DollarSign} subtitle="VND / tháng" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {byLeaseTerm.map((zone: any) => (
+          <Card key={zone.leaseTermType} className={zone.leaseTermType === 'LONG' ? 'border-blue-200' : 'border-violet-200'}>
+            <CardContent className="p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800">{zone.name}</div>
+                  <div className="text-xs text-gray-400">Tính theo diện tích từng khu</div>
+                </div>
+                <div className={`text-2xl font-bold ${zone.leaseTermType === 'LONG' ? 'text-blue-700' : 'text-violet-700'}`}>
+                  {zone.occupancyRate}%
+                </div>
+              </div>
+              <Progress value={zone.occupancyRate} className="h-3" />
+              <div className="mt-2 flex justify-between text-xs text-gray-500">
+                <span>{zone.occupied}/{zone.total} mặt bằng</span>
+                <span>{Math.round(zone.occupiedArea ?? 0).toLocaleString()} / {Math.round(zone.area ?? 0).toLocaleString()} m²</span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

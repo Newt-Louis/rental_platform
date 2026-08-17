@@ -165,11 +165,10 @@ export function UnitFormFields({
           <input type="hidden" {...register('tier')} />
         </div>
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Hình thức thuê</label>
-          <Select value={watch('leaseTermType') || 'NONE'} onValueChange={(v) => setValue('leaseTermType', v === 'NONE' ? '' : v, { shouldDirty: true })}>
-            <SelectTrigger><SelectValue placeholder="Chọn..." /></SelectTrigger>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Khu cho thuê *</label>
+          <Select value={watch('leaseTermType') || 'LONG'} onValueChange={(v) => setValue('leaseTermType', v, { shouldDirty: true })}>
+            <SelectTrigger><SelectValue placeholder="Chọn khu..." /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="NONE">— Không chọn —</SelectItem>
               {LEASE_TERM_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>

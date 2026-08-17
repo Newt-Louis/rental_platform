@@ -1194,7 +1194,7 @@ model Unit {
   virtualTourUrl String? // 360deg tour / video link
 
   // GAP #3 -- Phn loi hnh thc thu
-  leaseTermType UnitLeaseTermType? // LONG hoc SHORT; LONG c th cho thu ngn hn khi trng
+  leaseTermType UnitLeaseTermType @default(LONG) // Khu cho thue dai han hoac ngan han
 
   // GAP #4 -- Loi mt bng
   spaceType SpaceType? // RETAIL_UNIT, LED, ESCALATOR_WRAP...
@@ -1361,7 +1361,7 @@ model Proposal {
   status              ProposalStatus @default(DRAFT)
   notes               String?
   pricingRuleId       String? // Rule version used when pricing was evaluated
-  pricingSnapshot     Json?   // Immutable effective values + source metadata
+  pricingSnapshot     Json? // Immutable effective values + source metadata
 
   // T Trnh fields
   businessModel         BusinessModelEnum? // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
@@ -3010,8 +3010,8 @@ model UnitBooking {
   priceApprovedBy       User?                @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
   priceApprovedAt       DateTime?
   priceDeviationPercent Float? // % chnh lch so vi gi sn
-  pricingRuleId          String? // Rule version used for the latest validation
-  pricingSnapshot        Json?   // Effective pricing values and inheritance sources
+  pricingRuleId         String? // Rule version used for the latest validation
+  pricingSnapshot       Json? // Effective pricing values and inheritance sources
 
   createdById  String
   createdBy    User     @relation("BookingCreatedBy", fields: [createdById], references: [id])
@@ -3171,31 +3171,36 @@ model SlotPricingRule {
 }
 
 model SlotBooking {
-  id            String            @id @default(cuid())
-  bookingRef    String            @unique
-  slotId        String
-  slot          UnitSlot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  leadId        String?
-  lead          Lead?             @relation(fields: [leadId], references: [id])
-  customerId    String?
-  customer      Customer?         @relation(fields: [customerId], references: [id])
-  type          String // DAILY, HOURLY, MONTHLY
-  startDatetime DateTime
-  endDatetime   DateTime
-  totalArea     Float?
-  baseAmount    Float?
-  discountPct   Float?            @default(0)
-  totalAmount   Float // Final amount after discount
-  status        SlotBookingStatus @default(PENDING)
-  notes         String?
-  cancelReason  String?
-  createdById   String?
-  createdBy     User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                        String            @id @default(cuid())
+  bookingRef                String            @unique
+  slotId                    String
+  slot                      UnitSlot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  leadId                    String?
+  lead                      Lead?             @relation(fields: [leadId], references: [id])
+  customerId                String?
+  customer                  Customer?         @relation(fields: [customerId], references: [id])
+  type                      String // DAILY, HOURLY, MONTHLY
+  installationStartDatetime DateTime?
+  installationEndDatetime   DateTime?
+  startDatetime             DateTime
+  endDatetime               DateTime
+  dismantlingStartDatetime  DateTime?
+  dismantlingEndDatetime    DateTime?
+  totalArea                 Float?
+  baseAmount                Float?
+  discountPct               Float?            @default(0)
+  totalAmount               Float // Final amount after discount
+  status                    SlotBookingStatus @default(PENDING)
+  notes                     String?
+  cancelReason              String?
+  createdById               String?
+  createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
+  @@index([installationStartDatetime, dismantlingEndDatetime])
 }
 
 // Cu hnh thng hiu hin th  mn hnh ng nhp (logo + nh nn) -- bng singleton,

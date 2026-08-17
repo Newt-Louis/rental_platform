@@ -6,6 +6,7 @@ const makeUnit = (overrides: any) => ({
   status: UnitStatus.VACANT,
   areaNLA: 100,
   baseRentPerSqm: 0,
+  leaseTermType: 'LONG',
   category: 'F&B',
   floor: { id: 'floor-1', name: 'Tầng 1' },
   mall: { id: 'mall-1', name: 'THISO Mall' },
@@ -17,11 +18,13 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
   const prisma = {
     unit: { findMany: jest.fn() },
+    slotBooking: { findMany: jest.fn() },
     occupancySnapshot: { findMany: jest.fn() },
   } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    prisma.slotBooking.findMany.mockResolvedValue([]);
     service = new OccupancyAnalyticsService(prisma, {
       runExclusive: jest.fn((_name, _ttl, task) => task()),
     } as any);
@@ -105,6 +108,29 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       const result = await service.getOccupancyV2();
       expect(result.summary).toHaveProperty('totalMonthlyBillingRevenue');
+    });
+  });
+
+  describe('occupancy by rental zone', () => {
+    it('calculates long-term and short-term occupancy independently by area', async () => {
+      const now = Date.now();
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ leaseTermType: 'LONG', status: UnitStatus.OCCUPIED, areaNLA: 100 }),
+        makeUnit({ leaseTermType: 'LONG', status: UnitStatus.VACANT, areaNLA: 100 }),
+        makeUnit({ leaseTermType: 'SHORT', status: UnitStatus.OCCUPIED, areaNLA: 30 }),
+        makeUnit({ leaseTermType: 'SHORT', status: UnitStatus.VACANT, areaNLA: 70 }),
+      ]);
+      prisma.slotBooking.findMany.mockResolvedValue([{
+        installationStartDatetime: new Date(now - 3_600_000),
+        dismantlingEndDatetime: new Date(now + 3_600_000),
+        startDatetime: new Date(now - 1_800_000),
+        endDatetime: new Date(now + 1_800_000),
+        slot: { id: 'short-slot-1', unitId: 'short-unit-1', area: 30 },
+      }]);
+
+      const result = await service.getOccupancyV2();
+      expect(result.byLeaseTerm.find((zone: any) => zone.leaseTermType === 'LONG')?.occupancyRate).toBe(50);
+      expect(result.byLeaseTerm.find((zone: any) => zone.leaseTermType === 'SHORT')?.occupancyRate).toBe(30);
     });
   });
 });

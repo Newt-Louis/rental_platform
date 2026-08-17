@@ -26,7 +26,7 @@ export function useSpacesFilters() {
   const tierFilter      = searchParams.get('tier')       ?? '';
   const leaseTermFilter = searchParams.get('leaseTerm')  ?? '';
 
-  const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter || spaceTypeFilter || tierFilter || leaseTermFilter);
+  const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter || spaceTypeFilter || tierFilter);
 
   const clearFilters = () => setSearchParams((prev) => {
     const next = new URLSearchParams(prev);

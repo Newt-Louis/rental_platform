@@ -149,7 +149,16 @@ export class SlotsController {
   @Patch('bookings/:bookingId')
   async updateSlotBooking(
     @Param('bookingId') bookingId: string,
-    @Body() body: { startDatetime?: string; endDatetime?: string; discountPct?: number; notes?: string },
+    @Body() body: {
+      installationStartDatetime?: string;
+      installationEndDatetime?: string;
+      startDatetime?: string;
+      endDatetime?: string;
+      dismantlingStartDatetime?: string;
+      dismantlingEndDatetime?: string;
+      discountPct?: number;
+      notes?: string;
+    },
     @CurrentUser() user: any,
   ) {
     await this.check(user, { slotBookingId: bookingId });

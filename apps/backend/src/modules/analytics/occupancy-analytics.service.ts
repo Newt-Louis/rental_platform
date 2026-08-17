@@ -25,10 +25,44 @@ export class OccupancyAnalyticsService {
         baseRentPerSqm: true,
         camPerSqm: true,
         category: true,
+        leaseTermType: true,
         floor: { select: { id: true, name: true } },
         mall: { select: { id: true, name: true } },
       },
     });
+    const shortBookings = await this.prisma.slotBooking.findMany({
+      where: {
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        slot: {
+          unit: {
+            isActive: true,
+            leaseTermType: 'SHORT',
+            ...(mallId ? { mallId } : {}),
+            ...(floorId ? { floorId } : {}),
+            ...(category ? { category } : {}),
+          },
+        },
+      },
+      select: {
+        installationStartDatetime: true,
+        dismantlingEndDatetime: true,
+        startDatetime: true,
+        endDatetime: true,
+        slot: { select: { id: true, unitId: true, area: true } },
+      },
+    });
+    const now = new Date();
+    const occupiedShortSlots = new Map<string, { unitId: string; area: number }>();
+    for (const bookingItem of shortBookings) {
+      const occupiedFrom = bookingItem.installationStartDatetime ?? bookingItem.startDatetime;
+      const occupiedTo = bookingItem.dismantlingEndDatetime ?? bookingItem.endDatetime;
+      if (occupiedFrom <= now && occupiedTo >= now) {
+        occupiedShortSlots.set(bookingItem.slot.id, {
+          unitId: bookingItem.slot.unitId,
+          area: bookingItem.slot.area,
+        });
+      }
+    }
 
     const totalUnits = units.length;
     const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
@@ -57,6 +91,28 @@ export class OccupancyAnalyticsService {
 
     const byCategory = this.groupByField(units, 'category');
     const byFloor = this.groupByFieldWithRent(units, 'floor');
+    const byLeaseTerm = ['LONG', 'SHORT'].map((leaseTermType) => {
+      const zoneUnits = units.filter((unit) => unit.leaseTermType === leaseTermType);
+      const area = zoneUnits.reduce((sum, unit) => sum + (unit.areaNLA ?? 0), 0);
+      const occupiedUnits = zoneUnits.filter((unit) => unit.status === UnitStatus.OCCUPIED);
+      const bookedUnitIds = new Set(Array.from(occupiedShortSlots.values()).map((slot) => slot.unitId));
+      const occupiedCount = leaseTermType === 'SHORT' ? bookedUnitIds.size : occupiedUnits.length;
+      const occupiedArea = leaseTermType === 'SHORT'
+        ? Math.min(area, Array.from(occupiedShortSlots.values()).reduce((sum, slot) => sum + slot.area, 0))
+        : occupiedUnits.reduce((sum, unit) => sum + (unit.areaNLA ?? 0), 0);
+      return {
+        leaseTermType,
+        name: leaseTermType === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn',
+        total: zoneUnits.length,
+        occupied: occupiedCount,
+        vacant: leaseTermType === 'SHORT'
+          ? zoneUnits.length - occupiedCount
+          : zoneUnits.filter((unit) => unit.status === UnitStatus.VACANT).length,
+        area,
+        occupiedArea,
+        occupancyRate: area > 0 ? Math.round((occupiedArea / area) * 1000) / 10 : 0,
+      };
+    });
 
     return {
       summary: {
@@ -78,6 +134,7 @@ export class OccupancyAnalyticsService {
       },
       byCategory,
       byFloor,
+      byLeaseTerm,
     };
   }
 

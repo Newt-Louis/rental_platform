@@ -43,8 +43,12 @@ export class CreateSlotBookingDto {
   @ApiPropertyOptional() @IsString() @IsOptional() customerId?: string;
 
   @ApiProperty({ enum: SlotBookingType }) @IsEnum(SlotBookingType) type: SlotBookingType;
+  @ApiProperty({ description: 'Thời điểm bắt đầu lắp đặt' }) @IsDateString() installationStartDatetime: string;
+  @ApiProperty({ description: 'Thời điểm kết thúc lắp đặt' }) @IsDateString() installationEndDatetime: string;
   @ApiProperty() @IsDateString() startDatetime: string;
   @ApiProperty() @IsDateString() endDatetime: string;
+  @ApiProperty({ description: 'Thời điểm bắt đầu tháo dỡ' }) @IsDateString() dismantlingStartDatetime: string;
+  @ApiProperty({ description: 'Thời điểm kết thúc tháo dỡ' }) @IsDateString() dismantlingEndDatetime: string;
 
   @ApiPropertyOptional() @IsNumber() @IsOptional() @Min(0) @Max(100) discountPct?: number;
   @ApiPropertyOptional() @IsString() @IsOptional() notes?: string;
