@@ -293,7 +293,7 @@ export class WorkOrdersService {
     const include = {
       mall: { select: { id: true, code: true, name: true } },
       unit: { select: { id: true, code: true, name: true } },
-      requester: { select: { id: true, fullName: true } },
+      requester: { select: { id: true, fullName: true, department: true } },
       assignee: { select: { id: true, fullName: true } },
       _count: { select: { checklist: true, evidence: true } },
     } as const;
@@ -320,7 +320,7 @@ export class WorkOrdersService {
       include: {
         mall: true,
         unit: true,
-        requester: { select: { id: true, fullName: true } },
+        requester: { select: { id: true, fullName: true, department: true } },
         assignee: { select: { id: true, fullName: true } },
         reviewer: { select: { id: true, fullName: true } },
         checklist: {

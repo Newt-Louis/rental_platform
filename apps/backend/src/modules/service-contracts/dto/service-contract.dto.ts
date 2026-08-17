@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,7 +14,12 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { ServiceContractStatus, ServiceContractType } from '@prisma/client';
+import {
+  ServiceContractServiceCategory,
+  ServiceContractStatus,
+  ServiceContractType,
+  ServiceContractValueBasis,
+} from '@prisma/client';
 
 const PAYMENT_DIRECTIONS = ['PAYABLE', 'RECEIVABLE'] as const;
 const PAYMENT_STATUSES = ['PENDING', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
@@ -21,7 +27,7 @@ const MILESTONE_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE', 'CANCELLED'] as co
 const RECURRING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const;
 
 export class CreateServiceContractDto {
-  @IsOptional() @IsString() @MaxLength(100) contractNumber?: string;
+  @IsString() @IsNotEmpty() @MaxLength(100) contractNumber: string;
   @IsString() @MaxLength(250) title: string;
   @IsString() mallId: string;
   @IsString() @MaxLength(250) counterpartyName: string;
@@ -39,6 +45,8 @@ export class CreateServiceContractDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) invoiceLeadDays?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) defaultVatRate?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) paymentTermDays?: number;
+  @IsEnum(ServiceContractServiceCategory) serviceCategory: ServiceContractServiceCategory;
+  @IsEnum(ServiceContractValueBasis) valueBasis: ServiceContractValueBasis;
   @IsOptional() @IsString() @MaxLength(250) productName?: string;
   @IsOptional() @IsString() @MaxLength(100) workflowStage?: string;
   @IsOptional() @IsString() @MaxLength(30) workflowColor?: string;
@@ -65,6 +73,8 @@ export class UpdateServiceContractDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) invoiceLeadDays?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) defaultVatRate?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) paymentTermDays?: number;
+  @IsOptional() @IsEnum(ServiceContractServiceCategory) serviceCategory?: ServiceContractServiceCategory;
+  @IsOptional() @IsEnum(ServiceContractValueBasis) valueBasis?: ServiceContractValueBasis;
   @IsOptional() @IsString() @MaxLength(250) productName?: string;
   @IsOptional() @IsString() @MaxLength(100) workflowStage?: string;
   @IsOptional() @IsString() @MaxLength(30) workflowColor?: string;
@@ -145,7 +155,7 @@ export class UpdateMilestoneDto {
 }
 
 export class RenewServiceContractDto {
-  @IsOptional() @IsString() @MaxLength(100) contractNumber?: string;
+  @IsString() @IsNotEmpty() @MaxLength(100) contractNumber: string;
   @IsOptional() @IsString() @MaxLength(250) title?: string;
   @IsOptional() @IsDateString() startDate?: string;
   @IsDateString() endDate: string;

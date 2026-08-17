@@ -50,6 +50,34 @@ const TYPES = [
   "CLEANING",
   "OTHER",
 ];
+const SERVICE_CATEGORIES = [
+  ["CLEANING", "Vệ sinh"],
+  ["SECURITY", "An ninh / bảo vệ"],
+  ["MAINTENANCE", "Bảo trì"],
+  ["TECHNICAL", "Kỹ thuật"],
+  ["IT_SOFTWARE", "CNTT / phần mềm"],
+  ["CONSULTING", "Tư vấn"],
+  ["INSURANCE", "Bảo hiểm"],
+  ["CONSTRUCTION", "Xây dựng"],
+  ["LABOR_SUPPLY", "Cung ứng nhân sự"],
+  ["MARKETING", "Marketing / truyền thông"],
+  ["PARKING", "Bãi xe"],
+  ["LANDSCAPING", "Cảnh quan"],
+  ["PEST_CONTROL", "Kiểm soát côn trùng"],
+  ["WASTE_MANAGEMENT", "Thu gom / xử lý chất thải"],
+  ["UTILITIES", "Điện, nước và tiện ích"],
+  ["OTHER", "Dịch vụ khác"],
+] as const;
+const VALUE_BASES = [
+  ["ONE_TIME", "Trọn gói / một lần"],
+  ["MONTHLY", "Theo tháng"],
+  ["QUARTERLY", "Theo quý"],
+  ["ANNUAL", "Theo năm"],
+  ["PROJECT", "Theo dự án"],
+  ["OTHER", "Cơ sở khác"],
+] as const;
+const categoryLabel = (value: string) => SERVICE_CATEGORIES.find(([key]) => key === value)?.[1] ?? value;
+const valueBasisLabel = (value: string) => VALUE_BASES.find(([key]) => key === value)?.[1] ?? value;
 const labels: Record<string, string> = {
   DRAFT: "Nháp",
   PROPOSAL: "Đề xuất",
@@ -74,11 +102,15 @@ export default function ServiceContractsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
+  const [serviceCategory, setServiceCategory] = useState("");
+  const [valueBasis, setValueBasis] = useState("");
   const [paymentDirection, setPaymentDirection] = useState("");
   const [alert, setAlert] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [createPaymentDirection, setCreatePaymentDirection] = useState("PAYABLE");
+  const [createOriginalFile, setCreateOriginalFile] = useState<File>();
   const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
   useEffect(() => {
@@ -88,22 +120,23 @@ export default function ServiceContractsPage() {
     setPage(1);
   }, [selectedMallId]);
   const list = useQuery({
-    queryKey: ["service-contracts", selectedMallId, search, status, type, paymentDirection, alert, page],
+    queryKey: ["service-contracts", selectedMallId, search, status, type, serviceCategory, valueBasis, paymentDirection, alert, page],
     queryFn: () =>
       serviceContractsApi.list({
         mallId: selectedMallId || undefined,
         search: search || undefined,
         status: status || undefined,
         type: type || undefined,
+        serviceCategory: serviceCategory || undefined,
+        valueBasis: valueBasis || undefined,
         paymentDirection: paymentDirection || undefined,
         alert: alert || undefined,
         alertDays: 30,
         page,
         limit: 25,
       }),
-    enabled: !!selectedMallId,
   });
-  const alertSummary = useQuery({ queryKey: ["service-contract-alerts", selectedMallId], queryFn: () => serviceContractsApi.alerts(30, selectedMallId || undefined), enabled: !!selectedMallId });
+  const alertSummary = useQuery({ queryKey: ["service-contract-alerts", selectedMallId], queryFn: () => serviceContractsApi.alerts(30, selectedMallId || undefined) });
   const detail = useQuery({
     queryKey: ["service-contract", selectedId],
     queryFn: () => serviceContractsApi.detail(selectedId!),
@@ -120,20 +153,37 @@ export default function ServiceContractsPage() {
     qc.invalidateQueries({ queryKey: ["service-contract"] });
   };
   const create = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      serviceContractsApi.create(data),
-    onSuccess: (response: any) => {
-      const created = response?.data ?? response;
+    mutationFn: async ({ data, originalFile }: { data: Record<string, unknown>; originalFile?: File }) => {
+      const response = await serviceContractsApi.create(data);
+      const created = (response as any)?.data ?? response;
+      let uploadError: unknown;
+      if (originalFile && created?.id) {
+        try {
+          await serviceContractsApi.upload(created.id, originalFile, "CONTRACT");
+        } catch (error) {
+          uploadError = error;
+        }
+      }
+      return { created, uploadError };
+    },
+    onSuccess: ({ created, uploadError }) => {
       setSearch("");
       setStatus(created?.status || "DRAFT");
       setType("");
+      setServiceCategory("");
+      setValueBasis("");
       setPaymentDirection("");
       setAlert("");
       setPage(1);
       refresh();
       setShowCreate(false);
+      setCreateOriginalFile(undefined);
       if (created?.id) setSelectedId(created.id);
-      toast({ title: "Đã tạo hợp đồng dịch vụ" });
+      toast(uploadError ? {
+        title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
+        description: "Hợp đồng đã được lưu. Vui lòng thử tải lại tài liệu trong hồ sơ hợp đồng.",
+        variant: "destructive",
+      } : { title: "Đã tạo hợp đồng dịch vụ và lưu bản gốc" });
     },
     onError: (e: any) =>
       toast({
@@ -185,20 +235,26 @@ export default function ServiceContractsPage() {
   });
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const formData = new FormData(e.currentTarget);
+    formData.delete("originalDocument");
+    const raw = Object.fromEntries(formData.entries());
     const data = Object.fromEntries(
       Object.entries(raw).filter(([, value]) => value !== ""),
     ) as Record<string, unknown>;
-    if (data.totalValue !== undefined)
-      data.totalValue = Number(data.totalValue);
-    create.mutate(data);
+    for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
+      if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
+    }
+    create.mutate({
+      data,
+      originalFile: createOriginalFile,
+    });
   }
   function submitEdit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
     const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
     for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
-      if (data[key] !== undefined) data[key] = Number(data[key]);
+      if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
     }
     update.mutate(data);
   }
@@ -206,14 +262,22 @@ export default function ServiceContractsPage() {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
     const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
-    if (data.totalValue !== undefined) data.totalValue = Number(data.totalValue);
+    if (data.totalValue !== undefined) data.totalValue = Number(String(data.totalValue).replace(/,/g, ""));
     renew.mutate(data);
   }
   async function upload(file?: File) {
     if (!file || !selectedId) return;
-    await serviceContractsApi.upload(selectedId, file);
-    refresh();
-    toast({ title: "Đã lưu tài liệu hợp đồng" });
+    try {
+      await serviceContractsApi.upload(selectedId, file);
+      refresh();
+      toast({ title: "Đã lưu tài liệu hợp đồng" });
+    } catch (e: any) {
+      toast({
+        title: "Không thể tải tài liệu",
+        description: e?.response?.data?.message || "Vui lòng kiểm tra định dạng, dung lượng file và thử lại.",
+        variant: "destructive",
+      });
+    }
   }
 
   return (
@@ -229,11 +293,11 @@ export default function ServiceContractsPage() {
         </Button>}
       </div>
       {!selectedMallId && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
-          {t("selectMall")}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
+          Đang xem tổng hợp hợp đồng của tất cả Mall được phân quyền. Chọn một Mall cụ thể để tạo hợp đồng mới.
         </div>
       )}
-      {selectedMallId && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           ["EXPIRING", "Sắp hết hạn", alertData.expiring || 0, "border-amber-200 bg-amber-50 text-amber-800"],
           ["RECEIVABLE", "Kỳ phải thu sắp đến", alertData.receivableDue || 0, "border-emerald-200 bg-emerald-50 text-emerald-800"],
@@ -243,7 +307,7 @@ export default function ServiceContractsPage() {
           <div className="flex items-center justify-between text-sm font-medium"><span>{title}</span>{key === "OVERDUE" ? <AlertTriangle size={18} /> : <Clock size={18} />}</div>
           <div className="mt-2 text-2xl font-semibold">{String(count)}</div><div className="text-xs opacity-75">Trong 30 ngày tới</div>
         </button>)}
-      </div>}
+      </div>
       <div className="flex flex-wrap gap-3">
         <div className="relative max-w-md flex-1">
           <Search
@@ -270,8 +334,10 @@ export default function ServiceContractsPage() {
           ))}
         </select>
         <select className="rounded-md border bg-background px-3 text-sm" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}><option value="">Tất cả loại hợp đồng</option>{TYPES.map(value => <option key={value} value={value}>{value}</option>)}</select>
+        <select className="rounded-md border bg-background px-3 text-sm" value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm dịch vụ</option>{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+        <select className="rounded-md border bg-background px-3 text-sm" value={valueBasis} onChange={(e) => { setValueBasis(e.target.value); setPage(1); }}><option value="">Tất cả cơ sở giá trị</option>{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select className="rounded-md border bg-background px-3 text-sm" value={paymentDirection} onChange={(e) => { setPaymentDirection(e.target.value); setAlert(""); setPage(1); }}><option value="">Tất cả phải thu / phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option><option value="PAYABLE">Hợp đồng phải trả</option></select>
-        {(alert || type || paymentDirection || status) && <Button variant="outline" onClick={() => { setStatus(""); setType(""); setPaymentDirection(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}
+        {(alert || type || serviceCategory || valueBasis || paymentDirection || status) && <Button variant="outline" onClick={() => { setStatus(""); setType(""); setServiceCategory(""); setValueBasis(""); setPaymentDirection(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}
       </div>
       <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} hợp đồng</span><span>Mặc định: tất cả trạng thái</span></div>
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -303,7 +369,7 @@ export default function ServiceContractsPage() {
                     {c.counterpartyName}
                   </div>
                 </td>
-                <td>{c.type}</td>
+                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground">{c.type}</div></td>
                 <td>
                   {c.startDate
                     ? new Date(c.startDate).toLocaleDateString()
@@ -312,6 +378,7 @@ export default function ServiceContractsPage() {
                 </td>
                 <td className="text-right">
                   {Number(c.totalValue).toLocaleString()} {c.currency}
+                  <div className="text-xs text-muted-foreground">{valueBasisLabel(c.valueBasis || "ONE_TIME")}</div>
                 </td>
                 <td className="px-3">
                   <Badge variant="outline">{t(`statuses.${c.status}`)}</Badge>
@@ -333,47 +400,35 @@ export default function ServiceContractsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
             onSubmit={submit}
-            className="grid w-full max-w-2xl grid-cols-2 gap-4 rounded-xl bg-background p-6 shadow-xl"
+            className="grid max-h-[92vh] w-full max-w-4xl grid-cols-2 gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl"
           >
-            <div className="col-span-2 flex justify-between">
-              <h2 className="text-xl font-semibold">Tạo hợp đồng dịch vụ</h2>
-              <button type="button" onClick={() => setShowCreate(false)}>
+            <div className="col-span-2 flex justify-between border-b pb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Tạo hợp đồng dịch vụ</h2>
+                <p className="text-sm text-muted-foreground">Nhập đầy đủ thông tin pháp lý, tài chính và bản gốc trong một lần.</p>
+              </div>
+              <button type="button" onClick={() => { setShowCreate(false); setCreateOriginalFile(undefined); }}>
                 <X />
               </button>
             </div>
-              <Input
-                name="contractNumber"
-                placeholder="Số hợp đồng (để trống để hệ thống tự sinh)"
-              />
-            <Input name="title" required placeholder="Tên hợp đồng *" />
-            <Input
-              name="counterpartyName"
-              required
-              placeholder="Tên đối tác *"
-            />
-            <Input name="counterpartyTax" placeholder="Mã số thuế" />
-            <select
-              name="type"
-              className="rounded-md border bg-background px-3"
-            >
-              {TYPES.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-            <select
-              name="paymentDirection"
-              className="rounded-md border bg-background px-3"
-            >
-              <option value="PAYABLE">Hợp đồng phải trả</option>
-              <option value="RECEIVABLE">Hợp đồng phải thu</option>
-            </select>
-            <Input name="productName" placeholder="Sản phẩm / dịch vụ" />
-            <Input
-              name="totalValue"
-              type="number"
-              min="0"
-              placeholder="Giá trị hợp đồng"
-            />
+            <h3 className="col-span-2 font-semibold">Thông tin pháp lý</h3>
+            <label className="text-sm">Số hợp đồng pháp lý *<Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng đã/phải ký" /></label>
+            <label className="text-sm">Tên hợp đồng *<Input name="title" required placeholder="Tên hợp đồng" /></label>
+            <label className="text-sm">Tên đối tác *<Input name="counterpartyName" required placeholder="Tên pháp lý của đối tác" /></label>
+            <label className="text-sm">Mã số thuế<Input name="counterpartyTax" placeholder="Mã số thuế" /></label>
+            <label className="text-sm">Email<Input name="counterpartyEmail" type="email" placeholder="Email đối tác" /></label>
+            <label className="text-sm">Điện thoại<Input name="counterpartyPhone" placeholder="Số điện thoại" /></label>
+            <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" placeholder="Địa chỉ pháp lý" /></label>
+
+            <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">Phân loại và giá trị</h3>
+            <label className="text-sm">Loại hợp đồng<select name="type" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="text-sm">Chiều thanh toán<select name="paymentDirection" value={createPaymentDirection} onChange={(e) => setCreatePaymentDirection(e.target.value)} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Hợp đồng phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option></select></label>
+            <label className="text-sm">Nhóm sản phẩm/dịch vụ *<select name="serviceCategory" required defaultValue="MAINTENANCE" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="text-sm">Mô tả chi tiết sản phẩm/dịch vụ<Input name="productName" placeholder="Thông tin chi tiết (không dùng để phân nhóm báo cáo)" /></label>
+            <label className="text-sm">Giá trị hợp đồng *<Input name="totalValue" type="number" min="0" required placeholder="Giá trị chưa/đã gồm VAT theo hợp đồng" /></label>
+            <label className="text-sm">Cơ sở giá trị *<select name="valueBasis" required defaultValue="ONE_TIME" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="text-sm">Tiền tệ<Input name="currency" defaultValue="VND" /></label>
+            <label className="text-sm">Ngày ký<Input name="signedDate" type="date" /></label>
             <label className="text-sm">
               Ngày bắt đầu
               <Input name="startDate" type="date" />
@@ -381,6 +436,24 @@ export default function ServiceContractsPage() {
             <label className="text-sm">
               Ngày kết thúc
               <Input name="endDate" type="date" />
+            </label>
+
+            {createPaymentDirection === "RECEIVABLE" && <>
+              <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={7} /></label>
+              <label className="text-sm">VAT mặc định (%)<Input name="defaultVatRate" type="number" min="0" max="100" defaultValue={10} /></label>
+              <label className="text-sm">Hạn thanh toán (ngày)<Input name="paymentTermDays" type="number" min="0" defaultValue={15} /></label>
+            </>}
+
+            <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">Tài liệu và ghi chú</h3>
+            <label className="col-span-2 rounded-lg border border-dashed p-4 text-sm">
+              <span className="mb-2 block font-medium">Hợp đồng bản gốc</span>
+              <span className="mb-3 block text-xs text-muted-foreground">PDF, Word hoặc ảnh; tối đa 30 MB. File sẽ được lưu ngay sau khi tạo hồ sơ.</span>
+              <Input
+                name="originalDocument"
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                onChange={(event) => setCreateOriginalFile(event.target.files?.[0])}
+              />
             </label>
             <textarea
               name="notes"
@@ -392,11 +465,11 @@ export default function ServiceContractsPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setShowCreate(false)}
+                onClick={() => { setShowCreate(false); setCreateOriginalFile(undefined); }}
               >
                 Hủy
               </Button>
-              <Button disabled={create.isPending}>Lưu hợp đồng</Button>
+              <Button disabled={create.isPending}>{create.isPending ? "Đang tạo và lưu tài liệu..." : "Tạo hợp đồng"}</Button>
             </div>
           </form>
         </div>
@@ -428,6 +501,11 @@ export default function ServiceContractsPage() {
                   {Number(item.totalValue).toLocaleString("vi-VN")}{" "}
                   {item.currency}
                 </div>
+                <div className="text-xs text-muted-foreground">{valueBasisLabel(item.valueBasis || "ONE_TIME")}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Nhóm dịch vụ</span>
+                <div className="font-medium">{categoryLabel(item.serviceCategory || "OTHER")}</div>
               </div>
               <div>
                 <span className="text-muted-foreground">Bắt đầu</span>
@@ -530,8 +608,10 @@ export default function ServiceContractsPage() {
             <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" defaultValue={item.billingParty?.address || ""} /></label>
             <label className="text-sm">Loại hợp đồng<select name="type" defaultValue={item.type} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
             <label className="text-sm">Chiều thanh toán<select name="paymentDirection" defaultValue={item.paymentDirection} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Phải trả</option><option value="RECEIVABLE">Phải thu</option></select></label>
-            <label className="text-sm">Sản phẩm / dịch vụ<Input name="productName" defaultValue={item.productName || ""} /></label>
+            <label className="text-sm">Nhóm sản phẩm/dịch vụ<select name="serviceCategory" defaultValue={item.serviceCategory || "OTHER"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="text-sm">Mô tả chi tiết<Input name="productName" defaultValue={item.productName || ""} /></label>
             <label className="text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
+            <label className="text-sm">Cơ sở giá trị<select name="valueBasis" defaultValue={item.valueBasis || "ONE_TIME"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm">Ngày ký<Input name="signedDate" type="date" defaultValue={item.signedDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Ngày kết thúc<Input name="endDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
@@ -554,7 +634,7 @@ export default function ServiceContractsPage() {
               <div><h2 className="text-xl font-semibold">Gia hạn hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">Từ {item.contractNumber}</p></div>
               <button type="button" onClick={() => setShowRenew(false)}><X /></button>
             </div>
-            <label className="col-span-2 text-sm">Số hợp đồng mới<Input name="contractNumber" placeholder="Để trống để hệ thống tự sinh" /></label>
+            <label className="col-span-2 text-sm">Số hợp đồng pháp lý mới *<Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng gia hạn" /></label>
             <label className="col-span-2 text-sm">Tên hợp đồng<Input name="title" defaultValue={item.title} /></label>
             <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Ngày kết thúc mới *<Input name="endDate" type="date" required /></label>

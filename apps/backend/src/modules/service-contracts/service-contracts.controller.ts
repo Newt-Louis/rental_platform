@@ -50,9 +50,6 @@ export class ServiceContractsController {
     return this.service.stats(mallIds ?? undefined);
   }
 
-  @Get('tools/generate-number')
-  generateNumber(@Query('mallCode') mallCode?: string) { return { contractNumber: this.service.generateNumber(mallCode) }; }
-
   @Get('summary/alerts')
   async alerts(@Query('days') days: string, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
     if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);

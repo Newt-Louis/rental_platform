@@ -61,8 +61,19 @@ describe('ServiceContractsService data boundaries', () => {
   it('only renews expiring or expired contracts', async () => {
     prisma.serviceContract.findFirst.mockResolvedValue({ id: 'contract-1', status: 'ACTIVE' });
 
-    await expect(service.renew('contract-1', { endDate: '2027-12-31' }, 'user-1'))
+    await expect(service.renew('contract-1', { contractNumber: 'PL-RENEW-001', endDate: '2027-12-31' }, 'user-1'))
       .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requires the legal contract number instead of generating an internal number', async () => {
+    await expect(service.create({
+      contractNumber: '   ',
+      title: 'Hợp đồng bảo trì',
+      mallId: 'mall-1',
+      counterpartyName: 'Đối tác',
+      serviceCategory: 'MAINTENANCE',
+      valueBasis: 'ANNUAL',
+    } as any, 'user-1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('does not allow marking a contract renewed without creating its renewal', async () => {

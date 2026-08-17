@@ -49,6 +49,10 @@ export default function WorkOrderTemplates({ mallId, malls, users }: any) {
   const [expanded, setExpanded] = useState(false),
     [open, setOpen] = useState(false),
     [form, setForm] = useState<any>(blank);
+  const departments = Array.from(new Set([
+    ...Object.values(CAT).filter(value => value !== "Khác"),
+    ...users.map((user: any) => user.department).filter(Boolean),
+  ])).sort((a, b) => a.localeCompare(b, "vi"));
   const query = useQuery({
     queryKey: ["work-order-templates", mallId],
     queryFn: () => workOrdersApi.templates(mallId ? { mallId } : undefined),
@@ -290,27 +294,35 @@ export default function WorkOrderTemplates({ mallId, malls, users }: any) {
             </label>
             <label className="text-sm">
               Bộ phận
-              <Input
-                className="mt-1"
+              <select
+                className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.assignedDepartment}
                 onChange={(e) =>
                   setForm({ ...form, assignedDepartment: e.target.value })
                 }
-              />
+              >
+                <option value="">Chọn bộ phận xử lý</option>
+                {departments.map(value => <option key={value} value={value}>{value}</option>)}
+              </select>
             </label>
             <label className="text-sm">
               Người phụ trách
               <select
                 className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.assigneeId}
-                onChange={(e) =>
-                  setForm({ ...form, assigneeId: e.target.value })
-                }
+                onChange={(e) => {
+                  const assignee = users.find((user: any) => user.id === e.target.value);
+                  setForm({
+                    ...form,
+                    assigneeId: e.target.value,
+                    assignedDepartment: assignee?.department || form.assignedDepartment,
+                  });
+                }}
               >
                 <option value="">Chưa phân công</option>
                 {users.map((x: any) => (
                   <option key={x.id} value={x.id}>
-                    {x.fullName}
+                    {x.fullName}{x.department ? ` — ${x.department}` : ""}
                   </option>
                 ))}
               </select>

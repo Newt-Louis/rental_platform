@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Boxes,
+  Download,
   History,
   PackagePlus,
   Plus,
@@ -77,6 +78,7 @@ export default function InventoryPage() {
   const [mallId, setMallId] = useState(selectedMallId || "");
   const [type, setType] = useState("");
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [modal, setModal] = useState<
     "category" | "item" | "transaction" | null
   >(null);
@@ -165,6 +167,29 @@ export default function InventoryPage() {
     }
     return true;
   };
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const blob = await inventoryApi.exportExcel({
+        ...(mallId && { mallId }),
+        ...(type && { itemType: type }),
+        ...(search && { search }),
+      });
+      const url = URL.createObjectURL(blob as Blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Inventory_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Đã xuất báo cáo Excel kho vận hành" });
+    } catch (error) {
+      toast({ title: "Không thể xuất Excel", description: errorText(error), variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -180,6 +205,10 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={exportExcel} disabled={exporting}>
+            <Download className="mr-2 h-4 w-4" />
+            {exporting ? "Đang xuất..." : "Xuất Excel"}
+          </Button>
           {canEdit && (
             <>
               <Button

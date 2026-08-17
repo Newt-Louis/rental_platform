@@ -54,6 +54,136 @@ export class InventoryService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
+  async exportExcel(mallIds: string[] | undefined, query: any) {
+    const mallScope = query.mallId ? { mallId: query.mallId } : mallIds ? { mallId: { in: mallIds } } : {};
+    const searchFilter = query.search ? {
+      OR: [
+        { sku: { contains: query.search, mode: Prisma.QueryMode.insensitive } },
+        { name: { contains: query.search, mode: Prisma.QueryMode.insensitive } },
+        { location: { contains: query.search, mode: Prisma.QueryMode.insensitive } },
+      ],
+    } : {};
+    const itemFilter = {
+      ...(query.itemType ? { itemType: query.itemType } : {}),
+      ...searchFilter,
+    };
+    const itemWhere: Prisma.InventoryItemWhereInput = { ...mallScope, ...itemFilter, isActive: true };
+    const categoryWhere: Prisma.InventoryCategoryWhereInput = {
+      ...mallScope,
+      ...(query.itemType ? { itemType: query.itemType } : {}),
+      isActive: true,
+    };
+    const transactionWhere: Prisma.InventoryTransactionWhereInput = {
+      ...mallScope,
+      ...(Object.keys(itemFilter).length ? { item: { is: itemFilter } } : {}),
+    };
+    const [items, transactions, categories] = await Promise.all([
+      this.prisma.inventoryItem.findMany({
+        where: itemWhere,
+        include: { category: true, mall: { select: { name: true, code: true } } },
+        orderBy: [{ mall: { code: 'asc' } }, { sku: 'asc' }],
+      }),
+      this.prisma.inventoryTransaction.findMany({
+        where: transactionWhere,
+        include: {
+          mall: { select: { name: true, code: true } },
+          item: { select: { sku: true, name: true, unit: true, itemType: true } },
+          createdBy: { select: { fullName: true } },
+        },
+        orderBy: { transactionAt: 'desc' },
+      }),
+      this.prisma.inventoryCategory.findMany({
+        where: categoryWhere,
+        include: { mall: { select: { name: true, code: true } }, _count: { select: { items: true } } },
+        orderBy: [{ mall: { code: 'asc' } }, { itemType: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
+
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'THISO Leasing Platform';
+    workbook.created = new Date();
+    const typeLabels: Record<string, string> = { VTTH: 'Vật tư tiêu hao', CCDC: 'Công cụ dụng cụ', EQUIPMENT: 'Trang thiết bị vận hành' };
+    const transactionLabels: Record<string, string> = { IN: 'Nhập kho', OUT: 'Xuất kho', RETURN: 'Hoàn trả', ADJUST: 'Kiểm kê/điều chỉnh' };
+
+    const stockSheet = workbook.addWorksheet('Tồn kho', { views: [{ state: 'frozen', ySplit: 1 }] });
+    stockSheet.columns = [
+      { header: 'STT', key: 'index', width: 7 }, { header: 'Mall', key: 'mall', width: 25 },
+      { header: 'Mã hàng', key: 'sku', width: 18 }, { header: 'Tên hàng', key: 'name', width: 32 },
+      { header: 'Nhóm', key: 'itemType', width: 26 }, { header: 'Danh mục', key: 'category', width: 24 },
+      { header: 'ĐVT', key: 'unit', width: 12 }, { header: 'Quy cách', key: 'specification', width: 24 },
+      { header: 'Nhà sản xuất', key: 'manufacturer', width: 22 }, { header: 'Vị trí kho', key: 'location', width: 20 },
+      { header: 'Tồn hiện tại', key: 'currentStock', width: 15 }, { header: 'Tồn tối thiểu', key: 'minStock', width: 15 },
+      { header: 'Trạng thái', key: 'status', width: 17 }, { header: 'Đơn giá bình quân', key: 'averageCost', width: 20 },
+      { header: 'Giá trị tồn', key: 'inventoryValue', width: 20 }, { header: 'Ghi chú', key: 'notes', width: 28 },
+      { header: 'Cập nhật lúc', key: 'updatedAt', width: 20 },
+    ];
+    items.forEach((item, index) => stockSheet.addRow({
+      index: index + 1, mall: `${item.mall.code} — ${item.mall.name}`, sku: item.sku, name: item.name,
+      itemType: typeLabels[item.itemType] ?? item.itemType, category: item.category.name, unit: item.unit,
+      specification: item.specification, manufacturer: item.manufacturer, location: item.location,
+      currentStock: item.currentStock, minStock: item.minStock,
+      status: item.currentStock <= item.minStock ? 'Sắp hết / hết hàng' : 'Đủ tồn',
+      averageCost: item.averageCost, inventoryValue: item.currentStock * item.averageCost,
+      notes: item.notes, updatedAt: item.updatedAt,
+    }));
+
+    const txSheet = workbook.addWorksheet('Sổ nhập xuất', { views: [{ state: 'frozen', ySplit: 1 }] });
+    txSheet.columns = [
+      { header: 'STT', key: 'index', width: 7 }, { header: 'Mall', key: 'mall', width: 25 },
+      { header: 'Số phiếu', key: 'transactionNo', width: 24 }, { header: 'Thời gian', key: 'transactionAt', width: 20 },
+      { header: 'Loại', key: 'type', width: 22 }, { header: 'Mã hàng', key: 'sku', width: 18 },
+      { header: 'Tên hàng', key: 'name', width: 30 }, { header: 'Nhóm', key: 'itemType', width: 26 },
+      { header: 'Số lượng', key: 'quantity', width: 14 }, { header: 'ĐVT', key: 'unit', width: 12 },
+      { header: 'Đơn giá', key: 'unitCost', width: 18 }, { header: 'Tồn trước', key: 'stockBefore', width: 14 },
+      { header: 'Tồn sau', key: 'stockAfter', width: 14 }, { header: 'Nhà cung cấp', key: 'supplier', width: 24 },
+      { header: 'Người nhận', key: 'recipient', width: 22 }, { header: 'Bộ phận', key: 'department', width: 20 },
+      { header: 'Số chứng từ', key: 'referenceNo', width: 20 }, { header: 'Mục đích', key: 'purpose', width: 26 },
+      { header: 'Ghi chú', key: 'notes', width: 26 }, { header: 'Người tạo', key: 'createdBy', width: 22 },
+    ];
+    transactions.forEach((transaction, index) => txSheet.addRow({
+      index: index + 1, mall: `${transaction.mall.code} — ${transaction.mall.name}`,
+      transactionNo: transaction.transactionNo, transactionAt: transaction.transactionAt,
+      type: transactionLabels[transaction.type] ?? transaction.type, sku: transaction.item.sku,
+      name: transaction.item.name, itemType: typeLabels[transaction.item.itemType] ?? transaction.item.itemType,
+      quantity: transaction.quantity, unit: transaction.item.unit, unitCost: transaction.unitCost,
+      stockBefore: transaction.stockBefore, stockAfter: transaction.stockAfter, supplier: transaction.supplier,
+      recipient: transaction.recipient, department: transaction.department, referenceNo: transaction.referenceNo,
+      purpose: transaction.purpose, notes: transaction.notes, createdBy: transaction.createdBy.fullName,
+    }));
+
+    const categorySheet = workbook.addWorksheet('Danh mục', { views: [{ state: 'frozen', ySplit: 1 }] });
+    categorySheet.columns = [
+      { header: 'STT', key: 'index', width: 7 }, { header: 'Mall', key: 'mall', width: 25 },
+      { header: 'Mã danh mục', key: 'code', width: 20 }, { header: 'Tên danh mục', key: 'name', width: 30 },
+      { header: 'Nhóm', key: 'itemType', width: 26 }, { header: 'Số mã hàng', key: 'itemCount', width: 15 },
+      { header: 'Mô tả', key: 'description', width: 36 },
+    ];
+    categories.forEach((category, index) => categorySheet.addRow({
+      index: index + 1, mall: `${category.mall.code} — ${category.mall.name}`, code: category.code,
+      name: category.name, itemType: typeLabels[category.itemType] ?? category.itemType,
+      itemCount: category._count.items, description: category.description,
+    }));
+
+    for (const sheet of [stockSheet, txSheet, categorySheet]) {
+      sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columnCount } };
+      sheet.getRow(1).height = 24;
+      sheet.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) row.alignment = { vertical: 'top', wrapText: true };
+      });
+    }
+    for (const key of ['averageCost', 'inventoryValue']) stockSheet.getColumn(key).numFmt = '#,##0.00';
+    txSheet.getColumn('unitCost').numFmt = '#,##0.00';
+    stockSheet.getColumn('updatedAt').numFmt = 'dd/mm/yyyy hh:mm';
+    txSheet.getColumn('transactionAt').numFmt = 'dd/mm/yyyy hh:mm';
+    return workbook.xlsx.writeBuffer();
+  }
+
   async createItem(dto: CreateInventoryItemDto) {
     const category = await this.prisma.inventoryCategory.findFirst({ where: { id: dto.categoryId, mallId: dto.mallId, itemType: dto.itemType, isActive: true } });
     if (!category) throw new BadRequestException('Danh mục không thuộc Mall hoặc không đúng nhóm tài sản');

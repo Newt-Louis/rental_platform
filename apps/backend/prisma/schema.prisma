@@ -269,6 +269,34 @@ enum ServiceContractType {
   OTHER
 }
 
+enum ServiceContractServiceCategory {
+  CLEANING
+  SECURITY
+  MAINTENANCE
+  TECHNICAL
+  IT_SOFTWARE
+  CONSULTING
+  INSURANCE
+  CONSTRUCTION
+  LABOR_SUPPLY
+  MARKETING
+  PARKING
+  LANDSCAPING
+  PEST_CONTROL
+  WASTE_MANAGEMENT
+  UTILITIES
+  OTHER
+}
+
+enum ServiceContractValueBasis {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  PROJECT
+  OTHER
+}
+
 enum BillingCycle {
   MONTHLY
   QUARTERLY
@@ -1588,43 +1616,45 @@ model ContractFile {
 
 /// Service and operations contracts, separate from leasing Contract records.
 model ServiceContract {
-  id                    String                @id @default(cuid())
-  contractNumber        String                @unique
+  id                    String                         @id @default(cuid())
+  contractNumber        String                         @unique
   title                 String
   mallId                String
   counterpartyName      String
   counterpartyTax       String?
   counterpartyEmail     String?
   counterpartyPhone     String?
-  type                  ServiceContractType   @default(SERVICE)
-  status                ServiceContractStatus @default(DRAFT)
+  type                  ServiceContractType            @default(SERVICE)
+  status                ServiceContractStatus          @default(DRAFT)
   workflowStage         String?
   workflowColor         String?
   signedDate            DateTime?
   startDate             DateTime?
   endDate               DateTime?
   terminatedDate        DateTime?
-  totalValue            Float                 @default(0)
-  currency              String                @default("VND")
-  paymentDirection      String                @default("PAYABLE")
+  totalValue            Float                          @default(0)
+  currency              String                         @default("VND")
+  paymentDirection      String                         @default("PAYABLE")
   billingPartyId        String?
-  billingParty          BillingParty?         @relation(fields: [billingPartyId], references: [id])
-  invoiceLeadDays       Int                   @default(7)
-  defaultVatRate        Float                 @default(10)
-  paymentTermDays       Int                   @default(15)
+  billingParty          BillingParty?                  @relation(fields: [billingPartyId], references: [id])
+  invoiceLeadDays       Int                            @default(7)
+  defaultVatRate        Float                          @default(10)
+  paymentTermDays       Int                            @default(15)
+  serviceCategory       ServiceContractServiceCategory @default(OTHER)
+  valueBasis            ServiceContractValueBasis      @default(ONE_TIME)
   productName           String?
-  riskScore             Int                   @default(0)
-  hasAllRequiredClauses Boolean               @default(false)
+  riskScore             Int                            @default(0)
+  hasAllRequiredClauses Boolean                        @default(false)
   ownerId               String?
   createdById           String
   parentContractId      String?
-  parentContract        ServiceContract?      @relation("ServiceContractRenewals", fields: [parentContractId], references: [id])
-  renewals              ServiceContract[]     @relation("ServiceContractRenewals")
+  parentContract        ServiceContract?               @relation("ServiceContractRenewals", fields: [parentContractId], references: [id])
+  renewals              ServiceContract[]              @relation("ServiceContractRenewals")
   notes                 String?
   tags                  String?
-  isDeleted             Boolean               @default(false)
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  isDeleted             Boolean                        @default(false)
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
 
   documents  ServiceContractDocument[]
   events     ServiceContractEvent[]
@@ -1634,6 +1664,7 @@ model ServiceContract {
 
   @@index([mallId, status])
   @@index([mallId, isDeleted, status, type, paymentDirection])
+  @@index([mallId, serviceCategory, valueBasis])
   @@index([endDate])
   @@index([counterpartyName])
 }

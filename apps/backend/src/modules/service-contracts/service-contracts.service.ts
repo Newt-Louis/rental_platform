@@ -33,6 +33,8 @@ export class ServiceContractsService {
     if (query.mallId) where.mallId = query.mallId; else if (mallIds) where.mallId = { in: mallIds };
     if (query.status) where.status = query.status;
     if (query.type) where.type = query.type;
+    if (query.serviceCategory) where.serviceCategory = query.serviceCategory;
+    if (query.valueBasis) where.valueBasis = query.valueBasis;
     if (query.paymentDirection) where.paymentDirection = query.paymentDirection;
     const now = new Date();
     const alertDays = Math.min(365, Math.max(1, Number(query.alertDays) || 30));
@@ -61,9 +63,10 @@ export class ServiceContractsService {
   async create(dto: CreateServiceContractDto, userId: string) {
     if (dto.startDate && dto.endDate && new Date(dto.endDate) < new Date(dto.startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
     const { signedDate, startDate, endDate, totalValue, contractNumber, counterpartyAddress, ...data } = dto;
-    const finalContractNumber = contractNumber?.trim() || this.generateNumber();
+    const finalContractNumber = contractNumber.trim();
+    if (!finalContractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber: finalContractNumber }, select: { id: true } });
-    if (duplicate) throw new ConflictException(`Số hợp đồng ${finalContractNumber} đã tồn tại. Vui lòng nhập số khác hoặc để trống để hệ thống tự sinh.`);
+    if (duplicate) throw new ConflictException(`Số hợp đồng ${finalContractNumber} đã tồn tại. Vui lòng kiểm tra và nhập đúng số hợp đồng pháp lý.`);
     const normalizedTotalValue = Number.isFinite(Number(totalValue)) ? Number(totalValue) : 0;
     return this.prisma.$transaction(async tx => {
       const existingParty = data.paymentDirection === 'RECEIVABLE' && data.counterpartyTax
@@ -145,15 +148,22 @@ export class ServiceContractsService {
   async stats(mallIds?: string[]) {
     const where: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
     const soon = new Date(); soon.setDate(soon.getDate() + 30);
-    const [total, grouped, expiringSoon, value] = await Promise.all([
+    const [total, grouped, categories, valueBases, expiringSoon, value] = await Promise.all([
       this.prisma.serviceContract.count({ where }), this.prisma.serviceContract.groupBy({ by: ['status'], where, _count: true }),
+      this.prisma.serviceContract.groupBy({ by: ['serviceCategory'], where, _count: true }),
+      this.prisma.serviceContract.groupBy({ by: ['valueBasis'], where, _count: true }),
       this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: ['ACTIVE', 'PENDING_SIGNATURE', 'EXPIRING'] } } }),
       this.prisma.serviceContract.aggregate({ where, _sum: { totalValue: true } }),
     ]);
-    return { total, expiringSoon, totalValue: value._sum.totalValue || 0, byStatus: Object.fromEntries(grouped.map(x => [x.status, x._count])) };
+    return {
+      total,
+      expiringSoon,
+      totalValue: value._sum.totalValue || 0,
+      byStatus: Object.fromEntries(grouped.map(x => [x.status, x._count])),
+      byServiceCategory: Object.fromEntries(categories.map(x => [x.serviceCategory, x._count])),
+      byValueBasis: Object.fromEntries(valueBases.map(x => [x.valueBasis, x._count])),
+    };
   }
-
-  generateNumber(mallCode = 'MALL') { return `HD-${mallCode}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`; }
 
   async createPayment(contractId: string, body: CreateServiceContractPaymentDto) {
     const contract = await this.findOne(contractId);
@@ -281,7 +291,8 @@ export class ServiceContractsService {
     const startDate = body.startDate ? new Date(body.startDate) : old.endDate;
     const endDate = new Date(body.endDate);
     if (!startDate || endDate <= startDate) throw new BadRequestException('Ngày kết thúc hợp đồng gia hạn phải sau ngày bắt đầu');
-    const contractNumber = body.contractNumber?.trim() || this.generateNumber();
+    const contractNumber = body.contractNumber.trim();
+    if (!contractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý của hợp đồng gia hạn');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber }, select: { id: true } });
     if (duplicate) throw new ConflictException(`Số hợp đồng ${contractNumber} đã tồn tại`);
     return this.prisma.$transaction(async tx => {
@@ -295,7 +306,8 @@ export class ServiceContractsService {
         type: old.type, startDate, endDate, totalValue: Number(body.totalValue ?? old.totalValue),
         currency: old.currency, paymentDirection: old.paymentDirection, billingPartyId,
         invoiceLeadDays: old.invoiceLeadDays, defaultVatRate: old.defaultVatRate,
-        paymentTermDays: old.paymentTermDays, productName: old.productName, ownerId: old.ownerId,
+        paymentTermDays: old.paymentTermDays, serviceCategory: old.serviceCategory,
+        valueBasis: old.valueBasis, productName: old.productName, ownerId: old.ownerId,
         createdById: userId, parentContractId: id, notes: body.notes,
         events: { create: { eventType: 'CREATED', description: `Gia hạn từ hợp đồng ${old.contractNumber}`, userId } },
       } });
