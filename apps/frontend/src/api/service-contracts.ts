@@ -1,6 +1,7 @@
 import api from '@/lib/axios';
 export const serviceContractsApi = {
   list: (params?: Record<string, unknown>) => api.get('/service-contracts', { params }).then(r => r.data),
+  exportExcel: (params?: Record<string, unknown>) => api.get('/service-contracts/export', { params, responseType: 'blob' }).then(r => r.data),
   detail: (id: string) => api.get(`/service-contracts/${id}`).then(r => r.data),
   create: (data: Record<string, unknown>) => api.post('/service-contracts', data).then(r => r.data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/service-contracts/${id}`, data).then(r => r.data),

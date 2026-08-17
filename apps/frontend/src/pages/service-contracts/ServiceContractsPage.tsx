@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Clock, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
+import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { Button } from "@/components/ui/button";
@@ -90,6 +90,19 @@ const labels: Record<string, string> = {
   RENEWED: "Đã gia hạn",
   CANCELLED: "Đã hủy",
 };
+const STATUS_DESCRIPTIONS: Record<string, string> = {
+  DRAFT: "Hồ sơ đang được soạn thảo và bổ sung thông tin; chưa đưa vào quy trình phê duyệt.",
+  PROPOSAL: "Điều khoản thương mại đang ở bước đề xuất, trao đổi hoặc thương lượng với các bên.",
+  UNDER_REVIEW: "Hồ sơ đang được các bộ phận liên quan kiểm tra và phê duyệt nội bộ.",
+  PENDING_SIGNATURE: "Nội dung đã hoàn thiện và đang chờ các bên ký hợp đồng pháp lý.",
+  ACTIVE: "Hợp đồng đã có hiệu lực; các nghĩa vụ, thanh toán và mốc thực hiện đang được theo dõi.",
+  EXPIRING: "Hợp đồng sắp đến ngày kết thúc; cần quyết định gia hạn, kết thúc hoặc chấm dứt.",
+  EXPIRED: "Hợp đồng đã qua ngày kết thúc và không còn hiệu lực thực hiện.",
+  TERMINATED: "Hợp đồng đã được chấm dứt trước hạn theo quyết định hoặc thỏa thuận của các bên.",
+  RENEWED: "Hợp đồng đã được thay thế hoặc tiếp nối bằng một hợp đồng gia hạn mới.",
+  CANCELLED: "Hồ sơ đã bị hủy và không tiếp tục quy trình ký kết hoặc thực hiện.",
+};
+const LIFECYCLE_FLOW = ["DRAFT", "PROPOSAL", "UNDER_REVIEW", "PENDING_SIGNATURE", "ACTIVE", "EXPIRING", "EXPIRED"];
 
 export default function ServiceContractsPage() {
   const { t } = useTranslation("serviceContracts");
@@ -111,6 +124,8 @@ export default function ServiceContractsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createPaymentDirection, setCreatePaymentDirection] = useState("PAYABLE");
   const [createOriginalFile, setCreateOriginalFile] = useState<File>();
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
   useEffect(() => {
@@ -148,6 +163,7 @@ export default function ServiceContractsPage() {
   const alertData = (alertSummary.data as any)?.data ?? alertSummary.data ?? {};
   // Axios unwraps non-paginated API responses, while paginated lists keep `data`.
   const item = (detail.data as any)?.data ?? detail.data;
+  useEffect(() => setPendingStatus(null), [selectedId, item?.status]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["service-contracts"] });
     qc.invalidateQueries({ queryKey: ["service-contract-alerts"] });
@@ -196,7 +212,11 @@ export default function ServiceContractsPage() {
   const changeStatus = useMutation({
     mutationFn: (next: string) =>
       serviceContractsApi.updateStatus(selectedId!, next),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setPendingStatus(null);
+      refresh();
+      toast({ title: "Đã cập nhật trạng thái hợp đồng" });
+    },
     onError: (e: any) =>
       toast({
         title: "Chuyển trạng thái không hợp lệ",
@@ -280,6 +300,35 @@ export default function ServiceContractsPage() {
       });
     }
   }
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const blob = await serviceContractsApi.exportExcel({
+        mallId: selectedMallId || undefined,
+        search: search || undefined,
+        status: status || undefined,
+        type: type || undefined,
+        serviceCategory: serviceCategory || undefined,
+        valueBasis: valueBasis || undefined,
+        paymentDirection: paymentDirection || undefined,
+        alert: alert || undefined,
+        alertDays: 30,
+      });
+      const url = URL.createObjectURL(blob as Blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ServiceContracts_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Đã xuất báo cáo Excel hợp đồng dịch vụ" });
+    } catch (error: any) {
+      toast({ title: "Không thể xuất Excel", description: error?.response?.data?.message || error?.message, variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="space-y-5 p-6">
@@ -288,10 +337,16 @@ export default function ServiceContractsPage() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
         </div>
-        {canEdit && <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId}>
-          <Plus size={16} className="mr-2" />
-          {t("create")}
-        </Button>}
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={exportExcel} disabled={exporting}>
+            <Download size={16} className="mr-2" />
+            {exporting ? "Đang xuất..." : "Xuất Excel"}
+          </Button>
+          {canEdit && <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId}>
+            <Plus size={16} className="mr-2" />
+            {t("create")}
+          </Button>}
+        </div>
       </div>
       {!selectedMallId && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
@@ -526,19 +581,15 @@ export default function ServiceContractsPage() {
               </div>
             </div>
             <div className="mt-5">
-              <h3 className="mb-2 font-semibold">Vòng đời hợp đồng</h3>
-              <select
-                className="w-full rounded-md border bg-background p-2"
-                value={item.status}
-                disabled={!canEdit}
-                onChange={(e) => changeStatus.mutate(e.target.value)}
-              >
-                {[item.status, ...(ALLOWED_TRANSITIONS[item.status] || [])].map((s) => (
-                  <option key={s} value={s}>
-                    {labels[s]}
-                  </option>
-                ))}
-              </select>
+              <ContractLifecycle
+                status={item.status}
+                canEdit={canEdit}
+                pendingStatus={pendingStatus}
+                isPending={changeStatus.isPending}
+                onSelect={setPendingStatus}
+                onCancel={() => setPendingStatus(null)}
+                onConfirm={() => pendingStatus && changeStatus.mutate(pendingStatus)}
+              />
             </div>
             <div className="mt-6">
               <div className="mb-2 flex items-center justify-between">
@@ -649,6 +700,92 @@ export default function ServiceContractsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function ContractLifecycle({
+  status,
+  canEdit,
+  pendingStatus,
+  isPending,
+  onSelect,
+  onCancel,
+  onConfirm,
+}: {
+  status: string;
+  canEdit: boolean;
+  pendingStatus: string | null;
+  isPending: boolean;
+  onSelect: (status: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const transitions = ALLOWED_TRANSITIONS[status] || [];
+  const currentIndex = LIFECYCLE_FLOW.indexOf(status);
+  return (
+    <section className="space-y-4 rounded-lg border p-4">
+      <div>
+        <h3 className="font-semibold">Vòng đời hợp đồng</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Theo dõi tiến trình và chọn bước chuyển tiếp phù hợp. Mọi thay đổi đều được lưu vào lịch sử hợp đồng.
+        </p>
+      </div>
+      <div className="overflow-x-auto pb-1">
+        <div className="flex min-w-max items-center gap-1">
+          {LIFECYCLE_FLOW.map((stage, index) => (
+            <div key={stage} className="flex items-center gap-1">
+              <div className={`rounded-full border px-3 py-1.5 text-xs ${stage === status ? "border-primary bg-primary text-primary-foreground font-semibold" : currentIndex >= 0 && index < currentIndex ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "bg-muted/30 text-muted-foreground"}`}>
+                {labels[stage]}
+              </div>
+              {index < LIFECYCLE_FLOW.length - 1 && <span className="text-muted-foreground">→</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-md border-l-4 border-primary bg-muted/40 p-3">
+        <div className="text-xs font-medium uppercase text-muted-foreground">Trạng thái hiện tại</div>
+        <div className="mt-1 font-semibold">{labels[status] || status}</div>
+        <p className="mt-1 text-sm text-muted-foreground">{STATUS_DESCRIPTIONS[status] || "Chưa có mô tả cho trạng thái này."}</p>
+      </div>
+      {canEdit && transitions.length > 0 && (
+        <div>
+          <div className="mb-2 text-sm font-medium">Bước có thể chuyển tiếp</div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {transitions.map(next => (
+              <button
+                key={next}
+                type="button"
+                className={`rounded-md border p-3 text-left transition hover:border-primary hover:bg-muted/40 ${pendingStatus === next ? "border-primary ring-2 ring-primary/20" : ""}`}
+                onClick={() => onSelect(next)}
+              >
+                <div className={`font-medium ${["CANCELLED", "TERMINATED"].includes(next) ? "text-red-600" : ""}`}>
+                  Chuyển sang “{labels[next]}”
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{STATUS_DESCRIPTIONS[next]}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {canEdit && transitions.length === 0 && (
+        <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+          Đây là trạng thái kết thúc. Không có bước chuyển tiếp trực tiếp từ trạng thái này.
+        </div>
+      )}
+      {pendingStatus && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
+          <div className="font-medium">Xác nhận chuyển sang “{labels[pendingStatus]}”?</div>
+          <p className="mt-1 text-xs">{STATUS_DESCRIPTIONS[pendingStatus]}</p>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={onCancel} disabled={isPending}>Hủy</Button>
+            <Button size="sm" variant={["CANCELLED", "TERMINATED"].includes(pendingStatus) ? "destructive" : "default"} onClick={onConfirm} disabled={isPending}>
+              {isPending ? "Đang cập nhật..." : "Xác nhận chuyển trạng thái"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {!canEdit && <p className="text-xs text-muted-foreground">Bạn có quyền xem vòng đời nhưng không có quyền chuyển trạng thái hợp đồng.</p>}
+    </section>
   );
 }
 

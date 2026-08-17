@@ -10,6 +10,7 @@ const mallContext = vi.hoisted(() => ({ selectedMallId: null as string | null })
 vi.mock('@/api', () => ({
   serviceContractsApi: {
     list: vi.fn(),
+    exportExcel: vi.fn(),
     detail: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -81,6 +82,7 @@ describe('ServiceContractsPage all-mall view', () => {
       currency: 'VND',
       documents: [], events: [], payments: [], checklist: [], milestones: [],
     } as never);
+    vi.mocked(serviceContractsApi.updateStatus).mockResolvedValue({ id: 'contract-created', status: 'PROPOSAL' } as never);
   });
 
   it('loads contracts and alerts without a mallId while keeping creation mall-specific', async () => {
@@ -138,5 +140,19 @@ describe('ServiceContractsPage all-mall view', () => {
     })));
     await waitFor(() => expect(serviceContractsApi.upload).toHaveBeenCalledWith('contract-created', original, 'CONTRACT'));
     await waitFor(() => expect(serviceContractsApi.alerts).toHaveBeenCalledTimes(2));
+  });
+
+  it('explains lifecycle choices and requires confirmation before changing status', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    expect(await screen.findByText('Trạng thái hiện tại')).toBeInTheDocument();
+    expect(screen.getByText(/Hồ sơ đang được soạn thảo/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Chuyển sang “Đề xuất”/ }));
+    expect(serviceContractsApi.updateStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
+
+    await waitFor(() => expect(serviceContractsApi.updateStatus).toHaveBeenCalledWith('contract-1', 'PROPOSAL'));
   });
 });

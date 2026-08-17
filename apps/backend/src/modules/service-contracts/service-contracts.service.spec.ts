@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import * as ExcelJS from 'exceljs';
 import { ServiceContractsService } from './service-contracts.service';
 
 describe('ServiceContractsService data boundaries', () => {
@@ -8,6 +9,7 @@ describe('ServiceContractsService data boundaries', () => {
     serviceContractChecklistItem: { findFirst: jest.fn(), update: jest.fn() },
     serviceContractMilestone: { findFirst: jest.fn(), update: jest.fn() },
     serviceContractDocument: { aggregate: jest.fn(), create: jest.fn() },
+    mall: { findMany: jest.fn() },
   } as any;
   const storage = { saveFile: jest.fn(), deleteFile: jest.fn() } as any;
   let service: ServiceContractsService;
@@ -131,5 +133,32 @@ describe('ServiceContractsService data boundaries', () => {
     expect(prisma.serviceContractPayment.count).toHaveBeenCalledWith({ where: expect.objectContaining({
       contract: expect.objectContaining({ status: { in: ['ACTIVE', 'EXPIRING'] } }),
     }) });
+  });
+
+  it('exports filtered contracts and their payment schedule to an Excel workbook', async () => {
+    prisma.serviceContract.findMany.mockResolvedValue([{
+      id: 'contract-1', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì', counterpartyName: 'Đối tác A',
+      counterpartyTax: '0312345678', type: 'SERVICE', serviceCategory: 'MAINTENANCE', productName: 'Bảo trì hệ thống',
+      status: 'ACTIVE', paymentDirection: 'PAYABLE', signedDate: new Date('2026-01-01'), startDate: new Date('2026-01-01'),
+      endDate: new Date('2026-12-31'), totalValue: 120000000, valueBasis: 'ANNUAL', currency: 'VND', notes: null,
+      createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-08-17'), mallId: 'mall-1',
+      _count: { documents: 1 }, payments: [{
+        milestone: 'Đợt 1', dueDate: new Date('2026-09-01'), subtotal: 10000000, vatRate: 10, vatAmount: 1000000,
+        totalAmount: 11000000, amount: 11000000, paidAmount: null, currency: 'VND', status: 'PENDING',
+        invoiceNumber: null, notes: null,
+      }],
+    }]);
+    prisma.mall.findMany.mockResolvedValue([{ id: 'mall-1', code: 'SALA', name: 'Thiso Mall Sala' }]);
+
+    const buffer = await service.exportExcel({ serviceCategory: 'MAINTENANCE' }, ['mall-1']);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+
+    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual(['Hợp đồng', 'Lịch thanh toán']);
+    expect(workbook.getWorksheet('Hợp đồng')?.getCell('C2').value).toBe('PL-2026-001');
+    expect(workbook.getWorksheet('Lịch thanh toán')?.getCell('F2').value).toBe('Đợt 1');
+    expect(prisma.serviceContract.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ mallId: { in: ['mall-1'] }, serviceCategory: 'MAINTENANCE' }),
+    }));
   });
 });

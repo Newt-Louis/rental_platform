@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -41,6 +42,16 @@ export class ServiceContractsController {
     if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
     const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.findAll(query, mallIds ?? undefined);
+  }
+
+  @Get('export')
+  async exportExcel(@Query() query: any, @CurrentUser() user: any, @Res() res: Response) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    const buffer = await this.service.exportExcel(query, mallIds ?? undefined);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="ServiceContracts_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(buffer);
   }
 
   @Get('summary/stats')
