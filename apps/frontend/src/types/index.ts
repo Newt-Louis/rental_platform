@@ -484,6 +484,11 @@ export interface Invoice {
   totalPaid?: number;
   balance?: number;
   daysOverdue?: number;
+  sourceContractNumber?: string;
+  sourceContractType?: string;
+  sourceStatus?: string;
+  sourcePaidAmount?: number;
+  sourceTotalAmount?: number;
 }
 
 export interface Ticket {

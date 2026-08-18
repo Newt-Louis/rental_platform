@@ -47,6 +47,14 @@ const SOURCE_LABELS: Record<string, string> = {
   PENALTY: 'Phí phạt',
   SHORT_TERM_BOOKING: 'Thuê ngắn hạn',
 };
+const SOURCE_COLORS: Record<string, string> = {
+  LEASE_CONTRACT: 'border-blue-200 bg-blue-50 text-blue-700',
+  SERVICE_CONTRACT: 'border-teal-200 bg-teal-50 text-teal-700',
+  PARKING: 'border-violet-200 bg-violet-50 text-violet-700',
+  SHORT_TERM_BOOKING: 'border-orange-200 bg-orange-50 text-orange-700',
+  UTILITY: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+  PENALTY: 'border-red-200 bg-red-50 text-red-700',
+};
 
 const LINE_TYPE_CONFIG: Record<string, { icon: React.ElementType; unit?: string; isFixed?: boolean }> = {
   RENT:           { icon: Receipt,    isFixed: true },
@@ -914,6 +922,14 @@ function InvoicesTab() {
 
   const invoices: Invoice[] = data?.data ?? [];
   const summary = data?.summary ?? {};
+  const sourceBreakdown = Array.from(new Set([
+    ...Object.keys(summary.bySource || {}),
+    ...Object.keys(pendingSummary.bySource || {}),
+  ])).map((source) => ({
+    source,
+    count: (summary.bySource?.[source]?.count || 0) + (pendingSummary.bySource?.[source]?.count || 0),
+    amount: (summary.bySource?.[source]?.amount || 0) + (pendingSummary.bySource?.[source]?.amount || 0),
+  }));
   const totalPages = data?.totalPages ?? 1;
 
   // Active step based on filter
@@ -963,13 +979,15 @@ function InvoicesTab() {
             <div className="space-y-2 p-4"><Skeleton className="h-11" /><Skeleton className="h-11" /></div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[1050px] w-full text-sm">
+              <table className="min-w-[1220px] w-full text-sm">
                 <thead className="bg-gray-50 text-xs text-gray-500"><tr>
                   <th className="w-10 px-3 py-2.5 text-center"><input type="checkbox" aria-label="Chọn tất cả khoản đến hạn" checked={allDueSelected} disabled={!duePendingRows.length} onChange={(event) => setSelectedPending(event.target.checked ? new Set(duePendingRows.map((row) => `${row.sourceType}:${row.id}`)) : new Set())} /></th>
                   <th className="px-4 py-2.5 text-left font-medium">Đối tượng phải thu</th>
                   <th className="px-4 py-2.5 text-left font-medium">Nguồn / Hợp đồng</th>
                   <th className="px-4 py-2.5 text-left font-medium">Kỳ thu / Nội dung</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Dự kiến phải thu</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Giá trị hóa đơn</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Đã ghi nhận</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Còn dự kiến thu</th>
                   <th className="px-4 py-2.5 text-left font-medium">Ngày dự kiến xuất</th>
                   <th className="px-4 py-2.5 text-left font-medium">Tình trạng</th>
                   <th className="px-4 py-2.5 text-right font-medium">Thao tác</th>
@@ -979,9 +997,11 @@ function InvoicesTab() {
                     <tr key={`${row.sourceType}-${row.id}`} onClick={() => setPendingDetail(row)} className={`cursor-pointer hover:bg-violet-50 ${row.isDueForInvoice ? 'bg-red-50/40' : ''}`}>
                       <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Chọn ${row.contractNumber}`} disabled={!row.isDueForInvoice} checked={selectedPending.has(`${row.sourceType}:${row.id}`)} onClick={(event) => event.stopPropagation()} onChange={(event) => setSelectedPending((current) => { const next = new Set(current); const key = `${row.sourceType}:${row.id}`; event.target.checked ? next.add(key) : next.delete(key); return next; })} /></td>
                       <td className="px-4 py-3"><div className="font-medium text-gray-800">{row.counterpartyName}</div><div className="text-xs text-gray-400">{row.taxCode || row.unitCode || '—'}</div></td>
-                      <td className="px-4 py-3"><div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[row.sourceType] || row.sourceType}</div><div className="font-mono text-[11px] text-slate-400">{row.contractNumber}</div></td>
+                      <td className="px-4 py-3"><Badge className={`border text-[11px] ${SOURCE_COLORS[row.sourceType] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[row.sourceType] || row.sourceType}</Badge><div className="mt-1 font-mono text-[11px] text-slate-500">{row.contractNumber}</div>{row.contractType && <div className="text-[11px] text-slate-400">{row.contractType === 'PRINCIPLE_ACTUAL' ? 'Nguyên tắc · theo thực tế' : 'Định mức + phí vượt'}</div>}</td>
                       <td className="px-4 py-3"><div className="text-gray-700">{row.milestone}</div><div className="text-xs text-gray-400">{row.period || 'Theo mốc hợp đồng'}</div></td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(row.totalAmount)} ₫</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700">{row.paidAmount ? `${fmtCompact(row.paidAmount)} ₫` : '—'}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(row.amountToCollect ?? row.totalAmount)} ₫</td>
                       <td className="px-4 py-3 text-xs text-gray-600">{fmtDate(row.invoicePlannedDate)}<div className="text-[11px] text-gray-400">Hạn thu {fmtDate(row.dueDate)}</div></td>
                       <td className="px-4 py-3">{row.isDueForInvoice
                         ? <Badge className="border border-red-200 bg-red-100 text-red-700">{row.daysInvoiceOverdue ? `Treo ${row.daysInvoiceOverdue} ngày` : 'Đến hạn xuất'}</Badge>
@@ -998,13 +1018,17 @@ function InvoicesTab() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <button onClick={() => { setSourceType(''); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${!sourceType ? 'bg-slate-900 text-white' : 'bg-white'}`}>Tất cả nguồn</button>
-        {Object.entries(summary.bySource || {}).map(([source, value]: [string, any]) => (
-          <button key={source} onClick={() => { setSourceType(source); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${sourceType === source ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'}`}>
-            {SOURCE_LABELS[source] || source} · {value.count}
-          </button>
-        ))}
+      <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between"><div><h3 className="text-sm font-semibold text-slate-800">Phân loại theo nguồn thu</h3><p className="text-xs text-slate-500">Chọn một nguồn để kiểm tra đúng nhóm hợp đồng và khoản thu.</p></div><button onClick={() => { setSourceType(''); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${!sourceType ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'}`}>Tất cả nguồn</button></div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {sourceBreakdown.map(({ source, count, amount }) => (
+            <button key={source} onClick={() => { setSourceType(source); setPage(1); }} className={`rounded-xl border p-3 text-left transition-all ${SOURCE_COLORS[source] || 'border-slate-200 bg-slate-50 text-slate-700'} ${sourceType === source ? 'ring-2 ring-slate-800 shadow-sm' : 'hover:shadow-sm'}`}>
+              <div className="text-xs font-semibold">{SOURCE_LABELS[source] || source}</div>
+              <div className="mt-1 text-base font-bold">{fmtCompact(amount)} ₫</div>
+              <div className="mt-1 text-[11px] opacity-75">{count} khoản cần kiểm tra</div>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex gap-3 mb-4 flex-wrap">
@@ -1064,8 +1088,9 @@ function InvoicesTab() {
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{inv.invoiceNumber}</td>
                     <td className="px-4 py-3 font-medium text-gray-800">{inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name}</td>
                     <td className="px-4 py-3">
-                      <div className="text-xs font-medium text-slate-700">{SOURCE_LABELS[inv.sourceType || ''] || inv.type}</div>
-                      <div className="text-[11px] text-slate-400">{inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
+                      <Badge className={`border text-[11px] ${SOURCE_COLORS[inv.sourceType || ''] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[inv.sourceType || ''] || inv.type}</Badge>
+                      <div className="mt-1 text-[11px] font-medium text-slate-500">{inv.sourceContractNumber || inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
+                      {inv.sourceType === 'PARKING' && <div className={`mt-1 text-[11px] ${inv.sourceStatus === 'PAID' ? 'text-emerald-700' : inv.sourceStatus === 'PARTIAL' ? 'text-amber-700' : 'text-slate-400'}`}>Parking: {inv.sourceStatus === 'PAID' ? 'đã thanh toán' : inv.sourceStatus === 'PARTIAL' ? 'đã thu một phần' : 'chưa thu'}{inv.sourceContractType ? ` · ${inv.sourceContractType === 'PRINCIPLE_ACTUAL' ? 'theo thực tế' : 'định mức'}` : ''}</div>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-slate-400">{inv.type}</div></td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-800">
@@ -1118,6 +1143,8 @@ function InvoicesTab() {
             <div className="grid grid-cols-2 gap-3">
               <div><div className="text-xs text-slate-400">Nội dung / kỳ thu</div><div className="font-medium">{pendingDetail.milestone || pendingDetail.period || 'Theo hợp đồng'}</div></div>
               <div><div className="text-xs text-slate-400">Số tiền dự kiến</div><div className="font-bold">{fmtMoney(pendingDetail.totalAmount)}</div></div>
+              <div><div className="text-xs text-slate-400">Đã ghi nhận tại nguồn</div><div className="font-medium text-emerald-700">{fmtMoney(pendingDetail.paidAmount)}</div></div>
+              <div><div className="text-xs text-slate-400">Còn dự kiến thu</div><div className="font-bold">{fmtMoney(pendingDetail.amountToCollect ?? pendingDetail.totalAmount)}</div></div>
               <div><div className="text-xs text-slate-400">Ngày dự kiến xuất</div><div>{fmtDate(pendingDetail.invoicePlannedDate)}</div></div>
               <div><div className="text-xs text-slate-400">Hạn thanh toán</div><div>{fmtDate(pendingDetail.dueDate)}</div></div>
             </div>

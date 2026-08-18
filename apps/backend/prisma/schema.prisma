@@ -893,6 +893,7 @@ model ParkingCustomerContract {
   tenantId        String
   tenant          Tenant                     @relation(fields: [tenantId], references: [id])
   title           String
+  contractType    String                     @default("FIXED_QUOTA")
   status          String                     @default("DRAFT")
   signedDate      DateTime?
   startDate       DateTime
@@ -914,6 +915,7 @@ model ParkingCustomerContract {
 
   @@index([mallId, status, endDate])
   @@index([tenantId, status])
+  @@index([contractType, status])
 }
 
 model ParkingContractRate {

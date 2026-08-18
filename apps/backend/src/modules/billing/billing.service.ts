@@ -104,7 +104,8 @@ export class BillingService {
       }) : [],
       includeParking ? this.prisma.parkingMonthlyStatement.findMany({
         where: {
-          status: { in: ['UNPAID', 'PARTIAL'] },
+          // Trạng thái thu tiền không thay thế nghĩa vụ xuất hóa đơn.
+          status: { in: ['UNPAID', 'PARTIAL', 'PAID'] },
           contract: {
             isActive: true,
             status: { in: ['ACTIVE', 'EXPIRING'] },
@@ -124,6 +125,7 @@ export class BillingService {
         include: {
           contract: { include: { tenant: true } },
           lines: true,
+          payments: { orderBy: { paidAt: 'desc' } },
         },
       }) : [],
     ]);
@@ -210,6 +212,9 @@ export class BillingService {
         subtotal: row.totalAmount,
         vatRate: 10,
         totalAmount: row.totalAmount * 1.1,
+        paidAmount: row.paidAmount || 0,
+        amountToCollect: Math.max(0, row.totalAmount * 1.1 - (row.paidAmount || 0)),
+        sourceStatus: row.status,
         invoicePlannedDate: row.createdAt,
         dueDate: row.startDatetime,
         ...timing(row.startDatetime, row.createdAt),
@@ -227,6 +232,7 @@ export class BillingService {
         unitCode: null,
         period: row.period,
         milestone: `Phí bãi xe ${row.period}`,
+        contractType: row.contract.contractType,
         subtotal: row.totalAmount,
         vatRate: 10,
         totalAmount: row.totalAmount * 1.1,
@@ -237,19 +243,21 @@ export class BillingService {
     const data = [...lease, ...service, ...shortTerm, ...parking].sort((a, b) =>
       new Date(a.invoicePlannedDate).getTime() - new Date(b.invoicePlannedDate).getTime());
     const dueRows = data.filter((row) => row.isDueForInvoice);
+    const collectible = (row: { totalAmount: number; amountToCollect?: number }) =>
+      row.amountToCollect ?? row.totalAmount;
     return {
       data,
       total: data.length,
       summary: {
         count: data.length,
-        amount: data.reduce((sum, row) => sum + row.totalAmount, 0),
+        amount: data.reduce((sum, row) => sum + collectible(row), 0),
         dueCount: dueRows.length,
-        dueAmount: dueRows.reduce((sum, row) => sum + row.totalAmount, 0),
+        dueAmount: dueRows.reduce((sum, row) => sum + collectible(row), 0),
         bySource: {
           LEASE_CONTRACT: { count: lease.length, amount: lease.reduce((sum, row) => sum + row.totalAmount, 0) },
           SERVICE_CONTRACT: { count: service.length, amount: service.reduce((sum, row) => sum + row.totalAmount, 0) },
           SHORT_TERM_BOOKING: { count: shortTerm.length, amount: shortTerm.reduce((sum, row) => sum + row.totalAmount, 0) },
-          PARKING: { count: parking.length, amount: parking.reduce((sum, row) => sum + row.totalAmount, 0) },
+          PARKING: { count: parking.length, amount: parking.reduce((sum, row) => sum + collectible(row), 0) },
         },
       },
     };
@@ -339,10 +347,14 @@ export class BillingService {
       const statement = await this.prisma.parkingMonthlyStatement.findFirst({
         where: {
           id,
-          status: { in: ['UNPAID', 'PARTIAL'] },
+          status: { in: ['UNPAID', 'PARTIAL', 'PAID'] },
           ...(mallIds ? { contract: { mallId: { in: mallIds } } } : {}),
         },
-        include: { contract: { include: { tenant: true } }, lines: true },
+        include: {
+          contract: { include: { tenant: true } },
+          lines: true,
+          payments: { orderBy: { paidAt: 'desc' } },
+        },
       });
       if (!statement) throw new NotFoundException('Không tìm thấy bảng kê bãi xe chờ xuất hóa đơn');
       const existing = await this.prisma.invoice.findFirst({
@@ -379,6 +391,19 @@ export class BillingService {
             order,
           })) },
         } });
+        if (statement.paidAmount > 0) {
+          const latestSourcePayment = statement.payments[0];
+          await tx.payment.create({ data: {
+            invoiceId: invoice.id,
+            tenantId: statement.contract.tenantId,
+            amount: Math.min(invoice.totalAmount, statement.paidAmount),
+            method: PaymentMethod.BANK_TRANSFER,
+            reference: latestSourcePayment?.referenceNo || `PARKING-${statement.id}`,
+            paidAt: latestSourcePayment?.paidAt || new Date(),
+            notes: 'Đồng bộ khoản thanh toán đã ghi nhận tại Parking',
+            idempotencyKey: `parking-source-payment:${statement.id}`,
+          } });
+        }
         await tx.parkingMonthlyStatement.update({
           where: { id: statement.id },
           data: { reconciliationStatus: 'TRANSFERRED_TO_BILLING' },
@@ -533,6 +558,9 @@ export class BillingService {
     if (search) {
       and.push({ OR: [
         { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { counterpartyName: { contains: search, mode: 'insensitive' } },
+        { notes: { contains: search, mode: 'insensitive' } },
+        { sourceId: { contains: search, mode: 'insensitive' } },
         { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
         { billingParty: { name: { contains: search, mode: 'insensitive' } } },
         { contract: { contractNumber: { contains: search, mode: 'insensitive' } } },
@@ -571,13 +599,36 @@ export class BillingService {
       }),
     ]);
 
+    const parkingSourceIds = rawData
+      .filter((invoice) => invoice.sourceType === 'PARKING' && invoice.sourceId)
+      .map((invoice) => invoice.sourceId as string);
+    const parkingSources = parkingSourceIds.length
+      ? await this.prisma.parkingMonthlyStatement.findMany({
+          where: { id: { in: parkingSourceIds } },
+          select: {
+            id: true, period: true, status: true, paidAmount: true, totalAmount: true,
+            contract: { select: { contractNumber: true, contractType: true } },
+          },
+        })
+      : [];
+    const parkingSourceMap = new Map(parkingSources.map((source) => [source.id, source]));
     const today = new Date();
     const enrich = (invoice: any) => {
       const { adjustedTotal, totalPaid, balance } = this.financials(invoice);
+      const parkingSource = invoice.sourceType === 'PARKING'
+        ? parkingSourceMap.get(invoice.sourceId)
+        : undefined;
       const daysOverdue = balance > 0 && new Date(invoice.dueDate) < today
         ? Math.max(1, Math.floor((today.getTime() - new Date(invoice.dueDate).getTime()) / 86400000))
         : 0;
-      return { ...invoice, adjustedTotal, totalPaid, balance, daysOverdue };
+      return {
+        ...invoice, adjustedTotal, totalPaid, balance, daysOverdue,
+        sourceContractNumber: parkingSource?.contract.contractNumber,
+        sourceContractType: parkingSource?.contract.contractType,
+        sourceStatus: parkingSource?.status,
+        sourcePaidAmount: parkingSource?.paidAmount,
+        sourceTotalAmount: parkingSource?.totalAmount,
+      };
     };
     const data = rawData.map(enrich);
     const summary = {
@@ -693,8 +744,8 @@ export class BillingService {
       where: { id },
       data: { status: InvoiceStatus.ISSUED, issuedAt: new Date() },
     });
-    await this.syncServiceContractPayment(id);
-    return updated;
+    await this.recomputeInvoiceStatusFromPayments(id);
+    return (await this.prisma.invoice.findUnique({ where: { id } })) ?? updated;
   }
 
   // ── Invoice Line Management ────────────────────────────────────────────────
@@ -927,24 +978,42 @@ export class BillingService {
       where: { id: invoiceId },
       data: { status: newStatus, paidAt: newStatus === InvoiceStatus.PAID ? new Date() : null },
     });
-    await this.syncServiceContractPayment(invoiceId, db);
+    await this.syncSourceReceivable(invoiceId, db);
   }
 
-  private async syncServiceContractPayment(
+  private async syncSourceReceivable(
     invoiceId: string,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
     const invoice = await db.invoice.findUnique({ where: { id: invoiceId }, include: { payments: { where: { reversedAt: null } } } });
-    if (!invoice || invoice.sourceType !== 'SERVICE_CONTRACT') return;
-    const paidAmount = Math.max(0, invoice.payments.reduce((sum, payment) => sum + payment.amount, 0) - invoice.refundedAmount);
-    const statusMap: Record<InvoiceStatus, string> = {
-      DRAFT: 'PENDING', ISSUED: 'PENDING', PARTIALLY_PAID: 'PARTIAL', PAID: 'PAID', OVERDUE: 'OVERDUE', CANCELLED: 'CANCELLED',
-    };
-    await db.serviceContractPayment.updateMany({ where: { invoiceId }, data: {
-      billingStatus: invoice.status === InvoiceStatus.DRAFT ? 'INVOICE_DRAFT' : invoice.status,
-      status: statusMap[invoice.status], paidAmount,
-      paidDate: invoice.status === InvoiceStatus.PAID ? (invoice.paidAt || new Date()) : null,
-    } });
+    if (!invoice || !['SERVICE_CONTRACT', 'PARKING'].includes(invoice.sourceType)) return;
+    const paidAmount = Math.max(0, (invoice.payments || []).reduce((sum, payment) => sum + payment.amount, 0) - (invoice.refundedAmount || 0));
+    if (invoice.sourceType === 'SERVICE_CONTRACT') {
+      const statusMap: Record<InvoiceStatus, string> = {
+        DRAFT: 'PENDING', ISSUED: 'PENDING', PARTIALLY_PAID: 'PARTIAL', PAID: 'PAID', OVERDUE: 'OVERDUE', CANCELLED: 'CANCELLED',
+      };
+      await db.serviceContractPayment.updateMany({ where: { invoiceId }, data: {
+        billingStatus: invoice.status === InvoiceStatus.DRAFT ? 'INVOICE_DRAFT' : invoice.status,
+        status: statusMap[invoice.status], paidAmount,
+        paidDate: invoice.status === InvoiceStatus.PAID ? (invoice.paidAt || new Date()) : null,
+      } });
+      return;
+    }
+    if (invoice.sourceType === 'PARKING' && invoice.sourceId) {
+      const statement = await db.parkingMonthlyStatement.findUnique({
+        where: { id: invoice.sourceId },
+        select: { totalAmount: true },
+      });
+      if (!statement) return;
+      const sourcePaidAmount = Math.min(statement.totalAmount, paidAmount);
+      const sourceStatus = sourcePaidAmount >= statement.totalAmount
+        ? 'PAID'
+        : sourcePaidAmount > 0 ? 'PARTIAL' : 'UNPAID';
+      await db.parkingMonthlyStatement.update({
+        where: { id: invoice.sourceId },
+        data: { paidAmount: sourcePaidAmount, status: sourceStatus },
+      });
+    }
   }
 
   // ── Void / Reversal (Phase 1 — kiểm soát tài chính) ─────────────────────────
@@ -975,7 +1044,7 @@ export class BillingService {
         voidReason: reason.trim(),
       },
     });
-    await this.syncServiceContractPayment(invoiceId);
+    await this.syncSourceReceivable(invoiceId);
     return updated;
   }
 

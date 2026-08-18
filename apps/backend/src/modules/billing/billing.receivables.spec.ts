@@ -2,11 +2,12 @@ import { BillingService } from './billing.service';
 
 describe('BillingService receivables workbench', () => {
   const prisma = {
-    invoice: { findMany: jest.fn(), count: jest.fn() },
+    invoice: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
     billingScheduleEntry: { findMany: jest.fn() },
     serviceContractPayment: { findMany: jest.fn() },
     slotBooking: { findMany: jest.fn() },
     parkingMonthlyStatement: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn(),
   } as any;
   let service: BillingService;
 
@@ -15,6 +16,7 @@ describe('BillingService receivables workbench', () => {
     prisma.invoice.findMany.mockResolvedValue([]);
     prisma.slotBooking.findMany.mockResolvedValue([]);
     prisma.parkingMonthlyStatement.findMany.mockResolvedValue([]);
+    prisma.invoice.findFirst.mockResolvedValue(null);
     service = new BillingService(prisma);
   });
 
@@ -149,5 +151,35 @@ describe('BillingService receivables workbench', () => {
       mallId: 'mall-1', subtotal: 1_000, totalAmount: 1_100,
     });
     expect(result.summary.bySource.PARKING).toEqual({ count: 1, amount: 1_100 });
+  });
+
+  it('carries a Parking payment into the draft Billing invoice', async () => {
+    const tx = {
+      invoice: { create: jest.fn().mockResolvedValue({ id: 'invoice-parking', invoiceNumber: 'PARKING-statement-1', totalAmount: 1_100 }) },
+      payment: { create: jest.fn().mockResolvedValue({ id: 'payment-1' }) },
+      parkingMonthlyStatement: { update: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation((callback: any) => callback(tx));
+    prisma.parkingMonthlyStatement.findFirst.mockResolvedValue({
+      id: 'statement-1', contractId: 'contract-1', period: '2026-08',
+      status: 'PARTIAL', paidAmount: 400, totalAmount: 1_000,
+      dueDate: new Date(), lines: [],
+      payments: [{ paidAt: new Date('2026-08-10'), referenceNo: 'BANK-001' }],
+      contract: {
+        tenantId: 'tenant-1', mallId: 'mall-1', contractNumber: 'PK-001',
+        tenant: { companyName: 'Parking Tenant', taxCode: 'TAX' },
+      },
+    });
+
+    await service.createInvoiceFromPending('PARKING', 'statement-1', 'user-1');
+
+    expect(tx.payment.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      invoiceId: 'invoice-parking', amount: 400, reference: 'BANK-001',
+      idempotencyKey: 'parking-source-payment:statement-1',
+    }) });
+    expect(tx.parkingMonthlyStatement.update).toHaveBeenCalledWith({
+      where: { id: 'statement-1' },
+      data: { reconciliationStatus: 'TRANSFERRED_TO_BILLING' },
+    });
   });
 });
