@@ -2474,6 +2474,28 @@ model AuditLog {
   @@index([createdAt])
 }
 
+/// Job execution ledger (docs/reliability/OBSERVABILITY.md, sprint brief
+/// section 25) - every scheduled job that runs through SchedulerLockService
+/// gets one row per attempt, so "when did this last run, did it succeed, how
+/// long did it take, is it failing repeatedly" is a query away instead of a
+/// log-grep. Deliberately does not store job payload/business data (no
+/// records_processed detail beyond an optional summary count) - this is an
+/// execution ledger, not an audit trail of what each job did.
+model JobExecution {
+  id          String    @id @default(cuid())
+  jobName     String
+  instance    String // hostname/pid - identifies which replica ran it
+  status      String // RUNNING | SUCCEEDED | FAILED | SKIPPED_LOCKED
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  errorSummary String? // truncated message only - never a full stack trace with request/user data
+  createdAt   DateTime  @default(now())
+
+  @@index([jobName, startedAt])
+  @@index([jobName, status, startedAt])
+}
+
 model OutboxEvent {
   id            String    @id @default(cuid())
   eventKey      String    @unique
