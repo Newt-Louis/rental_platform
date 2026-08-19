@@ -326,6 +326,7 @@ export default function DashboardPage() {
     (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts30'), value: d?.expiringIn30 ?? 0, urgent: true, to: '/contracts?expiring=30' },
     (showLeasing || showFinance || showContracts) && { label: t('actionItems.expiringContracts90'), value: d?.expiringIn90 ?? 0, urgent: false, to: '/contracts?expiring=90' },
     showOperations && { label: t('actionItems.openTickets'), value: d?.openTickets ?? 0, urgent: false, to: '/tickets?queue=open' },
+    showOperations && { label: t('actionItems.fitoutSlaBreaches'), value: d?.openFitoutSlaBreaches ?? 0, urgent: true, to: '/fitout/dashboard' },
     showLeasing  && { label: t('actionItems.expiringBookings'), value: bookingStats?.expiringSoon ?? 0, urgent: true, to: '/bookings?expiringSoon=true' },
   ].filter(Boolean) as { label: string; value: number; urgent: boolean; to: string }[])
     .filter((item) => canAccessPath(user?.role, item.to));

@@ -32,7 +32,19 @@
       "search": "Search proposals, tenants, spaces...",
       "status": "Status",
       "dateRange": "Creation date range",
-      "all": "All"
+      "all": "All",
+      "clear": "Clear filters"
+    },
+    "createEntry": {
+      "title": "Create Proposal from Booking",
+      "subtitle": "Pick an active booking to draft a lease proposal for",
+      "searchPlaceholder": "Search by booking number, unit, tenant...",
+      "loading": "Loading bookings...",
+      "empty": "No active bookings available to create a proposal from yet.",
+      "noResultsForFilter": "No proposals match the current filters.",
+      "noMatch": "No matching bookings found.",
+      "goToBookings": "Create a Booking first",
+      "noParty": "No tenant yet"
     },
     "stats": {
       "total": "Total proposals",
@@ -189,7 +201,9 @@
       "floorPrice": "Floor price (₫/m²)",
       "proposed": "Proposed (₫/m²)",
       "ceiling": "Ceiling (₫/m²)",
-      "deviation": "Deviation %"
+      "deviation": "Deviation %",
+      "rentFreeDays": "{{count}} rent-free days",
+      "policyReasonTitle": "Why this approval step applies"
     },
     "actions": {
       "detail": "Details",

@@ -72,6 +72,7 @@
     "expiringContracts30": "HĐ hết hạn trong 30 ngày",
     "expiringContracts90": "HĐ hết hạn trong 90 ngày",
     "openTickets": "Ticket đang mở",
+    "fitoutSlaBreaches": "Fitout trễ SLA",
     "expiringBookings": "Booking sắp hết hạn"
   },
   "badges": {

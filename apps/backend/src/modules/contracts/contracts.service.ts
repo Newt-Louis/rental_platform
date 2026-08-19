@@ -197,6 +197,13 @@ export class ContractsService {
           orderBy: { createdAt: 'desc' },
           take: 12,
         },
+        // Cross-module handoff visibility (docs/audit/11-INFORMATION-FLOW.md):
+        // Fitout project creation and billing schedule generation already run
+        // automatically on contract activation (see FitoutService.
+        // handleContractActivated / ContractsService.updateStatus), but the
+        // detail screen never surfaced that this had happened — `take: 1` is
+        // enough to answer "does a schedule exist yet", not to list it.
+        billingSchedule: { select: { id: true }, take: 1 },
       },
     });
 

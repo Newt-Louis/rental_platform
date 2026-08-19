@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "createdAt": "2026-07-17T01:18:40.808Z",
-  "database": "leasing_platform_uat",
-  "format": "postgres-custom",
-  "bytes": 294180,
-  "sha256": "88ba9af4f810afe94f0c94e38ab002c6bdea42ca44eb2c84dd5ae54cb4ec26f1",
-  "file": "leasing-leasing_platform_uat-20260717T011838Z.dump"
-}

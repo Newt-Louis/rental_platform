@@ -7,6 +7,7 @@ describe('DashboardService', () => {
     invoice: { findMany: jest.fn() }, tenant: { count: jest.fn() },
     unitBooking: { count: jest.fn() },
     slotBooking: { findMany: jest.fn() },
+    fitoutMilestone: { count: jest.fn() },
   };
   const redis = { getJson: jest.fn(), setJson: jest.fn() };
   const mallAccess = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
@@ -33,6 +34,7 @@ describe('DashboardService', () => {
     prisma.tenant.count.mockResolvedValue(5);
     prisma.unitBooking.count.mockResolvedValueOnce(6).mockResolvedValueOnce(7).mockResolvedValueOnce(8);
     prisma.slotBooking.findMany.mockResolvedValue([]);
+    prisma.fitoutMilestone.count.mockResolvedValue(2);
     service = new DashboardService(prisma, redis as any, mallAccess as any);
   });
 
@@ -47,7 +49,7 @@ describe('DashboardService', () => {
         ]),
       }),
     }));
-    expect(result).toMatchObject({ focusAreas: ['tickets', 'fitout'], openTickets: 4 });
+    expect(result).toMatchObject({ focusAreas: ['tickets', 'fitout'], openTickets: 4, openFitoutSlaBreaches: 2 });
     expect(result).not.toHaveProperty('monthlyRevenue');
     expect(result).not.toHaveProperty('bookingStats');
   });
@@ -58,11 +60,35 @@ describe('DashboardService', () => {
     expect(result).toMatchObject({
       monthlyRevenue: 1500, collectedRevenue: 850, overdueAmount: 750,
       bookingStats: { active: 6, pending: 7, expiringSoon: 8 }, focusAreas: ['overview'],
+      openFitoutSlaBreaches: 2,
     });
     expect(prisma.invoice.findMany).toHaveBeenCalledWith(expect.objectContaining({
       select: expect.objectContaining({
         payments: { where: { reversedAt: null }, select: { amount: true } },
       }),
     }));
+  });
+
+  it('scopes the fitout SLA-breach count to accessible malls (FR-08)', async () => {
+    await service.getDashboard(undefined, { id: 'user-1', role: 'OPERATION' });
+    expect(prisma.fitoutMilestone.count).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        completedAt: null,
+        targetDate: expect.objectContaining({ lt: expect.any(Date) }),
+        project: {
+          unit: {
+            OR: expect.arrayContaining([
+              { mallId: { in: ['mall-1'] } },
+              { floor: { mallId: { in: ['mall-1'] } } },
+            ]),
+          },
+        },
+      }),
+    }));
+  });
+
+  it('strips openFitoutSlaBreaches for roles outside Operation/Overview (e.g. FINANCE)', async () => {
+    const result = await service.getDashboard('mall-1', { id: 'user-1', role: 'FINANCE' });
+    expect(result).not.toHaveProperty('openFitoutSlaBreaches');
   });
 });

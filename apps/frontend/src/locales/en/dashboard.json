@@ -72,6 +72,7 @@
     "expiringContracts30": "Contracts expiring in 30 days",
     "expiringContracts90": "Contracts expiring in 90 days",
     "openTickets": "Open tickets",
+    "fitoutSlaBreaches": "Fitout SLA breaches",
     "expiringBookings": "Expiring bookings"
   },
   "badges": {

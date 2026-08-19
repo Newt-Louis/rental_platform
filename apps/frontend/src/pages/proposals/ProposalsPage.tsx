@@ -23,8 +23,10 @@ import {
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
   X, Loader2, Pencil, CheckSquare, Square, SlidersHorizontal, Clock3, Sparkles,
 } from 'lucide-react';
-import type { Proposal } from '@/types';
+import type { Proposal, UnitBooking } from '@/types';
 import { ProposalEditorDialog } from './ProposalEditor';
+import { CreateProposalEntryDialog } from './CreateProposalDialog';
+import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
 
@@ -730,6 +732,8 @@ export default function ProposalsPage() {
   }, []);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
+  const [createPickerOpen, setCreatePickerOpen] = useState(false);
+  const [pickedBooking, setPickedBooking] = useState<UnitBooking | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
@@ -932,6 +936,11 @@ export default function ProposalsPage() {
           <h1 className="text-2xl font-bold text-gray-900">{t('proposals.title')}</h1>
           <p className="text-sm text-gray-500 mt-1">{t('proposals.manage')}</p>
         </div>
+        {canEdit && (
+          <Button className="gap-1.5" onClick={() => setCreatePickerOpen(true)}>
+            <Plus size={16} /> {t('proposals.create')}
+          </Button>
+        )}
       </div>
 
       <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
@@ -1191,9 +1200,25 @@ export default function ProposalsPage() {
               </tbody>
             </table>
             {proposals.length === 0 && (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-gray-400 space-y-3">
                 <FileText size={40} className="mx-auto mb-2 opacity-20" />
-                <p>{t('proposals.noneYet')}</p>
+                {hasApplied ? (
+                  <>
+                    <p>{t('proposals.createEntry.noResultsForFilter')}</p>
+                    <Button size="sm" variant="outline" onClick={clearFilters}>
+                      {t('proposals.filters.clear')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p>{t('proposals.noneYet')}</p>
+                    {canEdit && (
+                      <Button size="sm" onClick={() => setCreatePickerOpen(true)} className="gap-1.5">
+                        <Plus size={14} /> {t('proposals.create')}
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1221,6 +1246,21 @@ export default function ProposalsPage() {
           onClose={() => setEditingProposal(null)}
         />
       )}
+
+      <CreateProposalEntryDialog
+        open={createPickerOpen}
+        mallId={selectedMallId || undefined}
+        onClose={() => setCreatePickerOpen(false)}
+        onPickBooking={(booking) => {
+          setCreatePickerOpen(false);
+          setPickedBooking(booking);
+        }}
+      />
+      <ConvertToProposalDialog
+        booking={pickedBooking}
+        open={!!pickedBooking}
+        onClose={() => setPickedBooking(null)}
+      />
 
       {/* Bulk delete confirm dialog */}
       <Dialog open={confirmBulkDelete} onOpenChange={(open) => !open && setConfirmBulkDelete(false)}>

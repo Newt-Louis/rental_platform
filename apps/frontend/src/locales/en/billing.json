@@ -184,7 +184,11 @@
     "pendingCollection": "{{count}} pending collection",
     "searchPlaceholder": "Search invoice no., tenant...",
     "exporting": "Exporting...",
-    "noInvoices": "No invoices found"
+    "noInvoices": "No invoices yet",
+    "noInvoicesHint": "Invoices are generated automatically from the billing schedule, or from the \"Pending\" section above.",
+    "noInvoicesFiltered": "No invoices match the current filters",
+    "noInvoicesFilteredHint": "Try changing your search or filters.",
+    "clearFilters": "Clear filters"
   },
   "header": {
     "title": "Invoices & collections",

@@ -3,11 +3,12 @@
     "overview": "Tổng quan",
     "salesProcess": "Quy trình bán hàng",
     "crm": "Khách hàng tiềm năng (CRM)",
-    "operations": "Vận hành",
+    "fitoutOps": "Thi công & Bàn giao",
+    "incidentOps": "Xử lý sự cố & Bảo trì",
+    "securityParking": "An ninh & Bãi đỗ xe",
     "finance": "Tài chính",
     "analytics": "Phân tích",
-    "system": "Hệ thống",
-    "parkingCentral": "Parking Central"
+    "system": "Hệ thống"
   },
   "items": {
     "dashboard": "Dashboard",

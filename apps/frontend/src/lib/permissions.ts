@@ -137,7 +137,12 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "FINANCE",
     "LEGAL",
   ],
-  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
+  // TENANT không có ở đây: Tenant Portal đã có tab Fitout riêng (đọc dữ liệu qua
+  // endpoint tenant-accessible trong fitout.controller.ts); các tab con của trang
+  // /fitout (submittal/issue/gantt/daily-report/controls) chỉ cho phép
+  // MODULE_ROLES.fitout ở backend (không có TENANT) nên không cấp route này cho
+  // TENANT để tránh 403 giữa chừng khi chuyển tab.
+  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
@@ -212,7 +217,15 @@ export function canAccessModule(
 }
 
 export function canAccessPath(role: string | undefined, path: string): boolean {
-  const segment = path.replace(/^\//, "").split("/")[0] as RouteModule;
+  // Product bug found during test triage (docs/reliability/TEST_BASELINE_REMEDIATION.md):
+  // a query string was never stripped before segment extraction, so any path
+  // with a `?` (e.g. "/billing?status=OVERDUE" — exactly what the Dashboard's
+  // action-item links use) produced a segment like "billing?status=OVERDUE",
+  // which never matches PATH_TO_MODULE. Every action item whose target URL had
+  // a query string was silently filtered out of the Dashboard for every role,
+  // including ADMIN.
+  const pathWithoutQuery = path.split("?")[0];
+  const segment = pathWithoutQuery.replace(/^\//, "").split("/")[0] as RouteModule;
   const module = PATH_TO_MODULE[segment];
   if (!module) return false;
   return canAccessModule(role, module);
@@ -286,24 +299,39 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    key: "operations",
-    label: "Vận hành",
+    key: "fitoutOps",
+    // Thi công & bàn giao mặt bằng cho khách thuê sau khi ký hợp đồng.
+    label: "Thi công & Bàn giao",
     items: [
+      { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
+    ],
+  },
+  {
+    key: "incidentOps",
+    // Xử lý sự cố hàng ngày: ticket khách thuê báo, điều phối công việc nội bộ,
+    // kho vật tư/phụ tùng dùng để xử lý các việc đó — 3 việc có liên hệ trực tiếp
+    // với nhau trong công việc vận hành hàng ngày (khác với Thi công/An ninh).
+    label: "Xử lý sự cố & Bảo trì",
+    items: [
+      { label: "Ticket", path: "/tickets", module: "tickets" as RouteModule },
       {
-        label: "Hợp đồng dịch vụ",
-        path: "/service-contracts",
-        module: "service-contracts" as RouteModule,
+        label: "Điều phối công việc",
+        path: "/work-orders",
+        module: "work-orders" as RouteModule,
       },
       {
         label: "Kho vận hành",
         path: "/inventory",
         module: "inventory" as RouteModule,
       },
-      {
-        label: "Điều phối công việc",
-        path: "/work-orders",
-        module: "work-orders" as RouteModule,
-      },
+    ],
+  },
+  {
+    key: "securityParking",
+    // Gộp "Vận hành bãi xe" + "Parking Central" (báo cáo/giao dịch) — trước đây
+    // tách 2 nhóm khác nhau cho cùng một chủ đề (xem docs/audit FR-03).
+    label: "An ninh & Bãi đỗ xe",
+    items: [
       {
         label: "Tuần tra an ninh",
         path: "/patrol",
@@ -314,14 +342,27 @@ export const NAV_GROUPS = [
         path: "/parking",
         module: "parking" as RouteModule,
       },
-      { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
-      { label: "Ticket", path: "/tickets", module: "tickets" as RouteModule },
+      {
+        label: "Giao dịch bãi đỗ xe",
+        path: "/parking-transaction",
+        module: "parking-transaction" as RouteModule,
+      },
+      {
+        label: "Báo cáo bãi đỗ xe",
+        path: "/parking-report",
+        module: "parking-report" as RouteModule,
+      },
     ],
   },
   {
     key: "finance",
     label: "Tài chính",
     items: [
+      {
+        label: "Hợp đồng dịch vụ",
+        path: "/service-contracts",
+        module: "service-contracts" as RouteModule,
+      },
       { label: "Doanh thu", path: "/sales", module: "sales" as RouteModule },
       {
         label: "Billing & AR",
@@ -376,22 +417,6 @@ export const NAV_GROUPS = [
         module: "audit-log" as RouteModule,
       },
       { label: "Quản trị", path: "/admin", module: "admin" as RouteModule },
-    ],
-  },
-  {
-    key: "parkingCentral",
-    label: "Parking Central",
-    items: [
-      {
-        label: "Báo cáo bãi đỗ xe",
-        path: "/parking-report",
-        module: "parking-report" as RouteModule,
-      },
-      {
-        label: "Giao dịch bãi đỗ xe",
-        path: "/parking-transaction",
-        module: "parking-transaction" as RouteModule,
-      },
     ],
   },
 ];

@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { useMallStore } from '@/store/mall.store';
+import { openAuthenticatedFile } from '@/lib/downloadFile';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
@@ -369,13 +370,16 @@ function DocumentsTab({ contractId }: { contractId: string }) {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Download */}
-                  <a href={f.filePath?.startsWith('http') ? f.filePath : f.filePath}
-                    target="_blank" rel="noopener noreferrer"
+                  {/* Download — authenticated (see docs/security/SECRET_INCIDENT_REMEDIATION.md P1):
+                      a plain <a href> can't attach the JWT bearer token, so this
+                      fetches through the API and opens a blob URL instead. */}
+                  <button
+                    type="button"
+                    onClick={() => openAuthenticatedFile(`/files/contracts/${f.id}`, { download: f.fileName })}
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
                     title={t('documents.download')}>
                     <Download size={14} />
-                  </a>
+                  </button>
 
                   {/* Sign */}
                   {!f.signedAt && (
@@ -638,6 +642,32 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
       )}
       {detail && (
         <div className="px-6 pb-8 pt-4">
+          {['ACTIVE', 'EXPIRING'].includes(detail.status) && (
+            <div className="mb-4 grid gap-2 sm:grid-cols-2">
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.fitoutProject ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {detail.fitoutProject ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+                <span className="flex-1">
+                  {detail.fitoutProject ? t('handoff.fitoutStarted') : t('handoff.fitoutNotStarted')}
+                </span>
+                {detail.fitoutProject && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate(`/fitout?projectId=${detail.fitoutProject.id}`)}>
+                    {t('handoff.viewFitout')}
+                  </Button>
+                )}
+              </div>
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.billingSchedule?.length > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {detail.billingSchedule?.length > 0 ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+                <span className="flex-1">
+                  {detail.billingSchedule?.length > 0 ? t('handoff.billingScheduled') : t('handoff.billingNotScheduled')}
+                </span>
+                {detail.billingSchedule?.length > 0 && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate('/billing')}>
+                    {t('handoff.viewBilling')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
           <Tabs defaultValue="detail">
             <TabsList className="mb-4">
               <TabsTrigger value="detail">{t('sheet.tabs.detail')}</TabsTrigger>
@@ -1122,6 +1152,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 export default function ContractsPage() {
   const { t } = useTranslation('contracts');
   const { selectedMallId } = useMallStore();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const expiringDays = searchParams.get('expiring') ? +searchParams.get('expiring')! : 90;
   const [search, setSearch] = useState('');
@@ -1375,9 +1406,23 @@ export default function ContractsPage() {
             </tbody>
           </table>
           {contracts.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-gray-400 space-y-3">
               <File size={40} className="mx-auto mb-2 opacity-20" />
-              <p>{t('empty')}</p>
+              <p className="font-medium text-gray-600">
+                {hasFilter ? t('emptyFiltered.title') : t('empty')}
+              </p>
+              <p className="text-sm">
+                {hasFilter ? t('emptyFiltered.subtitle') : t('emptyNoData.subtitle')}
+              </p>
+              {hasFilter ? (
+                <Button variant="outline" size="sm" onClick={clearFilters} className="gap-1.5">
+                  <X size={14} /> {t('filters.clearFilters')}
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => navigate('/proposals')}>
+                  {t('emptyNoData.cta')}
+                </Button>
+              )}
             </div>
           )}
         </div>

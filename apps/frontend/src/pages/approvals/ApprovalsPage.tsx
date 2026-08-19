@@ -614,6 +614,12 @@ export default function ApprovalsPage() {
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-800 text-sm">{step.stepName}</div>
                             <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">{t('approvals.table.step', { order: step.stepOrder })}</Badge>
+                            {step.policyReason && (
+                              <div className="mt-1 flex items-start gap-1 text-[11px] text-gray-400" title={t('approvals.table.policyReasonTitle')}>
+                                <ShieldCheck size={11} className="mt-0.5 shrink-0" />
+                                <span className="line-clamp-2">{step.policyReason}</span>
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{step.approverRole}</Badge>
@@ -631,6 +637,12 @@ export default function ApprovalsPage() {
                               <span className="text-red-600 font-medium">{proposal.discount}%</span>
                             ) : (
                               <span className="text-gray-400">0%</span>
+                            )}
+                            {proposal?.rentFree > 0 && (
+                              <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-amber-600">
+                                <CalendarDays size={10} />
+                                {t('approvals.table.rentFreeDays', { count: proposal.rentFree })}
+                              </div>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">

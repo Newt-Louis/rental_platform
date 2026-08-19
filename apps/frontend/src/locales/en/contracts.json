@@ -57,7 +57,23 @@
     "documents": "Documents",
     "daysRemaining": "{{count}} days"
   },
-  "empty": "No contracts found",
+  "handoff": {
+    "fitoutStarted": "Fitout has been started",
+    "fitoutNotStarted": "Fitout has not been started yet",
+    "viewFitout": "View Fitout",
+    "billingScheduled": "Billing schedule is set up",
+    "billingNotScheduled": "No billing schedule yet",
+    "viewBilling": "View Billing"
+  },
+  "empty": "No contracts yet",
+  "emptyNoData": {
+    "subtitle": "Contracts are created automatically once a Proposal is approved. Start from Proposals.",
+    "cta": "Go to Proposals"
+  },
+  "emptyFiltered": {
+    "title": "No contracts match the current filters",
+    "subtitle": "Try changing your search or filters."
+  },
   "total": "{{count}} contracts",
   "pagination": {
     "prev": "Previous",

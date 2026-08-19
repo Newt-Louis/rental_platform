@@ -110,9 +110,29 @@ export class ApprovalsService {
 
     const total = filtered.length;
     const skip = (Number(page) - 1) * Number(limit);
-    const data = filtered.slice(skip, skip + Number(limit));
+    const data = await this.attachPolicyReason(filtered.slice(skip, skip + Number(limit)));
 
     return { data, total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) };
+  }
+
+  /**
+   * FR-04 (docs/audit/04-UX-FRICTION-REPORT.md): the approvals queue only showed
+   * step/status, forcing the approver to open the Proposal separately to see *why*
+   * this step exists. `ApprovalStep` doesn't store which `ApprovalPolicyRule`
+   * produced it (steps are renumbered per-proposal in buildApprovalStepsFromRules,
+   * so `stepOrder` can't be mapped back to the rule table's own `stepOrder`) — the
+   * best available correlation without a schema change is `stepName` + `approverRole`,
+   * which is copied verbatim from the matching rule when the step is created. This
+   * surfaces the rule's own human-authored `name` as the "why" explanation.
+   */
+  private async attachPolicyReason<T extends { stepName: string; approverRole: string }>(steps: T[]) {
+    if (!steps.length) return steps;
+    const rules = await this.prisma.approvalPolicyRule.findMany({ where: { isActive: true } });
+    const byKey = new Map(rules.map((r) => [`${r.stepName}::${r.approverRole}`, r]));
+    return steps.map((step) => ({
+      ...step,
+      policyReason: byKey.get(`${step.stepName}::${step.approverRole}`)?.name ?? null,
+    }));
   }
 
   async getWorkflow(workflowId: string) {

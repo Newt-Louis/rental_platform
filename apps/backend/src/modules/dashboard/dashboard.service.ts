@@ -83,7 +83,11 @@ export class DashboardService {
       expiringIn30: data.expiringIn30,
       expiringIn90: data.expiringIn90,
     };
-    if (role === 'OPERATION') return { ...base, openTickets: data.openTickets };
+    if (role === 'OPERATION') return {
+      ...base,
+      openTickets: data.openTickets,
+      openFitoutSlaBreaches: data.openFitoutSlaBreaches,
+    };
     if (role === 'LEGAL') return {
       ...base,
       expiringIn30: data.expiringIn30,
@@ -152,6 +156,7 @@ export class DashboardService {
       pendingBookings,
       expiringBookings,
       slotBookings,
+      openFitoutSlaBreaches,
     ] = await Promise.all([
       this.prisma.unit.findMany({
         where: unitWhere,
@@ -254,6 +259,17 @@ export class DashboardService {
           slot: { select: { id: true, unitId: true, area: true } },
         },
       }),
+      // Live SLA-breach state (FR-08 / docs/audit/07-DASHBOARD-REDESIGN.md): a
+      // milestone is overdue the moment `targetDate` passes, independent of the
+      // daily `fitout-sla-check` cron's `isOverdue` flag, so this stays accurate
+      // between cron runs rather than only reflecting yesterday's 8am snapshot.
+      this.prisma.fitoutMilestone.count({
+        where: {
+          completedAt: null,
+          targetDate: { lt: today },
+          ...(mallIds === null ? {} : { project: { unit: unitScope } }),
+        },
+      }),
     ]);
 
     const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
@@ -303,6 +319,7 @@ export class DashboardService {
       expiringIn90,
       pendingApprovals,
       openTickets,
+      openFitoutSlaBreaches,
       healthScore: this.healthScoreForRole(role, occupancyRate, collectionRate),
       bookingStats: {
         ...longBookingStats,
