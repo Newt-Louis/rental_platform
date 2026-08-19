@@ -1,6 +1,11 @@
 # Final Go-Live Matrix
 
-**Date:** 2026-08-19 · Release Candidate: RC1 (`2701bd1a8f61e5434ccc44615029c9954d89f108`)
+**Date:** 2026-08-19 · Release Candidate: RC1 at the time this matrix was
+first written; **superseded by RC2** (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`,
+see `docs/golive/RELEASE_CANDIDATE.md`) after the Go-Live Operations
+workstream added the upload-backup tooling below. The verdict and every
+row's status are unchanged by that update — RC2 only added backup/CI
+tooling, not application code.
 
 | Area | Status | Evidence | Blocker | Owner |
 |---|---|---|---|---|

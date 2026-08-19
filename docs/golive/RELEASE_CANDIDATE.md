@@ -1,6 +1,31 @@
-# Release Candidate — RC1
+# Release Candidate — RC1 → RC2
 
 **Date:** 2026-08-19
+
+## RC2 (current)
+
+Per this program's change-control rule (no silent modification of a
+frozen RC — any post-freeze code change gets a new RC with issue/
+severity/reason/test-evidence recorded): the Go-Live Operations workstream
+added real code (not just docs) after RC1 froze — the uploaded-file
+backup/restore scripts and a `.gitignore`/CI change. That change is now
+**RC2**.
+
+| | |
+|---|---|
+| Git commit SHA | `acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44` |
+| Parent | RC1 (`2701bd1a8f61e5434ccc44615029c9954d89f108`) |
+| Issue | GL-03 (upload/document backup) had no mechanism at all |
+| Severity | Go-live blocker (per `docs/golive/GO_LIVE_BLOCKERS.md`) — not a P0/P1 application defect, but a required operational capability this gate's own workstream C explicitly assigned as in-scope tooling work, not "new feature development" |
+| Reason | Build and drill-verify an uploaded-file backup/restore mechanism mirroring the existing database one; fix a live data-leak risk found while doing so (the new backup archive wasn't gitignored) | 
+| Test evidence | 2 new automated tests (`backup-restore.test.mjs`), a live drill (`docs/golive/RESTORE_DRILL.md` — 13/13 files restored, checksum-matched), full backend suite re-confirmed green (67/67 suites, 359/359 tests, unaffected since no application code changed) |
+
+**RC2 is what should be used for anything downstream of this point** —
+UAT, pilot, or any further evaluation. RC1 remains a valid historical
+reference for the engineering/reliability gate specifically, but RC2 is
+the current candidate.
+
+## RC1 (superseded, kept for history)
 
 | | |
 |---|---|

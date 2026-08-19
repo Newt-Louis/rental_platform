@@ -1,6 +1,8 @@
 # Go-Live Operations Board
 
-**Date:** 2026-08-19 · RC1 (`2701bd1a8f61e5434ccc44615029c9954d89f108`)
+**Date:** 2026-08-19 · RC2 (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`,
+supersedes RC1 per `docs/golive/RELEASE_CANDIDATE.md`'s change-control
+entry — this board already reflects RC2's state)
 
 | Area | Status | Owner | Evidence | Blocker |
 |---|---|---|---|---|
