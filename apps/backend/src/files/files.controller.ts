@@ -88,8 +88,18 @@ export class FilesController {
       case 'INVOICE': {
         const invoice = await this.prisma.invoice.findUnique({ where: { id: doc.entityId }, select: { tenantId: true } });
         if (!invoice) throw new NotFoundException('Hóa đơn không tồn tại');
-        if (user.role === Role.TENANT && invoice.tenantId !== user.tenantId) {
-          throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
+        if (user.role === Role.TENANT) {
+          if (invoice.tenantId !== user.tenantId) {
+            throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
+          }
+        } else {
+          // Phase 4 (docs/program/04-BILLING-FINANCE-COMPLETION.md): this branch previously
+          // let *any* authenticated non-tenant role download invoice documents — no role
+          // check at all, unlike the FITOUT_SUBMITTAL case a few lines below. Invoice
+          // documents are financial records; restrict to the same roles that can read
+          // billing data anywhere else in the platform (role-permissions.ts `billing`,
+          // minus TENANT — handled above).
+          requireRole(user, [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR]);
         }
         break;
       }

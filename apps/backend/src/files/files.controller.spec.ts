@@ -68,6 +68,21 @@ describe('FilesController — authenticated, authorized document downloads', () 
       expect(prisma.unifiedDocument.update).toHaveBeenCalledWith({ where: { id: 'd1' }, data: { downloadCount: { increment: 1 } } });
     });
 
+    it('rejects a staff role with no billing access from downloading an invoice document (Phase 4 fix — used to allow any authenticated non-tenant role)', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd1', entityType: 'INVOICE', entityId: 'inv-1', isActive: true, fileName: 'invoice.pdf', filePath: 'x' });
+      prisma.invoice.findUnique.mockResolvedValue({ tenantId: 'tenant-A' });
+      await expect(
+        controller.downloadUnifiedDocument('d1', { role: 'OPERATION' }, fakeRes()),
+      ).rejects.toThrow('Bạn không có quyền truy cập tài liệu này');
+    });
+
+    it('allows FINANCE to download an invoice document', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd1', entityType: 'INVOICE', entityId: 'inv-1', isActive: true, fileName: 'invoice.pdf', mimeType: 'application/pdf', filePath: 'x' });
+      prisma.invoice.findUnique.mockResolvedValue({ tenantId: 'tenant-A' });
+      const result = await controller.downloadUnifiedDocument('d1', { role: 'FINANCE' }, fakeRes());
+      expect(result).toBeInstanceOf(StreamableFile);
+    });
+
     it('rejects a tenant that does not own the invoice', async () => {
       prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd1', entityType: 'INVOICE', entityId: 'inv-1', isActive: true, fileName: 'invoice.pdf', filePath: 'x' });
       prisma.invoice.findUnique.mockResolvedValue({ tenantId: 'tenant-A' });

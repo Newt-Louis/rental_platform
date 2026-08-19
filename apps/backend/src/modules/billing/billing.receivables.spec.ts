@@ -17,7 +17,13 @@ describe('BillingService receivables workbench', () => {
     prisma.slotBooking.findMany.mockResolvedValue([]);
     prisma.parkingMonthlyStatement.findMany.mockResolvedValue([]);
     prisma.invoice.findFirst.mockResolvedValue(null);
-    service = new BillingService(prisma);
+    service = new BillingService(
+      prisma,
+      undefined,
+      { invoiceIssuedHtml: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      { increment: jest.fn() } as any,
+    );
   });
 
   it('returns balance, overdue days and summary calculated across all matching invoices', async () => {

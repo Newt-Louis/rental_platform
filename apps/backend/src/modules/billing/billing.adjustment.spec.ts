@@ -21,7 +21,13 @@ describe('BillingService invoice adjustments', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BillingService(prisma);
+    service = new BillingService(
+      prisma,
+      undefined,
+      { invoiceIssuedHtml: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      { increment: jest.fn() } as any,
+    );
     jest.spyOn(service, 'findOneInvoice').mockResolvedValue(invoice);
     jest.spyOn(service as any, 'recomputeInvoiceStatusFromPayments').mockResolvedValue(undefined);
     tx.invoiceAdjustment.create.mockResolvedValue({ id: 'adjustment-1' });

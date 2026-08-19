@@ -28,7 +28,13 @@ describe('BillingService payment transaction safety', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(tx));
-    service = new BillingService(prisma as unknown as PrismaService);
+    service = new BillingService(
+      prisma as unknown as PrismaService,
+      undefined,
+      { invoiceIssuedHtml: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      { increment: jest.fn() } as any,
+    );
   });
 
   it('creates payment and updates invoice status in one transaction', async () => {

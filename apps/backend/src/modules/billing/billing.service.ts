@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InvoiceAdjustmentType, InvoiceStatus, PaymentMethod, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { StorageService } from '../../storage/storage.service';
+import { EmailService } from '../notifications/email.service';
+import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 interface CurrentUser {
   id: string;
@@ -12,7 +15,53 @@ interface CurrentUser {
 
 @Injectable()
 export class BillingService {
-  constructor(private prisma: PrismaService, private storage?: StorageService) {}
+  private readonly logger = new Logger(BillingService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService | undefined,
+    private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
+    private metrics: OperationalMetricsService,
+  ) {}
+
+  // Phase 4 (docs/program/04-BILLING-FINANCE-COMPLETION.md): wires up the previously-dead
+  // BillingConfig.notifyTenantOnIssue flag through the same retryable EmailDeliveryService
+  // queue already proven for AR-dunning/fitout-SLA emails, rather than a synchronous send.
+  // Public: also called by BillingScheduleService for the auto-issue-on-generation path, so
+  // the flag applies consistently regardless of which code path transitions an invoice to
+  // ISSUED, not just the manual "Issue" button.
+  async enqueueInvoiceIssuedNotification(
+    tx: Prisma.TransactionClient,
+    invoice: { id: string; invoiceNumber: string; period: string; totalAmount: number; dueDate: Date },
+  ) {
+    const config = await tx.billingConfig.findFirst();
+    if (!config?.notifyTenantOnIssue) return;
+
+    const full = await tx.invoice.findUnique({
+      where: { id: invoice.id },
+      include: {
+        tenant: { select: { brandName: true, contactEmail: true } },
+        billingParty: { select: { name: true, email: true } },
+      },
+    });
+    const partyEmail = full?.tenant?.contactEmail || full?.billingParty?.email;
+    if (!partyEmail) return;
+    const partyName = full?.tenant?.brandName || full?.billingParty?.name || 'Đối tác';
+
+    await this.emailDelivery.enqueue(tx, {
+      eventKey: `invoice-issued:${invoice.id}`,
+      to: partyEmail,
+      subject: `[THISO] Hóa đơn ${invoice.invoiceNumber} đã phát hành`,
+      html: this.emailService.invoiceIssuedHtml({
+        tenantName: partyName,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: invoice.totalAmount,
+        dueDate: invoice.dueDate.toLocaleDateString('vi-VN'),
+        period: invoice.period,
+      }),
+    });
+  }
 
   private financials(invoice: { totalAmount: number; adjustmentAmount?: number; refundedAmount?: number; payments: { amount: number; reversedAt?: Date | null }[] }) {
     const adjustedTotal = Math.max(0, invoice.totalAmount + (invoice.adjustmentAmount ?? 0));
@@ -733,19 +782,71 @@ export class BillingService {
     });
   }
 
+  /**
+   * Phase 4 hardening (docs/program/04-BILLING-FINANCE-COMPLETION.md): used to be an
+   * unwrapped totals-recalc + status-update, with no tenant notification at all despite the
+   * `BillingConfig.notifyTenantOnIssue` toggle existing in settings (Phase 2/3 found this —
+   * the flag was read/written but never checked anywhere). Issuing is now one Serializable
+   * transaction covering totals, status, and — if the flag is on — a queued notification via
+   * the same retryable `EmailDeliveryService` already used for AR-dunning/fitout-SLA email.
+   * A same-invoice retry (double-click / request retry) is an idempotent replay, not an
+   * error: the notification's deterministic `eventKey` makes re-enqueueing safe (no
+   * duplicate email), and the already-issued invoice is returned as-is.
+   */
   async issueInvoice(id: string) {
     const invoice = await this.findOneInvoice(id);
-    if (invoice.status !== 'DRAFT') throw new BadRequestException('Invoice is not DRAFT');
+    if (invoice.status !== 'DRAFT' && invoice.status !== 'ISSUED') {
+      throw new BadRequestException('Invoice is not DRAFT');
+    }
 
-    // Recalculate totals from lines before issuing
-    await this.recalculateTotals(id);
+    const startedAt = Date.now();
+    this.logger.log(JSON.stringify({ event: 'invoice.issue.started', invoiceId: id }));
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const current = await tx.invoice.findUniqueOrThrow({ where: { id } });
+        if (current.status !== InvoiceStatus.DRAFT) {
+          if (current.status !== InvoiceStatus.ISSUED) {
+            throw new BadRequestException('Invoice is not DRAFT');
+          }
+          // Idempotent replay: already issued (by this same request racing itself, or by a
+          // concurrent duplicate call). Ensure the notification intent still exists — safe
+          // no-op if already enqueued — rather than silently skipping it, then return as-is.
+          await this.enqueueInvoiceIssuedNotification(tx, current);
+          return { invoice: current, replay: true };
+        }
 
-    const updated = await this.prisma.invoice.update({
-      where: { id },
-      data: { status: InvoiceStatus.ISSUED, issuedAt: new Date() },
-    });
-    await this.recomputeInvoiceStatusFromPayments(id);
-    return (await this.prisma.invoice.findUnique({ where: { id } })) ?? updated;
+        await this.recalculateTotals(id, tx);
+        const issued = await tx.invoice.update({
+          where: { id },
+          data: { status: InvoiceStatus.ISSUED, issuedAt: new Date() },
+        });
+        await this.enqueueInvoiceIssuedNotification(tx, issued);
+        return { invoice: issued, replay: false };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+      await this.recomputeInvoiceStatusFromPayments(id);
+
+      if (result.replay) {
+        this.metrics.increment('duplicate_transition_blocked_total');
+      }
+      this.logger.log(JSON.stringify({
+        event: 'invoice.issue.completed',
+        invoiceId: id,
+        durationMs: Date.now() - startedAt,
+        resolvedDuplicateIssue: result.replay,
+      }));
+
+      return (await this.prisma.invoice.findUnique({ where: { id } })) ?? result.invoice;
+    } catch (error: any) {
+      this.metrics.increment('invoice_issue_failure_total');
+      this.logger.warn(JSON.stringify({
+        event: 'invoice.issue.failed',
+        invoiceId: id,
+        durationMs: Date.now() - startedAt,
+        error: error?.message ?? String(error),
+      }));
+      throw error;
+    }
   }
 
   // ── Invoice Line Management ────────────────────────────────────────────────
@@ -827,15 +928,18 @@ export class BillingService {
     return { deleted: true };
   }
 
-  private async recalculateTotals(invoiceId: string) {
-    const lines = await this.prisma.invoiceLine.findMany({ where: { invoiceId } });
+  private async recalculateTotals(
+    invoiceId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const lines = await db.invoiceLine.findMany({ where: { invoiceId } });
     const subtotal = lines.reduce((sum, l) => sum + l.amount, 0);
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, select: { vatRate: true } });
+    const invoice = await db.invoice.findUnique({ where: { id: invoiceId }, select: { vatRate: true } });
     const vatRate = invoice?.vatRate ?? 10;
     const vatAmount = subtotal * (vatRate / 100);
     const totalAmount = subtotal + vatAmount;
 
-    return this.prisma.invoice.update({
+    return db.invoice.update({
       where: { id: invoiceId },
       data: { subtotal, vatAmount, totalAmount },
     });
