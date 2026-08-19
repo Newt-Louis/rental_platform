@@ -6,6 +6,7 @@ import { ticketsApi, tenantsApi, spacesApi, usersApi, maintenanceApi } from '@/a
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AuthenticatedImage } from '@/components/ui/authenticated-image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -344,9 +345,9 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
             {photos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((p: any) => (
-                  <a key={p.id} href={`/uploads/${p.filePath}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden bg-gray-100 border">
-                    <img src={`/uploads/${p.filePath}`} alt={p.fileName} className="w-full h-full object-cover" />
-                  </a>
+                  <div key={p.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <AuthenticatedImage src={`/files/documents/${p.id}`} alt={p.fileName} className="w-full h-full object-cover" />
+                  </div>
                 ))}
               </div>
             )}

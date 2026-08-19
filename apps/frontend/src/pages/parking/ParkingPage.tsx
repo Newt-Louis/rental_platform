@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { parkingApi, tenantsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
+import { openAuthenticatedFile } from "@/lib/downloadFile";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -741,7 +742,7 @@ export default function ParkingPage() {
                 </div>
               ))}
               <h3 className="font-semibold">Tài liệu</h3>
-              {detail.documents.length ? detail.documents.map((doc: any) => <a key={doc.id} href={`/uploads/${doc.filePath}`} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted"><span><FileText className="mr-2 inline h-4 w-4" />{doc.fileName}</span><span className="text-muted-foreground">{Math.ceil(doc.fileSize / 1024)} KB</span></a>) : <p className="text-sm text-muted-foreground">Chưa có tài liệu hợp đồng</p>}
+              {detail.documents.length ? detail.documents.map((doc: any) => <button key={doc.id} type="button" onClick={() => openAuthenticatedFile(`/files/parking-contract-documents/${doc.id}`)} className="flex w-full items-center justify-between rounded-md border p-3 text-left text-sm hover:bg-muted"><span><FileText className="mr-2 inline h-4 w-4" />{doc.fileName}</span><span className="text-muted-foreground">{Math.ceil(doc.fileSize / 1024)} KB</span></button>) : <p className="text-sm text-muted-foreground">Chưa có tài liệu hợp đồng</p>}
             </>
           )}
         </DialogContent>

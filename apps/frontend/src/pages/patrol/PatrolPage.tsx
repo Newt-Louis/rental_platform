@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { patrolApi, usersApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
+import { AuthenticatedImage } from "@/components/ui/authenticated-image";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1296,18 +1297,13 @@ export default function PatrolPage() {
                       </div>
                     )}
                     {c.filePath && (
-                      <a
-                        href={`/uploads/${c.filePath}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 block w-32 overflow-hidden rounded-md border"
-                      >
-                        <img
-                          src={`/uploads/${c.filePath}`}
+                      <div className="mt-2 block w-32 overflow-hidden rounded-md border">
+                        <AuthenticatedImage
+                          src={`/files/patrol-checks/${c.id}`}
                           className="h-20 w-32 object-cover"
                           alt="Minh chứng"
                         />
-                      </a>
+                      </div>
                     )}
                     {c.workOrderId && (
                       <div className="mt-2 text-sm text-destructive">

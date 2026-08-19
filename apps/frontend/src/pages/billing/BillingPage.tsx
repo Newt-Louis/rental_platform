@@ -21,6 +21,7 @@ import {
   Sparkles, Activity, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import api from '@/lib/axios';
+import { openAuthenticatedFile } from '@/lib/downloadFile';
 import type { Invoice, ArAgingRow } from '@/types';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
@@ -697,7 +698,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
 
             {!!inv?.adjustments?.length && <div><div className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Bút toán điều chỉnh</div><div className="space-y-2">{inv.adjustments.map((item: any) => <div key={item.id} className={`rounded-lg border px-3 py-2.5 ${item.status === 'CANCELLED' ? 'bg-gray-50 opacity-60' : 'bg-violet-50 border-violet-100'}`}><div className="flex justify-between gap-3"><div><div className="text-sm font-medium text-violet-900">{{ CREDIT_NOTE: 'Credit note', DEBIT_NOTE: 'Debit note', WRITE_OFF: 'Xóa nợ', REFUND: 'Hoàn tiền' }[item.type as string] || item.type}</div><div className="text-xs text-gray-500">{item.reason}{item.reference ? ` · ${item.reference}` : ''}</div></div><div className="text-right"><div className="font-semibold">{fmtMoney(item.amount)}</div><div className="text-[11px] text-gray-400">{fmtDate(item.createdAt)}</div></div></div></div>)}</div></div>}
 
-            <div><div className="mb-2 flex items-center justify-between"><div className="text-xs font-bold uppercase tracking-wider text-gray-400">Tài liệu hóa đơn</div>{isStaff && <label className="cursor-pointer text-xs font-medium text-blue-600 hover:underline"><input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx" disabled={uploadDocumentMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadDocumentMutation.mutate(file); event.target.value = ''; }} />{uploadDocumentMutation.isPending ? 'Đang tải...' : '+ Tải tài liệu'}</label>}</div>{invoiceDocuments.length ? <div className="space-y-2">{invoiceDocuments.map((document: any) => <a key={document.id} href={`/uploads/${document.filePath}`} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"><div className="flex min-w-0 items-center gap-2"><FileText size={14} className="shrink-0 text-blue-500" /><div className="min-w-0"><div className="truncate text-sm font-medium">{document.fileName}</div><div className="text-[11px] text-slate-400">{document.documentType} · phiên bản {document.version}</div></div></div><Download size={13} className="text-slate-400" /></a>)}</div> : <div className="rounded-lg border border-dashed p-4 text-center text-xs text-slate-400">Chưa có tài liệu đính kèm</div>}</div>
+            <div><div className="mb-2 flex items-center justify-between"><div className="text-xs font-bold uppercase tracking-wider text-gray-400">Tài liệu hóa đơn</div>{isStaff && <label className="cursor-pointer text-xs font-medium text-blue-600 hover:underline"><input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx" disabled={uploadDocumentMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadDocumentMutation.mutate(file); event.target.value = ''; }} />{uploadDocumentMutation.isPending ? 'Đang tải...' : '+ Tải tài liệu'}</label>}</div>{invoiceDocuments.length ? <div className="space-y-2">{invoiceDocuments.map((document: any) => <button key={document.id} type="button" onClick={() => openAuthenticatedFile(`/files/documents/${document.id}`)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"><div className="flex min-w-0 items-center gap-2"><FileText size={14} className="shrink-0 text-blue-500" /><div className="min-w-0"><div className="truncate text-sm font-medium">{document.fileName}</div><div className="text-[11px] text-slate-400">{document.documentType} · phiên bản {document.version}</div></div></div><Download size={13} className="text-slate-400" /></button>)}</div> : <div className="rounded-lg border border-dashed p-4 text-center text-xs text-slate-400">Chưa có tài liệu đính kèm</div>}</div>
 
             {/* ── PAYMENT HISTORY ── */}
             {payments.length > 0 && (
@@ -1114,9 +1115,26 @@ function InvoicesTab() {
             </tbody>
           </table>
           {invoices.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-gray-400 space-y-3">
               <Receipt size={36} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">{t('billing:list.noInvoices')}</p>
+              {(search || status || bucket || sourceType) ? (
+                <>
+                  <p className="text-sm font-medium text-gray-600">{t('billing:list.noInvoicesFiltered')}</p>
+                  <p className="text-sm">{t('billing:list.noInvoicesFilteredHint')}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setSearch(''); setStatus(''); setBucket(''); setSourceType(''); }}
+                  >
+                    {t('billing:list.clearFilters')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-gray-600">{t('billing:list.noInvoices')}</p>
+                  <p className="text-sm">{t('billing:list.noInvoicesHint')}</p>
+                </>
+              )}
             </div>
           )}
         </div>

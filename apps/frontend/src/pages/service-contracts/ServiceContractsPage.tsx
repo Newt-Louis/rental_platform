@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
+import { openAuthenticatedFile } from "@/lib/downloadFile";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -607,18 +608,17 @@ export default function ServiceContractsPage() {
               </div>
               <div className="divide-y rounded-lg border">
                 {item.documents?.map((d: any) => (
-                  <a
+                  <button
                     key={d.id}
-                    href={`/uploads/${d.filePath}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex justify-between p-3 hover:bg-muted"
+                    type="button"
+                    onClick={() => openAuthenticatedFile(`/files/service-contract-documents/${d.id}`)}
+                    className="flex w-full justify-between p-3 text-left hover:bg-muted"
                   >
                     <span>{d.fileName}</span>
                     <span className="text-xs text-muted-foreground">
                       v{d.version} · {(d.fileSize / 1024 / 1024).toFixed(1)} MB
                     </span>
-                  </a>
+                  </button>
                 ))}
                 {!item.documents?.length && (
                   <div className="p-6 text-center text-sm text-muted-foreground">
@@ -1071,15 +1071,14 @@ function ContractOperations({
                   />
                 </label>}
                 {p.documents?.map((d: any) => (
-                  <a
+                  <button
+                    type="button"
                     className="px-2 py-1 text-xs text-primary underline"
                     key={d.id}
-                    href={`/uploads/${d.filePath}`}
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => openAuthenticatedFile(`/files/service-contract-documents/${d.id}`)}
                   >
                     {d.documentType}: {d.fileName}
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>

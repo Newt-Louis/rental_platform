@@ -17,6 +17,7 @@ import { useMallStore } from "@/store/mall.store";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AuthenticatedImage } from "@/components/ui/authenticated-image";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -698,20 +699,16 @@ export default function WorkOrdersPage() {
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {item.evidence.map((e: any) => (
-                    <a
-                      key={e.id}
-                      href={`/uploads/${e.filePath}`}
-                      target="_blank"
-                      className="overflow-hidden rounded-lg border"
-                    >
-                      <img
+                    <div key={e.id} className="overflow-hidden rounded-lg border">
+                      <AuthenticatedImage
                         className="h-24 w-full object-cover"
-                        src={`/uploads/${e.filePath}`}
+                        src={`/files/work-order-evidence/${e.id}`}
+                        alt={e.evidenceType}
                       />
                       <div className="p-1 text-center text-xs">
                         {e.evidenceType}
                       </div>
-                    </a>
+                    </div>
                   ))}
                 </div>
               </section>
