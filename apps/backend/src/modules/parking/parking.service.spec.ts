@@ -13,8 +13,30 @@ describe("ParkingService safeguards", () => {
       $transaction: jest.fn((callback) => callback(tx)),
     };
     const storage: any = { saveFile: jest.fn() };
-    return { service: new ParkingService(prisma, storage), prisma, storage, tx };
+    const schedulerLock: any = { runExclusive: jest.fn((_name, _ttl, task) => task().then((value: unknown) => ({ executed: true, value }))) };
+    return { service: new ParkingService(prisma, storage, schedulerLock), prisma, storage, tx, schedulerLock };
   }
+
+  it("runs the daily statement job under the distributed scheduler lock", async () => {
+    const { service, prisma, schedulerLock } = setup();
+    prisma.parkingCustomerContract.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    prisma.parkingCustomerContract.findMany = jest.fn().mockResolvedValue([]);
+
+    await service.generateDueStatements();
+
+    expect(schedulerLock.runExclusive).toHaveBeenCalledWith("parking-contract-billing", 14_400_000, expect.any(Function));
+    expect(prisma.parkingCustomerContract.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run the statement job body when another instance already holds the lock", async () => {
+    const { service, prisma, schedulerLock } = setup();
+    schedulerLock.runExclusive = jest.fn().mockResolvedValue({ executed: false, reason: "locked" });
+    prisma.parkingCustomerContract.updateMany = jest.fn();
+
+    await service.generateDueStatements();
+
+    expect(prisma.parkingCustomerContract.updateMany).not.toHaveBeenCalled();
+  });
 
   it("rejects an invalid contract status transition", async () => {
     const { service, prisma } = setup();

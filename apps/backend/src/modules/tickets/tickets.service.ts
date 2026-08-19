@@ -7,6 +7,7 @@ import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
 import { Cron } from '@nestjs/schedule';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 const ENTITY_TYPE = 'TICKET';
 
@@ -38,6 +39,7 @@ export class TicketsService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   async listMyUnits(currentUser: CurrentUser) {
@@ -513,6 +515,10 @@ export class TicketsService {
   /** Tạo nhắc việc cho các kế hoạch sắp đến hạn; idempotent theo ngày qua kiểm tra thông báo đã tồn tại. */
   @Cron('0 7 * * *', { name: 'maintenance-due-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
   async sendMaintenanceReminders() {
+    return this.schedulerLock.runExclusive('maintenance-due-reminders', 14_400_000, () => this.sendMaintenanceRemindersUnlocked());
+  }
+
+  private async sendMaintenanceRemindersUnlocked() {
     const now = new Date();
     const schedules = await this.prisma.maintenanceSchedule.findMany({ where: { isActive: true, assignedToId: { not: null } } });
     let sent = 0;

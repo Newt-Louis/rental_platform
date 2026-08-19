@@ -11,6 +11,7 @@ describe('maintenance workflow', () => {
     { saveFile: jest.fn() } as any,
     { create: jest.fn() } as any,
     {} as any,
+    { runExclusive: jest.fn((_name: string, _ttl: number, task: () => Promise<unknown>) => task()) } as any,
   );
 
   beforeEach(() => jest.clearAllMocks());

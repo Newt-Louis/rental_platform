@@ -8,6 +8,7 @@ import { Cron } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../../storage/storage.service";
+import { SchedulerLockService } from "../../common/services/scheduler-lock.service";
 
 const STATUSES = [
   "DRAFT",
@@ -30,6 +31,7 @@ export class ParkingService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private schedulerLock: SchedulerLockService,
   ) {}
   async contractMallId(id: string) {
     const x = await this.prisma.parkingCustomerContract.findUnique({
@@ -724,6 +726,10 @@ export class ParkingService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async generateDueStatements() {
+    return this.schedulerLock.runExclusive("parking-contract-billing", 14_400_000, () => this.generateDueStatementsUnlocked());
+  }
+
+  private async generateDueStatementsUnlocked() {
     const now = new Date();
     await this.prisma.parkingCustomerContract.updateMany({
       where: { status: "ACTIVE", endDate: { lt: now } },

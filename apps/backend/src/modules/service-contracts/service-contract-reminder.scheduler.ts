@@ -1,14 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
 export class ServiceContractReminderScheduler {
   private readonly logger = new Logger(ServiceContractReminderScheduler.name);
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
-  @Cron('0 8 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  @Cron('0 8 * * *', { name: 'service-contract-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
   async run() {
+    return this.schedulerLock.runExclusive('service-contract-reminders', 14_400_000, () => this.runUnlocked());
+  }
+
+  private async runUnlocked() {
     const now = new Date(); const horizon = new Date(now); horizon.setDate(horizon.getDate() + 31);
     const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
     const expiredContracts = await this.prisma.serviceContract.findMany({

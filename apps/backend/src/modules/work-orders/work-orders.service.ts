@@ -9,6 +9,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../../storage/storage.service";
 import { CreateWorkOrderDto } from "./dto/work-order.dto";
 import { NotificationsService } from "../notifications/notifications.service";
+import { SchedulerLockService } from "../../common/services/scheduler-lock.service";
 
 const TRANSITIONS: Record<string, string[]> = {
   NEW: ["ASSIGNED", "IN_PROGRESS", "CANCELLED"],
@@ -26,6 +27,7 @@ export class WorkOrdersService {
     private prisma: PrismaService,
     private storage: StorageService,
     private notifications: NotificationsService,
+    private schedulerLock: SchedulerLockService,
   ) {}
   async mallId(id: string) {
     const row = await this.prisma.workOrder.findUnique({
@@ -227,6 +229,10 @@ export class WorkOrdersService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async generateScheduledWorkOrders() {
+    return this.schedulerLock.runExclusive("work-order-template-generator", 14_400_000, () => this.generateScheduledWorkOrdersUnlocked());
+  }
+
+  private async generateScheduledWorkOrdersUnlocked() {
     const now = new Date();
     const templates = await this.prisma.workOrderTemplate.findMany({
       where: { isActive: true, nextRunAt: { lte: now } },
@@ -664,6 +670,10 @@ export class WorkOrdersService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async sendOverdueReminders() {
+    return this.schedulerLock.runExclusive("work-order-overdue-reminders", 14_400_000, () => this.sendOverdueRemindersUnlocked());
+  }
+
+  private async sendOverdueRemindersUnlocked() {
     const now = new Date(),
       since = new Date();
     since.setHours(0, 0, 0, 0);
