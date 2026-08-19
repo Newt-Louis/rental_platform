@@ -8,6 +8,7 @@ import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { ProposalStatus, UnitStatus } from '@prisma/client';
 
 /**
@@ -68,6 +69,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
+        { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
       ],
     }).compile();
     service = module.get(ProposalsService);

@@ -22,6 +22,7 @@ import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 @Injectable()
 export class ProposalsService {
@@ -35,6 +36,7 @@ export class ProposalsService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private categoriesService: CategoriesService,
+    private metrics: OperationalMetricsService,
   ) {}
 
   private generateProposalNumber() {
@@ -47,14 +49,15 @@ export class ProposalsService {
     proposal: Record<string, unknown>,
     createdById?: string,
     changeReason?: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const latest = await this.prisma.proposalVersion.findFirst({
+    const latest = await client.proposalVersion.findFirst({
       where: { proposalId: proposal.id as string },
       orderBy: { version: 'desc' },
     });
     const version = (latest?.version ?? 0) + 1;
 
-    return this.prisma.proposalVersion.create({
+    return client.proposalVersion.create({
       data: {
         proposalId: proposal.id as string,
         version,
@@ -293,6 +296,17 @@ export class ProposalsService {
     return updated;
   }
 
+  /**
+   * Phase 3 hardening (docs/program/02-E2E-WORKFLOW.md, backlog #4): this used to do three
+   * unwrapped writes (pricing update → workflow create → status update) — a crash between
+   * them could leave a live ApprovalWorkflow against a still-DRAFT proposal. All state
+   * writes now happen inside one Serializable transaction, re-checking DRAFT status inside
+   * it to close the double-submit race (browser retry / double-click / concurrent API
+   * calls). `ApprovalWorkflow.proposalId` already has a DB-level unique constraint
+   * (schema.prisma), so a genuine concurrent double-submit resolves via the same
+   * P2002-repair pattern already proven in `createContractFromProposal`, rather than a new
+   * idempotency-key mechanism this flow doesn't need.
+   */
   async submit(id: string) {
     const proposal = await this.findOne(id);
     if (proposal.status !== ProposalStatus.DRAFT) {
@@ -341,10 +355,6 @@ export class ProposalsService {
         camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
         sources: validation.categoryPricing?.sources ?? null,
       };
-      await this.prisma.proposal.update({
-        where: { id },
-        data: { pricingRuleId, pricingSnapshot },
-      });
     }
 
     const steps = buildApprovalStepsFromRules(rules, {
@@ -361,25 +371,88 @@ export class ProposalsService {
       );
     }
 
-    await this.snapshotProposal({ ...proposal, pricingRuleId, pricingSnapshot } as unknown as Record<string, unknown>, undefined, 'SUBMITTED');
+    let workflow: { id: string };
+    const startedAt = Date.now();
+    this.logger.log(JSON.stringify({ event: 'proposal.submit.started', proposalId: id, tenantId: proposal.tenantId ?? null }));
+    try {
+      workflow = await this.prisma.$transaction(async (tx) => {
+        // Re-check inside the transaction: closes the TOCTOU window between the pre-check
+        // above and here, so a double-click/browser-retry/concurrent-API-call can't create
+        // two workflows for the same proposal.
+        const current = await tx.proposal.findUniqueOrThrow({ where: { id } });
+        if (current.status !== ProposalStatus.DRAFT) {
+          throw new BadRequestException('Proposal is not in DRAFT status');
+        }
 
-    const workflow = await this.prisma.approvalWorkflow.create({
-      data: {
-        entityType: 'PROPOSAL',
-        entityId: id,
+        if (pricingRuleId || pricingSnapshot) {
+          await tx.proposal.update({ where: { id }, data: { pricingRuleId, pricingSnapshot } });
+        }
+
+        await this.snapshotProposal(
+          { ...proposal, pricingRuleId, pricingSnapshot } as unknown as Record<string, unknown>,
+          undefined,
+          'SUBMITTED',
+          tx,
+        );
+
+        const created = await tx.approvalWorkflow.create({
+          data: {
+            entityType: 'PROPOSAL',
+            entityId: id,
+            proposalId: id,
+            status: WorkflowStatus.IN_PROGRESS,
+            steps: {
+              create: steps,
+            },
+          },
+        });
+
+        await tx.proposal.update({
+          where: { id },
+          data: { status: ProposalStatus.SUBMITTED },
+        });
+
+        return created;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      this.logger.log(JSON.stringify({
+        event: 'proposal.submit.completed',
         proposalId: id,
-        status: WorkflowStatus.IN_PROGRESS,
-        steps: {
-          create: steps,
-        },
-      },
-    });
+        tenantId: proposal.tenantId ?? null,
+        workflowId: workflow.id,
+        durationMs: Date.now() - startedAt,
+      }));
+    } catch (error: any) {
+      // Concurrent request won the race: our insert hit the unique constraint on
+      // ApprovalWorkflow.proposalId. Resolve to the workflow that now exists instead of
+      // surfacing a raw database error — the proposal was submitted exactly once either way.
+      if (error?.code === 'P2002') {
+        const winner = await this.prisma.approvalWorkflow.findUnique({ where: { proposalId: id } });
+        if (winner) {
+          this.metrics.increment('duplicate_transition_blocked_total');
+          this.logger.log(JSON.stringify({
+            event: 'proposal.submit.completed',
+            proposalId: id,
+            workflowId: winner.id,
+            durationMs: Date.now() - startedAt,
+            resolvedConcurrentSubmit: true,
+          }));
+          return { message: 'Proposal submitted for approval', workflowId: winner.id };
+        }
+      }
+      this.metrics.increment('proposal_submit_failure_total');
+      this.logger.warn(JSON.stringify({
+        event: 'proposal.submit.failed',
+        proposalId: id,
+        durationMs: Date.now() - startedAt,
+        error: error?.message ?? String(error),
+      }));
+      throw error;
+    }
 
-    await this.prisma.proposal.update({
-      where: { id },
-      data: { status: ProposalStatus.SUBMITTED },
-    });
-
+    // Best-effort, not part of the atomic core: in-app + email notifications to approvers.
+    // A failure here must not roll back a proposal that was already correctly submitted —
+    // matches the "notification is not state" rule (network side effects stay out of the
+    // DB transaction; the workflow itself is already durable at this point).
     await this.notifyPendingApprovers(workflow.id, 1);
 
     return { message: 'Proposal submitted for approval', workflowId: workflow.id };

@@ -26,9 +26,15 @@ APPROVAL WORKFLOW
 CONTRACT + TENANT (if new) + UNIT STATUS
    Created atomically in one server mutation on proposal conversion
    Owner: Leasing Manager (drives DRAFT→PENDING_LEGAL→PENDING_SIGNATURE→ACTIVE)
-   Consumers notified: none automatic at ACTIVE — this is the gap V2 also flags
-   (Fitout kickoff and Billing schedule are NOT automatically triggered by
-   contract activation; a human must separately start each)
+   > **CORRECTED AFTER LIVE CODE VERIFICATION (2026-08-19, docs/program/02-E2E-WORKFLOW.md
+   > and 03-CONTRACT-LIFECYCLE-COMPLETION.md):** the line below ("Consumers notified: none
+   > automatic at ACTIVE... a human must separately start each") is **stale**. Fitout
+   > project creation and Billing schedule generation are both automatically triggered by
+   > `ContractsService.updateStatus` on activation (`contract.activated` outbox event →
+   > `FitoutService.handleContractActivated`, and a direct call to
+   > `BillingScheduleService.buildScheduleForContract`, made atomic with the status change
+   > as of Phase 3 hardening). This was true even before Phase 3 — only the atomicity
+   > changed, not whether the handoff happens. No manual trigger exists or is needed.
       ↓
 FITOUT (manually initiated)
    Owner: Operation (fitout coordinator)
@@ -69,14 +75,24 @@ REPORTING
 - **Lead→Booking is a hard prerequisite with no visible prompt** (FR-02) — the flow
   diagram above is invisible to a first-time user; nothing in the UI states "you
   must create a Booking before a Proposal."
-- **Contract ACTIVE does not visibly hand off to Fitout/Billing** — a manager has
+- ~~**Contract ACTIVE does not visibly hand off to Fitout/Billing** — a manager has
   to know, from institutional memory, to go start those two processes manually.
   This is the platform's biggest "user doesn't know the next action" gap at a
   cross-module level (distinct from FR items, which are within-module or
   navigation-level; this is a process-completeness gap already named as a P2
   engineering item in V2 but with a direct UX consequence: the Dashboard's action
   list could and should surface "Contract #X is ACTIVE but has no Fitout project
-  started" as a needs-attention item).
+  started" as a needs-attention item).~~
+  **CORRECTED AFTER LIVE CODE VERIFICATION (2026-08-19):** this claim is stale.
+  Fitout/Billing kickoff on contract activation is automatic (see the corrected
+  note earlier in this document), and Option B already surfaced both handoff
+  states directly on the Contract detail screen — two status badges
+  ("Fitout đã bắt đầu"/"Fitout chưa bắt đầu", "Đã lên lịch billing"/"Chưa lên lịch
+  billing") with "View Fitout"/"View Billing" links
+  (`apps/frontend/src/pages/contracts/ContractsPage.tsx:643-668`), confirmed live
+  in `docs/readiness/POST_OPTION_B_GATE_REVIEW.md`. See
+  `docs/program/02-E2E-WORKFLOW.md` for the full verification. This finding
+  should be treated as resolved, not open, in any future audit that cites it.
 - **Reporting reads from too many places** (FR-11) for a user to know which number
   is authoritative when two reports disagree.
 

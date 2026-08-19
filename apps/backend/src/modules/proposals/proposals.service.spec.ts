@@ -8,6 +8,7 @@ import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { ProposalStatus } from '@prisma/client';
 import { Role } from '@prisma/client';
 
@@ -16,15 +17,20 @@ describe('ProposalsService integration (mocked DB)', () => {
   const prisma: any = {
     proposal: {
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
     },
     invoice: { count: jest.fn() },
     approvalPolicyRule: { findMany: jest.fn() },
     proposalVersion: { findFirst: jest.fn(), create: jest.fn() },
-    approvalWorkflow: { create: jest.fn() },
+    approvalWorkflow: { create: jest.fn(), findUnique: jest.fn() },
     approvalStep: { findFirst: jest.fn().mockResolvedValue(null) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
+    // submit() wraps its writes in $transaction — run the callback with `prisma`
+    // itself standing in for `tx`, so the existing per-call mocks below double as
+    // the transaction-scoped ones too.
+    $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
   };
 
   beforeEach(async () => {
@@ -39,6 +45,7 @@ describe('ProposalsService integration (mocked DB)', () => {
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
+        { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
       ],
     }).compile();
     service = module.get(ProposalsService);
@@ -61,6 +68,12 @@ describe('ProposalsService integration (mocked DB)', () => {
     };
 
     prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.proposal.findUniqueOrThrow.mockResolvedValue({
       ...proposal,
       approvalWorkflow: null,
       contract: null,
@@ -91,6 +104,40 @@ describe('ProposalsService integration (mocked DB)', () => {
         }),
       }),
     );
+  });
+
+  it('submit resolves a lost double-submit race to the winning workflow instead of throwing', async () => {
+    const proposal = {
+      id: 'p1',
+      status: ProposalStatus.DRAFT,
+      discount: 12,
+      rentFree: 30,
+      tenantId: 't1',
+      startDate: new Date('2026-01-01'),
+      area: 100,
+      term: 36,
+      rentPerSqm: 500000,
+      camPerSqm: 50000,
+      unit: { category: 'F&B' },
+      tenant: { category: 'F&B' },
+    };
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.invoice.count.mockResolvedValue(0);
+    prisma.approvalPolicyRule.findMany.mockResolvedValue([
+      { stepName: 'Finance', stepOrder: 1, approverRole: Role.FINANCE, conditionType: 'DISCOUNT_PCT', operator: '>=', threshold: 0, isRequired: true },
+    ]);
+    prisma.$transaction.mockRejectedValueOnce({ code: 'P2002' });
+    prisma.approvalWorkflow.findUnique.mockResolvedValue({ id: 'concurrent-winner' });
+
+    const result = await service.submit('p1');
+
+    expect(result.workflowId).toBe('concurrent-winner');
+    expect(prisma.approvalWorkflow.findUnique).toHaveBeenCalledWith({ where: { proposalId: 'p1' } });
   });
 
   it('submit rejects when no rules configured', async () => {

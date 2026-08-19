@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
-import { ContractStatus, UnitStatus } from '@prisma/client';
+import { ContractStatus, UnitStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { OutboxService } from '../../common/services/outbox.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 interface CurrentUser {
   id: string;
@@ -50,12 +51,15 @@ const CONTRACT_AMENDMENT_ONLY_FIELDS = [
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(
     private prisma: PrismaService,
     private events: ContractEventsService,
     private unitStatus: UnitStatusService,
     private billingScheduleService: BillingScheduleService,
     private outbox: OutboxService,
+    private metrics: OperationalMetricsService,
   ) {}
 
   async getActivationReadiness(id: string) {
@@ -338,6 +342,14 @@ export class ContractsService {
     return updated;
   }
 
+  /**
+   * Phase 3 hardening (docs/program/02-E2E-WORKFLOW.md, backlog #5): activation used to
+   * commit `Contract.status = ACTIVE` in one transaction, then call
+   * `buildScheduleForContract` afterwards, outside it — a throw there left the contract
+   * ACTIVE with no billing schedule and no automatic recovery. Status change, event,
+   * outbox-enqueue, and billing-schedule generation now happen inside one Serializable
+   * transaction: either the contract activates *with* a schedule, or neither happens.
+   */
   async updateStatus(id: string, status: ContractStatus, userId?: string) {
     const readiness = status === ContractStatus.ACTIVE
       ? await this.getActivationReadiness(id)
@@ -356,60 +368,92 @@ export class ContractsService {
         throw new BadRequestException(`Không thể chuyển hợp đồng từ ${before.status} sang ${status}.`);
       }
     }
-    const updated = before.status === status
-      ? before
-      : await this.prisma.$transaction(async (tx) => {
-          const contract = await tx.contract.update({ where: { id }, data: { status } });
+
+    const startedAt = Date.now();
+    if (status === ContractStatus.ACTIVE) {
+      this.logger.log(JSON.stringify({ event: 'contract.activation.started', contractId: id, actorId: userId ?? null }));
+    }
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Re-read inside the transaction: closes the race window between the pre-checks
+        // above and here. Under Serializable isolation, two concurrent activations of the
+        // same contract resolve to one winner; the loser gets a P2034 conflict, caught below.
+        const current = await tx.contract.findUniqueOrThrow({ where: { id } });
+
+        const contract = current.status === status
+          ? current
+          : await tx.contract.update({ where: { id }, data: { status } });
+
+        if (current.status !== status) {
           await tx.contractEvent.create({
             data: {
               contractId: id,
               eventType: 'STATUS_CHANGED',
               title: `Status changed to ${status}`,
-              beforeValue: before.status,
+              beforeValue: current.status,
               afterValue: status,
               userId,
             },
           });
-          if (status === ContractStatus.ACTIVE) {
-            await this.outbox.enqueue(tx, {
-              eventKey: `contract:${id}:activated`,
-              eventName: 'contract.activated',
-              aggregateType: 'CONTRACT',
-              aggregateId: id,
-              payload: {
-                contractId: id,
-                tenantId: contract.tenantId,
-                unitId: contract.unitId,
-                handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
-                openingDate: readiness?.contract.proposal?.openingDate ?? null,
-              },
-            });
-          }
-          return contract;
-        });
+        }
 
-    if (status === ContractStatus.ACTIVE) {
-      if (before.status === ContractStatus.ACTIVE) {
-        await this.prisma.$transaction((tx) =>
-          this.outbox.enqueue(tx, {
+        if (status === ContractStatus.ACTIVE) {
+          // Idempotent by design: also re-run on a same-status call (e.g. a manual retry
+          // after a prior failure here), not just on the first DRAFT→ACTIVE transition —
+          // so "activate again" is a safe, effective way to recover a contract that ended
+          // up ACTIVE with an incomplete billing schedule under the old, non-atomic path.
+          await this.outbox.enqueue(tx, {
             eventKey: `contract:${id}:activated`,
             eventName: 'contract.activated',
             aggregateType: 'CONTRACT',
             aggregateId: id,
             payload: {
               contractId: id,
-              tenantId: updated.tenantId,
-              unitId: updated.unitId,
+              tenantId: contract.tenantId,
+              unitId: contract.unitId,
               handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
               openingDate: readiness?.contract.proposal?.openingDate ?? null,
             },
-          }),
-        );
-      }
-      await this.billingScheduleService.buildScheduleForContract(id);
-    }
+          });
+          await this.billingScheduleService.buildScheduleForContract(id, tx);
+        }
 
-    return updated;
+        return contract;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+      if (status === ContractStatus.ACTIVE) {
+        this.logger.log(JSON.stringify({
+          event: 'contract.activation.completed',
+          contractId: id,
+          actorId: userId ?? null,
+          durationMs: Date.now() - startedAt,
+        }));
+      }
+      return result;
+    } catch (error: any) {
+      // Lost a concurrent-activation race: the winning transaction already moved the
+      // contract to `status`. Resolve to that outcome instead of surfacing a raw
+      // serialization error — same idempotent-retry pattern used in
+      // ProposalsService.createContractFromProposal for its P2002 case.
+      if (error?.code === 'P2034') {
+        const winner = await this.prisma.contract.findUnique({ where: { id } });
+        if (winner?.status === status) {
+          this.metrics.increment('duplicate_transition_blocked_total');
+          return winner;
+        }
+      }
+      if (status === ContractStatus.ACTIVE) {
+        this.metrics.increment('contract_activation_failure_total');
+        this.logger.warn(JSON.stringify({
+          event: 'contract.activation.failed',
+          contractId: id,
+          actorId: userId ?? null,
+          durationMs: Date.now() - startedAt,
+          error: error?.message ?? String(error),
+        }));
+      }
+      throw error;
+    }
   }
 
   /**
