@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import type { ApprovalWorkflowCompletedEvent, ApprovalWorkflowRejectedEvent, ApprovalWorkflowStepAdvancedEvent } from '../approvals/approvals.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../notifications/email.service';
+import { EmailDeliveryService } from '../notifications/email-delivery.service';
 
 const ENTITY_TYPE = 'FITOUT_SUBMITTAL';
 const DEFAULT_APPROVER_ROLE = 'OPERATION';
@@ -15,7 +15,7 @@ export class FitoutSubmittalService {
     private prisma: PrismaService,
     private storageService: StorageService,
     private notifications: NotificationsService,
-    private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
   ) {}
 
   async list(projectId: string, query: { formTypeId?: string; status?: string } = {}) {
@@ -29,6 +29,21 @@ export class FitoutSubmittalService {
       },
       orderBy: [{ formTypeId: 'asc' }, { revisionNo: 'desc' }],
     });
+  }
+
+  /**
+   * Phase 5 (docs/program/RELIABILITY_BACKLOG.md): resolves a submittal id to its owning
+   * project id so the controller can run the same mall-access check every other
+   * project-scoped fitout route already runs — this controller previously had no
+   * mall-access enforcement at all, unlike FitoutController.
+   */
+  async getProjectId(submittalId: string): Promise<string> {
+    const submittal = await this.prisma.fitoutSubmittal.findUnique({
+      where: { id: submittalId },
+      select: { projectId: true },
+    });
+    if (!submittal) throw new NotFoundException('Submittal not found');
+    return submittal.projectId;
   }
 
   async getOne(id: string) {
@@ -315,7 +330,14 @@ export class FitoutSubmittalService {
         entityId: submittal.id,
       });
       if (approver.email) {
-        await this.emailService.sendMail({
+        // Phase 5 hardening (docs/program/RELIABILITY_BACKLOG.md item 9): used to call
+        // emailService.sendMail() directly — a synchronous, non-retried send, unlike the
+        // fitout-SLA/AR-dunning emails in adjacent modules, which correctly use this same
+        // retryable queue. The eventKey is per-(submittal, step, approver), so re-running
+        // notifyPendingApprovers for the same step (e.g. a retried event) re-enqueues
+        // safely rather than sending a duplicate.
+        await this.emailDelivery.enqueue(this.prisma, {
+          eventKey: `fitout-submittal:${submittal.id}:step:${stepOrder}:approver:${approver.id}`,
           to: approver.email,
           subject: `[Fitout] Submittal chờ duyệt — ${submittal.formType.name}`,
           html: `<p>Kính gửi ${approver.fullName},</p><p>Submittal <strong>${submittal.title}</strong> của ${submittal.project.tenant.brandName} (${submittal.project.unit.code}) đang chờ bạn phê duyệt.</p>`,

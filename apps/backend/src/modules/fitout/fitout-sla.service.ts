@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
+
+type Db = PrismaService | Prisma.TransactionClient;
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
@@ -39,8 +41,8 @@ export class FitoutSlaService {
     });
   }
 
-  async recordMilestone(projectId: string, stage: string) {
-    const policy = await this.prisma.fitoutSlaPolicy.findUnique({
+  async recordMilestone(projectId: string, stage: string, db: Db = this.prisma) {
+    const policy = await db.fitoutSlaPolicy.findUnique({
       where: { stage },
     });
 
@@ -48,7 +50,7 @@ export class FitoutSlaService {
       ? new Date(Date.now() + policy.targetDays * 24 * 60 * 60 * 1000)
       : null;
 
-    return this.prisma.fitoutMilestone.upsert({
+    return db.fitoutMilestone.upsert({
       where: { projectId_stage: { projectId, stage } },
       create: {
         projectId,
@@ -67,13 +69,13 @@ export class FitoutSlaService {
     });
   }
 
-  async completeMilestone(projectId: string, stage: string) {
-    const milestone = await this.prisma.fitoutMilestone.findUnique({
+  async completeMilestone(projectId: string, stage: string, db: Db = this.prisma) {
+    const milestone = await db.fitoutMilestone.findUnique({
       where: { projectId_stage: { projectId, stage } },
     });
 
     if (milestone) {
-      return this.prisma.fitoutMilestone.update({
+      return db.fitoutMilestone.update({
         where: { id: milestone.id },
         data: { completedAt: new Date() },
       });
