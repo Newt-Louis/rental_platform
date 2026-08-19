@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -20,6 +21,8 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 
 @Injectable()
 export class BookingService {
+  private readonly logger = new Logger(BookingService.name);
+
   constructor(
     private prisma: PrismaService,
     private categoriesService: CategoriesService,
@@ -28,6 +31,18 @@ export class BookingService {
 
   // ─── Tạo booking mới với priority tự động ────────────────────────────────
 
+  /**
+   * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md item 1): used to run the
+   * priority-slot computation (aggregate MAX + 1) and the booking-number counter as reads
+   * followed by unwrapped writes (booking create → unit-status transition → lead update →
+   * activity logs) — a crash partway could commit the Booking row while the Unit/Lead status
+   * updates never ran, and two concurrent creates for the *same unit* could both read the
+   * same MAX(priority) before either committed, producing two ACTIVE bookings for one unit
+   * (violates the "at most one ACTIVE booking per unit" queue invariant). All of it now runs
+   * inside one Serializable transaction; Postgres's own serialization-conflict detection
+   * (P2034) catches the concurrent-same-unit race, and `runSerializable` retries the whole
+   * decision fresh (so the loser correctly becomes priority 2/queued instead of erroring).
+   */
   async create(dto: CreateBookingDto, createdById: string) {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
     if (unit?.leaseTermType && unit.leaseTermType !== 'LONG') {
@@ -56,43 +71,12 @@ export class BookingService {
       if (!customer) throw new NotFoundException('Customer không tồn tại');
     }
 
-    // Kiểm tra lead/customer chưa có booking ACTIVE cho unit này
-    const existingActive = await this.prisma.unitBooking.findFirst({
-      where: {
-        unitId: dto.unitId,
-        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
-        ...(dto.leadId ? { leadId: dto.leadId } : {}),
-        ...(dto.customerId ? { customerId: dto.customerId } : {}),
-        isActive: true,
-      },
-    });
-    if (existingActive) {
-      throw new ConflictException('Khách hàng này đã có booking đang chờ hoặc đang giữ cho unit này');
-    }
-
-    // Tính priority: lấy max hiện tại + 1
-    const maxPriority = await this.prisma.unitBooking.aggregate({
-      where: {
-        unitId: dto.unitId,
-        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
-        isActive: true,
-      },
-      _max: { priority: true },
-    });
-    const priority = (maxPriority._max.priority ?? 0) + 1;
-
     const holdDays = dto.holdDays ?? 30;
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + holdDays);
 
-    // Auto-generate booking number: BK-YYYY-NNNNN
-    const year = new Date().getFullYear();
-    const count = await this.prisma.unitBooking.count({
-      where: { bookingNumber: { startsWith: `BK-${year}-` } },
-    });
-    const bookingNumber = `BK-${year}-${String(count + 1).padStart(5, '0')}`;
-
-    // Validate proposed price if provided
+    // Validate proposed price if provided — read-only external validation, safe to run once
+    // ahead of the transaction/retry loop rather than re-running it on every attempt.
     let priceApprovalStatus: PriceApprovalStatus | null = null;
     let priceDeviationPercent: number | null = null;
     let pricingRuleId: string | null = null;
@@ -123,60 +107,95 @@ export class BookingService {
       };
     }
 
-    const booking = await this.prisma.unitBooking.create({
-      data: {
-        bookingNumber,
-        unitId: dto.unitId,
-        leadId: dto.leadId,
-        customerId: dto.customerId,
-        priority,
-        status: priority === 1 ? BookingStatus.ACTIVE : BookingStatus.PENDING,
-        requestedArea: dto.requestedArea,
-        requestedTerm: dto.requestedTerm,
-        expectedRent: dto.expectedRent,
-        proposedRentPerSqm: dto.proposedRentPerSqm,
-        proposedCamPerSqm: dto.proposedCamPerSqm,
-        priceApprovalStatus,
-        priceDeviationPercent,
-        pricingRuleId,
-        pricingSnapshot,
-        holdDays,
-        expiresAt,
-        activatedAt: priority === 1 ? new Date() : null,
-        notes: dto.notes,
-        createdById,
-        assignedToId: dto.assignedToId,
-      },
-      include: this.defaultInclude(),
+    return this.runSerializable(async (tx) => {
+      // Re-checked on every attempt (including retries after a losing race) so the decision
+      // is always made against current data, not a stale pre-transaction read.
+      const existingActive = await tx.unitBooking.findFirst({
+        where: {
+          unitId: dto.unitId,
+          status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+          ...(dto.leadId ? { leadId: dto.leadId } : {}),
+          ...(dto.customerId ? { customerId: dto.customerId } : {}),
+          isActive: true,
+        },
+      });
+      if (existingActive) {
+        throw new ConflictException('Khách hàng này đã có booking đang chờ hoặc đang giữ cho unit này');
+      }
+
+      // Tính priority: lấy max hiện tại + 1
+      const maxPriority = await tx.unitBooking.aggregate({
+        where: {
+          unitId: dto.unitId,
+          status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+          isActive: true,
+        },
+        _max: { priority: true },
+      });
+      const priority = (maxPriority._max.priority ?? 0) + 1;
+
+      // Auto-generate booking number: BK-YYYY-NNNNN
+      const year = new Date().getFullYear();
+      const count = await tx.unitBooking.count({
+        where: { bookingNumber: { startsWith: `BK-${year}-` } },
+      });
+      const bookingNumber = `BK-${year}-${String(count + 1).padStart(5, '0')}`;
+
+      const booking = await tx.unitBooking.create({
+        data: {
+          bookingNumber,
+          unitId: dto.unitId,
+          leadId: dto.leadId,
+          customerId: dto.customerId,
+          priority,
+          status: priority === 1 ? BookingStatus.ACTIVE : BookingStatus.PENDING,
+          requestedArea: dto.requestedArea,
+          requestedTerm: dto.requestedTerm,
+          expectedRent: dto.expectedRent,
+          proposedRentPerSqm: dto.proposedRentPerSqm,
+          proposedCamPerSqm: dto.proposedCamPerSqm,
+          priceApprovalStatus,
+          priceDeviationPercent,
+          pricingRuleId,
+          pricingSnapshot,
+          holdDays,
+          expiresAt,
+          activatedAt: priority === 1 ? new Date() : null,
+          notes: dto.notes,
+          createdById,
+          assignedToId: dto.assignedToId,
+        },
+        include: this.defaultInclude(),
+      });
+
+      // Khi priority 1 → unit chuyển sang BOOKING
+      if (priority === 1) {
+        await this.unitStatus.transition(dto.unitId, UnitStatus.BOOKING, {
+          userId: createdById,
+          reason: `Booking ${bookingNumber} activated`,
+        }, tx);
+      }
+
+      // Cập nhật lead status → PROPOSAL nếu booking ACTIVE
+      if (dto.leadId && priority === 1) {
+        await tx.lead.update({
+          where: { id: dto.leadId },
+          data: { status: LeadStatus.PROPOSAL },
+        });
+      }
+
+      // Ghi activity log
+      await this.logActivity(booking.id, BookingActivityType.CREATED, createdById, {
+        note: `Booking ${bookingNumber} tạo thành công. Priority: ${priority}`,
+      }, tx);
+      if (priority === 1) {
+        await this.logActivity(booking.id, BookingActivityType.ACTIVATED, createdById, {
+          note: 'Booking được kích hoạt ngay (priority 1)',
+        }, tx);
+      }
+
+      return booking;
     });
-
-    // Khi priority 1 → unit chuyển sang BOOKING
-    if (priority === 1) {
-      await this.unitStatus.transition(dto.unitId, UnitStatus.BOOKING, {
-        userId: createdById,
-        reason: `Booking ${bookingNumber} activated`,
-      });
-    }
-
-    // Cập nhật lead status → PROPOSAL nếu booking ACTIVE
-    if (dto.leadId && priority === 1) {
-      await this.prisma.lead.update({
-        where: { id: dto.leadId },
-        data: { status: LeadStatus.PROPOSAL },
-      });
-    }
-
-    // Ghi activity log
-    await this.logActivity(booking.id, BookingActivityType.CREATED, createdById, {
-      note: `Booking ${bookingNumber} tạo thành công. Priority: ${priority}`,
-    });
-    if (priority === 1) {
-      await this.logActivity(booking.id, BookingActivityType.ACTIVATED, createdById, {
-        note: 'Booking được kích hoạt ngay (priority 1)',
-      });
-    }
-
-    return booking;
   }
 
   // ─── Danh sách bookings ───────────────────────────────────────────────────
@@ -308,6 +327,15 @@ export class BookingService {
 
   // ─── Cập nhật thông tin booking ───────────────────────────────────────────
 
+  /**
+   * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md item 2): the unit-change path
+   * used to count the new unit's queue position, then commit the booking update, the old
+   * unit's queue promotion, and the new unit's status transition as separate unwrapped
+   * writes — the exact "release Unit A, reserve Unit B fails" partial-state risk section 14
+   * warns about, plus the same same-unit queue-position race as create(). The queue-position
+   * count and every write now happen inside one Serializable transaction via the same
+   * `runSerializable` retry helper.
+   */
   async update(id: string, dto: UpdateBookingDto, userId: string) {
     const booking = await this.requireBooking(id, [BookingStatus.ACTIVE, BookingStatus.PENDING]);
 
@@ -319,11 +347,9 @@ export class BookingService {
       }
     }
 
-    // ── Đổi unit ──────────────────────────────────────────────────────────────
-    let newUnitId: string | undefined;
-    let newPriority: number | undefined;
-    let newStatus: BookingStatus | undefined;
-
+    // ── Đổi unit — chỉ validate sự tồn tại/khoá ở đây; vị trí queue được tính lại
+    // bên trong transaction bên dưới để tránh đọc dữ liệu cũ. ───────────────────
+    let targetNewUnitId: string | undefined;
     if (dto.unitId !== undefined && dto.unitId !== booking.unitId) {
       const newUnit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
       if (newUnit?.leaseTermType && newUnit.leaseTermType !== 'LONG') {
@@ -333,18 +359,12 @@ export class BookingService {
       if (this.unitStatus.isLockedForBooking(newUnit.status)) {
         throw new BadRequestException(`Không thể chuyển sang mặt bằng này (trạng thái ${newUnit.status})`);
       }
-
-      // Đếm vị trí trong queue của unit mới
-      const queueCount = await this.prisma.unitBooking.count({
-        where: { unitId: dto.unitId, status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] }, isActive: true },
-      });
-      newUnitId = dto.unitId;
-      newPriority = queueCount + 1;
-      newStatus = queueCount === 0 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
+      targetNewUnitId = dto.unitId;
     }
 
-    // ── Validate giá đề xuất (dùng unit hiện tại hoặc unit mới) ──────────────
-    const targetUnitId = newUnitId ?? booking.unitId;
+    // ── Validate giá đề xuất (dùng unit hiện tại hoặc unit mới) — read-only external
+    // validation, safe ahead of the transaction/retry loop. ─────────────────────
+    const targetUnitId = targetNewUnitId ?? booking.unitId;
     const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId } });
 
     let priceApprovalStatus: PriceApprovalStatus | null | undefined = undefined;
@@ -353,7 +373,7 @@ export class BookingService {
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
     if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
-      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!newUnitId) {
+      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
         const validation = await this.categoriesService.validateProposedPrice({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
@@ -382,39 +402,56 @@ export class BookingService {
       }
     }
 
-    const updated = await this.prisma.unitBooking.update({
-      where: { id },
-      data: {
-        ...(dto.leadId !== undefined && { leadId: dto.leadId || null }),
-        ...(newUnitId && { unitId: newUnitId, priority: newPriority, status: newStatus, activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : undefined }),
-        assignedToId: dto.assignedToId,
-        requestedArea: dto.requestedArea,
-        requestedTerm: dto.requestedTerm,
-        expectedRent: dto.expectedRent,
-        proposedRentPerSqm: dto.proposedRentPerSqm,
-        proposedCamPerSqm: dto.proposedCamPerSqm,
-        ...(priceApprovalStatus !== undefined && { priceApprovalStatus }),
-        ...(priceDeviationPercent !== undefined && { priceDeviationPercent }),
-        ...(pricingRuleId !== undefined && { pricingRuleId }),
-        ...(pricingSnapshot !== undefined && { pricingSnapshot }),
-        notes: dto.notes,
-      },
-      include: this.defaultInclude(),
-    });
+    return this.runSerializable(async (tx) => {
+      let newUnitId: string | undefined;
+      let newPriority: number | undefined;
+      let newStatus: BookingStatus | undefined;
 
-    // ── Sau khi đổi unit: dọn queue cũ + cập nhật status unit mới ────────────
-    if (newUnitId) {
-      await this.promoteNextInQueue(booking.unitId, userId);
-      if (newStatus === BookingStatus.ACTIVE) {
-        await this.unitStatus.transition(newUnitId, UnitStatus.BOOKING, {
-          userId,
-          reason: `Booking ${id} chuyển sang unit này`,
+      if (targetNewUnitId) {
+        // Đếm vị trí trong queue của unit mới — tính lại trong transaction, không dùng số
+        // đã đọc trước đó, để đóng race giữa 2 request đổi unit cùng lúc.
+        const queueCount = await tx.unitBooking.count({
+          where: { unitId: targetNewUnitId, status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] }, isActive: true },
         });
+        newUnitId = targetNewUnitId;
+        newPriority = queueCount + 1;
+        newStatus = queueCount === 0 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
       }
-    }
 
-    await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' });
-    return updated;
+      const updated = await tx.unitBooking.update({
+        where: { id },
+        data: {
+          ...(dto.leadId !== undefined && { leadId: dto.leadId || null }),
+          ...(newUnitId && { unitId: newUnitId, priority: newPriority, status: newStatus, activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : undefined }),
+          assignedToId: dto.assignedToId,
+          requestedArea: dto.requestedArea,
+          requestedTerm: dto.requestedTerm,
+          expectedRent: dto.expectedRent,
+          proposedRentPerSqm: dto.proposedRentPerSqm,
+          proposedCamPerSqm: dto.proposedCamPerSqm,
+          ...(priceApprovalStatus !== undefined && { priceApprovalStatus }),
+          ...(priceDeviationPercent !== undefined && { priceDeviationPercent }),
+          ...(pricingRuleId !== undefined && { pricingRuleId }),
+          ...(pricingSnapshot !== undefined && { pricingSnapshot }),
+          notes: dto.notes,
+        },
+        include: this.defaultInclude(),
+      });
+
+      // ── Sau khi đổi unit: dọn queue cũ + cập nhật status unit mới ────────────
+      if (newUnitId) {
+        await this.promoteNextInQueue(booking.unitId, userId, tx);
+        if (newStatus === BookingStatus.ACTIVE) {
+          await this.unitStatus.transition(newUnitId, UnitStatus.BOOKING, {
+            userId,
+            reason: `Booking ${id} chuyển sang unit này`,
+          }, tx);
+        }
+      }
+
+      await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' }, tx);
+      return updated;
+    });
   }
 
   // ─── Phê duyệt giá đề xuất ─────────────────────────────────────────────────
@@ -629,6 +666,12 @@ export class BookingService {
 
   // ─── Khôi phục booking đã hủy ────────────────────────────────────────────
 
+  /**
+   * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md item 19): same priority-race and
+   * multi-write-atomicity risk as create()/update() — the max-priority read and the update/
+   * unit-status/activity writes were unwrapped. Now goes through the same
+   * `runSerializable` retry helper.
+   */
   async reinstate(id: string, userId: string) {
     const booking = await this.prisma.unitBooking.findUnique({ where: { id } });
     if (!booking || !booking.isActive) throw new NotFoundException('Booking không tồn tại');
@@ -644,42 +687,45 @@ export class BookingService {
       );
     }
 
-    const maxPriority = await this.prisma.unitBooking.aggregate({
-      where: {
-        unitId: booking.unitId,
-        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
-        isActive: true,
-      },
-      _max: { priority: true },
-    });
-    const newPriority = (maxPriority._max.priority ?? 0) + 1;
-    const newStatus = newPriority === 1 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
-
     const holdDays = booking.holdDays ?? 30;
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + holdDays);
 
-    await this.prisma.unitBooking.update({
-      where: { id },
-      data: {
-        status: newStatus,
-        priority: newPriority,
-        cancelledAt: null,
-        cancelReason: null,
-        expiresAt,
-        activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : null,
-      },
-    });
-
-    if (newStatus === BookingStatus.ACTIVE) {
-      await this.unitStatus.transition(booking.unitId, UnitStatus.BOOKING, {
-        userId,
-        reason: `Booking ${booking.bookingNumber} được khôi phục`,
+    await this.runSerializable(async (tx) => {
+      const maxPriority = await tx.unitBooking.aggregate({
+        where: {
+          unitId: booking.unitId,
+          status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+          isActive: true,
+        },
+        _max: { priority: true },
       });
-    }
+      const newPriority = (maxPriority._max.priority ?? 0) + 1;
+      const newStatus = newPriority === 1 ? BookingStatus.ACTIVE : BookingStatus.PENDING;
 
-    await this.logActivity(id, BookingActivityType.ACTIVATED, userId, {
-      note: `Booking được khôi phục. Priority: ${newPriority}`,
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + holdDays);
+
+      await tx.unitBooking.update({
+        where: { id },
+        data: {
+          status: newStatus,
+          priority: newPriority,
+          cancelledAt: null,
+          cancelReason: null,
+          expiresAt,
+          activatedAt: newStatus === BookingStatus.ACTIVE ? new Date() : null,
+        },
+      });
+
+      if (newStatus === BookingStatus.ACTIVE) {
+        await this.unitStatus.transition(booking.unitId, UnitStatus.BOOKING, {
+          userId,
+          reason: `Booking ${booking.bookingNumber} được khôi phục`,
+        }, tx);
+      }
+
+      await this.logActivity(id, BookingActivityType.ACTIVATED, userId, {
+        note: `Booking được khôi phục. Priority: ${newPriority}`,
+      }, tx);
     });
 
     return this.findOne(id);
@@ -687,24 +733,49 @@ export class BookingService {
 
   // ─── Hủy booking ──────────────────────────────────────────────────────────
 
+  /**
+   * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md item 3): status update, activity
+   * log, and queue promotion used to be three unwrapped writes — a crash after the status
+   * update but before promotion left a CANCELLED booking whose unit stayed reserved with no
+   * one promoted to take its place (blocking inventory for no active booking, the exact
+   * invariant section 16 names). Also idempotent now: a retry against an already-CANCELLED
+   * booking returns the same success message instead of throwing, since requireBooking's
+   * allowed-status guard would otherwise reject a network-timeout retry of a cancel that
+   * actually succeeded.
+   */
   async cancel(id: string, dto: CancelBookingDto, userId: string) {
-    const booking = await this.requireBooking(id, [BookingStatus.ACTIVE, BookingStatus.PENDING]);
+    const existing = await this.prisma.unitBooking.findUnique({ where: { id } });
+    if (!existing || !existing.isActive) throw new NotFoundException('Booking không tồn tại');
+    if (existing.status === BookingStatus.CANCELLED) {
+      return { message: 'Booking đã được hủy' }; // idempotent replay — safe retry after success
+    }
+    if (existing.status !== BookingStatus.ACTIVE && existing.status !== BookingStatus.PENDING) {
+      throw new BadRequestException(
+        `Booking đang ở trạng thái ${existing.status}, không thể thực hiện hành động này`,
+      );
+    }
 
-    await this.prisma.unitBooking.update({
-      where: { id },
-      data: {
-        status: BookingStatus.CANCELLED,
-        cancelledAt: new Date(),
-        cancelReason: dto.reason,
-      },
+    await this.runSerializable(async (tx) => {
+      const current = await tx.unitBooking.findUniqueOrThrow({ where: { id } });
+      if (current.status === BookingStatus.CANCELLED) return; // idempotent replay (lost race)
+
+      await tx.unitBooking.update({
+        where: { id },
+        data: {
+          status: BookingStatus.CANCELLED,
+          cancelledAt: new Date(),
+          cancelReason: dto.reason,
+        },
+      });
+
+      await this.logActivity(id, BookingActivityType.CANCELLED, userId, {
+        note: dto.reason ? `Hủy booking. Lý do: ${dto.reason}` : 'Hủy booking',
+      }, tx);
+
+      // Promote next in queue — only meaningful if this booking held priority 1; harmless
+      // no-op otherwise (promoteNextInQueue only acts on the unit's current PENDING queue).
+      await this.promoteNextInQueue(existing.unitId, userId, tx);
     });
-
-    await this.logActivity(id, BookingActivityType.CANCELLED, userId, {
-      note: dto.reason ? `Hủy booking. Lý do: ${dto.reason}` : 'Hủy booking',
-    });
-
-    // Promote next in queue
-    await this.promoteNextInQueue(booking.unitId, userId);
 
     return { message: 'Booking đã được hủy' };
   }
@@ -837,6 +908,17 @@ export class BookingService {
 
   // ─── Expire bookings hết hạn (gọi từ cron job) ───────────────────────────
 
+  /**
+   * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md item 20, section 37-38 of the
+   * phase brief — the "expiry vs confirm" race). Runs from `BookingScheduler`'s hourly cron
+   * (distributed lock already correct, unchanged). The per-booking loop used to do 3
+   * unwrapped writes with no re-check — if a user confirmed/updated/cancelled the same
+   * booking in the window between this job's initial fetch and its per-booking write, the
+   * job could still force it to EXPIRED against now-stale assumptions. Each booking's expiry
+   * now re-checks its current state inside a Serializable transaction before acting; if it's
+   * no longer an eligible candidate (someone else already changed it), it's skipped rather
+   * than blindly overwritten.
+   */
   async expireOverdueBookings() {
     const now = new Date();
     const expired = await this.prisma.unitBooking.findMany({
@@ -847,19 +929,38 @@ export class BookingService {
       },
     });
 
+    let expiredCount = 0;
     for (const booking of expired) {
-      await this.prisma.unitBooking.update({
-        where: { id: booking.id },
-        data: { status: BookingStatus.EXPIRED },
-      });
-      await this.logActivity(booking.id, BookingActivityType.EXPIRED, booking.createdById, {
-        note: 'Booking tự động hết hạn',
-      });
-      // Promote next
-      await this.promoteNextInQueue(booking.unitId, booking.createdById);
+      try {
+        await this.runSerializable(async (tx) => {
+          const current = await tx.unitBooking.findUniqueOrThrow({ where: { id: booking.id } });
+          if (
+            (current.status !== BookingStatus.ACTIVE && current.status !== BookingStatus.PENDING) ||
+            !current.expiresAt ||
+            current.expiresAt >= now
+          ) {
+            return; // no longer eligible — someone else already acted on it
+          }
+
+          await tx.unitBooking.update({
+            where: { id: booking.id },
+            data: { status: BookingStatus.EXPIRED },
+          });
+          await this.logActivity(booking.id, BookingActivityType.EXPIRED, booking.createdById, {
+            note: 'Booking tự động hết hạn',
+          }, tx);
+          await this.promoteNextInQueue(booking.unitId, booking.createdById, tx);
+          expiredCount++;
+        });
+      } catch (error: any) {
+        // One booking's failure must not abort the batch for every other overdue booking —
+        // same batch-resilience principle as generateDueInvoices (Backbone Consolidation
+        // Gate finding D).
+        this.logger.warn(`expireOverdueBookings: skipping booking ${booking.id}: ${error?.message ?? error}`);
+      }
     }
 
-    return { expiredCount: expired.length };
+    return { expiredCount };
   }
 
   // ─── Stats tổng hợp ───────────────────────────────────────────────────────
@@ -904,13 +1005,41 @@ export class BookingService {
     return booking;
   }
 
+  /**
+   * Phase 6 (docs/program/RELIABILITY_BACKLOG.md items 1-3): shared Serializable-transaction
+   * + retry helper for Booking's queue-position races (create, unit-change on update, cancel
+   * promoting the next in queue). A losing transaction under Serializable isolation fails
+   * with Postgres error P2034 ("could not serialize access") — retried up to `maxAttempts`
+   * times so the loser's request re-evaluates against fresh data instead of erroring out for
+   * what is, from the caller's point of view, a normal concurrent booking action, not a bug.
+   */
+  private async runSerializable<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    maxAttempts = 3,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await this.prisma.$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (error: any) {
+        if (error?.code === 'P2034' && attempt < maxAttempts - 1) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
   private async logActivity(
     bookingId: string,
     type: BookingActivityType,
     performedById: string,
     opts: { note: string; metadata?: any },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    await this.prisma.bookingActivity.create({
+    await db.bookingActivity.create({
       data: {
         bookingId,
         type,
@@ -922,8 +1051,12 @@ export class BookingService {
   }
 
   // Khi priority 1 bị cancel/expire → promote booking priority 2 lên thành ACTIVE
-  private async promoteNextInQueue(unitId: string, promotedById: string) {
-    const next = await this.prisma.unitBooking.findFirst({
+  private async promoteNextInQueue(
+    unitId: string,
+    promotedById: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const next = await db.unitBooking.findFirst({
       where: {
         unitId,
         status: BookingStatus.PENDING,
@@ -933,7 +1066,7 @@ export class BookingService {
     });
 
     if (next) {
-      await this.prisma.unitBooking.update({
+      await db.unitBooking.update({
         where: { id: next.id },
         data: {
           status: BookingStatus.ACTIVE,
@@ -945,20 +1078,20 @@ export class BookingService {
       await this.unitStatus.transition(unitId, UnitStatus.BOOKING, {
         userId: promotedById,
         reason: 'Next booking promoted to priority 1',
-      });
+      }, db);
       await this.logActivity(next.id, BookingActivityType.ACTIVATED, promotedById, {
         note: 'Tự động kích hoạt do booking ưu tiên cao hơn bị hủy/hết hạn',
-      });
+      }, db);
       await this.logActivity(next.id, BookingActivityType.PRIORITY_CHANGED, promotedById, {
         note: 'Lên ưu tiên #1',
         metadata: { newPriority: 1 },
-      });
+      }, db);
     } else {
       // Không còn ai trong queue → unit trở lại VACANT
       await this.unitStatus.transition(unitId, UnitStatus.VACANT, {
         userId: promotedById,
         reason: 'Booking queue empty',
-      });
+      }, db);
     }
   }
 
