@@ -7,8 +7,26 @@ on:
     branches: [ main, master ]
 
 jobs:
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Scan tracked files for committed secrets
+        run: node scripts/secret-scan.mjs
+
   operations:
     name: Operations automation
+    needs: secret-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,9 +48,10 @@ jobs:
           node --check scripts/performance-smoke.mjs
           node --check scripts/release-readiness.mjs
           node --check scripts/ux-static-check.mjs
+          node --check scripts/secret-scan.mjs
 
       - name: Test operations automation
-        run: node --test scripts/ops-automation.test.mjs scripts/backup-restore.test.mjs scripts/performance-smoke.test.mjs scripts/release-readiness.test.mjs
+        run: node --test scripts/ops-automation.test.mjs scripts/backup-restore.test.mjs scripts/performance-smoke.test.mjs scripts/release-readiness.test.mjs scripts/secret-scan.test.mjs
 
       - name: Validate scheduler and production readiness invariants
         run: node scripts/ops-static-check.mjs
@@ -51,6 +70,7 @@ jobs:
 
   backend:
     name: Backend build
+    needs: secret-scan
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -86,6 +106,7 @@ jobs:
 
   frontend:
     name: Frontend build
+    needs: secret-scan
     runs-on: ubuntu-latest
     defaults:
       run:

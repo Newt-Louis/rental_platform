@@ -6,13 +6,26 @@ deploy-prod.sh
 .env
 .env.local
 .env.production
+.env.uat-server
 apps/backend/.env
 apps/backend/.env.local
 apps/backend/.env.production
 # Keep example files (no real credentials)
 !.env.example
 !.env.docker
+!.env.uat-server.example
 !apps/backend/.env.example
+
+# ─── Secret incident 2026-08-19 (docs/security/SECRET_INCIDENT_REMEDIATION.md) ──
+# artifacts/uat-preflight.env and the UAT DB dumps were committed with real
+# credentials/data — untracked as part of remediation. Real database backups
+# belong in a proper backup store (see docs/readiness/BACKUP_RESTORE_READINESS.md),
+# never in git.
+artifacts/uat-preflight.env
+!artifacts/uat-preflight.env.example
+artifacts/backups/*.dump
+artifacts/backups/*.dump.json
+artifacts/backups/*.dump.sha256
 
 # ─── Node Modules ────────────────────────────────────────────────────────────
 node_modules/
