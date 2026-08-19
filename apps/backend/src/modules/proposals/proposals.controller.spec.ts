@@ -19,7 +19,8 @@ describe('ProposalsController access and roles', () => {
     await controller.findAll({ status: 'DRAFT' }, user);
     await controller.stats(user);
     expect(service.findAll).toHaveBeenCalledWith({ status: 'DRAFT', mallIds: ['mall-1'] });
-    expect(service.getStats).toHaveBeenCalledWith(['mall-1']);
+    // See note below on the leaseTermType forwarding — same reason.
+    expect(service.getStats).toHaveBeenCalledWith(['mall-1'], undefined);
   });
 
   it('uses and validates the mall selected in the request instead of stale active mall context', async () => {
@@ -29,7 +30,13 @@ describe('ProposalsController access and roles', () => {
     expect(mallAccess.assertMallAccess).toHaveBeenCalledTimes(2);
     expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('u1', 'LEASING_EXECUTIVE', 'mall-new');
     expect(service.findAll).toHaveBeenCalledWith({ status: 'DRAFT', mallId: 'mall-new', mallIds: undefined });
-    expect(service.getStats).toHaveBeenCalledWith(['mall-new']);
+    // Test defect fix (docs/reliability/TEST_BASELINE_REMEDIATION.md):
+    // ProposalsController.stats() now also forwards an optional leaseTermType
+    // query param to service.getStats(mallIds, leaseTermType) — a real,
+    // intentional feature (LONG/SHORT lease-term filtering), not exercised by
+    // this test, so the second arg is `undefined` here. The assertion below
+    // was never updated for that extra parameter.
+    expect(service.getStats).toHaveBeenCalledWith(['mall-new'], undefined);
   });
 
   it('validates proposal mall before returning detail', async () => {

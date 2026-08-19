@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardPage from './DashboardPage';
 import { dashboardApi } from '@/api';
+import i18n from '@/lib/i18n';
+
+beforeAll(() => i18n.changeLanguage('vi'));
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
