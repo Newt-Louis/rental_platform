@@ -28,6 +28,12 @@ artifacts/uat-preflight.env
 artifacts/backups/*.dump
 artifacts/backups/*.dump.json
 artifacts/backups/*.dump.sha256
+# Go-Live Workstream C (docs/golive/GO_LIVE_BLOCKERS.md GL-03): uploaded-file backup
+# archives contain real tenant business documents — never belong in git, same reasoning
+# as the DB dumps above.
+artifacts/backups/*.tar.gz
+artifacts/backups/*.tar.gz.json
+artifacts/backups/*.tar.gz.sha256
 
 # ─── Node Modules ────────────────────────────────────────────────────────────
 node_modules/

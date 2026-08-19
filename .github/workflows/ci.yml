@@ -45,6 +45,9 @@ jobs:
           node --check scripts/ops-static-check.mjs
           node --check scripts/backup-database.mjs
           node --check scripts/verify-database-restore.mjs
+          node --check scripts/backup-uploads.mjs
+          node --check scripts/verify-uploads-restore.mjs
+          node --check scripts/backbone-reconciliation.mjs
           node --check scripts/performance-smoke.mjs
           node --check scripts/release-readiness.mjs
           node --check scripts/ux-static-check.mjs
