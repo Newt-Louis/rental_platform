@@ -1,6 +1,7 @@
-import { PrismaClient, Role, UnitStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
+import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from './approval-policy-seed.util';
+import { generateBillingPeriods } from '../src/modules/billing/billing-schedule.util';
 
 const prisma = new PrismaClient();
 
@@ -1049,6 +1050,43 @@ async function main() {
   }
 
   console.log('Contracts created');
+
+  // Phase 6 early cleanup (docs/program/RELIABILITY_BACKLOG.md item 18, found by the
+  // Backbone Consolidation Gate's live-data reconciliation script): contracts above are
+  // inserted directly via prisma.contract.create with status ACTIVE/EXPIRING already set,
+  // bypassing ContractsService.updateStatus() — the one place that normally guarantees an
+  // ACTIVE contract also gets a billing schedule (Phase 3 hardening). Reuses the actual
+  // application's period-generation algorithm (generateBillingPeriods) rather than
+  // reimplementing it, so seeded schedules match exactly what buildScheduleForContract would
+  // have produced had the contract gone through real activation.
+  for (const contract of contracts) {
+    if (contract.status !== ContractStatus.ACTIVE && contract.status !== ContractStatus.EXPIRING) continue;
+    const periods = generateBillingPeriods({
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      rent: contract.rent,
+      cam: contract.cam,
+      rentFree: contract.rentFree,
+      escalationPercent: contract.escalationPercent,
+      paymentTerm: contract.paymentTerm,
+      billingCycle: contract.billingCycle,
+    });
+    await prisma.billingScheduleEntry.createMany({
+      data: periods.map((period) => ({
+        contractId: contract.id,
+        period: period.period,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        rentAmount: period.rentAmount,
+        camAmount: period.camAmount,
+        subtotal: period.subtotal,
+        dueDate: period.dueDate,
+        status: period.skipped ? BillingScheduleStatus.SKIPPED : BillingScheduleStatus.PENDING,
+      })),
+    });
+  }
+
+  console.log('Billing schedules seeded for ACTIVE/EXPIRING contracts');
 
   // Create FitoutProjects for active contracts (status = FitoutStageConfig.code, seeded in migration 20260702100000)
   const fitoutStatuses = [
