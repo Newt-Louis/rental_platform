@@ -12,6 +12,7 @@ import {
   BookmarkPlus, DollarSign, AlertTriangle, CheckCircle, BadgeCheck,
 } from 'lucide-react';
 import type { Unit } from '@/types';
+import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
 
 export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
   unitId: string; unitCode: string; unit?: Unit; open: boolean; onClose: () => void;
@@ -24,12 +25,19 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
       leadId: '', customerId: '',
       requestedArea: '', requestedTerm: '36', expectedRent: '',
       proposedRentPerSqm: '', proposedCamPerSqm: '',
-      holdDays: '30', notes: '',
+      holdDays: '30', notes: '', currencyCode: 'VND' as CurrencyCode,
     },
   });
 
   const sourceType = watch('sourceType');
   const proposedRent = watch('proposedRentPerSqm');
+  const currencyCode = watch('currencyCode') as CurrencyCode;
+  const currencySymbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  // Category price-floor validation (minRentPerSqm/maxRentPerSqm/suggestedRent) is VND-denominated
+  // only (docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- Category pricing is out of this pass's
+  // scope). Skip autofill/validation against it for a non-VND booking rather than comparing
+  // mismatched units.
+  const isVndPricing = currencyCode === 'VND';
   const selectedCustomerId = watch('customerId');
   const priceAutofilledRef = useRef(false);
 
@@ -44,7 +52,7 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
         requestedArea: unit?.areaNLA ? String(unit.areaNLA) : '',
         requestedTerm: '36', expectedRent: '',
         proposedRentPerSqm: '', proposedCamPerSqm: '',
-        holdDays: '30', notes: '',
+        holdDays: '30', notes: '', currencyCode: 'VND' as CurrencyCode,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,7 +84,7 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
       floorId: unit?.floor?.id,
       zoneId: unit?.zone?.id,
     }),
-    enabled: open && !!unit?.mall?.id && !!unit?.categoryId,
+    enabled: open && !!unit?.mall?.id && !!unit?.categoryId && isVndPricing,
   });
 
   // Validate proposed price when it changes
@@ -89,10 +97,10 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
       zoneId: unit?.zone?.id,
       proposedRentPerSqm: Number(proposedRent),
     }),
-    enabled: open && !!unit?.mall?.id && !!unit?.categoryId && !!proposedRent && Number(proposedRent) > 0,
+    enabled: open && !!unit?.mall?.id && !!unit?.categoryId && !!proposedRent && Number(proposedRent) > 0 && isVndPricing,
   });
 
-  const categoryPricing = pricingData?.pricing;
+  const categoryPricing = isVndPricing ? pricingData?.pricing : undefined;
 
   // Khi tra được giá ngành hàng (master data) lần đầu trong phiên mở dialog này: tự điền giá đề xuất
   // theo suggestedRent/camPerSqm đã đăng ký — không ghi đè nếu người dùng đã tự sửa sau đó.
@@ -132,6 +140,7 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
       expectedRent: data.expectedRent ? Number(data.expectedRent) : undefined,
       proposedRentPerSqm: data.proposedRentPerSqm ? Number(data.proposedRentPerSqm) : undefined,
       proposedCamPerSqm: data.proposedCamPerSqm ? Number(data.proposedCamPerSqm) : undefined,
+      currencyCode: data.currencyCode || 'VND',
       holdDays: Number(data.holdDays),
       notes: data.notes || undefined,
     }),
@@ -272,13 +281,28 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng (₫/m²)</label>
-              <Input {...register('expectedRent')} type="number" placeholder="650000" />
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
+              <Select value={currencyCode} onValueChange={(v) => setValue('currencyCode', v as CurrencyCode)}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CURRENCY_CODES.map((code) => (
+                    <SelectItem key={code} value={code}>{code}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!isVndPricing && (
+                <p className="text-xs text-gray-400 mt-1">Giá sàn/trần theo ngành hàng chỉ áp dụng cho VND — không kiểm tra với {currencyCode}</p>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Giữ slot (ngày) *</label>
               <Input {...register('holdDays', { required: true })} type="number" min={1} />
             </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng ({currencySymbol}/m²)</label>
+            <Input {...register('expectedRent')} type="number" placeholder="650000" />
           </div>
 
           {/* Category Pricing Info */}
@@ -310,14 +334,14 @@ export function CreateBookingDialog({ unitId, unitCode, unit, open, onClose }: {
           {/* Proposed Price */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá sale đề xuất (₫/m²)</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá sale đề xuất ({currencySymbol}/m²)</label>
               <Input {...register('proposedRentPerSqm')} type="number" placeholder="550000" />
               {categoryPricing?.suggestedRent != null && (
                 <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.suggestedRent.toLocaleString('vi-VN')} ₫</p>
               )}
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất (₫/m²)</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất ({currencySymbol}/m²)</label>
               <Input {...register('proposedCamPerSqm')} type="number" placeholder="80000" />
               {categoryPricing?.camPerSqm != null && (
                 <p className="text-xs text-gray-400 mt-1">Gợi ý theo ngành hàng: {categoryPricing.camPerSqm.toLocaleString('vi-VN')} ₫</p>

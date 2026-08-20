@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Building2, User, X, BookmarkPlus } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
 
 export function CreateBookingDialog({ open, onClose, mallId }: {
   open: boolean; onClose: () => void; mallId?: string | null;
@@ -18,8 +20,9 @@ export function CreateBookingDialog({ open, onClose, mallId }: {
     leadSearch: '', leadId: '',
     requestedArea: '', requestedTerm: '', expectedRent: '',
     proposedRentPerSqm: '', proposedCamPerSqm: '',
-    holdDays: '30', notes: '', assignedToId: '',
+    holdDays: '30', notes: '', assignedToId: '', currencyCode: 'VND' as CurrencyCode,
   });
+  const currencySymbol = CURRENCIES[form.currencyCode]?.symbol ?? '₫';
   const setField = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -53,6 +56,7 @@ export function CreateBookingDialog({ open, onClose, mallId }: {
       expectedRent: form.expectedRent ? Number(form.expectedRent) : undefined,
       proposedRentPerSqm: form.proposedRentPerSqm ? Number(form.proposedRentPerSqm) : undefined,
       proposedCamPerSqm: form.proposedCamPerSqm ? Number(form.proposedCamPerSqm) : undefined,
+      currencyCode: form.currencyCode || 'VND',
       holdDays: Number(form.holdDays) || 30,
       notes: form.notes || undefined,
       assignedToId: form.assignedToId || undefined,
@@ -62,7 +66,7 @@ export function CreateBookingDialog({ open, onClose, mallId }: {
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
       toast({ title: 'Đã tạo booking lô thuê' });
       onClose();
-      setForm({ unitSearch: '', unitId: '', unitLabel: '', leadSearch: '', leadId: '', requestedArea: '', requestedTerm: '', expectedRent: '', proposedRentPerSqm: '', proposedCamPerSqm: '', holdDays: '30', notes: '', assignedToId: '' });
+      setForm({ unitSearch: '', unitId: '', unitLabel: '', leadSearch: '', leadId: '', requestedArea: '', requestedTerm: '', expectedRent: '', proposedRentPerSqm: '', proposedCamPerSqm: '', holdDays: '30', notes: '', assignedToId: '', currencyCode: 'VND' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi tạo booking', variant: 'destructive' }),
   });
@@ -161,16 +165,27 @@ export function CreateBookingDialog({ open, onClose, mallId }: {
             </div>
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng (₫/m²)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
+            <Select value={form.currencyCode} onValueChange={(v) => setForm((f) => ({ ...f, currencyCode: v as CurrencyCode }))}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {CURRENCY_CODES.map((code) => (
+                  <SelectItem key={code} value={code}>{code}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá kỳ vọng ({currencySymbol}/m²)</label>
             <Input type="number" value={form.expectedRent} onChange={setField('expectedRent')} placeholder="680000" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê đề xuất (₫/m²)</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê đề xuất ({currencySymbol}/m²)</label>
               <Input type="number" value={form.proposedRentPerSqm} onChange={setField('proposedRentPerSqm')} placeholder="650000" />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất (₫/m²)</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">CAM đề xuất ({currencySymbol}/m²)</label>
               <Input type="number" value={form.proposedCamPerSqm} onChange={setField('proposedCamPerSqm')} placeholder="50000" />
             </div>
           </div>
