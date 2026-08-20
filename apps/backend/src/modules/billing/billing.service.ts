@@ -7,6 +7,16 @@ import { EmailService } from '../notifications/email.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { formatMoney } from '../../common/utils/format-money';
+import { SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
+
+// ServiceContract/ServiceContractPayment.currency are still free-text String columns
+// (docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- tightening them to the CurrencyCode enum
+// is explicitly out of scope). Coerce defensively when bridging into Invoice.currencyCode
+// (a real enum) rather than trusting arbitrary text; unrecognized values default VND, the
+// same default those String columns themselves use.
+function toCurrencyCode(value: string | null | undefined): CurrencyCode {
+  return (SUPPORTED_CURRENCY_CODES as string[]).includes(value ?? '') ? (value as CurrencyCode) : 'VND';
+}
 
 interface CurrentUser {
   id: string;
@@ -379,6 +389,7 @@ export class BillingService {
           sourceType: 'SERVICE_CONTRACT', sourceId: payment.contractId,
           period, type: 'SERVICE_CONTRACT', subtotal, vatRate, vatAmount,
           totalAmount: payment.totalAmount ?? subtotal + vatAmount,
+          currencyCode: toCurrencyCode(payment.currency),
           dueDate: payment.dueDate,
           notes: `${payment.contract.contractNumber} - ${payment.milestone}`,
           lines: { create: { type: 'SERVICE_CONTRACT', description: `${payment.contract.title} - ${payment.milestone}`, qty: 1, unitPrice: subtotal, amount: subtotal } },
