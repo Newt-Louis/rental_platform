@@ -3,6 +3,19 @@
 **Date:** 2026-08-19 · Release Candidate: **RC1**
 (`2701bd1a8f61e5434ccc44615029c9954d89f108`)
 
+> **Superseded by RC3** (`c61fdb9`, 2026-08-20 — Multi-Currency Foundation,
+> VND/USD/MMK; see `docs/golive/RELEASE_CANDIDATE.md` and
+> `docs/program/MULTI_CURRENCY_COMPLETION.md`). Unlike RC2 (docs/CI tooling
+> only), RC3 is real application code, so its own Functional/Reliability
+> evidence is newer than what's quoted below (368/368 tests, 17/17
+> reconciliation checks) — see `docs/golive/FINAL_GO_LIVE_MATRIX.md` for the
+> updated rows. The **verdict below is otherwise unchanged**: still NO-GO,
+> gated on the same pre-existing, unrelated, human/DevOps-owned operational
+> blockers (credential rotation, off-site backup, git-history remediation) —
+> none of which RC3 touches or resolves. RC3 does add one new UAT-scope item
+> not covered by this report: the full lifecycle should be re-tested with
+> VND, USD, and MMK before go-live.
+
 ## Release Candidate
 
 RC1 — 7 commits on top of the `CONDITIONAL GO` baseline (`c317ad0`),

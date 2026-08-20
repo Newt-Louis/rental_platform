@@ -1,16 +1,21 @@
 # Final Go-Live Matrix
 
 **Date:** 2026-08-19 · Release Candidate: RC1 at the time this matrix was
-first written; **superseded by RC2** (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`,
-see `docs/golive/RELEASE_CANDIDATE.md`) after the Go-Live Operations
-workstream added the upload-backup tooling below. The verdict and every
-row's status are unchanged by that update — RC2 only added backup/CI
-tooling, not application code.
+first written; superseded by RC2 (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`,
+docs/CI tooling only), now **superseded by RC3**
+(`c61fdb9`, see `docs/golive/RELEASE_CANDIDATE.md`) — the Multi-Currency
+Foundation (VND/USD/MMK). Unlike RC2, RC3 **is** application code; the
+Functional and Reliability rows below are updated with RC3's evidence. Every
+other row is unaffected — RC3 touches no security/credential/deployment/
+performance surface. Overall verdict unchanged (still gated on the
+unrelated RED/AMBER rows below); see
+`docs/program/MULTI_CURRENCY_COMPLETION.md` for the new UAT-scope item this
+adds (re-test the lifecycle with VND/USD/MMK before go-live).
 
 | Area | Status | Evidence | Blocker | Owner |
 |---|---|---|---|---|
-| Functional | **GREEN** | 359/359 backend tests passing; every business-lifecycle transition (Proposal→Approval→Contract→Billing/Fitout→Handover, CRM→Booking) traced against live code and hardened | None | This program |
-| Reliability | **GREEN** | `docs/program/RELIABILITY_BACKLOG.md`: 22 tracked findings, 15 resolved, 7 open, **0 P0, 0 P1**; live-data reconciliation 13/13 clean via `scripts/backbone-reconciliation.mjs` | None | This program |
+| Functional | **GREEN** | 368/368 backend tests passing (RC2 baseline 359/359 — +9 this pass, Multi-Currency Foundation); every business-lifecycle transition (Proposal→Approval→Contract→Billing/Fitout→Handover, CRM→Booking) traced against live code and hardened; currency now propagates explicitly VND/USD/MMK across Booking→Proposal→Contract→Billing→Invoice→Payment (`docs/program/MULTI_CURRENCY_COMPLETION.md`) | None | This program |
+| Reliability | **GREEN** | `docs/program/RELIABILITY_BACKLOG.md`: 22 tracked findings, 15 resolved, 7 open, **0 P0, 0 P1**; live-data reconciliation **17/17 clean** via `scripts/backbone-reconciliation.mjs` (13 pre-existing + 4 new currency-invariant checks, run against the dev DB reseeded with real USD/MMK data) | None | This program |
 | Security (code-level) | **GREEN** | `scripts/secret-scan.mjs`: 0 issues across 344 tracked files; `npm audit`: 0 critical (backend or frontend), all existing high/moderate findings are pre-documented deferred major-version bumps (`docs/security/DEPENDENCY_AUDIT.md`), none newly introduced | None | This program |
 | **Credentials (operational)** | **RED** | `docs/golive/CREDENTIAL_ROTATION_EVIDENCE.md` — 0 of 4+ exposed credentials rotated | **Live UAT credentials (Postgres, JWT, Anthropic API key, SSH) still valid and exposed** | Security/DevOps (human) |
 | Git history | **RED** | `docs/security/SECRET_INCIDENT_REMEDIATION.md` — old commits with leaked secrets still reachable; rewrite prepared but blocked on credential rotation happening first (rotate-then-rewrite ordering, to avoid invalidating credentials that are still needed before the new ones are live) | Depends on Credentials row above | Security/DevOps (human) |

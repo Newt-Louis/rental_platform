@@ -1,8 +1,37 @@
-# Release Candidate — RC1 → RC2
+# Release Candidate — RC1 → RC2 → RC3
 
-**Date:** 2026-08-19
+**Date:** 2026-08-20
 
-## RC2 (current)
+## RC3 (current)
+
+Per this program's change-control rule: RC2 was frozen for the Go-Live
+Operations backup/CI tooling pass. This program then added the
+Multi-Currency Foundation (VND/USD/MMK) on top of it — real application
+code across the Prisma schema, a hand-written migration, backend services/
+DTOs, frontend forms, and the reconciliation script — so per the same rule
+that produced RC2 ("do not silently keep calling modified code RC1/RC2"),
+that commit is now **RC3**.
+
+| | |
+|---|---|
+| Git commit SHA | `c61fdb9` |
+| Parent | RC2 (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`) |
+| Issue | Multinational rollout requires USD and MMK alongside VND; audit found the core leasing lifecycle (Booking/Contract/BillingScheduleEntry/Invoice/Payment) had essentially no currency tracking, and a live bug where Proposal→Contract conversion silently dropped the Proposal's currency |
+| Severity | Real financial-domain feature — not a defect fix, a new capability required for the multinational business requirement |
+| Reason | Full detail: `docs/program/MULTI_CURRENCY_{AUDIT,ARCHITECTURE,MIGRATION,TEST_MATRIX,COMPLETION}.md` |
+| Test evidence | 3 new/extended spec files; **69/69 suites, 368/368 tests** (RC2 baseline: 67/67, 359/359 — nothing regressed); `npx tsc --noEmit` clean both sides; `vite build` clean; `scripts/backbone-reconciliation.mjs`: **17/17 clean** (13 pre-existing + 4 new currency checks) run against the live dev DB reseeded with real USD/MMK data |
+| Backward compatibility | No breaking API changes — every new field defaults to VND, matching today's implicit behavior for every existing caller |
+
+**RC3 is what should be used for anything downstream of this point** — UAT,
+pilot, or any further evaluation. Per `docs/program/MULTI_CURRENCY_COMPLETION.md`,
+human UAT should re-test Booking/Proposal/Contract/Billing/Invoice/Payment/
+Reports with VND, USD, and MMK before go-live. RC3 does not change the
+overall production-readiness verdict (`docs/golive/FINAL_PRODUCTION_READINESS.md`
+remains NO-GO) — the blockers are pre-existing, unrelated, human/DevOps-owned
+operational items (credential rotation, off-site backup, git-history
+remediation), none of which this pass touches.
+
+## RC2 (superseded)
 
 Per this program's change-control rule (no silent modification of a
 frozen RC — any post-freeze code change gets a new RC with issue/

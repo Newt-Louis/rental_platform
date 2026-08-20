@@ -1,12 +1,14 @@
 # Go-Live Operations Board
 
-**Date:** 2026-08-19 · RC2 (`acf6a26e929f7f1ee6f98f2b5e007781e4fb9a44`,
-supersedes RC1 per `docs/golive/RELEASE_CANDIDATE.md`'s change-control
-entry — this board already reflects RC2's state)
+**Date:** 2026-08-20 · RC3 (`c61fdb9`, supersedes RC2 per
+`docs/golive/RELEASE_CANDIDATE.md`'s change-control entry — Multi-Currency
+Foundation, VND/USD/MMK; see `docs/program/MULTI_CURRENCY_COMPLETION.md`.
+Every other row below is unaffected by RC3 — none of this program's
+operational blockers are currency-related)
 
 | Area | Status | Owner | Evidence | Blocker |
 |---|---|---|---|---|
-| RC | **DONE** | This program | `docs/golive/RELEASE_CANDIDATE.md` — RC1 frozen, 359/359 tests, build clean | None |
+| RC | **DONE** | This program | `docs/golive/RELEASE_CANDIDATE.md` — RC3, 368/368 tests, build clean | None |
 | Credentials | **NOT STARTED** | Security/DevOps (human) | `docs/golive/CREDENTIAL_ROTATION_TRACKER.md` | No system access from this environment |
 | Git History | **BLOCKED** | Security/DevOps (human) | `docs/security/SECRET_INCIDENT_REMEDIATION.md` | Blocked on Credentials completing first (by design) |
 | DB Backup | **BLOCKED** | DBA/DevOps (human) | `docs/readiness/BACKUP_RESTORE_READINESS.md` — mechanism proven, local-disk only | No off-site destination configured |
