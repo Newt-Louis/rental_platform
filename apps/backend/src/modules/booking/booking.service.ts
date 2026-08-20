@@ -152,6 +152,7 @@ export class BookingService {
           requestedArea: dto.requestedArea,
           requestedTerm: dto.requestedTerm,
           expectedRent: dto.expectedRent,
+          currencyCode: dto.currencyCode ?? 'VND',
           proposedRentPerSqm: dto.proposedRentPerSqm,
           proposedCamPerSqm: dto.proposedCamPerSqm,
           priceApprovalStatus,
@@ -858,7 +859,11 @@ export class BookingService {
           businessModel: dto.businessModel,
           serviceFeeSqm: dto.serviceFeeSqm ?? 0,
           businessSupportFeeSqm: dto.businessSupportFeeSqm ?? 0,
-          rentCurrency: dto.rentCurrency ?? 'VND',
+          // Currency propagation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): the
+          // caller may pick a different currency at conversion time (SNAPSHOT), but
+          // absent that, inherit the currency the Booking itself was created with
+          // rather than silently resetting to VND.
+          rentCurrency: dto.rentCurrency ?? booking.currencyCode ?? 'VND',
           fitoutDays: dto.fitoutDays ?? 90,
           handoverDate: dto.handoverDate ? new Date(dto.handoverDate) : undefined,
           openingDate: dto.openingDate ? new Date(dto.openingDate) : undefined,

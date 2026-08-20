@@ -191,10 +191,16 @@ export class DashboardService {
           ...relationScope,
         },
       }),
+      // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): these two
+      // queries feed VND-denominated revenue KPIs (monthlyRevenue, collectedRevenue,
+      // overdueAmount, ...) via plain arithmetic reduce() below. Scoping to VND here
+      // means a USD/MMK invoice is correctly excluded from those KPIs rather than
+      // silently summed into them as if it were VND -- no cross-currency SUM.
       this.prisma.invoice.findMany({
         where: {
           isActive: true,
           period: currentMonth,
+          currencyCode: 'VND',
           ...(mallIds === null ? {} : { contract: { unit: unitScope } }),
         },
         select: {
@@ -208,6 +214,7 @@ export class DashboardService {
         where: {
           isActive: true,
           status: InvoiceStatus.OVERDUE,
+          currencyCode: 'VND',
           ...(mallIds === null ? {} : { contract: { unit: unitScope } }),
         },
         select: {
@@ -372,10 +379,13 @@ export class DashboardService {
         const occupancyRate = totalArea > 0 ? (leasedArea / totalArea) * 100 : 0;
 
         const [invoices, overdueCount, openTickets, expiringIn30, slotBookings] = await Promise.all([
+          // See the currency note on the main dashboard's invoice.findMany above --
+          // same unsafe-SUM guard applies here for the per-mall revenue breakdown.
           this.prisma.invoice.findMany({
             where: {
               isActive: true,
               period: { startsWith: currentMonth },
+              currencyCode: 'VND',
               contract: { unit: { floor: { mallId: mall.id } } },
             },
             select: {

@@ -60,6 +60,7 @@ function fmtDate(d?: string | null) {
 
 function fmtMoney(v: number, currency = 'VND') {
   if (currency === 'USD') return `$${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD`;
+  if (currency === 'MMK') return `${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} MMK`;
   return `${v?.toLocaleString('vi-VN')} VND`;
 }
 

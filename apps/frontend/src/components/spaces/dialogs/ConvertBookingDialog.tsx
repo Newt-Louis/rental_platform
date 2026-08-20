@@ -111,6 +111,7 @@ export function ConvertBookingDialog({
                 <SelectContent>
                   <SelectItem value="VND">VND</SelectItem>
                   <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="MMK">MMK</SelectItem>
                 </SelectContent>
               </Select>
             </div>

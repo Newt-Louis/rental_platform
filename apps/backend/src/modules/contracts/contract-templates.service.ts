@@ -4,11 +4,12 @@ import { AmendmentStatus, AmendmentType } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
+import { formatMoney } from '../../common/utils/format-money';
 
 // Field hợp đồng được phép thay đổi qua Amendment — không cho amend tenantId/unitId/status/...
 // (những field này ảnh hưởng workflow riêng: tạo hợp đồng mới, termination, activation).
 const AMENDABLE_CONTRACT_FIELDS = new Set([
-  'rent', 'cam', 'deposit', 'depositLease', 'depositFitout', 'fitoutFee',
+  'rent', 'cam', 'deposit', 'currencyCode', 'depositLease', 'depositFitout', 'fitoutFee',
   'utilityFee', 'afterHoursFee', 'operatingHours', 'billingCycle', 'paymentTerm',
   'rentFree', 'escalationPercent', 'startDate', 'endDate', 'term', 'notes',
 ]);
@@ -86,8 +87,8 @@ export class ContractTemplatesService {
       tenantName: contract.tenant.brandName,
       companyName: contract.tenant.companyName,
       unitCode: contract.unit?.code ?? contract.unitId,
-      rent: contract.rent.toLocaleString('vi-VN'),
-      cam: contract.cam.toLocaleString('vi-VN'),
+      rent: formatMoney(contract.rent, contract.currencyCode),
+      cam: formatMoney(contract.cam, contract.currencyCode),
       startDate: contract.startDate.toLocaleDateString('vi-VN'),
       endDate: contract.endDate.toLocaleDateString('vi-VN'),
       term: String(contract.term),

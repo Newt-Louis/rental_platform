@@ -1,11 +1,12 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { InvoiceAdjustmentType, InvoiceStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { InvoiceAdjustmentType, InvoiceStatus, PaymentMethod, Prisma, CurrencyCode } from '@prisma/client';
 import * as crypto from 'crypto';
 import { StorageService } from '../../storage/storage.service';
 import { EmailService } from '../notifications/email.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { formatMoney } from '../../common/utils/format-money';
 
 interface CurrentUser {
   id: string;
@@ -336,6 +337,7 @@ export class BillingService {
           period: row.period,
           type: 'MONTHLY_RENT',
           subtotal: row.subtotal,
+          currencyCode: row.contract.currencyCode,
           vatRate,
           vatAmount: row.subtotal * vatRate / 100,
           totalAmount: row.subtotal * (1 + vatRate / 100),
@@ -446,6 +448,7 @@ export class BillingService {
             invoiceId: invoice.id,
             tenantId: statement.contract.tenantId,
             amount: Math.min(invoice.totalAmount, statement.paidAmount),
+            currencyCode: invoice.currencyCode,
             method: PaymentMethod.BANK_TRANSFER,
             reference: latestSourcePayment?.referenceNo || `PARKING-${statement.id}`,
             paidAt: latestSourcePayment?.paidAt || new Date(),
@@ -741,17 +744,25 @@ export class BillingService {
     vatRate?: number;
     dueDate: string;
     notes?: string;
+    currencyCode?: CurrencyCode;
     lines?: { type: string; description: string; qty: number; unitPrice: number; amount: number }[];
   }) {
+    // Currency propagation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): an
+    // invoice linked to a Contract always takes that Contract's currency,
+    // resolved server-side, never the caller's — same override pattern as
+    // ContractsService.create(). Without a contractId, the caller's
+    // currencyCode (default VND) is used as-is.
+    let resolvedCurrencyCode: CurrencyCode = dto.currencyCode ?? 'VND';
     if (dto.contractId) {
       const contract = await this.prisma.contract.findUnique({
         where: { id: dto.contractId },
-        select: { id: true, tenantId: true, isActive: true },
+        select: { id: true, tenantId: true, isActive: true, currencyCode: true },
       });
       if (!contract || !contract.isActive) throw new BadRequestException('Hợp đồng không tồn tại hoặc không hoạt động');
       if (dto.tenantId && contract.tenantId !== dto.tenantId) {
         throw new BadRequestException('Khách thuê không thuộc hợp đồng đã chọn');
       }
+      resolvedCurrencyCode = contract.currencyCode;
     }
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
@@ -775,6 +786,7 @@ export class BillingService {
         vatRate,
         vatAmount,
         totalAmount,
+        currencyCode: resolvedCurrencyCode,
         dueDate: new Date(dto.dueDate),
         notes: dto.notes,
         lines: dto.lines ? { create: dto.lines } : undefined,
@@ -960,6 +972,7 @@ export class BillingService {
     paidAt?: string;
     notes?: string;
     idempotencyKey?: string;
+    currencyCode?: CurrencyCode;
   }, currentUser?: CurrentUser) {
     const invoice = await this.findOneInvoice(invoiceId, currentUser);
     if (invoice.status === InvoiceStatus.CANCELLED) {
@@ -973,9 +986,18 @@ export class BillingService {
     if (!payableStatuses.includes(invoice.status)) {
       throw new BadRequestException('Chỉ có thể ghi nhận thanh toán cho hóa đơn đã phát hành');
     }
+    // No FX settlement exists in this system (docs/program/MULTI_CURRENCY_ARCHITECTURE.md) —
+    // a payment's currency is always the invoice's. If a caller explicitly sends a
+    // different one, reject rather than silently coerce; the normal case (no
+    // currencyCode sent) inherits the invoice's currency automatically below.
+    if (dto.currencyCode && dto.currencyCode !== invoice.currencyCode) {
+      throw new BadRequestException(
+        `Đơn vị tiền tệ thanh toán (${dto.currencyCode}) không khớp với hóa đơn (${invoice.currencyCode}). Hệ thống chưa hỗ trợ thanh toán chuyển đổi ngoại tệ.`,
+      );
+    }
     const { balance } = this.financials(invoice);
     if (dto.amount > balance) {
-      throw new BadRequestException(`Số tiền thanh toán vượt quá dư nợ còn lại (${balance.toLocaleString('vi-VN')} VND)`);
+      throw new BadRequestException(`Số tiền thanh toán vượt quá dư nợ còn lại (${formatMoney(balance, invoice.currencyCode)})`);
     }
     if (dto.paidAt && new Date(dto.paidAt).getTime() > Date.now() + 86_400_000) {
       throw new BadRequestException('Ngày thanh toán không được nằm trong tương lai');
@@ -1020,6 +1042,7 @@ export class BillingService {
             tenantId: invoice.tenantId,
             billingPartyId: invoice.billingPartyId,
             amount: dto.amount,
+            currencyCode: invoice.currencyCode,
             method: dto.method ?? PaymentMethod.BANK_TRANSFER,
             reference: dto.reference,
             paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
@@ -1360,6 +1383,7 @@ export class BillingService {
           tenantId: sale.tenantId,
           period,
           type: 'REVENUE_SHARE' as any,
+          currencyCode: contract.currencyCode,
           subtotal: shareAmount,
           vatRate,
           vatAmount,

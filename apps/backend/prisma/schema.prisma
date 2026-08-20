@@ -134,6 +134,16 @@ enum PriceApprovalStatus {
   REJECTED
 }
 
+// Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+// Adding a new currency is: one enum value here + one migration + one entry
+// in common/currency/currency.constants.ts (backend) and lib/currency.ts
+// (frontend) -- no lifecycle model changes.
+enum CurrencyCode {
+  VND
+  USD
+  MMK
+}
+
 // ===========================================================================
 // CATEGORY MASTER DATA
 // ===========================================================================
@@ -1383,7 +1393,7 @@ model Proposal {
   businessModel         BusinessModelEnum? // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
   serviceFeeSqm         Float              @default(0) // Ph Dch v (USD/m2/thng)
   businessSupportFeeSqm Float              @default(0) // Ph h tr Kinh doanh
-  rentCurrency          String             @default("VND") // VND hoc USD
+  rentCurrency          CurrencyCode       @default(VND) // Canonical Proposal currency field (kept named rentCurrency for backward compat -- see MULTI_CURRENCY_ARCHITECTURE.md)
   fitoutDays            Int                @default(90) // Thi hn hon thin ni tht (ngy)
   handoverDate          DateTime? // Ngy Bn giao Mt bng
   openingDate           DateTime? // Ngy Khai trng d kin
@@ -1547,6 +1557,7 @@ model Contract {
   rent              Float
   cam               Float          @default(0)
   deposit           Float
+  currencyCode      CurrencyCode   @default(VND) // Authoritative currency for rent/cam/deposit and all downstream billing; propagated from Proposal.rentCurrency at creation, immutable outside the Amendment workflow once ACTIVE
   billingCycle      BillingCycle   @default(MONTHLY)
   paymentTerm       Int            @default(30)
   rentFree          Int            @default(0)
@@ -1593,21 +1604,22 @@ enum BillingScheduleStatus {
 }
 
 model BillingScheduleEntry {
-  id          String                @id @default(cuid())
-  contractId  String
-  contract    Contract              @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  period      String
-  periodStart DateTime
-  periodEnd   DateTime
-  rentAmount  Float
-  camAmount   Float
-  subtotal    Float
-  dueDate     DateTime
-  status      BillingScheduleStatus @default(PENDING)
-  invoiceId   String?               @unique
-  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id           String                @id @default(cuid())
+  contractId   String
+  contract     Contract              @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  period       String
+  periodStart  DateTime
+  periodEnd    DateTime
+  rentAmount   Float
+  camAmount    Float
+  subtotal     Float
+  currencyCode CurrencyCode          @default(VND) // Derived from Contract.currencyCode at schedule-build time
+  dueDate      DateTime
+  status       BillingScheduleStatus @default(PENDING)
+  invoiceId    String?               @unique
+  invoice      Invoice?              @relation(fields: [invoiceId], references: [id])
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   @@unique([contractId, period])
   @@index([status, dueDate])
@@ -2134,41 +2146,42 @@ model SalesTurnover {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  invoiceNumber  String        @unique
-  contractId     String?
-  contract       Contract?     @relation(fields: [contractId], references: [id])
-  tenantId       String?
-  tenant         Tenant?       @relation(fields: [tenantId], references: [id])
-  billingPartyId String?
-  billingParty   BillingParty? @relation(fields: [billingPartyId], references: [id])
-  mallId         String?
-  mall           Mall?         @relation(fields: [mallId], references: [id])
-  counterpartyName    String?
-  counterpartyTaxCode String?
-  sourceType     String        @default("LEASE_CONTRACT")
-  sourceId       String?
-  period         String
-  type           InvoiceType   @default(MONTHLY_RENT)
-  status         InvoiceStatus @default(DRAFT)
-  subtotal       Float
-  vatRate        Float         @default(10)
-  vatAmount      Float
-  totalAmount    Float
-  adjustmentAmount Float       @default(0)
-  refundedAmount   Float       @default(0)
-  dueDate        DateTime
-  issuedAt       DateTime?
-  paidAt         DateTime?
-  notes          String?
-  electronicInvoiceStatus   String    @default("NOT_SENT")
+  id                        String        @id @default(cuid())
+  invoiceNumber             String        @unique
+  contractId                String?
+  contract                  Contract?     @relation(fields: [contractId], references: [id])
+  tenantId                  String?
+  tenant                    Tenant?       @relation(fields: [tenantId], references: [id])
+  billingPartyId            String?
+  billingParty              BillingParty? @relation(fields: [billingPartyId], references: [id])
+  mallId                    String?
+  mall                      Mall?         @relation(fields: [mallId], references: [id])
+  counterpartyName          String?
+  counterpartyTaxCode       String?
+  sourceType                String        @default("LEASE_CONTRACT")
+  sourceId                  String?
+  period                    String
+  type                      InvoiceType   @default(MONTHLY_RENT)
+  status                    InvoiceStatus @default(DRAFT)
+  subtotal                  Float
+  vatRate                   Float         @default(10)
+  vatAmount                 Float
+  totalAmount               Float
+  currencyCode              CurrencyCode  @default(VND) // Derived from the source Contract/BillingScheduleEntry at invoice-creation time
+  adjustmentAmount          Float         @default(0)
+  refundedAmount            Float         @default(0)
+  dueDate                   DateTime
+  issuedAt                  DateTime?
+  paidAt                    DateTime?
+  notes                     String?
+  electronicInvoiceStatus   String        @default("NOT_SENT")
   electronicInvoiceRef      String?
   electronicInvoiceIssuedAt DateTime?
   electronicInvoiceError    String?
   legalInvoiceNumber        String?
-  isActive       Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  isActive                  Boolean       @default(true)
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
 
   // Hu ho n c kim sot -- khng xo bn ghi, ch nh du CANCELLED + lu vt ai/khi no/v sao.
   voidedAt   DateTime?
@@ -2282,6 +2295,7 @@ model Payment {
   billingPartyId  String?
   billingParty    BillingParty? @relation(fields: [billingPartyId], references: [id])
   amount          Float
+  currencyCode    CurrencyCode  @default(VND) // Always equal to Invoice.currencyCode -- enforced server-side, never client-suppliable independently
   method          PaymentMethod @default(BANK_TRANSFER)
   reference       String?
   idempotencyKey  String?       @unique
@@ -2482,15 +2496,15 @@ model AuditLog {
 /// records_processed detail beyond an optional summary count) - this is an
 /// execution ledger, not an audit trail of what each job did.
 model JobExecution {
-  id          String    @id @default(cuid())
-  jobName     String
-  instance    String // hostname/pid - identifies which replica ran it
-  status      String // RUNNING | SUCCEEDED | FAILED | SKIPPED_LOCKED
-  startedAt   DateTime  @default(now())
-  finishedAt  DateTime?
-  durationMs  Int?
+  id           String    @id @default(cuid())
+  jobName      String
+  instance     String // hostname/pid - identifies which replica ran it
+  status       String // RUNNING | SUCCEEDED | FAILED | SKIPPED_LOCKED
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  durationMs   Int?
   errorSummary String? // truncated message only - never a full stack trace with request/user data
-  createdAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
 
   @@index([jobName, startedAt])
   @@index([jobName, status, startedAt])
@@ -3065,6 +3079,7 @@ model UnitBooking {
   requestedArea Float? // Din tch yu cu
   requestedTerm Int? // Thi hn thu mong mun (thng)
   expectedRent  Float? // Mc gi k vng (khch)
+  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE

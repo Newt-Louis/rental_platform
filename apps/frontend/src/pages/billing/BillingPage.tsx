@@ -23,6 +23,7 @@ import {
 import api from '@/lib/axios';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
 import type { Invoice, ArAgingRow } from '@/types';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { AsyncState } from '@/components/ui/async-state';
@@ -75,9 +76,12 @@ const VARIABLE_LINE_TYPE_KEYS = Object.entries(LINE_TYPE_CONFIG)
   .filter(([, v]) => !v.isFixed)
   .map(([k]) => k);
 
-function fmtMoney(n?: number | null) {
+// currencyCode defaults to VND -- every existing call site keeps formatting exactly as
+// before; only the invoice-detail panel (which knows the invoice's actual currency) passes
+// it explicitly (docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+function fmtMoney(n?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫';
+  return formatMoney(Math.round(n), currencyCode);
 }
 function fmtCompact(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
@@ -165,19 +169,19 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
           </DialogTitle>
           {invoice && (
             <p className="text-sm text-gray-500">
-              {invoice.invoiceNumber} · {invoice.counterpartyName || invoice.tenant?.brandName || invoice.billingParty?.name} · {t('billing:detail.remaining')}: {fmtMoney(remaining)}
+              {invoice.invoiceNumber} · {invoice.counterpartyName || invoice.tenant?.brandName || invoice.billingParty?.name} · {t('billing:detail.remaining')}: {fmtMoney(remaining, invoice.currencyCode)}
             </p>
           )}
         </DialogHeader>
         <div className="space-y-3 pt-1">
           <div>
-            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentAmount')}</label>
+            <label className="text-sm font-medium mb-1 block">{t('billing:detail.paymentAmount')} {invoice?.currencyCode && invoice.currencyCode !== 'VND' ? `(${invoice.currencyCode})` : ''}</label>
             <Input type="number" value={form.amount}
               onChange={(e) => setForm(p => ({ ...p, amount: e.target.value }))}
               placeholder={remaining.toString()} />
             <button className="text-xs text-blue-600 mt-1"
               onClick={() => setForm(p => ({ ...p, amount: remaining.toString() }))}>
-              {t('billing:detail.fullAmountFill', { amount: fmtMoney(remaining) })}
+              {t('billing:detail.fullAmountFill', { amount: fmtMoney(remaining, invoice?.currencyCode) })}
             </button>
           </div>
           <div>
@@ -670,33 +674,33 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
             <div className="border border-gray-200 rounded-lg bg-gray-50 p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{t('billing:detail.subtotal')}</span>
-                <span>{fmtMoney(inv?.subtotal)}</span>
+                <span>{fmtMoney(inv?.subtotal, inv?.currencyCode)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{t('billing:detail.vat', { rate: inv?.vatRate ?? 10 })}</span>
-                <span>{fmtMoney(inv?.vatAmount)}</span>
+                <span>{fmtMoney(inv?.vatAmount, inv?.currencyCode)}</span>
               </div>
-              {!!inv?.adjustmentAmount && <div className={`flex justify-between text-sm ${inv.adjustmentAmount < 0 ? 'text-emerald-700' : 'text-orange-700'}`}><span>Điều chỉnh công nợ</span><span>{inv.adjustmentAmount > 0 ? '+' : ''}{fmtMoney(inv.adjustmentAmount)}</span></div>}
-              {!!inv?.refundedAmount && <div className="flex justify-between text-sm text-violet-700"><span>Đã hoàn tiền</span><span>{fmtMoney(inv.refundedAmount)}</span></div>}
+              {!!inv?.adjustmentAmount && <div className={`flex justify-between text-sm ${inv.adjustmentAmount < 0 ? 'text-emerald-700' : 'text-orange-700'}`}><span>Điều chỉnh công nợ</span><span>{inv.adjustmentAmount > 0 ? '+' : ''}{fmtMoney(inv.adjustmentAmount, inv?.currencyCode)}</span></div>}
+              {!!inv?.refundedAmount && <div className="flex justify-between text-sm text-violet-700"><span>Đã hoàn tiền</span><span>{fmtMoney(inv.refundedAmount, inv?.currencyCode)}</span></div>}
               <div className="flex justify-between text-base font-bold border-t border-gray-200 pt-2">
                 <span>{t('billing:detail.totalSection')}</span>
-                <span className="text-gray-900">{fmtMoney(inv?.adjustedTotal ?? inv?.totalAmount)}</span>
+                <span className="text-gray-900">{fmtMoney(inv?.adjustedTotal ?? inv?.totalAmount, inv?.currencyCode)}</span>
               </div>
               {payments.length > 0 && (
                 <>
                   <div className="flex justify-between text-sm text-green-600 border-t border-gray-200 pt-2">
                     <span>{t('billing:detail.paid')}</span>
-                    <span className="font-medium">- {fmtMoney(totalPaid)}</span>
+                    <span className="font-medium">- {fmtMoney(totalPaid, inv?.currencyCode)}</span>
                   </div>
                   <div className={`flex justify-between text-sm font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     <span>{t('billing:detail.remaining')}</span>
-                    <span>{fmtMoney(balance)}</span>
+                    <span>{fmtMoney(balance, inv?.currencyCode)}</span>
                   </div>
                 </>
               )}
             </div>
 
-            {!!inv?.adjustments?.length && <div><div className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Bút toán điều chỉnh</div><div className="space-y-2">{inv.adjustments.map((item: any) => <div key={item.id} className={`rounded-lg border px-3 py-2.5 ${item.status === 'CANCELLED' ? 'bg-gray-50 opacity-60' : 'bg-violet-50 border-violet-100'}`}><div className="flex justify-between gap-3"><div><div className="text-sm font-medium text-violet-900">{{ CREDIT_NOTE: 'Credit note', DEBIT_NOTE: 'Debit note', WRITE_OFF: 'Xóa nợ', REFUND: 'Hoàn tiền' }[item.type as string] || item.type}</div><div className="text-xs text-gray-500">{item.reason}{item.reference ? ` · ${item.reference}` : ''}</div></div><div className="text-right"><div className="font-semibold">{fmtMoney(item.amount)}</div><div className="text-[11px] text-gray-400">{fmtDate(item.createdAt)}</div></div></div></div>)}</div></div>}
+            {!!inv?.adjustments?.length && <div><div className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Bút toán điều chỉnh</div><div className="space-y-2">{inv.adjustments.map((item: any) => <div key={item.id} className={`rounded-lg border px-3 py-2.5 ${item.status === 'CANCELLED' ? 'bg-gray-50 opacity-60' : 'bg-violet-50 border-violet-100'}`}><div className="flex justify-between gap-3"><div><div className="text-sm font-medium text-violet-900">{{ CREDIT_NOTE: 'Credit note', DEBIT_NOTE: 'Debit note', WRITE_OFF: 'Xóa nợ', REFUND: 'Hoàn tiền' }[item.type as string] || item.type}</div><div className="text-xs text-gray-500">{item.reason}{item.reference ? ` · ${item.reference}` : ''}</div></div><div className="text-right"><div className="font-semibold">{fmtMoney(item.amount, inv?.currencyCode)}</div><div className="text-[11px] text-gray-400">{fmtDate(item.createdAt)}</div></div></div></div>)}</div></div>}
 
             <div><div className="mb-2 flex items-center justify-between"><div className="text-xs font-bold uppercase tracking-wider text-gray-400">Tài liệu hóa đơn</div>{isStaff && <label className="cursor-pointer text-xs font-medium text-blue-600 hover:underline"><input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx" disabled={uploadDocumentMutation.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadDocumentMutation.mutate(file); event.target.value = ''; }} />{uploadDocumentMutation.isPending ? 'Đang tải...' : '+ Tải tài liệu'}</label>}</div>{invoiceDocuments.length ? <div className="space-y-2">{invoiceDocuments.map((document: any) => <button key={document.id} type="button" onClick={() => openAuthenticatedFile(`/files/documents/${document.id}`)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"><div className="flex min-w-0 items-center gap-2"><FileText size={14} className="shrink-0 text-blue-500" /><div className="min-w-0"><div className="truncate text-sm font-medium">{document.fileName}</div><div className="text-[11px] text-slate-400">{document.documentType} · phiên bản {document.version}</div></div></div><Download size={13} className="text-slate-400" /></button>)}</div> : <div className="rounded-lg border border-dashed p-4 text-center text-xs text-slate-400">Chưa có tài liệu đính kèm</div>}</div>
 
@@ -712,7 +716,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                       <div className="flex items-center gap-2">
                         <CheckCircle2 size={14} className={p.reversedAt ? 'text-gray-400' : 'text-green-600'} />
                         <div>
-                          <div className={`text-sm font-medium ${p.reversedAt ? 'text-gray-500 line-through' : 'text-green-800'}`}>{fmtMoney(p.amount)}</div>
+                          <div className={`text-sm font-medium ${p.reversedAt ? 'text-gray-500 line-through' : 'text-green-800'}`}>{fmtMoney(p.amount, p.currencyCode ?? inv?.currencyCode)}</div>
                           <div className={`text-xs ${p.reversedAt ? 'text-gray-400' : 'text-green-600'}`}>{p.method} · {fmtDate(p.paidAt)}</div>
                           {p.reversedAt && <div className="text-xs text-red-500 mt-0.5">{t('billing:detail.reversed', { reason: p.reversalReason })}</div>}
                         </div>

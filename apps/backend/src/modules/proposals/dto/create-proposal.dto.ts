@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PartialType } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsDateString, IsInt, Min, Max, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsDateString, IsInt, IsEnum, Min, Max, MinLength } from 'class-validator';
+import { CurrencyCode } from '@prisma/client';
 
 export class CreateProposalDto {
   @ApiPropertyOptional()
@@ -97,10 +98,10 @@ export class CreateProposalDto {
   @IsNumber()
   businessSupportFeeSqm?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: CurrencyCode })
   @IsOptional()
-  @IsString()
-  rentCurrency?: string;
+  @IsEnum(CurrencyCode)
+  rentCurrency?: CurrencyCode;
 
   @ApiPropertyOptional()
   @IsOptional()

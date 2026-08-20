@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsNumber, IsInt, Min, MinLength, IsDateString, IsEnum, ValidateIf } from 'class-validator';
-import { BusinessModelEnum } from '@prisma/client';
+import { BusinessModelEnum, CurrencyCode } from '@prisma/client';
 
 export class CreateBookingDto {
   @ApiProperty({ description: 'ID của unit muốn đặt' })
@@ -37,6 +37,11 @@ export class CreateBookingDto {
   @IsOptional()
   @IsNumber()
   expectedRent?: number;
+
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Đơn vị tiền tệ của expectedRent/proposedRentPerSqm (mặc định VND)' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional({ description: 'Giá sale đề xuất (VND/m²/tháng)' })
   @IsOptional()
@@ -193,10 +198,10 @@ export class ConvertToProposalDto {
   @IsNumber()
   businessSupportFeeSqm?: number;
 
-  @ApiPropertyOptional({ description: 'Đơn vị tiền tệ giá thuê: VND hoặc USD' })
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Đơn vị tiền tệ giá thuê. Mặc định kế thừa từ Booking.currencyCode, hoặc VND nếu Booking không có.' })
   @IsOptional()
-  @IsString()
-  rentCurrency?: string;
+  @IsEnum(CurrencyCode)
+  rentCurrency?: CurrencyCode;
 
   @ApiPropertyOptional({ description: 'Số ngày hoàn thiện nội thất' })
   @IsOptional()

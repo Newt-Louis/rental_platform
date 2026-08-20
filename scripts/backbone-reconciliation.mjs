@@ -151,6 +151,51 @@ const CHECKS = [
       WHERE p."bookingId" IS NOT NULL AND (b.id IS NULL OR b.status != 'CONVERTED');
     `,
   },
+
+  // --- Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md) ---
+  // Booking → Proposal is a deliberate SNAPSHOT (a sales rep may re-quote a deal in a
+  // different currency at conversion time), so it is not checked here. Everything
+  // downstream of Proposal is a REFERENCE/DERIVED invariant that must never drift.
+  {
+    name: 'Contract.currencyCode does not match its source Proposal.rentCurrency',
+    severity: 'P0 -- ContractsService.create() must force this; a mismatch means the override was bypassed',
+    sql: `
+      SELECT c."contractNumber", c."currencyCode" AS contract_currency, p."rentCurrency" AS proposal_currency
+      FROM "Contract" c
+      JOIN "Proposal" p ON p.id = c."proposalId"
+      WHERE c."currencyCode" != p."rentCurrency";
+    `,
+  },
+  {
+    name: 'BillingScheduleEntry.currencyCode does not match its Contract.currencyCode',
+    severity: 'P0',
+    sql: `
+      SELECT b.id, b.period, b."currencyCode" AS entry_currency, c."currencyCode" AS contract_currency
+      FROM "BillingScheduleEntry" b
+      JOIN "Contract" c ON c.id = b."contractId"
+      WHERE b."currencyCode" != c."currencyCode";
+    `,
+  },
+  {
+    name: 'Invoice.currencyCode does not match its source Contract.currencyCode (LEASE_CONTRACT invoices only)',
+    severity: 'P0',
+    sql: `
+      SELECT i."invoiceNumber", i."currencyCode" AS invoice_currency, c."currencyCode" AS contract_currency
+      FROM "Invoice" i
+      JOIN "Contract" c ON c.id = i."contractId"
+      WHERE i."sourceType" = 'LEASE_CONTRACT' AND i."currencyCode" != c."currencyCode";
+    `,
+  },
+  {
+    name: 'Payment.currencyCode does not match its Invoice.currencyCode',
+    severity: 'P0 -- BillingService.recordPayment() must force this; a mismatch means an unsupported cross-currency payment slipped through',
+    sql: `
+      SELECT pay.id, pay."currencyCode" AS payment_currency, i."currencyCode" AS invoice_currency, i."invoiceNumber"
+      FROM "Payment" pay
+      JOIN "Invoice" i ON i.id = pay."invoiceId"
+      WHERE pay."currencyCode" != i."currencyCode";
+    `,
+  },
 ];
 
 function runQuery(sql) {

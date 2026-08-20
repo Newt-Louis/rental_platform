@@ -45,7 +45,7 @@ const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours
 // audit trail và đồng bộ billing schedule.
 const CONTRACT_AMENDMENT_ONLY_FIELDS = [
   'tenantId', 'unitId', 'type', 'proposalId', 'startDate', 'endDate', 'term',
-  'rent', 'cam', 'deposit', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent',
+  'rent', 'cam', 'deposit', 'currencyCode', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent',
   'depositLease', 'depositFitout', 'fitoutFee', 'utilityFee', 'afterHoursFee',
 ];
 
@@ -249,6 +249,21 @@ export class ContractsService {
       );
     }
 
+    // Currency propagation invariant (docs/program/MULTI_CURRENCY_ARCHITECTURE.md):
+    // a Contract created from a Proposal always takes the Proposal's currency —
+    // never the client's — so the currency chosen when the deal was negotiated
+    // can't silently drift when the contract document is issued. This is
+    // resolved server-side and placed after the `...dto` spread below so it
+    // structurally wins over anything the client sent.
+    let resolvedCurrencyCode = dto.currencyCode ?? 'VND';
+    if (dto.proposalId) {
+      const proposal = await this.prisma.proposal.findUnique({
+        where: { id: dto.proposalId },
+        select: { rentCurrency: true },
+      });
+      if (proposal) resolvedCurrencyCode = proposal.rentCurrency;
+    }
+
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
     const contractNumber = `CTR-${year}-${rand}`;
@@ -260,6 +275,7 @@ export class ContractsService {
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         cam: dto.cam ?? 0,
+        currencyCode: resolvedCurrencyCode,
         billingCycle: dto.billingCycle ?? 'MONTHLY',
         paymentTerm: dto.paymentTerm ?? 30,
         rentFree: dto.rentFree ?? 0,

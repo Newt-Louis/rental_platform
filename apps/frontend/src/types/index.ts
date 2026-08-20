@@ -1,3 +1,5 @@
+import type { CurrencyCode } from '@/lib/currency';
+export type { CurrencyCode };
 export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
 export type UnitStatus = 'VACANT' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
@@ -237,6 +239,7 @@ export interface UnitBooking {
   requestedArea?: number;
   requestedTerm?: number;
   expectedRent?: number;
+  currencyCode?: CurrencyCode;
   proposedRentPerSqm?: number;
   proposedCamPerSqm?: number;
   pricingSnapshot?: Record<string, unknown>;
@@ -416,7 +419,7 @@ export interface Proposal {
   businessModel?: string;
   serviceFeeSqm: number;
   businessSupportFeeSqm: number;
-  rentCurrency: string;
+  rentCurrency: CurrencyCode;
   fitoutDays: number;
   handoverDate?: string;
   openingDate?: string;
@@ -448,6 +451,7 @@ export interface Contract {
   rent: number;
   cam: number;
   deposit: number;
+  currencyCode: CurrencyCode;
   // GAP #41
   depositLease?: number;
   depositFitout: number;
@@ -478,6 +482,7 @@ export interface Invoice {
   type: string;
   status: InvoiceStatus;
   totalAmount: number;
+  currencyCode?: CurrencyCode;
   dueDate: string;
   issuedAt?: string;
   paidAt?: string;

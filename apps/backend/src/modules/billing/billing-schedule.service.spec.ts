@@ -56,6 +56,39 @@ describe('BillingScheduleService integration (mocked DB)', () => {
     expect(prisma.billingScheduleEntry.upsert).toHaveBeenCalled();
   });
 
+  // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md):
+  // BillingScheduleEntry.currencyCode is DERIVED from Contract.currencyCode at
+  // schedule-build time, not left at the schema default.
+  it('derives BillingScheduleEntry.currencyCode from Contract.currencyCode (USD contract)', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      id: 'c1',
+      isActive: true,
+      status: 'ACTIVE',
+      startDate: new Date('2026-01-01'),
+      endDate: new Date('2026-03-31'),
+      rent: 100,
+      cam: 10,
+      rentFree: 0,
+      escalationPercent: 0,
+      paymentTerm: 15,
+      billingCycle: 'MONTHLY',
+      currencyCode: 'USD',
+    });
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.billingScheduleEntry.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.billingScheduleEntry.upsert.mockImplementation(({ create }) =>
+      Promise.resolve({ ...create, id: `e-${create.period}` }),
+    );
+
+    await service.buildScheduleForContract('c1');
+
+    expect(prisma.billingScheduleEntry.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ currencyCode: 'USD' }),
+      }),
+    );
+  });
+
   it('refuses to (re)build a schedule for a TERMINATED contract — closes the manual-rebuild resurrection gap', async () => {
     prisma.contract.findUnique.mockResolvedValue({
       id: 'c1',
