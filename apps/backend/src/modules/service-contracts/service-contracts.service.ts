@@ -291,7 +291,7 @@ export class ServiceContractsService {
     return this.prisma.serviceContractPayment.create({ data: {
       contractId, milestone: body.milestone, dueDate, amount: subtotal + vatAmount,
       subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, invoicePlannedDate,
-      currency: body.currency || 'VND', reminderDays: Number(body.reminderDays ?? 7),
+      currency: body.currency || contract.currency, reminderDays: Number(body.reminderDays ?? 7),
       periodType: body.periodType, periodNumber: body.periodNumber ? Number(body.periodNumber) : undefined,
       periodStart: body.periodStart ? new Date(body.periodStart) : undefined,
       periodEnd: body.periodEnd ? new Date(body.periodEnd) : undefined,
@@ -343,7 +343,7 @@ export class ServiceContractsService {
     const contract = await this.findOne(contractId); const start = new Date(body.startDate);
     const subtotal = Number(body.subtotal ?? body.amount ?? 0); const vatRate = Number(body.vatRate ?? contract.defaultVatRate); const vatAmount = subtotal * vatRate / 100;
     if (!Number.isFinite(subtotal) || subtotal <= 0) throw new BadRequestException('Số tiền mỗi kỳ phải lớn hơn 0');
-    const rows = Array.from({ length: Number(body.count) }, (_, i) => { const due = new Date(start); body.frequency === 'ANNUALLY' ? due.setFullYear(due.getFullYear() + i) : due.setMonth(due.getMonth() + i * (body.frequency === 'QUARTERLY' ? 3 : 1)); const planned = new Date(due.getTime() - contract.invoiceLeadDays * 86400000); return { contractId, milestone: `${body.milestonePrefix} ${i + 1}/${body.count}`, dueDate: due, invoicePlannedDate: planned, amount: subtotal + vatAmount, subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, currency: body.currency || 'VND', periodType: body.frequency, periodNumber: i + 1, reminderDays: Number(body.reminderDays ?? 7), notes: body.notes }; });
+    const rows = Array.from({ length: Number(body.count) }, (_, i) => { const due = new Date(start); body.frequency === 'ANNUALLY' ? due.setFullYear(due.getFullYear() + i) : due.setMonth(due.getMonth() + i * (body.frequency === 'QUARTERLY' ? 3 : 1)); const planned = new Date(due.getTime() - contract.invoiceLeadDays * 86400000); return { contractId, milestone: `${body.milestonePrefix} ${i + 1}/${body.count}`, dueDate: due, invoicePlannedDate: planned, amount: subtotal + vatAmount, subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, currency: body.currency || contract.currency, periodType: body.frequency, periodNumber: i + 1, reminderDays: Number(body.reminderDays ?? 7), notes: body.notes }; });
     await this.prisma.serviceContractPayment.createMany({ data: rows }); return this.prisma.serviceContractPayment.findMany({ where: { contractId }, orderBy: { dueDate: 'asc' } });
   }
 

@@ -484,7 +484,7 @@ export default function ServiceContractsPage() {
             <label className="text-sm">Mô tả chi tiết sản phẩm/dịch vụ<Input name="productName" placeholder="Thông tin chi tiết (không dùng để phân nhóm báo cáo)" /></label>
             <label className="text-sm">Giá trị hợp đồng *<Input name="totalValue" type="number" min="0" required placeholder="Giá trị chưa/đã gồm VAT theo hợp đồng" /></label>
             <label className="text-sm">Cơ sở giá trị *<select name="valueBasis" required defaultValue="ONE_TIME" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="text-sm">Tiền tệ<Input name="currency" defaultValue="VND" /></label>
+            <label className="text-sm">Tiền tệ<select name="currency" defaultValue="VND" className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
             <label className="text-sm">Ngày ký<Input name="signedDate" type="date" /></label>
             <label className="text-sm">
               Ngày bắt đầu
@@ -667,7 +667,7 @@ export default function ServiceContractsPage() {
             <label className="text-sm">Ngày ký<Input name="signedDate" type="date" defaultValue={item.signedDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Ngày kết thúc<Input name="endDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Tiền tệ<Input name="currency" defaultValue={item.currency || "VND"} /></label>
+            <label className="text-sm">Tiền tệ<select name="currency" defaultValue={item.currency || "VND"} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
             {item.paymentDirection === "RECEIVABLE" && <>
               <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={item.invoiceLeadDays ?? 7} /></label>
               <label className="text-sm">VAT mặc định (%)<Input name="defaultVatRate" type="number" min="0" defaultValue={item.defaultVatRate ?? 10} /></label>
