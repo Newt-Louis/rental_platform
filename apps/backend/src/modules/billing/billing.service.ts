@@ -658,7 +658,7 @@ export class BillingService {
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({
         where: summaryWhere,
-        select: { status: true, sourceType: true, type: true, totalAmount: true, dueDate: true, payments: { select: { amount: true, reversedAt: true } } },
+        select: { status: true, sourceType: true, type: true, totalAmount: true, dueDate: true, currencyCode: true, payments: { select: { amount: true, reversedAt: true } } },
       }),
     ]);
 
@@ -694,7 +694,15 @@ export class BillingService {
       };
     };
     const data = rawData.map(enrich);
-    const summary = {
+
+    // CR-102: summary.* is VND-only by convention (same as ArAgingTab's grand total,
+    // CollectionKpiService, and getPendingReceivables' vndOnly() helper) -- summing
+    // balances across VND/USD/MMK into one number would be financially meaningless
+    // (INV-CUR-001). Non-VND totals are never dropped: every currency present gets its
+    // own bucket set under summary.byCurrency, using the exact same shape as the
+    // top-level (VND) summary, so a caller can render them individually instead of
+    // blending them in. See docs/system-truth/16-MULTI-CURRENCY-SEMANTICS.md.
+    const emptyBucketSet = () => ({
       totalOutstanding: 0,
       draft: { count: 0, amount: 0 },
       current: { count: 0, amount: 0 },
@@ -702,21 +710,27 @@ export class BillingService {
       overdue: { count: 0, amount: 0 },
       paid: { count: 0, amount: 0 },
       bySource: {} as Record<string, { count: number; amount: number }>,
-    };
+    });
+    const byCurrency: Record<string, ReturnType<typeof emptyBucketSet>> = {};
     for (const row of summaryRows.map(enrich)) {
+      const currency = row.currencyCode ?? 'VND';
+      byCurrency[currency] ||= emptyBucketSet();
+      const bucketSet = byCurrency[currency];
+
       const source = row.sourceType || row.type || 'OTHER';
-      summary.bySource[source] ||= { count: 0, amount: 0 };
-      summary.bySource[source].count++;
-      summary.bySource[source].amount += row.balance;
-      if (!['PAID', 'CANCELLED'].includes(row.status)) summary.totalOutstanding += row.balance;
-      const bucket = row.status === 'DRAFT' ? summary.draft
-        : row.status === 'PAID' ? summary.paid
-        : row.daysOverdue > 0 || row.status === 'OVERDUE' ? summary.overdue
-        : row.status === 'PARTIALLY_PAID' ? summary.partial
-        : summary.current;
+      bucketSet.bySource[source] ||= { count: 0, amount: 0 };
+      bucketSet.bySource[source].count++;
+      bucketSet.bySource[source].amount += row.balance;
+      if (!['PAID', 'CANCELLED'].includes(row.status)) bucketSet.totalOutstanding += row.balance;
+      const bucket = row.status === 'DRAFT' ? bucketSet.draft
+        : row.status === 'PAID' ? bucketSet.paid
+        : row.daysOverdue > 0 || row.status === 'OVERDUE' ? bucketSet.overdue
+        : row.status === 'PARTIALLY_PAID' ? bucketSet.partial
+        : bucketSet.current;
       bucket.count++;
       bucket.amount += row.status === 'PAID' ? row.totalAmount : row.balance;
     }
+    const summary = { ...(byCurrency.VND ?? emptyBucketSet()), currency: 'VND' as const, byCurrency };
     return { data, total, page, limit, totalPages: Math.ceil(total / limit), summary };
   }
 

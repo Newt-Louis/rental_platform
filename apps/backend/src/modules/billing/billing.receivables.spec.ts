@@ -188,4 +188,99 @@ describe('BillingService receivables workbench', () => {
       data: { reconciliationStatus: 'TRANSFERRED_TO_BILLING' },
     });
   });
+
+  // CR-102 -- findAllInvoices' summary must never blend amounts from different
+  // currencies into one total (INV-CUR-001). summary.* stays VND-only (matching
+  // the ArAgingTab/CollectionKpiService/getPendingReceivables convention); every
+  // currency present gets its own bucket set under summary.byCurrency instead.
+  describe('CR-102 -- findAllInvoices currency-safe summary', () => {
+    const inv = (id: string, currencyCode: string | undefined, totalAmount: number, mallId = 'mall-1') => ({
+      id, status: 'ISSUED', sourceType: 'LEASE_CONTRACT', type: 'MONTHLY_RENT',
+      totalAmount, dueDate: new Date(Date.now() + 5 * 86400000), currencyCode, payments: [],
+      contract: { unit: { mallId } },
+    });
+    const run = async (rows: ReturnType<typeof inv>[], mallIds?: string[]) => {
+      prisma.invoice.findMany.mockResolvedValueOnce(rows).mockResolvedValueOnce(rows);
+      prisma.invoice.count.mockResolvedValue(rows.length);
+      return service.findAllInvoices({ page: 1, limit: 25 }, undefined, mallIds);
+    };
+
+    it('T01 VND only -- summary matches the single currency present', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'VND', 500_000)]);
+      expect(result.summary.currency).toBe('VND');
+      expect(result.summary.totalOutstanding).toBe(1_500_000);
+      expect(result.summary.current).toEqual({ count: 2, amount: 1_500_000 });
+      expect(Object.keys(result.summary.byCurrency)).toEqual(['VND']);
+    });
+
+    it('T02 USD only -- VND bucket is empty, USD lives only in byCurrency', async () => {
+      const result = await run([inv('i1', 'USD', 100), inv('i2', 'USD', 250)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.current).toEqual({ count: 0, amount: 0 });
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(350);
+      expect(result.summary.byCurrency.VND).toBeUndefined();
+    });
+
+    it('T03 MMK only -- VND bucket is empty, MMK lives only in byCurrency', async () => {
+      const result = await run([inv('i1', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+      expect(result.summary.byCurrency.VND).toBeUndefined();
+    });
+
+    it('T04 VND + USD -- each currency totals independently, never summed together', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'USD', 100)]);
+      expect(result.summary.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.VND.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      // The specific failure mode this defect used to produce: a blended 1,000,100 total.
+      expect(result.summary.totalOutstanding).not.toBe(1_000_100);
+    });
+
+    it('T05 VND + MMK -- each currency totals independently', async () => {
+      const result = await run([inv('i1', 'VND', 2_000_000), inv('i2', 'MMK', 800_000)]);
+      expect(result.summary.totalOutstanding).toBe(2_000_000);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(800_000);
+      expect(result.summary.totalOutstanding).not.toBe(2_800_000);
+    });
+
+    it('T06 USD + MMK (no VND at all) -- VND bucket empty, both foreign currencies isolated', async () => {
+      const result = await run([inv('i1', 'USD', 100), inv('i2', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+    });
+
+    it('T07 VND + USD + MMK together -- three independent totals, never combined', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'USD', 100), inv('i3', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.VND.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+      expect(Object.keys(result.summary.byCurrency).sort()).toEqual(['MMK', 'USD', 'VND']);
+    });
+
+    it('T08 Mall A isolation -- mallIds is threaded into the query for Mall A', async () => {
+      await run([inv('i1', 'VND', 1_000_000, 'mall-A')], ['mall-A']);
+      const summaryCall = prisma.invoice.findMany.mock.calls[1][0];
+      expect(summaryCall.where.AND).toEqual(expect.arrayContaining([
+        expect.objectContaining({ OR: expect.arrayContaining([{ mallId: { in: ['mall-A'] } }]) }),
+      ]));
+    });
+
+    it('T09 Mall B isolation -- mallIds is threaded into the query for a different mall, independently of Mall A', async () => {
+      await run([inv('i1', 'VND', 1_000_000, 'mall-B')], ['mall-B']);
+      const summaryCall = prisma.invoice.findMany.mock.calls[1][0];
+      expect(summaryCall.where.AND).toEqual(expect.arrayContaining([
+        expect.objectContaining({ OR: expect.arrayContaining([{ mallId: { in: ['mall-B'] } }]) }),
+      ]));
+    });
+
+    it('T10 empty dataset -- no invoices produces a zeroed VND summary and no error', async () => {
+      const result = await run([]);
+      expect(result.summary.currency).toBe('VND');
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency).toEqual({});
+    });
+  });
 });

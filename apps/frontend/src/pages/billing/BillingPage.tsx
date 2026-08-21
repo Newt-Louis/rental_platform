@@ -927,6 +927,10 @@ function InvoicesTab() {
 
   const invoices: Invoice[] = data?.data ?? [];
   const summary = data?.summary ?? {};
+  // CR-102: summary.* is VND-only (see billing.service.ts findAllInvoices) -- never blend
+  // it with other currencies. summary.byCurrency carries every currency's own totals so
+  // non-VND amounts are visible, not silently dropped from the page.
+  const nonVndCurrencies = Object.keys(summary.byCurrency || {}).filter((c) => c !== 'VND' && (summary.byCurrency[c]?.totalOutstanding || 0) > 0);
   const sourceBreakdown = Array.from(new Set([
     ...Object.keys(summary.bySource || {}),
     ...Object.keys(pendingSummary.bySource || {}),
@@ -950,12 +954,12 @@ function InvoicesTab() {
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
-          ['', 'Tổng phải thu dự kiến', (summary.totalOutstanding || 0) + (pendingSummary.amount || 0), (summary.draft?.count || 0) + (summary.current?.count || 0) + (summary.partial?.count || 0) + (summary.overdue?.count || 0) + (pendingSummary.count || 0), 'border-slate-200 bg-white text-slate-900'],
-          ['UNBILLED', 'Chờ xuất hóa đơn', pendingSummary.amount || 0, pendingSummary.count || 0, 'border-violet-200 bg-violet-50 text-violet-800'],
-          ['DRAFT', 'Hóa đơn nháp', summary.draft?.amount || 0, summary.draft?.count || 0, 'border-amber-200 bg-amber-50 text-amber-800'],
-          ['CURRENT', 'Chờ thu trong hạn', summary.current?.amount || 0, summary.current?.count || 0, 'border-blue-200 bg-blue-50 text-blue-800'],
-          ['PARTIAL', 'Đã thu một phần', summary.partial?.amount || 0, summary.partial?.count || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
-          ['OVERDUE', 'Quá hạn', summary.overdue?.amount || 0, summary.overdue?.count || 0, 'border-red-200 bg-red-50 text-red-800'],
+          ['', 'Tổng phải thu dự kiến (VND)', (summary.totalOutstanding || 0) + (pendingSummary.amount || 0), (summary.draft?.count || 0) + (summary.current?.count || 0) + (summary.partial?.count || 0) + (summary.overdue?.count || 0) + (pendingSummary.count || 0), 'border-slate-200 bg-white text-slate-900'],
+          ['UNBILLED', 'Chờ xuất hóa đơn (VND)', pendingSummary.amount || 0, pendingSummary.count || 0, 'border-violet-200 bg-violet-50 text-violet-800'],
+          ['DRAFT', 'Hóa đơn nháp (VND)', summary.draft?.amount || 0, summary.draft?.count || 0, 'border-amber-200 bg-amber-50 text-amber-800'],
+          ['CURRENT', 'Chờ thu trong hạn (VND)', summary.current?.amount || 0, summary.current?.count || 0, 'border-blue-200 bg-blue-50 text-blue-800'],
+          ['PARTIAL', 'Đã thu một phần (VND)', summary.partial?.amount || 0, summary.partial?.count || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
+          ['OVERDUE', 'Quá hạn (VND)', summary.overdue?.amount || 0, summary.overdue?.count || 0, 'border-red-200 bg-red-50 text-red-800'],
         ].map(([key, label, amount, count, color]) => (
           <button key={String(key)} onClick={() => { setBucket(String(key)); setStatus(''); setPage(1); }}
             className={`rounded-xl border p-3 text-left transition-shadow hover:shadow-sm ${color} ${bucket === key ? 'ring-2 ring-slate-700' : ''}`}>
@@ -965,6 +969,16 @@ function InvoicesTab() {
           </button>
         ))}
       </div>
+      {nonVndCurrencies.length > 0 && (
+        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          Ngoài VND ở trên, còn có công nợ bằng {nonVndCurrencies.map((c) => (
+            <span key={c} className="font-medium">
+              {formatMoney(summary.byCurrency[c].totalOutstanding, c as CurrencyCode)}
+            </span>
+          )).reduce((prev, curr) => (prev.length ? [...prev, ', ', curr] : [curr]), [] as any[])}
+          {' '}(không gộp chung vào tổng VND để tránh cộng nhầm đơn vị tiền tệ).
+        </div>
+      )}
 
       {(bucket === 'UNBILLED' || (!bucket && pendingRows.length > 0)) && (
         <div className="mb-5 overflow-hidden rounded-xl border border-violet-200 bg-white">
