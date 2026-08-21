@@ -40,6 +40,7 @@ const SalesPage = lazy(() => import("@/pages/sales/SalesPage"));
 const BillingPage = lazy(() => import("@/pages/billing/BillingPage"));
 const SapPage = lazy(() => import("@/pages/sap/SapPage"));
 const AiPage = lazy(() => import("@/pages/ai/AiPage"));
+const CodebaseChatPage = lazy(() => import("@/pages/ai/CodebaseChatPage"));
 const ReportsPage = lazy(() => import("@/pages/reports/ReportsPage"));
 const AnalyticsDashboard = lazy(
   () => import("@/pages/analytics/AnalyticsDashboard"),
@@ -322,6 +323,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <AiPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="ai/codebase"
+                    element={
+                      <RoleRoute>
+                        <CodebaseChatPage />
                       </RoleRoute>
                     }
                   />
