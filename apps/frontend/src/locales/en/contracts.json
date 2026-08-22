@@ -120,6 +120,7 @@
       "duration": "Duration",
       "durationMonths": "{{count}} months",
       "perMonth": " ₫/month",
+      "perMonthSuffix": "/month",
       "reason": "Reason",
       "initiatedBy": "Initiated by",
       "initiatedByThiso": "THISO (Management)",
@@ -199,8 +200,8 @@
       "RENEWAL": "Renewal",
       "OTHER": "Other"
     },
-    "newRentLabel": "New rent (VND/month)",
-    "newCamLabel": "New CAM fee (VND/month)",
+    "newRentLabel": "New rent ({{currency}}/month)",
+    "newCamLabel": "New CAM fee ({{currency}}/month)",
     "newRentFreeLabel": "New rent-free months",
     "newEndDateLabel": "New end date",
     "effectiveDateLabel": "Effective date",

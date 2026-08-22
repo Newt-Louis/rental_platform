@@ -89,6 +89,43 @@ describe('BillingScheduleService integration (mocked DB)', () => {
     );
   });
 
+  // Regression: the upsert's `update` branch (existing PENDING entry, not yet invoiced)
+  // used to omit currencyCode entirely, so a currency Amendment (VND -> USD) updated
+  // Contract.currencyCode but left already-generated BillingScheduleEntry rows stuck on
+  // the old currency forever -- only brand-new periods picked up the change via `create`.
+  it('updates BillingScheduleEntry.currencyCode on rebuild when a PENDING entry already exists', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      id: 'c1',
+      isActive: true,
+      status: 'ACTIVE',
+      startDate: new Date('2026-01-01'),
+      endDate: new Date('2026-03-31'),
+      rent: 100,
+      cam: 10,
+      rentFree: 0,
+      escalationPercent: 0,
+      paymentTerm: 15,
+      billingCycle: 'MONTHLY',
+      currencyCode: 'USD',
+    });
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([
+      { id: 'e-2026-01', period: '2026-01', invoiceId: null, status: 'PENDING', currencyCode: 'VND' },
+    ]);
+    prisma.billingScheduleEntry.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.billingScheduleEntry.upsert.mockImplementation(({ create }) =>
+      Promise.resolve({ ...create, id: `e-${create.period}` }),
+    );
+
+    await service.buildScheduleForContract('c1');
+
+    expect(prisma.billingScheduleEntry.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { contractId_period: { contractId: 'c1', period: '2026-01' } },
+        update: expect.objectContaining({ currencyCode: 'USD' }),
+      }),
+    );
+  });
+
   it('refuses to (re)build a schedule for a TERMINATED contract — closes the manual-rebuild resurrection gap', async () => {
     prisma.contract.findUnique.mockResolvedValue({
       id: 'c1',

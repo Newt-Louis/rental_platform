@@ -20,11 +20,16 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BookingStatus } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Bookings')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.booking)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'booking' }, status: EnforcementStatus.ENFORCED })
 @Controller('bookings')
 export class BookingController {
   constructor(

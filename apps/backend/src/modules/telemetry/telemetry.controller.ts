@@ -1,6 +1,9 @@
 import { Body, Controller, HttpCode, Logger, Post, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
+
+// CR-101 Phase 1: descriptive only. Client-error logging, no Mall concept.
 import { ReportClientErrorDto } from './dto/report-client-error.dto';
 
 /**
@@ -11,6 +14,7 @@ import { ReportClientErrorDto } from './dto/report-client-error.dto';
  * write-amplification risk beyond log volume.
  */
 @ApiTags('Telemetry')
+@GlobalScope('Frontend client-error logging, log-only, no Mall concept')
 @Controller('telemetry')
 export class TelemetryController {
   private readonly logger = new Logger('ClientTelemetry');

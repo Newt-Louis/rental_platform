@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DealTimelineSheet } from '@/components/DealTimeline';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import {
   GitBranch, Search, Clock, Building2, User, ChevronRight, Zap,
 } from 'lucide-react';
@@ -25,9 +26,10 @@ const STAGE_CONFIG: Record<string, { color: string }> = {
   WON: { color: 'bg-green-100 text-green-700' },
 };
 
-function fmtValue(v?: number | null) {
+function fmtValue(v?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!v) return '—';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(v) + ' ₫';
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(v) + ' ' + symbol;
 }
 
 export default function DealPipelinePage() {
@@ -174,7 +176,7 @@ export default function DealPipelinePage() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">{fmtValue(deal.estimatedValue)}</p>
+                      <p className="text-sm font-semibold text-gray-900">{fmtValue(deal.estimatedValue, deal.currencyCode)}</p>
                       <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1 justify-end">
                         <Clock size={10} />
                         {new Date(deal.updatedAt).toLocaleDateString('vi-VN')}

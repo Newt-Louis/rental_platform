@@ -9,11 +9,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
 
+// CR-101 Phase 1: descriptive only. Singleton platform-wide white-label config -- no Mall concept applies.
 @ApiTags('Branding')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.branding)
+@GlobalScope('Singleton platform-wide branding config, not per-Mall')
 @Controller('branding')
 export class BrandingController {
   constructor(private readonly brandingService: BrandingService) {}

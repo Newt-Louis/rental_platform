@@ -15,11 +15,21 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { UnitStatus, UnitMediaType } from '@prisma/client';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only. This controller carries the platform's
+// most severe confirmed gap (P0-002, Unit CRUD) plus, newly found this session,
+// a whole-Mall-level gap on updateMall/deleteMall/getMall. Media/History/
+// Map-Position sub-sections are not individually re-annotated this pass (not
+// independently re-verified) and inherit the class default -- flagged as a
+// follow-up, not silently assumed safe.
 
 @ApiTags('Spaces')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.spaces)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.GAP, trackedAs: 'class default; see method-level overrides below for verified sections' })
 @Controller('spaces')
 export class SpacesController {
   constructor(
@@ -32,6 +42,7 @@ export class SpacesController {
 
   @Get('malls')
   @ApiOperation({ summary: 'List all malls' })
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async getMalls(@CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.spacesService.getMalls(mallIds ?? undefined);
@@ -40,6 +51,7 @@ export class SpacesController {
   @Post('malls')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create mall' })
+  @Scope({ type: ScopeType.GLOBAL, globalReason: 'Creating a brand-new Mall has no existing Mall to scope against; whether non-ADMIN roles should be allowed to do this at all is a separate ROLE AUTH question, out of AUTH-01 scope' })
   createMall(@Body() dto: CreateMallDto) {
     return this.spacesService.createMall(dto);
   }
@@ -47,27 +59,34 @@ export class SpacesController {
   @Post('malls/setup')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create mall with floors and zones in one transaction' })
+  @Scope({ type: ScopeType.GLOBAL, globalReason: 'Creating a brand-new Mall has no existing Mall to scope against' })
   setupMall(@Body() dto: any) {
     return this.spacesService.setupMall(dto);
   }
 
   @Get('malls/:id')
   @ApiOperation({ summary: 'Get mall by ID' })
-  getMall(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'id' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getMall(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, id);
     return this.spacesService.getMall(id);
   }
 
   @Patch('malls/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update mall' })
-  updateMall(@Param('id') id: string, @Body() dto: Partial<CreateMallDto>) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'id' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateMall(@Param('id') id: string, @Body() dto: Partial<CreateMallDto>, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, id);
     return this.spacesService.updateMall(id, dto);
   }
 
   @Delete('malls/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate mall' })
-  deleteMall(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'id' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async deleteMall(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, id);
     return this.spacesService.deleteMall(id);
   }
 
@@ -76,13 +95,17 @@ export class SpacesController {
   @Get('floors')
   @ApiOperation({ summary: 'List floors' })
   @ApiQuery({ name: 'mallId', required: false })
-  getFloors(@Query('mallId') mallId?: string) {
-    return this.spacesService.getFloors(mallId);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B -- explicit mallId is authorized; omitted mallId now falls back to the accessible-Mall set instead of returning every Floor platform-wide' })
+  async getFloors(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const accessibleMallIds = mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getFloors(mallId, accessibleMallIds);
   }
 
   @Post('floors')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create floor' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'body', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
   createFloor(@Body() dto: { mallId: string; name: string; level: string; sortOrder?: number }) {
     return this.spacesService.createFloor(dto);
   }
@@ -90,14 +113,18 @@ export class SpacesController {
   @Patch('floors/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update floor' })
-  updateFloor(@Param('id') id: string, @Body() dto: { name?: string; level?: string; sortOrder?: number }) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateFloor(@Param('id') id: string, @Body() dto: { name?: string; level?: string; sortOrder?: number }, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.updateFloor(id, dto);
   }
 
   @Delete('floors/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate floor' })
-  deleteFloor(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async deleteFloor(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.deleteFloor(id);
   }
 
@@ -107,13 +134,17 @@ export class SpacesController {
   @ApiOperation({ summary: 'List zones' })
   @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'mallId', required: false })
-  getZones(@Query('floorId') floorId?: string, @Query('mallId') mallId?: string) {
-    return this.spacesService.getZones(floorId, mallId);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getZones(@Query('floorId') floorId: string | undefined, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const accessibleMallIds = mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getZones(floorId, mallId, accessibleMallIds);
   }
 
   @Post('zones')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create zone' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'body', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
   createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string }) {
     return this.spacesService.createZone(dto);
   }
@@ -121,14 +152,18 @@ export class SpacesController {
   @Patch('zones/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update zone' })
-  updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string }) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string }, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
     return this.spacesService.updateZone(id, dto);
   }
 
   @Delete('zones/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Deactivate zone' })
-  deleteZone(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async deleteZone(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
     return this.spacesService.deleteZone(id);
   }
 
@@ -148,15 +183,21 @@ export class SpacesController {
   @ApiQuery({ name: 'leaseTermType', required: false, description: 'GAP #3 — filter by lease term type (LONG/SHORT)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  getUnits(@Query() query: any) {
-    return this.spacesService.getUnits(query);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })
+  async getUnits(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const accessibleMallIds = query.mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getUnits(query, accessibleMallIds);
   }
 
   @Get('units/occupancy')
   @ApiOperation({ summary: 'Get occupancy summary stats' })
   @ApiQuery({ name: 'mallId', required: false })
-  getOccupancy(@Query('mallId') mallId?: string) {
-    return this.spacesService.getOccupancySummary(mallId);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getOccupancy(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const accessibleMallIds = mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getOccupancySummary(mallId, accessibleMallIds);
   }
 
   // ─── Static sub-routes must come BEFORE units/:id ───────────────────────
@@ -165,30 +206,39 @@ export class SpacesController {
   @ApiOperation({ summary: 'Get units that have been vacant for extended period' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'days', required: false, description: 'Days threshold (default 90)' })
-  getStaleVacantUnits(
-    @Query('mallId') mallId?: string,
-    @Query('days') days?: string,
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getStaleVacantUnits(
+    @Query('mallId') mallId: string | undefined,
+    @Query('days') days: string | undefined,
+    @CurrentUser() user: any,
   ) {
-    return this.spacesService.getStaleVacantUnits(mallId, days ? +days : undefined);
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const accessibleMallIds = mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getStaleVacantUnits(mallId, days ? +days : undefined, accessibleMallIds);
   }
 
   @Get('units/expiring')
   @ApiOperation({ summary: 'Get units with leases expiring soon' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'days', required: false, description: 'Days ahead to look (default 90)' })
-  getExpiringLeases(
-    @Query('mallId') mallId?: string,
-    @Query('days') days?: string,
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getExpiringLeases(
+    @Query('mallId') mallId: string | undefined,
+    @Query('days') days: string | undefined,
+    @CurrentUser() user: any,
   ) {
-    return this.spacesService.getExpiringLeases(mallId, days ? +days : undefined);
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const accessibleMallIds = mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getExpiringLeases(mallId, days ? +days : undefined, accessibleMallIds);
   }
 
   @Get('units/compare')
   @ApiOperation({ summary: 'Compare multiple units side by side (2-5 units)' })
   @ApiQuery({ name: 'ids', required: true, description: 'Comma-separated unit IDs' })
-  compareUnits(@Query('ids') ids: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'query', key: 'ids', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B -- one id per entry in the comma-separated list, accessible-set checked in service' })
+  compareUnits(@Query('ids') ids: string, @CurrentUser() user: any) {
     const unitIds = ids.split(',').map((id) => id.trim()).filter(Boolean);
-    return this.spacesService.compareUnits(unitIds);
+    return this.spacesService.compareUnits(unitIds, user);
   }
 
   @Get('units/search')
@@ -210,14 +260,17 @@ export class SpacesController {
   @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  searchUnits(@Query() query: any) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async searchUnits(@Query() query: any, @CurrentUser() user: any) {
     if (query.status && query.status.includes(',')) {
       query.status = query.status.split(',');
     }
     if (query.category && query.category.includes(',')) {
       query.category = query.category.split(',');
     }
-    return this.spacesService.getUnitsAdvanced(query);
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const accessibleMallIds = query.mallId ? undefined : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.spacesService.getUnitsAdvanced(query, accessibleMallIds);
   }
 
   // ─── GAP #2 — Merge / Split Units ────────────────────────────────────────
@@ -240,12 +293,13 @@ export class SpacesController {
       },
     },
   })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'body', key: 'unitIds', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B -- one id per entry; service enforces all entries share one Mall before checking it' })
   mergeUnits(
     @Body() body: { unitIds: string[] } & MergeUnitDto,
     @CurrentUser() user: any,
   ) {
     const { unitIds, ...dto } = body;
-    return this.spacesService.mergeUnits(unitIds, dto, user?.id);
+    return this.spacesService.mergeUnits(unitIds, dto, user?.id, user);
   }
 
   @Post('units/:id/split')
@@ -254,7 +308,9 @@ export class SpacesController {
     summary: 'GAP #2 — Tách mặt bằng tổng hợp về các unit gốc',
     description: 'Phục hồi các unit gốc về VACANT và vô hiệu hoá unit tổng hợp.',
   })
-  splitUnit(@Param('id') id: string, @CurrentUser() user: any) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async splitUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.splitUnit(id, user?.id);
   }
 
@@ -262,13 +318,16 @@ export class SpacesController {
 
   @Get('units/:id')
   @ApiOperation({ summary: 'Get unit by ID with tenant and lease info' })
-  getUnit(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })
+  async getUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.getUnit(id);
   }
 
   @Post('units')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create unit' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'body', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
   createUnit(@Body() dto: CreateUnitDto, @CurrentUser() user: any) {
     return this.spacesService.createUnit({ ...dto, mallId: dto.mallId ?? user.activeMallId });
   }
@@ -276,21 +335,27 @@ export class SpacesController {
   @Patch('units/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit' })
-  updateUnit(@Param('id') id: string, @Body() dto: UpdateUnitDto) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })
+  async updateUnit(@Param('id') id: string, @Body() dto: UpdateUnitDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.updateUnit(id, dto);
   }
 
   @Patch('units/:id/status')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit status' })
-  updateUnitStatus(@Param('id') id: string, @Body('status') status: UnitStatus, @CurrentUser() user: any) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })
+  async updateUnitStatus(@Param('id') id: string, @Body('status') status: UnitStatus, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.updateUnitStatus(id, status, user?.id);
   }
 
   @Delete('units/:id')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete unit' })
-  deleteUnit(@Param('id') id: string, @CurrentUser() user: any) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })
+  async deleteUnit(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.deleteUnit(id, user?.id);
   }
 
@@ -299,7 +364,9 @@ export class SpacesController {
   @Get('units/:id/media')
   @ApiOperation({ summary: 'Danh sách media của unit (ảnh, floor plan, video, brochure)' })
   @ApiQuery({ name: 'type', required: false, enum: UnitMediaType })
-  getUnitMedia(@Param('id') id: string, @Query('type') type?: UnitMediaType) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getUnitMedia(@Param('id') id: string, @Query('type') type: UnitMediaType | undefined, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.unitMediaService.getUnitMedia(id, type);
   }
 
@@ -308,12 +375,14 @@ export class SpacesController {
   @ApiOperation({ summary: 'Upload media cho unit (ảnh, floor plan, video, brochure)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
-  uploadUnitMedia(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async uploadUnitMedia(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { type?: UnitMediaType; caption?: string; isCover?: string },
     @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.unitMediaService.uploadMedia(
       id,
       file,
@@ -325,19 +394,23 @@ export class SpacesController {
   @Patch('units/:id/media/:mediaId')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Cập nhật caption, thứ tự, hoặc đánh dấu cover' })
-  updateUnitMedia(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateUnitMedia(
     @Param('id') id: string,
     @Param('mediaId') mediaId: string,
     @Body() body: { caption?: string; sortOrder?: number; isCover?: boolean },
     @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.unitMediaService.updateMedia(id, mediaId, body, user.id);
   }
 
   @Delete('units/:id/media/:mediaId')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Xóa media của unit' })
-  deleteUnitMedia(@Param('id') id: string, @Param('mediaId') mediaId: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async deleteUnitMedia(@Param('id') id: string, @Param('mediaId') mediaId: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.unitMediaService.deleteMedia(id, mediaId);
   }
 
@@ -352,18 +425,22 @@ export class SpacesController {
   @ApiQuery({ name: 'mallId', required: true })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
-  importUnits(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async importUnits(
     @Query('mallId') mallId: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: any,
   ) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.unitMediaService.importUnits(mallId, file, user.id);
   }
 
   @Get('units/import/logs')
   @ApiOperation({ summary: 'Lịch sử import unit' })
   @ApiQuery({ name: 'mallId', required: true })
-  getImportLogs(@Query('mallId') mallId: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getImportLogs(@Query('mallId') mallId: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.unitMediaService.getImportLogs(mallId);
   }
 
@@ -373,18 +450,22 @@ export class SpacesController {
 
   @Get('units/:id/history')
   @ApiOperation({ summary: 'Get unit change history' })
-  getUnitHistory(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getUnitHistory(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.getUnitHistory(id);
   }
 
   @Patch('units/:id/with-history')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update unit with history tracking' })
-  updateUnitWithHistory(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateUnitWithHistory(
     @Param('id') id: string,
     @Body() dto: any,
     @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.updateUnitWithHistory(id, dto, user?.id);
   }
 
@@ -395,7 +476,9 @@ export class SpacesController {
   @Get('analytics/rent')
   @ApiOperation({ summary: 'Rent analytics by floor and category' })
   @ApiQuery({ name: 'mallId', required: false })
-  getRentAnalytics(@Query('mallId') mallId?: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getRentAnalytics(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.spacesService.getRentAnalytics(mallId);
   }
 
@@ -403,10 +486,13 @@ export class SpacesController {
   @ApiOperation({ summary: 'Historical occupancy trend' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'months', required: false, description: 'Number of months (default 12)' })
-  getOccupancyTrend(
-    @Query('mallId') mallId?: string,
-    @Query('months') months?: string,
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getOccupancyTrend(
+    @Query('mallId') mallId: string | undefined,
+    @Query('months') months: string | undefined,
+    @CurrentUser() user: any,
   ) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.spacesService.getOccupancyTrend(mallId, months ? +months : undefined);
   }
 
@@ -414,10 +500,13 @@ export class SpacesController {
   @ApiOperation({ summary: 'Unit availability calendar/forecast' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'months', required: false, description: 'Months ahead to forecast (default 6)' })
-  getAvailabilityCalendar(
-    @Query('mallId') mallId?: string,
-    @Query('months') months?: string,
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getAvailabilityCalendar(
+    @Query('mallId') mallId: string | undefined,
+    @Query('months') months: string | undefined,
+    @CurrentUser() user: any,
   ) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.spacesService.getAvailabilityCalendar(mallId, months ? +months : undefined);
   }
 
@@ -428,11 +517,12 @@ export class SpacesController {
   @Post('units/bulk-update')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Bulk update multiple units' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'body', key: 'unitIds', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002) -- one id per entry, accessible-set checked in service' })
   bulkUpdateUnits(
     @Body() body: { unitIds: string[]; updates: any },
     @CurrentUser() user: any,
   ) {
-    return this.spacesService.bulkUpdateUnits(body.unitIds, body.updates, user?.id);
+    return this.spacesService.bulkUpdateUnits(body.unitIds, body.updates, user?.id, user);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -441,7 +531,9 @@ export class SpacesController {
 
   @Get('floors/:id/map')
   @ApiOperation({ summary: 'Get floor map data: floor plan URL + all units with positions' })
-  getFloorMapData(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getFloorMapData(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.getFloorMapData(id);
   }
 
@@ -450,44 +542,59 @@ export class SpacesController {
   @ApiOperation({ summary: 'Upload floor plan image for a floor (JPG/PNG/WebP)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
-  uploadFloorPlan(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async uploadFloorPlan(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.uploadFloorPlan(id, file);
   }
 
   @Delete('floors/:id/floor-plan')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Delete floor plan image' })
-  deleteFloorPlan(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async deleteFloorPlan(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.deleteFloorPlan(id);
   }
 
   @Patch('floors/:id/map-positions')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Batch save unit positions on floor map (% coordinates)' })
-  saveMapPositions(
+  @Scope({
+    type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'floor' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B.1 -- authorizes the floor here, AND (as of Phase 3B.1) SpacesService.saveMapPositions independently verifies every body.positions[].unitId belongs to this Floor and Mall before writing (INV-SPACE-MAP-001/002)',
+  })
+  async saveMapPositions(
     @Param('id') id: string,
     @Body() body: { positions: Array<{ unitId: string; polygon?: number[][]; x?: number; y?: number; w?: number; h?: number }> },
+    @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorId: id });
     return this.spacesService.saveMapPositions(id, body.positions);
   }
 
   @Patch('units/:id/map-position')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update a single unit map position on floor plan' })
-  updateUnitMapPosition(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async updateUnitMapPosition(
     @Param('id') id: string,
     @Body() body: { polygon?: number[][] | null; x?: number | null; y?: number | null; w?: number | null; h?: number | null },
+    @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.updateUnitMapPosition(id, body);
   }
 
   @Delete('units/:id/map-position')
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Remove unit from floor map (clear position)' })
-  clearUnitMapPosition(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'unit' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async clearUnitMapPosition(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: id });
     return this.spacesService.clearUnitMapPosition(id);
   }
 }

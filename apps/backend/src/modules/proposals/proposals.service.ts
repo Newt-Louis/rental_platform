@@ -336,7 +336,14 @@ export class ProposalsService {
     let priceDeviationPct = 0;
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
-    if (proposal.unit?.categoryId) {
+    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
+    // currency field (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a USD/MMK
+    // proposal.rentPerSqm against a VND floor/ceiling produces a nonsensical deviation (e.g. a
+    // $2,500/sqm proposal read as ~99.6% below a 700,000 VND floor), which then feeds straight
+    // into buildApprovalStepsFromRules()'s PRICE_DEVIATION_PCT rule matching -- silently forcing
+    // or skipping CEO/Director escalation based on a meaningless number. Skip the check for a
+    // non-VND proposal, same as the equivalent guard in BookingService.create()/update().
+    if (proposal.unit?.categoryId && proposal.rentCurrency === 'VND') {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: proposal.unit.mallId,
         categoryId: proposal.unit.categoryId,
@@ -708,6 +715,13 @@ export class ProposalsService {
             deposit: proposal.depositAmount,
             rentFree: proposal.rentFree,
             escalationPercent: proposal.escalationPercent,
+            // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): this is the actual
+            // Proposal->Contract conversion path wired to the UI's "Convert to Contract" action
+            // (ContractsService.create() is a separate direct-create path with its own currency
+            // resolution) -- without this, the Contract row silently fell back to the schema's
+            // VND default regardless of the Proposal's real currency, reproducing exactly the
+            // silent-currency-loss bug the original audit found and thought it had closed.
+            currencyCode: proposal.rentCurrency,
             // GAP #41 — carry-over 3 khoản cọc từ Proposal
             depositLease: (proposal as any).depositLease ?? undefined,
             depositFitout: (proposal as any).depositFitout ?? 0,

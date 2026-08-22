@@ -23,8 +23,13 @@ import {
   UpdateCategoryPricingDto,
   ValidatePriceDto,
 } from './dto/category-pricing.dto';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
 
+// CR-101 Phase 1: descriptive only. Class default = base taxonomy (GLOBAL); the
+// CategoryMallPricing sub-resource is separately Mall-scoped and enforced --
+// not individually re-annotated per-method this pass, tracked as a follow-up.
 @ApiTags('Categories')
+@GlobalScope('Base category taxonomy is global platform config; CategoryMallPricing sub-resource is separately Mall-scoped and enforced (not re-annotated per-method this pass)')
 @Controller('categories')
 @UseGuards(JwtAuthGuard)
 export class CategoriesController {

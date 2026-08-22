@@ -113,8 +113,8 @@ export class DashboardService {
     const role = user?.role;
     let mallIds: string[] | null = mallId ? [mallId] : null;
     if (user) {
-      if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
-      else mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+      if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
+      else mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true });
     }
 
     const scopeKey = mallId ?? (mallIds === null ? 'all' : `user:${user?.id ?? 'none'}`);

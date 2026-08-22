@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, UnitHistoryType, UnitStatus } from '@prisma/client';
 
@@ -41,6 +41,17 @@ export interface UnitTransitionOptions {
   tenantId?: string;
   leaseStartDate?: Date;
   leaseEndDate?: Date;
+  /**
+   * CR-101 Phase 3E / INV-AUTH-006 — the Mall the caller's own already-validated
+   * business entity belongs to (e.g. a Booking's current unit.mallId before a
+   * unit reassignment). When provided, must match the target Unit's actual
+   * mallId or the transition is denied before any mutation. Never populate this
+   * from unvalidated client input — only from a value the caller itself derived
+   * from a trusted, already-persisted record. Omit when the caller has no prior
+   * entity to compare against (e.g. creating a brand-new Booking/Contract
+   * against `unitId` directly — there is nothing to be inconsistent with yet).
+   */
+  expectedMallId?: string;
 }
 
 @Injectable()
@@ -69,6 +80,17 @@ export class UnitStatusService {
   ) {
     const unit = await client.unit.findUnique({ where: { id: unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
+
+    // INV-AUTH-006 — entity integrity, not user-role policy: the caller's own
+    // already-validated business entity must belong to the same Mall as the
+    // Unit it's about to mutate. Checked first, before any other validation or
+    // write, so a mismatch never leaves a partial side effect (history, queue
+    // promotion, etc.) behind.
+    if (options.expectedMallId && options.expectedMallId !== unit.mallId) {
+      throw new ForbiddenException(
+        'Unit does not belong to the expected mall for this operation',
+      );
+    }
 
     const isLowAvailabilityStatus = ([UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.NEGOTIATING] as UnitStatus[])
       .includes(toStatus);

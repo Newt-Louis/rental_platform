@@ -6,10 +6,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { ArrowRight } from 'lucide-react';
 import type { UnitBooking } from '@/types';
 import { buildProposalPrefill } from './proposal-prefill';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 
 export function ConvertToProposalDialog({ booking, open, onClose }: {
   booking: UnitBooking | null; open: boolean; onClose: () => void;
@@ -40,6 +42,7 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
       camPerSqm: form.camPerSqm ? Number(form.camPerSqm) : undefined,
       deposit: Number(form.deposit), rentFree: Number(form.rentFree),
       escalationPercent: Number(form.escalationPercent),
+      rentCurrency: form.rentCurrency,
       notes: form.notes || undefined,
       // GAP #91–94, #41
       utilityFee: Number(form.utilityFee) || undefined,
@@ -61,6 +64,8 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((p) => ({ ...p, [k]: e.target.value }));
+  const currency = (form.rentCurrency ?? 'VND') as CurrencyCode;
+  const currencySymbol = CURRENCIES[currency]?.symbol ?? '₫';
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -94,13 +99,24 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
             <label className="text-sm font-medium text-gray-700 mb-1 block">Ngày bắt đầu dự kiến *</label>
             <Input value={form.startDate} onChange={set('startDate')} type="date" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê (₫/m²) *</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
+              <Select value={currency} onValueChange={(v) => setForm((p) => ({ ...p, rentCurrency: v as CurrencyCode }))}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="VND">VND</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="MMK">MMK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê ({currencySymbol}/m²) *</label>
               <Input value={form.rentPerSqm} onChange={set('rentPerSqm')} type="number" placeholder="680000" />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM ({currencySymbol}/m²)</label>
               <Input value={form.camPerSqm} onChange={set('camPerSqm')} type="number" placeholder="85000" />
             </div>
           </div>
@@ -126,7 +142,7 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
             <div className="rounded-lg bg-green-50 border border-green-100 p-3 text-sm">
               <span className="text-gray-500">Ước tính/tháng: </span>
               <span className="font-bold text-green-700">
-                {new Intl.NumberFormat('vi-VN').format(Number(form.area) * Number(form.rentPerSqm))} ₫
+                {new Intl.NumberFormat('vi-VN').format(Number(form.area) * Number(form.rentPerSqm))} {currencySymbol}
               </span>
             </div>
           )}
@@ -141,11 +157,11 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí tiện ích/tháng (₫)</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí tiện ích/tháng ({currencySymbol})</label>
                   <Input type="number" value={form.utilityFee} onChange={set('utilityFee')} placeholder="0" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí ngoài giờ/giờ (₫)</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Phí ngoài giờ/giờ ({currencySymbol})</label>
                   <Input type="number" value={form.afterHoursFee} onChange={set('afterHoursFee')} placeholder="0" />
                 </div>
               </div>
@@ -155,16 +171,16 @@ export function ConvertToProposalDialog({ booking, open, onClose }: {
                   <Input type="number" value={form.paymentTermDays} onChange={set('paymentTermDays')} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thuê (₫) — 0=tự tính</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thuê ({currencySymbol}) — 0=tự tính</label>
                   <Input type="number" value={form.depositLease} onChange={set('depositLease')} placeholder="0" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thi công (₫)</label>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Cọc thi công ({currencySymbol})</label>
                   <Input type="number" value={form.depositFitout} onChange={set('depositFitout')} placeholder="0" />
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">Phí thi công (₫)</label>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Phí thi công ({currencySymbol})</label>
                 <Input type="number" value={form.fitoutFee} onChange={set('fitoutFee')} placeholder="0" />
               </div>
             </div>

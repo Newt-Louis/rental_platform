@@ -13,6 +13,10 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ProposalStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 const PROPOSAL_EDIT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR];
 const PROPOSAL_CONVERT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
@@ -21,6 +25,7 @@ const PROPOSAL_CONVERT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRE
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.proposals)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'proposal' }, status: EnforcementStatus.ENFORCED })
 @Controller('proposals')
 export class ProposalsController {
   constructor(

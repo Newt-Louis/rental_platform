@@ -25,6 +25,7 @@ import {
   CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles,
 } from 'lucide-react';
 import type { Contract } from '@/types';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 
 // ── Status maps ───────────────────────────────────────────────────────────────
 
@@ -71,8 +72,9 @@ function fmtDate(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
-function fmtCurrency(n?: number | null) {
-  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ₫`;
+function fmtCurrency(n?: number | null, currencyCode?: CurrencyCode) {
+  const symbol = CURRENCIES[currencyCode ?? 'VND']?.symbol ?? '₫';
+  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ${symbol}`;
 }
 
 const BILLING_ENTRY_STATUS_COLOR: Record<string, string> = {
@@ -789,21 +791,21 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
               <SheetSection label={t('sheet.sections.financial')} className="bg-green-50">
                 <SheetRow label={t('sheet.fields.rent')}
-                  value={`${new Intl.NumberFormat('vi-VN').format(detail.rent)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                  value={`${fmtCurrency(detail.rent, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 {detail.cam > 0 && (
                   <SheetRow label={t('sheet.fields.cam')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.cam)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                    value={`${fmtCurrency(detail.cam, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 )}
                 {detail.serviceCharge > 0 && (
                   <SheetRow label={t('sheet.fields.serviceCharge')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.serviceCharge)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                    value={`${fmtCurrency(detail.serviceCharge, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 )}
                 <SheetRow label={t('sheet.fields.totalMonthly')}
-                  value={<span className="text-green-700 font-bold">{new Intl.NumberFormat('vi-VN').format(monthlyRent)} ₫</span>}
+                  value={<span className="text-green-700 font-bold">{fmtCurrency(monthlyRent, detail.currencyCode)}</span>}
                   icon={DollarSign} />
                 {detail.deposit > 0 && (
                   <SheetRow label={t('sheet.fields.deposit')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.deposit)} ₫`} icon={DollarSign} />
+                    value={fmtCurrency(detail.deposit, detail.currencyCode)} icon={DollarSign} />
                 )}
               </SheetSection>
 
@@ -905,16 +907,16 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                         <div className="text-[11px] text-gray-500">{t('billingTab.summary.totalScheduled')}</div>
-                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled)}</div>
+                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled, detail.currencyCode)}</div>
                         <div className="text-[11px] text-gray-400 mt-0.5">{t('billingTab.summary.periodCount', { count: scheduleEntries.length })}</div>
                       </div>
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                         <div className="text-[11px] text-emerald-700">{t('billingTab.summary.collected')}</div>
-                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected)}</div>
+                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected, detail.currencyCode)}</div>
                       </div>
                       <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                         <div className="text-[11px] text-amber-700">{t('billingTab.summary.remaining')}</div>
-                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected))}</div>
+                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected), detail.currencyCode)}</div>
                       </div>
                       <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                         <div className="text-[11px] text-blue-700">{t('billingTab.summary.collectionRate')}</div>
@@ -937,7 +939,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                           {scheduleEntries.map((e: any) => (
                             <tr key={e.id}>
                               <td className="px-3 py-2 font-medium text-gray-800">{e.period}</td>
-                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal)}</td>
+                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal, detail.currencyCode)}</td>
                               <td className="px-3 py-2 text-gray-600">{fmtDate(e.dueDate)}</td>
                               <td className="px-3 py-2">
                                 <Badge variant="outline" className={`${BILLING_ENTRY_STATUS_COLOR[e.status] ?? ''} text-xs`}>
@@ -957,8 +959,8 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                                     </Badge>
                                     <span className="text-[11px] text-gray-400">
                                       {t('billingTab.table.collectedOfTotal', {
-                                        collected: fmtCurrency(e.invoice.collectedAmount),
-                                        total: fmtCurrency(e.invoice.totalAmount),
+                                        collected: fmtCurrency(e.invoice.collectedAmount, detail.currencyCode),
+                                        total: fmtCurrency(e.invoice.totalAmount, detail.currencyCode),
                                       })}
                                     </span>
                                   </button>
@@ -1023,8 +1025,8 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <SheetRow label={t('sheet.fields.reason')} value={term.reason} icon={AlertTriangle} />
                     <SheetRow label={t('sheet.fields.initiatedBy')} value={term.initiatedBy === 'THISO' ? t('sheet.fields.initiatedByThiso') : t('sheet.fields.initiatedByTenant')} icon={User} />
                     <SheetRow label={t('sheet.fields.noticePeriod')} value={t('sheet.fields.noticePeriodDays', { count: term.noticePeriodDays })} icon={Clock} />
-                    {term.depositRefund != null && <SheetRow label={t('sheet.fields.depositRefund')} value={term.depositRefund.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
-                    {term.penaltyAmount != null && <SheetRow label={t('sheet.fields.penalty')} value={term.penaltyAmount.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                    {term.depositRefund != null && <SheetRow label={t('sheet.fields.depositRefund')} value={fmtCurrency(term.depositRefund, detail.currencyCode)} icon={DollarSign} />}
+                    {term.penaltyAmount != null && <SheetRow label={t('sheet.fields.penalty')} value={fmtCurrency(term.penaltyAmount, detail.currencyCode)} icon={DollarSign} />}
                   </SheetSection>
 
                   {term.status !== 'COMPLETED' && (
@@ -1097,14 +1099,14 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
             {amendmentForm.type === 'RENT_CHANGE' && (
               <div>
-                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel')}</label>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel', { currency: detail?.currencyCode ?? 'VND' })}</label>
                 <Input type="number" value={amendmentForm.newRent}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, newRent: e.target.value }))} />
               </div>
             )}
             {amendmentForm.type === 'CAM_CHANGE' && (
               <div>
-                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel')}</label>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel', { currency: detail?.currencyCode ?? 'VND' })}</label>
                 <Input type="number" value={amendmentForm.newCam}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, newCam: e.target.value }))} />
               </div>
@@ -1378,7 +1380,7 @@ export default function ContractsPage() {
                       <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{c.type}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)} VNĐ
+                      {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)} {c.currencyCode ?? 'VND'}
                     </td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.startDate).toLocaleDateString('vi-VN')}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString('vi-VN')}</td>

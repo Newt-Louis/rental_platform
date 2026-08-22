@@ -20,6 +20,10 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { MallAccessService } from "../../common/services/mall-access.service";
 import { CreateWorkOrderDto } from "./dto/work-order.dto";
 import { WorkOrdersService } from "./work-orders.service";
+import { Scope } from "../../common/decorators/scope.decorator";
+import { ScopeType, EnforcementStatus } from "../../common/constants/scope.types";
+
+// CR-101 Phase 1: descriptive only.
 
 const ROLES = [
   Role.ADMIN,
@@ -28,9 +32,15 @@ const ROLES = [
   Role.OPERATION,
   Role.LEASING_MANAGER,
 ];
+// CR-101 Phase 3G (BC-CEO-SCOPE Option A): Work Orders is a confirmed
+// operational-write contradiction -- CEO keeps read/list/summary/export, loses
+// every create/update/status/review/checklist/evidence/template-authoring
+// route below.
+const WRITE_ROLES = ROLES.filter((r) => r !== Role.CEO);
 @ApiTags("Work Orders")
 @ApiBearerAuth("JWT-auth")
 @Roles(...ROLES)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller("work-orders")
 export class WorkOrdersController {
   constructor(
@@ -91,14 +101,18 @@ export class WorkOrdersController {
   @Get("templates") async templates(@Query() q: any, @CurrentUser() u: any) {
     return this.service.listTemplates(q, await this.ids(u, q.mallId));
   }
-  @Post("templates") async createTemplate(
+  @Post("templates")
+  @Roles(...WRITE_ROLES)
+  async createTemplate(
     @Body() body: any,
     @CurrentUser() u: any,
   ) {
     await this.mallAccess.assertMallAccess(u.id, u.role, body.mallId);
     return this.service.createTemplate(body, u.id);
   }
-  @Put("templates/:id") async updateTemplate(
+  @Put("templates/:id")
+  @Roles(...WRITE_ROLES)
+  async updateTemplate(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() u: any,
@@ -106,7 +120,9 @@ export class WorkOrdersController {
     await this.assertTemplate(id, u);
     return this.service.updateTemplate(id, body);
   }
-  @Patch("templates/:id/toggle") async toggleTemplate(
+  @Patch("templates/:id/toggle")
+  @Roles(...WRITE_ROLES)
+  async toggleTemplate(
     @Param("id") id: string,
     @Body("isActive") active: boolean,
     @CurrentUser() u: any,
@@ -114,7 +130,9 @@ export class WorkOrdersController {
     await this.assertTemplate(id, u);
     return this.service.toggleTemplate(id, active);
   }
-  @Post("templates/:id/run") async runTemplate(
+  @Post("templates/:id/run")
+  @Roles(...WRITE_ROLES)
+  async runTemplate(
     @Param("id") id: string,
     @CurrentUser() u: any,
   ) {
@@ -130,11 +148,15 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.detail(id);
   }
-  @Post() async create(@Body() dto: CreateWorkOrderDto, @CurrentUser() u: any) {
+  @Post()
+  @Roles(...WRITE_ROLES)
+  async create(@Body() dto: CreateWorkOrderDto, @CurrentUser() u: any) {
     await this.mallAccess.assertMallAccess(u.id, u.role, dto.mallId);
     return this.service.create(dto, u.id);
   }
-  @Put(":id") async update(
+  @Put(":id")
+  @Roles(...WRITE_ROLES)
+  async update(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() u: any,
@@ -142,7 +164,9 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.update(id, body, u.id);
   }
-  @Patch(":id/status") async status(
+  @Patch(":id/status")
+  @Roles(...WRITE_ROLES)
+  async status(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() u: any,
@@ -150,7 +174,9 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.transition(id, body.status, u.id, body.note);
   }
-  @Post(":id/review") async review(
+  @Post(":id/review")
+  @Roles(...WRITE_ROLES)
+  async review(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() u: any,
@@ -158,7 +184,9 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.review(id, body.approved, body.note, u.id);
   }
-  @Post(":id/checklist") async checklist(
+  @Post(":id/checklist")
+  @Roles(...WRITE_ROLES)
+  async checklist(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() u: any,
@@ -166,7 +194,9 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.addChecklist(id, body);
   }
-  @Post(":id/comments") async comment(
+  @Post(":id/comments")
+  @Roles(...WRITE_ROLES)
+  async comment(
     @Param("id") id: string,
     @Body("content") content: string,
     @CurrentUser() u: any,
@@ -174,7 +204,9 @@ export class WorkOrdersController {
     await this.assert(id, u);
     return this.service.addComment(id, content, u.id);
   }
-  @Patch(":id/checklist/:itemId") async toggle(
+  @Patch(":id/checklist/:itemId")
+  @Roles(...WRITE_ROLES)
+  async toggle(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
     @Body("isCompleted") completed: boolean,
@@ -184,6 +216,7 @@ export class WorkOrdersController {
     return this.service.toggleChecklist(id, itemId, completed, u.id);
   }
   @Post(":id/evidence")
+  @Roles(...WRITE_ROLES)
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 15 * 1024 * 1024 } }),
   )

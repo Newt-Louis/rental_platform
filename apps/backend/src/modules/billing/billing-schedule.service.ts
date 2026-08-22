@@ -96,6 +96,7 @@ export class BillingScheduleService {
           rentAmount: period.rentAmount,
           camAmount: period.camAmount,
           subtotal: period.subtotal,
+          currencyCode: contract.currencyCode,
           dueDate: period.dueDate,
         },
       });

@@ -11,50 +11,68 @@ import {
   UpdateFitoutRiskDto,
 } from './dto/fitout-controls.dto';
 import { FitoutControlsService } from './fitout-controls.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
+// CR-101 Phase 3A: enforced via the existing `fitoutProject` resolver, keyed
+// off the shared :projectId base-path param on every route in this controller.
 @ApiTags('Fitout Controls')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.fitout)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'projectId', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
 @Controller('fitouts/:projectId/controls')
 export class FitoutControlsController {
-  constructor(private readonly service: FitoutControlsService) {}
+  constructor(
+    private readonly service: FitoutControlsService,
+    private readonly mallAccess: MallAccessService,
+  ) {}
 
   @Get('summary') @ApiOperation({ summary: 'Risk and change cost dashboard summary' })
-  summary(@Param('projectId') projectId: string) { return this.service.getSummary(projectId); }
+  async summary(@Param('projectId') projectId: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
+    return this.service.getSummary(projectId);
+  }
 
   @Get('risks')
-  listRisks(@Param('projectId') projectId: string, @Query('status') status?: string) {
+  async listRisks(@Param('projectId') projectId: string, @Query('status') status: string | undefined, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.listRisks(projectId, status);
   }
 
   @Post('risks')
-  createRisk(@Param('projectId') projectId: string, @Body() dto: CreateFitoutRiskDto, @CurrentUser() user: any) {
+  async createRisk(@Param('projectId') projectId: string, @Body() dto: CreateFitoutRiskDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.createRisk(projectId, dto, user.id);
   }
 
   @Patch('risks/:riskId')
-  updateRisk(@Param('projectId') projectId: string, @Param('riskId') riskId: string, @Body() dto: UpdateFitoutRiskDto) {
+  async updateRisk(@Param('projectId') projectId: string, @Param('riskId') riskId: string, @Body() dto: UpdateFitoutRiskDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.updateRisk(projectId, riskId, dto);
   }
 
   @Get('change-orders')
-  listChanges(@Param('projectId') projectId: string, @Query('status') status?: string) {
+  async listChanges(@Param('projectId') projectId: string, @Query('status') status: string | undefined, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.listChangeOrders(projectId, status);
   }
 
   @Post('change-orders')
-  createChange(@Param('projectId') projectId: string, @Body() dto: CreateFitoutChangeOrderDto, @CurrentUser() user: any) {
+  async createChange(@Param('projectId') projectId: string, @Body() dto: CreateFitoutChangeOrderDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.createChangeOrder(projectId, dto, user.id);
   }
 
   @Patch('change-orders/:changeId/decision')
-  decide(
+  async decide(
     @Param('projectId') projectId: string,
     @Param('changeId') changeId: string,
     @Body() dto: DecideFitoutChangeOrderDto,
     @CurrentUser() user: any,
   ) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: projectId });
     return this.service.decideChangeOrder(projectId, changeId, dto, user);
   }
 }

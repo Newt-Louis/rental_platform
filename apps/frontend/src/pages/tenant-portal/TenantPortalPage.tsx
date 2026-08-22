@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import {
   ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
@@ -63,12 +64,14 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ₫';
+function fmt(n: number, currencyCode: CurrencyCode = 'VND') {
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ' + symbol;
 }
 
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return new Intl.NumberFormat('vi-VN').format(n) + ' ' + symbol;
 }
 
 function fmtDate(d?: string | null) {
@@ -454,11 +457,11 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
         </DialogHeader>
         <div className="mb-3 p-3 bg-gray-50 rounded-lg text-sm">
           <p className="font-medium text-blue-800">{invoice.invoiceNumber}</p>
-          <p className="text-gray-700 mt-0.5">Tổng: {fmtFull(invoice.totalAmount)}</p>
+          <p className="text-gray-700 mt-0.5">Tổng: {fmtFull(invoice.totalAmount, invoice.currencyCode)}</p>
         </div>
         <form onSubmit={handleSubmit((d) => mutation.mutate({ ...d, amount: Number(d.amount) }))} className="space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Số tiền (₫)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Số tiền ({CURRENCIES[(invoice.currencyCode ?? 'VND') as CurrencyCode]?.symbol ?? '₫'})</label>
             <Input {...register('amount', { required: true })} type="number" />
           </div>
           <div>
@@ -535,8 +538,12 @@ export default function TenantPortalPage() {
   const fitouts: any[] = fitoutsData?.data ?? [];
 
   const overdueInvoices = invoices.filter((i) => i.status === 'OVERDUE');
+  // "Tổng chờ thanh toán" is a single VND-denominated figure -- if this tenant has invoices in
+  // more than one currency, mixing them into one sum would be meaningless, so scope to VND
+  // (same convention as the dashboard's revenue KPIs). Each invoice row in the table below is
+  // still shown individually with its own currency regardless.
   const pendingInvoicesTotal = invoices
-    .filter((i) => i.status === 'ISSUED' || i.status === 'OVERDUE')
+    .filter((i) => (i.status === 'ISSUED' || i.status === 'OVERDUE') && (i.currencyCode ?? 'VND') === 'VND')
     .reduce((sum, i) => sum + (i.totalAmount ?? 0), 0);
   const openTickets = tickets.filter((t) => !['RESOLVED', 'CLOSED'].includes(t.status));
   const activeFitouts = fitouts.filter((f) => f.status !== 'OPENED');
@@ -662,7 +669,7 @@ export default function TenantPortalPage() {
                           </span>
                           <span className="flex items-center gap-1 text-gray-900 font-medium">
                             <DollarSign size={11} />
-                            {fmt(c.rent)}/tháng
+                            {fmt(c.rent, c.currencyCode)}/tháng
                           </span>
                         </div>
                       </div>
@@ -730,7 +737,7 @@ export default function TenantPortalPage() {
                         <td className="px-4 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
                         <td className="px-4 py-3 hidden md:table-cell">{inv.tenant?.brandName}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{inv.period}</td>
-                        <td className="px-4 py-3 text-right font-medium">{fmt(inv.totalAmount)}</td>
+                        <td className="px-4 py-3 text-right font-medium">{fmt(inv.totalAmount, inv.currencyCode)}</td>
                         <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                           {fmtDate(inv.dueDate)}
                         </td>

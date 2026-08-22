@@ -94,6 +94,26 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     expect(prisma.lead.update).toHaveBeenCalledWith({ where: { id: 'l1' }, data: { status: 'WON' } });
   });
 
+  // Regression found live in the running dev environment during a QC pass on the multi-currency
+  // work: createContractFromProposal()'s tx.contract.create() never set currencyCode at all, so
+  // it silently fell back to the schema's VND default regardless of Proposal.rentCurrency --
+  // reproducing exactly the "silent currency loss" bug the original audit
+  // (docs/program/MULTI_CURRENCY_AUDIT.md) found and thought it had closed via
+  // ContractsService.create() (a separate, direct-create code path this one doesn't share).
+  it('propagates Proposal.rentCurrency onto the created Contract', async () => {
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...APPROVED_PROPOSAL, rentCurrency: 'USD', unit: {}, tenant: {}, lead: { id: 'l1' }, approvalWorkflow: null, contract: null,
+    });
+    prisma.contract.findFirst.mockResolvedValue(null);
+    prisma.contract.create.mockResolvedValue({ id: 'c1', contractNumber: 'CTR-2026-00001', proposalId: 'p1', currencyCode: 'USD' });
+
+    await service.createContractFromProposal('p1', { userId: 'user-1' });
+
+    expect(prisma.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ currencyCode: 'USD' }) }),
+    );
+  });
+
   it('rolls back — a failure partway through the transaction propagates and the contract create is not treated as committed', async () => {
     prisma.contract.findFirst.mockResolvedValue(null);
     prisma.contract.create.mockResolvedValue({ id: 'c1', contractNumber: 'CTR-2026-00001', proposalId: 'p1' });

@@ -15,14 +15,19 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AmendmentType, ContractStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
 const CONTRACT_EDIT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.LEGAL];
 const CONTRACT_STATUS_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Contracts')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.contracts)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'contract' }, status: EnforcementStatus.ENFORCED })
 @Controller('contracts')
 export class ContractsController {
   constructor(

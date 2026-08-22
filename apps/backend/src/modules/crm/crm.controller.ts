@@ -11,11 +11,16 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LeadStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('CRM')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.crm)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'crmDeal' }, status: EnforcementStatus.ENFORCED })
 @Controller('crm')
 export class CrmController {
   private readonly logger = new Logger(CrmController.name);
@@ -55,6 +60,7 @@ export class CrmController {
   @ApiQuery({ name: 'stage', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-008 / AUTH-01' })
   getUnifiedDeals(@Query() query: any) {
     return this.crmService.getUnifiedDeals(query);
   }

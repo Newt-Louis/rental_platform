@@ -20,6 +20,10 @@ import {
   UpdateServiceContractStatusDto,
 } from './dto/service-contract.dto';
 import { ServiceContractsService } from './service-contracts.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 const VIEW_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.FINANCE, Role.LEGAL, Role.OPERATION];
 const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEGAL, Role.OPERATION];
@@ -27,6 +31,7 @@ const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.L
 @ApiTags('Service Contracts')
 @ApiBearerAuth('JWT-auth')
 @Roles(...VIEW_ROLES)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller('service-contracts')
 export class ServiceContractsController {
   constructor(private service: ServiceContractsService, private mallAccess: MallAccessService) {}

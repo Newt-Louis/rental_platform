@@ -120,6 +120,7 @@
       "duration": "Thời hạn",
       "durationMonths": "{{count}} tháng",
       "perMonth": " ₫/tháng",
+      "perMonthSuffix": "/tháng",
       "reason": "Lý do",
       "initiatedBy": "Khởi tạo bởi",
       "initiatedByThiso": "THISO (BQL)",
@@ -199,8 +200,8 @@
       "RENEWAL": "Tái ký / gia hạn mới",
       "OTHER": "Khác"
     },
-    "newRentLabel": "Tiền thuê mới (VND/tháng)",
-    "newCamLabel": "Phí CAM mới (VND/tháng)",
+    "newRentLabel": "Tiền thuê mới ({{currency}}/tháng)",
+    "newCamLabel": "Phí CAM mới ({{currency}}/tháng)",
     "newRentFreeLabel": "Số tháng miễn phí thuê mới",
     "newEndDateLabel": "Ngày kết thúc mới",
     "effectiveDateLabel": "Ngày hiệu lực",
