@@ -23,7 +23,7 @@ import {
 import api from '@/lib/axios';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
 import type { Invoice, ArAgingRow } from '@/types';
-import { formatMoney, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { AsyncState } from '@/components/ui/async-state';
@@ -85,6 +85,13 @@ function fmtMoney(n?: number | null, currencyCode: CurrencyCode = 'VND') {
 }
 function fmtCompact(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+}
+// Compact notation with the record's actual currency symbol, instead of a hardcoded ₫
+// (fmtCompact's callers used to append " ₫" unconditionally regardless of the invoice's
+// real currencyCode -- see docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+function fmtCompactCur(n: number, currencyCode: CurrencyCode = 'VND') {
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return `${fmtCompact(n)} ${symbol}`;
 }
 function fmtDate(d?: string | Date | null) {
   if (!d) return '—';
@@ -488,8 +495,8 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                               </div>
                             </td>
                             <td className="px-3 py-2.5 text-right text-gray-500 text-xs">{line.qty}</td>
-                            <td className="px-3 py-2.5 text-right text-gray-600 text-xs">{fmtMoney(line.unitPrice)}</td>
-                            <td className="px-3 py-2.5 text-right font-medium">{fmtMoney(line.amount)}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-600 text-xs">{fmtMoney(line.unitPrice, inv?.currencyCode)}</td>
+                            <td className="px-3 py-2.5 text-right font-medium">{fmtMoney(line.amount, inv?.currencyCode)}</td>
                           </tr>
                         );
                       })}
@@ -618,13 +625,13 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
                                 <Input type="number" className="h-7 text-xs w-28 ml-auto" value={editForm.unitPrice}
                                   onChange={(e) => setEditForm(p => ({ ...p, unitPrice: e.target.value }))} />
                               ) : (
-                                <span className="text-gray-600 text-xs">{fmtMoney(line.unitPrice)}</span>
+                                <span className="text-gray-600 text-xs">{fmtMoney(line.unitPrice, inv?.currencyCode)}</span>
                               )}
                             </td>
                             <td className="px-3 py-2.5 text-right font-medium text-sm">
                               {isEditing
-                                ? fmtMoney(Number(editForm.qty) * Number(editForm.unitPrice))
-                                : fmtMoney(line.amount)
+                                ? fmtMoney(Number(editForm.qty) * Number(editForm.unitPrice), inv?.currencyCode)
+                                : fmtMoney(line.amount, inv?.currencyCode)
                               }
                             </td>
                             {isStaff && isDraft && (
@@ -1018,9 +1025,9 @@ function InvoicesTab() {
                       <td className="px-4 py-3"><div className="font-medium text-gray-800">{row.counterpartyName}</div><div className="text-xs text-gray-400">{row.taxCode || row.unitCode || '—'}</div></td>
                       <td className="px-4 py-3"><Badge className={`border text-[11px] ${SOURCE_COLORS[row.sourceType] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[row.sourceType] || row.sourceType}</Badge><div className="mt-1 font-mono text-[11px] text-slate-500">{row.contractNumber}</div>{row.contractType && <div className="text-[11px] text-slate-400">{row.contractType === 'PRINCIPLE_ACTUAL' ? 'Nguyên tắc · theo thực tế' : 'Định mức + phí vượt'}</div>}</td>
                       <td className="px-4 py-3"><div className="text-gray-700">{row.milestone}</div><div className="text-xs text-gray-400">{row.period || 'Theo mốc hợp đồng'}</div></td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(row.totalAmount)} ₫</td>
-                      <td className="px-4 py-3 text-right font-medium text-emerald-700">{row.paidAmount ? `${fmtCompact(row.paidAmount)} ₫` : '—'}</td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(row.amountToCollect ?? row.totalAmount)} ₫</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(row.totalAmount, row.currencyCode)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700">{row.paidAmount ? fmtCompactCur(row.paidAmount, row.currencyCode) : '—'}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(row.amountToCollect ?? row.totalAmount, row.currencyCode)}</td>
                       <td className="px-4 py-3 text-xs text-gray-600">{fmtDate(row.invoicePlannedDate)}<div className="text-[11px] text-gray-400">Hạn thu {fmtDate(row.dueDate)}</div></td>
                       <td className="px-4 py-3">{row.isDueForInvoice
                         ? <Badge className="border border-red-200 bg-red-100 text-red-700">{row.daysInvoiceOverdue ? `Treo ${row.daysInvoiceOverdue} ngày` : 'Đến hạn xuất'}</Badge>
@@ -1113,10 +1120,10 @@ function InvoicesTab() {
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-slate-400">{inv.type}</div></td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-800">
-                      {fmtCompact(inv.totalAmount)} ₫
+                      {fmtCompactCur(inv.totalAmount, inv.currencyCode)}
                     </td>
-                    <td className="px-4 py-3 text-right text-emerald-700">{inv.totalPaid ? `${fmtCompact(inv.totalPaid)} ₫` : '—'}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompact(inv.balance ?? inv.totalAmount)} ₫</td>
+                    <td className="px-4 py-3 text-right text-emerald-700">{inv.totalPaid ? fmtCompactCur(inv.totalPaid, inv.currencyCode) : '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(inv.balance ?? inv.totalAmount, inv.currencyCode)}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {fmtDate(inv.dueDate)}
                       {(inv.daysOverdue || overdue) ? <div className="mt-0.5 font-medium text-red-600">Quá {inv.daysOverdue || 0} ngày</div> : null}
@@ -1178,9 +1185,9 @@ function InvoicesTab() {
             <div className="rounded-lg bg-violet-50 p-4"><div className="font-semibold text-violet-900">{pendingDetail.counterpartyName}</div><div className="mt-1 text-xs text-violet-700">{SOURCE_LABELS[pendingDetail.sourceType] || pendingDetail.sourceType} · {pendingDetail.contractNumber}</div></div>
             <div className="grid grid-cols-2 gap-3">
               <div><div className="text-xs text-slate-400">Nội dung / kỳ thu</div><div className="font-medium">{pendingDetail.milestone || pendingDetail.period || 'Theo hợp đồng'}</div></div>
-              <div><div className="text-xs text-slate-400">Số tiền dự kiến</div><div className="font-bold">{fmtMoney(pendingDetail.totalAmount)}</div></div>
-              <div><div className="text-xs text-slate-400">Đã ghi nhận tại nguồn</div><div className="font-medium text-emerald-700">{fmtMoney(pendingDetail.paidAmount)}</div></div>
-              <div><div className="text-xs text-slate-400">Còn dự kiến thu</div><div className="font-bold">{fmtMoney(pendingDetail.amountToCollect ?? pendingDetail.totalAmount)}</div></div>
+              <div><div className="text-xs text-slate-400">Số tiền dự kiến</div><div className="font-bold">{fmtMoney(pendingDetail.totalAmount, pendingDetail.currencyCode)}</div></div>
+              <div><div className="text-xs text-slate-400">Đã ghi nhận tại nguồn</div><div className="font-medium text-emerald-700">{fmtMoney(pendingDetail.paidAmount, pendingDetail.currencyCode)}</div></div>
+              <div><div className="text-xs text-slate-400">Còn dự kiến thu</div><div className="font-bold">{fmtMoney(pendingDetail.amountToCollect ?? pendingDetail.totalAmount, pendingDetail.currencyCode)}</div></div>
               <div><div className="text-xs text-slate-400">Ngày dự kiến xuất</div><div>{fmtDate(pendingDetail.invoicePlannedDate)}</div></div>
               <div><div className="text-xs text-slate-400">Hạn thanh toán</div><div>{fmtDate(pendingDetail.dueDate)}</div></div>
             </div>
@@ -1210,7 +1217,12 @@ function ArAgingTab() {
   const { selectedMallId } = useMallStore();
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['ar-aging', selectedMallId], queryFn: () => billingApi.arAging(selectedMallId || undefined) });
   const rows: ArAgingRow[] = data?.data ?? data ?? [];
-  const total = rows.reduce((s, r) => s + r.total, 0);
+  // The summary cards and grand total below are single VND-denominated numbers -- mixing in
+  // USD/MMK rows would silently sum across currencies into a meaningless figure, so they're
+  // scoped to VND rows (same convention as the main dashboard's revenue KPIs). Non-VND rows
+  // still appear individually in the table below, labeled with their own currency.
+  const vndRows = rows.filter((r) => (r.currencyCode ?? 'VND') === 'VND');
+  const total = vndRows.reduce((s, r) => s + r.total, 0);
 
   return (
     <div>
@@ -1218,7 +1230,7 @@ function ArAgingTab() {
         {['current', 'days30', 'days60', 'days90', 'days90plus'].map((key, i) => {
           const labelKeys = ['arAging.current', 'arAging.days30', 'arAging.days60', 'arAging.days90', 'arAging.over90'] as const;
           const colors = ['text-green-600', 'text-yellow-600', 'text-orange-600', 'text-red-500', 'text-red-700'];
-          const sum = rows.reduce((s, r) => s + (r as any)[key], 0);
+          const sum = vndRows.reduce((s, r) => s + (r as any)[key], 0);
           return (
             <Card key={key}>
               <CardContent className="pt-4 text-center">
@@ -1250,21 +1262,28 @@ function ArAgingTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((r, i) => (
+              {rows.map((r, i) => {
+                const cur = r.currencyCode ?? 'VND';
+                const fmt = (n: number) => formatMoney(n, cur);
+                return (
                 <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium"><div>{r.counterpartyName || r.tenant?.brandName || r.billingParty?.name}</div>{r.billingParty?.taxCode && <div className="text-xs font-normal text-slate-400">MST: {r.billingParty.taxCode}</div>}</td>
-                  <td className="px-4 py-3 text-right text-sm">{r.current > 0 ? fmtCompact(r.current) : '—'}</td>
-                  <td className="px-4 py-3 text-right text-sm text-yellow-600">{r.days30 > 0 ? fmtCompact(r.days30) : '—'}</td>
-                  <td className="px-4 py-3 text-right text-sm text-orange-600">{r.days60 > 0 ? fmtCompact(r.days60) : '—'}</td>
-                  <td className="px-4 py-3 text-right text-sm text-red-500">{r.days90 > 0 ? fmtCompact(r.days90) : '—'}</td>
-                  <td className="px-4 py-3 text-right text-sm text-red-700 font-medium">{r.days90plus > 0 ? fmtCompact(r.days90plus) : '—'}</td>
-                  <td className="px-4 py-3 text-right font-bold">{fmtCompact(r.total)}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <div>{r.counterpartyName || r.tenant?.brandName || r.billingParty?.name} {cur !== 'VND' && <span className="text-xs font-normal text-slate-400">({cur})</span>}</div>
+                    {r.billingParty?.taxCode && <div className="text-xs font-normal text-slate-400">MST: {r.billingParty.taxCode}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm">{r.current > 0 ? fmt(r.current) : '—'}</td>
+                  <td className="px-4 py-3 text-right text-sm text-yellow-600">{r.days30 > 0 ? fmt(r.days30) : '—'}</td>
+                  <td className="px-4 py-3 text-right text-sm text-orange-600">{r.days60 > 0 ? fmt(r.days60) : '—'}</td>
+                  <td className="px-4 py-3 text-right text-sm text-red-500">{r.days90 > 0 ? fmt(r.days90) : '—'}</td>
+                  <td className="px-4 py-3 text-right text-sm text-red-700 font-medium">{r.days90plus > 0 ? fmt(r.days90plus) : '—'}</td>
+                  <td className="px-4 py-3 text-right font-bold">{fmt(r.total)}</td>
                 </tr>
-              ))}
+                );
+              })}
               <tr className="bg-gray-50 font-bold border-t">
-                <td className="px-4 py-3">{t('arAging.grandTotal')}</td>
+                <td className="px-4 py-3">{t('arAging.grandTotal')} <span className="text-xs font-normal text-slate-400">(VND)</span></td>
                 <td colSpan={5} />
-                <td className="px-4 py-3 text-right text-red-700">{fmtCompact(total)}</td>
+                <td className="px-4 py-3 text-right text-red-700">{formatMoney(total, 'VND')}</td>
               </tr>
             </tbody>
           </table>

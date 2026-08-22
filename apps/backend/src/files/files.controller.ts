@@ -5,6 +5,28 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
+import { Scope } from '../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../common/constants/scope.types';
+import { MallAccessService } from '../common/services/mall-access.service';
+
+// CR-101 Phase 1: descriptive only. Confirmed SAFE for unauthenticated/
+// cross-tenant access (see docs/architecture-review/02-FILE-SECURITY-ARCHITECTURE.md)
+// -- every route does its own per-request tenant/role ownership check.
+//
+// CR-101 Phase 3C (C1+C2, docs/changes/CR-101-PHASE-3C-C1-C2-COMPLETION.md):
+// Contract/Invoice/Ticket/Fitout* routes below now ALSO call MallAccessService,
+// using the SAME already-registered resolvers (`contract`, `invoice`, `ticket`,
+// `fitoutSubmittal`, `fitoutIssue`, `fitoutDailyReportEntry`, `fitoutProject`)
+// every other CR-101-remediated route in the codebase uses -- no new resolver
+// logic was written for these families, only new call sites.
+//
+// CR-101 Phase 3C (C3, docs/changes/CR-101-PHASE-3C-C3-COMPLETION.md):
+// Parking/ServiceContract/WorkOrder/Patrol/Maintenance now ALSO Mall-checked,
+// using 4 new resolvers (`workOrder`, `parkingCustomerContract`,
+// `serviceContract`, `patrolCheck`) added to MallAccessService this batch --
+// all direct-field lookups, no schema change. `fitout.controller.ts`'s
+// `reviewDocument` docId-substitution bug and `fitout-issue.controller.ts`'s
+// incidental-only protection remain open (C4, not authorized).
 
 /**
  * Authenticated, authorized document downloads (docs/security/SECRET_INCIDENT_REMEDIATION.md
@@ -45,6 +67,7 @@ export class FilesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly mallAccess: MallAccessService,
   ) {}
 
   private stream(res: Response, fileName: string, mimeType: string | null, relativeFilePath: string): StreamableFile {
@@ -58,6 +81,7 @@ export class FilesController {
     return new StreamableFile(fileStream);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'contract' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C2)' })
   @Get('contracts/:fileId')
   async downloadContractFile(
     @Param('fileId') fileId: string,
@@ -72,9 +96,13 @@ export class FilesController {
     if (user.role === Role.TENANT && file.contract.tenantId !== user.tenantId) {
       throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
     }
+    // File-first: Mall is resolved from the file's OWN contractId (already
+    // fetched above), never from a client-supplied parameter.
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { contractId: file.contractId });
     return this.stream(res, file.fileName, file.fileType, file.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C2) -- polymorphic UnifiedDocument, resolver chosen per doc.entityType inside the handler body: invoice | ticket | fitoutSubmittal | fitoutIssue | fitoutDailyReportEntry (all pre-registered), see mall-resolver-registry.ts' })
   @Get('documents/:fileId')
   async downloadUnifiedDocument(
     @Param('fileId') fileId: string,
@@ -84,6 +112,12 @@ export class FilesController {
     const doc = await this.prisma.unifiedDocument.findUnique({ where: { id: fileId } });
     if (!doc || !doc.isActive) throw new NotFoundException('Tài liệu không tồn tại');
 
+    // UnifiedDocument is polymorphic (entityType + entityId) -- Mall resolution
+    // is branch-aware: each entityType maps to its own already-registered
+    // MallAccessService resolver, keyed off doc.entityId (the file's OWN
+    // pointer to its owner, never a client-supplied parameter). An
+    // entityType this switch doesn't recognize falls through to the `default`
+    // branch below and is denied (fail-safe), not silently allowed.
     switch (doc.entityType) {
       case 'INVOICE': {
         const invoice = await this.prisma.invoice.findUnique({ where: { id: doc.entityId }, select: { tenantId: true } });
@@ -101,6 +135,7 @@ export class FilesController {
           // minus TENANT — handled above).
           requireRole(user, [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR]);
         }
+        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { invoiceId: doc.entityId });
         break;
       }
       case 'TICKET': {
@@ -109,15 +144,24 @@ export class FilesController {
         if (user.role === Role.TENANT && ticket.tenantId !== user.tenantId) {
           throw new ForbiddenException('Bạn không có quyền truy cập tài liệu này');
         }
+        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { ticketId: doc.entityId });
         break;
       }
       case 'FITOUT_SUBMITTAL':
-      case 'FITOUT_ISSUE':
-      case 'FITOUT_DAILY_REPORT':
         // TENANT has no access to submittal/issue/daily-report controllers at all
         // (backend MODULE_ROLES.fitout excludes TENANT there) — role check below
-        // is the full authorization surface for these three.
+        // is the full authorization surface for these three branches, plus the
+        // Mall check now added for each.
         requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
+        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
+        break;
+      case 'FITOUT_ISSUE':
+        requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
+        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutIssueId: doc.entityId });
+        break;
+      case 'FITOUT_DAILY_REPORT':
+        requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
+        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutDailyReportEntryId: doc.entityId });
         break;
       default:
         throw new NotFoundException('Loại tài liệu không được hỗ trợ');
@@ -127,6 +171,7 @@ export class FilesController {
     return this.stream(res, doc.fileName, doc.mimeType, doc.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C2)' })
   @Get('fitout-documents/:fileId')
   async downloadFitoutDocument(
     @Param('fileId') fileId: string,
@@ -143,9 +188,13 @@ export class FilesController {
     } else if (user.role !== Role.TENANT) {
       requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
     }
+    // File-first: Mall is resolved from the file's OWN projectId (already
+    // fetched above), never from a client-supplied parameter.
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId: doc.projectId });
     return this.stream(res, doc.fileName, null, doc.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'parkingCustomerContract' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C3)' })
   @Get('parking-contract-documents/:fileId')
   async downloadParkingContractDocument(
     @Param('fileId') fileId: string,
@@ -155,9 +204,13 @@ export class FilesController {
     requireRole(user, PARKING_ROLES);
     const doc = await this.prisma.parkingContractDocument.findUnique({ where: { id: fileId } });
     if (!doc) throw new NotFoundException('Tài liệu không tồn tại');
+    // File-first: Mall is resolved from the file's OWN contractId, never a
+    // client-supplied parameter.
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { parkingCustomerContractId: doc.contractId });
     return this.stream(res, doc.fileName, doc.mimeType, doc.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'serviceContract' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C3)' })
   @Get('service-contract-documents/:fileId')
   async downloadServiceContractDocument(
     @Param('fileId') fileId: string,
@@ -167,9 +220,11 @@ export class FilesController {
     requireRole(user, SERVICE_CONTRACT_ROLES);
     const doc = await this.prisma.serviceContractDocument.findUnique({ where: { id: fileId } });
     if (!doc) throw new NotFoundException('Tài liệu không tồn tại');
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { serviceContractId: doc.contractId });
     return this.stream(res, doc.fileName, doc.mimeType, doc.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'workOrder' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C3)' })
   @Get('work-order-evidence/:fileId')
   async downloadWorkOrderEvidence(
     @Param('fileId') fileId: string,
@@ -179,9 +234,11 @@ export class FilesController {
     requireRole(user, WORK_ORDER_ROLES);
     const doc = await this.prisma.workOrderEvidence.findUnique({ where: { id: fileId } });
     if (!doc) throw new NotFoundException('Tài liệu không tồn tại');
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { workOrderId: doc.workOrderId });
     return this.stream(res, doc.fileName, doc.mimeType, doc.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'patrolCheck' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C3) -- closes the confirmed gap: the pre-existing PatrolService.checkMallId() helper was never called from this route; folded into MallAccessService as the `patrolCheck` resolver instead of importing PatrolService here, keeping one canonical resolution mechanism' })
   @Get('patrol-checks/:fileId')
   async downloadPatrolCheckFile(
     @Param('fileId') fileId: string,
@@ -191,9 +248,11 @@ export class FilesController {
     requireRole(user, PATROL_ROLES);
     const check = await this.prisma.patrolCheck.findUnique({ where: { id: fileId } });
     if (!check || !check.filePath) throw new NotFoundException('Tài liệu không tồn tại');
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { patrolCheckId: fileId });
     return this.stream(res, check.fileName ?? 'evidence', check.mimeType ?? null, check.filePath);
   }
 
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'executionId', resolver: 'maintenanceSchedule' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C3)' })
   @Get('maintenance-evidence/:executionId/:fileName')
   async downloadMaintenanceEvidence(
     @Param('executionId') executionId: string,
@@ -207,6 +266,9 @@ export class FilesController {
     const relativePath = `maintenance/${executionId}/${fileName}`;
     const matches = execution.evidenceUrls.some((url) => url.endsWith(relativePath));
     if (!matches) throw new NotFoundException('Tài liệu không thuộc bản ghi bảo trì này');
+    // File-first: Mall is resolved from the execution's OWN scheduleId, never a
+    // client-supplied parameter.
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { maintenanceScheduleId: execution.scheduleId });
     return this.stream(res, fileName, null, relativePath);
   }
 }

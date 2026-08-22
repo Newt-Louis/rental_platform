@@ -17,6 +17,8 @@ import { Response } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { MallAccessService } from "../../common/services/mall-access.service";
+import { Scope } from "../../common/decorators/scope.decorator";
+import { ScopeType, EnforcementStatus } from "../../common/constants/scope.types";
 import { ParkingService } from "./parking.service";
 import {
   CreateParkingContractDto, GenerateParkingStatementDto, ParkingAdjustmentDto,
@@ -38,9 +40,11 @@ const EDIT = [
   Role.LEASING_MANAGER,
 ];
 const FINANCE_EDIT = [Role.ADMIN, Role.MALL_DIRECTOR, Role.FINANCE];
+// CR-101 Phase 1: descriptive only.
 @ApiTags("Parking Contracts & Receivables")
 @ApiBearerAuth("JWT-auth")
 @Roles(...VIEW)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller("parking")
 export class ParkingController {
   constructor(

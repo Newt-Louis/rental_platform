@@ -16,11 +16,16 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Fitout')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.fitout)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED })
 @Controller('fitouts')
 export class FitoutController {
   constructor(
@@ -253,7 +258,11 @@ export class FitoutController {
     @CurrentUser() user: any,
   ) {
     await this.validateProject(user, id);
-    return this.documentsService.reviewDocument(docId, body.decision, body.note, user?.id);
+    // File-first / parent-child integrity (CR-101 Phase 3C C4-01): the document
+    // must be verified to actually belong to `id` (the already-authorized
+    // project), not merely fetched by its own `docId` -- see
+    // fitout-documents.service.ts's reviewDocument for the full fix.
+    return this.documentsService.reviewDocument(docId, id, body.decision, body.note, user?.id);
   }
 
   @Get(':id/gate-check/:targetStatus')

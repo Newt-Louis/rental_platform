@@ -11,9 +11,10 @@ export class OccupancyAnalyticsService {
 
   constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
-  async getOccupancyV2(mallId?: string, floorId?: string, category?: string) {
+  async getOccupancyV2(mallId?: string, floorId?: string, category?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
     if (floorId) where.floorId = floorId;
     if (category) where.category = category;
 
@@ -179,9 +180,10 @@ export class OccupancyAnalyticsService {
 
   // ─── GAP #28 — Breakdown floor × category với occupancy ratio ─────────────
 
-  async getCategoryByFloor(mallId?: string) {
+  async getCategoryByFloor(mallId?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
 
     const units = await this.prisma.unit.findMany({
       where,
@@ -225,9 +227,12 @@ export class OccupancyAnalyticsService {
     })).sort((a, b) => a.floorName.localeCompare(b.floorName));
   }
 
-  async getOccupancyTrend(mallId?: string, months = 12) {
+  async getOccupancyTrend(mallId?: string, months = 12, mallIds?: string[] | null) {
+    const where: any = { floorId: null, category: null };
+    if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
     const snapshots = await this.prisma.occupancySnapshot.findMany({
-      where: mallId ? { mallId, floorId: null, category: null } : { floorId: null, category: null },
+      where,
       orderBy: { period: 'asc' },
       take: months,
     });
@@ -272,11 +277,14 @@ export class OccupancyAnalyticsService {
         },
       });
       const occupancy = summarizeOccupancyByLeaseTerm(units, shortBookings, now);
+      // Multi-currency: revenue/revenuePerSqm are single VND-denominated figures -- scope to
+      // VND, same convention as the dashboard's revenue KPIs.
       const monthInvoices = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
           period,
           status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
+          currencyCode: 'VND',
         },
         _sum: { subtotal: true },
       });
@@ -329,9 +337,10 @@ export class OccupancyAnalyticsService {
     this.logger.log(`Occupancy snapshot taken for ${malls.length} malls`);
   }
 
-  async getVacancyAnalysis(mallId?: string) {
+  async getVacancyAnalysis(mallId?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true, status: UnitStatus.VACANT };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
 
     const vacantUnits = await this.prisma.unit.findMany({
       where,

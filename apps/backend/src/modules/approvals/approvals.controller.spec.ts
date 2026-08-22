@@ -16,7 +16,7 @@ describe('ApprovalsController mall access', () => {
   it('uses and validates the mall selected in the request instead of stale active mall context', async () => {
     const user = { id: 'u1', role: 'FINANCE', activeMallId: 'mall-old' };
     await controller.getPending(user, { page: 1, mallId: 'mall-new' });
-    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('u1', 'FINANCE', 'mall-new');
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('u1', 'FINANCE', 'mall-new', { crossMallRead: true });
     expect(service.getPending).toHaveBeenCalledWith(
       'u1', 'FINANCE', { page: 1, mallId: 'mall-new' }, ['mall-new'],
     );
@@ -34,7 +34,7 @@ describe('ApprovalsController mall access', () => {
     const user = { id: 'u1', role: 'FINANCE' };
     await controller.approve('step-1', { comment: 'Reviewed' }, user);
     expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
-      'u1', 'FINANCE', { approvalStepId: 'step-1' },
+      'u1', 'FINANCE', { approvalStepId: 'step-1' }, { crossMallRead: true },
     );
     expect(service.approve).toHaveBeenCalledWith('step-1', 'u1', 'FINANCE', 'Reviewed');
   });

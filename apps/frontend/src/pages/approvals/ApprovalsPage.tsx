@@ -23,9 +23,11 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
+function fmt(n: number, currencyCode: CurrencyCode = 'VND') {
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} ${symbol}`;
 }
 function fmtPrice(n: number | null | undefined) {
   if (!n) return '—';
@@ -202,11 +204,11 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
           <SheetSection label={t('approvals.workflow.section.financial')} className="bg-slate-50">
             <div className="grid grid-cols-2 gap-x-4">
               <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? fmt(p.monthlyRent) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? fmt(p.monthlyCAM) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? fmt(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? fmt(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? fmt(p.totalContractValue) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? fmt(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
           </SheetSection>
@@ -629,7 +631,7 @@ export default function ApprovalsPage() {
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
                             {proposal?.monthlyRent ? (
-                              <span className="text-gray-700">{fmt(proposal.monthlyRent)}</span>
+                              <span className="text-gray-700">{fmt(proposal.monthlyRent, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
@@ -647,7 +649,7 @@ export default function ApprovalsPage() {
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
                             {proposal?.totalContractValue ? (
-                              <span className="font-bold text-green-600">{fmt(proposal.totalContractValue)}</span>
+                              <span className="font-bold text-green-600">{fmt(proposal.totalContractValue, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
                           <td className="px-3 py-3">

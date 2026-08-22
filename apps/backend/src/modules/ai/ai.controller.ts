@@ -12,16 +12,35 @@ import { FloorPlanService } from './floor-plan.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
+// CR-101 Phase 3D (docs/changes/CR-101-PHASE-3D-AI-SCOPE-COMPLETION.md):
+// every route below now derives its Mall-authorization context from the
+// authenticated caller (@CurrentUser), never from client-supplied request
+// data alone. chat/chatStream/getSuggestions build a server-derived
+// AiRequestContext (authorizedMallIds, from the same MallAccessService.
+// getAccessibleMallIds() used by every other Mall-scoped list endpoint in the
+// codebase) and thread it through to AiService, which now filters every
+// business-data query in buildContext()/getSuggestions() by it. The 5
+// floor-plan routes now Mall-check the request's own mallId (create/list) or
+// the analysis's own mallId via the new `floorPlanAnalysis` resolver
+// (get/status/apply) -- previously 3 of the 5 had zero Mall check at all.
+// `MODULE_ROLES.ai` does not include TENANT -- this controller is not
+// Tenant-reachable, confirmed unchanged.
 @ApiTags('AI Assistant')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.ai)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3D' })
 @Controller('ai')
 export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly floorPlanService: FloorPlanService,
+    private readonly mallAccess: MallAccessService,
   ) {}
 
   @Post('chat')
@@ -29,8 +48,9 @@ export class AiController {
   // Mỗi lần chat đều gọi Claude API thật (có phí) sau khi truy vấn context từ DB — giới hạn chặt hơn
   // mức mặc định toàn hệ thống để tránh spam/script lạm dụng chi phí LLM.
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
-  chat(@Body() body: { message: string; history?: { role: string; content: string }[] }) {
-    return this.aiService.chat(body.message, body.history ?? []);
+  async chat(@Body() body: { message: string; history?: { role: string; content: string }[] }, @CurrentUser() user: any) {
+    const authorizedMallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true });
+    return this.aiService.chat(body.message, body.history ?? [], { userId: user.id, role: user.role, authorizedMallIds });
   }
 
   @Post('chat/stream')
@@ -38,6 +58,7 @@ export class AiController {
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   async chatStream(
     @Body() body: { message: string; history?: { role: string; content: string }[] },
+    @CurrentUser() user: any,
     @Res() res: Response,
   ) {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -47,9 +68,10 @@ export class AiController {
     res.flushHeaders();
 
     try {
+      const authorizedMallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true });
       await this.aiService.chatStream(body.message, body.history ?? [], (chunk) => {
         res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-      });
+      }, { userId: user.id, role: user.role, authorizedMallIds });
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     } catch (e) {
       res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
@@ -60,8 +82,9 @@ export class AiController {
 
   @Get('suggestions')
   @ApiOperation({ summary: 'Get suggested questions' })
-  getSuggestions() {
-    return this.aiService.getSuggestions();
+  async getSuggestions(@CurrentUser() user: any) {
+    const authorizedMallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true });
+    return this.aiService.getSuggestions({ userId: user.id, role: user.role, authorizedMallIds });
   }
 
   // ─── Floor Plan Analysis ───────────────────────────────────────────────────
@@ -90,35 +113,53 @@ export class AiController {
       },
     }),
   )
-  analyzeFloorPlan(
+  async analyzeFloorPlan(
     @UploadedFile() file: Express.Multer.File,
     @Body('mallId') mallId: string,
+    @CurrentUser() user: any,
   ) {
     if (!file) throw new BadRequestException('File is required');
+    if (!mallId) throw new BadRequestException('mallId is required');
+    // CR-101 Phase 3G: deliberately NOT given crossMallRead -- this creates a
+    // new analysis (a write), and CEO's enterprise grant is read-only.
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.floorPlanService.uploadAndAnalyze(file, mallId);
   }
 
   @Get('floor-plan/analyses')
   @ApiOperation({ summary: 'List floor plan analyses for a mall' })
-  getAnalyses(@Query('mallId') mallId: string) {
+  async getAnalyses(@Query('mallId') mallId: string, @CurrentUser() user: any) {
+    if (!mallId) throw new BadRequestException('mallId is required');
+    // CR-101 Phase 3G: read-only, part of CEO's approved enterprise READ scope.
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
     return this.floorPlanService.getAnalyses(mallId);
   }
 
   @Get('floor-plan/analyses/:id')
   @ApiOperation({ summary: 'Get full analysis result' })
-  getAnalysis(@Param('id') id: string) {
+  async getAnalysis(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorPlanAnalysisId: id }, { crossMallRead: true });
     return this.floorPlanService.getAnalysis(id);
   }
 
   @Get('floor-plan/analyses/:id/status')
   @ApiOperation({ summary: 'Poll analysis status' })
-  getAnalysisStatus(@Param('id') id: string) {
+  async getAnalysisStatus(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorPlanAnalysisId: id }, { crossMallRead: true });
     return this.floorPlanService.pollStatus(id);
   }
 
   @Post('floor-plan/analyses/:id/apply')
   @ApiOperation({ summary: 'Apply AI zone suggestions to system (create floors & zones)' })
-  applyAnalysis(@Param('id') id: string) {
+  async applyAnalysis(@Param('id') id: string, @CurrentUser() user: any) {
+    // File-first: Mall is resolved from the analysis's OWN mallId, not a
+    // client-supplied parameter -- this is a write operation (creates real
+    // Floor/Zone/Unit records), so this check matters even more than on the
+    // read-only routes above. CR-101 Phase 3G: deliberately NOT given
+    // crossMallRead -- CEO's enterprise grant is read-only (BC-CEO-SCOPE
+    // Option A explicitly excludes CREATE), so this stays governed by CEO's
+    // ordinary UserMallAccess grants like any other write.
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { floorPlanAnalysisId: id });
     return this.floorPlanService.applySuggestions(id);
   }
 }

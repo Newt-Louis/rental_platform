@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { usePermission } from '@/hooks/usePermission';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import {
   Search, Building2, Phone, Mail, FileText, Receipt, Ticket,
   Plus, Edit2, Globe, Shield, MapPin, Hash, User, X,
@@ -49,9 +50,10 @@ const INVOICE_STATUS: Record<string, { color: string }> = {
   DRAFT:          { color: 'bg-gray-100 text-gray-600' },
 };
 
-function fmtMoney(n?: number | null) {
+function fmtMoney(n?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', style: 'currency', currency: 'VND' }).format(n);
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} ${symbol}`;
 }
 function fmtDate(d?: string | null) {
   if (!d) return '—';
@@ -431,7 +433,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
             <div className="text-xs text-gray-400 mt-0.5">{t('kpi.contracts')}</div>
           </div>
           <div className="bg-white border border-gray-100 rounded-xl p-3 text-center">
-            <div className="text-lg font-bold text-blue-700">{fmtMoney(monthlyRent)}</div>
+            <div className="text-lg font-bold text-blue-700">{fmtMoney(monthlyRent, activeContract?.currencyCode)}</div>
             <div className="text-xs text-gray-400 mt-0.5">{t('kpi.monthlyRent')}</div>
           </div>
           <div className={`border rounded-xl p-3 text-center ${overdueInvoices.length > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>

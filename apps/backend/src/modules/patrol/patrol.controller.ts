@@ -16,13 +16,17 @@ import { Role } from "@prisma/client";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { MallAccessService } from "../../common/services/mall-access.service";
+import { Scope } from "../../common/decorators/scope.decorator";
+import { ScopeType, EnforcementStatus } from "../../common/constants/scope.types";
 import { PatrolService } from "./patrol.service";
 
 const VIEW = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.OPERATION];
 const EDIT = [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION];
+// CR-101 Phase 1: descriptive only.
 @ApiTags("Security Patrol")
 @ApiBearerAuth("JWT-auth")
 @Roles(...VIEW)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller("patrol")
 export class PatrolController {
   constructor(

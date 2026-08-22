@@ -588,6 +588,7 @@ export interface ArAgingRow {
   tenant?: Tenant;
   billingParty?: { id: string; name: string; taxCode?: string };
   counterpartyName?: string;
+  currencyCode?: CurrencyCode;
   current: number;
   days30: number;
   days60: number;

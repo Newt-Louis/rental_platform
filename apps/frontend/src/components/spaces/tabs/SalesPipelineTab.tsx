@@ -5,6 +5,7 @@ import {
   ArrowRight, BookmarkPlus, Users, FileText, Clock, X, Plus, CheckCircle, Lock,
 } from 'lucide-react';
 import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
+import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
 
 const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   ACTIVE:    { label: 'Đang giữ',  color: 'bg-amber-100 text-amber-700' },
@@ -50,6 +51,7 @@ export function SalesPipelineTab({
   const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
 
   const fmtVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
+  const curSymbol = (c?: CurrencyCode) => CURRENCIES[c ?? 'VND']?.symbol ?? '₫';
   const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
@@ -123,8 +125,8 @@ export function SalesPipelineTab({
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-500">
                     {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} m²</span>}
                     {b.requestedTerm && <span>Hạn: {b.requestedTerm} th</span>}
-                    {b.expectedRent && <span>Kỳ vọng: {fmtVND(b.expectedRent)} ₫/m²</span>}
-                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtVND(b.proposedRentPerSqm)} ₫/m²</span>}
+                    {b.expectedRent && <span>Kỳ vọng: {fmtVND(b.expectedRent)} {curSymbol(b.currencyCode)}/m²</span>}
+                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtVND(b.proposedRentPerSqm)} {curSymbol(b.currencyCode)}/m²</span>}
                     {b.assignedTo && <span className="col-span-2">Sale: {b.assignedTo.fullName}</span>}
                   </div>
 
@@ -221,28 +223,28 @@ export function SalesPipelineTab({
                           </div>
                           <div>
                             <span className="text-gray-400">Giá thuê/m²: </span>
-                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} ₫</span>
+                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} {curSymbol(pr.rentCurrency)}</span>
                           </div>
                           <div>
                             <span className="text-gray-400">Tiền thuê/tháng: </span>
-                            <span className="font-medium">{fmtVND(pr.monthlyRent)} ₫</span>
+                            <span className="font-medium">{fmtVND(pr.monthlyRent)} {curSymbol(pr.rentCurrency)}</span>
                           </div>
                           {(pr.monthlyCAM ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí DVPT/tháng: </span>
-                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} ₫</span>
+                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} {curSymbol(pr.rentCurrency)}</span>
                             </div>
                           )}
                           {(pr.serviceFeeSqm ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí DV/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} ₫</span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} {curSymbol(pr.rentCurrency)}</span>
                             </div>
                           )}
                           {(pr.businessSupportFeeSqm ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí HT KD/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} ₫</span>
+                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} {curSymbol(pr.rentCurrency)}</span>
                             </div>
                           )}
                           {pr.discount > 0 && (
@@ -261,11 +263,11 @@ export function SalesPipelineTab({
                         {/* Total monthly highlight */}
                         <div className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 mt-1">
                           <span className="text-gray-500">Tổng phải trả/tháng:</span>
-                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} ₫</span>
+                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} {curSymbol(pr.rentCurrency)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">Tổng giá trị HĐ:</span>
-                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} ₫</span>
+                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} {curSymbol(pr.rentCurrency)}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 text-gray-400">
                           <span>Bắt đầu: {fmtDate(pr.startDate)}</span>

@@ -160,9 +160,9 @@ export class ComplianceService {
     });
   }
 
-  async getMultiMallComparison() {
+  async getMultiMallComparison(mallIds: string[] | null) {
     const malls = await this.prisma.mall.findMany({
-      where: { isActive: true },
+      where: mallIds ? { isActive: true, id: { in: mallIds } } : { isActive: true },
       select: { id: true, name: true, code: true },
     });
 
@@ -199,11 +199,14 @@ export class ComplianceService {
       const currentMonth = new Date();
       const period = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
 
+      // Multi-currency: monthlyRevenue/revenuePerSqm are single VND-denominated figures --
+      // scope to VND, same convention as the dashboard's revenue KPIs.
       const revenue = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
           period,
           status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
+          currencyCode: 'VND',
         },
         _sum: { subtotal: true },
       });

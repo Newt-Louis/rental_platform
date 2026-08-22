@@ -4,6 +4,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus, Prisma } from '@prisma/client';
@@ -82,7 +83,16 @@ export class BookingService {
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    if (dto.proposedRentPerSqm !== undefined && unit.categoryId) {
+    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
+    // currency field of their own (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a
+    // USD/MMK proposedRentPerSqm against a VND floor/ceiling produces a nonsensical deviation
+    // (e.g. a $25 proposal read as "99.99% below" a 500,000 VND floor), which then forces a
+    // bogus CEO-approval requirement and shows up as garbage in the Approvals price-review
+    // queue. Skip the floor/ceiling check entirely for a non-VND booking, same as the frontend
+    // create dialog already assumes (its "not checked for {currency}" disclaimer was previously
+    // cosmetic only -- the backend still ran the check regardless of currency).
+    const isVndPricing = (dto.currencyCode ?? 'VND') === 'VND';
+    if (dto.proposedRentPerSqm !== undefined && unit.categoryId && isVndPricing) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: unit.mallId,
         categoryId: unit.categoryId,
@@ -351,6 +361,7 @@ export class BookingService {
     // ── Đổi unit — chỉ validate sự tồn tại/khoá ở đây; vị trí queue được tính lại
     // bên trong transaction bên dưới để tránh đọc dữ liệu cũ. ───────────────────
     let targetNewUnitId: string | undefined;
+    let originalUnitMallId: string | undefined;
     if (dto.unitId !== undefined && dto.unitId !== booking.unitId) {
       const newUnit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
       if (newUnit?.leaseTermType && newUnit.leaseTermType !== 'LONG') {
@@ -359,6 +370,23 @@ export class BookingService {
       if (!newUnit || !newUnit.isActive) throw new NotFoundException('Mặt bằng không tồn tại');
       if (this.unitStatus.isLockedForBooking(newUnit.status)) {
         throw new BadRequestException(`Không thể chuyển sang mặt bằng này (trạng thái ${newUnit.status})`);
+      }
+      // INV-AUTH-006 (CR-101 Phase 3E) — a booking's target unit may be swapped
+      // for another unit in the same Mall (e.g. correcting the picked unit),
+      // but never silently transplanted to a different Mall than the one it
+      // was created under. The MallAccessGuard only proves the caller can
+      // access the *new* unit's Mall (which a staff member with grants to
+      // multiple Malls legitimately can) — it says nothing about whether that
+      // Mall matches this booking's own. That consistency check belongs here.
+      const originalUnit = await this.prisma.unit.findUnique({
+        where: { id: booking.unitId },
+        select: { mallId: true },
+      });
+      originalUnitMallId = originalUnit?.mallId;
+      if (originalUnitMallId && newUnit.mallId !== originalUnitMallId) {
+        throw new ForbiddenException(
+          'Không thể chuyển booking sang mặt bằng thuộc mall khác',
+        );
       }
       targetNewUnitId = dto.unitId;
     }
@@ -373,7 +401,11 @@ export class BookingService {
     let pricingRuleId: string | null | undefined = undefined;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
+    // See the currency note on the same guard in create() above -- CategoryPricing's
+    // floor/ceiling is VND-only; UpdateBookingDto has no currencyCode of its own, so the
+    // booking's existing currency is authoritative here.
+    const isVndPricing = (booking.currencyCode ?? 'VND') === 'VND';
+    if (dto.proposedRentPerSqm !== undefined && unit?.categoryId && isVndPricing) {
       if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
         const validation = await this.categoriesService.validateProposedPrice({
           mallId: unit.mallId,
@@ -446,6 +478,7 @@ export class BookingService {
           await this.unitStatus.transition(newUnitId, UnitStatus.BOOKING, {
             userId,
             reason: `Booking ${id} chuyển sang unit này`,
+            expectedMallId: originalUnitMallId,
           }, tx);
         }
       }

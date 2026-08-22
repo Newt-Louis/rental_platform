@@ -4,11 +4,15 @@ import { AuditLogService } from './audit-log.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
 
+// CR-101 Phase 1: descriptive only. Restricted to ADMIN/CEO (both mall-scoping
+// bypass roles per mall-access.service.ts) -- no separate Mall boundary applies.
 @ApiTags('Audit Log')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.auditLog)
+@GlobalScope('ADMIN/CEO-only, both Mall-scoping bypass roles -- no Mall boundary needed')
 @Controller('audit-logs')
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}

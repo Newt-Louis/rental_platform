@@ -106,7 +106,7 @@ export function ConvertBookingDialog({
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <div>
               <label className="text-xs font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
-              <Select value={currency} onValueChange={(v) => setValue('rentCurrency', v)}>
+              <Select value={currency} onValueChange={(v) => setValue('rentCurrency', v as typeof currency)}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="VND">VND</SelectItem>

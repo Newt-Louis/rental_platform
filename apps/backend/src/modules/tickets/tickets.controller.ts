@@ -10,11 +10,19 @@ import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TicketStatus, TicketPriority, TicketType, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope, GlobalScope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
+// CR-101 Phase 1: descriptive only. Core CRUD is correctly Mall+Tenant scoped
+// (class default). escalations/rate/rating and the SLA-policy admin routes are
+// the confirmed CONTRA-003 gap -- none of those service methods receive
+// currentUser at all, so they skip the same ownership check every other
+// method in this service applies.
 @ApiTags('Tickets')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.tickets)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.ENFORCED })
 @Controller('tickets')
 export class TicketsController {
   constructor(
@@ -137,12 +145,14 @@ export class TicketsController {
 
   @Get('sla/policies')
   @ApiOperation({ summary: 'List SLA policies' })
+  @GlobalScope('Should be ADMIN-only platform config; currently reachable by TENANT role -- CONTRA-003, role-policy issue not a Mall issue')
   listSlaPolicies() {
     return this.slaService.listPolicies();
   }
 
   @Post('sla/policies')
   @ApiOperation({ summary: 'Upsert SLA policy' })
+  @GlobalScope('Should be ADMIN-only platform config; currently any TENANT-role account can upsert it -- CONTRA-003, confirmed exploitable')
   upsertSlaPolicy(@Body() body: {
     ticketType: TicketType;
     priority: TicketPriority;
@@ -155,24 +165,28 @@ export class TicketsController {
 
   @Get('sla/stats')
   @ApiOperation({ summary: 'Get SLA compliance stats' })
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.GAP, trackedAs: 'not individually re-verified this session' })
   getSlaStats() {
     return this.slaService.getStats();
   }
 
   @Get(':id/escalations')
   @ApiOperation({ summary: 'Get ticket escalation history' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
   getEscalations(@Param('id') id: string) {
     return this.ticketsService.getEscalations(id);
   }
 
   @Post(':id/rate')
   @ApiOperation({ summary: 'Submit CSAT rating for closed ticket' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
   rateTicket(@Param('id') id: string, @Body() body: { rating: number; comment?: string }) {
     return this.ticketsService.rateTicket(id, body.rating, body.comment);
   }
 
   @Get(':id/rating')
   @ApiOperation({ summary: 'Get ticket rating' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
   getTicketRating(@Param('id') id: string) {
     return this.ticketsService.getTicketRating(id);
   }

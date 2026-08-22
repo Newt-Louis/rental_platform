@@ -145,7 +145,7 @@ export class RenewalRiskService {
     this.logger.log(`Recalculated risk for ${contracts.length} contracts`);
   }
 
-  async getRiskDashboard(mallId?: string) {
+  async getRiskDashboard(mallId?: string, mallIds?: string[] | null) {
     const where: any = {
       contract: {
         isActive: true,
@@ -154,6 +154,8 @@ export class RenewalRiskService {
     };
     if (mallId) {
       where.contract.unit = { mallId };
+    } else if (mallIds) {
+      where.contract.unit = { mallId: { in: mallIds } };
     }
 
     const scores = await this.prisma.renewalRiskScore.findMany({

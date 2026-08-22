@@ -3,16 +3,29 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { Role } from '@prisma/client';
 import { OccupancyAnalyticsService } from './occupancy-analytics.service';
 import { RenewalRiskService } from './renewal-risk.service';
 import { ComplianceService } from './compliance.service';
 import { ComplianceSchedulerService } from './compliance-scheduler.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { MallAccessService } from '../../common/services/mall-access.service';
+
+// CR-101 Phase 3G (BC-013): every read route below resolves its Mall scope via
+// MallAccessService (crossMallRead-aware, so CEO gets unrestricted per
+// BC-CEO-SCOPE Option A) instead of trusting/ignoring a raw mallId.
+// upsertMallPolicy/updateMallRetention are config-WRITE actions -- narrowed
+// below to exclude CEO (BC-CEO-SCOPE Option A: "Analytics configuration" is
+// one of the confirmed operational-write contradictions to remove).
+const ANALYTICS_CONFIG_WRITE_ROLES = MODULE_ROLES.analytics.filter((r) => r !== Role.CEO);
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.analytics)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3G (BC-013)' })
 @Controller('analytics')
 export class AnalyticsController {
   constructor(
@@ -20,78 +33,101 @@ export class AnalyticsController {
     private renewalRisk: RenewalRiskService,
     private compliance: ComplianceService,
     private complianceScheduler: ComplianceSchedulerService,
+    private mallAccess: MallAccessService,
   ) {}
+
+  /** Resolves the caller's Mall scope: an explicit mallId (validated against the
+   * caller's own access), or the caller's full accessible set (null =
+   * unrestricted, for ADMIN/CEO). */
+  private async scope(user: any, mallId?: string): Promise<string[] | null> {
+    if (mallId) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
+      return [mallId];
+    }
+    return this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true });
+  }
 
   @Get('occupancy')
   @ApiOperation({ summary: 'Get occupancy analytics v2' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'category', required: false })
-  getOccupancyV2(
-    @Query('mallId') mallId?: string,
-    @Query('floorId') floorId?: string,
-    @Query('category') category?: string,
+  async getOccupancyV2(
+    @Query('mallId') mallId: string | undefined,
+    @Query('floorId') floorId: string | undefined,
+    @Query('category') category: string | undefined,
+    @CurrentUser() user: any,
   ) {
-    return this.occupancy.getOccupancyV2(mallId, floorId, category);
+    return this.occupancy.getOccupancyV2(mallId, floorId, category, await this.scope(user, mallId));
   }
 
   @Get('occupancy/trend')
   @ApiOperation({ summary: 'Get occupancy trend over time' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'months', required: false })
-  getOccupancyTrend(
-    @Query('mallId') mallId?: string,
-    @Query('months') months?: string,
+  async getOccupancyTrend(
+    @Query('mallId') mallId: string | undefined,
+    @Query('months') months: string | undefined,
+    @CurrentUser() user: any,
   ) {
-    return this.occupancy.getOccupancyTrend(mallId, months ? parseInt(months) : 12);
+    return this.occupancy.getOccupancyTrend(mallId, months ? parseInt(months) : 12, await this.scope(user, mallId));
   }
 
   @Get('vacancy')
   @ApiOperation({ summary: 'Get vacancy analysis with estimated loss' })
   @ApiQuery({ name: 'mallId', required: false })
-  getVacancyAnalysis(@Query('mallId') mallId?: string) {
-    return this.occupancy.getVacancyAnalysis(mallId);
+  async getVacancyAnalysis(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    return this.occupancy.getVacancyAnalysis(mallId, await this.scope(user, mallId));
   }
 
   // GAP #28 — Breakdown ngành hàng theo tầng
   @Get('occupancy/category-by-floor')
   @ApiOperation({ summary: 'GAP #28 — Breakdown ngành hàng × tầng với tỉ lệ lấp đầy từng ngành' })
   @ApiQuery({ name: 'mallId', required: false })
-  getCategoryByFloor(@Query('mallId') mallId?: string) {
-    return this.occupancy.getCategoryByFloor(mallId);
+  async getCategoryByFloor(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    return this.occupancy.getCategoryByFloor(mallId, await this.scope(user, mallId));
   }
 
   @Get('renewal-risk')
   @ApiOperation({ summary: 'Get renewal risk dashboard' })
   @ApiQuery({ name: 'mallId', required: false })
-  getRenewalRiskDashboard(@Query('mallId') mallId?: string) {
-    return this.renewalRisk.getRiskDashboard(mallId);
+  async getRenewalRiskDashboard(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
+    return this.renewalRisk.getRiskDashboard(mallId, await this.scope(user, mallId));
   }
 
   @Post('renewal-risk/:contractId')
   @ApiOperation({ summary: 'Calculate renewal risk for a contract' })
-  calculateRenewalRisk(@Param('contractId') contractId: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'contractId', resolver: 'contract' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
+  async calculateRenewalRisk(@Param('contractId') contractId: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { contractId });
     return this.renewalRisk.calculateRiskScore(contractId);
   }
 
   @Get('multi-mall')
   @ApiOperation({ summary: 'Get multi-mall comparison' })
-  getMultiMallComparison() {
-    return this.compliance.getMultiMallComparison();
+  @Scope({ type: ScopeType.MALL_SCOPED, crossMallRead: true, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3G (BC-013) -- closes the CONTRA-008/AUTH-01 gap this route was tracked under' })
+  async getMultiMallComparison(@CurrentUser() user: any) {
+    return this.compliance.getMultiMallComparison(await this.scope(user));
   }
 
   @Get('mall-policy/:mallId')
   @ApiOperation({ summary: 'Get mall policy' })
-  getMallPolicy(@Param('mallId') mallId: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
+  async getMallPolicy(@Param('mallId') mallId: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
     return this.compliance.getMallPolicy(mallId);
   }
 
   @Post('mall-policy/:mallId')
+  @Roles(...ANALYTICS_CONFIG_WRITE_ROLES)
   @ApiOperation({ summary: 'Update mall policy' })
-  upsertMallPolicy(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
+  async upsertMallPolicy(
     @Param('mallId') mallId: string,
     @Body() body: { policies: Record<string, any>; kpiTargets?: Record<string, any> },
+    @CurrentUser() user: any,
   ) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.compliance.upsertMallPolicy(mallId, body);
   }
 
@@ -147,16 +183,22 @@ export class AnalyticsController {
 
   @Get('compliance/retention/:mallId')
   @ApiOperation({ summary: 'Get retention policy for a mall' })
-  getMallRetention(@Param('mallId') mallId: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
+  async getMallRetention(@Param('mallId') mallId: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
     return this.complianceScheduler.getMallRetentionPolicy(mallId);
   }
 
   @Put('compliance/retention/:mallId')
+  @Roles(...ANALYTICS_CONFIG_WRITE_ROLES)
   @ApiOperation({ summary: 'Update retention policy for a mall' })
-  updateMallRetention(
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'param', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
+  async updateMallRetention(
     @Param('mallId') mallId: string,
     @Body('retentionDays') retentionDays: Record<string, number>,
+    @CurrentUser() user: any,
   ) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     return this.complianceScheduler.updateRetentionPolicy(mallId, retentionDays);
   }
 }

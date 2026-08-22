@@ -10,11 +10,16 @@ export class CollectionKpiService {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
+    // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): dso/collectionRate/
+    // totalBilled/totalCollected/outstandingAr are single VND-denominated figures -- scope to
+    // VND, same convention as the dashboard's revenue KPIs, so a USD/MMK invoice is excluded
+    // rather than silently summed in.
     const invoices = await this.prisma.invoice.findMany({
       where: {
         isActive: true,
         createdAt: { gte: start },
         status: { not: InvoiceStatus.CANCELLED },
+        currencyCode: 'VND',
         ...(mallIds ? { OR: [{ mallId: { in: mallIds } }, { contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
       },
       include: { payments: true },
@@ -75,6 +80,7 @@ export class CollectionKpiService {
           isActive: true,
           createdAt: { lte: end },
           status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE, InvoiceStatus.PAID] },
+          currencyCode: 'VND',
           ...(mallIds ? { OR: [{ mallId: { in: mallIds } }, { contract: { unit: { mallId: { in: mallIds } } } }, { billingParty: { mallId: { in: mallIds } } }] } : {}),
         },
         include: { payments: true },

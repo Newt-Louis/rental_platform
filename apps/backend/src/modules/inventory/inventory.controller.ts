@@ -7,11 +7,16 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { CreateInventoryCategoryDto, CreateInventoryItemDto, CreateInventoryTransactionDto } from './dto/inventory.dto';
 import { InventoryService } from './inventory.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
 const VIEW = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION];
 const EDIT = [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION];
 
-@ApiTags('Inventory') @ApiBearerAuth('JWT-auth') @Roles(...VIEW) @Controller('inventory')
+// CR-101 Phase 1: descriptive only.
+@ApiTags('Inventory') @ApiBearerAuth('JWT-auth') @Roles(...VIEW)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
+@Controller('inventory')
 export class InventoryController {
   constructor(private service: InventoryService, private mallAccess: MallAccessService) {}
   private async mallIds(user: any, mallId?: string) { if (mallId) { await this.mallAccess.assertMallAccess(user.id, user.role, mallId); return [mallId]; } return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined; }

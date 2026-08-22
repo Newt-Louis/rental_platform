@@ -621,10 +621,18 @@ export class CrmService {
     const proposalGroups = await this.prisma.proposal.groupBy({
       by: ['status'], where: proposalWhere, _count: { _all: true }, _sum: { totalContractValue: true },
     });
+    // Multi-currency: proposalValueByStatus/totalContractValue sums are single VND figures --
+    // a separate VND-scoped groupBy avoids blending USD/MMK proposals into them, while
+    // proposalByStatus (a pure count) stays currency-agnostic from the query above.
+    const proposalValueGroups = await this.prisma.proposal.groupBy({
+      by: ['status'], where: { ...proposalWhere, rentCurrency: 'VND' }, _sum: { totalContractValue: true },
+    });
     const proposalByStatus: Record<string, number> = {};
     const proposalValueByStatus: Record<string, number> = {};
     proposalGroups.forEach((group) => {
       proposalByStatus[group.status] = group._count._all;
+    });
+    proposalValueGroups.forEach((group) => {
       proposalValueByStatus[group.status] = group._sum.totalContractValue ?? 0;
     });
 
@@ -893,6 +901,10 @@ export class CrmService {
           priority: lead.priority,
           assignedTo: lead.assignedTo,
           estimatedValue: lead.estimatedValue ?? proposal?.totalContractValue ?? null,
+          // Lead.estimatedValue/expectedRent have no currency field (always VND); once a deal
+          // reaches PROPOSAL+ and estimatedValue falls back to totalContractValue, it must carry
+          // that proposal's actual currency instead of silently assuming VND.
+          currencyCode: lead.estimatedValue == null && proposal ? proposal.rentCurrency : 'VND',
           stage: dealStage,
           nextAction,
           mall,

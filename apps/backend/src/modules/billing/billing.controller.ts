@@ -15,11 +15,19 @@ import { InvoiceAdjustmentType, InvoiceStatus, Role } from '@prisma/client';
 import { RecordPaymentDto } from './dto/record-payment.dto';
 import { AddInvoiceLineDto, CreateInvoiceDto, UpdateInvoiceLineDto } from './dto/invoice.dto';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
+// CR-101 Phase 1: descriptive only. Best-covered controller in the platform --
+// class default reflects the norm; a handful of methods are documented gaps
+// elsewhere (see CR-102 for the currency-mixing fix already shipped) and are not
+// re-annotated per-method here since this decorator describes Mall scope, not
+// currency correctness.
 @ApiTags('Billing & AR')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.billing)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'invoice' }, status: EnforcementStatus.ENFORCED })
 @Controller('billing')
 export class BillingController {
   constructor(

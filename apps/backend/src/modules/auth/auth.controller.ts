@@ -8,8 +8,14 @@ import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
 
+// CR-101 Phase 1: descriptive only, class-level default. Most routes here are
+// pre-Mall-context identity bootstrapping (login/register/me); a few (not
+// individually re-verified this session) may touch mall-context selection --
+// flagged UNDECLARED-by-omission rather than guessed at the method level.
 @ApiTags('Auth')
+@GlobalScope('Identity bootstrapping (login/register/me) -- no Mall context established yet on these routes')
 @Controller('auth')
 export class AuthController {
   constructor(

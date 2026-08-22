@@ -9,6 +9,10 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Role } from '@prisma/client';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 import { SetTenantPortalPasswordDto } from './dto/portal-password.dto';
 
 const TENANT_MANAGE_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
@@ -17,6 +21,7 @@ const TENANT_MANAGE_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTO
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.tenants)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'tenant' }, status: EnforcementStatus.ENFORCED })
 @Controller('tenants')
 export class TenantsController {
   constructor(private readonly tenantsService: TenantsService, private readonly mallAccess: MallAccessService) {}

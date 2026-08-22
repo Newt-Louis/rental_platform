@@ -228,6 +228,7 @@ export class BillingService {
       subtotal: row.subtotal,
       vatRate: 10,
       totalAmount: row.subtotal * 1.1,
+      currencyCode: row.currencyCode,
       invoicePlannedDate: row.dueDate,
       dueDate: row.dueDate,
       ...timing(row.dueDate),
@@ -251,6 +252,7 @@ export class BillingService {
         subtotal,
         vatRate,
         totalAmount: row.totalAmount ?? subtotal * (1 + vatRate / 100),
+        currencyCode: toCurrencyCode(row.currency),
         invoicePlannedDate: row.invoicePlannedDate || row.dueDate,
         dueDate: row.dueDate,
         ...timing(row.dueDate, row.invoicePlannedDate),
@@ -272,6 +274,7 @@ export class BillingService {
         subtotal: row.totalAmount,
         vatRate: 10,
         totalAmount: row.totalAmount * 1.1,
+        currencyCode: 'VND' as CurrencyCode, // SlotBooking has no currency field yet (see audit doc)
         paidAmount: row.paidAmount || 0,
         amountToCollect: Math.max(0, row.totalAmount * 1.1 - (row.paidAmount || 0)),
         sourceStatus: row.status,
@@ -296,6 +299,7 @@ export class BillingService {
         subtotal: row.totalAmount,
         vatRate: 10,
         totalAmount: row.totalAmount * 1.1,
+        currencyCode: 'VND' as CurrencyCode, // ParkingCustomerContract currency is out of scope (see audit doc)
         invoicePlannedDate: row.issueDate,
         dueDate: row.dueDate,
         ...timing(row.dueDate, row.issueDate),
@@ -305,17 +309,24 @@ export class BillingService {
     const dueRows = data.filter((row) => row.isDueForInvoice);
     const collectible = (row: { totalAmount: number; amountToCollect?: number }) =>
       row.amountToCollect ?? row.totalAmount;
+    // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): summary.amount/dueAmount/
+    // bySource.*.amount are single VND-denominated figures -- summing a USD/MMK row into them
+    // would silently blend currencies into a meaningless number. Scope to VND rows only, same
+    // convention as the dashboard's revenue KPIs; non-VND rows still appear in `data` with
+    // their own currencyCode for the UI to render individually.
+    const vndOnly = <T extends { currencyCode?: CurrencyCode }>(rows: T[]) =>
+      rows.filter((row) => (row.currencyCode ?? 'VND') === 'VND');
     return {
       data,
       total: data.length,
       summary: {
         count: data.length,
-        amount: data.reduce((sum, row) => sum + collectible(row), 0),
+        amount: vndOnly(data).reduce((sum, row) => sum + collectible(row), 0),
         dueCount: dueRows.length,
-        dueAmount: dueRows.reduce((sum, row) => sum + collectible(row), 0),
+        dueAmount: vndOnly(dueRows).reduce((sum, row) => sum + collectible(row), 0),
         bySource: {
-          LEASE_CONTRACT: { count: lease.length, amount: lease.reduce((sum, row) => sum + row.totalAmount, 0) },
-          SERVICE_CONTRACT: { count: service.length, amount: service.reduce((sum, row) => sum + row.totalAmount, 0) },
+          LEASE_CONTRACT: { count: lease.length, amount: vndOnly(lease).reduce((sum, row) => sum + row.totalAmount, 0) },
+          SERVICE_CONTRACT: { count: service.length, amount: vndOnly(service).reduce((sum, row) => sum + row.totalAmount, 0) },
           SHORT_TERM_BOOKING: { count: shortTerm.length, amount: shortTerm.reduce((sum, row) => sum + row.totalAmount, 0) },
           PARKING: { count: parking.length, amount: parking.reduce((sum, row) => sum + collectible(row), 0) },
         },
@@ -1551,12 +1562,17 @@ export class BillingService {
 
       const daysDue = Math.floor((today.getTime() - new Date(inv.dueDate).getTime()) / 86400000);
 
-      const counterpartyKey = inv.tenantId ? `tenant:${inv.tenantId}` : inv.billingPartyId ? `party:${inv.billingPartyId}` : `invoice:${inv.id}`;
+      // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): a tenant's VND and
+      // USD/MMK invoices must never land in the same bucket -- that would silently sum
+      // across currencies into one meaningless "total". Key by tenant+currency instead so
+      // a mixed-currency tenant gets one aging row per currency, each internally consistent.
+      const counterpartyKey = `${inv.tenantId ? `tenant:${inv.tenantId}` : inv.billingPartyId ? `party:${inv.billingPartyId}` : `invoice:${inv.id}`}:${inv.currencyCode}`;
       if (!byTenant[counterpartyKey]) {
         byTenant[counterpartyKey] = {
           tenant: inv.tenant,
           billingParty: inv.billingParty,
           counterpartyName: inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name || 'Chưa xác định',
+          currencyCode: inv.currencyCode,
           current: 0,
           days30: 0,
           days60: 0,

@@ -12,11 +12,17 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
+
+// CR-101 Phase 1: descriptive only. ADMIN-only class (RolesGuard bypasses this
+// role's own @Roles metadata anyway) -- self-consistently ADMIN-restricted, not
+// a Mall-scoping gap (see docs/architecture-review/15-CR-101-ROUTE-COVERAGE.md).
 
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
+@GlobalScope('ADMIN-only class (bypasses Mall-scoping anyway) -- staff account management')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

@@ -10,22 +10,32 @@ import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.d
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
 import { ApproveDecisionDto, RejectDecisionDto } from './dto/approval-decision.dto';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Approvals')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.approvals)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'approvalStepOrWorkflow' }, status: EnforcementStatus.ENFORCED })
 @Controller('approvals')
 export class ApprovalsController {
   constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
 
   private async mallIds(user: any, requestedMallId?: string): Promise<string[] | undefined> {
     const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
+    // CR-101 Phase 3G: CEO's "perform Approval actions only where the workflow
+    // assigns CEO" grant requires seeing pending/history/all-workflow lists
+    // across every Mall, not just its own UserMallAccess set -- the real
+    // authorization gate for approve/reject is ApprovalStep.approverRole,
+    // enforced independently in ApprovalsService, not Mall membership.
     if (mallId) {
-      await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+      await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
       return [mallId];
     }
-    return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined;
+    return (await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true })) ?? undefined;
   }
 
   @Get('pending')
@@ -82,7 +92,7 @@ export class ApprovalsController {
     @Body() dto: ApproveDecisionDto,
     @CurrentUser() user: any,
   ) {
-    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id });
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id }, { crossMallRead: true });
     return this.approvalsService.approve(id, user.id, user.role, dto.comment);
   }
 
@@ -93,14 +103,14 @@ export class ApprovalsController {
     @Body() dto: RejectDecisionDto,
     @CurrentUser() user: any,
   ) {
-    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id });
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id }, { crossMallRead: true });
     return this.approvalsService.reject(id, user.id, user.role, dto.comment);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get workflow details' })
   async getWorkflow(@Param('id') id: string, @CurrentUser() user: any) {
-    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalWorkflowId: id });
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalWorkflowId: id }, { crossMallRead: true });
     return this.approvalsService.getWorkflow(id);
   }
 }

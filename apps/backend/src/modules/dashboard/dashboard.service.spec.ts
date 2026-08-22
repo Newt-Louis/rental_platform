@@ -40,7 +40,7 @@ describe('DashboardService', () => {
 
   it('limits an all-mall dashboard to malls assigned to the user', async () => {
     const result = await service.getDashboard(undefined, { id: 'user-1', role: 'OPERATION' });
-    expect(mallAccess.getAccessibleMallIds).toHaveBeenCalledWith('user-1', 'OPERATION');
+    expect(mallAccess.getAccessibleMallIds).toHaveBeenCalledWith('user-1', 'OPERATION', { crossMallRead: true });
     expect(prisma.unit.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         OR: expect.arrayContaining([
@@ -56,7 +56,7 @@ describe('DashboardService', () => {
 
   it('validates a requested mall and calculates collection from valid payments', async () => {
     const result = await service.getDashboard('mall-1', { id: 'user-1', role: 'ADMIN' });
-    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('user-1', 'ADMIN', 'mall-1');
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('user-1', 'ADMIN', 'mall-1', { crossMallRead: true });
     expect(result).toMatchObject({
       monthlyRevenue: 1500, collectedRevenue: 850, overdueAmount: 750,
       bookingStats: { active: 6, pending: 7, expiringSoon: 8 }, focusAreas: ['overview'],

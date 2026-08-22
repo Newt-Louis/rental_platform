@@ -45,4 +45,66 @@ describe('buildProposalPrefill', () => {
       area: '25', term: '12', rentPerSqm: '480000', camPerSqm: '50000', businessModel: 'KIOSK',
     });
   });
+
+  it('inherits the booking currency instead of defaulting to VND', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-3', bookingNumber: 'BK-2026-00003', unitId: 'unit-3', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      currencyCode: 'USD',
+      unit: {
+        id: 'unit-3', mallId: 'mall-1', code: 'L2-01', areaGFA: 60, areaNLA: 55,
+        baseRentPerSqm: 25, camPerSqm: 3, status: 'BOOKING',
+      },
+    });
+
+    expect(result.rentCurrency).toBe('USD');
+  });
+
+  // Regression: found live in the running dev environment. A booking priced in USD had
+  // proposedRentPerSqm set (a real USD rate) but no proposedCamPerSqm, so the prefill fell back
+  // to Unit.camPerSqm -- a VND-denominated field -- and silently mixed a VND-scale CAM rate
+  // (e.g. 75,000) into an otherwise-USD proposal, producing a wildly wrong monthly bill once the
+  // resulting contract was billed.
+  it('does not fall back to Unit.camPerSqm/baseRentPerSqm (VND-only fields) for a non-VND booking', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-5', bookingNumber: 'BK-2026-00005', unitId: 'unit-5', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      currencyCode: 'USD',
+      proposedRentPerSqm: 323,
+      unit: {
+        id: 'unit-5', mallId: 'mall-1', code: 'L4-B02', areaGFA: 240, areaNLA: 233,
+        baseRentPerSqm: 600000, camPerSqm: 75000, status: 'BOOKING',
+      },
+    });
+
+    expect(result.rentPerSqm).toBe('323');
+    expect(result.camPerSqm).toBe('');
+  });
+
+  it('still falls back to Unit.camPerSqm/baseRentPerSqm for a VND booking (unchanged behavior)', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-6', bookingNumber: 'BK-2026-00006', unitId: 'unit-6', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      unit: {
+        id: 'unit-6', mallId: 'mall-1', code: 'L4-B03', areaGFA: 240, areaNLA: 233,
+        baseRentPerSqm: 600000, camPerSqm: 75000, status: 'BOOKING',
+      },
+    });
+
+    expect(result.rentPerSqm).toBe('600000');
+    expect(result.camPerSqm).toBe('75000');
+  });
+
+  it('defaults to VND when the booking has no currencyCode', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-4', bookingNumber: 'BK-2026-00004', unitId: 'unit-4', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      unit: {
+        id: 'unit-4', mallId: 'mall-1', code: 'L2-02', areaGFA: 60, areaNLA: 55,
+        baseRentPerSqm: 500000, camPerSqm: 50000, status: 'BOOKING',
+      },
+    });
+
+    expect(result.rentCurrency).toBe('VND');
+  });
 });

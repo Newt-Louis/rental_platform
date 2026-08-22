@@ -16,7 +16,7 @@ const AMENDABLE_CONTRACT_FIELDS = new Set([
 const AMENDMENT_DATE_FIELDS = new Set(['startDate', 'endDate']);
 // Field nào đổi thì lịch thu tiền (billing schedule) đã sinh trước đó phải build lại.
 const BILLING_RELEVANT_FIELDS = new Set([
-  'rent', 'cam', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent', 'startDate', 'endDate',
+  'rent', 'cam', 'currencyCode', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent', 'startDate', 'endDate',
 ]);
 
 @Injectable()

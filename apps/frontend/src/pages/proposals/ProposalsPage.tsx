@@ -24,6 +24,7 @@ import {
   X, Loader2, Pencil, CheckSquare, Square, SlidersHorizontal, Clock3, Sparkles,
 } from 'lucide-react';
 import type { Proposal, UnitBooking } from '@/types';
+import { CURRENCIES, formatMoney, type CurrencyCode } from '@/lib/currency';
 import { ProposalEditorDialog } from './ProposalEditor';
 import { CreateProposalEntryDialog } from './CreateProposalDialog';
 import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
@@ -39,12 +40,13 @@ const STATUS_COLOR: Record<string, string> = {
   CONVERTED:    'bg-purple-100 text-purple-700',
 };
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
+function fmt(n: number, currencyCode: CurrencyCode = 'VND') {
+  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
+  return `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} ${symbol}`;
 }
 
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
+  return formatMoney(n, currencyCode);
 }
 
 function fmtDate(d?: string | null) {
@@ -558,16 +560,16 @@ function ProposalDetailSheet({
                 <SheetSection label={t('proposals.sections.financials')} className="bg-gray-50">
                   <SheetRow
                     label={t('proposals.fields.proposedRent')}
-                    value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent)}</span>}
+                    value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent, p.rentCurrency)}</span>}
                     icon={DollarSign}
                   />
                   <SheetRow
                     label={t('contracts.fields.camFee')}
-                    value={p.monthlyCAM ? fmtFull(p.monthlyCAM) : null}
+                    value={p.monthlyCAM ? fmtFull(p.monthlyCAM, p.rentCurrency) : null}
                     icon={DollarSign}
                   />
                   {p.marketingFee > 0 && (
-                    <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee)} icon={DollarSign} />
+                    <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee, p.rentCurrency)} icon={DollarSign} />
                   )}
                   {p.rentFree > 0 && (
                     <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} tháng`} icon={Calendar} />
@@ -577,7 +579,7 @@ function ProposalDetailSheet({
                   )}
                   <SheetRow
                     label={t('contracts.fields.rentAmount')}
-                    value={<span className="font-bold text-green-700">{fmt(p.totalContractValue)}</span>}
+                    value={<span className="font-bold text-green-700">{fmt(p.totalContractValue, p.rentCurrency)}</span>}
                     icon={DollarSign}
                   />
                 </SheetSection>
@@ -1139,8 +1141,8 @@ export default function ProposalsPage() {
                         <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${p.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{p.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>
                       </td>
                       <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
-                      <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>
-                      <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
+                      <td className="px-4 py-3 text-right">{fmt(p.monthlyRent, p.rentCurrency)}</td>
+                      <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue, p.rentCurrency)}</td>
                       <td className="px-4 py-3">
                         <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
                         {p.status === 'CONVERTED' && p.contract && (

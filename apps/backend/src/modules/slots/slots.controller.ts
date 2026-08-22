@@ -13,11 +13,15 @@ import {
   CreateSlotBookingDto, CreateSlotPricingRuleDto, CreateSlotGridDto,
   SlotBookingType,
 } from './dto/slots.dto';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
+// CR-101 Phase 1: descriptive only.
 @ApiTags('Slots')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.slots)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'slot' }, status: EnforcementStatus.ENFORCED })
 @Controller('slots')
 export class SlotsController {
   constructor(private readonly slotsService: SlotsService, private readonly mallAccess: MallAccessService) {}

@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { useAuthStore } from '@/store/auth.store';
+import { CURRENCIES } from '@/lib/currency';
 import {
   DndContext,
   DragOverlay,
@@ -876,8 +877,8 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                             </div>
                             {(p.monthlyRent || p.totalContractValue) && (
                               <div className="grid grid-cols-2 gap-x-4 text-xs">
-                                {p.monthlyRent && <div><span className="text-gray-400">{t('leadSheet.monthlyRent')} </span><span className="font-semibold">{new Intl.NumberFormat('vi-VN').format(p.monthlyRent)} ₫</span></div>}
-                                {p.totalContractValue && <div><span className="text-gray-400">{t('leadSheet.contractValue')} </span><span className="font-bold text-green-700">{new Intl.NumberFormat('vi-VN').format(p.totalContractValue)} ₫</span></div>}
+                                {p.monthlyRent && <div><span className="text-gray-400">{t('leadSheet.monthlyRent')} </span><span className="font-semibold">{new Intl.NumberFormat('vi-VN').format(p.monthlyRent)} {CURRENCIES[p.rentCurrency as keyof typeof CURRENCIES]?.symbol ?? '₫'}</span></div>}
+                                {p.totalContractValue && <div><span className="text-gray-400">{t('leadSheet.contractValue')} </span><span className="font-bold text-green-700">{new Intl.NumberFormat('vi-VN').format(p.totalContractValue)} {CURRENCIES[p.rentCurrency as keyof typeof CURRENCIES]?.symbol ?? '₫'}</span></div>}
                                 {p.term && <div><span className="text-gray-400">{t('leadSheet.term')} </span><span>{t('leadSheet.termMonths', { term: p.term })}</span></div>}
                                 {p.startDate && <div><span className="text-gray-400">{t('leadSheet.startDate')} </span><span>{fmtDate(p.startDate)}</span></div>}
                               </div>
