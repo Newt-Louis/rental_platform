@@ -19,12 +19,16 @@ import {
   TrendingUp, TrendingDown, Building2, AlertTriangle, DollarSign,
   Calendar, Percent, Users, Clock, Shield, RefreshCw,
 } from 'lucide-react';
+import { formatMoney, formatMoneyAmount, formatMoneyCompact } from '@/lib/currency';
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
+function StatCard({ title, value, valueTitle, subtitle, icon: Icon, trend, trendUp }: {
   title: string;
   value: string | number;
+  /** CR-109 Wave 2: full, non-abbreviated value shown as a native tooltip when
+   * `value` is a compact/abbreviated display. */
+  valueTitle?: string;
   subtitle?: string;
   icon: any;
   trend?: string;
@@ -36,7 +40,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-500 mb-1">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-2xl font-bold text-gray-900" title={valueTitle}>{value}</p>
             {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
             {trend && (
               <div className={`flex items-center gap-1 mt-1 text-xs ${trendUp ? 'text-green-500' : 'text-red-500'}`}>
@@ -89,8 +93,9 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
           subtitle="Bao gồm đang fitout" />
         <StatCard title="Diện tích trống" value={`${Math.round(s.vacantArea ?? 0).toLocaleString()} m²`}
           icon={AlertTriangle} subtitle={`${s.vacantUnits ?? 0} units`} />
-        <StatCard title="Ước tính thất thu" value={`${Math.round((vacancySummary.totalEstimatedLoss ?? 0) / 1_000_000).toLocaleString()}M`}
-          icon={DollarSign} subtitle="VND / tháng" />
+        <StatCard title="Ước tính thất thu" value={formatMoneyCompact(vacancySummary.totalEstimatedLoss ?? 0, 'VND')}
+          valueTitle={formatMoney(vacancySummary.totalEstimatedLoss ?? 0, 'VND')}
+          icon={DollarSign} subtitle="/ tháng" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -296,13 +301,13 @@ function MultiMallTab() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-[720px] w-full text-sm">
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-2 font-medium">TTTM</th>
                   <th className="text-right py-2 font-medium">Lấp đầy</th>
                   <th className="text-right py-2 font-medium">Units</th>
-                  <th className="text-right py-2 font-medium">Doanh thu/tháng</th>
+                  <th className="text-right py-2 font-medium">Doanh thu/tháng (VND)</th>
                   <th className="text-right py-2 font-medium">VND/m²</th>
                   <th className="text-center py-2 font-medium">Policy</th>
                 </tr>
@@ -320,8 +325,8 @@ function MultiMallTab() {
                       </span>
                     </td>
                     <td className="text-right py-3">{m.occupiedUnits}/{m.totalUnits}</td>
-                    <td className="text-right py-3">{Math.round(m.monthlyRevenue / 1_000_000).toLocaleString()}M</td>
-                    <td className="text-right py-3">{Math.round(m.revenuePerSqm).toLocaleString()}</td>
+                    <td className="text-right py-3 whitespace-nowrap">{formatMoneyAmount(m.monthlyRevenue, 'VND')}</td>
+                    <td className="text-right py-3 whitespace-nowrap">{formatMoneyAmount(m.revenuePerSqm, 'VND')}</td>
                     <td className="text-center py-3">
                       {m.hasPolicy ? (
                         <Badge className="bg-green-100 text-green-700">Đã cấu hình</Badge>

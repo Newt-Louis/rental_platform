@@ -48,3 +48,17 @@ export function formatMoneyAmount(amount: number | null | undefined, currencyCod
     maximumFractionDigits: meta.decimalPlaces,
   }).format(amount);
 }
+
+// CR-109 Wave 2 (Dashboard/KPI compact exception): compact notation is allowed
+// only for aggregate KPI tiles/charts, and only when the currency code is
+// explicitly and unambiguously attached to the compact number itself -- never
+// a bare "125tr"/"125M"/"$25K". Every call site MUST also expose the full
+// value (e.g. via a `title` tooltip using formatMoney()) so precision is
+// never lost, only visually deferred. Do not use this for any transactional
+// table or per-record financial figure -- those use formatMoney()/
+// formatMoneyAmount() and must never abbreviate.
+export function formatMoneyCompact(amount: number | null | undefined, currencyCode: CurrencyCode = 'VND', locale = 'vi-VN'): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—';
+  const compact = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(amount);
+  return `${compact} ${currencyCode}`;
+}

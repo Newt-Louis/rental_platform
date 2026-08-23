@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { formatMoney, formatMoneyAmount, formatMoneyCompact } from '@/lib/currency';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -116,8 +117,8 @@ function RevenueReport() {
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={byPeriod}>
             <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1e6).toFixed(0)}M`} />
-            <Tooltip formatter={(v: any) => [`${(v / 1e6).toFixed(1)}M VNĐ`]} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatMoneyCompact(v, 'VND')} />
+            <Tooltip formatter={(v: any) => [formatMoney(v, 'VND')]} />
             <Bar dataKey="total" name={t('revenue.issued')} fill="#93c5fd" />
             <Bar dataKey="paid" name={t('revenue.collected')} fill="#3b82f6" />
           </BarChart>
@@ -226,8 +227,16 @@ function ContractExpiryReport() {
   </AsyncState>;
 }
 
+// CR-109 Wave 2: this report's totals are computed VND-only server-side
+// (reports.service.ts scopes revenue/receivables to currencyCode: 'VND' to
+// avoid a cross-currency sum), so 'VND' is passed explicitly, not inferred --
+// every card/label using this also discloses "(VND)" since the figure
+// silently excludes any USD/MMK records.
 function fmtMoney(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' đ';
+  return formatMoneyCompact(n, 'VND');
+}
+function fmtMoneyFullVnd(n: number) {
+  return formatMoney(n, 'VND');
 }
 
 function RevenueReceivablesReport() {
@@ -248,9 +257,9 @@ function RevenueReceivablesReport() {
     <div className="space-y-6">
       <p className="text-xs text-gray-400 -mt-2">{t('revenueReceivables.subtitle')}</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalBilled')}</p><p className="text-xl font-bold">{fmtMoney(d?.totalBilled ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalCollected')}</p><p className="text-xl font-bold text-green-600">{fmtMoney(d?.totalCollected ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalOutstanding')}</p><p className="text-xl font-bold text-red-600">{fmtMoney(d?.totalOutstanding ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalBilled')}</p><p className="text-xl font-bold" title={fmtMoneyFullVnd(d?.totalBilled ?? 0)}>{fmtMoney(d?.totalBilled ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalCollected')}</p><p className="text-xl font-bold text-green-600" title={fmtMoneyFullVnd(d?.totalCollected ?? 0)}>{fmtMoney(d?.totalCollected ?? 0)}</p></CardContent></Card>
+        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalOutstanding')}</p><p className="text-xl font-bold text-red-600" title={fmtMoneyFullVnd(d?.totalOutstanding ?? 0)}>{fmtMoney(d?.totalOutstanding ?? 0)}</p></CardContent></Card>
         <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.collectionRate')}</p><p className="text-xl font-bold">{d?.collectionRate ?? 0}%</p></CardContent></Card>
       </div>
       <div className="grid md:grid-cols-2 gap-6">
@@ -275,7 +284,7 @@ function RevenueReceivablesReport() {
               {byType.map((inv: any) => (
                 <div key={inv.type} className="flex justify-between items-center text-sm">
                   <span>{inv.type}</span>
-                  <span className="text-gray-500">{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
+                  <span className="text-gray-500" title={`${fmtMoneyFullVnd(inv.collected)} / ${fmtMoneyFullVnd(inv.billed)}`}>{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
                 </div>
               ))}
             </div>
@@ -298,8 +307,8 @@ function ArAgingReport() {
     onRetry={refetch} loading={<Skeleton className="h-64" />}
     emptyTitle={t('arAging.empty')}
     emptyDescription={t('arAging.emptyDesc')}>
-    <div className="bg-white rounded-lg border overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="bg-white rounded-lg border overflow-x-auto">
+      <table className="min-w-[900px] w-full text-sm">
         <thead className="bg-gray-50 border-b">
           <tr>
             <th className="text-left px-4 py-3 font-medium text-gray-600">{t('arAging.tenant')}</th>
@@ -309,18 +318,20 @@ function ArAgingReport() {
             <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days90')}</th>
             <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.days90plus')}</th>
             <th className="text-right px-4 py-3 font-medium text-gray-600">{t('arAging.total')}</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">{t('common:labels.currency')}</th>
           </tr>
         </thead>
         <tbody className="divide-y">
           {rows.map((r: any, i: number) => (
             <tr key={i} className="hover:bg-gray-50">
               <td className="px-4 py-3 font-medium">{r.tenant?.brandName}</td>
-              <td className="px-4 py-3 text-right text-gray-500">{fmtMoney(r.current)}</td>
-              <td className="px-4 py-3 text-right text-gray-500">{fmtMoney(r.days30)}</td>
-              <td className="px-4 py-3 text-right text-orange-600">{fmtMoney(r.days60)}</td>
-              <td className="px-4 py-3 text-right text-orange-700">{fmtMoney(r.days90)}</td>
-              <td className="px-4 py-3 text-right text-red-600 font-medium">{fmtMoney(r.days90plus)}</td>
-              <td className="px-4 py-3 text-right font-bold">{fmtMoney(r.total)}</td>
+              <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatMoneyAmount(r.current, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-right text-gray-500 whitespace-nowrap">{formatMoneyAmount(r.days30, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-right text-orange-600 whitespace-nowrap">{formatMoneyAmount(r.days60, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-right text-orange-700 whitespace-nowrap">{formatMoneyAmount(r.days90, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-right text-red-600 font-medium whitespace-nowrap">{formatMoneyAmount(r.days90plus, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{formatMoneyAmount(r.total, r.currencyCode)}</td>
+              <td className="px-4 py-3 text-xs font-mono text-gray-500">{r.currencyCode ?? 'VND'}</td>
             </tr>
           ))}
         </tbody>

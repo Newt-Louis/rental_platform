@@ -19,9 +19,19 @@ import {
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { formatMoney, formatMoneyCompact } from '@/lib/currency';
 
+// CR-109 Wave 2: these dashboard revenue/debt aggregates are computed
+// VND-only server-side (dashboard.service.ts explicitly filters to
+// currencyCode: 'VND' to avoid a cross-currency sum) -- 'VND' is passed
+// explicitly below, not inferred, and every card discloses "(VND)" in its
+// title since the figure silently excludes any USD/MMK records rather than
+// converting or mixing them.
 function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
+  return formatMoneyCompact(n, 'VND');
+}
+function fmtFullVnd(n: number) {
+  return formatMoney(n, 'VND');
 }
 
 function fmtArea(n: number) {
@@ -37,10 +47,14 @@ const COLOR_MAP = {
 };
 
 function StatCard({
-  title, value, sub, icon: Icon, color = 'blue', badge, to,
+  title, value, valueTitle, sub, icon: Icon, color = 'blue', badge, to,
 }: {
   title: string;
   value: string | number;
+  /** CR-109 Wave 2: full, non-abbreviated value shown as a native tooltip when
+   * `value` is a compact/abbreviated display -- so precision is never lost,
+   * only visually deferred. */
+  valueTitle?: string;
   sub?: string;
   icon: React.ElementType;
   color?: keyof typeof COLOR_MAP;
@@ -68,7 +82,7 @@ function StatCard({
         <div className="flex items-start justify-between">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{title}</p>
-            <p className="mt-2 text-[1.7rem] font-semibold leading-none tracking-tight text-slate-950">{value}</p>
+            <p className="mt-2 text-[1.7rem] font-semibold leading-none tracking-tight text-slate-950" title={valueTitle}>{value}</p>
             {sub && <p className="mt-2 text-xs leading-5 text-slate-500">{sub}</p>}
           </div>
           <div className={`ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 ${c.iconBg}`}>
@@ -187,7 +201,7 @@ function BillingProgress({
         <div key={r.label}>
           <div className="flex justify-between items-center mb-1.5">
             <span className="text-xs text-gray-500">{r.label}</span>
-            <span className="text-xs font-semibold text-gray-800">{fmt(r.value)}</span>
+            <span className="text-xs font-semibold text-gray-800" title={fmtFullVnd(r.value)}>{fmt(r.value)}</span>
           </div>
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
@@ -427,6 +441,7 @@ export default function DashboardPage() {
               <StatCard
                 title={t('stats.monthlyRevenue')}
                 value={fmt(d?.monthlyRevenue ?? 0)}
+                valueTitle={fmtFullVnd(d?.monthlyRevenue ?? 0)}
                 sub={t('stats.collectedRevenue', { amount: fmt(d?.collectedRevenue ?? 0) })}
                 icon={TrendingUp}
                 color="purple"
@@ -435,6 +450,7 @@ export default function DashboardPage() {
               <StatCard
                 title={t('stats.overdueDebt')}
                 value={fmt(d?.overdueAmount ?? 0)}
+                valueTitle={fmtFullVnd(d?.overdueAmount ?? 0)}
                 sub={t('stats.overdueInvoices', { count: d?.overdueCount ?? 0 })}
                 icon={DollarSign}
                 color="red"
