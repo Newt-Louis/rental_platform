@@ -23,7 +23,7 @@ import {
 import api from '@/lib/axios';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
 import type { Invoice, ArAgingRow } from '@/types';
-import { formatMoney, CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { AsyncState } from '@/components/ui/async-state';
@@ -85,13 +85,6 @@ function fmtMoney(n?: number | null, currencyCode: CurrencyCode = 'VND') {
 }
 function fmtCompact(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
-}
-// Compact notation with the record's actual currency symbol, instead of a hardcoded ₫
-// (fmtCompact's callers used to append " ₫" unconditionally regardless of the invoice's
-// real currencyCode -- see docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
-function fmtCompactCur(n: number, currencyCode: CurrencyCode = 'VND') {
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return `${fmtCompact(n)} ${symbol}`;
 }
 function fmtDate(d?: string | Date | null) {
   if (!d) return '—';
@@ -1014,6 +1007,7 @@ function InvoicesTab() {
                   <th className="px-4 py-2.5 text-right font-medium">Giá trị hóa đơn</th>
                   <th className="px-4 py-2.5 text-right font-medium">Đã ghi nhận</th>
                   <th className="px-4 py-2.5 text-right font-medium">Còn dự kiến thu</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Tiền tệ</th>
                   <th className="px-4 py-2.5 text-left font-medium">Ngày dự kiến xuất</th>
                   <th className="px-4 py-2.5 text-left font-medium">Tình trạng</th>
                   <th className="px-4 py-2.5 text-right font-medium">Thao tác</th>
@@ -1025,9 +1019,10 @@ function InvoicesTab() {
                       <td className="px-4 py-3"><div className="font-medium text-gray-800">{row.counterpartyName}</div><div className="text-xs text-gray-400">{row.taxCode || row.unitCode || '—'}</div></td>
                       <td className="px-4 py-3"><Badge className={`border text-[11px] ${SOURCE_COLORS[row.sourceType] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[row.sourceType] || row.sourceType}</Badge><div className="mt-1 font-mono text-[11px] text-slate-500">{row.contractNumber}</div>{row.contractType && <div className="text-[11px] text-slate-400">{row.contractType === 'PRINCIPLE_ACTUAL' ? 'Nguyên tắc · theo thực tế' : 'Định mức + phí vượt'}</div>}</td>
                       <td className="px-4 py-3"><div className="text-gray-700">{row.milestone}</div><div className="text-xs text-gray-400">{row.period || 'Theo mốc hợp đồng'}</div></td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(row.totalAmount, row.currencyCode)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-emerald-700">{row.paidAmount ? fmtCompactCur(row.paidAmount, row.currencyCode) : '—'}</td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(row.amountToCollect ?? row.totalAmount, row.currencyCode)}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">{formatMoneyAmount(row.totalAmount, row.currencyCode)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-700 whitespace-nowrap">{row.paidAmount ? formatMoneyAmount(row.paidAmount, row.currencyCode) : '—'}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">{formatMoneyAmount(row.amountToCollect ?? row.totalAmount, row.currencyCode)}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-gray-500">{row.currencyCode ?? 'VND'}</td>
                       <td className="px-4 py-3 text-xs text-gray-600">{fmtDate(row.invoicePlannedDate)}<div className="text-[11px] text-gray-400">Hạn thu {fmtDate(row.dueDate)}</div></td>
                       <td className="px-4 py-3">{row.isDueForInvoice
                         ? <Badge className="border border-red-200 bg-red-100 text-red-700">{row.daysInvoiceOverdue ? `Treo ${row.daysInvoiceOverdue} ngày` : 'Đến hạn xuất'}</Badge>
@@ -1095,6 +1090,7 @@ function InvoicesTab() {
                 <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.totalAmount')}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Đã thu</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Còn phải thu</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('common:labels.currency')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.dueDate')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.status')}</th>
                 <th className="px-3 py-3" />
@@ -1119,11 +1115,12 @@ function InvoicesTab() {
                       {inv.sourceType === 'PARKING' && <div className={`mt-1 text-[11px] ${inv.sourceStatus === 'PAID' ? 'text-emerald-700' : inv.sourceStatus === 'PARTIAL' ? 'text-amber-700' : 'text-slate-400'}`}>Parking: {inv.sourceStatus === 'PAID' ? 'đã thanh toán' : inv.sourceStatus === 'PARTIAL' ? 'đã thu một phần' : 'chưa thu'}{inv.sourceContractType ? ` · ${inv.sourceContractType === 'PRINCIPLE_ACTUAL' ? 'theo thực tế' : 'định mức'}` : ''}</div>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-slate-400">{inv.type}</div></td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-800">
-                      {fmtCompactCur(inv.totalAmount, inv.currencyCode)}
+                    <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
+                      {formatMoneyAmount(inv.totalAmount, inv.currencyCode)}
                     </td>
-                    <td className="px-4 py-3 text-right text-emerald-700">{inv.totalPaid ? fmtCompactCur(inv.totalPaid, inv.currencyCode) : '—'}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-900">{fmtCompactCur(inv.balance ?? inv.totalAmount, inv.currencyCode)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">{inv.totalPaid ? formatMoneyAmount(inv.totalPaid, inv.currencyCode) : '—'}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">{formatMoneyAmount(inv.balance ?? inv.totalAmount, inv.currencyCode)}</td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-500">{inv.currencyCode ?? 'VND'}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {fmtDate(inv.dueDate)}
                       {(inv.daysOverdue || overdue) ? <div className="mt-0.5 font-medium text-red-600">Quá {inv.daysOverdue || 0} ngày</div> : null}

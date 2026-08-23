@@ -25,7 +25,7 @@ import {
   CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles,
 } from 'lucide-react';
 import type { Contract } from '@/types';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 
 // ── Status maps ───────────────────────────────────────────────────────────────
 
@@ -73,8 +73,7 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 function fmtCurrency(n?: number | null, currencyCode?: CurrencyCode) {
-  const symbol = CURRENCIES[currencyCode ?? 'VND']?.symbol ?? '₫';
-  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ${symbol}`;
+  return formatMoney(n ?? 0, currencyCode ?? 'VND');
 }
 
 const BILLING_ENTRY_STATUS_COLOR: Record<string, string> = {
@@ -789,7 +788,11 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 <SheetRow label={t('sheet.fields.unit')} value={detail.unit?.code} icon={Building2} />
               </SheetSection>
 
-              <SheetSection label={t('sheet.sections.financial')} className="bg-green-50">
+              <SheetSection
+                label={t('sheet.sections.financial')}
+                className="bg-green-50"
+                action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{detail.currencyCode ?? 'VND'}</span>}
+              >
                 <SheetRow label={t('sheet.fields.rent')}
                   value={`${fmtCurrency(detail.rent, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 {detail.cam > 0 && (
@@ -1339,7 +1342,7 @@ export default function ContractsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[1200px] w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.contractNo')}</th>
@@ -1348,6 +1351,7 @@ export default function ContractsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.unit')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.type')}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.monthlyRent')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('common:labels.currency')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.startDate')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.endDate')}</th>
                 {showExpiring && <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.remaining')}</th>}
@@ -1379,9 +1383,10 @@ export default function ContractsPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{c.type}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)} {c.currencyCode ?? 'VND'}
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {formatMoneyAmount(c.rent, c.currencyCode ?? 'VND')}
                     </td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.currencyCode ?? 'VND'}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.startDate).toLocaleDateString('vi-VN')}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString('vi-VN')}</td>
                     {showExpiring && (

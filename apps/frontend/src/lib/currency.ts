@@ -33,3 +33,18 @@ export function formatMoney(amount: number | null | undefined, currencyCode: Cur
     maximumFractionDigits: meta.decimalPlaces,
   }).format(amount);
 }
+
+// CR-109 Wave 1 (Rule 1/3): numeric-only presentation for financial tables that
+// carry a dedicated Currency column -- embedding a symbol/code in the Amount
+// cell there would duplicate what the Currency column already states. Uses the
+// same authoritative CURRENCIES.decimalPlaces config as formatMoney(), just
+// without the `style: 'currency'` decoration. Never introduce a second,
+// independent Intl.NumberFormat call in a component -- extend this instead.
+export function formatMoneyAmount(amount: number | null | undefined, currencyCode: CurrencyCode = 'VND', locale = 'vi-VN'): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—';
+  const meta = CURRENCIES[currencyCode] ?? CURRENCIES.VND;
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: meta.decimalPlaces,
+    maximumFractionDigits: meta.decimalPlaces,
+  }).format(amount);
+}

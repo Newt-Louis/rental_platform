@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { usePermission } from '@/hooks/usePermission';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
   Search, Building2, Phone, Mail, FileText, Receipt, Ticket,
   Plus, Edit2, Globe, Shield, MapPin, Hash, User, X,
@@ -52,8 +52,7 @@ const INVOICE_STATUS: Record<string, { color: string }> = {
 
 function fmtMoney(n?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!n) return '—';
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} ${symbol}`;
+  return formatMoney(n, currencyCode);
 }
 function fmtDate(d?: string | null) {
   if (!d) return '—';
@@ -584,8 +583,8 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-bold text-gray-800">
-                          {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)}đ
+                        <div className="text-sm font-bold text-gray-800 whitespace-nowrap">
+                          {fmtMoney(c.rent, c.currencyCode)}
                         </div>
                         <div className="text-xs text-gray-400">{t('info.perMonth')}</div>
                       </div>
@@ -619,8 +618,8 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                         <Clock size={10} /> {inv.period} · {t('info.dueDate')} {fmtDate(inv.dueDate)}
                       </div>
                     </div>
-                    <div className="text-sm font-bold text-gray-800">
-                      {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(inv.totalAmount)}đ
+                    <div className="text-sm font-bold text-gray-800 whitespace-nowrap">
+                      {fmtMoney(inv.totalAmount, inv.currencyCode)}
                     </div>
                   </div>
                 );

@@ -987,6 +987,7 @@ function ContractOperations({
                     <div className="text-emerald-600">
                       Đã thanh toán{" "}
                       {Number(p.paidAmount || p.amount).toLocaleString("vi-VN")}{" "}
+                      {p.currency}{" "}
                       · {new Date(p.paidDate).toLocaleDateString("vi-VN")}
                     </div>
                   )}
