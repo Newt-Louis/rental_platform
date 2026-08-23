@@ -81,6 +81,7 @@
     "floor": "Floor",
     "unit": "Unit",
     "price": "Price",
+    "currency": "Currency",
     "rent": "Rent",
     "deposit": "Deposit",
     "duration": "Duration",

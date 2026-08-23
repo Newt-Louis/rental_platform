@@ -89,7 +89,7 @@ describe('BookingService — category price-floor validation is VND-only', () =>
       prisma.unit.findUnique.mockResolvedValue({
         id: 'unit-1', mallId: 'mall-1', categoryId: 'cat-1', status: UnitStatus.VACANT, isActive: true,
       });
-      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', isActive: true });
+      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', mallId: 'mall-1', isActive: true });
     });
 
     it('skips the VND floor/ceiling check for a USD booking -- no bogus approval requirement', async () => {

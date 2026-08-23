@@ -3,7 +3,7 @@ import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 
 describe('BookingController mall access', () => {
   const bookingService: any = {
-    findAll: jest.fn(), getStats: jest.fn(), findOne: jest.fn(),
+    findAll: jest.fn(), findUnits: jest.fn(), getStats: jest.fn(), findOne: jest.fn(),
     expireOverdueBookings: jest.fn(),
   };
   const mallAccess: any = {
@@ -37,6 +37,37 @@ describe('BookingController mall access', () => {
       'user-1', 'LEASING_EXECUTIVE', { bookingId: 'booking-1' },
     );
     expect(bookingService.findOne).toHaveBeenCalledWith('booking-1');
+  });
+
+  it('scopes Unit Finder results to assigned Malls for normal staff', async () => {
+    await controller.findUnits({ page: 1, limit: 20 }, { id: 'user-1', role: 'LEASING_EXECUTIVE' });
+    expect(bookingService.findUnits).toHaveBeenCalledWith({
+      page: 1, limit: 20, mallIds: ['mall-1', 'mall-2'],
+    });
+  });
+
+  it('validates an explicit Unit Finder Mall before querying', async () => {
+    await controller.findUnits(
+      { mallId: 'mall-1', page: 1, limit: 20 },
+      { id: 'admin-1', role: 'ADMIN' },
+    );
+    expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('admin-1', 'ADMIN', 'mall-1');
+    expect(bookingService.findUnits).toHaveBeenCalledWith({ mallId: 'mall-1', page: 1, limit: 20 });
+  });
+
+  it('does not query Unit Finder when Mall access is denied', async () => {
+    mallAccess.assertMallAccess.mockRejectedValueOnce(new Error('denied'));
+    await expect(controller.findUnits(
+      { mallId: 'mall-x', page: 1, limit: 20 },
+      { id: 'user-1', role: 'LEASING_EXECUTIVE' },
+    )).rejects.toThrow('denied');
+    expect(bookingService.findUnits).not.toHaveBeenCalled();
+  });
+
+  it('does not add a synthetic Mall restriction for an unrestricted ADMIN search', async () => {
+    mallAccess.getAccessibleMallIds.mockResolvedValueOnce(null);
+    await controller.findUnits({ page: 1, limit: 20 }, { id: 'admin-1', role: 'ADMIN' });
+    expect(bookingService.findUnits).toHaveBeenCalledWith({ page: 1, limit: 20 });
   });
 
   it('restricts the manual expiry endpoint to admins', () => {

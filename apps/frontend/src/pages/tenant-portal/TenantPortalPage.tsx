@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { CURRENCIES, formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import {
   ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
@@ -64,14 +64,8 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(n: number, currencyCode: CurrencyCode = 'VND') {
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ' + symbol;
-}
-
 function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ' + symbol;
+  return formatMoney(n, currencyCode);
 }
 
 function fmtDate(d?: string | null) {
@@ -578,9 +572,9 @@ export default function TenantPortalPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <Receipt size={16} className="text-orange-500" />
-              <span className="text-xs font-medium text-orange-700">Tổng chờ thanh toán</span>
+              <span className="text-xs font-medium text-orange-700">Tổng chờ thanh toán (VND)</span>
             </div>
-            <p className="text-xl font-bold text-orange-800">{fmt(pendingInvoicesTotal)}</p>
+            <p className="text-xl font-bold text-orange-800">{fmtFull(pendingInvoicesTotal)}</p>
           </CardContent>
         </Card>
         <Card className={`border-0 ${overdueInvoices.length > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
@@ -669,7 +663,7 @@ export default function TenantPortalPage() {
                           </span>
                           <span className="flex items-center gap-1 text-gray-900 font-medium">
                             <DollarSign size={11} />
-                            {fmt(c.rent, c.currencyCode)}/tháng
+                            {fmtFull(c.rent, c.currencyCode)}/tháng
                           </span>
                         </div>
                       </div>
@@ -715,14 +709,15 @@ export default function TenantPortalPage() {
               <p>Không có hóa đơn</p>
             </div>
           ) : (
-            <div className="bg-white rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Số HD</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Khách thuê</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Kỳ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Tổng tiền</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Tiền tệ</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Hạn TT</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
                     <th className="px-4 py-3" />
@@ -737,7 +732,8 @@ export default function TenantPortalPage() {
                         <td className="px-4 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
                         <td className="px-4 py-3 hidden md:table-cell">{inv.tenant?.brandName}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{inv.period}</td>
-                        <td className="px-4 py-3 text-right font-medium">{fmt(inv.totalAmount, inv.currencyCode)}</td>
+                        <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatMoneyAmount(inv.totalAmount, inv.currencyCode)}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-gray-500">{inv.currencyCode ?? 'VND'}</td>
                         <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                           {fmtDate(inv.dueDate)}
                         </td>

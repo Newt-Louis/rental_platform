@@ -23,12 +23,8 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, formatMoneyAmount } from '@/lib/currency';
 
-function fmt(n: number, currencyCode: CurrencyCode = 'VND') {
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return `${new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n)} ${symbol}`;
-}
 function fmtPrice(n: number | null | undefined) {
   if (!n) return '—';
   return new Intl.NumberFormat('vi-VN').format(n);
@@ -201,14 +197,18 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
             </div>
           </SheetSection>
 
-          <SheetSection label={t('approvals.workflow.section.financial')} className="bg-slate-50">
+          <SheetSection
+            label={t('approvals.workflow.section.financial')}
+            className="bg-slate-50"
+            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency ?? 'VND'}</span>}
+          >
             <div className="grid grid-cols-2 gap-x-4">
               <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? fmt(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? fmt(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? formatMoney(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? formatMoney(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? fmt(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? formatMoney(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
           </SheetSection>
@@ -555,7 +555,7 @@ export default function ApprovalsPage() {
             <>
               {!rejectDialog && <Selecto ref={proposalSelectoRef} container={proposalGridRef.current} {...proposalSelectoProps} />}
               <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
-                <table className="w-full text-sm">
+                <table className="min-w-[1300px] w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-blue-50/40">
                       <th className="px-3 py-3 w-8">
@@ -576,6 +576,7 @@ export default function ApprovalsPage() {
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.monthlyRent')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.discount')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.contractValue')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('common:labels.currency')}</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -629,9 +630,9 @@ export default function ApprovalsPage() {
                           <td className="px-4 py-3">
                             <div className="font-medium">{proposal?.tenant?.brandName ?? <span className="text-gray-400">—</span>}</div>
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
+                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                             {proposal?.monthlyRent ? (
-                              <span className="text-gray-700">{fmt(proposal.monthlyRent, proposal.rentCurrency)}</span>
+                              <span className="text-gray-700">{formatMoneyAmount(proposal.monthlyRent, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
@@ -647,11 +648,12 @@ export default function ApprovalsPage() {
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
+                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                             {proposal?.totalContractValue ? (
-                              <span className="font-bold text-green-600">{fmt(proposal.totalContractValue, proposal.rentCurrency)}</span>
+                              <span className="font-bold text-green-600">{formatMoneyAmount(proposal.totalContractValue, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
+                          <td className="px-4 py-3 text-xs font-mono text-gray-500">{proposal?.rentCurrency ?? '—'}</td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
