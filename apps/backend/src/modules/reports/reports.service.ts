@@ -93,12 +93,27 @@ export class ReportsService {
       _count: true,
     });
 
-    const proposals = await this.prisma.proposal.groupBy({
-      by: ['status'],
+    // CR-110 (INV-CUR-001 -- never sum different currencies): group by status AND
+    // rentCurrency so totalContractValue is never blindly summed across VND/USD/MMK
+    // proposals. _count is re-aggregated to a per-status total (currency-agnostic,
+    // safe to combine); the money sum stays bucketed per currency.
+    const proposalCurrencyGroups = await this.prisma.proposal.groupBy({
+      by: ['status', 'rentCurrency'],
       where: proposalWhere,
-      _count: true,
+      _count: { _all: true },
       _sum: { totalContractValue: true },
     });
+    const proposalsByStatus = new Map<string, { status: string; _count: number; valueByCurrency: Record<string, number> }>();
+    for (const g of proposalCurrencyGroups) {
+      let row = proposalsByStatus.get(g.status);
+      if (!row) {
+        row = { status: g.status, _count: 0, valueByCurrency: {} };
+        proposalsByStatus.set(g.status, row);
+      }
+      row._count += g._count._all;
+      row.valueByCurrency[g.rentCurrency] = (row.valueByCurrency[g.rentCurrency] ?? 0) + (g._sum.totalContractValue ?? 0);
+    }
+    const proposals = Array.from(proposalsByStatus.values());
 
     const leadRows = await this.prisma.lead.findMany({
       where: leadWhere,

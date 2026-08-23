@@ -19,12 +19,14 @@ import {
   TrendingUp, TrendingDown, Building2, AlertTriangle, DollarSign,
   Calendar, Percent, Users, Clock, Shield, RefreshCw,
 } from 'lucide-react';
+import { formatMoney, formatMoneyCompact, type CurrencyCode } from '@/lib/currency';
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
+function StatCard({ title, value, valueTitle, subtitle, icon: Icon, trend, trendUp }: {
   title: string;
   value: string | number;
+  valueTitle?: string;
   subtitle?: string;
   icon: any;
   trend?: string;
@@ -36,7 +38,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-500 mb-1">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-2xl font-bold text-gray-900" title={valueTitle}>{value}</p>
             {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
             {trend && (
               <div className={`flex items-center gap-1 mt-1 text-xs ${trendUp ? 'text-green-500' : 'text-red-500'}`}>
@@ -205,8 +207,27 @@ function RenewalRiskTab({ mallId }: { mallId?: string }) {
           subtitle="Cần hành động ngay" />
         <StatCard title="High Risk" value={summary.high ?? 0} icon={TrendingDown}
           subtitle="Cần theo dõi" />
-        <StatCard title="Doanh thu rủi ro" value={`${Math.round((summary.atRiskMonthlyRevenue ?? 0) / 1_000_000).toLocaleString()}M`}
-          icon={DollarSign} subtitle="VND / tháng" />
+        {(() => {
+          // CR-110 (INV-CUR-001): atRiskMonthlyRevenueByCurrency is a per-currency
+          // map -- never summed across VND/USD/MMK. Show the largest currency's
+          // figure as the headline value; list any others in the subtitle rather
+          // than silently dropping them.
+          const byCurrency: Record<string, number> = summary.atRiskMonthlyRevenueByCurrency ?? {};
+          const entries = Object.entries(byCurrency).filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a);
+          const [primaryCode, primaryValue] = entries[0] ?? ['VND', 0];
+          const others = entries.slice(1);
+          return (
+            <StatCard
+              title="Doanh thu rủi ro"
+              value={formatMoneyCompact(primaryValue, primaryCode as CurrencyCode)}
+              valueTitle={formatMoney(primaryValue, primaryCode as CurrencyCode)}
+              icon={DollarSign}
+              subtitle={others.length > 0
+                ? `+ ${others.map(([code, v]) => formatMoneyCompact(v, code as CurrencyCode)).join(', ')} / tháng`
+                : '/ tháng'}
+            />
+          );
+        })()}
         <StatCard title="Tổng HĐ theo dõi" value={summary.total ?? 0} icon={Users} />
       </div>
 

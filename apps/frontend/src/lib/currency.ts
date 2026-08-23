@@ -33,3 +33,24 @@ export function formatMoney(amount: number | null | undefined, currencyCode: Cur
     maximumFractionDigits: meta.decimalPlaces,
   }).format(amount);
 }
+
+// Numeric-only formatting (no embedded currency symbol/code) for table cells
+// that already carry a dedicated Currency column -- prevents the amount from
+// showing its currency twice.
+export function formatMoneyAmount(amount: number | null | undefined, currencyCode: CurrencyCode = 'VND', locale = 'vi-VN'): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—';
+  const meta = CURRENCIES[currencyCode] ?? CURRENCIES.VND;
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: meta.decimalPlaces,
+    maximumFractionDigits: meta.decimalPlaces,
+  }).format(amount);
+}
+
+// Compact notation with an explicit currency CODE (never a bare abbreviation)
+// for KPI/Dashboard tiles -- pair with a `title`/tooltip showing formatMoney's
+// full value.
+export function formatMoneyCompact(amount: number | null | undefined, currencyCode: CurrencyCode = 'VND', locale = 'vi-VN'): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return '—';
+  const compact = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(amount);
+  return `${compact} ${currencyCode}`;
+}

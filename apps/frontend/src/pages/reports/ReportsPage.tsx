@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { formatMoney, formatMoneyCompact, type CurrencyCode } from '@/lib/currency';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -163,19 +164,24 @@ function PipelineReport() {
         <CardHeader><CardTitle className="text-sm">{t('pipeline.proposalsByStatus')}</CardTitle></CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {proposals.map((p: any, i: number) => (
-              <div key={i} className="flex justify-between items-center">
-                <span className="text-sm">{p.status}</span>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{p._count}</Badge>
-                  {p._sum?.totalContractValue > 0 && (
-                    <span className="text-xs text-gray-500">
-                      {(p._sum.totalContractValue / 1e9).toFixed(1)}B
-                    </span>
-                  )}
+            {proposals.map((p: any, i: number) => {
+              // CR-110 (INV-CUR-001): valueByCurrency is a per-currency map --
+              // rendered as one badge per currency present, never summed together.
+              const currencies = Object.entries(p.valueByCurrency ?? {}).filter(([, v]) => (v as number) > 0);
+              return (
+                <div key={i} className="flex justify-between items-center">
+                  <span className="text-sm">{p.status}</span>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <Badge variant="secondary">{p._count}</Badge>
+                    {currencies.map(([code, value]) => (
+                      <span key={code} className="text-xs text-gray-500 whitespace-nowrap" title={formatMoney(value as number, code as CurrencyCode)}>
+                        {formatMoneyCompact(value as number, code as CurrencyCode)}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>

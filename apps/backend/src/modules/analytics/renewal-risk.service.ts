@@ -166,6 +166,7 @@ export class RenewalRiskService {
             contractNumber: true,
             endDate: true,
             rent: true,
+            currencyCode: true,
             tenant: { select: { brandName: true } },
             unit: { select: { code: true } },
           },
@@ -181,10 +182,14 @@ export class RenewalRiskService {
       LOW: scores.filter((s) => s.riskLevel === 'LOW'),
     };
 
-    const atRiskRevenue = [...byLevel.CRITICAL, ...byLevel.HIGH].reduce(
-      (sum, s) => sum + (s.contract.rent ?? 0),
-      0,
-    );
+    // CR-110 (INV-CUR-001 -- never sum different currencies): contract.rent is
+    // currency-aware (VND/USD/MMK), so at-risk revenue is bucketed per currency
+    // instead of blindly summed into one figure.
+    const atRiskRevenueByCurrency: Record<string, number> = {};
+    for (const s of [...byLevel.CRITICAL, ...byLevel.HIGH]) {
+      const code = s.contract.currencyCode ?? 'VND';
+      atRiskRevenueByCurrency[code] = (atRiskRevenueByCurrency[code] ?? 0) + (s.contract.rent ?? 0);
+    }
 
     return {
       summary: {
@@ -193,7 +198,7 @@ export class RenewalRiskService {
         high: byLevel.HIGH.length,
         medium: byLevel.MEDIUM.length,
         low: byLevel.LOW.length,
-        atRiskMonthlyRevenue: atRiskRevenue,
+        atRiskMonthlyRevenueByCurrency: atRiskRevenueByCurrency,
       },
       topRisks: scores.slice(0, 10).map((s) => ({
         contractNumber: s.contract.contractNumber,
