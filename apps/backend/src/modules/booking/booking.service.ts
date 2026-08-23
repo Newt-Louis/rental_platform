@@ -19,6 +19,7 @@ import {
 } from './dto/create-booking.dto';
 import { CategoriesService } from '../categories/categories.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
 
 @Injectable()
 export class BookingService {
@@ -66,6 +67,11 @@ export class BookingService {
         throw new BadRequestException('Lead ngan han phai su dung booking o ngan han');
       }
       if (!lead) throw new NotFoundException('Lead không tồn tại');
+      if (!lead.mallId || lead.mallId !== unit.mallId) {
+        throw new ForbiddenException(
+          'Lead must belong to the same mall as the selected Unit',
+        );
+      }
     }
     if (dto.customerId) {
       const customer = await this.prisma.customer.findUnique({ where: { id: dto.customerId } });
@@ -118,6 +124,29 @@ export class BookingService {
     }
 
     return this.runSerializable(async (tx) => {
+      // Finder eligibility is advisory. Re-read the Unit and Lead inside every
+      // serializable attempt so a status/Mall change between search and submit
+      // cannot create a queued Booking against stale eligibility.
+      const currentUnit = await tx.unit.findUnique({ where: { id: dto.unitId } });
+      if (!currentUnit || !currentUnit.isActive) {
+        throw new NotFoundException('Unit không tồn tại');
+      }
+      if ((currentUnit.leaseTermType && currentUnit.leaseTermType !== 'LONG') || this.unitStatus.isLockedForBooking(currentUnit.status)) {
+        throw new BadRequestException(
+          `Không thể tạo booking: mặt bằng không còn đủ điều kiện (trạng thái ${currentUnit.status}).`,
+        );
+      }
+      if (dto.leadId) {
+        const currentLead = await tx.lead.findUnique({ where: { id: dto.leadId } });
+        if (!currentLead) throw new NotFoundException('Lead không tồn tại');
+        if (currentLead.leaseTermType && currentLead.leaseTermType !== 'LONG') {
+          throw new BadRequestException('Lead ngắn hạn phải sử dụng booking ô ngắn hạn');
+        }
+        if (!currentLead.mallId || currentLead.mallId !== currentUnit.mallId) {
+          throw new ForbiddenException('Lead must belong to the same mall as the selected Unit');
+        }
+      }
+
       // Re-checked on every attempt (including retries after a losing race) so the decision
       // is always made against current data, not a stale pre-transaction read.
       const existingActive = await tx.unitBooking.findFirst({
@@ -210,6 +239,114 @@ export class BookingService {
   }
 
   // ─── Danh sách bookings ───────────────────────────────────────────────────
+
+  /**
+   * CR-BOOKING-UX Wave 1: read-only Booking projection over Unit master data.
+   * The same UnitStatusService predicate used by create() derives eligibility.
+   * Results are advisory; POST /bookings always revalidates current state.
+   */
+  async findUnits(query: UnitFinderQueryDto & { mallIds?: string[] }) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    if (query.minArea !== undefined && query.maxArea !== undefined && query.minArea > query.maxArea) {
+      throw new BadRequestException('minArea must be less than or equal to maxArea');
+    }
+
+    const where: Prisma.UnitWhereInput = {
+      isActive: true,
+      leaseTermType: 'LONG',
+    };
+    if (query.mallId) where.mallId = query.mallId;
+    else if (query.mallIds) where.mallId = { in: query.mallIds };
+    if (query.unitId) where.id = query.unitId;
+    if (query.floorId) where.floorId = query.floorId;
+    if (query.zoneId) where.zoneId = query.zoneId;
+    if (query.status) where.status = query.status;
+    if (query.minArea !== undefined || query.maxArea !== undefined) {
+      where.areaNLA = {
+        ...(query.minArea !== undefined ? { gte: query.minArea } : {}),
+        ...(query.maxArea !== undefined ? { lte: query.maxArea } : {}),
+      };
+    }
+
+    const search = query.search?.trim();
+    if (search) {
+      where.OR = [
+        { code: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [units, total] = await Promise.all([
+      this.prisma.unit.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          mallId: true,
+          floorId: true,
+          zoneId: true,
+          areaNLA: true,
+          areaGFA: true,
+          category: true,
+          status: true,
+          leaseTermType: true,
+          mall: { select: { id: true, name: true, code: true } },
+          floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.unit.count({ where }),
+    ]);
+
+    const unitIds = units.map((unit) => unit.id);
+    const queueCounts = unitIds.length
+      ? await this.prisma.unitBooking.groupBy({
+          by: ['unitId'],
+          where: {
+            unitId: { in: unitIds },
+            isActive: true,
+            status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const queueCountByUnit = new Map(queueCounts.map((row) => [row.unitId, row._count._all]));
+
+    return {
+      data: units.map((unit) => {
+        const locked = this.unitStatus.isLockedForBooking(unit.status);
+        const mode = locked
+          ? 'BLOCKED'
+          : unit.status === UnitStatus.BOOKING
+            ? 'QUEUE'
+            : unit.status === UnitStatus.VACANT
+              ? 'IMMEDIATE'
+              : 'BLOCKED';
+        return {
+          ...unit,
+          currentEligibility: {
+            selectable: mode !== 'BLOCKED',
+            mode,
+            reasonCode: locked
+              ? `UNIT_STATUS_${unit.status}`
+              : mode === 'BLOCKED'
+                ? 'UNIT_STATUS_NOT_BOOKABLE'
+                : null,
+            queueCount: mode === 'QUEUE' ? (queueCountByUnit.get(unit.id) ?? 0) : 0,
+          },
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
 
   async findAll(query: {
     unitId?: string;

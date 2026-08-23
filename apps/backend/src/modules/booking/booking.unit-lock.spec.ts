@@ -51,7 +51,7 @@ describe('BookingService — unit status lock (#20)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', isActive: true });
+    prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', mallId: 'mall-1', isActive: true });
     prisma.unitBooking.findFirst.mockResolvedValue(null);
     prisma.unitBooking.create.mockResolvedValue({ id: 'booking-1' });
     prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 0 } });

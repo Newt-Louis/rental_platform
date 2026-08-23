@@ -122,7 +122,7 @@ export function filterSlotBookings(
 export default function BookingsPage() {
   const { t } = useTranslation('bookings');
   const [searchParams] = useSearchParams();
-  const { selectedMallId } = useMallStore();
+  const { selectedMallId, selectedMallName } = useMallStore();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [typeFilter, setTypeFilter] = useState<'unit' | 'slot'>('unit');
@@ -1011,7 +1011,7 @@ export default function BookingsPage() {
         onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); setEditSlotDirectly(false); }}
       />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
-      <CreateBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} />
+      <CreateBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} mallName={selectedMallName} />
 
       {/* Reinstate Confirmation */}
       <Dialog open={!!confirmReinstateId} onOpenChange={(o) => { if (!o) setConfirmReinstateId(null); }}>

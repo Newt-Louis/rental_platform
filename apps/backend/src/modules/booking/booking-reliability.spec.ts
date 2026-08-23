@@ -79,7 +79,7 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
 
     beforeEach(() => {
       prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.VACANT, isActive: true });
-      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', isActive: true });
+      prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', mallId: 'mall-1', isActive: true });
     });
 
     it('resolves a lost concurrent-same-unit race by retrying with fresh data instead of erroring', async () => {
@@ -116,6 +116,18 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
       prisma.unitBooking.findFirst.mockResolvedValue({ id: 'existing-1' });
 
       await expect(service.create(dto, 'user-1')).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.unitBooking.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a Unit that becomes locked after discovery but before the transaction', async () => {
+      prisma.unit.findUnique
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.VACANT, isActive: true, leaseTermType: 'LONG' })
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.CONTRACTED, isActive: true, leaseTermType: 'LONG' });
+      unitStatus.isLockedForBooking
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+
+      await expect(service.create(dto, 'user-1')).rejects.toThrow('không còn đủ điều kiện');
       expect(prisma.unitBooking.create).not.toHaveBeenCalled();
     });
 
