@@ -40,13 +40,14 @@ export class CrmService {
     statuses?: string;
     assignedToId?: string;
     customerId?: string;
+    mallId?: string;
     leaseTermType?: UnitLeaseTermType;
     search?: string;
     page?: number;
     limit?: number;
     scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
-    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, leaseTermType } = query;
+    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, mallId, leaseTermType } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null, ...this.leadScope(query.scope) };
@@ -66,6 +67,11 @@ export class CrmService {
     }
     if (assignedToId) where.assignedToId = assignedToId;
     if (customerId) where.customerId = customerId;
+    // An explicit Mall filter is stricter than the general CRM visibility
+    // scope. Booking may only pair a Lead whose owning mallId matches the
+    // selected Unit, so related/assigned Leads from another Mall must not be
+    // returned as selectable finder results.
+    if (mallId) where.mallId = mallId;
     if (leaseTermType) where.leaseTermType = leaseTermType;
     if (search) {
       where.OR = [

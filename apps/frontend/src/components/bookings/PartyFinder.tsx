@@ -57,7 +57,11 @@ export function PartyFinder({
       }),
     enabled: !!mallId,
   });
-  const leads: BookingLead[] = query.data?.data ?? [];
+  // The API applies the authoritative direct-Mall filter. Keep this defensive
+  // projection so a stale/mixed response never renders an unusable option.
+  const leads: BookingLead[] = (query.data?.data ?? []).filter(
+    (lead: BookingLead) => lead.mallId === mallId,
+  );
   const totalPages = query.data?.totalPages ?? 1;
 
   if (!mallId) {
@@ -105,52 +109,51 @@ export function PartyFinder({
       >
         <div className="max-h-64 divide-y overflow-y-auto rounded-lg border">
           {leads.map((lead) => {
-            const mallMismatch = !lead.mallId || lead.mallId !== mallId;
             const selected = selectedLead?.id === lead.id;
             return (
-              <div key={lead.id} className="flex items-start gap-3 p-3">
-                <User
-                  className="mt-0.5 h-4 w-4 shrink-0 text-blue-500"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-gray-900">
-                      {lead.brandName || lead.company || "Lead chưa đặt tên"}
-                    </span>
-                    <Badge variant="outline">{lead.status}</Badge>
+              <div
+                key={lead.id}
+                className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-3 p-3"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <User
+                    className="mt-0.5 h-4 w-4 shrink-0 text-blue-500"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-gray-900">
+                        {lead.brandName || lead.company || "Lead chưa đặt tên"}
+                      </span>
+                      <Badge variant="outline">{lead.status}</Badge>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      {lead.contactName || "Chưa có người liên hệ"}
+                      {lead.phone ? ` · ${lead.phone}` : ""}
+                    </p>
+                    {lead.email && (
+                      <p className="truncate text-xs text-gray-500">
+                        {lead.email}
+                      </p>
+                    )}
+                    {lead.customer && (
+                      <p className="text-xs text-gray-500">
+                        Customer:{" "}
+                        {lead.customer.customerCode || lead.customer.companyName}
+                      </p>
+                    )}
+                    {lead.tenant && (
+                      <p className="text-xs text-gray-500">
+                        Tenant: {lead.tenant.brandName || lead.tenant.companyName}
+                      </p>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-600">
-                    {lead.contactName || "Chưa có người liên hệ"}
-                    {lead.phone ? ` · ${lead.phone}` : ""}
-                  </p>
-                  {lead.email && (
-                    <p className="truncate text-xs text-gray-500">
-                      {lead.email}
-                    </p>
-                  )}
-                  {lead.customer && (
-                    <p className="text-xs text-gray-500">
-                      Customer:{" "}
-                      {lead.customer.customerCode || lead.customer.companyName}
-                    </p>
-                  )}
-                  {lead.tenant && (
-                    <p className="text-xs text-gray-500">
-                      Tenant: {lead.tenant.brandName || lead.tenant.companyName}
-                    </p>
-                  )}
-                  {mallMismatch && (
-                    <p className="mt-1 text-xs text-red-600">
-                      Lead chưa được gắn đúng Mall và không thể chọn.
-                    </p>
-                  )}
                 </div>
                 <Button
                   type="button"
                   size="sm"
                   variant={selected ? "default" : "outline"}
-                  disabled={mallMismatch}
+                  className="w-20"
                   aria-label={`Chọn Lead ${lead.brandName || lead.company || lead.contactName || lead.id}`}
                   onClick={() => onSelect(lead)}
                 >

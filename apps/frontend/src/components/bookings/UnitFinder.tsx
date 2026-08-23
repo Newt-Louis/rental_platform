@@ -282,7 +282,7 @@ export function UnitFinder({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-20">Chọn</TableHead>
+                <TableHead className="w-24">Chọn</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead>Tầng</TableHead>
                 <TableHead>Khu</TableHead>
@@ -304,6 +304,7 @@ export function UnitFinder({
                         type="button"
                         size="sm"
                         variant={selected ? "default" : "outline"}
+                        className="w-20"
                         disabled={!unit.currentEligibility.selectable}
                         aria-label={`Chọn Unit ${unit.code}`}
                         aria-describedby={

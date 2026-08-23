@@ -61,17 +61,14 @@ describe("PartyFinder", () => {
     );
   });
 
-  it("fails safely for cross-Mall and Mall-less Leads", async () => {
+  it("shows only Leads that can be selected for the active Mall", async () => {
     const onSelect = vi.fn();
     renderFinder(onSelect);
-    await screen.findByText("Other Mall");
+    await screen.findByText("NIKE");
 
-    expect(
-      screen.getByRole("button", { name: "Chọn Lead Other Mall" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Chọn Lead No Mall" }),
-    ).toBeDisabled();
+    expect(screen.queryByText("Other Mall")).not.toBeInTheDocument();
+    expect(screen.queryByText("No Mall")).not.toBeInTheDocument();
+    expect(screen.queryByText(/không thể chọn/i)).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Chọn Lead NIKE" }),
     );

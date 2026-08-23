@@ -61,4 +61,15 @@ describe('CrmService lead list filters', () => {
     expect(where.AND).toHaveLength(1);
     expect(where.OR).toHaveLength(4);
   });
+
+  it('restricts an explicit Mall search to Leads owned by that Mall', async () => {
+    await service.findAll({
+      mallId: 'mall-1',
+      scope: { userId: 'manager-1', role: Role.LEASING_MANAGER, mallIds: ['mall-1'] },
+    });
+
+    const where = prisma.lead.findMany.mock.calls[0][0].where;
+    expect(where.mallId).toBe('mall-1');
+    expect(where.AND).toHaveLength(1);
+  });
 });
