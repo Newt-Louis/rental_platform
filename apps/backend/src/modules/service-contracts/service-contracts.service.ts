@@ -261,17 +261,20 @@ export class ServiceContractsService {
   async stats(mallIds?: string[]) {
     const where: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
     const soon = new Date(); soon.setDate(soon.getDate() + 30);
-    const [total, grouped, categories, valueBases, expiringSoon, value] = await Promise.all([
+    const [total, grouped, categories, valueBases, expiringSoon, valueByCurrency] = await Promise.all([
       this.prisma.serviceContract.count({ where }), this.prisma.serviceContract.groupBy({ by: ['status'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['serviceCategory'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['valueBasis'], where, _count: true }),
       this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: EXPIRY_ALERT_STATUSES } } }),
-      this.prisma.serviceContract.aggregate({ where, _sum: { totalValue: true } }),
+      // Money Domain Consolidation (INV-CUR-001): ServiceContract.totalValue is
+      // currency-aware (VND/USD/MMK) -- group by currency instead of a blind
+      // _sum, same pattern as CR-110's reports/renewal-risk fixes.
+      this.prisma.serviceContract.groupBy({ by: ['currency'], where, _sum: { totalValue: true } }),
     ]);
     return {
       total,
       expiringSoon,
-      totalValue: value._sum.totalValue || 0,
+      totalValueByCurrency: Object.fromEntries(valueByCurrency.map(x => [x.currency, x._sum.totalValue || 0])),
       byStatus: Object.fromEntries(grouped.map(x => [x.status, x._count])),
       byServiceCategory: Object.fromEntries(categories.map(x => [x.serviceCategory, x._count])),
       byValueBasis: Object.fromEntries(valueBases.map(x => [x.valueBasis, x._count])),

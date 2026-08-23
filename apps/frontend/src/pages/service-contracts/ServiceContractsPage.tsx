@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePermission } from "@/hooks/usePermission";
 import type { Role } from "@/types";
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from "@/lib/currency";
 
 const STATUSES = [
   "DRAFT",
@@ -434,7 +435,7 @@ export default function ServiceContractsPage() {
                   – {c.endDate ? new Date(c.endDate).toLocaleDateString() : "—"}
                 </td>
                 <td className="text-right">
-                  {Number(c.totalValue).toLocaleString()} {c.currency}
+                  {formatMoneyAmount(Number(c.totalValue), c.currency as CurrencyCode)} {c.currency}
                   <div className="text-xs text-muted-foreground">{valueBasisLabel(c.valueBasis || "ONE_TIME")}</div>
                 </td>
                 <td className="px-3">
@@ -555,8 +556,7 @@ export default function ServiceContractsPage() {
               <div>
                 <span className="text-muted-foreground">Giá trị</span>
                 <div className="font-medium">
-                  {Number(item.totalValue).toLocaleString("vi-VN")}{" "}
-                  {item.currency}
+                  {formatMoney(Number(item.totalValue), item.currency as CurrencyCode)}
                 </div>
                 <div className="text-xs text-muted-foreground">{valueBasisLabel(item.valueBasis || "ONE_TIME")}</div>
               </div>
@@ -980,13 +980,13 @@ function ContractOperations({
                   <b>{p.milestone}</b>
                   <div className="text-muted-foreground">
                     {new Date(p.dueDate).toLocaleDateString("vi-VN")} ·{" "}
-                    {Number(p.amount).toLocaleString("vi-VN")} {p.currency} ·
+                    {formatMoneyAmount(Number(p.amount), p.currency as CurrencyCode)} {p.currency} ·
                     nhắc trước {p.reminderDays} ngày
                   </div>
                   {p.paidDate && (
                     <div className="text-emerald-600">
                       Đã thanh toán{" "}
-                      {Number(p.paidAmount || p.amount).toLocaleString("vi-VN")}{" "}
+                      {formatMoneyAmount(Number(p.paidAmount || p.amount), p.currency as CurrencyCode)}{" "}
                       {p.currency}{" "}
                       · {new Date(p.paidDate).toLocaleDateString("vi-VN")}
                     </div>

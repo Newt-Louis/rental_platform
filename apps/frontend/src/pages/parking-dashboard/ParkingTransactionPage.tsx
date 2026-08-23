@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ScanLine, Search, Download, ImageIcon, X } from 'lucide-react';
 import { formatDateTimeVN } from '@/lib/utils';
+import { formatMoney } from '@/lib/currency';
 
 const PARKING_LOTS = [
   { code: 'sKVuws6s', name: 'Sala' },
@@ -18,8 +19,10 @@ const PARKING_LOTS = [
   { code: 'HVkrxUsp', name: 'PVT' },
 ];
 
+// Money Domain Consolidation: Parking transactions have no currency field on
+// the schema (currency-less by design, deferred -- see ParkingReportPage.tsx).
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' đ';
+  return formatMoney(n, 'VND');
 }
 
 function yesterdayIso() {

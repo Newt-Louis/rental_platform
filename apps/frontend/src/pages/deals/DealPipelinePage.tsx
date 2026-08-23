@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DealTimelineSheet } from '@/components/DealTimeline';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
   GitBranch, Search, Clock, Building2, User, ChevronRight, Zap,
 } from 'lucide-react';
@@ -26,10 +26,11 @@ const STAGE_CONFIG: Record<string, { color: string }> = {
   WON: { color: 'bg-green-100 text-green-700' },
 };
 
+// Money Domain Consolidation: per-deal figures are individual record values,
+// not KPI aggregates -- must show the full amount, never abbreviated.
 function fmtValue(v?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!v) return '—';
-  const symbol = CURRENCIES[currencyCode]?.symbol ?? '₫';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(v) + ' ' + symbol;
+  return formatMoney(v, currencyCode);
 }
 
 export default function DealPipelinePage() {

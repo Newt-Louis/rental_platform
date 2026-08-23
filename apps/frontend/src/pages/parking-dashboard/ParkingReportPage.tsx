@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { ParkingCircle } from 'lucide-react';
+import { formatMoney, formatMoneyCompact } from '@/lib/currency';
 
 const PARKING_LOTS = [
   { code: 'sKVuws6s', name: 'Sala' },
@@ -14,8 +15,14 @@ const PARKING_LOTS = [
   { code: 'HVkrxUsp', name: 'PVT' },
 ];
 
+// Money Domain Consolidation: Parking revenue has no currency field on the
+// schema at all (currency-less by design, deferred to a future CR per
+// CR-102's "Deferred to CR-103" list) -- VND is the platform's implicit unit.
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n) + ' đ';
+  return formatMoneyCompact(n, 'VND');
+}
+function fmtVndFull(n: number) {
+  return formatMoney(n, 'VND');
 }
 
 function monthRange(month: string) {
@@ -85,7 +92,7 @@ export default function ParkingReportPage() {
           <Card>
             <CardContent className="pt-4">
               <p className="text-xs text-gray-500">{t('report.todayRevenue', 'Doanh thu hôm nay')}</p>
-              <p className="text-xl font-bold">{fmtVnd(k?.todayRevenue ?? 0)}</p>
+              <p className="text-xl font-bold" title={fmtVndFull(k?.todayRevenue ?? 0)}>{fmtVnd(k?.todayRevenue ?? 0)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -97,7 +104,7 @@ export default function ParkingReportPage() {
           <Card>
             <CardContent className="pt-4">
               <p className="text-xs text-gray-500">{t('report.lastMonthRevenue', 'Doanh thu tháng trước')}</p>
-              <p className="text-xl font-bold">{fmtVnd(k?.totalRevenueLastMonth ?? 0)}</p>
+              <p className="text-xl font-bold" title={fmtVndFull(k?.totalRevenueLastMonth ?? 0)}>{fmtVnd(k?.totalRevenueLastMonth ?? 0)}</p>
             </CardContent>
           </Card>
           <Card>

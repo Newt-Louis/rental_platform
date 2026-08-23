@@ -274,8 +274,8 @@ function RevenueReceivablesReport() {
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={byPeriod}>
                 <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1e6).toFixed(0)}M`} />
-                <Tooltip formatter={(v: any) => [`${(v / 1e6).toFixed(1)}M VNĐ`]} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatMoneyCompact(v, 'VND')} />
+                <Tooltip formatter={(v: any) => [formatMoney(v, 'VND')]} />
                 <Bar dataKey="billed" name={t('revenueReceivables.issued')} fill="#93c5fd" />
                 <Bar dataKey="collected" name={t('revenueReceivables.collected')} fill="#3b82f6" />
               </BarChart>
