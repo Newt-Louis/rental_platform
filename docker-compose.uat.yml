@@ -54,6 +54,7 @@ services:
     profiles: [setup]
 
   backend-uat:
+    image: registry.thisoretail.store/leasing-platform/backend:${IMAGE_TAG:-latest}
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
@@ -90,6 +91,7 @@ services:
       start_period: 30s
 
   frontend-uat:
+    image: registry.thisoretail.store/leasing-platform/frontend:${IMAGE_TAG:-latest}
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile

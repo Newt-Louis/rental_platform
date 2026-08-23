@@ -65,16 +65,16 @@ export class CreateSlotPricingRuleDto {
 }
 
 export class CreateSlotGridDto {
-  @ApiProperty({ description: 'Number of rows in the grid', example: 2 })
+  @ApiProperty({ description: 'Number of rows in the grid (max 10)', example: 2 })
   @IsNumber()
   @Min(1)
-  @Max(6)
+  @Max(10)
   rows: number;
 
-  @ApiProperty({ description: 'Number of columns in the grid', example: 3 })
+  @ApiProperty({ description: 'Number of columns in the grid (max 10)', example: 3 })
   @IsNumber()
   @Min(1)
-  @Max(6)
+  @Max(10)
   cols: number;
 
   @ApiPropertyOptional({ enum: SlotType })

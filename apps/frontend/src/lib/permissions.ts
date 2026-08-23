@@ -391,6 +391,11 @@ export const NAV_GROUPS = [
       },
       { label: "AI Assistant", path: "/ai", module: "ai" as RouteModule },
       {
+        label: "Codebase Chat",
+        path: "/ai/codebase",
+        module: "ai" as RouteModule,
+      },
+      {
         label: "Cross-Mall CEO",
         path: "/cross-mall",
         module: "cross-mall" as RouteModule,
