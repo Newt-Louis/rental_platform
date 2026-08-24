@@ -13,7 +13,7 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 628/628 across 96 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
+| Engineering | PASS | Backend is 632/632 across 97 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
 | Authorization | BLOCKED | Waves 15–17 close Ticket secondary paths, CRM unified deals and Analytics Compliance exports. Remaining code-level capability questions are explicit business confirmations; live cross-Mall/Tenant UAT evidence is still unavailable. |
 | Tenant isolation | BLOCKED | Wave 15 closes the confirmed Ticket escalation/rating ownership gaps with focused negative coverage. Live Contract/Invoice checks passed and Files have focused tests, but the complete live cross-tenant UAT matrix is still missing. |

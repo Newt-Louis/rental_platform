@@ -41,6 +41,50 @@ The following pre-existing paths are excluded from program staging unless their 
 | 17 | Analytics compliance-export authorization | COMPLETE — Mall scope, payload isolation and global-write control enforced |
 | 18 | Work Order state/event atomicity | COMPLETE — state mutation and audit event share one transaction |
 | 19 | Short-term Slot allocation concurrency | COMPLETE — serialized conflict-check and write with bounded retry |
+| 20 | Contract direct-create/update atomicity | COMPLETE — Contract, Unit and audit writes share transaction boundaries |
+
+## Wave 20 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W20-CONTRACT-WRITE-ATOMICITY`
+
+Business reason: Direct Contract creation currently commits the Contract before
+transitioning its Unit and writing the Contract audit event. Contract update
+similarly commits before its event. A downstream failure can leave a live
+Contract without matching Unit state or audit history. Existing Proposal-based
+conversion already demonstrates the approved transaction-client pattern.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Contracts with Unit status and Contract audit history |
+| Runtime behavior | Revalidate Unit/live-contract constraints and commit Contract create + Unit transition + event in one Serializable transaction; update + event share one transaction |
+| Data/workflow | Existing Contract status, editable fields and Unit transition matrix unchanged |
+| Financial/currency | Existing Proposal currency propagation and all Contract amounts/formulas unchanged |
+| Mall/Tenant | Existing authorization and entity ownership checks unchanged |
+| Authorization | Unchanged |
+| API | Routes, DTOs and response shapes unchanged |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Direct create rechecks occupancy inside Serializable transaction; event/Unit failure rolls back Contract. Update event failure rolls back update. |
+| Protected work | Dashboard and concurrent Proposal/Approval/frontend currency files excluded |
+| Tests | Currency propagation regression plus focused rollback/transaction tests, backend full suite/build, reconciliation and `git diff --check` |
+| Golden scenarios | Proposal/Contract currency invariant and Contract-to-Unit state continuity |
+| Rollback | Restore sequential direct-create/update calls |
+| Unknowns | Termination workflow transaction boundary is separately audited; no termination behavior in this wave |
+
+## Wave 20 technical gate — 2026-08-24
+
+- Direct Contract creation revalidates Unit/live-contract constraints inside a
+  Serializable transaction, then creates the Contract, transitions the Unit and
+  writes the existing audit event through the same transaction client.
+- Contract field update and its existing audit event now share one transaction.
+  Serialization conflicts retry at most three times.
+- Proposal currency remains authoritative and the focused propagation suite
+  still covers USD, MMK, direct explicit currency and VND fallback.
+- Focused Contract create/update/activation: PASS, 3 suites / 14 tests.
+- Backend full: PASS, 97/97 suites and 632/632 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Contract lifecycle, financial formulas, currency propagation, API, schema and
+  database structure: UNCHANGED.
 
 ## Wave 19 Change Request and Impact Map
 

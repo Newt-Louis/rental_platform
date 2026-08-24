@@ -8,7 +8,8 @@ Status: ACTIVE
 | Penalty/dunning currency | Separate approved correctness CR required | Out of Golden Billing UI |
 | Payment remaining formula mismatch | Backend balance authoritative | Track; do not alter formula in UI |
 | Proposal calculation/rent-free/scenario semantics | Business-rule evidence required | Preserve existing behavior |
-| Contract termination/amendment/direct-create atomicity | Cross-domain/Tier 0 review | No opportunistic change |
+| Contract direct-create/update atomicity | RESOLVED in Wave 20 | Contract + Unit transition + audit event share a Serializable transaction; general update + audit share a transaction; currency propagation unchanged |
+| Contract termination/amendment atomicity | Tier 1 reliability | Termination complete still transitions Unit after Contract/termination commit; amendment boundary requires separate code evidence |
 | Slot allocation concurrency | RESOLVED in Wave 19 | Create/update conflict reads and writes use Serializable transactions with bounded retry; overlap semantics and pricing remain unchanged |
 | Duplicated financial formulas | Platform-level refactor | Audit before consolidation |
 | Remaining cross-Mall scope gaps in adjacent modules | Security verification | Fix only with endpoint evidence and reviewed impact map |

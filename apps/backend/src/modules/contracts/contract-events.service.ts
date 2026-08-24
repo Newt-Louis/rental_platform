@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class ContractEventsService {
@@ -14,8 +17,8 @@ export class ContractEventsService {
     afterValue?: string;
     userId?: string;
     metadata?: Record<string, unknown>;
-  }) {
-    return this.prisma.contractEvent.create({
+  }, client: PrismaClientOrTx = this.prisma) {
+    return client.contractEvent.create({
       data: {
         contractId: opts.contractId,
         eventType: opts.eventType,
