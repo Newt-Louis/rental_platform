@@ -23,7 +23,7 @@ Status: ACTIVE
 | Ticket scheduled escalation recipient Mall policy | Tier 1; `BC-020-R` | Confirm whether recipient discovery must be Mall-scoped before changing scheduler semantics |
 | Work Order status/event atomicity | Tier 1 reliability | Status write and audit-event insert are currently separate; preserve until a reviewed transaction change |
 | Patrol abnormal-check → Work Order transaction boundary | Tier 1 cross-module; XMOD-007 | Existing one-way/idempotent automation is preserved; verify atomicity before any correctness change |
-| Analytics Compliance export Mall ownership | Tier 1; BC required | Core Analytics reads were fixed in CR-101 Phase 3G, but export list/request/generate/manual-monthly paths still require authoritative ownership, scoped entity lookups and negative cross-Mall tests |
+| Analytics Compliance export Mall ownership | RESOLVED in Wave 17 | Worklist, request and generation enforce Mall ownership; global writes/manual all-Mall trigger are ADMIN-only; source payloads use authoritative Mall relations and scoped exports omit SAP logs that lack Mall provenance |
 | CEO operational capability contradiction | Tier 0 authorization; business confirmation required | Current Parking, Work Order and Proposal write access conflicts with the documented aggregate/read persona; do not normalize roles from the UI |
 
 This backlog records risks; it is not authorization to change Tier 0/Tier 1 behavior.

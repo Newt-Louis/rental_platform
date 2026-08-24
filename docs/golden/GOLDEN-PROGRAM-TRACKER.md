@@ -38,6 +38,51 @@ The following pre-existing paths are excluded from program staging unless their 
 | 14 | Render-discovered presentation defects | COMPLETE — report artifacts removed and Work Order templates localized |
 | 15 | Ticket secondary-path authorization | COMPLETE — per-ticket ownership and Mall-scoped aggregates enforced |
 | 16 | CRM unified-deals authorization | COMPLETE — authoritative Lead scope enforced before pagination |
+| 17 | Analytics compliance-export authorization | COMPLETE — Mall scope, payload isolation and global-write control enforced |
+
+## Wave 17 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W17-COMPLIANCE-EXPORT-MALL-SCOPE`
+
+Business reason: Compliance export list/request/generate routes currently bypass
+the Analytics Mall-scope helper. In addition, Mall-specific APPROVALS exports do
+not filter their payload by Mall and Mall-specific AUDIT_TRAIL exports include
+all SAP integration logs even though `SapIntegrationLog` has no authoritative
+Mall provenance. These are proven cross-Mall disclosure risks.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Analytics compliance export |
+| Runtime behavior | Scope export worklists to accessible Malls; validate Mall ownership before request/generate; restrict global export writes and the all-Mall monthly trigger to ADMIN |
+| Data/workflow | Export records and source business entities are read-only; only existing export status/file metadata is written |
+| Financial/currency | No amount, formula, rounding, currency or FX behavior changes |
+| Mall/Tenant | Applies authoritative `Unit.mallId` / `Invoice.mallId` relationship predicates before source-data retrieval; scoped users cannot see global export records |
+| Authorization | CEO retains approved cross-Mall read; operational writes require explicit Mall access; global writes are ADMIN-only |
+| API | Existing routes, request DTOs and response shapes remain unchanged; unauthorized/cross-Mall access is denied or excluded |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Internal scheduled monthly generation remains unchanged; manual all-Mall trigger is ADMIN-only |
+| Protected work | Dashboard and concurrent Proposal/Approval/frontend currency files excluded |
+| Tests | Controller authorization, service query predicates, focused/full backend, build, reconciliation and `git diff --check` |
+| Golden scenarios | GS-09 cross-Mall denial; compliance APPROVALS/AUDIT export isolation |
+| Rollback | Revert controller guards/scope propagation and service query predicates |
+| Unknowns | `SapIntegrationLog` has no Mall field or relation; therefore Mall-scoped exports safely omit those logs instead of guessing ownership. Global ADMIN exports remain complete. |
+
+## Wave 17 technical gate — 2026-08-24
+
+- Compliance export list results are constrained to the caller's accessible
+  Mall set; scoped request/generate mutations validate authoritative Mall
+  ownership before service execution.
+- Global export requests and the manual all-Mall scheduler trigger are
+  ADMIN-only. CEO cross-Mall read remains unchanged.
+- Mall-scoped APPROVALS data resolves Mall through Proposal/Fitout Unit
+  ownership. SAP logs have no Mall provenance and are omitted only from scoped
+  AUDIT_TRAIL exports; global ADMIN exports remain complete.
+- Focused Analytics controller/service: PASS, 2 suites / 14 tests.
+- Backend full: PASS, 94/94 suites and 620/620 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- API route/request/response contracts, export types, financial logic, schema,
+  database and internal scheduled generation: UNCHANGED.
 
 ## Wave 16 Change Request and Impact Map
 

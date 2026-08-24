@@ -13,9 +13,9 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 611/611 across 93 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
+| Engineering | PASS | Backend is 620/620 across 94 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
-| Authorization | FAIL | Waves 15–16 close Ticket secondary paths and CRM unified deals. Analytics Compliance exports retain a confirmed Mall ownership/scope gap. |
+| Authorization | BLOCKED | Waves 15–17 close Ticket secondary paths, CRM unified deals and Analytics Compliance exports. Remaining code-level capability questions are explicit business confirmations; live cross-Mall/Tenant UAT evidence is still unavailable. |
 | Tenant isolation | BLOCKED | Wave 15 closes the confirmed Ticket escalation/rating ownership gaps with focused negative coverage. Live Contract/Invoice checks passed and Files have focused tests, but the complete live cross-tenant UAT matrix is still missing. |
 | Cross-Mall isolation | BLOCKED | The UAT seed contains one Mall, so a meaningful two-Mall denial matrix cannot be executed. Confirmed adjacent endpoint gaps must also be remediated first. |
 | Data integrity | PASS | Read-only backbone reconciliation completed 17/17 checks clean on 2026-08-24; backend concurrency/invariant suites pass. This is dev-data evidence, not production-data certification. |
@@ -44,7 +44,8 @@ the newest source where older readiness documents conflict, especially
 - Live credential rotation and old-credential revocation are incomplete.
 - No usable off-site database/upload backup exists.
 - Full UAT and cross-Mall isolation evidence do not exist.
-- Confirmed authorization gaps remain in reachable adjacent surfaces.
+- Live cross-Mall/Tenant authorization evidence remains unavailable; code-level
+  defects identified in the audited reachable surfaces have been remediated.
 - Automated rendered verification passes, but the new Golden candidates still
   have no human business-usability sign-off.
 

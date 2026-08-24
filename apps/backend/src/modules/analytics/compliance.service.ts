@@ -53,9 +53,7 @@ export class ComplianceService {
   }
 
   async generateExport(exportId: string) {
-    const exp = await this.prisma.complianceExport.findUnique({
-      where: { id: exportId },
-    });
+    const exp = await this.getExport(exportId);
     if (!exp) return null;
 
     const data = await this.gatherExportData(exp);
@@ -70,6 +68,10 @@ export class ComplianceService {
     });
 
     return data;
+  }
+
+  async getExport(exportId: string) {
+    return this.prisma.complianceExport.findUnique({ where: { id: exportId } });
   }
 
   private async gatherExportData(exp: any) {
@@ -96,7 +98,13 @@ export class ComplianceService {
         return this.prisma.invoice.findMany({
           where: {
             ...where,
-            ...(exp.mallId && { contract: { unit: { mallId: exp.mallId } } }),
+            ...(exp.mallId && {
+              OR: [
+                { mallId: exp.mallId },
+                { billingParty: { mallId: exp.mallId } },
+                { contract: { unit: { mallId: exp.mallId } } },
+              ],
+            }),
           },
           include: {
             tenant: { select: { brandName: true, taxCode: true } },
@@ -107,7 +115,15 @@ export class ComplianceService {
 
       case 'APPROVALS':
         return this.prisma.approvalWorkflow.findMany({
-          where,
+          where: {
+            ...where,
+            ...(exp.mallId && {
+              OR: [
+                { proposal: { unit: { mallId: exp.mallId } } },
+                { fitoutSubmittal: { project: { unit: { mallId: exp.mallId } } } },
+              ],
+            }),
+          },
           include: {
             proposal: {
               select: {
@@ -135,12 +151,16 @@ export class ComplianceService {
             },
             orderBy: { createdAt: 'asc' },
           }),
-          sapLogs: await this.prisma.sapIntegrationLog.findMany({
-            where: {
-              createdAt: { gte: exp.periodStart, lte: exp.periodEnd },
-            },
-            orderBy: { createdAt: 'asc' },
-          }),
+          // SapIntegrationLog has no authoritative Mall field/relation. Never
+          // guess ownership from payload/entity strings in a scoped export.
+          sapLogs: exp.mallId
+            ? []
+            : await this.prisma.sapIntegrationLog.findMany({
+                where: {
+                  createdAt: { gte: exp.periodStart, lte: exp.periodEnd },
+                },
+                orderBy: { createdAt: 'asc' },
+              }),
         };
 
       default:
@@ -148,9 +168,13 @@ export class ComplianceService {
     }
   }
 
-  async listExports(filters: { mallId?: string; status?: string }) {
+  async listExports(filters: { mallId?: string; status?: string; mallIds?: string[] | null }) {
     const where: any = {};
-    if (filters.mallId) where.mallId = filters.mallId;
+    if (filters.mallIds !== null && filters.mallIds !== undefined) {
+      where.mallId = { in: filters.mallIds };
+    } else if (filters.mallId) {
+      where.mallId = filters.mallId;
+    }
     if (filters.status) where.status = filters.status;
 
     return this.prisma.complianceExport.findMany({

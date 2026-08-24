@@ -69,7 +69,7 @@ overlap; independent modules must continue.
 | CRM unified-deals Mall scope | Proven security defect; Lead already has authoritative `mallId` and controller already has the scope helper | RESOLVED in Wave 16 with pre-pagination scope tests |
 | Ticket escalation/rate/rating ownership | Proven defect; reuse the same authoritative Ticket validation used by core CRUD | RESOLVED in Wave 15 with ownership tests |
 | Ticket SLA policy access | Proven exploitable role defect; source comment and global policy model establish ADMIN-only intent | RESOLVED in Wave 15 with role/scope tests |
-| Analytics Compliance export Mall scope | Proven defect; export and requested records persist `mallId` and Analytics already has a scope helper | Fix and add negative scope tests |
+| Analytics Compliance export Mall scope | Proven security defect; export records persist `mallId`, business entities have authoritative Mall relations and Analytics already has a scope helper | RESOLVED in Wave 17 with ownership checks, payload predicates and negative tests |
 | Payment remaining mismatch | Not a blocker; backend `balance` is already the approved authority | Keep UI on backend value; isolate any formula divergence test |
 | Contract/Work Order atomicity | Engineering correctness work, not a business blocker where the all-or-nothing invariant is provable | Audit transaction boundaries and fix scoped defects |
 | Slot allocation concurrency | Engineering correctness work | Add concurrency guard/tests without inventing allocation policy |

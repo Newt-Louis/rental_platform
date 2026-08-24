@@ -62,10 +62,13 @@ business confirmation and no workflow semantics were changed.
 |---|---|---|
 | Reports core and CSV export | CR-101 Phase 3G controller resolves explicit or accessible Mall sets through `MallAccessService`; service tests prove scopes reach Prisma/Billing queries | VERIFIED for focused paths; earlier System Truth characterization is stale |
 | Analytics occupancy/vacancy/renewal/multi-Mall | Controller resolves accessible Mall scope; multi-Mall comparison receives that scope rather than returning global data to ordinary Mall roles | VERIFIED by focused controller/service suites; unchanged |
-| Analytics Compliance exports | List/request/generate/manual-monthly endpoints do not validate requested/entity Mall ownership and inherit the broad Analytics role set | CONFIRMED REMAINING GAP; Tier 1 quarantine pending ownership decision and negative tests |
+| Analytics Compliance exports | Wave 17 scopes the worklist, validates persisted/requested Mall ownership before writes, restricts global writes/manual all-Mall generation to ADMIN, and Mall-scopes source payloads | VERIFIED by focused controller/service tests; SAP logs without Mall provenance are omitted from Mall-scoped exports |
 | Analytics retention policy | Per-Mall reads/writes validate Mall access; config writes exclude CEO | VERIFIED for current controller path; unchanged |
 
-Wave 5 changes presentation only. Focused Report/Analytics verification passed 6 suites / 29 tests; this evidence corrects the stale broad-gap wording without claiming the Compliance sub-surface is secure.
+Wave 5 changed presentation only. Wave 17 subsequently closed the Compliance
+sub-surface with authoritative Unit/Invoice relationship predicates and
+negative authorization coverage. No export format, schema, financial logic or
+internal scheduler semantics changed.
 
 ## Wave 6 evidence — Admin / Users / Mall Access / Permissions
 
