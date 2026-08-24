@@ -8,6 +8,7 @@ import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { ProposalStatus } from '@prisma/client';
 import { Role } from '@prisma/client';
 
@@ -16,19 +17,26 @@ describe('ProposalsService integration (mocked DB)', () => {
   const prisma: any = {
     proposal: {
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
     },
     invoice: { count: jest.fn() },
     approvalPolicyRule: { findMany: jest.fn() },
     proposalVersion: { findFirst: jest.fn(), create: jest.fn() },
-    approvalWorkflow: { create: jest.fn() },
+    approvalWorkflow: { create: jest.fn(), findUnique: jest.fn() },
     approvalStep: { findFirst: jest.fn().mockResolvedValue(null) },
     user: { findMany: jest.fn().mockResolvedValue([]) },
+    // submit() wraps its writes in $transaction — run the callback with `prisma`
+    // itself standing in for `tx`, so the existing per-call mocks below double as
+    // the transaction-scoped ones too.
+    $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
   };
+  const categories = { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    categories.validateProposedPrice.mockResolvedValue({ deviationPercent: 0 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProposalsService,
@@ -38,7 +46,8 @@ describe('ProposalsService integration (mocked DB)', () => {
         { provide: BillingScheduleService, useValue: { buildScheduleForContract: jest.fn() } },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
-        { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
+        { provide: CategoriesService, useValue: categories },
+        { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
       ],
     }).compile();
     service = module.get(ProposalsService);
@@ -61,6 +70,12 @@ describe('ProposalsService integration (mocked DB)', () => {
     };
 
     prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.proposal.findUniqueOrThrow.mockResolvedValue({
       ...proposal,
       approvalWorkflow: null,
       contract: null,
@@ -90,6 +105,131 @@ describe('ProposalsService integration (mocked DB)', () => {
           }),
         }),
       }),
+    );
+  });
+
+  it('submit resolves a lost double-submit race to the winning workflow instead of throwing', async () => {
+    const proposal = {
+      id: 'p1',
+      status: ProposalStatus.DRAFT,
+      discount: 12,
+      rentFree: 30,
+      tenantId: 't1',
+      startDate: new Date('2026-01-01'),
+      area: 100,
+      term: 36,
+      rentPerSqm: 500000,
+      camPerSqm: 50000,
+      unit: { category: 'F&B' },
+      tenant: { category: 'F&B' },
+    };
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.invoice.count.mockResolvedValue(0);
+    prisma.approvalPolicyRule.findMany.mockResolvedValue([
+      { stepName: 'Finance', stepOrder: 1, approverRole: Role.FINANCE, conditionType: 'DISCOUNT_PCT', operator: '>=', threshold: 0, isRequired: true },
+    ]);
+    prisma.$transaction.mockRejectedValueOnce({ code: 'P2002' });
+    prisma.approvalWorkflow.findUnique.mockResolvedValue({ id: 'concurrent-winner' });
+
+    const result = await service.submit('p1');
+
+    expect(result.workflowId).toBe('concurrent-winner');
+    expect(prisma.approvalWorkflow.findUnique).toHaveBeenCalledWith({ where: { proposalId: 'p1' } });
+  });
+
+  // Regression found during a QC pass on the multi-currency work: CategoryPricing's
+  // minRentPerSqm/maxRentPerSqm are VND-only. submit() used to call validateProposedPrice()
+  // unconditionally, so a USD/MMK proposal's rentPerSqm got compared against a VND floor,
+  // producing a nonsensical deviation that then fed into PRICE_DEVIATION_PCT approval-rule
+  // matching -- silently forcing or skipping CEO/Director escalation for the wrong reason.
+  it('submit skips the VND floor/ceiling check for a non-VND proposal', async () => {
+    const proposal = {
+      id: 'p1',
+      status: ProposalStatus.DRAFT,
+      discount: 0,
+      rentFree: 0,
+      tenantId: 't1',
+      startDate: new Date('2026-01-01'),
+      area: 100,
+      term: 36,
+      rentPerSqm: 25,
+      camPerSqm: 3,
+      rentCurrency: 'USD',
+      unit: { category: 'F&B', categoryId: 'cat-1' },
+      tenant: { category: 'F&B' },
+    };
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.proposal.findUniqueOrThrow.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.invoice.count.mockResolvedValue(0);
+    prisma.approvalPolicyRule.findMany.mockResolvedValue([
+      { stepName: 'Leasing Manager', stepOrder: 1, approverRole: Role.LEASING_MANAGER, conditionType: 'DISCOUNT_PCT', operator: '>=', threshold: 0, isRequired: true },
+    ]);
+    prisma.proposalVersion.findFirst.mockResolvedValue(null);
+    prisma.proposalVersion.create.mockResolvedValue({ id: 'v1', version: 1 });
+    prisma.approvalWorkflow.create.mockResolvedValue({ id: 'w1' });
+    prisma.proposal.update.mockResolvedValue({});
+
+    await service.submit('p1');
+
+    expect(categories.validateProposedPrice).not.toHaveBeenCalled();
+  });
+
+  it('submit still runs the VND floor/ceiling check for a VND proposal', async () => {
+    const proposal = {
+      id: 'p1',
+      status: ProposalStatus.DRAFT,
+      discount: 0,
+      rentFree: 0,
+      tenantId: 't1',
+      startDate: new Date('2026-01-01'),
+      area: 100,
+      term: 36,
+      rentPerSqm: 500000,
+      camPerSqm: 50000,
+      rentCurrency: 'VND',
+      unit: { category: 'F&B', categoryId: 'cat-1' },
+      tenant: { category: 'F&B' },
+    };
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.proposal.findUniqueOrThrow.mockResolvedValue({
+      ...proposal,
+      approvalWorkflow: null,
+      contract: null,
+      lead: null,
+    });
+    prisma.invoice.count.mockResolvedValue(0);
+    prisma.approvalPolicyRule.findMany.mockResolvedValue([
+      { stepName: 'Leasing Manager', stepOrder: 1, approverRole: Role.LEASING_MANAGER, conditionType: 'DISCOUNT_PCT', operator: '>=', threshold: 0, isRequired: true },
+    ]);
+    prisma.proposalVersion.findFirst.mockResolvedValue(null);
+    prisma.proposalVersion.create.mockResolvedValue({ id: 'v1', version: 1 });
+    prisma.approvalWorkflow.create.mockResolvedValue({ id: 'w1' });
+    prisma.proposal.update.mockResolvedValue({});
+
+    await service.submit('p1');
+
+    expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+      expect.objectContaining({ proposedRentPerSqm: 500000 }),
     );
   });
 

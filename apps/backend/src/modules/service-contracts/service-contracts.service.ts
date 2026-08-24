@@ -21,23 +21,26 @@ const ALLOWED_TRANSITIONS: Record<ServiceContractStatus, ServiceContractStatus[]
   EXPIRING: ['ACTIVE', 'EXPIRED', 'TERMINATED'], EXPIRED: [], TERMINATED: [], RENEWED: [], CANCELLED: [],
 };
 const DOCUMENT_TYPES = ['CONTRACT', 'APPENDIX', 'INVOICE', 'PAYMENT_PROOF', 'OTHER'];
+const EXPIRY_ALERT_STATUSES: ServiceContractStatus[] = [
+  'DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE', 'ACTIVE', 'EXPIRING',
+];
 
 @Injectable()
 export class ServiceContractsService {
   constructor(private prisma: PrismaService, private storage: StorageService) {}
 
-  async findAll(query: any, mallIds?: string[]) {
-    const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+  private buildWhere(query: any, mallIds?: string[]): Prisma.ServiceContractWhereInput {
     const where: Prisma.ServiceContractWhereInput = { isDeleted: false };
     if (query.mallId) where.mallId = query.mallId; else if (mallIds) where.mallId = { in: mallIds };
     if (query.status) where.status = query.status;
     if (query.type) where.type = query.type;
+    if (query.serviceCategory) where.serviceCategory = query.serviceCategory;
+    if (query.valueBasis) where.valueBasis = query.valueBasis;
     if (query.paymentDirection) where.paymentDirection = query.paymentDirection;
     const now = new Date();
     const alertDays = Math.min(365, Math.max(1, Number(query.alertDays) || 30));
     const horizon = new Date(now.getTime() + alertDays * 86400000);
-    if (query.alert === 'EXPIRING') { where.endDate = { gte: now, lte: horizon }; where.status = { in: ['ACTIVE', 'EXPIRING'] }; }
+    if (query.alert === 'EXPIRING') { where.endDate = { gte: now, lte: horizon }; where.status = { in: EXPIRY_ALERT_STATUSES }; }
     if (query.alert === 'PAYMENT_DUE') where.payments = { some: { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon } } };
     if (query.alert === 'OVERDUE') where.payments = { some: { OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } };
     if (query.search) where.OR = [
@@ -45,11 +48,123 @@ export class ServiceContractsService {
       { title: { contains: query.search, mode: 'insensitive' } },
       { counterpartyName: { contains: query.search, mode: 'insensitive' } },
     ];
+    return where;
+  }
+
+  async findAll(query: any, mallIds?: string[]) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const where = this.buildWhere(query, mallIds);
     const [data, total] = await Promise.all([
       this.prisma.serviceContract.findMany({ where, include: { _count: { select: { documents: true } } }, orderBy: { updatedAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
       this.prisma.serviceContract.count({ where }),
     ]);
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  async exportExcel(query: any, mallIds?: string[]) {
+    const where = this.buildWhere(query, mallIds);
+    const contracts = await this.prisma.serviceContract.findMany({
+      where,
+      include: {
+        payments: { orderBy: { dueDate: 'asc' } },
+        _count: { select: { documents: true } },
+      },
+      orderBy: [{ mallId: 'asc' }, { endDate: 'asc' }, { contractNumber: 'asc' }],
+    });
+    const malls = await this.prisma.mall.findMany({
+      where: { id: { in: Array.from(new Set(contracts.map(contract => contract.mallId))) } },
+      select: { id: true, code: true, name: true },
+    });
+    const mallById = new Map(malls.map(mall => [mall.id, mall]));
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'THISO Leasing Platform';
+    workbook.created = new Date();
+    const statusLabels: Record<string, string> = {
+      DRAFT: 'Nháp', PROPOSAL: 'Đề xuất', UNDER_REVIEW: 'Đang duyệt', PENDING_SIGNATURE: 'Chờ ký',
+      ACTIVE: 'Hiệu lực', EXPIRING: 'Sắp hết hạn', EXPIRED: 'Hết hạn', TERMINATED: 'Đã chấm dứt',
+      RENEWED: 'Đã gia hạn', CANCELLED: 'Đã hủy',
+    };
+    const categoryLabels: Record<string, string> = {
+      CLEANING: 'Vệ sinh', SECURITY: 'An ninh / bảo vệ', MAINTENANCE: 'Bảo trì', TECHNICAL: 'Kỹ thuật',
+      IT_SOFTWARE: 'CNTT / phần mềm', CONSULTING: 'Tư vấn', INSURANCE: 'Bảo hiểm', CONSTRUCTION: 'Xây dựng',
+      LABOR_SUPPLY: 'Cung ứng nhân sự', MARKETING: 'Marketing / truyền thông', PARKING: 'Bãi xe',
+      LANDSCAPING: 'Cảnh quan', PEST_CONTROL: 'Kiểm soát côn trùng', WASTE_MANAGEMENT: 'Thu gom / xử lý chất thải',
+      UTILITIES: 'Điện, nước và tiện ích', OTHER: 'Dịch vụ khác',
+    };
+    const valueBasisLabels: Record<string, string> = {
+      ONE_TIME: 'Trọn gói / một lần', MONTHLY: 'Theo tháng', QUARTERLY: 'Theo quý', ANNUAL: 'Theo năm',
+      PROJECT: 'Theo dự án', OTHER: 'Cơ sở khác',
+    };
+    const paymentStatusLabels: Record<string, string> = {
+      PENDING: 'Chờ thanh toán', PARTIAL: 'Thanh toán một phần', PAID: 'Đã thanh toán',
+      OVERDUE: 'Quá hạn', CANCELLED: 'Đã hủy',
+    };
+
+    const contractSheet = workbook.addWorksheet('Hợp đồng', { views: [{ state: 'frozen', ySplit: 1 }] });
+    contractSheet.columns = [
+      { header: 'STT', key: 'index', width: 7 }, { header: 'Mall', key: 'mall', width: 26 },
+      { header: 'Số HĐ pháp lý', key: 'contractNumber', width: 22 }, { header: 'Tên hợp đồng', key: 'title', width: 34 },
+      { header: 'Đối tác', key: 'counterpartyName', width: 30 }, { header: 'Mã số thuế', key: 'counterpartyTax', width: 18 },
+      { header: 'Loại HĐ', key: 'type', width: 18 }, { header: 'Nhóm dịch vụ', key: 'serviceCategory', width: 27 },
+      { header: 'Mô tả dịch vụ', key: 'productName', width: 32 }, { header: 'Trạng thái', key: 'status', width: 20 },
+      { header: 'Chiều thanh toán', key: 'paymentDirection', width: 20 }, { header: 'Ngày ký', key: 'signedDate', width: 15 },
+      { header: 'Ngày bắt đầu', key: 'startDate', width: 15 }, { header: 'Ngày kết thúc', key: 'endDate', width: 15 },
+      { header: 'Giá trị HĐ', key: 'totalValue', width: 20 }, { header: 'Cơ sở giá trị', key: 'valueBasis', width: 22 },
+      { header: 'Tiền tệ', key: 'currency', width: 12 }, { header: 'Số tài liệu', key: 'documents', width: 14 },
+      { header: 'Số kỳ thanh toán', key: 'payments', width: 18 }, { header: 'Ghi chú', key: 'notes', width: 32 },
+      { header: 'Ngày tạo', key: 'createdAt', width: 20 }, { header: 'Cập nhật lúc', key: 'updatedAt', width: 20 },
+    ];
+    contracts.forEach((contract, index) => contractSheet.addRow({
+      index: index + 1, mall: mallById.has(contract.mallId) ? `${mallById.get(contract.mallId)?.code} — ${mallById.get(contract.mallId)?.name}` : contract.mallId,
+      contractNumber: contract.contractNumber,
+      title: contract.title, counterpartyName: contract.counterpartyName, counterpartyTax: contract.counterpartyTax,
+      type: contract.type, serviceCategory: categoryLabels[contract.serviceCategory] ?? contract.serviceCategory,
+      productName: contract.productName, status: statusLabels[contract.status] ?? contract.status,
+      paymentDirection: contract.paymentDirection === 'RECEIVABLE' ? 'Phải thu' : 'Phải trả',
+      signedDate: contract.signedDate, startDate: contract.startDate, endDate: contract.endDate,
+      totalValue: contract.totalValue, valueBasis: valueBasisLabels[contract.valueBasis] ?? contract.valueBasis,
+      currency: contract.currency, documents: contract._count.documents, payments: contract.payments.length,
+      notes: contract.notes, createdAt: contract.createdAt, updatedAt: contract.updatedAt,
+    }));
+
+    const paymentSheet = workbook.addWorksheet('Lịch thanh toán', { views: [{ state: 'frozen', ySplit: 1 }] });
+    paymentSheet.columns = [
+      { header: 'STT', key: 'index', width: 7 }, { header: 'Mall', key: 'mall', width: 26 },
+      { header: 'Số HĐ pháp lý', key: 'contractNumber', width: 22 }, { header: 'Đối tác', key: 'counterpartyName', width: 30 },
+      { header: 'Chiều thanh toán', key: 'paymentDirection', width: 20 }, { header: 'Đợt thanh toán', key: 'milestone', width: 28 },
+      { header: 'Ngày đến hạn', key: 'dueDate', width: 16 }, { header: 'Giá trị trước VAT', key: 'subtotal', width: 20 },
+      { header: 'VAT (%)', key: 'vatRate', width: 12 }, { header: 'Tiền VAT', key: 'vatAmount', width: 18 },
+      { header: 'Tổng giá trị', key: 'totalAmount', width: 20 }, { header: 'Đã thanh toán', key: 'paidAmount', width: 20 },
+      { header: 'Tiền tệ', key: 'currency', width: 12 }, { header: 'Trạng thái', key: 'status', width: 22 },
+      { header: 'Số hóa đơn', key: 'invoiceNumber', width: 20 }, { header: 'Ghi chú', key: 'notes', width: 30 },
+    ];
+    let paymentIndex = 0;
+    for (const contract of contracts) for (const payment of contract.payments) paymentSheet.addRow({
+      index: ++paymentIndex, mall: mallById.has(contract.mallId) ? `${mallById.get(contract.mallId)?.code} — ${mallById.get(contract.mallId)?.name}` : contract.mallId,
+      contractNumber: contract.contractNumber, counterpartyName: contract.counterpartyName,
+      paymentDirection: contract.paymentDirection === 'RECEIVABLE' ? 'Phải thu' : 'Phải trả', milestone: payment.milestone,
+      dueDate: payment.dueDate, subtotal: payment.subtotal, vatRate: payment.vatRate, vatAmount: payment.vatAmount,
+      totalAmount: payment.totalAmount ?? payment.amount, paidAmount: payment.paidAmount, currency: payment.currency,
+      status: paymentStatusLabels[payment.status] ?? payment.status, invoiceNumber: payment.invoiceNumber, notes: payment.notes,
+    });
+    for (const sheet of [contractSheet, paymentSheet]) {
+      sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columnCount } };
+      sheet.getRow(1).height = 24;
+      sheet.getRow(1).eachCell(cell => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      sheet.eachRow((row, rowNumber) => { if (rowNumber > 1) row.alignment = { vertical: 'top', wrapText: true }; });
+    }
+    for (const key of ['signedDate', 'startDate', 'endDate']) contractSheet.getColumn(key).numFmt = 'dd/mm/yyyy';
+    for (const key of ['createdAt', 'updatedAt']) contractSheet.getColumn(key).numFmt = 'dd/mm/yyyy hh:mm';
+    contractSheet.getColumn('totalValue').numFmt = '#,##0.00';
+    paymentSheet.getColumn('dueDate').numFmt = 'dd/mm/yyyy';
+    for (const key of ['subtotal', 'vatAmount', 'totalAmount', 'paidAmount']) paymentSheet.getColumn(key).numFmt = '#,##0.00';
+    return workbook.xlsx.writeBuffer();
   }
 
   async findOne(id: string) {
@@ -61,9 +176,10 @@ export class ServiceContractsService {
   async create(dto: CreateServiceContractDto, userId: string) {
     if (dto.startDate && dto.endDate && new Date(dto.endDate) < new Date(dto.startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
     const { signedDate, startDate, endDate, totalValue, contractNumber, counterpartyAddress, ...data } = dto;
-    const finalContractNumber = contractNumber?.trim() || this.generateNumber();
+    const finalContractNumber = contractNumber.trim();
+    if (!finalContractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber: finalContractNumber }, select: { id: true } });
-    if (duplicate) throw new ConflictException(`Số hợp đồng ${finalContractNumber} đã tồn tại. Vui lòng nhập số khác hoặc để trống để hệ thống tự sinh.`);
+    if (duplicate) throw new ConflictException(`Số hợp đồng ${finalContractNumber} đã tồn tại. Vui lòng kiểm tra và nhập đúng số hợp đồng pháp lý.`);
     const normalizedTotalValue = Number.isFinite(Number(totalValue)) ? Number(totalValue) : 0;
     return this.prisma.$transaction(async tx => {
       const existingParty = data.paymentDirection === 'RECEIVABLE' && data.counterpartyTax
@@ -145,15 +261,25 @@ export class ServiceContractsService {
   async stats(mallIds?: string[]) {
     const where: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
     const soon = new Date(); soon.setDate(soon.getDate() + 30);
-    const [total, grouped, expiringSoon, value] = await Promise.all([
+    const [total, grouped, categories, valueBases, expiringSoon, valueByCurrency] = await Promise.all([
       this.prisma.serviceContract.count({ where }), this.prisma.serviceContract.groupBy({ by: ['status'], where, _count: true }),
-      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: ['ACTIVE', 'PENDING_SIGNATURE', 'EXPIRING'] } } }),
-      this.prisma.serviceContract.aggregate({ where, _sum: { totalValue: true } }),
+      this.prisma.serviceContract.groupBy({ by: ['serviceCategory'], where, _count: true }),
+      this.prisma.serviceContract.groupBy({ by: ['valueBasis'], where, _count: true }),
+      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: EXPIRY_ALERT_STATUSES } } }),
+      // Money Domain Consolidation (INV-CUR-001): ServiceContract.totalValue is
+      // currency-aware (VND/USD/MMK) -- group by currency instead of a blind
+      // _sum, same pattern as CR-110's reports/renewal-risk fixes.
+      this.prisma.serviceContract.groupBy({ by: ['currency'], where, _sum: { totalValue: true } }),
     ]);
-    return { total, expiringSoon, totalValue: value._sum.totalValue || 0, byStatus: Object.fromEntries(grouped.map(x => [x.status, x._count])) };
+    return {
+      total,
+      expiringSoon,
+      totalValueByCurrency: Object.fromEntries(valueByCurrency.map(x => [x.currency, x._sum.totalValue || 0])),
+      byStatus: Object.fromEntries(grouped.map(x => [x.status, x._count])),
+      byServiceCategory: Object.fromEntries(categories.map(x => [x.serviceCategory, x._count])),
+      byValueBasis: Object.fromEntries(valueBases.map(x => [x.valueBasis, x._count])),
+    };
   }
-
-  generateNumber(mallCode = 'MALL') { return `HD-${mallCode}-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`; }
 
   async createPayment(contractId: string, body: CreateServiceContractPaymentDto) {
     const contract = await this.findOne(contractId);
@@ -168,7 +294,7 @@ export class ServiceContractsService {
     return this.prisma.serviceContractPayment.create({ data: {
       contractId, milestone: body.milestone, dueDate, amount: subtotal + vatAmount,
       subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, invoicePlannedDate,
-      currency: body.currency || 'VND', reminderDays: Number(body.reminderDays ?? 7),
+      currency: body.currency || contract.currency, reminderDays: Number(body.reminderDays ?? 7),
       periodType: body.periodType, periodNumber: body.periodNumber ? Number(body.periodNumber) : undefined,
       periodStart: body.periodStart ? new Date(body.periodStart) : undefined,
       periodEnd: body.periodEnd ? new Date(body.periodEnd) : undefined,
@@ -178,12 +304,13 @@ export class ServiceContractsService {
 
   async alerts(mallIds?: string[], days = 30) {
     const now = new Date(); const horizon = new Date(now.getTime() + Math.min(365, Math.max(1, days)) * 86400000);
-    const contractWhere: Prisma.ServiceContractWhereInput = { isDeleted: false, status: { in: ['ACTIVE', 'EXPIRING'] }, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
-    const paymentBase: Prisma.ServiceContractPaymentWhereInput = { contract: contractWhere };
+    const accessibleContracts: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
+    const activeContractWhere: Prisma.ServiceContractWhereInput = { ...accessibleContracts, status: { in: ['ACTIVE', 'EXPIRING'] } };
+    const paymentBase: Prisma.ServiceContractPaymentWhereInput = { contract: activeContractWhere };
     const [expiring, receivableDue, payableDue, overdue] = await Promise.all([
-      this.prisma.serviceContract.count({ where: { ...contractWhere, endDate: { gte: now, lte: horizon } } }),
-      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...contractWhere, paymentDirection: 'RECEIVABLE' } } }),
-      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...contractWhere, paymentDirection: 'PAYABLE' } } }),
+      this.prisma.serviceContract.count({ where: { ...accessibleContracts, status: { in: EXPIRY_ALERT_STATUSES }, endDate: { gte: now, lte: horizon } } }),
+      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'RECEIVABLE' } } }),
+      this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'PAYABLE' } } }),
       this.prisma.serviceContractPayment.count({ where: { ...paymentBase, OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } }),
     ]);
     return { days, expiring, receivableDue, payableDue, overdue };
@@ -219,7 +346,7 @@ export class ServiceContractsService {
     const contract = await this.findOne(contractId); const start = new Date(body.startDate);
     const subtotal = Number(body.subtotal ?? body.amount ?? 0); const vatRate = Number(body.vatRate ?? contract.defaultVatRate); const vatAmount = subtotal * vatRate / 100;
     if (!Number.isFinite(subtotal) || subtotal <= 0) throw new BadRequestException('Số tiền mỗi kỳ phải lớn hơn 0');
-    const rows = Array.from({ length: Number(body.count) }, (_, i) => { const due = new Date(start); body.frequency === 'ANNUALLY' ? due.setFullYear(due.getFullYear() + i) : due.setMonth(due.getMonth() + i * (body.frequency === 'QUARTERLY' ? 3 : 1)); const planned = new Date(due.getTime() - contract.invoiceLeadDays * 86400000); return { contractId, milestone: `${body.milestonePrefix} ${i + 1}/${body.count}`, dueDate: due, invoicePlannedDate: planned, amount: subtotal + vatAmount, subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, currency: body.currency || 'VND', periodType: body.frequency, periodNumber: i + 1, reminderDays: Number(body.reminderDays ?? 7), notes: body.notes }; });
+    const rows = Array.from({ length: Number(body.count) }, (_, i) => { const due = new Date(start); body.frequency === 'ANNUALLY' ? due.setFullYear(due.getFullYear() + i) : due.setMonth(due.getMonth() + i * (body.frequency === 'QUARTERLY' ? 3 : 1)); const planned = new Date(due.getTime() - contract.invoiceLeadDays * 86400000); return { contractId, milestone: `${body.milestonePrefix} ${i + 1}/${body.count}`, dueDate: due, invoicePlannedDate: planned, amount: subtotal + vatAmount, subtotal, vatRate, vatAmount, totalAmount: subtotal + vatAmount, currency: body.currency || contract.currency, periodType: body.frequency, periodNumber: i + 1, reminderDays: Number(body.reminderDays ?? 7), notes: body.notes }; });
     await this.prisma.serviceContractPayment.createMany({ data: rows }); return this.prisma.serviceContractPayment.findMany({ where: { contractId }, orderBy: { dueDate: 'asc' } });
   }
 
@@ -281,7 +408,8 @@ export class ServiceContractsService {
     const startDate = body.startDate ? new Date(body.startDate) : old.endDate;
     const endDate = new Date(body.endDate);
     if (!startDate || endDate <= startDate) throw new BadRequestException('Ngày kết thúc hợp đồng gia hạn phải sau ngày bắt đầu');
-    const contractNumber = body.contractNumber?.trim() || this.generateNumber();
+    const contractNumber = body.contractNumber.trim();
+    if (!contractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý của hợp đồng gia hạn');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber }, select: { id: true } });
     if (duplicate) throw new ConflictException(`Số hợp đồng ${contractNumber} đã tồn tại`);
     return this.prisma.$transaction(async tx => {
@@ -295,7 +423,8 @@ export class ServiceContractsService {
         type: old.type, startDate, endDate, totalValue: Number(body.totalValue ?? old.totalValue),
         currency: old.currency, paymentDirection: old.paymentDirection, billingPartyId,
         invoiceLeadDays: old.invoiceLeadDays, defaultVatRate: old.defaultVatRate,
-        paymentTermDays: old.paymentTermDays, productName: old.productName, ownerId: old.ownerId,
+        paymentTermDays: old.paymentTermDays, serviceCategory: old.serviceCategory,
+        valueBasis: old.valueBasis, productName: old.productName, ownerId: old.ownerId,
         createdById: userId, parentContractId: id, notes: body.notes,
         events: { create: { eventType: 'CREATED', description: `Gia hạn từ hợp đồng ${old.contractNumber}`, userId } },
       } });

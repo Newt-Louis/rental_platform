@@ -60,13 +60,13 @@ function fmtDate(d?: string | null) {
 
 function fmtMoney(v: number, currency = 'VND') {
   if (currency === 'USD') return `$${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD`;
+  if (currency === 'MMK') return `${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} MMK`;
   return `${v?.toLocaleString('vi-VN')} VND`;
 }
 
 function initEditorContent(p: any): EditorContent {
-  const isUSD = (p.rentCurrency ?? 'VND') === 'USD';
   const fmtR = (v: number) => fmtMoney(v, p.rentCurrency ?? 'VND');
-  const fmtS = (v: number) => fmtMoney(v, isUSD ? 'USD' : 'VND');
+  const fmtS = fmtR;
 
   const brandName = p.tenant?.brandName ?? p.lead?.brandName ?? '[…]';
   const companyName = p.tenant?.companyName ?? p.lead?.company ?? '[…]';

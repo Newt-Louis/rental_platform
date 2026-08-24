@@ -1,6 +1,21 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// CR-101 Phase 3D -- server-derived AI security context. `authorizedMallIds`
+// mirrors the exact convention MallAccessService.getAccessibleMallIds() and
+// every other Mall-scoped list endpoint in this codebase already uses:
+// `null` = unrestricted (the caller holds a BYPASS_ROLES role -- ADMIN/CEO,
+// unchanged existing platform policy, not a new decision made here), a
+// string[] = the caller's actual UserMallAccess grants. Always built by the
+// controller from the authenticated request, never accepted as client input
+// (INV-AI-001/002) -- prompt text can influence WHICH data buildContext()
+// decides to fetch, never WHICH MALL it's allowed to fetch from.
+export interface AiRequestContext {
+  userId: string;
+  role: string;
+  authorizedMallIds: string[] | null;
+}
+
 const SYSTEM_PROMPT = `Bạn là trợ lý AI chuyên nghiệp của THISO Leasing Platform — nền tảng quản lý cho thuê mặt bằng thương mại tại Việt Nam.
 
 Nhiệm vụ của bạn:
@@ -20,7 +35,7 @@ export class AiService {
 
   constructor(private prisma: PrismaService) {}
 
-  async chat(message: string, history: { role: string; content: string }[]) {
+  async chat(message: string, history: { role: string; content: string }[], ctx: AiRequestContext) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       throw new ServiceUnavailableException(
@@ -28,7 +43,7 @@ export class AiService {
       );
     }
 
-    const context = await this.buildContext(message);
+    const context = await this.buildContext(message, ctx);
 
     const messages = [
       ...history.slice(-8).map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
@@ -72,11 +87,11 @@ export class AiService {
     }
   }
 
-  async chatStream(message: string, history: { role: string; content: string }[], onChunk: (text: string) => void): Promise<void> {
+  async chatStream(message: string, history: { role: string; content: string }[], onChunk: (text: string) => void, ctx: AiRequestContext): Promise<void> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
-    const context = await this.buildContext(message);
+    const context = await this.buildContext(message, ctx);
     const messages = [
       ...history.slice(-8).map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content })),
       {
@@ -135,13 +150,18 @@ export class AiService {
     }
   }
 
-  private async buildContext(message: string): Promise<string> {
+  private async buildContext(message: string, ctx: AiRequestContext): Promise<string> {
     const lower = message.toLowerCase();
     const parts: string[] = [];
+    // `null` authorizedMallIds = unrestricted (ADMIN/CEO bypass, existing
+    // platform policy). A non-null array must constrain every query below --
+    // prompt text (`message`) only ever selects WHICH block runs, never
+    // widens WHICH Mall's data that block is allowed to read (INV-AI-002).
+    const mallIds = ctx.authorizedMallIds;
 
     try {
       if (lower.includes('lấp đầy') || lower.includes('occupancy') || lower.includes('vacant') || lower.includes('trống')) {
-        const units = await this.prisma.unit.findMany({ where: { isActive: true }, select: { status: true, areaNLA: true } });
+        const units = await this.prisma.unit.findMany({ where: { isActive: true, ...(mallIds ? { mallId: { in: mallIds } } : {}) }, select: { status: true, areaNLA: true } });
         const total = units.length;
         const occupied = units.filter((u) => u.status === 'OCCUPIED').length;
         const vacant = units.filter((u) => u.status === 'VACANT').length;
@@ -155,17 +175,19 @@ export class AiService {
       }
 
       if (lower.includes('hợp đồng') || lower.includes('contract') || lower.includes('hết hạn') || lower.includes('expire')) {
+        // Contract has no direct mallId -- scope via the required unit relation.
+        const unitMallFilter = mallIds ? { unit: { mallId: { in: mallIds } } } : {};
         const today = new Date();
         const d30 = new Date(today); d30.setDate(d30.getDate() + 30);
         const d90 = new Date(today); d90.setDate(d90.getDate() + 90);
         const d180 = new Date(today); d180.setDate(d180.getDate() + 180);
         const [active, exp30, exp90, exp180, expiring] = await Promise.all([
-          this.prisma.contract.count({ where: { isActive: true, status: 'ACTIVE' } }),
-          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d30 } } }),
-          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d90 } } }),
-          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d180 } } }),
+          this.prisma.contract.count({ where: { isActive: true, status: 'ACTIVE', ...unitMallFilter } }),
+          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d30 }, ...unitMallFilter } }),
+          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d90 }, ...unitMallFilter } }),
+          this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d180 }, ...unitMallFilter } }),
           this.prisma.contract.findMany({
-            where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d90 } },
+            where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: d90 }, ...unitMallFilter },
             include: { tenant: { select: { brandName: true } }, unit: { select: { code: true } } },
             orderBy: { endDate: 'asc' },
             take: 5,
@@ -176,27 +198,36 @@ export class AiService {
       }
 
       if (lower.includes('công nợ') || lower.includes('overdue') || lower.includes('hóa đơn') || lower.includes('invoice') || lower.includes('thanh toán')) {
+        // Multi-currency: this narrative always labels amounts "VNĐ" -- scope every query to
+        // VND so a USD/MMK invoice is excluded rather than silently summed/labeled wrong.
+        // Invoice.mallId is direct but nullable -- when mallIds is non-null, an
+        // `{in: mallIds}` filter also correctly excludes any invoice with no
+        // resolvable mallId at all, matching the fail-closed default used
+        // elsewhere in this codebase for ambiguous-mall financial records.
+        const invoiceMallFilter = mallIds ? { mallId: { in: mallIds } } : {};
         const overdue = await this.prisma.invoice.findMany({
-          where: { isActive: true, status: 'OVERDUE' },
+          where: { isActive: true, status: 'OVERDUE', currencyCode: 'VND', ...invoiceMallFilter },
           include: { tenant: { select: { brandName: true } } },
           orderBy: { totalAmount: 'desc' },
           take: 5,
         });
-        const allOverdue = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'OVERDUE' }, _sum: { totalAmount: true }, _count: true });
-        const issued = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'ISSUED' }, _sum: { totalAmount: true }, _count: true });
+        const allOverdue = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'OVERDUE', currencyCode: 'VND', ...invoiceMallFilter }, _sum: { totalAmount: true }, _count: true });
+        const issued = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'ISSUED', currencyCode: 'VND', ...invoiceMallFilter }, _sum: { totalAmount: true }, _count: true });
         const topDebt = overdue.map((i) => `  - ${i.tenant.brandName}: ${i.totalAmount.toLocaleString('vi-VN')} VNĐ`).join('\n');
         parts.push(`Hóa đơn quá hạn: ${allOverdue._count} hóa đơn, tổng: ${(allOverdue._sum.totalAmount ?? 0).toLocaleString('vi-VN')} VNĐ\nĐang chờ thanh toán: ${issued._count} hóa đơn, tổng: ${(issued._sum.totalAmount ?? 0).toLocaleString('vi-VN')} VNĐ\nTop công nợ lớn nhất:\n${topDebt}`);
       }
 
       if (lower.includes('doanh thu') || lower.includes('revenue') || lower.includes('sales') || lower.includes('kinh doanh')) {
+        // SalesTurnover has no direct mallId -- scope via the required unit relation.
+        const turnoverMallFilter = mallIds ? { unit: { mallId: { in: mallIds } } } : {};
         const today = new Date();
         const period = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
         const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth();
         const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
         const prevPeriod = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
         const [curr, prev] = await Promise.all([
-          this.prisma.salesTurnover.aggregate({ where: { period }, _sum: { grossSales: true, netSales: true }, _count: true }),
-          this.prisma.salesTurnover.aggregate({ where: { period: prevPeriod }, _sum: { grossSales: true }, _count: true }),
+          this.prisma.salesTurnover.aggregate({ where: { period, ...turnoverMallFilter }, _sum: { grossSales: true, netSales: true }, _count: true }),
+          this.prisma.salesTurnover.aggregate({ where: { period: prevPeriod, ...turnoverMallFilter }, _sum: { grossSales: true }, _count: true }),
         ]);
         const currTotal = curr._sum.grossSales ?? 0;
         const prevTotal = prev._sum.grossSales ?? 0;
@@ -205,29 +236,39 @@ export class AiService {
       }
 
       if (lower.includes('ticket') || lower.includes('yêu cầu') || lower.includes('vận hành') || lower.includes('sự cố')) {
+        // Ticket has no direct mallId -- scope via the required unit relation.
+        const ticketMallFilter = mallIds ? { unit: { mallId: { in: mallIds } } } : {};
         const [open, urgent, byType] = await Promise.all([
-          this.prisma.ticket.count({ where: { isActive: true, status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
-          this.prisma.ticket.count({ where: { isActive: true, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
-          this.prisma.ticket.groupBy({ by: ['type'], where: { isActive: true, status: { notIn: ['CLOSED', 'RESOLVED'] } }, _count: true }),
+          this.prisma.ticket.count({ where: { isActive: true, status: { notIn: ['CLOSED', 'RESOLVED'] }, ...ticketMallFilter } }),
+          this.prisma.ticket.count({ where: { isActive: true, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] }, ...ticketMallFilter } }),
+          this.prisma.ticket.groupBy({ by: ['type'], where: { isActive: true, status: { notIn: ['CLOSED', 'RESOLVED'] }, ...ticketMallFilter }, _count: true }),
         ]);
         const byTypeStr = byType.map((t) => `  - ${t.type}: ${t._count}`).join('\n');
         parts.push(`Ticket đang mở: ${open} (khẩn cấp: ${urgent})\nPhân loại:\n${byTypeStr}`);
       }
 
       if (lower.includes('khách thuê') || lower.includes('tenant') || lower.includes('thương hiệu')) {
+        // Tenant (a brand/company) has no direct mallId and can legitimately
+        // occupy units across multiple Malls -- scope to tenants who occupy at
+        // least one unit in an authorized Mall, not "any tenant that exists
+        // platform-wide" (groupBy doesn't support relation filters the same
+        // way, so the category breakdown uses the same occupiedUnits filter).
+        const tenantMallFilter = mallIds ? { occupiedUnits: { some: { mallId: { in: mallIds } } } } : {};
         const [total, byCategory] = await Promise.all([
-          this.prisma.tenant.count({ where: { isActive: true } }),
-          this.prisma.tenant.groupBy({ by: ['category'], where: { isActive: true }, _count: true, orderBy: { _count: { category: 'desc' } }, take: 5 }),
+          this.prisma.tenant.count({ where: { isActive: true, ...tenantMallFilter } }),
+          this.prisma.tenant.groupBy({ by: ['category'], where: { isActive: true, ...tenantMallFilter }, _count: true, orderBy: { _count: { category: 'desc' } }, take: 5 }),
         ]);
         const catStr = byCategory.map((c) => `  - ${c.category ?? 'Khác'}: ${c._count}`).join('\n');
         parts.push(`Tổng khách thuê hoạt động: ${total}\nPhân loại ngành hàng:\n${catStr}`);
       }
 
       if (lower.includes('proposal') || lower.includes('đề xuất') || lower.includes('duyệt') || lower.includes('phê duyệt')) {
+        // Proposal has no direct mallId -- scope via the required unit relation.
+        const proposalMallFilter = mallIds ? { unit: { mallId: { in: mallIds } } } : {};
         const [pending, approved, draft] = await Promise.all([
-          this.prisma.proposal.count({ where: { isActive: true, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } } }),
-          this.prisma.proposal.count({ where: { isActive: true, status: 'APPROVED', createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600000) } } }),
-          this.prisma.proposal.count({ where: { isActive: true, status: 'DRAFT' } }),
+          this.prisma.proposal.count({ where: { isActive: true, status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, ...proposalMallFilter } }),
+          this.prisma.proposal.count({ where: { isActive: true, status: 'APPROVED', createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600000) }, ...proposalMallFilter } }),
+          this.prisma.proposal.count({ where: { isActive: true, status: 'DRAFT', ...proposalMallFilter } }),
         ]);
         parts.push(`Proposal đang chờ duyệt: ${pending} | Draft: ${draft}\nĐã duyệt trong 30 ngày: ${approved}`);
       }
@@ -238,13 +279,14 @@ export class AiService {
     return parts.join('\n\n');
   }
 
-  async getSuggestions() {
+  async getSuggestions(ctx: AiRequestContext) {
+    const mallIds = ctx.authorizedMallIds;
     try {
       const [expiringContracts, overdueInvoices, openTickets, vacantUnits] = await Promise.all([
-        this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: new Date(Date.now() + 90 * 24 * 3600000) } } }),
-        this.prisma.invoice.count({ where: { isActive: true, status: 'OVERDUE' } }),
-        this.prisma.ticket.count({ where: { isActive: true, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] } } }),
-        this.prisma.unit.count({ where: { isActive: true, status: 'VACANT' } }),
+        this.prisma.contract.count({ where: { isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { lte: new Date(Date.now() + 90 * 24 * 3600000) }, ...(mallIds ? { unit: { mallId: { in: mallIds } } } : {}) } }),
+        this.prisma.invoice.count({ where: { isActive: true, status: 'OVERDUE', ...(mallIds ? { mallId: { in: mallIds } } : {}) } }),
+        this.prisma.ticket.count({ where: { isActive: true, priority: 'URGENT', status: { notIn: ['CLOSED', 'RESOLVED'] }, ...(mallIds ? { unit: { mallId: { in: mallIds } } } : {}) } }),
+        this.prisma.unit.count({ where: { isActive: true, status: 'VACANT', ...(mallIds ? { mallId: { in: mallIds } } : {}) } }),
       ]);
 
       return [

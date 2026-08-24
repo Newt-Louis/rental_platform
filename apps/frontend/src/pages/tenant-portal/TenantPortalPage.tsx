@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AuthenticatedImage } from '@/components/ui/authenticated-image';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
+import { CURRENCIES, formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import {
   ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
@@ -62,12 +64,8 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ₫';
-}
-
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
+  return formatMoney(n, currencyCode);
 }
 
 function fmtDate(d?: string | null) {
@@ -365,9 +363,9 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
             {photos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((p: any) => (
-                  <a key={p.id} href={`/uploads/${p.filePath}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden bg-gray-100 border">
-                    <img src={`/uploads/${p.filePath}`} alt={p.fileName} className="w-full h-full object-cover" />
-                  </a>
+                  <div key={p.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <AuthenticatedImage src={`/files/documents/${p.id}`} alt={p.fileName} className="w-full h-full object-cover" />
+                  </div>
                 ))}
               </div>
             )}
@@ -453,11 +451,11 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
         </DialogHeader>
         <div className="mb-3 p-3 bg-gray-50 rounded-lg text-sm">
           <p className="font-medium text-blue-800">{invoice.invoiceNumber}</p>
-          <p className="text-gray-700 mt-0.5">Tổng: {fmtFull(invoice.totalAmount)}</p>
+          <p className="text-gray-700 mt-0.5">Tổng: {fmtFull(invoice.totalAmount, invoice.currencyCode)}</p>
         </div>
         <form onSubmit={handleSubmit((d) => mutation.mutate({ ...d, amount: Number(d.amount) }))} className="space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Số tiền (₫)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Số tiền ({CURRENCIES[(invoice.currencyCode ?? 'VND') as CurrencyCode]?.symbol ?? '₫'})</label>
             <Input {...register('amount', { required: true })} type="number" />
           </div>
           <div>
@@ -534,8 +532,12 @@ export default function TenantPortalPage() {
   const fitouts: any[] = fitoutsData?.data ?? [];
 
   const overdueInvoices = invoices.filter((i) => i.status === 'OVERDUE');
+  // "Tổng chờ thanh toán" is a single VND-denominated figure -- if this tenant has invoices in
+  // more than one currency, mixing them into one sum would be meaningless, so scope to VND
+  // (same convention as the dashboard's revenue KPIs). Each invoice row in the table below is
+  // still shown individually with its own currency regardless.
   const pendingInvoicesTotal = invoices
-    .filter((i) => i.status === 'ISSUED' || i.status === 'OVERDUE')
+    .filter((i) => (i.status === 'ISSUED' || i.status === 'OVERDUE') && (i.currencyCode ?? 'VND') === 'VND')
     .reduce((sum, i) => sum + (i.totalAmount ?? 0), 0);
   const openTickets = tickets.filter((t) => !['RESOLVED', 'CLOSED'].includes(t.status));
   const activeFitouts = fitouts.filter((f) => f.status !== 'OPENED');
@@ -570,9 +572,9 @@ export default function TenantPortalPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <Receipt size={16} className="text-orange-500" />
-              <span className="text-xs font-medium text-orange-700">Tổng chờ thanh toán</span>
+              <span className="text-xs font-medium text-orange-700">Tổng chờ thanh toán (VND)</span>
             </div>
-            <p className="text-xl font-bold text-orange-800">{fmt(pendingInvoicesTotal)}</p>
+            <p className="text-xl font-bold text-orange-800">{fmtFull(pendingInvoicesTotal)}</p>
           </CardContent>
         </Card>
         <Card className={`border-0 ${overdueInvoices.length > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
@@ -661,7 +663,7 @@ export default function TenantPortalPage() {
                           </span>
                           <span className="flex items-center gap-1 text-gray-900 font-medium">
                             <DollarSign size={11} />
-                            {fmt(c.rent)}/tháng
+                            {fmtFull(c.rent, c.currencyCode)}/tháng
                           </span>
                         </div>
                       </div>
@@ -707,14 +709,15 @@ export default function TenantPortalPage() {
               <p>Không có hóa đơn</p>
             </div>
           ) : (
-            <div className="bg-white rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Số HD</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Khách thuê</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Kỳ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Tổng tiền</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Tiền tệ</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Hạn TT</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
                     <th className="px-4 py-3" />
@@ -729,7 +732,8 @@ export default function TenantPortalPage() {
                         <td className="px-4 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
                         <td className="px-4 py-3 hidden md:table-cell">{inv.tenant?.brandName}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{inv.period}</td>
-                        <td className="px-4 py-3 text-right font-medium">{fmt(inv.totalAmount)}</td>
+                        <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatMoneyAmount(inv.totalAmount, inv.currencyCode)}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-gray-500">{inv.currencyCode ?? 'VND'}</td>
                         <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                           {fmtDate(inv.dueDate)}
                         </td>

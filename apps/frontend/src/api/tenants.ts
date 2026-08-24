@@ -9,4 +9,10 @@ export const tenantsApi = {
   updateTenant: (id: string, data: Record<string, unknown>) =>
     api.put(`/tenants/${id}`, data).then((r) => r.data),
   deleteTenant: (id: string) => api.delete(`/tenants/${id}`).then((r) => r.data),
+  resetPortalPassword: (id: string) =>
+    api.post(`/tenants/${id}/portal/reset-password`).then((r) => r.data),
+  createPortalAccount: (id: string) =>
+    api.post(`/tenants/${id}/portal/account`).then((r) => r.data),
+  setPortalPassword: (id: string, newPassword: string) =>
+    api.patch(`/tenants/${id}/portal/password`, { newPassword }).then((r) => r.data),
 };

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { summarizeOccupancyByLeaseTerm, summarizeShortBookingPipeline } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class ComplianceService {
@@ -159,9 +160,9 @@ export class ComplianceService {
     });
   }
 
-  async getMultiMallComparison() {
+  async getMultiMallComparison(mallIds: string[] | null) {
     const malls = await this.prisma.mall.findMany({
-      where: { isActive: true },
+      where: mallIds ? { isActive: true, id: { in: mallIds } } : { isActive: true },
       select: { id: true, name: true, code: true },
     });
 
@@ -171,6 +172,20 @@ export class ComplianceService {
       const units = await this.prisma.unit.findMany({
         where: { mallId: mall.id, isActive: true },
       });
+      const shortBookings = await this.prisma.slotBooking.findMany({
+        where: { slot: { unit: { mallId: mall.id, leaseTermType: 'SHORT' } } },
+        select: {
+          status: true,
+          installationStartDatetime: true,
+          dismantlingEndDatetime: true,
+          startDatetime: true,
+          endDatetime: true,
+          totalAmount: true,
+          slot: { select: { id: true, unitId: true, area: true } },
+        },
+      });
+      const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
+      const shortPipeline = summarizeShortBookingPipeline(shortBookings);
 
       const totalUnits = units.length;
       const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
@@ -184,11 +199,14 @@ export class ComplianceService {
       const currentMonth = new Date();
       const period = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
 
+      // Multi-currency: monthlyRevenue/revenuePerSqm are single VND-denominated figures --
+      // scope to VND, same convention as the dashboard's revenue KPIs.
       const revenue = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
           period,
           status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
+          currencyCode: 'VND',
         },
         _sum: { subtotal: true },
       });
@@ -209,6 +227,25 @@ export class ComplianceService {
         revenuePerSqm: occupiedArea > 0 ? (revenue._sum.subtotal ?? 0) / occupiedArea : 0,
         hasPolicy: !!policy,
         kpiTargets: policy?.kpiTargets ?? null,
+        byLeaseTerm: {
+          LONG: {
+            ...occupancyByLeaseTerm.LONG,
+            activeContracts: contracts,
+            monthlyRevenue: revenue._sum.subtotal ?? 0,
+            revenuePerSqm: occupancyByLeaseTerm.LONG.occupiedArea > 0
+              ? (revenue._sum.subtotal ?? 0) / occupancyByLeaseTerm.LONG.occupiedArea
+              : 0,
+          },
+          SHORT: {
+            ...occupancyByLeaseTerm.SHORT,
+            activeContracts: 0,
+            monthlyRevenue: shortPipeline.revenue,
+            revenuePerSqm: occupancyByLeaseTerm.SHORT.occupiedArea > 0
+              ? shortPipeline.revenue / occupancyByLeaseTerm.SHORT.occupiedArea
+              : 0,
+            bookingStats: shortPipeline,
+          },
+        },
       });
     }
 

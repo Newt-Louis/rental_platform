@@ -8,11 +8,15 @@ describe('ServiceContractReminderScheduler', () => {
     notification: { findFirst: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
   } as any;
+  const schedulerLock = {
+    runExclusive: jest.fn((_name: string, _ttl: number, task: () => Promise<unknown>) =>
+      task().then((value) => ({ executed: true, value }))),
+  } as any;
   let scheduler: ServiceContractReminderScheduler;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    scheduler = new ServiceContractReminderScheduler(prisma);
+    scheduler = new ServiceContractReminderScheduler(prisma, schedulerLock);
     prisma.serviceContract.findMany
       .mockResolvedValueOnce([{ id: 'contract-1', status: 'ACTIVE' }])
       .mockResolvedValueOnce([]);
@@ -37,5 +41,16 @@ describe('ServiceContractReminderScheduler', () => {
         newValue: 'EXPIRED',
       }),
     });
+  });
+
+  it('runs under the distributed scheduler lock', async () => {
+    await scheduler.run();
+    expect(schedulerLock.runExclusive).toHaveBeenCalledWith('service-contract-reminders', 14_400_000, expect.any(Function));
+  });
+
+  it('skips the reminder pass entirely when another instance holds the lock', async () => {
+    schedulerLock.runExclusive.mockResolvedValueOnce({ executed: false, reason: 'locked' });
+    await scheduler.run();
+    expect(prisma.serviceContract.findMany).not.toHaveBeenCalled();
   });
 });

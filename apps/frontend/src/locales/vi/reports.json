@@ -94,9 +94,9 @@
   },
   "revenueReceivables": {
     "subtitle": "Doanh thu & công nợ chi tiết — không thay được báo cáo lãi/lỗ (P&L) vì hệ thống chưa có dữ liệu chi phí/OPEX để đối trừ.",
-    "totalBilled": "Tổng phát hành",
-    "totalCollected": "Đã thu",
-    "totalOutstanding": "Còn phải thu",
+    "totalBilled": "Tổng phát hành (VND)",
+    "totalCollected": "Đã thu (VND)",
+    "totalOutstanding": "Còn phải thu (VND)",
     "collectionRate": "Tỷ lệ thu hồi",
     "byMonth": "Theo tháng",
     "byType": "Theo loại hoá đơn",

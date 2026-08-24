@@ -13,6 +13,10 @@ describe('BillingService payment transaction safety', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    parkingMonthlyStatement: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
   };
   const prisma = {
     invoice: { findUnique: jest.fn() },
@@ -24,7 +28,13 @@ describe('BillingService payment transaction safety', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(tx));
-    service = new BillingService(prisma as unknown as PrismaService);
+    service = new BillingService(
+      prisma as unknown as PrismaService,
+      undefined,
+      { invoiceIssuedHtml: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      { increment: jest.fn() } as any,
+    );
   });
 
   it('creates payment and updates invoice status in one transaction', async () => {
@@ -55,6 +65,33 @@ describe('BillingService payment transaction safety', () => {
       data: { status: InvoiceStatus.PAID, paidAt: expect.any(Date) },
     });
     expect(result.id).toBe('payment-1');
+  });
+
+  it('synchronizes a Billing payment back to its Parking statement', async () => {
+    prisma.invoice.findUnique.mockResolvedValue({
+      id: 'invoice-parking', tenantId: 'tenant-1', status: InvoiceStatus.ISSUED,
+      sourceType: 'PARKING', sourceId: 'statement-1', totalAmount: 1_100, payments: [],
+    });
+    tx.payment.create.mockResolvedValue({ id: 'payment-parking', amount: 1_100 });
+    tx.payment.findMany.mockResolvedValue([{ amount: 1_100, reversedAt: null }]);
+    tx.invoice.findUnique
+      .mockResolvedValueOnce({
+        id: 'invoice-parking', totalAmount: 1_100, refundedAmount: 0,
+        status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+      })
+      .mockResolvedValueOnce({
+        id: 'invoice-parking', sourceType: 'PARKING', sourceId: 'statement-1',
+        status: InvoiceStatus.PAID, refundedAmount: 0,
+        payments: [{ amount: 1_100, reversedAt: null }],
+      });
+    tx.parkingMonthlyStatement.findUnique.mockResolvedValue({ totalAmount: 1_000 });
+
+    await service.recordPayment('invoice-parking', { amount: 1_100 });
+
+    expect(tx.parkingMonthlyStatement.update).toHaveBeenCalledWith({
+      where: { id: 'statement-1' },
+      data: { paidAmount: 1_000, status: 'PAID' },
+    });
   });
 
   it('rolls back the payment when invoice status recomputation fails', async () => {

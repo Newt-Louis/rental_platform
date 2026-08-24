@@ -1,9 +1,15 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LeadEditDialog } from '@/components/crm';
+import i18n from '@/lib/i18n';
+
+// This file's assertions expect real Vietnamese UI text (button labels like
+// 'Cập nhật', 'Hồ sơ Khách hàng...') — scoped fix, see
+// docs/reliability/TEST_BASELINE_REMEDIATION.md.
+beforeAll(() => i18n.changeLanguage('vi'));
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 

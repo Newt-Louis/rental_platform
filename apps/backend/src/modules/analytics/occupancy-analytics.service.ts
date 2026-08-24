@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatus } from '@prisma/client';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class OccupancyAnalyticsService {
@@ -10,9 +11,10 @@ export class OccupancyAnalyticsService {
 
   constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
-  async getOccupancyV2(mallId?: string, floorId?: string, category?: string) {
+  async getOccupancyV2(mallId?: string, floorId?: string, category?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
     if (floorId) where.floorId = floorId;
     if (category) where.category = category;
 
@@ -25,10 +27,34 @@ export class OccupancyAnalyticsService {
         baseRentPerSqm: true,
         camPerSqm: true,
         category: true,
+        leaseTermType: true,
         floor: { select: { id: true, name: true } },
         mall: { select: { id: true, name: true } },
       },
     });
+    const shortBookings = await this.prisma.slotBooking.findMany({
+      where: {
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        slot: {
+          unit: {
+            isActive: true,
+            leaseTermType: 'SHORT',
+            ...(mallId ? { mallId } : {}),
+            ...(floorId ? { floorId } : {}),
+            ...(category ? { category } : {}),
+          },
+        },
+      },
+      select: {
+        status: true,
+        installationStartDatetime: true,
+        dismantlingEndDatetime: true,
+        startDatetime: true,
+        endDatetime: true,
+        slot: { select: { id: true, unitId: true, area: true } },
+      },
+    });
+    const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
 
     const totalUnits = units.length;
     const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
@@ -57,6 +83,16 @@ export class OccupancyAnalyticsService {
 
     const byCategory = this.groupByField(units, 'category');
     const byFloor = this.groupByFieldWithRent(units, 'floor');
+    const byLeaseTerm = Object.values(occupancyByLeaseTerm).map((zone) => ({
+      leaseTermType: zone.leaseTermType,
+      name: zone.label,
+      total: zone.total,
+      occupied: zone.occupied,
+      vacant: zone.vacant,
+      area: zone.totalArea,
+      occupiedArea: zone.occupiedArea,
+      occupancyRate: zone.occupancyRate,
+    }));
 
     return {
       summary: {
@@ -78,6 +114,7 @@ export class OccupancyAnalyticsService {
       },
       byCategory,
       byFloor,
+      byLeaseTerm,
     };
   }
 
@@ -143,9 +180,10 @@ export class OccupancyAnalyticsService {
 
   // ─── GAP #28 — Breakdown floor × category với occupancy ratio ─────────────
 
-  async getCategoryByFloor(mallId?: string) {
+  async getCategoryByFloor(mallId?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
 
     const units = await this.prisma.unit.findMany({
       where,
@@ -189,9 +227,12 @@ export class OccupancyAnalyticsService {
     })).sort((a, b) => a.floorName.localeCompare(b.floorName));
   }
 
-  async getOccupancyTrend(mallId?: string, months = 12) {
+  async getOccupancyTrend(mallId?: string, months = 12, mallIds?: string[] | null) {
+    const where: any = { floorId: null, category: null };
+    if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
     const snapshots = await this.prisma.occupancySnapshot.findMany({
-      where: mallId ? { mallId, floorId: null, category: null } : { floorId: null, category: null },
+      where,
       orderBy: { period: 'asc' },
       take: months,
     });
@@ -203,6 +244,7 @@ export class OccupancyAnalyticsService {
       occupiedUnits: s.occupiedUnits,
       vacantUnits: s.vacantUnits,
       revenuePerSqm: s.revenuePerSqm,
+      leaseTermType: s.leaseTermType,
     }));
   }
 
@@ -223,66 +265,82 @@ export class OccupancyAnalyticsService {
         where: { mallId: mall.id, isActive: true },
       });
 
-      const totalUnits = units.length;
-      const totalArea = units.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
-      const occupied = units.filter((u) => u.status === UnitStatus.OCCUPIED);
-      const occupiedArea = occupied.reduce((s, u) => s + (u.areaNLA ?? 0), 0);
-      const vacant = units.filter((u) => u.status === UnitStatus.VACANT);
-      const underFitout = units.filter((u) => u.status === UnitStatus.UNDER_FITOUT);
-
+      const shortBookings = await this.prisma.slotBooking.findMany({
+        where: { slot: { unit: { mallId: mall.id, leaseTermType: 'SHORT' } } },
+        select: {
+          status: true,
+          installationStartDatetime: true,
+          dismantlingEndDatetime: true,
+          startDatetime: true,
+          endDatetime: true,
+          slot: { select: { id: true, unitId: true, area: true } },
+        },
+      });
+      const occupancy = summarizeOccupancyByLeaseTerm(units, shortBookings, now);
+      // Multi-currency: revenue/revenuePerSqm are single VND-denominated figures -- scope to
+      // VND, same convention as the dashboard's revenue KPIs.
       const monthInvoices = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
           period,
           status: { in: ['ISSUED', 'PAID', 'PARTIALLY_PAID'] },
+          currencyCode: 'VND',
         },
         _sum: { subtotal: true },
       });
-      const monthlyRevenue = monthInvoices._sum.subtotal ?? 0;
-      const revenuePerSqm = occupiedArea > 0 ? monthlyRevenue / occupiedArea : 0;
+      const longRevenue = monthInvoices._sum.subtotal ?? 0;
 
-      await this.prisma.occupancySnapshot.upsert({
+      for (const leaseTermType of ['LONG', 'SHORT'] as const) {
+        const segment = occupancy[leaseTermType];
+        const underFitout = units.filter((unit) => unit.leaseTermType === leaseTermType && unit.status === UnitStatus.UNDER_FITOUT).length;
+        const revenue = leaseTermType === 'LONG' ? longRevenue : 0;
+        const revenuePerSqm = segment.occupiedArea > 0 ? revenue / segment.occupiedArea : 0;
+        await this.prisma.occupancySnapshot.upsert({
         where: {
-          mallId_floorId_category_period: {
+          mallId_floorId_category_leaseTermType_period: {
             mallId: mall.id,
             floorId: null as any,
             category: null as any,
+            leaseTermType,
             period,
           },
         },
         create: {
           mallId: mall.id,
+          leaseTermType,
           period,
           snapshotDate: now,
-          totalUnits,
-          occupiedUnits: occupied.length,
-          vacantUnits: vacant.length,
-          underFitout: underFitout.length,
-          totalAreaSqm: totalArea,
-          occupiedAreaSqm: occupiedArea,
-          occupancyRate: totalArea > 0 ? (occupiedArea / totalArea) * 100 : 0,
+          totalUnits: segment.total,
+          occupiedUnits: segment.occupied,
+          vacantUnits: segment.vacant,
+          underFitout,
+          totalAreaSqm: segment.totalArea,
+          occupiedAreaSqm: segment.occupiedArea,
+          occupancyRate: segment.occupancyRate,
           revenuePerSqm,
         },
         update: {
           snapshotDate: now,
-          totalUnits,
-          occupiedUnits: occupied.length,
-          vacantUnits: vacant.length,
-          underFitout: underFitout.length,
-          totalAreaSqm: totalArea,
-          occupiedAreaSqm: occupiedArea,
-          occupancyRate: totalArea > 0 ? (occupiedArea / totalArea) * 100 : 0,
+          totalUnits: segment.total,
+          occupiedUnits: segment.occupied,
+          vacantUnits: segment.vacant,
+          underFitout,
+          totalAreaSqm: segment.totalArea,
+          occupiedAreaSqm: segment.occupiedArea,
+          occupancyRate: segment.occupancyRate,
           revenuePerSqm,
         },
       });
+      }
     }
 
     this.logger.log(`Occupancy snapshot taken for ${malls.length} malls`);
   }
 
-  async getVacancyAnalysis(mallId?: string) {
+  async getVacancyAnalysis(mallId?: string, mallIds?: string[] | null) {
     const where: any = { isActive: true, status: UnitStatus.VACANT };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
 
     const vacantUnits = await this.prisma.unit.findMany({
       where,

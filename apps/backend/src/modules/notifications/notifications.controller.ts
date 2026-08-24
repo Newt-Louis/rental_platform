@@ -5,11 +5,15 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UserScope } from '../../common/decorators/scope.decorator';
+
+// CR-101 Phase 1: descriptive only. Own-notifications-only, not a Mall concept.
 
 @ApiTags('Notifications')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.notifications)
+@UserScope()
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

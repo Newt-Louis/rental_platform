@@ -1,5 +1,6 @@
 import { SchedulerLockService } from './scheduler-lock.service';
 import { RedisService } from './redis.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 describe('SchedulerLockService', () => {
   const redis = {
@@ -7,11 +8,22 @@ describe('SchedulerLockService', () => {
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
   };
+  const prisma = {
+    jobExecution: {
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+  };
   let service: SchedulerLockService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new SchedulerLockService(redis as unknown as RedisService);
+    prisma.jobExecution.create.mockResolvedValue({ id: 'exec-1' });
+    prisma.jobExecution.update.mockResolvedValue({ id: 'exec-1' });
+    service = new SchedulerLockService(
+      redis as unknown as RedisService,
+      prisma as unknown as PrismaService,
+    );
   });
 
   it('executes and releases a lock owned by this process', async () => {
@@ -69,5 +81,67 @@ describe('SchedulerLockService', () => {
     });
     expect(redis.acquireLock).not.toHaveBeenCalled();
     redis.isEnabled = true;
+  });
+
+  it('records a RUNNING then SUCCEEDED ledger row for a successful run', async () => {
+    redis.acquireLock.mockResolvedValue(true);
+    redis.releaseLock.mockResolvedValue(true);
+    const task = jest.fn().mockResolvedValue('done');
+
+    await service.runExclusive('billing', 60_000, task);
+
+    expect(prisma.jobExecution.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ jobName: 'billing', status: 'RUNNING' }),
+      }),
+    );
+    expect(prisma.jobExecution.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'exec-1' },
+        data: expect.objectContaining({ status: 'SUCCEEDED' }),
+      }),
+    );
+  });
+
+  it('records a FAILED ledger row with an error summary when the task throws', async () => {
+    redis.acquireLock.mockResolvedValue(true);
+    redis.releaseLock.mockResolvedValue(true);
+
+    await expect(
+      service.runExclusive('billing', 60_000, async () => {
+        throw new Error('job failed');
+      }),
+    ).rejects.toThrow('job failed');
+
+    expect(prisma.jobExecution.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'exec-1' },
+        data: expect.objectContaining({ status: 'FAILED', errorSummary: 'job failed' }),
+      }),
+    );
+  });
+
+  it('records a SKIPPED_LOCKED ledger row when another instance owns the lock', async () => {
+    redis.acquireLock.mockResolvedValue(false);
+
+    await service.runExclusive('billing', 60_000, jest.fn());
+
+    expect(prisma.jobExecution.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ jobName: 'billing', status: 'SKIPPED_LOCKED' }),
+      }),
+    );
+  });
+
+  it('does not fail the job when the ledger write itself errors', async () => {
+    redis.acquireLock.mockResolvedValue(true);
+    redis.releaseLock.mockResolvedValue(true);
+    prisma.jobExecution.create.mockRejectedValue(new Error('db unavailable'));
+    const task = jest.fn().mockResolvedValue('done');
+
+    await expect(service.runExclusive('billing', 60_000, task)).resolves.toEqual({
+      executed: true,
+      value: 'done',
+    });
   });
 });

@@ -184,7 +184,11 @@
     "pendingCollection": "{{count}} chờ thu tiền",
     "searchPlaceholder": "Tìm số hóa đơn, khách thuê...",
     "exporting": "Đang xuất...",
-    "noInvoices": "Không có hóa đơn nào"
+    "noInvoices": "Chưa có hóa đơn nào",
+    "noInvoicesHint": "Hóa đơn được tạo tự động theo lịch thu phí, hoặc từ mục \"Chờ xử lý\" phía trên.",
+    "noInvoicesFiltered": "Không có hóa đơn phù hợp bộ lọc",
+    "noInvoicesFilteredHint": "Hãy thay đổi từ khóa hoặc bộ lọc.",
+    "clearFilters": "Xóa bộ lọc"
   },
   "header": {
     "title": "Hóa đơn và thu tiền",

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { fitoutApi, fitoutSubmittalApi, fitoutIssueApi, approvalsApi, usersApi } from '@/api';
@@ -965,12 +965,22 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
 export default function FitoutPage() {
   const { t } = useTranslation('fitout');
   const { selectedMallId } = useMallStore();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('projectId'));
   const [filterStatus, setFilterStatus] = useState('');
   const stages = useStageConfigs();
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const canManageConfig = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
+
+  // Cross-module handoff (docs/audit/11-INFORMATION-FLOW.md): a Contract's
+  // detail view links here with ?projectId=... so the target project opens
+  // directly instead of forcing the user to find it again in the list.
+  useEffect(() => {
+    const id = searchParams.get('projectId');
+    if (id) setSelectedId(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['fitouts', selectedMallId],

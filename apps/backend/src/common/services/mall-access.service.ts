@@ -6,7 +6,31 @@ import { Role } from '@prisma/client';
 // (khách thuê không có khái niệm phụ trách mall). Cách ly dữ liệu của TENANT được thực hiện bằng
 // kiểm tra tenantId ở tầng service (findOne/findAll mỗi module), chặt hơn và đúng bản chất hơn
 // so với UserMallAccess — nên TENANT bypass guard này thay vì bị chặn vì thiếu UserMallAccess.
-const BYPASS_ROLES: Role[] = [Role.ADMIN, Role.CEO, Role.TENANT];
+//
+// CR-101 Phase 3G (BC-CEO-SCOPE, Option A — approved 2026-08-22): CEO removed from this
+// blanket bypass. CEO's Mall access is no longer "skip every check for every domain it can
+// reach" — it is now the narrower CROSS_MALL_READ_ROLES grant below, explicitly opted into
+// per call site, never inferred from role name alone. See
+// docs/architecture-review/35-CR-101-PHASE-3G-IMPLEMENTATION-PLAN.md.
+const BYPASS_ROLES: Role[] = [Role.ADMIN, Role.TENANT];
+
+// CR-101 Phase 3G — the business-approved set of roles that get unrestricted (all-Mall) READ
+// on a small, explicitly-named set of oversight domains (Dashboard, Reports, Analytics, AI,
+// Approvals-action) — never CREATE/UPDATE/DELETE/APPROVE-outside-workflow/ADMIN. Consumed only
+// via the `crossMallRead` opt-in below, mirroring the "declared, not granted" philosophy already
+// used by @Scope's `crossMallRead` metadata field (scope.types.ts). A call site NOT passing
+// `{ crossMallRead: true }` gives CEO exactly the same ordinary UserMallAccess-derived scoping
+// as any other non-bypass role — this is deliberate, not an oversight, for every domain outside
+// the approved five.
+const CROSS_MALL_READ_ROLES: Role[] = [Role.CEO];
+
+export interface MallAccessOptions {
+  /** CR-101 Phase 3G — set true only at the small, business-approved set of call sites
+   * (Dashboard, Reports, Analytics read paths, AI, Approvals-action) that should give
+   * CROSS_MALL_READ_ROLES members unrestricted read. Never set this from generic/shared code
+   * reused by other domains. */
+  crossMallRead?: boolean;
+}
 
 @Injectable()
 export class MallAccessService {
@@ -16,8 +40,18 @@ export class MallAccessService {
     return !!role && BYPASS_ROLES.includes(role as Role);
   }
 
-  async assertMallAccess(userId: string, role: string, mallId: string): Promise<void> {
-    if (this.bypassesMallCheck(role)) return;
+  /** CR-101 Phase 3G — true only for roles in CROSS_MALL_READ_ROLES. Does not by itself grant
+   * anything; callers must combine with an explicit `crossMallRead: true` opt-in. */
+  hasCrossMallRead(role?: string): boolean {
+    return !!role && CROSS_MALL_READ_ROLES.includes(role as Role);
+  }
+
+  private grantsUnrestrictedRead(role: string, opts?: MallAccessOptions): boolean {
+    return this.bypassesMallCheck(role) || (!!opts?.crossMallRead && this.hasCrossMallRead(role));
+  }
+
+  async assertMallAccess(userId: string, role: string, mallId: string, opts?: MallAccessOptions): Promise<void> {
+    if (this.grantsUnrestrictedRead(role, opts)) return;
 
     const access = await this.prisma.userMallAccess.findFirst({
       where: { userId, mallId, isActive: true },
@@ -28,8 +62,8 @@ export class MallAccessService {
     }
   }
 
-  async getAccessibleMallIds(userId: string, role: string): Promise<string[] | null> {
-    if (this.bypassesMallCheck(role)) return null;
+  async getAccessibleMallIds(userId: string, role: string, opts?: MallAccessOptions): Promise<string[] | null> {
+    if (this.grantsUnrestrictedRead(role, opts)) return null;
 
     const accesses = await this.prisma.userMallAccess.findMany({
       where: { userId, isActive: true },
@@ -60,6 +94,8 @@ export class MallAccessService {
       fitoutSubmittalId?: string;
       fitoutIssueId?: string;
       invoiceId?: string;
+      paymentId?: string;
+      invoiceAdjustmentId?: string;
       bookingId?: string;
       slotId?: string;
       slotBookingId?: string;
@@ -70,9 +106,40 @@ export class MallAccessService {
       tenantId?: string;
       ticketId?: string;
       maintenanceScheduleId?: string;
+      // CR-101 Phase 3A -- new resolvers, additive only, same pattern as above.
+      servicePriceCatalogId?: string;
+      fitoutGanttTaskId?: string;
+      fitoutDailyReportEntryId?: string;
+      announcementId?: string;
+      // CR-101 Phase 3B -- Spaces hierarchy. Mall's own :id is passed directly as
+      // `mallId` (no lookup needed -- the entity IS the mallId). Floor's and
+      // Unit's own :id reuse the `floorId`/`unitId` sources above unchanged (those
+      // sources already resolve "given this id, what Mall does it belong to" --
+      // the same lookup whether the id came from a route's own :id or from a
+      // foreign-key field on another entity). Zone's own :id is the one genuinely
+      // new lookup, added below.
+      zoneId?: string;
+      // CR-101 Phase 3C (C3) -- WorkOrder/ParkingCustomerContract/ServiceContract
+      // all have a direct, non-nullable mallId field (confirmed against
+      // schema.prisma this phase, see docs/architecture-review/29-CR-101-FILE-OWNERSHIP-MATRIX.md).
+      // `patrolCheckId` folds patrol.service.ts's existing, unchanged
+      // `checkMallId()` helper's logic (PatrolCheck.shiftId -> PatrolShift.mallId)
+      // into this canonical registry, per the standing recommendation in
+      // 16-CR-101-RESOLVER-REGISTRY.md -- patrol.service.ts itself is not
+      // modified; its own call sites keep using checkMallId() unchanged.
+      workOrderId?: string;
+      parkingCustomerContractId?: string;
+      serviceContractId?: string;
+      patrolCheckId?: string;
+      // CR-101 Phase 3D -- FloorPlanAnalysis has a direct, non-nullable mallId
+      // field (confirmed against schema.prisma). Closes the confirmed gap:
+      // ai.controller.ts's getAnalysis/pollStatus/applySuggestions routes had
+      // zero Mall check, keyed only on the analysis's own id.
+      floorPlanAnalysisId?: string;
     },
+    opts?: MallAccessOptions,
   ): Promise<void> {
-    if (this.bypassesMallCheck(role)) return;
+    if (this.grantsUnrestrictedRead(role, opts)) return;
 
     let mallId = sources.mallId;
 
@@ -128,9 +195,56 @@ export class MallAccessService {
     if (!mallId && sources.invoiceId) {
       const invoice = await this.prisma.invoice.findUnique({
         where: { id: sources.invoiceId },
-        select: { contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+        select: {
+          mallId: true,
+          contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          billingParty: { select: { mallId: true } },
+        },
       });
-      mallId = invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId;
+      mallId = invoice?.mallId ?? invoice?.contract?.unit?.mallId ?? invoice?.contract?.unit?.floor?.mallId ?? invoice?.billingParty?.mallId ?? undefined;
+      if (invoice && !mallId) {
+        throw new ForbiddenException('Invoice is not assigned to an accessible mall');
+      }
+    }
+
+    if (!mallId && sources.paymentId) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: sources.paymentId },
+        select: {
+          invoice: {
+            select: {
+              mallId: true,
+              contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+              billingParty: { select: { mallId: true } },
+            },
+          },
+        },
+      });
+      mallId = payment?.invoice?.mallId
+        ?? payment?.invoice?.contract?.unit?.mallId
+        ?? payment?.invoice?.contract?.unit?.floor?.mallId
+        ?? payment?.invoice?.billingParty?.mallId
+        ?? undefined;
+      if (payment && !mallId) {
+        throw new ForbiddenException('Payment is not assigned to an accessible mall');
+      }
+    }
+
+    if (!mallId && sources.invoiceAdjustmentId) {
+      const adjustment = await this.prisma.invoiceAdjustment.findUnique({
+        where: { id: sources.invoiceAdjustmentId },
+        select: { invoice: { select: {
+          mallId: true,
+          contract: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+          billingParty: { select: { mallId: true } },
+        } } },
+      });
+      mallId = adjustment?.invoice.mallId
+        ?? adjustment?.invoice.contract?.unit?.mallId
+        ?? adjustment?.invoice.contract?.unit?.floor?.mallId
+        ?? adjustment?.invoice.billingParty?.mallId
+        ?? undefined;
+      if (adjustment && !mallId) throw new ForbiddenException('Adjustment is not assigned to an accessible mall');
     }
 
     if (!mallId && sources.bookingId) {
@@ -208,6 +322,86 @@ export class MallAccessService {
         select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
       });
       mallId = ticket?.unit?.mallId ?? ticket?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.servicePriceCatalogId) {
+      const item = await this.prisma.servicePriceCatalog.findUnique({
+        where: { id: sources.servicePriceCatalogId },
+        select: { mallId: true },
+      });
+      mallId = item?.mallId;
+    }
+
+    if (!mallId && sources.fitoutGanttTaskId) {
+      const task = await this.prisma.fitoutTask.findUnique({
+        where: { id: sources.fitoutGanttTaskId },
+        select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = task?.project?.unit?.mallId ?? task?.project?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.fitoutDailyReportEntryId) {
+      const entry = await this.prisma.fitoutDailyReportEntry.findUnique({
+        where: { id: sources.fitoutDailyReportEntryId },
+        select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } },
+      });
+      mallId = entry?.project?.unit?.mallId ?? entry?.project?.unit?.floor?.mallId;
+    }
+
+    if (!mallId && sources.announcementId) {
+      const announcement = await this.prisma.mallAnnouncement.findUnique({
+        where: { id: sources.announcementId },
+        select: { mallId: true },
+      });
+      mallId = announcement?.mallId;
+    }
+
+    if (!mallId && sources.zoneId) {
+      const zone = await this.prisma.zone.findUnique({
+        where: { id: sources.zoneId },
+        select: { mallId: true },
+      });
+      mallId = zone?.mallId;
+    }
+
+    if (!mallId && sources.workOrderId) {
+      const workOrder = await this.prisma.workOrder.findUnique({
+        where: { id: sources.workOrderId },
+        select: { mallId: true },
+      });
+      mallId = workOrder?.mallId;
+    }
+
+    if (!mallId && sources.parkingCustomerContractId) {
+      const contract = await this.prisma.parkingCustomerContract.findUnique({
+        where: { id: sources.parkingCustomerContractId },
+        select: { mallId: true },
+      });
+      mallId = contract?.mallId;
+    }
+
+    if (!mallId && sources.serviceContractId) {
+      const contract = await this.prisma.serviceContract.findUnique({
+        where: { id: sources.serviceContractId },
+        select: { mallId: true },
+      });
+      mallId = contract?.mallId;
+    }
+
+    if (!mallId && sources.patrolCheckId) {
+      const check = await this.prisma.patrolCheck.findUnique({
+        where: { id: sources.patrolCheckId },
+        select: { shift: { select: { mallId: true } } },
+      });
+      mallId = check?.shift?.mallId;
+    }
+
+    if (!mallId && sources.floorPlanAnalysisId) {
+      const analysis = await this.prisma.floorPlanAnalysis.findUnique({
+        where: { id: sources.floorPlanAnalysisId },
+        select: { mallId: true },
+      });
+      mallId = analysis?.mallId;
     }
 
     if (mallId) {

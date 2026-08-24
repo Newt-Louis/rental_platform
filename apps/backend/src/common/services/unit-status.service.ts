@@ -1,6 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UnitHistoryType, UnitStatus } from '@prisma/client';
+import { Prisma, UnitHistoryType, UnitStatus } from '@prisma/client';
+
+/** Either the top-level PrismaService or an interactive-transaction client
+ * (`prisma.$transaction(async (tx) => ...)`). Lets callers that need this
+ * transition to be atomic with their own other writes (e.g. Proposal→Contract,
+ * docs/security/... data-integrity hardening) pass their `tx` through instead
+ * of this service opening a second, independent transaction. */
+type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 /** Allowed unit status transitions for automated leasing lifecycle */
 const ALLOWED_TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
@@ -34,6 +41,17 @@ export interface UnitTransitionOptions {
   tenantId?: string;
   leaseStartDate?: Date;
   leaseEndDate?: Date;
+  /**
+   * CR-101 Phase 3E / INV-AUTH-006 — the Mall the caller's own already-validated
+   * business entity belongs to (e.g. a Booking's current unit.mallId before a
+   * unit reassignment). When provided, must match the target Unit's actual
+   * mallId or the transition is denied before any mutation. Never populate this
+   * from unvalidated client input — only from a value the caller itself derived
+   * from a trusted, already-persisted record. Omit when the caller has no prior
+   * entity to compare against (e.g. creating a brand-new Booking/Contract
+   * against `unitId` directly — there is nothing to be inconsistent with yet).
+   */
+  expectedMallId?: string;
 }
 
 @Injectable()
@@ -54,14 +72,30 @@ export class UnitStatusService {
     return LOCKED_FOR_BOOKING.includes(status);
   }
 
-  async transition(unitId: string, toStatus: UnitStatus, options: UnitTransitionOptions = {}) {
-    const unit = await this.prisma.unit.findUnique({ where: { id: unitId } });
+  async transition(
+    unitId: string,
+    toStatus: UnitStatus,
+    options: UnitTransitionOptions = {},
+    client: PrismaClientOrTx = this.prisma,
+  ) {
+    const unit = await client.unit.findUnique({ where: { id: unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
+
+    // INV-AUTH-006 — entity integrity, not user-role policy: the caller's own
+    // already-validated business entity must belong to the same Mall as the
+    // Unit it's about to mutate. Checked first, before any other validation or
+    // write, so a mismatch never leaves a partial side effect (history, queue
+    // promotion, etc.) behind.
+    if (options.expectedMallId && options.expectedMallId !== unit.mallId) {
+      throw new ForbiddenException(
+        'Unit does not belong to the expected mall for this operation',
+      );
+    }
 
     const isLowAvailabilityStatus = ([UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.NEGOTIATING] as UnitStatus[])
       .includes(toStatus);
     if (unit.status !== toStatus && isLowAvailabilityStatus) {
-      const liveContract = await this.prisma.contract.findFirst({
+      const liveContract = await client.contract.findFirst({
         where: {
           unitId,
           isActive: true,
@@ -78,7 +112,7 @@ export class UnitStatusService {
     }
 
     if (unit.status !== toStatus && toStatus === UnitStatus.BOOKING) {
-      const activeBooking = await this.prisma.unitBooking.findFirst({
+      const activeBooking = await client.unitBooking.findFirst({
         where: { unitId, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
         select: { id: true },
       });
@@ -88,7 +122,7 @@ export class UnitStatusService {
     }
 
     if (unit.status !== toStatus && toStatus === UnitStatus.VACANT) {
-      const activeBooking = await this.prisma.unitBooking.findFirst({
+      const activeBooking = await client.unitBooking.findFirst({
         where: { unitId, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
         select: { id: true },
       });
@@ -98,7 +132,7 @@ export class UnitStatusService {
     }
 
     if (unit.status !== toStatus && COMMITTED_STATUSES.includes(toStatus)) {
-      const liveContract = await this.prisma.contract.findFirst({
+      const liveContract = await client.contract.findFirst({
         where: {
           unitId,
           isActive: true,
@@ -134,21 +168,32 @@ export class UnitStatusService {
       data.vacantSince = null;
     }
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.unit.update({ where: { id: unitId }, data }),
-      this.prisma.unitHistory.create({
-        data: {
-          unitId,
-          changeType: UnitHistoryType.STATUS_CHANGE,
-          fieldName: 'status',
-          oldValue: unit.status,
-          newValue: toStatus,
-          changedById: options.userId,
-          notes: options.reason,
-        },
-      }),
-    ]);
+    const historyEntry = {
+      unitId,
+      changeType: UnitHistoryType.STATUS_CHANGE,
+      fieldName: 'status',
+      oldValue: unit.status,
+      newValue: toStatus,
+      changedById: options.userId,
+      notes: options.reason,
+    };
 
+    // When called with an outer `tx` (an interactive transaction we're already
+    // inside — e.g. Proposal→Contract), just run both writes on it: they're
+    // already atomic with the caller's other writes, and Prisma doesn't
+    // support opening a nested $transaction on a transaction client. The
+    // standalone (`client === this.prisma`) case keeps its own transaction,
+    // unchanged from before this method became composable.
+    if (client === this.prisma) {
+      const [updated] = await this.prisma.$transaction([
+        this.prisma.unit.update({ where: { id: unitId }, data }),
+        this.prisma.unitHistory.create({ data: historyEntry }),
+      ]);
+      return updated;
+    }
+
+    const updated = await client.unit.update({ where: { id: unitId }, data });
+    await client.unitHistory.create({ data: historyEntry });
     return updated;
   }
 }

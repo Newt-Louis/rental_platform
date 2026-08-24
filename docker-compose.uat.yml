@@ -30,21 +30,31 @@ services:
       timeout: 5s
       retries: 10
 
+  # Migration safety (docs/reliability/MIGRATION_SAFETY.md): SEED_DATABASE used
+  # to be hardcoded "true", meaning any invocation of this service — including
+  # a routine re-run — unconditionally ran prisma/seed.ts, which starts by
+  # deleteMany()-ing across most tables before reseeding demo fixtures. On a
+  # real UAT environment with real data, that's a silent full data wipe. Now
+  # opt-in and defaulted off, matching the already-correct pattern used by the
+  # local `migrate` service in docker-compose.yml. Pass SEED_DATABASE=true
+  # explicitly only when you actually want to reset this environment to demo
+  # data (e.g. first-time setup).
   migrate-uat:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile.dev
     environment:
       DATABASE_URL: postgresql://${UAT_POSTGRES_USER:-leasing_uat}:${UAT_POSTGRES_PASSWORD:?UAT_POSTGRES_PASSWORD is required}@postgres-uat:5432/${UAT_POSTGRES_DB:-leasing_platform_uat}
-      SEED_DATABASE: "true"
+      SEED_DATABASE: ${SEED_DATABASE:-false}
     depends_on:
       postgres-uat:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && npx ts-node --transpile-only prisma/seed.ts"
+    command: sh -c "npx prisma migrate deploy && if [ \"$$SEED_DATABASE\" = \"true\" ]; then npx ts-node --transpile-only prisma/seed.ts; fi"
     networks: [leasing-uat]
     profiles: [setup]
 
   backend-uat:
+    image: registry.thisoretail.store/leasing-platform/backend:${IMAGE_TAG:-latest}
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
@@ -81,6 +91,7 @@ services:
       start_period: 30s
 
   frontend-uat:
+    image: registry.thisoretail.store/leasing-platform/frontend:${IMAGE_TAG:-latest}
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile

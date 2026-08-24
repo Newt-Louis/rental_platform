@@ -161,7 +161,6 @@ export function CollectionKpiTab() {
   const { data, isLoading } = useQuery({
     queryKey: ['collection-kpi', selectedMallId],
     queryFn: () => billingApi.getCollectionKpi(6, selectedMallId || undefined),
-    enabled: !!selectedMallId,
   });
 
   const kpi = data?.data ?? data ?? {};

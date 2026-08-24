@@ -8,6 +8,7 @@ import { Cron } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../../storage/storage.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { SchedulerLockService } from "../../common/services/scheduler-lock.service";
 
 const SEVERITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const MIN_SECONDS_BETWEEN_CHECKS = 45;
@@ -36,6 +37,7 @@ export class PatrolService {
     private prisma: PrismaService,
     private storage: StorageService,
     private notifications: NotificationsService,
+    private schedulerLock: SchedulerLockService,
   ) {}
   async routeMallId(id: string) {
     const x = await this.prisma.patrolRoute.findUnique({
@@ -713,6 +715,10 @@ export class PatrolService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async markOverdueShifts() {
+    return this.schedulerLock.runExclusive("patrol-overdue-monitor", 600_000, () => this.markOverdueShiftsUnlocked());
+  }
+
+  private async markOverdueShiftsUnlocked() {
     const rows = await this.prisma.patrolShift.findMany({
       where: { status: "SCHEDULED", scheduledAt: { lt: new Date() } },
     });
@@ -739,6 +745,10 @@ export class PatrolService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async generateScheduledShifts() {
+    return this.schedulerLock.runExclusive("patrol-schedule-generator", 1_200_000, () => this.generateScheduledShiftsUnlocked());
+  }
+
+  private async generateScheduledShiftsUnlocked() {
     const schedules = await this.prisma.patrolSchedule.findMany({
       where: { isActive: true },
       include: { route: { include: { points: true } } },

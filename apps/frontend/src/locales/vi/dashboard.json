@@ -22,6 +22,7 @@
     "totalNla": "Tổng NLA: {{area}}",
     "leased": "Cho thuê",
     "vacant": "Trống",
+    "total": "Tổng",
     "other": "Khác",
     "leasedFull": "Đang cho thuê",
     "noData": "Chưa có dữ liệu"
@@ -30,9 +31,9 @@
     "occupancyRate": "Tỷ lệ lấp đầy",
     "tenants": "Khách thuê",
     "activeContracts": "Hợp đồng đang hoạt động",
-    "monthlyRevenue": "Doanh thu tháng",
+    "monthlyRevenue": "Doanh thu tháng (VND)",
     "collectedRevenue": "Đã thu: {{amount}}",
-    "overdueDebt": "Công nợ quá hạn",
+    "overdueDebt": "Công nợ quá hạn (VND)",
     "overdueInvoices": "{{count}} hóa đơn",
     "activeBookings": "Booking đang giữ",
     "pendingBookings": "{{count}} chờ kích hoạt",
@@ -72,6 +73,7 @@
     "expiringContracts30": "HĐ hết hạn trong 30 ngày",
     "expiringContracts90": "HĐ hết hạn trong 90 ngày",
     "openTickets": "Ticket đang mở",
+    "fitoutSlaBreaches": "Fitout trễ SLA",
     "expiringBookings": "Booking sắp hết hạn"
   },
   "badges": {
@@ -81,5 +83,73 @@
   },
   "error": {
     "loadFailed": "Không thể tải tổng quan vận hành"
+  },
+  "strip": {
+    "ariaLabel": "Tóm tắt tài chính điều hành",
+    "title": "Financial intelligence",
+    "exactValues": "Giá trị chính xác · VND",
+    "currentPeriod": "Kỳ hiện tại",
+    "collectedPeriod": "Đã thu trong kỳ",
+    "outstandingPeriod": "Dư nợ kỳ hiện tại",
+    "revenue": "Doanh thu tháng",
+    "collected": "Đã thu",
+    "uncollected": "Chưa thu (kỳ này)",
+    "overdue": "Quá hạn thu",
+    "occupancy": "Tỷ lệ lấp đầy"
+  },
+  "portfolio": {
+    "title": "Tình hình danh mục",
+    "occupiedArea": "Diện tích đang cho thuê",
+    "activeTenants": "Khách thuê hoạt động",
+    "activeBookings": "Booking đang giữ",
+    "pendingBookings": "{{count}} chờ kích hoạt",
+    "expiringContracts": "HĐ sắp hết hạn (30 ngày)",
+    "expiringContracts90": "Trong 90 ngày: {{count}}",
+    "healthScore": "Chỉ báo tổng hợp tham khảo",
+    "healthMethodology": "Phương pháp chỉ báo",
+    "healthFormulaBlend": "Lấp đầy {{occupancy}}% × 0,55 + Thu hồi {{collection}}% × 0,45",
+    "healthFormulaCollection": "Phản ánh tỷ lệ thu hồi hiện tại ({{collection}}%)",
+    "healthFormulaOccupancy": "Phản ánh tỷ lệ lấp đầy hiện tại ({{occupancy}}%)",
+    "healthDisclaimer": "Chỉ báo phân tích nội bộ, không phải KPI kinh doanh đã phê duyệt."
+  },
+  "trend": {
+    "title": "Xu hướng kinh doanh",
+    "revenue": "Doanh thu theo tháng",
+    "occupancy": "Lấp đầy theo tháng",
+    "ar": "Công nợ theo tháng",
+    "current": "Trong hạn",
+    "overdue": "Quá hạn",
+    "unitBillionVnd": "Đơn vị: Tỷ VND",
+    "unitMillionVnd": "Đơn vị: Triệu VND",
+    "unitThousandVnd": "Đơn vị: Nghìn VND",
+    "unitVnd": "Đơn vị: VND",
+    "unitPercent": "Đơn vị: %",
+    "month": "Tháng",
+    "tooltipPrecision": "Tooltip hiển thị giá trị chính xác",
+    "noData": "Chưa đủ dữ liệu lịch sử",
+    "noAccess": "Không có quyền xem"
+  },
+  "worklist": {
+    "title": "Cần xử lý",
+    "description": "Việc ưu tiên xử lý ngay, xếp theo mức độ khẩn cấp",
+    "invoiceContext": "{{count}} hóa đơn · {{amount}}",
+    "contractContext": "{{count}} hợp đồng",
+    "approvalContext": "{{count}} hồ sơ",
+    "ticketContext": "{{count}} ticket",
+    "projectContext": "{{count}} dự án",
+    "bookingContext": "{{count}} booking",
+    "queueCount": "{{count}} việc mở",
+    "priorityCritical": "Khẩn cấp",
+    "priorityHigh": "Ưu tiên cao",
+    "priorityNormal": "Theo dõi",
+    "process": "Xử lý",
+    "view": "Xem",
+    "approve": "Phê duyệt"
+  },
+  "header": {
+    "lastRefresh": "Cập nhật {{time}}",
+    "leaseTerm": "Loại thời hạn thuê",
+    "longTerm": "Dài hạn",
+    "shortTerm": "Ngắn hạn"
   }
 }

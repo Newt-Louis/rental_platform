@@ -23,10 +23,8 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
+import { formatMoney, formatMoneyAmount } from '@/lib/currency';
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
-}
 function fmtPrice(n: number | null | undefined) {
   if (!n) return '—';
   return new Intl.NumberFormat('vi-VN').format(n);
@@ -199,14 +197,18 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
             </div>
           </SheetSection>
 
-          <SheetSection label={t('approvals.workflow.section.financial')} className="bg-slate-50">
+          <SheetSection
+            label={t('approvals.workflow.section.financial')}
+            className="bg-slate-50"
+            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency ?? 'VND'}</span>}
+          >
             <div className="grid grid-cols-2 gap-x-4">
               <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? fmt(p.monthlyRent) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? fmt(p.monthlyCAM) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? formatMoney(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? formatMoney(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? fmt(p.totalContractValue) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? formatMoney(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
           </SheetSection>
@@ -243,6 +245,7 @@ export default function ApprovalsPage() {
   const [search, setSearch] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
+  const [leaseTermType, setLeaseTermType] = useState('');
 
   const { data: floorsResponse } = useQuery({
     queryKey: ['approval-filter-floors', selectedMallId],
@@ -257,7 +260,7 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     setProposalPage(1); setHistoryPage(1); setSelectedWorkflowId(null);
-    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId('');
+    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType('');
   }, [selectedMallId]);
 
   // ── Selection state ──
@@ -284,12 +287,12 @@ export default function ApprovalsPage() {
 
   // ── Queries ──
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['pending-approvals', proposalPage, selectedMallId, search, floorId, unitId],
-    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined, search: search || undefined, floorId: floorId || undefined, unitId: unitId || undefined }),
+    queryKey: ['pending-approvals', proposalPage, selectedMallId, search, floorId, unitId, leaseTermType],
+    queryFn: () => approvalsApi.pending({ page: proposalPage, limit: 15, mallId: selectedMallId || undefined, search: search || undefined, floorId: floorId || undefined, unitId: unitId || undefined, leaseTermType: leaseTermType || undefined }),
     refetchInterval: 30_000,
   });
   const { data: historyData, isLoading: loadingHistory, isError: historyError, refetch: refetchHistory } = useQuery({
-    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId, search, floorId, unitId],
+    queryKey: ['approvals-history', historyPage, historyStatus, selectedMallId, search, floorId, unitId, leaseTermType],
     queryFn: () => approvalsApi.history({
       page: historyPage,
       limit: 25,
@@ -298,13 +301,13 @@ export default function ApprovalsPage() {
       search: search || undefined,
       floorId: floorId || undefined,
       unitId: unitId || undefined,
+      leaseTermType: leaseTermType || undefined,
     }),
-    enabled: view === 'history',
   });
 
   const { data: priceApprovalsData, isLoading: loadingPriceApprovals, isError: priceError, refetch: refetchPrices } = useQuery({
-    queryKey: ['pending-price-approvals', pricePage, selectedMallId],
-    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25, mallId: selectedMallId || undefined }),
+    queryKey: ['pending-price-approvals', pricePage, selectedMallId, leaseTermType],
+    queryFn: () => bookingApi.getPendingPriceApproval({ page: pricePage, limit: 25, mallId: selectedMallId || undefined, leaseTermType: leaseTermType || undefined }),
     refetchInterval: 30_000,
     enabled: canApprovePrices,
   });
@@ -484,29 +487,31 @@ export default function ApprovalsPage() {
         </div>
       </div>
 
-      {/* ── Tab toggle ── */}
-      <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-1 w-fit">
+      {/* ── Status cards ── */}
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <button
           onClick={() => { setView('proposals'); setProposalPage(1); setSelectedPriceIds(new Set()); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'proposals' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'proposals' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-blue-200 bg-white'}`}
         >
-          <CheckSquare size={14} className="inline mr-1.5" />
-          {t('approvals.views.proposals')} ({proposalTotal})
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-700"><CheckSquare size={15} />{t('approvals.views.proposals')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{proposalTotal}</div>
         </button>
         {canApprovePrices && <button
           onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'prices' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'prices' ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100' : 'border-amber-200 bg-white'}`}
         >
-          <DollarSign size={14} className="inline mr-1.5" />
-          {t('approvals.views.prices')} ({priceTotal})
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-700"><DollarSign size={15} />{t('approvals.views.prices')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{priceTotal}</div>
         </button>}
         <button
           onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'history' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}
+          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'history' ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-emerald-200 bg-white'}`}
         >
-          <History size={14} className="inline mr-1.5" />
-          {t('approvals.views.history')}
+          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700"><History size={15} />{t('approvals.views.history')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{historyTotal}</div>
         </button>
+      </div>
+
+      <div className="mb-5 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setProposalPage(1); setPricePage(1); setHistoryPage(1); }}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>{label}</button>)}
       </div>
 
       {view !== 'prices' && (
@@ -550,7 +555,7 @@ export default function ApprovalsPage() {
             <>
               {!rejectDialog && <Selecto ref={proposalSelectoRef} container={proposalGridRef.current} {...proposalSelectoProps} />}
               <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
-                <table className="w-full text-sm">
+                <table className="min-w-[1300px] w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-blue-50/40">
                       <th className="px-3 py-3 w-8">
@@ -571,6 +576,7 @@ export default function ApprovalsPage() {
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.monthlyRent')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.discount')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.contractValue')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('common:labels.currency')}</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -605,11 +611,18 @@ export default function ApprovalsPage() {
                               {proposal?.proposalNumber ?? '—'}
                             </span>
                             {isNew && <Badge className="ml-2 gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> Mới</Badge>}
+                            {proposal?.unit?.leaseTermType && <div><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap"><div className={`flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}><Clock3 size={13} />{approvalAge(createdAt)}</div><div className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(createdAt)}</div></td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-800 text-sm">{step.stepName}</div>
                             <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">{t('approvals.table.step', { order: step.stepOrder })}</Badge>
+                            {step.policyReason && (
+                              <div className="mt-1 flex items-start gap-1 text-[11px] text-gray-400" title={t('approvals.table.policyReasonTitle')}>
+                                <ShieldCheck size={11} className="mt-0.5 shrink-0" />
+                                <span className="line-clamp-2">{step.policyReason}</span>
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{step.approverRole}</Badge>
@@ -617,9 +630,9 @@ export default function ApprovalsPage() {
                           <td className="px-4 py-3">
                             <div className="font-medium">{proposal?.tenant?.brandName ?? <span className="text-gray-400">—</span>}</div>
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
+                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                             {proposal?.monthlyRent ? (
-                              <span className="text-gray-700">{fmt(proposal.monthlyRent)}</span>
+                              <span className="text-gray-700">{formatMoneyAmount(proposal.monthlyRent, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
@@ -628,12 +641,19 @@ export default function ApprovalsPage() {
                             ) : (
                               <span className="text-gray-400">0%</span>
                             )}
+                            {proposal?.rentFree > 0 && (
+                              <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-amber-600">
+                                <CalendarDays size={10} />
+                                {t('approvals.table.rentFreeDays', { count: proposal.rentFree })}
+                              </div>
+                            )}
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums">
+                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                             {proposal?.totalContractValue ? (
-                              <span className="font-bold text-green-600">{fmt(proposal.totalContractValue)}</span>
+                              <span className="font-bold text-green-600">{formatMoneyAmount(proposal.totalContractValue, proposal.rentCurrency)}</span>
                             ) : '—'}
                           </td>
+                          <td className="px-4 py-3 text-xs font-mono text-gray-500">{proposal?.rentCurrency ?? '—'}</td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
@@ -775,6 +795,7 @@ export default function ApprovalsPage() {
                               {unit?.floor?.name && <span className="text-xs text-gray-400">{unit.floor.name}</span>}
                             </div>
                             {unit?.mall?.name && <div className="text-xs text-gray-400 mt-0.5 pl-5">{unit.mall.name}</div>}
+                            {unit?.leaseTermType && <span className={`ml-5 mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>}
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{booking.lead?.brandName ?? booking.customer?.companyName ?? '—'}</div>
@@ -918,6 +939,7 @@ export default function ApprovalsPage() {
                               {proposal.unit.floor?.name && ` · ${proposal.unit.floor.name}`}
                             </div>
                           )}
+                          {proposal?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="text-sm font-medium text-gray-800">{step.stepName}</div>

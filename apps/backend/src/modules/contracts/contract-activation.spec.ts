@@ -6,10 +6,11 @@ import { ContractEventsService } from './contract-events.service';
 import { ContractsService } from './contracts.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { OutboxService } from '../../common/services/outbox.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 describe('ContractsService activation workflow', () => {
   const tx = {
-    contract: { update: jest.fn() },
+    contract: { findUniqueOrThrow: jest.fn(), update: jest.fn() },
     contractEvent: { create: jest.fn() },
   };
   const prisma = {
@@ -20,6 +21,7 @@ describe('ContractsService activation workflow', () => {
   const unitStatus = {};
   const billingSchedule = { buildScheduleForContract: jest.fn() };
   const outbox = { enqueue: jest.fn() };
+  const metrics = { increment: jest.fn() };
   let service: ContractsService;
 
   const readyContract = {
@@ -46,6 +48,7 @@ describe('ContractsService activation workflow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(tx));
+    tx.contract.findUniqueOrThrow.mockResolvedValue(readyContract);
     tx.contract.update.mockResolvedValue({
       ...readyContract,
       status: ContractStatus.ACTIVE,
@@ -59,6 +62,7 @@ describe('ContractsService activation workflow', () => {
       unitStatus as UnitStatusService,
       billingSchedule as unknown as BillingScheduleService,
       outbox as unknown as OutboxService,
+      metrics as unknown as OperationalMetricsService,
     );
   });
 
@@ -107,6 +111,7 @@ describe('ContractsService activation workflow', () => {
     );
     expect(billingSchedule.buildScheduleForContract).toHaveBeenCalledWith(
       'contract-1',
+      tx,
     );
     expect(result.status).toBe(ContractStatus.ACTIVE);
   });
@@ -125,10 +130,9 @@ describe('ContractsService activation workflow', () => {
   });
 
   it('replays provisioning idempotently without creating another status event', async () => {
-    prisma.contract.findUnique.mockResolvedValue({
-      ...readyContract,
-      status: ContractStatus.ACTIVE,
-    });
+    const activeContract = { ...readyContract, status: ContractStatus.ACTIVE };
+    prisma.contract.findUnique.mockResolvedValue(activeContract);
+    tx.contract.findUniqueOrThrow.mockResolvedValue(activeContract);
 
     await service.updateStatus('contract-1', ContractStatus.ACTIVE, 'user-1');
 
@@ -139,6 +143,20 @@ describe('ContractsService activation workflow', () => {
       tx,
       expect.objectContaining({ eventKey: 'contract:contract-1:activated' }),
     );
-    expect(billingSchedule.buildScheduleForContract).toHaveBeenCalledTimes(1);
+    expect(billingSchedule.buildScheduleForContract).toHaveBeenCalledWith(
+      'contract-1',
+      tx,
+    );
+  });
+
+  it('resolves a lost concurrent-activation race instead of surfacing a serialization error', async () => {
+    prisma.contract.findUnique
+      .mockResolvedValueOnce(readyContract) // getActivationReadiness pre-check
+      .mockResolvedValueOnce({ ...readyContract, status: ContractStatus.ACTIVE }); // post-catch re-fetch
+    prisma.$transaction.mockRejectedValueOnce({ code: 'P2034' });
+
+    const result = await service.updateStatus('contract-1', ContractStatus.ACTIVE, 'user-1');
+
+    expect(result.status).toBe(ContractStatus.ACTIVE);
   });
 });

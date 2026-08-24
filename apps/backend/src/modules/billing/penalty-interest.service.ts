@@ -12,7 +12,7 @@ export class PenaltyInterestService {
     return this.prisma.penaltyInterestPolicy.findMany({ orderBy: { code: 'asc' } });
   }
 
-  async runPenaltyCalculation(asOf: Date = new Date()) {
+  async runPenaltyCalculation(asOf: Date = new Date(), mallIds?: string[]) {
     const policy = await this.prisma.penaltyInterestPolicy.findFirst({
       where: { isActive: true },
     });
@@ -24,6 +24,11 @@ export class PenaltyInterestService {
         status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] },
         dueDate: { lt: asOf },
         type: { not: 'PENALTY' },
+        ...(mallIds ? { OR: [
+          { mallId: { in: mallIds } },
+          { contract: { unit: { mallId: { in: mallIds } } } },
+          { billingParty: { mallId: { in: mallIds } } },
+        ] } : {}),
       },
       include: { payments: true },
     });
@@ -33,7 +38,9 @@ export class PenaltyInterestService {
 
     for (const invoice of invoices) {
       const paid = invoice.payments.filter((p) => !p.reversedAt).reduce((s, p) => s + p.amount, 0);
-      const outstanding = invoice.totalAmount - paid;
+      const adjustedTotal = Math.max(0, invoice.totalAmount + invoice.adjustmentAmount);
+      const netPaid = Math.max(0, paid - invoice.refundedAmount);
+      const outstanding = adjustedTotal - netPaid;
       if (outstanding <= 0) continue;
 
       const { penaltyAmount, daysOverdue } = calculatePenaltyInterest({
@@ -63,6 +70,12 @@ export class PenaltyInterestService {
           invoiceNumber: `PEN-${year}-${rand}`,
           contractId: invoice.contractId,
           tenantId: invoice.tenantId,
+          billingPartyId: invoice.billingPartyId,
+          mallId: invoice.mallId,
+          counterpartyName: invoice.counterpartyName,
+          counterpartyTaxCode: invoice.counterpartyTaxCode,
+          sourceType: 'PENALTY',
+          sourceId: invoice.id,
           period: `${invoice.period}-PENALTY`,
           type: 'PENALTY',
           status: InvoiceStatus.DRAFT,

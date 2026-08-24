@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -12,11 +12,12 @@ import {
   MessageSquare,
   History,
 } from "lucide-react";
-import { spacesApi, usersApi, workOrdersApi } from "@/api";
+import { usersApi, workOrdersApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AuthenticatedImage } from "@/components/ui/authenticated-image";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -67,29 +68,37 @@ const err = (e: any) =>
 export default function WorkOrdersPage() {
   const qc = useQueryClient(),
     { toast } = useToast(),
-    selectedMallId = useMallStore((s) => s.selectedMallId);
-  const [mallId, setMallId] = useState(selectedMallId || ""),
-    [search, setSearch] = useState(""),
+    selectedMallId = useMallStore((s) => s.selectedMallId),
+    selectedMallName = useMallStore((s) => s.selectedMallName),
+    openMallContextModal = useMallStore((s) => s.openMallContextModal);
+  const mallId = selectedMallId || "";
+  const [search, setSearch] = useState(""),
     [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("");
+  const [department, setDepartment] = useState("");
   const [alert, setAlert] = useState("");
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false),
     [selectedId, setSelectedId] = useState<string | null>(null),
     [form, setForm] = useState<any>({ ...empty, mallId: selectedMallId || "" }),
+    [createImages, setCreateImages] = useState<File[]>([]),
     [comment, setComment] = useState(""),
     [newChecklist, setNewChecklist] = useState("");
-  const mallsQ = useQuery({
-    queryKey: ["malls"],
-    queryFn: spacesApi.listMalls,
-  });
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedId(null);
+    setCreateOpen(false);
+    setForm({ ...empty, mallId });
+    setCreateImages([]);
+  }, [mallId]);
   const usersQ = useQuery({
     queryKey: ["work-order-users"],
     queryFn: () => usersApi.listUsers({ limit: 200 }),
   });
   const listQ = useQuery({
-    queryKey: ["work-orders", mallId, status, category, priority, alert, search, page],
+    queryKey: ["work-orders", mallId, status, category, priority, department, alert, search, page],
     queryFn: () =>
       workOrdersApi.list({
         ...(mallId && { mallId }),
@@ -97,6 +106,7 @@ export default function WorkOrdersPage() {
         ...(!status && !alert && { scope: "ACTIVE" }),
         ...(category && { category }),
         ...(priority && { priority }),
+        ...(department && { department }),
         ...(alert && { alert }),
         ...(search && { search }),
         page,
@@ -112,9 +122,6 @@ export default function WorkOrdersPage() {
     queryFn: () => workOrdersApi.detail(selectedId!),
     enabled: !!selectedId,
   });
-  const malls: any[] = Array.isArray(mallsQ.data)
-    ? mallsQ.data
-    : (mallsQ.data as any)?.data || [];
   const users: any[] = ((usersQ.data as any)?.data || usersQ.data || []).filter(
     (u: any) => u.role !== "TENANT",
   );
@@ -123,6 +130,11 @@ export default function WorkOrdersPage() {
   const totalPages = (listQ.data as any)?.totalPages || 1;
   const summary: any = summaryQ.data || {};
   const item: any = detailQ.data;
+  const departments = useMemo(() => Array.from(new Set([
+    ...Object.values(CATEGORIES).filter(value => value !== "Khác"),
+    ...users.map((user: any) => user.department).filter(Boolean),
+    ...rows.map((row: any) => row.assignedDepartment).filter(Boolean),
+  ])).sort((a, b) => a.localeCompare(b, "vi")), [users, rows]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["work-orders"] });
     qc.invalidateQueries({ queryKey: ["work-order-summary"] });
@@ -131,7 +143,19 @@ export default function WorkOrdersPage() {
   const action = useMutation({
     mutationFn: async ({ kind, data }: any) =>
       kind === "create"
-        ? workOrdersApi.create(data)
+        ? (async () => {
+            const { images = [], ...payload } = data;
+            const created = await workOrdersApi.create(payload);
+            let failedUploads = 0;
+            for (const image of images as File[]) {
+              try {
+                await workOrdersApi.uploadEvidence(created.id, image, "BEFORE");
+              } catch {
+                failedUploads += 1;
+              }
+            }
+            return { created, failedUploads };
+          })()
         : kind === "assign"
           ? workOrdersApi.update(selectedId!, { assigneeId: data.assigneeId })
           : kind === "addChecklist"
@@ -147,12 +171,18 @@ export default function WorkOrdersPage() {
                       data.itemId,
                       data.completed,
                     ),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       refresh();
       setCreateOpen(false);
+      setCreateImages([]);
       setComment("");
       setNewChecklist("");
-      toast({ title: "Đã cập nhật công việc" });
+      if (result?.created?.id) setSelectedId(result.created.id);
+      toast(result?.failedUploads ? {
+        title: "Đã tạo công việc nhưng có ảnh chưa tải được",
+        description: `${result.failedUploads} ảnh chưa được lưu. Vui lòng tải lại trong chi tiết Work Order.`,
+        variant: "destructive",
+      } : { title: "Đã cập nhật công việc" });
     },
     onError: (e: any) =>
       toast({
@@ -185,6 +215,7 @@ export default function WorkOrdersPage() {
       kind: "create",
       data: {
         ...form,
+        images: createImages,
         assigneeId: form.assigneeId || undefined,
         dueDate: form.dueDate || undefined,
         checklist: form.checklistText
@@ -203,6 +234,7 @@ export default function WorkOrdersPage() {
         ...(!status && !alert && { scope: "ACTIVE" }),
         ...(category && { category }),
         ...(priority && { priority }),
+        ...(department && { department }),
         ...(alert && { alert }),
         ...(search && { search }),
       });
@@ -240,7 +272,12 @@ export default function WorkOrdersPage() {
           </Button>
           <Button
             onClick={() => {
-              setForm({ ...empty, mallId: mallId || selectedMallId || "" });
+              if (!mallId) {
+                openMallContextModal();
+                return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+              }
+              setForm({ ...empty, mallId });
+              setCreateImages([]);
               setCreateOpen(true);
             }}
           >
@@ -278,20 +315,8 @@ export default function WorkOrdersPage() {
           ["CRITICAL", "Ưu tiên khẩn cấp", summary.critical || 0],
         ].map(([key, title, count]) => <button key={String(key)} className={`rounded-lg border p-4 text-left hover:bg-muted/40 ${alert === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><div className="flex items-center justify-between text-sm"><span>{title}</span><AlertTriangle className="h-4 w-4" /></div><div className="mt-2 text-2xl font-bold">{String(count)}</div></button>)}
       </div>
-      <WorkOrderTemplates mallId={mallId} malls={malls} users={users} />
+      <WorkOrderTemplates mallId={mallId} mallName={selectedMallName} users={users} />
       <div className="flex flex-wrap gap-3 rounded-lg border p-4">
-        <select
-          className="h-10 min-w-64 rounded-md border px-3"
-          value={mallId}
-          onChange={(e) => { setMallId(e.target.value); setPage(1); }}
-        >
-          <option value="">Tất cả Mall</option>
-          {malls.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.code} — {m.name}
-            </option>
-          ))}
-        </select>
         <select
           className="h-10 rounded-md border px-3"
           value={status}
@@ -306,6 +331,7 @@ export default function WorkOrdersPage() {
         </select>
         <select className="h-10 rounded-md border px-3" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm</option>{Object.entries(CATEGORIES).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select>
         <select className="h-10 rounded-md border px-3" value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }}><option value="">Tất cả ưu tiên</option><option value="LOW">Thấp</option><option value="MEDIUM">Trung bình</option><option value="HIGH">Cao</option><option value="CRITICAL">Khẩn cấp</option></select>
+        <select className="h-10 rounded-md border px-3" value={department} onChange={(e) => { setDepartment(e.target.value); setPage(1); }}><option value="">Tất cả bộ phận xử lý</option>{departments.map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
@@ -316,7 +342,7 @@ export default function WorkOrdersPage() {
           />
         </div>
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} công việc</span><div className="flex items-center gap-2"><span>Mặc định: công việc đang hoạt động</span>{(status || category || priority || alert) && <Button size="sm" variant="outline" onClick={() => { setStatus(""); setCategory(""); setPriority(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}</div></div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} công việc</span><div className="flex items-center gap-2"><span>Mặc định: công việc đang hoạt động</span>{(status || category || priority || department || alert) && <Button size="sm" variant="outline" onClick={() => { setStatus(""); setCategory(""); setPriority(""); setDepartment(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}</div></div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/60">
@@ -325,7 +351,8 @@ export default function WorkOrdersPage() {
                 "Số phiếu",
                 "Công việc",
                 "Nhóm",
-                "Bộ phận",
+                "Bộ phận gửi",
+                "Bộ phận xử lý",
                 "Ưu tiên",
                 "Người xử lý",
                 "Hạn hoàn thành",
@@ -357,6 +384,7 @@ export default function WorkOrdersPage() {
                 <td className="px-4 py-3">
                   {CATEGORIES[w.category] || w.category}
                 </td>
+                <td className="px-4 py-3">{w.requester?.department || "—"}</td>
                 <td className="px-4 py-3">{w.assignedDepartment || "—"}</td>
                 <td className="px-4 py-3">
                   <Badge
@@ -388,7 +416,7 @@ export default function WorkOrdersPage() {
             {!rows.length && (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={10}
                   className="p-10 text-center text-muted-foreground"
                 >
                   Chưa có công việc vận hành
@@ -399,26 +427,16 @@ export default function WorkOrdersPage() {
         </table>
       </div>
       {totalPages > 1 && <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm"><span>Trang {page} / {totalPages}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Trang trước</Button><Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)}>Trang sau</Button></div></div>}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setCreateImages([]); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Tạo Work Order</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <F label="Trung tâm thương mại">
-              <select
-                required
-                className="h-10 rounded-md border px-3"
-                value={form.mallId}
-                onChange={(e) => setForm({ ...form, mallId: e.target.value })}
-              >
-                <option value="">Chọn Mall</option>
-                {malls.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                {selectedMallName}
+              </div>
             </F>
             <F label="Nhóm công việc">
               <select
@@ -442,26 +460,34 @@ export default function WorkOrdersPage() {
               </F>
             </div>
             <F label="Bộ phận xử lý">
-              <Input
-                placeholder="Kỹ thuật, Vệ sinh..."
+              <select
+                className="h-10 rounded-md border px-3"
                 value={form.assignedDepartment}
                 onChange={(e) =>
                   setForm({ ...form, assignedDepartment: e.target.value })
                 }
-              />
+              >
+                <option value="">Chọn bộ phận xử lý</option>
+                {departments.map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
             </F>
             <F label="Người xử lý">
               <select
                 className="h-10 rounded-md border px-3"
                 value={form.assigneeId}
-                onChange={(e) =>
-                  setForm({ ...form, assigneeId: e.target.value })
-                }
+                onChange={(e) => {
+                  const assignee = users.find((user: any) => user.id === e.target.value);
+                  setForm({
+                    ...form,
+                    assigneeId: e.target.value,
+                    assignedDepartment: assignee?.department || form.assignedDepartment,
+                  });
+                }}
               >
                 <option value="">Chưa phân công</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.fullName}
+                    {u.fullName}{u.department ? ` — ${u.department}` : ""}
                   </option>
                 ))}
               </select>
@@ -488,6 +514,22 @@ export default function WorkOrdersPage() {
                     setForm({ ...form, description: e.target.value })
                   }
                 />
+              </F>
+            </div>
+            <div className="col-span-2">
+              <F label="Hình ảnh yêu cầu">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    const valid = files.filter(file => file.size <= 15 * 1024 * 1024);
+                    if (valid.length !== files.length) toast({ title: "Một số ảnh vượt quá 15 MB", variant: "destructive" });
+                    setCreateImages(valid);
+                  }}
+                />
+                {createImages.length > 0 && <span className="text-xs font-normal text-muted-foreground">Đã chọn {createImages.length} ảnh. Ảnh sẽ được tải lên sau khi tạo Work Order.</span>}
               </F>
             </div>
             <div className="col-span-2">
@@ -538,7 +580,13 @@ export default function WorkOrdersPage() {
                   <b>Vị trí:</b> {item.location || "—"}
                 </div>
                 <div>
-                  <b>Bộ phận:</b> {item.assignedDepartment || "—"}
+                  <b>Người gửi:</b> {item.requester?.fullName || "—"}
+                </div>
+                <div>
+                  <b>Bộ phận gửi:</b> {item.requester?.department || "—"}
+                </div>
+                <div>
+                  <b>Bộ phận xử lý:</b> {item.assignedDepartment || "—"}
                 </div>
                 <div>
                   <b>Người xử lý:</b> {item.assignee?.fullName || "Chưa giao"}
@@ -651,20 +699,16 @@ export default function WorkOrdersPage() {
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {item.evidence.map((e: any) => (
-                    <a
-                      key={e.id}
-                      href={`/uploads/${e.filePath}`}
-                      target="_blank"
-                      className="overflow-hidden rounded-lg border"
-                    >
-                      <img
+                    <div key={e.id} className="overflow-hidden rounded-lg border">
+                      <AuthenticatedImage
                         className="h-24 w-full object-cover"
-                        src={`/uploads/${e.filePath}`}
+                        src={`/files/work-order-evidence/${e.id}`}
+                        alt={e.evidenceType}
                       />
                       <div className="p-1 text-center text-xs">
                         {e.evidenceType}
                       </div>
-                    </a>
+                    </div>
                   ))}
                 </div>
               </section>

@@ -18,13 +18,19 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, UnitStatus } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Bookings')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.booking)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'booking' }, status: EnforcementStatus.ENFORCED })
 @Controller('bookings')
 export class BookingController {
   constructor(
@@ -69,6 +75,23 @@ export class BookingController {
   async getStats(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
     const scope = await this.scopedQuery({ mallId }, user);
     return this.bookingService.getStats(scope.mallId, scope.mallIds);
+  }
+
+  @Get('unit-finder')
+  @ApiOperation({ summary: 'Search Units for Booking with current server-derived eligibility' })
+  @ApiQuery({ name: 'mallId', required: false })
+  @ApiQuery({ name: 'unitId', required: false })
+  @ApiQuery({ name: 'floorId', required: false })
+  @ApiQuery({ name: 'zoneId', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: UnitStatus })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'minArea', required: false, type: Number, description: 'Minimum Unit NLA' })
+  @ApiQuery({ name: 'maxArea', required: false, type: Number, description: 'Maximum Unit NLA' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum 50' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-BOOKING-UX Wave 1' })
+  async findUnits(@Query() query: UnitFinderQueryDto, @CurrentUser() user: any) {
+    return this.bookingService.findUnits(await this.scopedQuery(query, user));
   }
 
   @Get('unit/:unitId/queue')
@@ -174,9 +197,10 @@ export class BookingController {
     @Query('mallId') mallId?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('leaseTermType') leaseTermType?: string,
     @CurrentUser() user?: any,
   ) {
-    const scope = await this.scopedQuery({ mallId, page, limit }, user);
+    const scope = await this.scopedQuery({ mallId, page, limit, leaseTermType }, user);
     return this.bookingService.getBookingsPendingPriceApproval(scope);
   }
 

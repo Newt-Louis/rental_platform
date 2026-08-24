@@ -256,60 +256,98 @@ export class ContractExpiryScheduler {
     return this.schedulerLock.runExclusive('ai-proactive-insights', 10_800_000, () => this.sendAiProactiveInsightsUnlocked());
   }
 
+  // CR-101 Phase 3D (INV-AI-005): confirmed gap -- this job previously computed
+  // ONE platform-wide aggregate (occupancy/overdue/expiring/tickets across ALL
+  // Malls) and sent the SAME insight text to every ADMIN + CEO + MALL_DIRECTOR
+  // recipient, regardless of which Mall(s) that recipient is actually
+  // authorized for. A MALL_DIRECTOR assigned only to Mall A received
+  // platform-wide figures including every other Mall.
+  //
+  // Fixed by partitioning: ADMIN/CEO (MallAccessService.BYPASS_ROLES --
+  // existing, unchanged platform policy, not a new decision made here) keep
+  // the original global aggregate/insight/recipient-list behavior exactly as
+  // before. MALL_DIRECTOR is NOT a bypass role, so their `UserMallAccess`
+  // grants are the authoritative Mall set -- the job now iterates by Mall (not
+  // by recipient, per Section 19's "iterate Mall -> calculate Mall insight ->
+  // deliver to authorized users" option, chosen over per-recipient-set
+  // grouping since the query volume this bounds is small -- number of Malls,
+  // not number of directors), computing and sending one AI call per Mall that
+  // has at least one assigned director, to only that Mall's directors. A
+  // director assigned to multiple Malls receives one notification per Mall --
+  // intentional, not a duplicate-delivery bug.
   private async sendAiProactiveInsightsUnlocked() {
     this.logger.log('Running AI proactive insights...');
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return;
 
     const today = new Date();
-    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
+    await this.sendGlobalInsight(apiKey, today);
+    await this.sendPerMallInsightsToDirectors(apiKey, today);
+  }
+
+  private async computeOperationalAggregate(mallId?: string) {
+    const unitFilter = mallId ? { mallId } : {};
     const [overdueInvoices, expiringContracts, openTickets, units] = await Promise.all([
-      this.prisma.invoice.count({ where: { isActive: true, status: 'OVERDUE' } }),
+      this.prisma.invoice.count({ where: { isActive: true, status: 'OVERDUE', ...(mallId ? { mallId } : {}) } }),
       this.prisma.contract.count({
         where: {
           isActive: true,
           status: { in: ['ACTIVE', 'EXPIRING'] },
           endDate: { lte: new Date(Date.now() + 30 * 86400000) },
+          ...(mallId ? { unit: { mallId } } : {}),
         },
       }),
-      this.prisma.ticket.count({ where: { isActive: true, status: { in: ['NEW', 'IN_PROGRESS'] } } }),
-      this.prisma.unit.findMany({ where: { isActive: true }, select: { status: true } }),
+      this.prisma.ticket.count({ where: { isActive: true, status: { in: ['NEW', 'IN_PROGRESS'] }, ...(mallId ? { unit: { mallId } } : {}) } }),
+      this.prisma.unit.findMany({ where: { isActive: true, ...unitFilter }, select: { status: true } }),
     ]);
 
     const occupied = units.filter((u) => u.status === 'OCCUPIED').length;
     const occupancyRate = units.length > 0 ? ((occupied / units.length) * 100).toFixed(1) : '0';
+    return { overdueInvoices, expiringContracts, openTickets, occupied, totalUnits: units.length, occupancyRate };
+  }
 
-    const prompt = `Dữ liệu vận hành THISO Mall hôm nay (${today.toLocaleDateString('vi-VN')}):
-- Tỷ lệ lấp đầy: ${occupancyRate}% (${occupied}/${units.length} lô)
-- Hóa đơn quá hạn: ${overdueInvoices} hóa đơn
-- Hợp đồng hết hạn trong 30 ngày: ${expiringContracts} hợp đồng
-- Ticket đang xử lý: ${openTickets} ticket
+  private buildPrompt(today: Date, agg: Awaited<ReturnType<ContractExpiryScheduler['computeOperationalAggregate']>>): string {
+    return `Dữ liệu vận hành THISO Mall hôm nay (${today.toLocaleDateString('vi-VN')}):
+- Tỷ lệ lấp đầy: ${agg.occupancyRate}% (${agg.occupied}/${agg.totalUnits} lô)
+- Hóa đơn quá hạn: ${agg.overdueInvoices} hóa đơn
+- Hợp đồng hết hạn trong 30 ngày: ${agg.expiringContracts} hợp đồng
+- Ticket đang xử lý: ${agg.openTickets} ticket
 
 Hãy đưa ra 3 điểm cần chú ý quan trọng nhất và 2 hành động ưu tiên cho hôm nay. Ngắn gọn, xúc tích.`;
+  }
 
+  private async callInsightModel(apiKey: string, prompt: string): Promise<string | null> {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    return data.content?.[0]?.text ?? null;
+  }
+
+  // Unchanged behavior for ADMIN/CEO -- both are MallAccessService.BYPASS_ROLES
+  // (unrestricted access platform-wide already), so the global aggregate is
+  // exactly their currently-effective authorized scope, not a new policy.
+  private async sendGlobalInsight(apiKey: string, today: Date) {
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 512,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as any;
-      const insight: string = data.content?.[0]?.text ?? '';
+      const agg = await this.computeOperationalAggregate();
+      const insight = await this.callInsightModel(apiKey, this.buildPrompt(today, agg));
       if (!insight) return;
 
-      const admins = await this.prisma.user.findMany({
-        where: { isActive: true, role: { in: ['ADMIN', 'CEO', 'MALL_DIRECTOR'] as any } },
+      const recipients = await this.prisma.user.findMany({
+        where: { isActive: true, role: { in: ['ADMIN', 'CEO'] as any } },
         select: { id: true },
       });
 
       await Promise.all(
-        admins.map((u) =>
+        recipients.map((u) =>
           this.notificationsService.create({
             userId: u.id,
             title: `🤖 AI Insights — ${today.toLocaleDateString('vi-VN')}`,
@@ -321,10 +359,54 @@ Hãy đưa ra 3 điểm cần chú ý quan trọng nhất và 2 hành động ư
         ),
       );
 
-      this.logger.log(`AI proactive insights sent to ${admins.length} admins`);
+      this.logger.log(`AI proactive insights (global) sent to ${recipients.length} ADMIN/CEO recipients`);
     } catch (e) {
-      this.logger.warn(`AI proactive insights failed: ${e.message}`);
+      this.logger.warn(`AI proactive insights (global) failed: ${e.message}`);
     }
+  }
+
+  private async sendPerMallInsightsToDirectors(apiKey: string, today: Date) {
+    const grants = await this.prisma.userMallAccess.findMany({
+      where: { isActive: true, user: { isActive: true, role: 'MALL_DIRECTOR' as any } },
+      select: { mallId: true, userId: true },
+    });
+    if (grants.length === 0) return;
+
+    const directorIdsByMall = new Map<string, string[]>();
+    for (const g of grants) {
+      const list = directorIdsByMall.get(g.mallId) ?? [];
+      list.push(g.userId);
+      directorIdsByMall.set(g.mallId, list);
+    }
+
+    let totalSent = 0;
+    for (const [mallId, directorIds] of directorIdsByMall) {
+      try {
+        const agg = await this.computeOperationalAggregate(mallId);
+        const insight = await this.callInsightModel(apiKey, this.buildPrompt(today, agg));
+        if (!insight) continue;
+
+        await Promise.all(
+          directorIds.map((userId) =>
+            this.notificationsService.create({
+              userId,
+              title: `🤖 AI Insights — ${today.toLocaleDateString('vi-VN')}`,
+              body: insight.substring(0, 500),
+              type: 'SYSTEM',
+              entityType: 'SYSTEM',
+              entityId: 'ai-insights',
+            }),
+          ),
+        );
+        totalSent += directorIds.length;
+      } catch (e) {
+        // One Mall's failure must not block the others -- matches the
+        // existing top-level try/catch's "don't let AI provider errors break
+        // the scheduled job" behavior, now scoped per Mall.
+        this.logger.warn(`AI proactive insights (Mall ${mallId}) failed: ${e.message}`);
+      }
+    }
+    this.logger.log(`AI proactive insights (per-Mall) sent to ${totalSent} MALL_DIRECTOR notifications across ${directorIdsByMall.size} Malls`);
   }
 
   // Cron job hàng ngày lúc 9:00 — chỉ đánh dấu OVERDUE (dunning xử lý thông báo)

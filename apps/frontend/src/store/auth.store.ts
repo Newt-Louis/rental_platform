@@ -46,16 +46,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const userData = res.data;
       set({ user: userData, isHydrated: true });
       const { activeMallId, activeMall } = userData;
-      const { selectedMallId, setSelectedMall, openMallContextModal } = useMallStore.getState();
-      if (selectedMallId !== (activeMallId ?? null)) {
-        // localStorage differs from DB — sync DB to current browser selection
-        api.patch('/auth/me/active-mall', { mallId: selectedMallId });
-      } else {
-        // In sync — update mall name from DB in case it changed
-        setSelectedMall(activeMallId ?? null, activeMall?.name);
-      }
+      const { setSelectedMall, openMallContextModal } = useMallStore.getState();
+      // Server context wins over stale browser storage; the Mall list validates access next.
+      setSelectedMall(activeMallId ?? null, activeMall?.name);
       // Regular users must always have an active mall — open picker if missing
-      if (userData.role !== 'ADMIN' && !activeMallId && !selectedMallId) {
+      if (userData.role !== 'ADMIN' && !activeMallId) {
         openMallContextModal();
       }
     } catch {

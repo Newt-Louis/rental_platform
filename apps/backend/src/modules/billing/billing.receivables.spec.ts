@@ -2,15 +2,28 @@ import { BillingService } from './billing.service';
 
 describe('BillingService receivables workbench', () => {
   const prisma = {
-    invoice: { findMany: jest.fn(), count: jest.fn() },
+    invoice: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
     billingScheduleEntry: { findMany: jest.fn() },
     serviceContractPayment: { findMany: jest.fn() },
+    slotBooking: { findMany: jest.fn() },
+    parkingMonthlyStatement: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    $transaction: jest.fn(),
   } as any;
   let service: BillingService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BillingService(prisma);
+    prisma.invoice.findMany.mockResolvedValue([]);
+    prisma.slotBooking.findMany.mockResolvedValue([]);
+    prisma.parkingMonthlyStatement.findMany.mockResolvedValue([]);
+    prisma.invoice.findFirst.mockResolvedValue(null);
+    service = new BillingService(
+      prisma,
+      undefined,
+      { invoiceIssuedHtml: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      { increment: jest.fn() } as any,
+    );
   });
 
   it('returns balance, overdue days and summary calculated across all matching invoices', async () => {
@@ -89,5 +102,185 @@ describe('BillingService receivables workbench', () => {
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith('SERVICE_CONTRACT', 'due-2', 'user-1', ['mall-1']);
     expect(result).toMatchObject({ requested: 1, created: 1, failed: 0 });
+  });
+
+  it('adds confirmed short-term bookings and excludes bookings already invoiced', async () => {
+    const start = new Date(Date.now() + 2 * 86400000);
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.serviceContractPayment.findMany.mockResolvedValue([]);
+    prisma.slotBooking.findMany.mockResolvedValue([
+      {
+        id: 'booking-new', bookingRef: 'ST-001', totalAmount: 1_000,
+        startDatetime: start, createdAt: new Date(),
+        customer: { companyName: 'Short Tenant', brandName: null, taxCode: 'TAX-1', tenantId: null },
+        lead: null,
+        slot: { code: 'S01', name: 'Atrium', unit: { mallId: 'mall-1', code: 'A1' } },
+      },
+      {
+        id: 'booking-billed', bookingRef: 'ST-002', totalAmount: 2_000,
+        startDatetime: start, createdAt: new Date(),
+        customer: null, lead: { brandName: 'Existing', company: null, tenantId: null },
+        slot: { code: 'S02', name: 'Lobby', unit: { mallId: 'mall-1', code: 'A2' } },
+      },
+    ]);
+    prisma.invoice.findMany.mockResolvedValue([{ sourceId: 'booking-billed' }]);
+
+    const result = await service.getPendingReceivables({}, ['mall-1']);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'booking-new', sourceType: 'SHORT_TERM_BOOKING', counterpartyName: 'Short Tenant',
+      mallId: 'mall-1', totalAmount: 1_100,
+    });
+  });
+
+  it('adds uninvoiced parking statements to pending receivables', async () => {
+    const issueDate = new Date(Date.now() - 86400000);
+    const dueDate = new Date(Date.now() + 10 * 86400000);
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.serviceContractPayment.findMany.mockResolvedValue([]);
+    prisma.parkingMonthlyStatement.findMany.mockResolvedValue([{
+      id: 'parking-2026-08', contractId: 'parking-contract', period: '2026-08',
+      issueDate, dueDate, totalAmount: 1_000,
+      contract: {
+        contractNumber: 'PK-001', mallId: 'mall-1',
+        tenant: { brandName: 'Tenant Parking', companyName: 'Tenant Parking Co', taxCode: 'PK-TAX' },
+      },
+      lines: [],
+    }]);
+
+    const result = await service.getPendingReceivables({ sourceType: 'PARKING' }, ['mall-1']);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'parking-2026-08', sourceType: 'PARKING', counterpartyName: 'Tenant Parking',
+      mallId: 'mall-1', subtotal: 1_000, totalAmount: 1_100,
+    });
+    expect(result.summary.bySource.PARKING).toEqual({ count: 1, amount: 1_100 });
+  });
+
+  it('carries a Parking payment into the draft Billing invoice', async () => {
+    const tx = {
+      invoice: { create: jest.fn().mockResolvedValue({ id: 'invoice-parking', invoiceNumber: 'PARKING-statement-1', totalAmount: 1_100 }) },
+      payment: { create: jest.fn().mockResolvedValue({ id: 'payment-1' }) },
+      parkingMonthlyStatement: { update: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation((callback: any) => callback(tx));
+    prisma.parkingMonthlyStatement.findFirst.mockResolvedValue({
+      id: 'statement-1', contractId: 'contract-1', period: '2026-08',
+      status: 'PARTIAL', paidAmount: 400, totalAmount: 1_000,
+      dueDate: new Date(), lines: [],
+      payments: [{ paidAt: new Date('2026-08-10'), referenceNo: 'BANK-001' }],
+      contract: {
+        tenantId: 'tenant-1', mallId: 'mall-1', contractNumber: 'PK-001',
+        tenant: { companyName: 'Parking Tenant', taxCode: 'TAX' },
+      },
+    });
+
+    await service.createInvoiceFromPending('PARKING', 'statement-1', 'user-1');
+
+    expect(tx.payment.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      invoiceId: 'invoice-parking', amount: 400, reference: 'BANK-001',
+      idempotencyKey: 'parking-source-payment:statement-1',
+    }) });
+    expect(tx.parkingMonthlyStatement.update).toHaveBeenCalledWith({
+      where: { id: 'statement-1' },
+      data: { reconciliationStatus: 'TRANSFERRED_TO_BILLING' },
+    });
+  });
+
+  // CR-102 -- findAllInvoices' summary must never blend amounts from different
+  // currencies into one total (INV-CUR-001). summary.* stays VND-only (matching
+  // the ArAgingTab/CollectionKpiService/getPendingReceivables convention); every
+  // currency present gets its own bucket set under summary.byCurrency instead.
+  describe('CR-102 -- findAllInvoices currency-safe summary', () => {
+    const inv = (id: string, currencyCode: string | undefined, totalAmount: number, mallId = 'mall-1') => ({
+      id, status: 'ISSUED', sourceType: 'LEASE_CONTRACT', type: 'MONTHLY_RENT',
+      totalAmount, dueDate: new Date(Date.now() + 5 * 86400000), currencyCode, payments: [],
+      contract: { unit: { mallId } },
+    });
+    const run = async (rows: ReturnType<typeof inv>[], mallIds?: string[]) => {
+      prisma.invoice.findMany.mockResolvedValueOnce(rows).mockResolvedValueOnce(rows);
+      prisma.invoice.count.mockResolvedValue(rows.length);
+      return service.findAllInvoices({ page: 1, limit: 25 }, undefined, mallIds);
+    };
+
+    it('T01 VND only -- summary matches the single currency present', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'VND', 500_000)]);
+      expect(result.summary.currency).toBe('VND');
+      expect(result.summary.totalOutstanding).toBe(1_500_000);
+      expect(result.summary.current).toEqual({ count: 2, amount: 1_500_000 });
+      expect(Object.keys(result.summary.byCurrency)).toEqual(['VND']);
+    });
+
+    it('T02 USD only -- VND bucket is empty, USD lives only in byCurrency', async () => {
+      const result = await run([inv('i1', 'USD', 100), inv('i2', 'USD', 250)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.current).toEqual({ count: 0, amount: 0 });
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(350);
+      expect(result.summary.byCurrency.VND).toBeUndefined();
+    });
+
+    it('T03 MMK only -- VND bucket is empty, MMK lives only in byCurrency', async () => {
+      const result = await run([inv('i1', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+      expect(result.summary.byCurrency.VND).toBeUndefined();
+    });
+
+    it('T04 VND + USD -- each currency totals independently, never summed together', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'USD', 100)]);
+      expect(result.summary.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.VND.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      // The specific failure mode this defect used to produce: a blended 1,000,100 total.
+      expect(result.summary.totalOutstanding).not.toBe(1_000_100);
+    });
+
+    it('T05 VND + MMK -- each currency totals independently', async () => {
+      const result = await run([inv('i1', 'VND', 2_000_000), inv('i2', 'MMK', 800_000)]);
+      expect(result.summary.totalOutstanding).toBe(2_000_000);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(800_000);
+      expect(result.summary.totalOutstanding).not.toBe(2_800_000);
+    });
+
+    it('T06 USD + MMK (no VND at all) -- VND bucket empty, both foreign currencies isolated', async () => {
+      const result = await run([inv('i1', 'USD', 100), inv('i2', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+    });
+
+    it('T07 VND + USD + MMK together -- three independent totals, never combined', async () => {
+      const result = await run([inv('i1', 'VND', 1_000_000), inv('i2', 'USD', 100), inv('i3', 'MMK', 50_000)]);
+      expect(result.summary.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.VND.totalOutstanding).toBe(1_000_000);
+      expect(result.summary.byCurrency.USD.totalOutstanding).toBe(100);
+      expect(result.summary.byCurrency.MMK.totalOutstanding).toBe(50_000);
+      expect(Object.keys(result.summary.byCurrency).sort()).toEqual(['MMK', 'USD', 'VND']);
+    });
+
+    it('T08 Mall A isolation -- mallIds is threaded into the query for Mall A', async () => {
+      await run([inv('i1', 'VND', 1_000_000, 'mall-A')], ['mall-A']);
+      const summaryCall = prisma.invoice.findMany.mock.calls[1][0];
+      expect(summaryCall.where.AND).toEqual(expect.arrayContaining([
+        expect.objectContaining({ OR: expect.arrayContaining([{ mallId: { in: ['mall-A'] } }]) }),
+      ]));
+    });
+
+    it('T09 Mall B isolation -- mallIds is threaded into the query for a different mall, independently of Mall A', async () => {
+      await run([inv('i1', 'VND', 1_000_000, 'mall-B')], ['mall-B']);
+      const summaryCall = prisma.invoice.findMany.mock.calls[1][0];
+      expect(summaryCall.where.AND).toEqual(expect.arrayContaining([
+        expect.objectContaining({ OR: expect.arrayContaining([{ mallId: { in: ['mall-B'] } }]) }),
+      ]));
+    });
+
+    it('T10 empty dataset -- no invoices produces a zeroed VND summary and no error', async () => {
+      const result = await run([]);
+      expect(result.summary.currency).toBe('VND');
+      expect(result.summary.totalOutstanding).toBe(0);
+      expect(result.summary.byCurrency).toEqual({});
+    });
   });
 });

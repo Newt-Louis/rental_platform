@@ -227,6 +227,35 @@ export class EmailService {
 </div></body></html>`;
   }
 
+  invoiceIssuedHtml(data: {
+    tenantName: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    dueDate: string;
+    period: string;
+  }): string {
+    return `
+<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
+  .header { background: #2563eb; color: white; padding: 24px 32px; }
+  .content { padding: 32px; font-size: 14px; color: #374151; }
+  .amount { font-size: 32px; font-weight: bold; color: #2563eb; text-align: center; margin: 20px 0; }
+  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1 style="margin:0">Hóa đơn mới</h1></div>
+  <div class="content">
+    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
+    <p>Hóa đơn kỳ <strong>${data.period}</strong> đã được phát hành:</p>
+    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
+  </div>
+  <div class="footer">THISO Leasing Platform</div>
+</div></body></html>`;
+  }
+
   fitoutSlaHtml(data: {
     managerName: string;
     tenantName: string;

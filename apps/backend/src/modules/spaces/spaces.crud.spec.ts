@@ -4,7 +4,7 @@ import { SpacesService } from './spaces.service';
 
 describe('SpacesService unit CRUD safeguards', () => {
   const prisma: any = {
-    mall: { findFirst: jest.fn() },
+    mall: { findFirst: jest.fn(), findMany: jest.fn() },
     floor: { findFirst: jest.fn() },
     zone: { findFirst: jest.fn() },
     unit: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
@@ -16,7 +16,8 @@ describe('SpacesService unit CRUD safeguards', () => {
     $transaction: jest.fn(),
   };
   const unitStatus: any = { transition: jest.fn() };
-  const service = new SpacesService(prisma, unitStatus);
+  const mallAccess: any = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
+  const service = new SpacesService(prisma, unitStatus, mallAccess);
   const unit = {
     id: 'unit-1', code: 'A-01', mallId: 'mall-1', floorId: null, zoneId: null,
     status: UnitStatus.VACANT, isActive: true,
@@ -33,6 +34,26 @@ describe('SpacesService unit CRUD safeguards', () => {
     prisma.unit.update.mockResolvedValue({ ...unit, name: 'Updated' });
     prisma.unitHistory.create.mockResolvedValue({ id: 'history-1' });
     prisma.$transaction.mockImplementation((operations: Promise<unknown>[]) => Promise.all(operations));
+  });
+
+  it('limits the Mall list to the permission scope', async () => {
+    prisma.mall.findMany.mockResolvedValue([]);
+
+    await service.getMalls(['mall-1', 'mall-2']);
+
+    expect(prisma.mall.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isActive: true, id: { in: ['mall-1', 'mall-2'] } },
+    }));
+  });
+
+  it('returns no Mall when a user has no Mall permission', async () => {
+    prisma.mall.findMany.mockResolvedValue([]);
+
+    await service.getMalls([]);
+
+    expect(prisma.mall.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isActive: true, id: { in: [] } },
+    }));
   });
 
   it('rejects lifecycle fields on generic edit', async () => {
@@ -80,5 +101,42 @@ describe('SpacesService unit CRUD safeguards', () => {
     await expect(service.bulkUpdateUnits(['unit-1'], { category: 'Retail' }, 'user-1'))
       .rejects.toThrow('Chỉ có thể cập nhật hàng loạt các mặt bằng đang trống');
     expect(prisma.unit.updateMany).not.toHaveBeenCalled();
+  });
+
+  // CR-101 Phase 3G (BC-BULK-UNIT-CROSS-MALL: DENY) -- a single bulk-update
+  // request must not span more than one Mall, even for a caller (e.g. ADMIN,
+  // or any multi-Mall-assigned staff member) whose accessible-mall-set would
+  // otherwise permit each unit individually.
+  it('rejects a bulk update spanning more than one Mall in a single request', async () => {
+    prisma.unit.findMany.mockResolvedValue([
+      { ...unit, id: 'unit-1', mallId: 'mall-1' },
+      { ...unit, id: 'unit-2', mallId: 'mall-2' },
+    ]);
+
+    await expect(
+      service.bulkUpdateUnits(['unit-1', 'unit-2'], { category: 'Retail' }, 'user-1'),
+    ).rejects.toThrow('nhiều mall khác nhau');
+    expect(prisma.unit.updateMany).not.toHaveBeenCalled();
+    // Fails before even checking per-unit Mall access -- the cross-Mall shape
+    // itself is rejected outright, not merely denied for lack of grants.
+    expect(mallAccess.getAccessibleMallIds).not.toHaveBeenCalled();
+  });
+
+  it('allows a bulk update where every unit belongs to the same Mall', async () => {
+    prisma.unit.findMany.mockResolvedValue([
+      { ...unit, id: 'unit-1', mallId: 'mall-1' },
+      { ...unit, id: 'unit-2', mallId: 'mall-1' },
+    ]);
+    prisma.unit.updateMany.mockResolvedValue({ count: 2 });
+    mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
+
+    await service.bulkUpdateUnits(
+      ['unit-1', 'unit-2'],
+      { category: 'Retail' },
+      'user-1',
+      { id: 'user-1', role: 'MALL_DIRECTOR' },
+    );
+
+    expect(prisma.unit.updateMany).toHaveBeenCalled();
   });
 });

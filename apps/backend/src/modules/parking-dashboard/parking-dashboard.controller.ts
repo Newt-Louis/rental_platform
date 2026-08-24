@@ -11,11 +11,17 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only. Keyed by parkingCode with no mallId mapping
+// -- schema-dependent, blocked on BC-008, not pure wiring.
 
 @ApiTags('Parking')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.parking)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.PENDING_BUSINESS_CONFIRMATION, trackedAs: 'BC-008' })
 @Controller('parking-dashboard')
 export class ParkingDashboardController {
   constructor(private readonly parkingService: ParkingDashboardService) {}

@@ -80,6 +80,37 @@ export function AnalyticsView({ mallId }: { mallId?: string | null }) {
         </div>
       )}
 
+      {/* Occupancy is intentionally separated by rental zone. */}
+      {occ?.byLeaseTerm && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {(['LONG', 'SHORT'] as const).map((key) => {
+            const zone = occ.byLeaseTerm[key];
+            const color = key === 'LONG' ? 'bg-blue-600' : 'bg-violet-600';
+            return (
+              <Card key={key} className="border-gray-100">
+                <CardContent className="p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-800">{zone.label}</div>
+                      <div className="text-xs text-gray-400">{zone.occupied}/{zone.total} mặt bằng đang thuê</div>
+                    </div>
+                    <div className={`text-xl font-bold ${key === 'LONG' ? 'text-blue-700' : 'text-violet-700'}`}>
+                      {zone.occupancyRate}%
+                    </div>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div className={`h-full rounded-full ${color}`} style={{ width: `${zone.occupancyRate}%` }} />
+                  </div>
+                  <div className="mt-2 text-xs text-gray-400">
+                    {(zone.occupiedArea ?? 0).toLocaleString()} / {(zone.totalArea ?? 0).toLocaleString()} m²
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
       {/* Occupancy bar */}
       {occ && (
         <div className="flex items-center gap-3 px-1">

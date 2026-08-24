@@ -1,6 +1,41 @@
 import api from '@/lib/axios';
 
+export type BookingUnitEligibilityMode = 'IMMEDIATE' | 'QUEUE' | 'BLOCKED';
+
+export interface BookingUnitFinderRow {
+  id: string;
+  code: string;
+  name?: string | null;
+  mallId: string;
+  floorId?: string | null;
+  zoneId?: string | null;
+  areaNLA: number;
+  areaGFA: number;
+  category?: string | null;
+  status: string;
+  leaseTermType: string;
+  mall: { id: string; name: string; code?: string | null };
+  floor?: { id: string; name: string; level?: string | null } | null;
+  zone?: { id: string; name: string; code?: string | null } | null;
+  currentEligibility: {
+    selectable: boolean;
+    mode: BookingUnitEligibilityMode;
+    reasonCode?: string | null;
+    queueCount: number;
+  };
+}
+
+export interface BookingUnitFinderResponse {
+  data: BookingUnitFinderRow[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export const bookingApi = {
+  findUnits: (params?: Record<string, unknown>): Promise<BookingUnitFinderResponse> =>
+    api.get('/bookings/unit-finder', { params }).then((r) => r.data),
   list: (params?: Record<string, unknown>) =>
     api.get('/bookings', { params }).then((r) => r.data),
   stats: (mallId?: string) =>
@@ -23,7 +58,7 @@ export const bookingApi = {
   convertToProposal: (id: string, data: Record<string, unknown>) =>
     api.post(`/bookings/${id}/convert-to-proposal`, data).then((r) => r.data),
   // Price approval
-  getPendingPriceApproval: (params?: { mallId?: string; page?: number; limit?: number }) =>
+  getPendingPriceApproval: (params?: { mallId?: string; page?: number; limit?: number; leaseTermType?: string }) =>
     api.get('/bookings/price-approval/pending', { params }).then((r) => {
       const response = r.data;
       // Handle both array and paginated object responses

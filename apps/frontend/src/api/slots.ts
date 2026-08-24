@@ -21,7 +21,16 @@ export const slotsApi = {
     api.get(`/slots/bookings/all`, { params }).then((r) => r.data),
   getSummaries: (unitIds: string[]) =>
     api.get(`/slots/summaries`, { params: { unitIds: unitIds.join(',') } }).then((r) => r.data),
-  updateSlotBooking: (bookingId: string, data: { startDatetime?: string; endDatetime?: string; discountPct?: number; notes?: string }) =>
+  updateSlotBooking: (bookingId: string, data: {
+    installationStartDatetime?: string;
+    installationEndDatetime?: string;
+    startDatetime?: string;
+    endDatetime?: string;
+    dismantlingStartDatetime?: string;
+    dismantlingEndDatetime?: string;
+    discountPct?: number;
+    notes?: string;
+  }) =>
     api.patch(`/slots/bookings/${bookingId}`, data).then((r) => r.data),
   confirmBooking: (bookingId: string) =>
     api.patch(`/slots/bookings/${bookingId}/confirm`).then((r) => r.data),

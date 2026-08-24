@@ -18,12 +18,14 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { useMallStore } from '@/store/mall.store';
+import { openAuthenticatedFile } from '@/lib/downloadFile';
 import {
   Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
   CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles,
 } from 'lucide-react';
 import type { Contract } from '@/types';
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 
 // ── Status maps ───────────────────────────────────────────────────────────────
 
@@ -70,8 +72,8 @@ function fmtDate(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
-function fmtCurrency(n?: number | null) {
-  return `${new Intl.NumberFormat('vi-VN').format(n ?? 0)} ₫`;
+function fmtCurrency(n?: number | null, currencyCode?: CurrencyCode) {
+  return formatMoney(n ?? 0, currencyCode ?? 'VND');
 }
 
 const BILLING_ENTRY_STATUS_COLOR: Record<string, string> = {
@@ -369,13 +371,16 @@ function DocumentsTab({ contractId }: { contractId: string }) {
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Download */}
-                  <a href={f.filePath?.startsWith('http') ? f.filePath : f.filePath}
-                    target="_blank" rel="noopener noreferrer"
+                  {/* Download — authenticated (see docs/security/SECRET_INCIDENT_REMEDIATION.md P1):
+                      a plain <a href> can't attach the JWT bearer token, so this
+                      fetches through the API and opens a blob URL instead. */}
+                  <button
+                    type="button"
+                    onClick={() => openAuthenticatedFile(`/files/contracts/${f.id}`, { download: f.fileName })}
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
                     title={t('documents.download')}>
                     <Download size={14} />
-                  </a>
+                  </button>
 
                   {/* Sign */}
                   {!f.signedAt && (
@@ -638,6 +643,32 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
       )}
       {detail && (
         <div className="px-6 pb-8 pt-4">
+          {['ACTIVE', 'EXPIRING'].includes(detail.status) && (
+            <div className="mb-4 grid gap-2 sm:grid-cols-2">
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.fitoutProject ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {detail.fitoutProject ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+                <span className="flex-1">
+                  {detail.fitoutProject ? t('handoff.fitoutStarted') : t('handoff.fitoutNotStarted')}
+                </span>
+                {detail.fitoutProject && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate(`/fitout?projectId=${detail.fitoutProject.id}`)}>
+                    {t('handoff.viewFitout')}
+                  </Button>
+                )}
+              </div>
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.billingSchedule?.length > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                {detail.billingSchedule?.length > 0 ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+                <span className="flex-1">
+                  {detail.billingSchedule?.length > 0 ? t('handoff.billingScheduled') : t('handoff.billingNotScheduled')}
+                </span>
+                {detail.billingSchedule?.length > 0 && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate('/billing')}>
+                    {t('handoff.viewBilling')}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
           <Tabs defaultValue="detail">
             <TabsList className="mb-4">
               <TabsTrigger value="detail">{t('sheet.tabs.detail')}</TabsTrigger>
@@ -757,23 +788,27 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 <SheetRow label={t('sheet.fields.unit')} value={detail.unit?.code} icon={Building2} />
               </SheetSection>
 
-              <SheetSection label={t('sheet.sections.financial')} className="bg-green-50">
+              <SheetSection
+                label={t('sheet.sections.financial')}
+                className="bg-green-50"
+                action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{detail.currencyCode ?? 'VND'}</span>}
+              >
                 <SheetRow label={t('sheet.fields.rent')}
-                  value={`${new Intl.NumberFormat('vi-VN').format(detail.rent)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                  value={`${fmtCurrency(detail.rent, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 {detail.cam > 0 && (
                   <SheetRow label={t('sheet.fields.cam')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.cam)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                    value={`${fmtCurrency(detail.cam, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 )}
                 {detail.serviceCharge > 0 && (
                   <SheetRow label={t('sheet.fields.serviceCharge')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.serviceCharge)}${t('sheet.fields.perMonth')}`} icon={DollarSign} />
+                    value={`${fmtCurrency(detail.serviceCharge, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
                 )}
                 <SheetRow label={t('sheet.fields.totalMonthly')}
-                  value={<span className="text-green-700 font-bold">{new Intl.NumberFormat('vi-VN').format(monthlyRent)} ₫</span>}
+                  value={<span className="text-green-700 font-bold">{fmtCurrency(monthlyRent, detail.currencyCode)}</span>}
                   icon={DollarSign} />
                 {detail.deposit > 0 && (
                   <SheetRow label={t('sheet.fields.deposit')}
-                    value={`${new Intl.NumberFormat('vi-VN').format(detail.deposit)} ₫`} icon={DollarSign} />
+                    value={fmtCurrency(detail.deposit, detail.currencyCode)} icon={DollarSign} />
                 )}
               </SheetSection>
 
@@ -875,16 +910,16 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                         <div className="text-[11px] text-gray-500">{t('billingTab.summary.totalScheduled')}</div>
-                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled)}</div>
+                        <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled, detail.currencyCode)}</div>
                         <div className="text-[11px] text-gray-400 mt-0.5">{t('billingTab.summary.periodCount', { count: scheduleEntries.length })}</div>
                       </div>
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                         <div className="text-[11px] text-emerald-700">{t('billingTab.summary.collected')}</div>
-                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected)}</div>
+                        <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected, detail.currencyCode)}</div>
                       </div>
                       <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                         <div className="text-[11px] text-amber-700">{t('billingTab.summary.remaining')}</div>
-                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected))}</div>
+                        <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected), detail.currencyCode)}</div>
                       </div>
                       <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                         <div className="text-[11px] text-blue-700">{t('billingTab.summary.collectionRate')}</div>
@@ -907,7 +942,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                           {scheduleEntries.map((e: any) => (
                             <tr key={e.id}>
                               <td className="px-3 py-2 font-medium text-gray-800">{e.period}</td>
-                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal)}</td>
+                              <td className="px-3 py-2 text-right">{fmtCurrency(e.subtotal, detail.currencyCode)}</td>
                               <td className="px-3 py-2 text-gray-600">{fmtDate(e.dueDate)}</td>
                               <td className="px-3 py-2">
                                 <Badge variant="outline" className={`${BILLING_ENTRY_STATUS_COLOR[e.status] ?? ''} text-xs`}>
@@ -927,8 +962,8 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                                     </Badge>
                                     <span className="text-[11px] text-gray-400">
                                       {t('billingTab.table.collectedOfTotal', {
-                                        collected: fmtCurrency(e.invoice.collectedAmount),
-                                        total: fmtCurrency(e.invoice.totalAmount),
+                                        collected: fmtCurrency(e.invoice.collectedAmount, detail.currencyCode),
+                                        total: fmtCurrency(e.invoice.totalAmount, detail.currencyCode),
                                       })}
                                     </span>
                                   </button>
@@ -993,8 +1028,8 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <SheetRow label={t('sheet.fields.reason')} value={term.reason} icon={AlertTriangle} />
                     <SheetRow label={t('sheet.fields.initiatedBy')} value={term.initiatedBy === 'THISO' ? t('sheet.fields.initiatedByThiso') : t('sheet.fields.initiatedByTenant')} icon={User} />
                     <SheetRow label={t('sheet.fields.noticePeriod')} value={t('sheet.fields.noticePeriodDays', { count: term.noticePeriodDays })} icon={Clock} />
-                    {term.depositRefund != null && <SheetRow label={t('sheet.fields.depositRefund')} value={term.depositRefund.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
-                    {term.penaltyAmount != null && <SheetRow label={t('sheet.fields.penalty')} value={term.penaltyAmount.toLocaleString('vi-VN') + ' đ'} icon={DollarSign} />}
+                    {term.depositRefund != null && <SheetRow label={t('sheet.fields.depositRefund')} value={fmtCurrency(term.depositRefund, detail.currencyCode)} icon={DollarSign} />}
+                    {term.penaltyAmount != null && <SheetRow label={t('sheet.fields.penalty')} value={fmtCurrency(term.penaltyAmount, detail.currencyCode)} icon={DollarSign} />}
                   </SheetSection>
 
                   {term.status !== 'COMPLETED' && (
@@ -1067,14 +1102,14 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
             {amendmentForm.type === 'RENT_CHANGE' && (
               <div>
-                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel')}</label>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newRentLabel', { currency: detail?.currencyCode ?? 'VND' })}</label>
                 <Input type="number" value={amendmentForm.newRent}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, newRent: e.target.value }))} />
               </div>
             )}
             {amendmentForm.type === 'CAM_CHANGE' && (
               <div>
-                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel')}</label>
+                <label className="text-sm text-gray-600 mb-1 block">{t('amendments.newCamLabel', { currency: detail?.currencyCode ?? 'VND' })}</label>
                 <Input type="number" value={amendmentForm.newCam}
                   onChange={(e) => setAmendmentForm((f) => ({ ...f, newCam: e.target.value }))} />
               </div>
@@ -1122,10 +1157,12 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 export default function ContractsPage() {
   const { t } = useTranslation('contracts');
   const { selectedMallId } = useMallStore();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const expiringDays = searchParams.get('expiring') ? +searchParams.get('expiring')! : 90;
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
+  const [leaseTermType, setLeaseTermType] = useState('');
   const [type, setType] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
@@ -1135,8 +1172,8 @@ export default function ContractsPage() {
   const [selectedContractId, setSelectedContractId] = useState<string | null>(searchParams.get('id'));
   const [page, setPage] = useState(1);
 
-  const hasFilter = !!(search || status || type || floorId || unitId || dateFrom || dateTo);
-  const filterCount = [status, type, floorId, unitId, dateFrom || dateTo].filter(Boolean).length;
+  const hasFilter = !!(search || status || leaseTermType || type || floorId || unitId || dateFrom || dateTo);
+  const filterCount = [status, leaseTermType, type, floorId, unitId, dateFrom || dateTo].filter(Boolean).length;
 
   const { data: floorsResponse } = useQuery({
     queryKey: ['contract-filter-floors', selectedMallId],
@@ -1149,17 +1186,18 @@ export default function ContractsPage() {
   });
   const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
 
-  useEffect(() => { setPage(1); setSelectedContractId(null); }, [search, status, type, floorId, unitId, dateFrom, dateTo, selectedMallId]);
+  useEffect(() => { setPage(1); setSelectedContractId(null); }, [search, status, leaseTermType, type, floorId, unitId, dateFrom, dateTo, selectedMallId]);
 
   function clearFilters() {
-    setSearch(''); setStatus(''); setType(''); setFloorId(''); setUnitId(''); setDateFrom(''); setDateTo('');
+    setSearch(''); setStatus(''); setLeaseTermType(''); setType(''); setFloorId(''); setUnitId(''); setDateFrom(''); setDateTo('');
   }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['contracts', { search, status, type, floorId, unitId, dateFrom, dateTo, page, selectedMallId }],
+    queryKey: ['contracts', { search, status, leaseTermType, type, floorId, unitId, dateFrom, dateTo, page, selectedMallId }],
     queryFn: () => contractsApi.listContracts({
       search: search || undefined,
       status: status || undefined,
+      leaseTermType: leaseTermType || undefined,
       type: type || undefined,
       floorId: floorId || undefined,
       unitId: unitId || undefined,
@@ -1173,8 +1211,8 @@ export default function ContractsPage() {
   });
 
   const { data: expiringData, isLoading: loadingExpiring, isError: expiringError, refetch: refetchExpiring } = useQuery({
-    queryKey: ['contracts-expiring', selectedMallId, expiringDays],
-    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays),
+    queryKey: ['contracts-expiring', selectedMallId, expiringDays, leaseTermType],
+    queryFn: () => contractsApi.expiring(selectedMallId ?? undefined, expiringDays, leaseTermType || undefined),
     enabled: showExpiring,
   });
 
@@ -1183,6 +1221,7 @@ export default function ContractsPage() {
     : (data?.data ?? []);
   const totalPages: number = data?.totalPages ?? 1;
   const total: number = data?.total ?? 0;
+  const contractSummary = data?.summary ?? { total: 0, byStatus: {} };
 
   return (
     <div>
@@ -1197,6 +1236,28 @@ export default function ContractsPage() {
           {showExpiring ? t('actions.showAll') : t('actions.showExpiring')}
         </Button>
       </div>
+
+      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
+          <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setPage(1); }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {!showExpiring && <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+        {[
+          ['', 'Tất cả hợp đồng', contractSummary.total || 0, 'border-slate-200 bg-white text-slate-800'],
+          ['PRE_ACTIVE', 'Đang chuẩn bị', (contractSummary.byStatus?.DRAFT || 0) + (contractSummary.byStatus?.PENDING_LEGAL || 0) + (contractSummary.byStatus?.PENDING_SIGNATURE || 0), 'border-amber-200 bg-amber-50 text-amber-800'],
+          ['ACTIVE', 'Đang hiệu lực', contractSummary.byStatus?.ACTIVE || 0, 'border-emerald-200 bg-emerald-50 text-emerald-800'],
+          ['EXPIRING', 'Sắp hết hạn', contractSummary.byStatus?.EXPIRING || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
+          ['ENDED', 'Đã kết thúc', (contractSummary.byStatus?.EXPIRED || 0) + (contractSummary.byStatus?.TERMINATING || 0) + (contractSummary.byStatus?.TERMINATED || 0), 'border-red-200 bg-red-50 text-red-800'],
+        ].map(([key, label, count, color]) => <button key={String(key)} onClick={() => { setStatus(String(key)); setPage(1); }}
+          className={`rounded-xl border p-3 text-left transition hover:shadow-sm ${color} ${status === key ? 'ring-2 ring-slate-700' : ''}`}>
+          <div className="text-xs font-medium">{label}</div><div className="mt-1 text-2xl font-bold">{count}</div>
+        </button>)}
+      </div>}
 
       {!showExpiring && (
         <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
@@ -1281,7 +1342,7 @@ export default function ContractsPage() {
         </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[1200px] w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.contractNo')}</th>
@@ -1290,6 +1351,7 @@ export default function ContractsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.unit')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.type')}</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.monthlyRent')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('common:labels.currency')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.startDate')}</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.endDate')}</th>
                 {showExpiring && <th className="text-right px-4 py-3 font-medium text-gray-600">{t('table.remaining')}</th>}
@@ -1319,11 +1381,12 @@ export default function ContractsPage() {
                     <td className="px-4 py-3 font-medium">{c.tenant?.brandName}</td>
                     <td className="px-4 py-3"><div className="font-medium text-gray-800">{c.unit?.code}</div><div className="text-xs text-gray-400">{c.unit?.floor?.name ?? 'Chưa xác định tầng'}</div></td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-xs">{c.type}</Badge>
+                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{c.type}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      {new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(c.rent)} VNĐ
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {formatMoneyAmount(c.rent, c.currencyCode ?? 'VND')}
                     </td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.currencyCode ?? 'VND'}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.startDate).toLocaleDateString('vi-VN')}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.endDate).toLocaleDateString('vi-VN')}</td>
                     {showExpiring && (
@@ -1350,9 +1413,23 @@ export default function ContractsPage() {
             </tbody>
           </table>
           {contracts.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-gray-400 space-y-3">
               <File size={40} className="mx-auto mb-2 opacity-20" />
-              <p>{t('empty')}</p>
+              <p className="font-medium text-gray-600">
+                {hasFilter ? t('emptyFiltered.title') : t('empty')}
+              </p>
+              <p className="text-sm">
+                {hasFilter ? t('emptyFiltered.subtitle') : t('emptyNoData.subtitle')}
+              </p>
+              {hasFilter ? (
+                <Button variant="outline" size="sm" onClick={clearFilters} className="gap-1.5">
+                  <X size={14} /> {t('filters.clearFilters')}
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => navigate('/proposals')}>
+                  {t('emptyNoData.cta')}
+                </Button>
+              )}
             </div>
           )}
         </div>

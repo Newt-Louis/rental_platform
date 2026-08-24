@@ -6,6 +6,7 @@ import { ticketsApi, tenantsApi, spacesApi, usersApi, maintenanceApi } from '@/a
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AuthenticatedImage } from '@/components/ui/authenticated-image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -344,9 +345,9 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
             {photos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((p: any) => (
-                  <a key={p.id} href={`/uploads/${p.filePath}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden bg-gray-100 border">
-                    <img src={`/uploads/${p.filePath}`} alt={p.fileName} className="w-full h-full object-cover" />
-                  </a>
+                  <div key={p.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <AuthenticatedImage src={`/files/documents/${p.id}`} alt={p.fileName} className="w-full h-full object-cover" />
+                  </div>
                 ))}
               </div>
             )}
@@ -414,7 +415,7 @@ const FREQUENCY_MAP: Record<string, string> = {
 function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { selectedMallId } = useMallStore();
+  const { selectedMallId, selectedMallName } = useMallStore();
   const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
     defaultValues: { mallId: '', title: '', description: '', frequency: 'MONTHLY', nextDueDate: '', estimatedHours: '', assignedToId: '', reminderDays: '3', checklistText: '' },
   });
@@ -423,12 +424,6 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
     if (open && selectedMallId) setValue('mallId', selectedMallId, { shouldValidate: true });
   }, [open, selectedMallId, setValue]);
 
-  const { data: mallsData } = useQuery({
-    queryKey: ['malls-lite'],
-    queryFn: () => spacesApi.listMalls(),
-    enabled: open,
-  });
-  const malls: any[] = mallsData?.data ?? mallsData ?? [];
   const { data: usersData } = useQuery({ queryKey: ['maintenance-assignees'], queryFn: () => usersApi.listUsers({ limit: 200 }), enabled: open });
   const staff: any[] = (usersData?.data ?? usersData ?? []).filter((user: any) => user.isActive && user.role !== 'TENANT');
 
@@ -450,12 +445,7 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
           <div>
             <Label>Mall *</Label>
-            <Select defaultValue={selectedMallId || undefined} onValueChange={(v) => setValue('mallId', v, { shouldValidate: true })}>
-              <SelectTrigger className={errors.mallId ? 'border-red-400' : ''}><SelectValue placeholder="Chọn mall..." /></SelectTrigger>
-              <SelectContent>
-                {malls.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="mt-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">{selectedMallName}</div>
             <input type="hidden" {...register('mallId', { required: 'Vui lòng chọn trung tâm thương mại' })} />
             {errors.mallId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.mallId.message)}</p>}
           </div>
@@ -543,7 +533,7 @@ function MaintenanceTab() {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [completing, setCompleting] = useState<any | null>(null);
-  const { selectedMallId } = useMallStore();
+  const { selectedMallId, openMallContextModal } = useMallStore();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['maintenance-schedules', selectedMallId],
@@ -577,7 +567,7 @@ function MaintenanceTab() {
   return (
     <div>
       <section className="mb-4 rounded-2xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-5 text-white">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200"><Compass size={14} /> Điều phối bảo trì chủ động</div><h3 className="text-xl font-semibold">{overdueCount ? `${overdueCount} kế hoạch đang quá hạn` : 'Mọi kế hoạch đang trong hạn'}</h3><p className="mt-1 text-sm text-emerald-100/70">Lập lịch · giao việc · nhắc hạn · thực hiện checklist · lưu evidence hiện trường.</p></div><div className="flex gap-2"><Button variant="outline" className="gap-2 border-white/20 bg-white/10 text-white hover:bg-white/20" onClick={() => reminderMutation.mutate()}><BellRing size={14} /> Gửi nhắc việc</Button><Button onClick={() => setShowCreate(true)} className="gap-2 bg-white text-slate-900 hover:bg-emerald-50"><Plus size={15} /> Lập kế hoạch</Button></div></div>
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200"><Compass size={14} /> Điều phối bảo trì chủ động</div><h3 className="text-xl font-semibold">{overdueCount ? `${overdueCount} kế hoạch đang quá hạn` : 'Mọi kế hoạch đang trong hạn'}</h3><p className="mt-1 text-sm text-emerald-100/70">Lập lịch · giao việc · nhắc hạn · thực hiện checklist · lưu evidence hiện trường.</p></div><div className="flex gap-2"><Button variant="outline" className="gap-2 border-white/20 bg-white/10 text-white hover:bg-white/20" onClick={() => reminderMutation.mutate()}><BellRing size={14} /> Gửi nhắc việc</Button><Button onClick={() => selectedMallId ? setShowCreate(true) : openMallContextModal()} className="gap-2 bg-white text-slate-900 hover:bg-emerald-50"><Plus size={15} /> Lập kế hoạch</Button></div></div>
       </section>
       <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{[
         ['Quá hạn', overdueCount, AlertTriangle, 'border-red-100 bg-red-50 text-red-700'],

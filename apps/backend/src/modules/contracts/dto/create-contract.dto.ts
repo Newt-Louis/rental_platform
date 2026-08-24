@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsNumber, IsDateString, IsInt, IsEnum } from 'class-validator';
-import { ContractType, BillingCycle } from '@prisma/client';
+import { ContractType, BillingCycle, CurrencyCode } from '@prisma/client';
 
 export class CreateContractDto {
   @ApiPropertyOptional()
@@ -65,6 +65,15 @@ export class CreateContractDto {
   @IsOptional()
   @IsNumber()
   escalationPercent?: number;
+
+  @ApiPropertyOptional({
+    enum: CurrencyCode,
+    description:
+      'Only used for a contract created without a proposalId. When proposalId is set, the currency is always taken from the Proposal — any value sent here is ignored (see MULTI_CURRENCY_ARCHITECTURE.md).',
+  })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional()
   @IsOptional()

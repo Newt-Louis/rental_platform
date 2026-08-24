@@ -1,12 +1,15 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { formatMoney } from './currency';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Kept for backward compatibility with its existing caller -- delegates to
+// the central multi-currency formatter (docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
 export function formatVND(amount: number): string {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  return formatMoney(amount, 'VND');
 }
 
 export function formatDate(dateStr: string): string {

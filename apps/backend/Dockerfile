@@ -59,7 +59,14 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
 
-# Apply committed, non-destructive production migrations before accepting traffic.
-# Prisma serializes migrate deploy with a database advisory lock, while `exec`
-# keeps Node as the signal-receiving application process under dumb-init.
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main.js"]
+# Migration safety (docs/reliability/MIGRATION_SAFETY.md): this container no
+# longer runs `prisma migrate deploy` on startup. A production application
+# instance auto-migrating on every boot means schema changes are applied by
+# whichever replica happens to start first/fastest, with no distinct
+# "migration succeeded" signal separate from "the app happened to start,"
+# and a broken migration surfaces as an app crash-loop instead of a clean,
+# isolated pipeline failure. Migrations are applied by the dedicated
+# `migrate`/`migrate-uat` Compose service (already existed, was just not the
+# only path — see docker-compose.yml/docker-compose.uat.yml) as an explicit,
+# separately-observable step *before* this container is deployed/restarted.
+CMD ["node", "dist/main.js"]

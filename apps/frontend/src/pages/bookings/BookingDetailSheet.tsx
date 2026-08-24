@@ -15,6 +15,7 @@ import {
   X, FileText, Activity, Clock, Pencil, RotateCcw,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
+import { formatMoney, CURRENCIES } from '@/lib/currency';
 import { UNIT_STATUS_CONFIG, ACTIVITY_LABELS, daysLeft, fmtDate } from './bookings-constants';
 import { ConvertToProposalDialog } from './ConvertToProposalDialog';
 import { ExtendDialog } from './ExtendDialog';
@@ -290,20 +291,23 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <Input type="number" value={ef.requestedTerm} onChange={setEfField('requestedTerm')} placeholder="36" className="bg-white" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng (₫/m²)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
                   <Input type="number" value={ef.expectedRent} onChange={setEfField('expectedRent')} placeholder="680000" className="bg-white" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Giá thuê đề xuất (₫/m²)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá thuê đề xuất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
                   <Input type="number" value={ef.proposedRentPerSqm} onChange={setEfField('proposedRentPerSqm')} placeholder="650000" className="bg-white" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">CAM đề xuất (₫/m²)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">CAM đề xuất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
                   <Input type="number" value={ef.proposedCamPerSqm} onChange={setEfField('proposedCamPerSqm')} placeholder="50000" className="bg-white" />
                 </div>
               </div>
+              {d.currencyCode && d.currencyCode !== 'VND' && (
+                <p className="text-xs text-gray-400 mt-1">Đơn vị tiền tệ ({d.currencyCode}) được đặt khi tạo booking và không thể sửa ở đây.</p>
+              )}
             </div>
 
             {/* Ghi chú */}
@@ -366,7 +370,10 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
             <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50" id="bs-request">
               <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
               <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
-              <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${new Intl.NumberFormat('vi-VN').format(d.expectedRent)} ₫/m²` : '—'} icon={DollarSign} />
+              <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${formatMoney(d.expectedRent, d.currencyCode ?? 'VND')}/m²` : '—'} icon={DollarSign} />
+              {d.currencyCode && d.currencyCode !== 'VND' && (
+                <SheetRow label="Đơn vị tiền tệ" value={`${d.currencyCode} (${CURRENCIES[d.currencyCode].name})`} icon={DollarSign} />
+              )}
             </SheetSection>
 
             <SheetSection label="THỜI GIAN" className="bg-gray-50" id="bs-timeline">

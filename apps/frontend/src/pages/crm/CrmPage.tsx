@@ -18,6 +18,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { useAuthStore } from '@/store/auth.store';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
   DndContext,
   DragOverlay,
@@ -207,6 +208,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     phone: '', email: '', category: '', expectedArea: '',
     source: 'WALK_IN', notes: '', website: '',
     budgetMin: '', budgetMax: '', rating: '3',
+    leaseTermType: 'LONG',
   });
   const { data: usersData } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.listUsers({ limit: 100 }) });
   const users: any[] = usersData?.data ?? usersData ?? [];
@@ -257,6 +259,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       source: form.source as any,
       notes: form.notes || undefined,
       assignedToId: assignedToId || undefined,
+      leaseTermType: form.leaseTermType,
       mallId: selectedMallId ?? undefined,
     }),
     onSuccess: () => {
@@ -420,6 +423,15 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
               <Label className="text-xs">{t('addDialog.fieldArea')}</Label>
               <Input type="number" value={form.expectedArea} onChange={(e) => set('expectedArea', e.target.value)} placeholder="100" className="mt-1 h-9" />
             </div>
+            {mode === 'lead' && (
+              <div>
+                <Label className="text-xs">Loại hình cho thuê</Label>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={form.leaseTermType} onChange={(e) => set('leaseTermType', e.target.value)}>
+                  <option value="LONG">Cho thuê dài hạn</option>
+                  <option value="SHORT">Cho thuê ngắn hạn</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Customer-only fields */}
@@ -865,8 +877,8 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                             </div>
                             {(p.monthlyRent || p.totalContractValue) && (
                               <div className="grid grid-cols-2 gap-x-4 text-xs">
-                                {p.monthlyRent && <div><span className="text-gray-400">{t('leadSheet.monthlyRent')} </span><span className="font-semibold">{new Intl.NumberFormat('vi-VN').format(p.monthlyRent)} ₫</span></div>}
-                                {p.totalContractValue && <div><span className="text-gray-400">{t('leadSheet.contractValue')} </span><span className="font-bold text-green-700">{new Intl.NumberFormat('vi-VN').format(p.totalContractValue)} ₫</span></div>}
+                                {p.monthlyRent && <div><span className="text-gray-400">{t('leadSheet.monthlyRent')} </span><span className="font-semibold">{formatMoney(p.monthlyRent, p.rentCurrency as CurrencyCode)}</span></div>}
+                                {p.totalContractValue && <div><span className="text-gray-400">{t('leadSheet.contractValue')} </span><span className="font-bold text-green-700">{formatMoney(p.totalContractValue, p.rentCurrency as CurrencyCode)}</span></div>}
                                 {p.term && <div><span className="text-gray-400">{t('leadSheet.term')} </span><span>{t('leadSheet.termMonths', { term: p.term })}</span></div>}
                                 {p.startDate && <div><span className="text-gray-400">{t('leadSheet.startDate')} </span><span>{fmtDate(p.startDate)}</span></div>}
                               </div>
@@ -1241,6 +1253,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
   // State
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'kanban' | 'list' | 'analytics' | 'customers'>('kanban');
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [listPage, setListPage] = useState(1);
   const LIST_PAGE_SIZE = 20;
@@ -1295,8 +1308,8 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
 
   // Pipeline data
   const { data: pipeline, isLoading } = useQuery({
-    queryKey: ['crm-pipeline', selectedMallId],
-    queryFn: () => crmApi.pipeline(100, selectedMallId ?? undefined),
+    queryKey: ['crm-pipeline', selectedMallId, leaseTermType],
+    queryFn: () => crmApi.pipeline(100, selectedMallId ?? undefined, leaseTermType),
   });
   const requestedLeadId = searchParams.get('leadId');
   const { data: requestedLeadData } = useQuery({
@@ -1545,6 +1558,13 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
       </div>
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
+        <div className="inline-flex rounded-lg border bg-white p-1">
+          {(['LONG', 'SHORT'] as const).map((term) => (
+            <button key={term} type="button" onClick={() => setLeaseTermType(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+              {term === 'LONG' ? 'Dài hạn' : 'Ngắn hạn'}
+            </button>
+          ))}
+        </div>
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('toolbar.search')} className="pl-8 h-9" />

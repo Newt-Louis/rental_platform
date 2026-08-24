@@ -23,8 +23,11 @@ import {
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
   X, Loader2, Pencil, CheckSquare, Square, SlidersHorizontal, Clock3, Sparkles,
 } from 'lucide-react';
-import type { Proposal } from '@/types';
+import type { Proposal, UnitBooking } from '@/types';
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { ProposalEditorDialog } from './ProposalEditor';
+import { CreateProposalEntryDialog } from './CreateProposalDialog';
+import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
 
@@ -37,12 +40,8 @@ const STATUS_COLOR: Record<string, string> = {
   CONVERTED:    'bg-purple-100 text-purple-700',
 };
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', notation: 'compact' }).format(n);
-}
-
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
+  return formatMoney(n, currencyCode);
 }
 
 function fmtDate(d?: string | null) {
@@ -195,7 +194,7 @@ function AddScenarioDialog({
   );
 }
 
-function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
+function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposalId: string; rentCurrency?: CurrencyCode }) {
   const { t } = useTranslation('deals');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -242,7 +241,10 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
         loadingLabel={t('common:actions.deleting', 'Đang xóa...')}
       />
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('proposals.scenarios.title')} ({scenarios.length})</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{t('proposals.scenarios.title')} ({scenarios.length})</span>
+          <span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{rentCurrency}</span>
+        </div>
         <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowAdd(true)}>
           <Plus size={12} /> {t('proposals.scenarios.add')}
         </Button>
@@ -279,11 +281,11 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
                 </div>
                 <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600">
                   <div><span className="text-gray-400">DT:</span> {terms.area?.toLocaleString()} m²</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.rentPerSqm')}:</span> {terms.rentPerSqm?.toLocaleString()}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.rentPerSqm')}:</span> {terms.rentPerSqm != null ? formatMoney(terms.rentPerSqm, rentCurrency) : '—'}</div>
                   <div><span className="text-gray-400">{t('proposals.scenarios.compare.term')}:</span> {terms.term} th</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.monthlyRent')}:</span> <span className="font-medium text-gray-700">{terms.monthlyRent?.toLocaleString()}</span></div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount?.toLocaleString()}</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue?.toLocaleString()}</span></div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.monthlyRent')}:</span> <span className="font-medium text-gray-700">{terms.monthlyRent != null ? formatMoney(terms.monthlyRent, rentCurrency) : '—'}</span></div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount != null ? formatMoney(terms.depositAmount, rentCurrency) : '—'}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue != null ? formatMoney(terms.totalValue, rentCurrency) : '—'}</span></div>
                   {terms.discount > 0 && <div><span className="text-gray-400">CK:</span> {terms.discount}%</div>}
                   {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} th</div>}
                   {terms.escalation > 0 && <div><span className="text-gray-400">{t('proposals.scenarios.fields.escalation')}:</span> {terms.escalation}%/năm</div>}
@@ -311,14 +313,14 @@ function ProposalScenariosPanel({ proposalId }: { proposalId: string }) {
             <tbody>
               {[
                 { labelKey: 'proposals.scenarios.compare.area', key: 'area', fmt: (v: number) => v?.toLocaleString() },
-                { labelKey: 'proposals.scenarios.compare.rentPerSqm', key: 'rentPerSqm', fmt: (v: number) => v?.toLocaleString() },
-                { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v?.toLocaleString() },
+                { labelKey: 'proposals.scenarios.compare.rentPerSqm', key: 'rentPerSqm', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
+                { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
                 { labelKey: 'proposals.scenarios.compare.term', key: 'term', fmt: (v: number) => `${v} th` },
                 { labelKey: 'proposals.scenarios.compare.discount', key: 'discount', fmt: (v: number) => `${v}%` },
                 { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} th` },
-                { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v?.toLocaleString(), highlight: true },
-                { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v?.toLocaleString() },
-                { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v?.toLocaleString(), highlight: true },
+                { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined, highlight: true },
+                { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
+                { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined, highlight: true },
                 { labelKey: 'proposals.scenarios.compare.score', key: '_score', fmt: (_v: number, s: any) => s.score?.toFixed(1) },
               ].map(({ labelKey, key, fmt: f, highlight }) => (
                 <tr key={key} className={`border-t ${highlight ? 'bg-gray-50/40' : ''}`}>
@@ -553,19 +555,23 @@ function ProposalDetailSheet({
                 </SheetSection>
 
                 {/* Financials */}
-                <SheetSection label={t('proposals.sections.financials')} className="bg-gray-50">
+                <SheetSection
+                  label={t('proposals.sections.financials')}
+                  className="bg-gray-50"
+                  action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency}</span>}
+                >
                   <SheetRow
                     label={t('proposals.fields.proposedRent')}
-                    value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent)}</span>}
+                    value={<span className="text-gray-700 font-semibold">{fmtFull(p.monthlyRent, p.rentCurrency)}</span>}
                     icon={DollarSign}
                   />
                   <SheetRow
                     label={t('contracts.fields.camFee')}
-                    value={p.monthlyCAM ? fmtFull(p.monthlyCAM) : null}
+                    value={p.monthlyCAM ? fmtFull(p.monthlyCAM, p.rentCurrency) : null}
                     icon={DollarSign}
                   />
                   {p.marketingFee > 0 && (
-                    <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee)} icon={DollarSign} />
+                    <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee, p.rentCurrency)} icon={DollarSign} />
                   )}
                   {p.rentFree > 0 && (
                     <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} tháng`} icon={Calendar} />
@@ -575,7 +581,7 @@ function ProposalDetailSheet({
                   )}
                   <SheetRow
                     label={t('contracts.fields.rentAmount')}
-                    value={<span className="font-bold text-green-700">{fmt(p.totalContractValue)}</span>}
+                    value={<span className="font-bold text-green-700">{fmtFull(p.totalContractValue, p.rentCurrency)}</span>}
                     icon={DollarSign}
                   />
                 </SheetSection>
@@ -641,7 +647,7 @@ function ProposalDetailSheet({
               </TabsContent>
 
               <TabsContent value="scenarios" className="mt-0">
-                <ProposalScenariosPanel proposalId={p.id} />
+                <ProposalScenariosPanel proposalId={p.id} rentCurrency={p.rentCurrency} />
               </TabsContent>
               <TabsContent value="versions" className="mt-0">
                 <ProposalVersionsPanel proposalId={p.id} />
@@ -713,7 +719,7 @@ function ProposalDetailSheet({
   );
 }
 
-const EMPTY_FILTERS = { search: '', status: '', floorId: '', unitId: '', dateFrom: '', dateTo: '' };
+const EMPTY_FILTERS = { search: '', status: '', leaseTermType: '', floorId: '', unitId: '', dateFrom: '', dateTo: '' };
 
 export default function ProposalsPage() {
   const { t } = useTranslation('deals');
@@ -730,6 +736,8 @@ export default function ProposalsPage() {
   }, []);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
+  const [createPickerOpen, setCreatePickerOpen] = useState(false);
+  const [pickedBooking, setPickedBooking] = useState<UnitBooking | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
@@ -784,7 +792,7 @@ export default function ProposalsPage() {
 
   const hasApplied = Object.values(applied).some(Boolean);
   const isDirty = Object.keys(draft).some((key) => draft[key as keyof typeof draft] !== applied[key as keyof typeof applied]);
-  const appliedFilterCount = [applied.status, applied.floorId, applied.unitId, applied.dateFrom || applied.dateTo].filter(Boolean).length;
+  const appliedFilterCount = [applied.status, applied.leaseTermType, applied.floorId, applied.unitId, applied.dateFrom || applied.dateTo].filter(Boolean).length;
 
   function applyFilters() { setApplied({ ...draft }); setPage(1); }
   function clearFilters() { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
@@ -794,6 +802,7 @@ export default function ProposalsPage() {
     queryFn: () => proposalsApi.listProposals({
       search: applied.search || undefined,
       status: applied.status || undefined,
+      leaseTermType: applied.leaseTermType || undefined,
       floorId: applied.floorId || undefined,
       unitId: applied.unitId || undefined,
       dateFrom: applied.dateFrom || undefined,
@@ -805,8 +814,8 @@ export default function ProposalsPage() {
   });
 
   const { data: statsResponse, isError: statsError, refetch: refetchStats } = useQuery({
-    queryKey: ['proposal-stats', selectedMallId],
-    queryFn: () => proposalsApi.getStats(selectedMallId || undefined),
+    queryKey: ['proposal-stats', selectedMallId, applied.leaseTermType],
+    queryFn: () => proposalsApi.getStats(selectedMallId || undefined, applied.leaseTermType || undefined),
   });
   const stats = statsResponse?.data ?? statsResponse ?? {};
 
@@ -931,17 +940,32 @@ export default function ProposalsPage() {
           <h1 className="text-2xl font-bold text-gray-900">{t('proposals.title')}</h1>
           <p className="text-sm text-gray-500 mt-1">{t('proposals.manage')}</p>
         </div>
+        {canEdit && (
+          <Button className="gap-1.5" onClick={() => setCreatePickerOpen(true)}>
+            <Plus size={16} /> {t('proposals.create')}
+          </Button>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
+          <button key={key || 'ALL'} onClick={() => { const next = { ...draft, leaseTermType: key }; setDraft(next); setApplied({ ...applied, leaseTermType: key }); setPage(1); }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${applied.leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
         {[
           { key: '', label: t('proposals.stats.total'), value: stats.total ?? 0, color: 'text-gray-900' },
           { key: 'DRAFT', label: t('proposals.stats.draft'), value: stats.DRAFT ?? 0, color: 'text-gray-700' },
-          { key: 'SUBMITTED', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
+          { key: 'PENDING_APPROVAL', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
           { key: 'APPROVED', label: t('proposals.stats.approved'), value: stats.APPROVED ?? 0, color: 'text-green-600' },
+          { key: 'REJECTED', label: t('proposals.status.REJECTED'), value: stats.REJECTED ?? 0, color: 'text-red-600' },
           { key: 'CONVERTED', label: t('proposals.stats.converted'), value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
         ].map((item) => (
-          <Card key={item.label} className="cursor-pointer hover:border-blue-300 transition-colors" onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
+          <Card key={item.label} className={`cursor-pointer transition-all hover:border-blue-300 hover:shadow-sm ${applied.status === item.key ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
             <CardContent className="p-4"><p className="text-xs text-gray-500">{item.label}</p><p className={`text-2xl font-semibold mt-1 ${item.color}`}>{item.value}</p></CardContent>
           </Card>
         ))}
@@ -1041,7 +1065,7 @@ export default function ProposalsPage() {
         <>
           {!selectedProposal && !editingProposal && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
           <div ref={gridRef} className="bg-white rounded-lg border overflow-x-auto select-none">
-            <table className="w-full text-sm">
+            <table className="min-w-[1300px] w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
                   <th className="px-3 py-3 w-8">
@@ -1067,6 +1091,7 @@ export default function ProposalsPage() {
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.area')}</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.monthlyRent')}</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.contractValue')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('common:labels.currency')}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.status')}</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -1116,10 +1141,12 @@ export default function ProposalsPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-800">{p.unit?.code}</div>
                         <div className="text-xs text-gray-400">{p.unit?.floor?.name ?? 'Chưa xác định tầng'}</div>
+                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${p.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{p.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>
                       </td>
                       <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
-                      <td className="px-4 py-3 text-right">{fmt(p.monthlyRent)}</td>
-                      <td className="px-4 py-3 text-right font-medium">{fmt(p.totalContractValue)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">{formatMoneyAmount(p.monthlyRent, p.rentCurrency)}</td>
+                      <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatMoneyAmount(p.totalContractValue, p.rentCurrency)}</td>
+                      <td className="px-4 py-3 text-xs font-mono text-gray-500">{p.rentCurrency}</td>
                       <td className="px-4 py-3">
                         <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
                         {p.status === 'CONVERTED' && p.contract && (
@@ -1179,9 +1206,25 @@ export default function ProposalsPage() {
               </tbody>
             </table>
             {proposals.length === 0 && (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-gray-400 space-y-3">
                 <FileText size={40} className="mx-auto mb-2 opacity-20" />
-                <p>{t('proposals.noneYet')}</p>
+                {hasApplied ? (
+                  <>
+                    <p>{t('proposals.createEntry.noResultsForFilter')}</p>
+                    <Button size="sm" variant="outline" onClick={clearFilters}>
+                      {t('proposals.filters.clear')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p>{t('proposals.noneYet')}</p>
+                    {canEdit && (
+                      <Button size="sm" onClick={() => setCreatePickerOpen(true)} className="gap-1.5">
+                        <Plus size={14} /> {t('proposals.create')}
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1209,6 +1252,21 @@ export default function ProposalsPage() {
           onClose={() => setEditingProposal(null)}
         />
       )}
+
+      <CreateProposalEntryDialog
+        open={createPickerOpen}
+        mallId={selectedMallId || undefined}
+        onClose={() => setCreatePickerOpen(false)}
+        onPickBooking={(booking) => {
+          setCreatePickerOpen(false);
+          setPickedBooking(booking);
+        }}
+      />
+      <ConvertToProposalDialog
+        booking={pickedBooking}
+        open={!!pickedBooking}
+        onClose={() => setPickedBooking(null)}
+      />
 
       {/* Bulk delete confirm dialog */}
       <Dialog open={confirmBulkDelete} onOpenChange={(open) => !open && setConfirmBulkDelete(false)}>

@@ -9,11 +9,17 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomerStatus } from '@prisma/client';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only. Customer has no mallId field or Mall
+// relation at all -- a resolver cannot even be designed until BC-016 resolves.
 
 @ApiTags('Customers')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.crm)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.PENDING_BUSINESS_CONFIRMATION, trackedAs: 'BC-016' })
 @Controller('crm/customers')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}

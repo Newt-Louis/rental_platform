@@ -1,12 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
-import { ContractStatus, UnitStatus } from '@prisma/client';
+import { ContractStatus, UnitStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { OutboxService } from '../../common/services/outbox.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 interface CurrentUser {
   id: string;
@@ -44,18 +45,21 @@ const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours
 // audit trail và đồng bộ billing schedule.
 const CONTRACT_AMENDMENT_ONLY_FIELDS = [
   'tenantId', 'unitId', 'type', 'proposalId', 'startDate', 'endDate', 'term',
-  'rent', 'cam', 'deposit', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent',
+  'rent', 'cam', 'deposit', 'currencyCode', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent',
   'depositLease', 'depositFitout', 'fitoutFee', 'utilityFee', 'afterHoursFee',
 ];
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(
     private prisma: PrismaService,
     private events: ContractEventsService,
     private unitStatus: UnitStatusService,
     private billingScheduleService: BillingScheduleService,
     private outbox: OutboxService,
+    private metrics: OperationalMetricsService,
   ) {}
 
   async getActivationReadiness(id: string) {
@@ -100,6 +104,7 @@ export class ContractsService {
 
   async findAll(query: {
     status?: ContractStatus;
+    leaseTermType?: string;
     type?: string;
     tenantId?: string;
     unitId?: string;
@@ -117,7 +122,9 @@ export class ContractsService {
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null };
-    if (filters.status) where.status = filters.status;
+    if (filters.status === 'PRE_ACTIVE' as any) where.status = { in: [ContractStatus.DRAFT, ContractStatus.PENDING_LEGAL, ContractStatus.PENDING_SIGNATURE] };
+    else if (filters.status === 'ENDED' as any) where.status = { in: [ContractStatus.EXPIRED, ContractStatus.TERMINATING, ContractStatus.TERMINATED] };
+    else if (filters.status) where.status = filters.status;
     if (filters.type) where.type = filters.type;
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
@@ -126,9 +133,10 @@ export class ContractsService {
       where.tenantId = filters.tenantId;
     }
     if (filters.unitId) where.unitId = filters.unitId;
-    if (query.mallIds || filters.floorId) where.unit = {
+    if (query.mallIds || filters.floorId || filters.leaseTermType) where.unit = {
       ...(query.mallIds ? { mallId: { in: query.mallIds } } : {}),
       ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      ...(filters.leaseTermType ? { leaseTermType: filters.leaseTermType } : {}),
     };
     if (query.startDateFrom || query.startDateTo) {
       where.startDate = {};
@@ -143,22 +151,30 @@ export class ContractsService {
       ];
     }
 
-    const [data, total] = await Promise.all([
+    const summaryWhere = { ...where };
+    delete summaryWhere.status;
+    const [data, total, groupedStatuses] = await Promise.all([
       this.prisma.contract.findMany({
         where,
         skip,
         take: +limit,
         include: {
           tenant: { select: { id: true, brandName: true, companyName: true } },
-          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
+          unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true, level: true } } } },
           managedBy: { select: { id: true, fullName: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.contract.count({ where }),
+      this.prisma.contract.groupBy({ by: ['status'], where: summaryWhere, _count: { _all: true } }),
     ]);
 
-    return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
+    const byStatus = Object.fromEntries(Object.values(ContractStatus).map((value) => [value, 0]));
+    groupedStatuses.forEach((row: any) => { byStatus[row.status] = row._count._all; });
+    return {
+      data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit),
+      summary: { total: groupedStatuses.reduce((sum: number, row: any) => sum + row._count._all, 0), byStatus },
+    };
   }
 
   async findOne(id: string, currentUser?: CurrentUser) {
@@ -185,6 +201,13 @@ export class ContractsService {
           orderBy: { createdAt: 'desc' },
           take: 12,
         },
+        // Cross-module handoff visibility (docs/audit/11-INFORMATION-FLOW.md):
+        // Fitout project creation and billing schedule generation already run
+        // automatically on contract activation (see FitoutService.
+        // handleContractActivated / ContractsService.updateStatus), but the
+        // detail screen never surfaced that this had happened — `take: 1` is
+        // enough to answer "does a schedule exist yet", not to list it.
+        billingSchedule: { select: { id: true }, take: 1 },
       },
     });
 
@@ -226,6 +249,21 @@ export class ContractsService {
       );
     }
 
+    // Currency propagation invariant (docs/program/MULTI_CURRENCY_ARCHITECTURE.md):
+    // a Contract created from a Proposal always takes the Proposal's currency —
+    // never the client's — so the currency chosen when the deal was negotiated
+    // can't silently drift when the contract document is issued. This is
+    // resolved server-side and placed after the `...dto` spread below so it
+    // structurally wins over anything the client sent.
+    let resolvedCurrencyCode = dto.currencyCode ?? 'VND';
+    if (dto.proposalId) {
+      const proposal = await this.prisma.proposal.findUnique({
+        where: { id: dto.proposalId },
+        select: { rentCurrency: true },
+      });
+      if (proposal) resolvedCurrencyCode = proposal.rentCurrency;
+    }
+
     const year = new Date().getFullYear();
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
     const contractNumber = `CTR-${year}-${rand}`;
@@ -237,6 +275,7 @@ export class ContractsService {
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         cam: dto.cam ?? 0,
+        currencyCode: resolvedCurrencyCode,
         billingCycle: dto.billingCycle ?? 'MONTHLY',
         paymentTerm: dto.paymentTerm ?? 30,
         rentFree: dto.rentFree ?? 0,
@@ -319,6 +358,14 @@ export class ContractsService {
     return updated;
   }
 
+  /**
+   * Phase 3 hardening (docs/program/02-E2E-WORKFLOW.md, backlog #5): activation used to
+   * commit `Contract.status = ACTIVE` in one transaction, then call
+   * `buildScheduleForContract` afterwards, outside it — a throw there left the contract
+   * ACTIVE with no billing schedule and no automatic recovery. Status change, event,
+   * outbox-enqueue, and billing-schedule generation now happen inside one Serializable
+   * transaction: either the contract activates *with* a schedule, or neither happens.
+   */
   async updateStatus(id: string, status: ContractStatus, userId?: string) {
     const readiness = status === ContractStatus.ACTIVE
       ? await this.getActivationReadiness(id)
@@ -337,60 +384,92 @@ export class ContractsService {
         throw new BadRequestException(`Không thể chuyển hợp đồng từ ${before.status} sang ${status}.`);
       }
     }
-    const updated = before.status === status
-      ? before
-      : await this.prisma.$transaction(async (tx) => {
-          const contract = await tx.contract.update({ where: { id }, data: { status } });
+
+    const startedAt = Date.now();
+    if (status === ContractStatus.ACTIVE) {
+      this.logger.log(JSON.stringify({ event: 'contract.activation.started', contractId: id, actorId: userId ?? null }));
+    }
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Re-read inside the transaction: closes the race window between the pre-checks
+        // above and here. Under Serializable isolation, two concurrent activations of the
+        // same contract resolve to one winner; the loser gets a P2034 conflict, caught below.
+        const current = await tx.contract.findUniqueOrThrow({ where: { id } });
+
+        const contract = current.status === status
+          ? current
+          : await tx.contract.update({ where: { id }, data: { status } });
+
+        if (current.status !== status) {
           await tx.contractEvent.create({
             data: {
               contractId: id,
               eventType: 'STATUS_CHANGED',
               title: `Status changed to ${status}`,
-              beforeValue: before.status,
+              beforeValue: current.status,
               afterValue: status,
               userId,
             },
           });
-          if (status === ContractStatus.ACTIVE) {
-            await this.outbox.enqueue(tx, {
-              eventKey: `contract:${id}:activated`,
-              eventName: 'contract.activated',
-              aggregateType: 'CONTRACT',
-              aggregateId: id,
-              payload: {
-                contractId: id,
-                tenantId: contract.tenantId,
-                unitId: contract.unitId,
-                handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
-                openingDate: readiness?.contract.proposal?.openingDate ?? null,
-              },
-            });
-          }
-          return contract;
-        });
+        }
 
-    if (status === ContractStatus.ACTIVE) {
-      if (before.status === ContractStatus.ACTIVE) {
-        await this.prisma.$transaction((tx) =>
-          this.outbox.enqueue(tx, {
+        if (status === ContractStatus.ACTIVE) {
+          // Idempotent by design: also re-run on a same-status call (e.g. a manual retry
+          // after a prior failure here), not just on the first DRAFT→ACTIVE transition —
+          // so "activate again" is a safe, effective way to recover a contract that ended
+          // up ACTIVE with an incomplete billing schedule under the old, non-atomic path.
+          await this.outbox.enqueue(tx, {
             eventKey: `contract:${id}:activated`,
             eventName: 'contract.activated',
             aggregateType: 'CONTRACT',
             aggregateId: id,
             payload: {
               contractId: id,
-              tenantId: updated.tenantId,
-              unitId: updated.unitId,
+              tenantId: contract.tenantId,
+              unitId: contract.unitId,
               handoverDate: readiness?.contract.proposal?.handoverDate ?? null,
               openingDate: readiness?.contract.proposal?.openingDate ?? null,
             },
-          }),
-        );
-      }
-      await this.billingScheduleService.buildScheduleForContract(id);
-    }
+          });
+          await this.billingScheduleService.buildScheduleForContract(id, tx);
+        }
 
-    return updated;
+        return contract;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+      if (status === ContractStatus.ACTIVE) {
+        this.logger.log(JSON.stringify({
+          event: 'contract.activation.completed',
+          contractId: id,
+          actorId: userId ?? null,
+          durationMs: Date.now() - startedAt,
+        }));
+      }
+      return result;
+    } catch (error: any) {
+      // Lost a concurrent-activation race: the winning transaction already moved the
+      // contract to `status`. Resolve to that outcome instead of surfacing a raw
+      // serialization error — same idempotent-retry pattern used in
+      // ProposalsService.createContractFromProposal for its P2002 case.
+      if (error?.code === 'P2034') {
+        const winner = await this.prisma.contract.findUnique({ where: { id } });
+        if (winner?.status === status) {
+          this.metrics.increment('duplicate_transition_blocked_total');
+          return winner;
+        }
+      }
+      if (status === ContractStatus.ACTIVE) {
+        this.metrics.increment('contract_activation_failure_total');
+        this.logger.warn(JSON.stringify({
+          event: 'contract.activation.failed',
+          contractId: id,
+          actorId: userId ?? null,
+          durationMs: Date.now() - startedAt,
+          error: error?.message ?? String(error),
+        }));
+      }
+      throw error;
+    }
   }
 
   /**
@@ -430,7 +509,7 @@ export class ContractsService {
     return { toExpiring: toExpiring.length, toExpired: toExpired.length };
   }
 
-  async getExpiring(days = 90, mallIds?: string[]) {
+  async getExpiring(days = 90, mallIds?: string[], leaseTermType?: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const cutoff = new Date();
@@ -441,6 +520,7 @@ export class ContractsService {
         isActive: true,
         status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
         endDate: { gte: today, lte: cutoff },
+        ...(leaseTermType ? { unit: { leaseTermType: leaseTermType as any } } : {}),
         ...(mallIds ? { OR: [
           { unit: { mallId: { in: mallIds } } },
           { unit: { floor: { mallId: { in: mallIds } } } },
@@ -448,7 +528,7 @@ export class ContractsService {
       },
       include: {
         tenant: { select: { id: true, brandName: true, contactEmail: true, contactPhone: true } },
-        unit: { select: { id: true, code: true, name: true } },
+        unit: { select: { id: true, code: true, name: true, leaseTermType: true } },
       },
       orderBy: { endDate: 'asc' },
     });

@@ -94,9 +94,9 @@
   },
   "revenueReceivables": {
     "subtitle": "Revenue & receivables detail — does not replace P&L report (no cost/OPEX data to offset).",
-    "totalBilled": "Total issued",
-    "totalCollected": "Collected",
-    "totalOutstanding": "Outstanding",
+    "totalBilled": "Total issued (VND)",
+    "totalCollected": "Collected (VND)",
+    "totalOutstanding": "Outstanding (VND)",
     "collectionRate": "Collection rate",
     "byMonth": "By month",
     "byType": "By invoice type",

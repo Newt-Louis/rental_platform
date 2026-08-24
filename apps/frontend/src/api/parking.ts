@@ -12,6 +12,8 @@ export const parkingApi = {
     api.get(`/parking/contracts/${id}`).then((r) => r.data),
   createContract: (data: any) =>
     api.post("/parking/contracts", data).then((r) => r.data),
+  updateContract: (id: string, data: any) =>
+    api.patch(`/parking/contracts/${id}`, data).then((r) => r.data),
   updateStatus: (id: string, status: string) =>
     api
       .patch(`/parking/contracts/${id}/status`, { status })
@@ -20,6 +22,8 @@ export const parkingApi = {
     api.post(`/parking/contracts/${id}/adjustments`, data).then((r) => r.data),
   generateStatement: (id: string, data: any) =>
     api.post(`/parking/contracts/${id}/statements`, data).then((r) => r.data),
+  previewStatement: (id: string, data: any) =>
+    api.post(`/parking/contracts/${id}/statements/preview`, data).then((r) => r.data),
   uploadDocument: (id: string, file: File, documentType = "CONTRACT") => {
     const form = new FormData();
     form.append("file", file);

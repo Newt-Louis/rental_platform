@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ContractStatus } from '@prisma/client';
 import { BillingService } from '../billing/billing.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { summarizeOccupancyByLeaseTerm, summarizeShortBookingPipeline } from '../../common/utils/lease-term-analytics';
 
 @Injectable()
 export class ReportsService {
@@ -12,9 +13,10 @@ export class ReportsService {
     private auditLogService: AuditLogService,
   ) {}
 
-  async occupancyReport(mallId?: string) {
+  async occupancyReport(mallId: string | undefined, mallIds: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (mallIds) where.mallId = { in: mallIds };
 
     const units = await this.prisma.unit.findMany({
       where,
@@ -23,6 +25,20 @@ export class ReportsService {
         tenant: { select: { brandName: true } },
       },
     });
+
+    const slotBookings = await this.prisma.slotBooking.findMany({
+      where: { slot: { unit: { ...where, leaseTermType: 'SHORT' } } },
+      select: {
+        status: true,
+        installationStartDatetime: true,
+        dismantlingEndDatetime: true,
+        startDatetime: true,
+        endDatetime: true,
+        totalAmount: true,
+        slot: { select: { id: true, unitId: true, area: true } },
+      },
+    });
+    const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
 
     const byStatus = units.reduce((acc, u) => {
       acc[u.status] = (acc[u.status] || 0) + 1;
@@ -38,27 +54,89 @@ export class ReportsService {
       return acc;
     }, {} as Record<string, any>);
 
-    return { byStatus, byFloor, total: units.length };
+    const buildSegment = (leaseTermType: 'LONG' | 'SHORT') => ({
+      ...occupancyByLeaseTerm[leaseTermType],
+      byStatus: units.filter((unit) => unit.leaseTermType === leaseTermType).reduce((acc, unit) => {
+        acc[unit.status] = (acc[unit.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+      byFloor: units.filter((unit) => unit.leaseTermType === leaseTermType).reduce((acc, unit) => {
+        const floor = unit.floor?.name ?? 'Unknown';
+        if (!acc[floor]) acc[floor] = { total: 0, occupied: 0, area: 0 };
+        acc[floor].total++;
+        acc[floor].area += unit.areaNLA;
+        if (unit.status === 'OCCUPIED') acc[floor].occupied++;
+        return acc;
+      }, {} as Record<string, { total: number; occupied: number; area: number }>),
+    });
+
+    return {
+      byStatus,
+      byFloor,
+      total: units.length,
+      byLeaseTerm: {
+        LONG: buildSegment('LONG'),
+        SHORT: { ...buildSegment('SHORT'), bookingStats: summarizeShortBookingPipeline(slotBookings) },
+      },
+    };
   }
 
-  async pipelineReport() {
+  async pipelineReport(mallIds: string[] | null) {
+    const leadWhere: any = { isActive: true };
+    if (mallIds) leadWhere.mallId = { in: mallIds };
+    const proposalWhere: any = { isActive: true };
+    if (mallIds) proposalWhere.unit = { mallId: { in: mallIds } };
+
     const leads = await this.prisma.lead.groupBy({
       by: ['status'],
-      where: { isActive: true },
+      where: leadWhere,
       _count: true,
     });
 
-    const proposals = await this.prisma.proposal.groupBy({
-      by: ['status'],
-      where: { isActive: true },
-      _count: true,
+    // CR-110 (INV-CUR-001 -- never sum different currencies): group by status AND
+    // rentCurrency so totalContractValue is never blindly summed across VND/USD/MMK
+    // proposals. _count is re-aggregated to a per-status total (currency-agnostic,
+    // safe to combine); the money sum stays bucketed per currency.
+    const proposalCurrencyGroups = await this.prisma.proposal.groupBy({
+      by: ['status', 'rentCurrency'],
+      where: proposalWhere,
+      _count: { _all: true },
       _sum: { totalContractValue: true },
     });
+    const proposalsByStatus = new Map<string, { status: string; _count: number; valueByCurrency: Record<string, number> }>();
+    for (const g of proposalCurrencyGroups) {
+      let row = proposalsByStatus.get(g.status);
+      if (!row) {
+        row = { status: g.status, _count: 0, valueByCurrency: {} };
+        proposalsByStatus.set(g.status, row);
+      }
+      row._count += g._count._all;
+      row.valueByCurrency[g.rentCurrency] = (row.valueByCurrency[g.rentCurrency] ?? 0) + (g._sum.totalContractValue ?? 0);
+    }
+    const proposals = Array.from(proposalsByStatus.values());
 
-    return { leads, proposals };
+    const leadRows = await this.prisma.lead.findMany({
+      where: leadWhere,
+      select: { status: true, leaseTermType: true },
+    });
+    const groupLeads = (leaseTermType: 'LONG' | 'SHORT') => Object.entries(
+      leadRows.filter((lead) => lead.leaseTermType === leaseTermType).reduce((acc, lead) => {
+        acc[lead.status] = (acc[lead.status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+    ).map(([status, count]) => ({ status, _count: count }));
+
+    return {
+      leads,
+      proposals,
+      byLeaseTerm: {
+        LONG: { leads: groupLeads('LONG'), proposals },
+        SHORT: { leads: groupLeads('SHORT'), proposals: [] },
+      },
+    };
   }
 
-  async revenueReport(params: { year?: number; month?: number }) {
+  async revenueReport(params: { year?: number; month?: number }, mallIds: string[] | null) {
     const year = params.year ?? new Date().getFullYear();
     const periods: string[] = [];
 
@@ -70,8 +148,13 @@ export class ReportsService {
       }
     }
 
+    // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): this report's totals are
+    // single VND-denominated numbers -- summing a USD/MMK invoice into them would silently
+    // blend currencies. Scope to VND, same convention as the dashboard's revenue KPIs.
+    const invoiceWhere: any = { isActive: true, period: { in: periods }, currencyCode: 'VND' };
+    if (mallIds) invoiceWhere.mallId = { in: mallIds };
     const invoices = await this.prisma.invoice.findMany({
-      where: { isActive: true, period: { in: periods } },
+      where: invoiceWhere,
       select: { period: true, totalAmount: true, status: true, vatAmount: true },
     });
 
@@ -88,17 +171,20 @@ export class ReportsService {
     return { year, byPeriod };
   }
 
-  async contractExpiryReport(params: { days?: number }) {
+  async contractExpiryReport(params: { days?: number }, mallIds: string[] | null) {
     const days = params.days ?? 180;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() + days);
 
+    const where: any = {
+      isActive: true,
+      status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
+      endDate: { lte: cutoff },
+    };
+    if (mallIds) where.unit = { mallId: { in: mallIds } };
+
     const contracts = await this.prisma.contract.findMany({
-      where: {
-        isActive: true,
-        status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING] },
-        endDate: { lte: cutoff },
-      },
+      where,
       include: {
         tenant: { select: { brandName: true, contactEmail: true, contactPhone: true } },
         unit: { select: { code: true, name: true, floor: { select: { name: true } } } },
@@ -112,9 +198,11 @@ export class ReportsService {
     }));
   }
 
-  async tenantSalesReport(params: { period: string }) {
+  async tenantSalesReport(params: { period: string }, mallIds: string[] | null) {
+    const where: any = { period: params.period };
+    if (mallIds) where.unit = { mallId: { in: mallIds } };
     const sales = await this.prisma.salesTurnover.findMany({
-      where: { period: params.period },
+      where,
       include: {
         tenant: { select: { brandName: true, category: true } },
         unit: { select: { code: true, areaNLA: true } },
@@ -133,11 +221,15 @@ export class ReportsService {
    * không thể tính lãi/lỗ thật mà không bịa số liệu. Đây là nửa doanh thu của P&L: phát hành vs
    * đã thu (loại trừ bút toán đã đảo) vs còn phải thu, theo loại hoá đơn và theo tháng.
    */
-  async revenueReceivablesReport(params: { year?: number }) {
+  async revenueReceivablesReport(params: { year?: number }, mallIds: string[] | null) {
     const year = params.year ?? new Date().getFullYear();
 
+    // Multi-currency: same VND-only scoping as revenueReport() above -- this report's
+    // totalBilled/totalCollected/byType/byPeriod are single VND figures.
+    const where: any = { isActive: true, period: { startsWith: `${year}-` }, currencyCode: 'VND' };
+    if (mallIds) where.mallId = { in: mallIds };
     const invoices = await this.prisma.invoice.findMany({
-      where: { isActive: true, period: { startsWith: `${year}-` } },
+      where,
       select: {
         period: true,
         type: true,
@@ -181,8 +273,8 @@ export class ReportsService {
   }
 
   /** Công nợ theo tuổi nợ — dùng lại đúng logic đối soát của Billing, không viết lại. */
-  async arAgingReport() {
-    return this.billingService.getArAging();
+  async arAgingReport(mallIds: string[] | null) {
+    return this.billingService.getArAging(mallIds ?? undefined);
   }
 
   /** Báo cáo tuân thủ tổng hợp từ Nhật ký hệ thống — ai sửa gì, tỷ lệ lỗi, theo loại đối tượng. */
@@ -210,16 +302,18 @@ export class ReportsService {
     };
   }
 
-  async exportCsv(type: string, from?: string, to?: string): Promise<string> {
+  async exportCsv(type: string, from: string | undefined, to: string | undefined, mallIds: string[] | null): Promise<string> {
     const fromDate = from ? new Date(from) : new Date(Date.now() - 90 * 86400000);
     const toDate = to ? new Date(to) : new Date();
 
     if (type === 'revenue') {
+      const where: any = {
+        isActive: true,
+        createdAt: { gte: fromDate, lte: toDate },
+      };
+      if (mallIds) where.mallId = { in: mallIds };
       const invoices = await this.prisma.invoice.findMany({
-        where: {
-          isActive: true,
-          createdAt: { gte: fromDate, lte: toDate },
-        },
+        where,
         include: {
           tenant: { select: { brandName: true } },
           contract: { select: { contractNumber: true } },
@@ -241,8 +335,10 @@ export class ReportsService {
     }
 
     if (type === 'occupancy') {
+      const occWhere: any = { isActive: true };
+      if (mallIds) occWhere.mallId = { in: mallIds };
       const units = await this.prisma.unit.findMany({
-        where: { isActive: true },
+        where: occWhere,
         include: {
           floor: { include: { mall: { select: { name: true } } } },
           zone: { select: { name: true } },
@@ -262,12 +358,14 @@ export class ReportsService {
     }
 
     if (type === 'expiry') {
+      const expiryWhere: any = {
+        isActive: true,
+        status: { in: ['ACTIVE', 'EXPIRING'] },
+        endDate: { gte: fromDate, lte: toDate },
+      };
+      if (mallIds) expiryWhere.unit = { mallId: { in: mallIds } };
       const contracts = await this.prisma.contract.findMany({
-        where: {
-          isActive: true,
-          status: { in: ['ACTIVE', 'EXPIRING'] },
-          endDate: { gte: fromDate, lte: toDate },
-        },
+        where: expiryWhere,
         include: {
           tenant: { select: { brandName: true } },
           unit: { select: { code: true } },

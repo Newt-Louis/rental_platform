@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -19,6 +20,10 @@ import {
   UpdateServiceContractStatusDto,
 } from './dto/service-contract.dto';
 import { ServiceContractsService } from './service-contracts.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 const VIEW_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.FINANCE, Role.LEGAL, Role.OPERATION];
 const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEGAL, Role.OPERATION];
@@ -26,6 +31,7 @@ const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.L
 @ApiTags('Service Contracts')
 @ApiBearerAuth('JWT-auth')
 @Roles(...VIEW_ROLES)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller('service-contracts')
 export class ServiceContractsController {
   constructor(private service: ServiceContractsService, private mallAccess: MallAccessService) {}
@@ -43,15 +49,22 @@ export class ServiceContractsController {
     return this.service.findAll(query, mallIds ?? undefined);
   }
 
+  @Get('export')
+  async exportExcel(@Query() query: any, @CurrentUser() user: any, @Res() res: Response) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    const buffer = await this.service.exportExcel(query, mallIds ?? undefined);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="ServiceContracts_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.send(buffer);
+  }
+
   @Get('summary/stats')
   async stats(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
     if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
     const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.stats(mallIds ?? undefined);
   }
-
-  @Get('tools/generate-number')
-  generateNumber(@Query('mallCode') mallCode?: string) { return { contractNumber: this.service.generateNumber(mallCode) }; }
 
   @Get('summary/alerts')
   async alerts(@Query('days') days: string, @Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {

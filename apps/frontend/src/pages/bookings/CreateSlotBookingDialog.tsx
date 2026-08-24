@@ -15,15 +15,23 @@ type CreateSlotForm = {
   clientType: 'lead' | 'customer';
   clientId: string;
   type: string;
+  installationStartDatetime: string;
+  installationEndDatetime: string;
   startDatetime: string;
   endDatetime: string;
+  dismantlingStartDatetime: string;
+  dismantlingEndDatetime: string;
   discountPct: string;
   notes: string;
 };
 
 const EMPTY_FORM: CreateSlotForm = {
   unitId: '', slotId: '', clientType: 'lead', clientId: '',
-  type: 'DAILY', startDatetime: '', endDatetime: '', discountPct: '0', notes: '',
+  type: 'DAILY',
+  installationStartDatetime: '', installationEndDatetime: '',
+  startDatetime: '', endDatetime: '',
+  dismantlingStartDatetime: '', dismantlingEndDatetime: '',
+  discountPct: '0', notes: '',
 };
 
 export function CreateSlotBookingDialog({ open, onClose, mallId }: {
@@ -44,7 +52,7 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
 
   const { data: unitsData } = useQuery({
     queryKey: ['units-for-slot', mallId],
-    queryFn: () => spacesApi.listUnits({ mallId: mallId ?? undefined, limit: 200 }),
+    queryFn: () => spacesApi.listUnits({ mallId: mallId ?? undefined, leaseTermType: 'SHORT', limit: 200 }),
     enabled: open,
   });
   const units: any[] = unitsData?.data ?? unitsData ?? [];
@@ -94,8 +102,12 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
       leadId: form.clientType === 'lead' ? form.clientId || undefined : undefined,
       customerId: form.clientType === 'customer' ? form.clientId || undefined : undefined,
       type: form.type,
+      installationStartDatetime: form.installationStartDatetime,
+      installationEndDatetime: form.installationEndDatetime,
       startDatetime: form.startDatetime,
       endDatetime: form.endDatetime,
+      dismantlingStartDatetime: form.dismantlingStartDatetime,
+      dismantlingEndDatetime: form.dismantlingEndDatetime,
       discountPct: Number(form.discountPct) || undefined,
       notes: form.notes || undefined,
     }),
@@ -110,7 +122,11 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     }),
   });
 
-  const canSubmit = form.slotId && form.startDatetime && form.endDatetime && !mutation.isPending;
+  const canSubmit = form.slotId
+    && form.installationStartDatetime && form.installationEndDatetime
+    && form.startDatetime && form.endDatetime
+    && form.dismantlingStartDatetime && form.dismantlingEndDatetime
+    && !mutation.isPending;
 
   const selectedSlot = slots.find((s) => s.id === form.slotId);
   const fmtM = (n?: number) => n != null ? new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫' : '—';
@@ -141,7 +157,7 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Lô thuê (Unit) *</label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng khu cho thuê ngắn hạn *</label>
               <div className="relative">
                 <select
                   value={form.unitId}
@@ -157,6 +173,11 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
                 </select>
                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
+              {units.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Chưa có mặt bằng thuộc khu cho thuê ngắn hạn tại Mall này.
+                </p>
+              )}
             </div>
 
             <div>
@@ -270,30 +291,53 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  {form.type === 'HOURLY' ? 'Giờ bắt đầu *' : 'Ngày bắt đầu *'}
-                </label>
-                <Input
-                  type={form.type === 'HOURLY' ? 'datetime-local' : 'date'}
-                  value={form.startDatetime}
-                  onChange={(e) => setField('startDatetime')(e.target.value)}
-                  className="h-9 text-sm"
-                />
+            {([
+              {
+                title: 'Thời gian lắp đặt',
+                startKey: 'installationStartDatetime' as const,
+                endKey: 'installationEndDatetime' as const,
+                tone: 'border-amber-100 bg-amber-50/60',
+              },
+              {
+                title: 'Thời gian thuê (dùng để tính giá)',
+                startKey: 'startDatetime' as const,
+                endKey: 'endDatetime' as const,
+                tone: 'border-violet-100 bg-violet-50/60',
+              },
+              {
+                title: 'Thời gian tháo dỡ',
+                startKey: 'dismantlingStartDatetime' as const,
+                endKey: 'dismantlingEndDatetime' as const,
+                tone: 'border-sky-100 bg-sky-50/60',
+              },
+            ]).map((phase) => (
+              <div key={phase.title} className={`rounded-lg border p-3 ${phase.tone}`}>
+                <div className="mb-2 text-xs font-semibold text-gray-700">{phase.title}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">Bắt đầu *</label>
+                    <Input
+                      type="datetime-local"
+                      value={form[phase.startKey]}
+                      onChange={(e) => setField(phase.startKey)(e.target.value)}
+                      className="h-9 text-sm bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">Kết thúc *</label>
+                    <Input
+                      type="datetime-local"
+                      value={form[phase.endKey]}
+                      onChange={(e) => setField(phase.endKey)(e.target.value)}
+                      className="h-9 text-sm bg-white"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  {form.type === 'HOURLY' ? 'Giờ kết thúc *' : 'Ngày kết thúc *'}
-                </label>
-                <Input
-                  type={form.type === 'HOURLY' ? 'datetime-local' : 'date'}
-                  value={form.endDatetime}
-                  onChange={(e) => setField('endDatetime')(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </div>
+            ))}
+            <p className="text-xs text-gray-500">
+              Lịch slot được giữ từ lúc bắt đầu lắp đặt đến khi hoàn tất tháo dỡ; giá chỉ tính theo thời gian thuê.
+            </p>
           </div>
 
           {/* ── STEP 4: Giá & chi tiết ── */}

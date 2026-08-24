@@ -5,9 +5,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
+
+// CR-101 Phase 1: descriptive only. Manages UserMallAccess grants themselves
+// (self-referential) -- appropriately restricted at the role layer.
 
 @ApiTags('Mall Access')
 @ApiBearerAuth('JWT-auth')
+@GlobalScope('Manages UserMallAccess grants themselves -- self-referential to the authorization system, restricted at the role layer')
 @Controller('mall-access')
 export class UserMallAccessController {
   constructor(private readonly service: UserMallAccessService) {}

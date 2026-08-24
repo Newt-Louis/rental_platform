@@ -53,10 +53,11 @@ export class ApprovalsService {
     ] };
   }
 
-  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string }) {
+  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string; leaseTermType?: string }) {
     const AND: any[] = [];
     if (query.floorId) AND.push({ proposal: { unit: { floorId: query.floorId } } });
     if (query.unitId) AND.push({ proposal: { unitId: query.unitId } });
+    if (query.leaseTermType) AND.push({ proposal: { unit: { leaseTermType: query.leaseTermType } } });
     if (query.search?.trim()) {
       const search = query.search.trim();
       AND.push({ OR: [
@@ -69,7 +70,7 @@ export class ApprovalsService {
     return AND.length ? { AND } : {};
   }
 
-  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string } = {}, mallIds?: string[]) {
+  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string; leaseTermType?: string } = {}, mallIds?: string[]) {
     const { page = 1, limit = 15 } = query;
 
     const where: any = {
@@ -90,7 +91,7 @@ export class ApprovalsService {
           include: {
             proposal: {
               include: {
-                unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true } } } },
+                unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true } } } },
                 tenant: { select: { id: true, brandName: true } },
               },
             },
@@ -109,9 +110,29 @@ export class ApprovalsService {
 
     const total = filtered.length;
     const skip = (Number(page) - 1) * Number(limit);
-    const data = filtered.slice(skip, skip + Number(limit));
+    const data = await this.attachPolicyReason(filtered.slice(skip, skip + Number(limit)));
 
     return { data, total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) };
+  }
+
+  /**
+   * FR-04 (docs/audit/04-UX-FRICTION-REPORT.md): the approvals queue only showed
+   * step/status, forcing the approver to open the Proposal separately to see *why*
+   * this step exists. `ApprovalStep` doesn't store which `ApprovalPolicyRule`
+   * produced it (steps are renumbered per-proposal in buildApprovalStepsFromRules,
+   * so `stepOrder` can't be mapped back to the rule table's own `stepOrder`) — the
+   * best available correlation without a schema change is `stepName` + `approverRole`,
+   * which is copied verbatim from the matching rule when the step is created. This
+   * surfaces the rule's own human-authored `name` as the "why" explanation.
+   */
+  private async attachPolicyReason<T extends { stepName: string; approverRole: string }>(steps: T[]) {
+    if (!steps.length) return steps;
+    const rules = await this.prisma.approvalPolicyRule.findMany({ where: { isActive: true } });
+    const byKey = new Map(rules.map((r) => [`${r.stepName}::${r.approverRole}`, r]));
+    return steps.map((step) => ({
+      ...step,
+      policyReason: byKey.get(`${step.stepName}::${step.approverRole}`)?.name ?? null,
+    }));
   }
 
   async getWorkflow(workflowId: string) {
@@ -309,7 +330,7 @@ export class ApprovalsService {
     return { message: 'Step rejected' };
   }
 
-  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string; floorId?: string; unitId?: string; search?: string }, mallIds?: string[]) {
+  async getHistory(userId: string, userRole: string, query: { page?: number; limit?: number; status?: string; floorId?: string; unitId?: string; search?: string; leaseTermType?: string }, mallIds?: string[]) {
     const { page = 1, limit = 25, status } = query;
     const skip = (page - 1) * +limit;
 
@@ -331,7 +352,7 @@ export class ApprovalsService {
               proposal: {
                 include: {
                   tenant: { select: { id: true, brandName: true } },
-                  unit: { select: { id: true, code: true, floor: { select: { name: true } } } },
+                  unit: { select: { id: true, code: true, leaseTermType: true, floor: { select: { name: true } } } },
                 },
               },
             },

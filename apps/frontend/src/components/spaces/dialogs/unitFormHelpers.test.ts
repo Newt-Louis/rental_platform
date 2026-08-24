@@ -17,7 +17,7 @@ const form = {
   baseRentPerSqm: '',
   camPerSqm: '',
   spaceType: '',
-  leaseTermType: '',
+  leaseTermType: 'LONG',
   tier: '',
   minFlexArea: '',
   maxFlexArea: '',
@@ -48,6 +48,8 @@ describe('buildUnitFormPayload', () => {
   });
 
   it('returns a clear validation message before sending an invalid form', () => {
+    expect(validateUnitFormValues({ ...form, leaseTermType: '' }, 'mall-1'))
+      .toBe('Vui lòng chọn khu cho thuê dài hạn hoặc khu cho thuê ngắn hạn.');
     expect(validateUnitFormValues({ ...form, areaGFA: '0' }, 'mall-1'))
       .toBe('Diện tích GFA phải là số lớn hơn 0.');
     expect(validateUnitFormValues({ ...form, isFlexibleArea: true, minFlexArea: '100', maxFlexArea: '50' }, 'mall-1'))

@@ -1,14 +1,14 @@
 import api from '@/lib/axios';
 export const serviceContractsApi = {
   list: (params?: Record<string, unknown>) => api.get('/service-contracts', { params }).then(r => r.data),
+  exportExcel: (params?: Record<string, unknown>) => api.get('/service-contracts/export', { params, responseType: 'blob' }).then(r => r.data),
   detail: (id: string) => api.get(`/service-contracts/${id}`).then(r => r.data),
   create: (data: Record<string, unknown>) => api.post('/service-contracts', data).then(r => r.data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/service-contracts/${id}`, data).then(r => r.data),
   updateStatus: (id: string, status: string) => api.patch(`/service-contracts/${id}/status`, { status }).then(r => r.data),
-  upload: (id: string, file: File, documentType = 'CONTRACT', paymentId?: string) => { const form = new FormData(); form.append('file', file); form.append('documentType', documentType); if (paymentId) form.append('paymentId', paymentId); return api.post(`/service-contracts/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data); },
+  upload: (id: string, file: File, documentType = 'CONTRACT', paymentId?: string) => { const form = new FormData(); form.append('file', file); form.append('documentType', documentType); if (paymentId) form.append('paymentId', paymentId); return api.post(`/service-contracts/${id}/documents`, form).then(r => r.data); },
   stats: (mallId?: string) => api.get('/service-contracts/summary/stats', { params: { mallId } }).then(r => r.data),
   alerts: (days = 30, mallId?: string) => api.get('/service-contracts/summary/alerts', { params: { days, mallId } }).then(r => r.data),
-  generateNumber: (mallCode?: string) => api.get('/service-contracts/tools/generate-number', { params: { mallCode } }).then(r => r.data),
   renew: (id: string, data: Record<string, unknown>) => api.post(`/service-contracts/${id}/renew`, data).then(r => r.data),
   createPayment: (id: string, data: Record<string, unknown>) => api.post(`/service-contracts/${id}/payments`, data).then(r => r.data),
   recurringPayments: (id: string, data: Record<string, unknown>) => api.post(`/service-contracts/${id}/payments/recurring`, data).then(r => r.data),

@@ -28,6 +28,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { StorageModule } from './storage/storage.module';
+import { FilesModule } from './files/files.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { BookingModule } from './modules/booking/booking.module';
@@ -42,6 +43,7 @@ import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
 import { PatrolModule } from "./modules/patrol/patrol.module";
 import { ParkingModule } from "./modules/parking/parking.module";
 import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
 
 @Module({
   imports: [
@@ -79,6 +81,7 @@ import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dash
     DashboardModule,
     NotificationsModule,
     StorageModule,
+    FilesModule,
     AnalyticsModule,
     AnnouncementsModule,
     BookingModule,
@@ -92,6 +95,7 @@ import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dash
     ParkingDashboardModule,
     PatrolModule,
     ParkingModule,
+    TelemetryModule,
   ],
   controllers: [HealthController],
   providers: [

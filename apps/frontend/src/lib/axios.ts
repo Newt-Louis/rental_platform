@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { reportClientError } from './telemetry';
 
 const api = axios.create({
   baseURL: (import.meta as any).env?.VITE_API_URL || '/api',
@@ -31,6 +32,14 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       window.location.href = '/login';
+    } else if (!error.response || error.response.status >= 500) {
+      // 4xx are expected user/validation errors, not reported. A missing
+      // response (network failure) or 5xx indicates a real backend/infra
+      // problem worth surfacing.
+      reportClientError({
+        message: `API ${error.config?.method?.toUpperCase() ?? ''} ${error.config?.url ?? ''} failed: ${error.message}`,
+        source: 'api-error',
+      });
     }
     return Promise.reject(error);
   }

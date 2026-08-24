@@ -4,9 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
-import {
-  STATUS_CONFIG, SPACE_TYPE_OPTIONS, TIER_OPTIONS, LEASE_TERM_OPTIONS,
-} from './spaces.constants';
+import { STATUS_CONFIG, SPACE_TYPE_OPTIONS, TIER_OPTIONS } from './spaces.constants';
 
 export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
   const [showFilters, setShowFilters] = useState(false);
@@ -22,7 +20,6 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
     categoryFilter, setCategoryFilter,
     spaceTypeFilter, setSpaceTypeFilter,
     tierFilter, setTierFilter,
-    leaseTermFilter, setLeaseTermFilter,
     hasAdvancedFilters,
     clearFilters,
   } = useSpacesFilters();
@@ -148,21 +145,6 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
                 <SelectContent>
                   <SelectItem value="ALL">Tất cả</SelectItem>
                   {TIER_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* GAP #3 */}
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Hình thức thuê</label>
-              <Select value={leaseTermFilter || 'ALL'} onValueChange={(value) => setLeaseTermFilter(value === 'ALL' ? '' : value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Tất cả" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Tất cả</SelectItem>
-                  {LEASE_TERM_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
                 </SelectContent>

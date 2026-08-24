@@ -8,6 +8,7 @@ import { Cron } from "@nestjs/schedule";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { StorageService } from "../../storage/storage.service";
+import { SchedulerLockService } from "../../common/services/scheduler-lock.service";
 
 const STATUSES = [
   "DRAFT",
@@ -17,11 +18,20 @@ const STATUSES = [
   "TERMINATED",
   "RENEWED",
 ];
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["ACTIVE", "TERMINATED"],
+  ACTIVE: ["SUSPENDED", "EXPIRED", "TERMINATED", "RENEWED"],
+  SUSPENDED: ["ACTIVE", "TERMINATED"],
+  EXPIRED: ["RENEWED"],
+  TERMINATED: [],
+  RENEWED: [],
+};
 @Injectable()
 export class ParkingService {
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private schedulerLock: SchedulerLockService,
   ) {}
   async contractMallId(id: string) {
     const x = await this.prisma.parkingCustomerContract.findUnique({
@@ -123,6 +133,7 @@ export class ParkingService {
           mallId: b.mallId,
           tenantId: b.tenantId,
           title: b.title.trim(),
+          contractType: b.contractType || "FIXED_QUOTA",
           status: b.status || "DRAFT",
           signedDate: b.signedDate ? new Date(b.signedDate) : undefined,
           startDate: new Date(b.startDate),
@@ -160,9 +171,22 @@ export class ParkingService {
     }
   }
   async updateContract(id: string, b: any) {
+    const current = await this.prisma.parkingCustomerContract.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException("Không tìm thấy hợp đồng bãi xe");
+    if (["EXPIRED", "TERMINATED", "RENEWED"].includes(current.status)) {
+      throw new BadRequestException("Hợp đồng đã kết thúc không thể chỉnh sửa");
+    }
+    const startDate = b.startDate ? new Date(b.startDate) : current.startDate;
+    const endDate = b.endDate ? new Date(b.endDate) : current.endDate;
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate < startDate) {
+      throw new BadRequestException("Ngày kết thúc phải sau ngày bắt đầu");
+    }
     const data: any = {};
+    if (b.contractType && b.contractType !== current.contractType && current.status !== "DRAFT")
+      throw new BadRequestException("Chỉ được đổi loại hợp đồng khi còn ở trạng thái nháp");
     for (const k of [
       "title",
+      "contractType",
       "signedDate",
       "startDate",
       "endDate",
@@ -170,17 +194,31 @@ export class ParkingService {
       "paymentTermDays",
       "depositAmount",
       "notes",
-    ])
-      if (k in b)
-        data[k] =
-          ["signedDate", "startDate", "endDate"].includes(k) && b[k]
-            ? new Date(b[k])
-            : b[k];
+    ]) {
+      if (!(k in b)) continue;
+      if (["signedDate", "startDate", "endDate"].includes(k)) {
+        data[k] = b[k] ? new Date(b[k]) : null;
+      } else if (k === "billingDay") {
+        const value = Number(b[k]);
+        if (!Number.isInteger(value) || value < 1 || value > 28) throw new BadRequestException("Ngày lập phí phải từ 1 đến 28");
+        data[k] = value;
+      } else if (k === "paymentTermDays" || k === "depositAmount") {
+        const value = Number(b[k]);
+        if (!Number.isFinite(value) || value < 0) throw new BadRequestException(`${k} không hợp lệ`);
+        data[k] = value;
+      } else data[k] = b[k];
+    }
     return this.prisma.parkingCustomerContract.update({ where: { id }, data });
   }
-  updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string) {
     if (!STATUSES.includes(status))
       throw new BadRequestException("Trạng thái hợp đồng không hợp lệ");
+    const contract = await this.prisma.parkingCustomerContract.findUnique({ where: { id }, select: { status: true } });
+    if (!contract) throw new NotFoundException("Không tìm thấy hợp đồng bãi xe");
+    if (contract.status === status) return this.prisma.parkingCustomerContract.findUnique({ where: { id } });
+    if (!(STATUS_TRANSITIONS[contract.status] || []).includes(status)) {
+      throw new BadRequestException(`Không thể chuyển trạng thái từ ${contract.status} sang ${status}`);
+    }
     return this.prisma.parkingCustomerContract.update({
       where: { id },
       data: { status },
@@ -193,8 +231,20 @@ export class ParkingService {
       );
     if (!current)
       throw new BadRequestException("Không tìm thấy biểu phí loại xe");
-    const effectiveDate = new Date(b.effectiveDate || Date.now()),
-      newQuantity = Math.max(0, Number(b.newQuantity) || 0);
+    if (contract.status !== "ACTIVE") throw new BadRequestException("Chỉ điều chỉnh được hợp đồng đang hiệu lực");
+    const effectiveDate = new Date(b.effectiveDate || Date.now());
+    const newQuantity = Number(b.newQuantity);
+    const unitPrice = Number(b.unitPrice ?? current.unitPrice);
+    const excessUnitPrice = Number(b.excessUnitPrice ?? current.excessUnitPrice);
+    if (Number.isNaN(effectiveDate.getTime()) || effectiveDate < contract.startDate || effectiveDate > contract.endDate) {
+      throw new BadRequestException("Ngày hiệu lực điều chỉnh nằm ngoài thời hạn hợp đồng");
+    }
+    if (effectiveDate <= current.effectiveFrom) throw new BadRequestException("Ngày hiệu lực mới phải sau ngày hiệu lực hiện tại");
+    if (!Number.isInteger(newQuantity) || newQuantity < 0) throw new BadRequestException("Số lượng đăng ký phải là số nguyên không âm");
+    if (!Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(excessUnitPrice) || excessUnitPrice < 0) {
+      throw new BadRequestException("Đơn giá không hợp lệ");
+    }
+    if (!b.reason?.trim()) throw new BadRequestException("Vui lòng nhập lý do điều chỉnh");
     return this.prisma.$transaction(async (tx) => {
       await tx.parkingContractRate.update({
         where: { id: current.id },
@@ -205,8 +255,8 @@ export class ParkingService {
           contractId,
           vehicleType: current.vehicleType,
           registeredQuantity: newQuantity,
-          unitPrice: Number(b.unitPrice ?? current.unitPrice),
-          excessUnitPrice: Number(b.excessUnitPrice ?? current.excessUnitPrice),
+          unitPrice,
+          excessUnitPrice,
           effectiveFrom: effectiveDate,
         },
       });
@@ -217,7 +267,7 @@ export class ParkingService {
           previousQuantity: current.registeredQuantity,
           newQuantity,
           effectiveDate,
-          reason: b.reason || "Điều chỉnh số lượng đăng ký",
+          reason: b.reason.trim(),
           createdById: userId,
         },
       });
@@ -232,13 +282,17 @@ export class ParkingService {
       end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
     return { start, end };
   }
-  async generateStatement(
+  async previewStatement(
     contractId: string,
     period: string,
     actuals?: Record<string, number>,
+    adjustment = 0,
+    notes?: string,
   ) {
     const c = await this.contract(contractId),
       { start, end } = this.periodDates(period);
+    if (c.status !== "ACTIVE")
+      throw new BadRequestException("Chỉ tạo bảng kê cho hợp đồng đang hiệu lực");
     if (start > c.endDate || end < c.startDate)
       throw new BadRequestException("Kỳ nằm ngoài thời hạn hợp đồng");
     const rates = c.rates
@@ -251,44 +305,88 @@ export class ParkingService {
       );
     if (!rates.length)
       throw new BadRequestException("Không có biểu phí hiệu lực trong kỳ");
+
+    const isActual = c.contractType === "PRINCIPLE_ACTUAL";
     const lines = rates.map((r) => {
-        const actual = Math.max(
-            0,
-            Number(actuals?.[r.vehicleType] ?? r.registeredQuantity),
-          ),
-          excess = Math.max(0, actual - r.registeredQuantity),
-          base = r.registeredQuantity * r.unitPrice,
-          excessAmount = excess * r.excessUnitPrice;
-        return {
-          vehicleType: r.vehicleType,
-          registeredQuantity: r.registeredQuantity,
-          actualQuantity: actual,
-          excessQuantity: excess,
-          unitPrice: r.unitPrice,
-          excessUnitPrice: r.excessUnitPrice,
-          baseAmount: base,
-          excessAmount,
-          totalAmount: base + excessAmount,
-        };
-      }),
-      subtotal = lines.reduce((s, x) => s + x.totalAmount, 0),
-      due = new Date(end);
-    due.setUTCDate(due.getUTCDate() + c.paymentTermDays);
-    return this.prisma.parkingMonthlyStatement.upsert({
+      const rawActual = actuals?.[r.vehicleType] ?? (isActual ? 0 : r.registeredQuantity);
+      const actual = Number(rawActual);
+      if (!Number.isInteger(actual) || actual < 0)
+        throw new BadRequestException(`Số lượng thực tế ${r.vehicleType} phải là số nguyên không âm`);
+      const excess = isActual ? 0 : Math.max(0, actual - r.registeredQuantity);
+      const base = isActual
+        ? actual * r.unitPrice
+        : r.registeredQuantity * r.unitPrice;
+      const excessAmount = isActual ? 0 : excess * r.excessUnitPrice;
+      return {
+        vehicleType: r.vehicleType,
+        registeredQuantity: r.registeredQuantity,
+        actualQuantity: actual,
+        excessQuantity: excess,
+        unitPrice: r.unitPrice,
+        excessUnitPrice: r.excessUnitPrice,
+        baseAmount: base,
+        excessAmount,
+        totalAmount: base + excessAmount,
+      };
+    });
+    const subtotal = lines.reduce((sum, line) => sum + line.totalAmount, 0);
+    const adjustmentValue = Number(adjustment || 0);
+    if (!Number.isFinite(adjustmentValue) || subtotal + adjustmentValue < 0)
+      throw new BadRequestException("Giá trị điều chỉnh không hợp lệ");
+    const dueDate = new Date(end);
+    dueDate.setUTCDate(dueDate.getUTCDate() + c.paymentTermDays);
+    const existingStatement = await this.prisma.parkingMonthlyStatement.findUnique({
       where: { contractId_period: { contractId, period } },
-      create: {
+      select: { id: true, status: true, reconciliationStatus: true },
+    });
+    return {
+      contractId,
+      contractType: c.contractType,
+      period,
+      periodStart: start,
+      periodEnd: end,
+      dueDate,
+      subtotal,
+      adjustment: adjustmentValue,
+      totalAmount: subtotal + adjustmentValue,
+      notes,
+      lines,
+      existingStatement,
+    };
+  }
+  async generateStatement(
+    contractId: string,
+    period: string,
+    actuals?: Record<string, number>,
+    adjustment = 0,
+    notes?: string,
+  ) {
+    const preview = await this.previewStatement(
+      contractId, period, actuals, adjustment, notes,
+    );
+    if (preview.existingStatement)
+      throw new ConflictException("Công nợ kỳ này đã được tạo; vui lòng điều chỉnh tại danh sách công nợ");
+    try {
+      return await this.prisma.parkingMonthlyStatement.create({
+        data: {
         contractId,
         period,
-        periodStart: start,
-        periodEnd: end,
-        dueDate: due,
-        subtotal,
-        totalAmount: subtotal,
-        lines: { create: lines },
-      },
-      update: {},
-      include: { lines: true },
-    });
+        periodStart: preview.periodStart,
+        periodEnd: preview.periodEnd,
+        dueDate: preview.dueDate,
+        subtotal: preview.subtotal,
+        adjustment: preview.adjustment,
+        totalAmount: preview.totalAmount,
+        notes: preview.notes,
+        lines: { create: preview.lines },
+        },
+        include: { lines: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
+        throw new ConflictException("Công nợ kỳ này đã được tạo");
+      throw error;
+    }
   }
   statements(mallIds?: string[], q?: any) {
     return this.prisma.parkingMonthlyStatement.findMany({
@@ -309,6 +407,7 @@ export class ParkingService {
           include: {
             tenant: { select: { id: true, brandName: true } },
             mall: { select: { name: true } },
+            rates: { where: { effectiveTo: null }, orderBy: { vehicleType: "asc" } },
           },
         },
         lines: true,
@@ -326,21 +425,25 @@ export class ParkingService {
   ) {
     const s = await this.prisma.parkingMonthlyStatement.findUnique({
       where: { id },
-      include: { lines: true },
+      include: { lines: true, contract: { select: { contractType: true } } },
     });
     if (!s) throw new NotFoundException("Không tìm thấy kỳ công nợ");
     if (s.status === "PAID")
       throw new BadRequestException("Kỳ đã thanh toán không thể điều chỉnh");
+    if (s.paidAmount > 0)
+      throw new BadRequestException("Kỳ đã phát sinh thanh toán không thể điều chỉnh số tiền");
+    if (["MATCHED", "TRANSFERRED_TO_BILLING"].includes(s.reconciliationStatus))
+      throw new BadRequestException("Bảng kê đã đối soát hoặc chuyển Billing không thể điều chỉnh");
     return this.prisma.$transaction(async (tx) => {
       let subtotal = 0;
       for (const line of s.lines) {
-        const actual = Math.max(
-            0,
-            Number(actuals?.[line.vehicleType] ?? line.actualQuantity),
-          ),
-          excess = Math.max(0, actual - line.registeredQuantity),
-          base = line.registeredQuantity * line.unitPrice,
-          excessAmount = excess * line.excessUnitPrice,
+        const actual = Number(actuals?.[line.vehicleType] ?? line.actualQuantity);
+        if (!Number.isInteger(actual) || actual < 0)
+          throw new BadRequestException(`Số lượng thực tế ${line.vehicleType} phải là số nguyên không âm`);
+        const isActual = s.contract.contractType === "PRINCIPLE_ACTUAL",
+          excess = isActual ? 0 : Math.max(0, actual - line.registeredQuantity),
+          base = isActual ? actual * line.unitPrice : line.registeredQuantity * line.unitPrice,
+          excessAmount = isActual ? 0 : excess * line.excessUnitPrice,
           total = base + excessAmount;
         subtotal += total;
         await tx.parkingMonthlyLine.update({
@@ -354,12 +457,15 @@ export class ParkingService {
           },
         });
       }
+      const adjustmentValue = Number(adjustment) || 0;
+      if (!Number.isFinite(adjustmentValue) || subtotal + adjustmentValue < 0)
+        throw new BadRequestException("Giá trị điều chỉnh không hợp lệ");
       return tx.parkingMonthlyStatement.update({
         where: { id },
         data: {
           subtotal,
-          adjustment: Number(adjustment) || 0,
-          totalAmount: subtotal + (Number(adjustment) || 0),
+          adjustment: adjustmentValue,
+          totalAmount: subtotal + adjustmentValue,
           notes,
           reconciliationStatus: "PENDING",
         },
@@ -367,23 +473,32 @@ export class ParkingService {
       });
     });
   }
-  reconcile(id: string, status: string) {
+  async reconcile(id: string, status: string) {
     if (!["PENDING", "MATCHED", "DISPUTED"].includes(status))
       throw new BadRequestException("Trạng thái đối soát không hợp lệ");
+    const statement = await this.prisma.parkingMonthlyStatement.findUnique({ where: { id } });
+    if (!statement) throw new NotFoundException("Không tìm thấy kỳ công nợ");
+    if (statement.reconciliationStatus === "TRANSFERRED_TO_BILLING")
+      throw new BadRequestException("Bảng kê đã chuyển Billing không thể thay đổi đối soát");
     return this.prisma.parkingMonthlyStatement.update({
       where: { id },
       data: { reconciliationStatus: status },
     });
   }
   async addPayment(id: string, b: any, userId: string) {
-    const s = await this.prisma.parkingMonthlyStatement.findUnique({
-      where: { id },
-    });
-    if (!s) throw new NotFoundException("Không tìm thấy kỳ công nợ");
     const amount = Number(b.amount);
     if (!amount || amount <= 0)
       throw new BadRequestException("Số tiền thanh toán phải lớn hơn 0");
+    if (b.paidAt && Number.isNaN(new Date(b.paidAt).getTime()))
+      throw new BadRequestException("Ngày thanh toán không hợp lệ");
     return this.prisma.$transaction(async (tx) => {
+      const s = await tx.parkingMonthlyStatement.findUnique({ where: { id } });
+      if (!s) throw new NotFoundException("Không tìm thấy kỳ công nợ");
+      if (s.reconciliationStatus === "TRANSFERRED_TO_BILLING")
+        throw new BadRequestException("Bảng kê đã chuyển Billing; vui lòng ghi nhận thanh toán tại Billing");
+      if (s.status === "PAID") throw new BadRequestException("Bảng kê đã thanh toán đủ");
+      const remaining = Math.max(0, s.totalAmount - s.paidAmount);
+      if (amount > remaining) throw new BadRequestException("Số tiền thanh toán vượt quá công nợ còn lại");
       const p = await tx.parkingDebtPayment.create({
           data: {
             statementId: id,
@@ -403,7 +518,7 @@ export class ParkingService {
         data: { paidAmount: paid, status },
       });
       return p;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
   async uploadDocument(
     id: string,
@@ -412,6 +527,15 @@ export class ParkingService {
     userId: string,
   ) {
     if (!file) throw new BadRequestException("Vui lòng chọn file hợp đồng");
+    const allowed = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowed.includes(file.mimetype))
+      throw new BadRequestException("Chỉ hỗ trợ PDF, Word, JPG hoặc PNG");
     const saved = await this.storage.saveFile(file, `parking-contracts/${id}`);
     return this.prisma.parkingContractDocument.create({
       data: {
@@ -602,11 +726,21 @@ export class ParkingService {
     timeZone: "Asia/Ho_Chi_Minh",
   })
   async generateDueStatements() {
-    const now = new Date(),
+    return this.schedulerLock.runExclusive("parking-contract-billing", 14_400_000, () => this.generateDueStatementsUnlocked());
+  }
+
+  private async generateDueStatementsUnlocked() {
+    const now = new Date();
+    await this.prisma.parkingCustomerContract.updateMany({
+      where: { status: "ACTIVE", endDate: { lt: now } },
+      data: { status: "EXPIRED" },
+    });
+    const
       period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
       contracts = await this.prisma.parkingCustomerContract.findMany({
         where: {
           status: "ACTIVE",
+          contractType: "FIXED_QUOTA",
           startDate: { lte: now },
           endDate: { gte: now },
           billingDay: { lte: now.getDate() },

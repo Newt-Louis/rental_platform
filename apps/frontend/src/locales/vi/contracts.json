@@ -57,7 +57,23 @@
     "documents": "Tài liệu",
     "daysRemaining": "{{count}} ngày"
   },
-  "empty": "Không có hợp đồng nào",
+  "handoff": {
+    "fitoutStarted": "Fitout đã được khởi tạo",
+    "fitoutNotStarted": "Fitout chưa được khởi tạo",
+    "viewFitout": "Xem Fitout",
+    "billingScheduled": "Đã có lịch thu phí",
+    "billingNotScheduled": "Chưa có lịch thu phí",
+    "viewBilling": "Xem Billing"
+  },
+  "empty": "Chưa có hợp đồng nào",
+  "emptyNoData": {
+    "subtitle": "Hợp đồng được tạo tự động khi một Đề xuất được duyệt. Hãy bắt đầu từ Đề xuất.",
+    "cta": "Đi tới Đề xuất"
+  },
+  "emptyFiltered": {
+    "title": "Không có hợp đồng phù hợp bộ lọc",
+    "subtitle": "Hãy thay đổi từ khóa hoặc bộ lọc."
+  },
   "total": "{{count}} hợp đồng",
   "pagination": {
     "prev": "Trước",
@@ -104,6 +120,7 @@
       "duration": "Thời hạn",
       "durationMonths": "{{count}} tháng",
       "perMonth": " ₫/tháng",
+      "perMonthSuffix": "/tháng",
       "reason": "Lý do",
       "initiatedBy": "Khởi tạo bởi",
       "initiatedByThiso": "THISO (BQL)",
@@ -183,8 +200,8 @@
       "RENEWAL": "Tái ký / gia hạn mới",
       "OTHER": "Khác"
     },
-    "newRentLabel": "Tiền thuê mới (VND/tháng)",
-    "newCamLabel": "Phí CAM mới (VND/tháng)",
+    "newRentLabel": "Tiền thuê mới ({{currency}}/tháng)",
+    "newCamLabel": "Phí CAM mới ({{currency}}/tháng)",
     "newRentFreeLabel": "Số tháng miễn phí thuê mới",
     "newEndDateLabel": "Ngày kết thúc mới",
     "effectiveDateLabel": "Ngày hiệu lực",

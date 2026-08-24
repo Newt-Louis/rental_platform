@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import i18n from '@/lib/i18n';
+import { reportClientError } from '@/lib/telemetry';
 
 interface Props {
   children: ReactNode;
@@ -19,6 +20,11 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Unhandled application error', error, info);
+    reportClientError({
+      message: error.message,
+      stack: error.stack,
+      source: 'error-boundary',
+    });
   }
 
   private reload = () => {

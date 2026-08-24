@@ -1,9 +1,10 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import i18n from '@/lib/i18n';
 import BookingsPage, {
   countSlotBookingStatuses,
   countUnitBookingStatuses,
@@ -11,6 +12,16 @@ import BookingsPage, {
   groupSlotBookings,
   groupUnitBookings,
 } from './BookingsPage';
+
+// This file's rendering assertions expect real Vietnamese UI text (e.g. 'Quản
+// lý Booking'), not raw i18n keys — react-i18next isn't initialized by the
+// shared test setup (apps/frontend/src/test/setup.ts) at all, and even when
+// initialized, jsdom's LanguageDetector resolves to English by default, not
+// the app's Vietnamese fallback. Scoped to this file only (not the shared
+// setup) — see docs/reliability/TEST_BASELINE_REMEDIATION.md for why a
+// global fix was tried and reverted (it broke other tests that correctly
+// assert against un-resolved i18n keys).
+beforeAll(() => i18n.changeLanguage('vi'));
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +40,14 @@ vi.mock('@/api', () => ({
     reinstate: (...args: any[]) => mockReinstate(...args),
     softDelete: (...args: any[]) => mockSoftDelete(...args),
     cancel: (...args: any[]) => mockCancelBooking(...args),
+    // Test defect fix (docs/reliability/TEST_BASELINE_REMEDIATION.md):
+    // BookingsPage queries bookingApi.stats() for the header stat tiles —
+    // this mock never included it, so every render hit a real TypeError
+    // ("bookingApi.stats is not a function"), which React Query surfaced as
+    // a query error ("Không thể tải thống kê booking"). That error banner,
+    // not any of the actual assertions below, was masking/breaking several
+    // of this file's tests.
+    stats: vi.fn().mockResolvedValue({ total: 0, active: 0, pending: 0, expiringSoon: 0 }),
   },
   slotsApi: {
     listAllBookings: vi.fn().mockResolvedValue([
@@ -238,12 +257,16 @@ describe('BookingsPage — render', () => {
 
   it('shows page heading', () => {
     renderPage();
-    expect(screen.getByText('Quản lý Booking')).toBeInTheDocument();
+    // Test defect fix (docs/reliability/TEST_BASELINE_REMEDIATION.md): page
+    // copy was reworded ("Quản lý Booking" → "Quản lý đặt chỗ",
+    // locales/vi/bookings.json `page.title`) without this assertion being
+    // updated.
+    expect(screen.getByText('Quản lý đặt chỗ')).toBeInTheDocument();
   });
 
   it('shows sub-heading description', () => {
     renderPage();
-    expect(screen.getByText(/Theo dõi đặt chỗ lô thuê/)).toBeInTheDocument();
+    expect(screen.getByText(/Theo dõi giữ chỗ mặt bằng dài hạn/)).toBeInTheDocument();
   });
 
   it('shows unit booking rows after loading', async () => {

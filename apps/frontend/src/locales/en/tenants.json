@@ -89,7 +89,30 @@
     "granted": "Granted",
     "notGranted": "Not granted",
     "grantedNote": "To grant login access, go to Admin → Accounts, create an account with the \"Tenant\" role and link it to this tenant.",
-    "notGrantedNote": "Enable Portal access in Edit, then create a login account in Admin → Accounts."
+    "notGrantedNote": "This tenant has no Portal account. New tenants receive one automatically.",
+    "loginEmail": "Login email",
+    "accountStatus": "Account status",
+    "active": "Active",
+    "locked": "Locked",
+    "resetPassword": "Send password reset link",
+    "setPassword": "Set password",
+    "sending": "Sending...",
+    "resetSuccess": "Previous password invalidated",
+    "invitationSent": "Activation link sent to {{email}}",
+    "invitationNotSent": "Email could not be sent to {{email}}. An administrator can use Set password.",
+    "setPasswordTitle": "Set Tenant Portal password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "passwordRule": "Password must contain at least 8 characters.",
+    "savePassword": "Save password",
+    "passwordUpdated": "Portal password updated",
+    "passwordMin": "Password must contain at least 8 characters",
+    "passwordMismatch": "Passwords do not match",
+    "actionFailed": "Could not update the Portal account",
+    "createAccount": "Create Portal account",
+    "creating": "Creating...",
+    "accountCreated": "Portal account created",
+    "emailRequiredForLegacy": "Update the contact email before creating an account."
   },
   "form": {
     "addTitle": "Add new tenant",
@@ -107,7 +130,9 @@
     "contactPhone": "Phone",
     "address": "Address",
     "portalAccess": "Tenant has Tenant Portal access",
-    "portalNote": "To grant actual login, go to Admin → Accounts, create an account with \"Tenant\" role and link to this tenant.",
+    "portalNote": "The Portal account is managed directly from the tenant profile.",
+    "portalAutoTitle": "Create Tenant Portal account automatically",
+    "portalAutoNote": "The contact email becomes the login email. The system creates the account and emails a link for the tenant to set a password.",
     "saving": "Saving...",
     "update": "Update",
     "create": "Create tenant",
@@ -143,6 +168,7 @@
     "emailInvalid": "Invalid email format",
     "phoneInvalid": "Invalid phone (e.g. 0912345678)",
     "contactNameMaxLength": "Maximum 100 characters",
-    "addressMaxLength": "Maximum 500 characters"
+    "addressMaxLength": "Maximum 500 characters",
+    "portalEmailRequired": "Email is required to create the Portal account"
   }
 }

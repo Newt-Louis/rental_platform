@@ -1,3 +1,5 @@
+import type { CurrencyCode } from '@/lib/currency';
+export type { CurrencyCode };
 export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
 export type UnitStatus = 'VACANT' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
@@ -237,6 +239,7 @@ export interface UnitBooking {
   requestedArea?: number;
   requestedTerm?: number;
   expectedRent?: number;
+  currencyCode?: CurrencyCode;
   proposedRentPerSqm?: number;
   proposedCamPerSqm?: number;
   pricingSnapshot?: Record<string, unknown>;
@@ -328,6 +331,7 @@ export interface Lead {
   source: string;
   status: LeadStatus;
   priority: LeadPriority;
+  leaseTermType: 'LONG' | 'SHORT';
   assignedTo?: User & { avatar?: string };
   customer?: { id: string; customerCode: string; companyName: string };
   customerId?: string;
@@ -415,7 +419,7 @@ export interface Proposal {
   businessModel?: string;
   serviceFeeSqm: number;
   businessSupportFeeSqm: number;
-  rentCurrency: string;
+  rentCurrency: CurrencyCode;
   fitoutDays: number;
   handoverDate?: string;
   openingDate?: string;
@@ -447,6 +451,7 @@ export interface Contract {
   rent: number;
   cam: number;
   deposit: number;
+  currencyCode: CurrencyCode;
   // GAP #41
   depositLease?: number;
   depositFitout: number;
@@ -471,16 +476,24 @@ export interface Invoice {
   billingParty?: { id: string; name: string; taxCode?: string };
   sourceType?: string;
   sourceId?: string;
+  counterpartyName?: string;
+  counterpartyTaxCode?: string;
   period: string;
   type: string;
   status: InvoiceStatus;
   totalAmount: number;
+  currencyCode?: CurrencyCode;
   dueDate: string;
   issuedAt?: string;
   paidAt?: string;
   totalPaid?: number;
   balance?: number;
   daysOverdue?: number;
+  sourceContractNumber?: string;
+  sourceContractType?: string;
+  sourceStatus?: string;
+  sourcePaidAmount?: number;
+  sourceTotalAmount?: number;
 }
 
 export interface Ticket {
@@ -575,6 +588,7 @@ export interface ArAgingRow {
   tenant?: Tenant;
   billingParty?: { id: string; name: string; taxCode?: string };
   counterpartyName?: string;
+  currencyCode?: CurrencyCode;
   current: number;
   days30: number;
   days60: number;

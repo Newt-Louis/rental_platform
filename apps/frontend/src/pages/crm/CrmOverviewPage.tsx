@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
 import { AlertTriangle, ArrowRight, Bell, Clock, Compass, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
+import { formatMoney, formatMoneyCompact } from '@/lib/currency';
 
 const PRIORITY_CONFIG: Record<string, { className: string }> = {
   HOT: { className: 'bg-red-100 text-red-700' },
@@ -19,8 +20,15 @@ const PRIORITY_CONFIG: Record<string, { className: string }> = {
   COLD: { className: 'bg-gray-100 text-gray-600' },
 };
 
+// Money Domain Consolidation: totalPipelineValue is derived from Lead.expectedRent,
+// which has no currency field on the schema at all (currency-less by design, not
+// a mixing bug) -- VND is the platform's implicit unit for this field, made
+// explicit here per the KPI-tile disclosure rule.
 function formatCompactVnd(value: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  return formatMoneyCompact(value, 'VND');
+}
+function formatFullVnd(value: number) {
+  return formatMoney(value, 'VND');
 }
 
 function daysSince(value?: string | null) {
@@ -57,7 +65,7 @@ export default function CrmOverviewPage() {
   const kpis = [
     { label: t('overview.kpi.activeLeads'), value: summary.totalActive ?? 0, icon: Target, tone: 'text-blue-700 bg-blue-50' },
     { label: t('overview.kpi.newThisMonth'), value: summary.newThisMonth ?? 0, icon: TrendingUp, tone: 'text-violet-700 bg-violet-50' },
-    { label: t('overview.kpi.pipelineValue'), value: `${formatCompactVnd(summary.totalPipelineValue ?? 0)} ₫`, icon: Flame, tone: 'text-amber-700 bg-amber-50' },
+    { label: t('overview.kpi.pipelineValue'), value: formatCompactVnd(summary.totalPipelineValue ?? 0), valueTitle: formatFullVnd(summary.totalPipelineValue ?? 0), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
     { label: t('overview.kpi.winRate'), value: `${(stats.conversionRates?.overallWinRate ?? 0).toFixed(1)}%`, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
     { label: t('overview.kpi.todayTasks'), value: overdue.length + dueToday.length, icon: Bell, tone: 'text-red-700 bg-red-50' },
   ];
@@ -104,11 +112,11 @@ export default function CrmOverviewPage() {
         loading={<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}</div>}
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {kpis.map(({ label, value, icon: Icon, tone }) => (
+          {kpis.map(({ label, value, valueTitle, icon: Icon, tone }) => (
             <Card key={label} className="shadow-none">
               <CardContent className="flex items-center gap-3 p-4">
                 <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></div>
-                <div><div className="text-xl font-bold text-gray-900">{value}</div><div className="text-xs text-gray-500">{label}</div></div>
+                <div><div className="text-xl font-bold text-gray-900" title={valueTitle}>{value}</div><div className="text-xs text-gray-500">{label}</div></div>
               </CardContent>
             </Card>
           ))}

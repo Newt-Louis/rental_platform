@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { bookingApi, crmApi, slotsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,18 +13,26 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AsyncState } from '@/components/ui/async-state';
+import { formatMoney, formatMoneyCompact } from '@/lib/currency';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Money Domain Consolidation: this page's proposal/slot revenue aggregates are
+// computed VND-only server-side (same pattern as crm.service.ts's VND-scoped
+// proposal value groupBy), so 'VND' is passed explicitly, not inferred.
 function fmtMoney(n?: number | null) {
   if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ₫';
+  return formatMoneyCompact(n, 'VND');
+}
+function fmtMoneyFullVnd(n?: number | null) {
+  if (!n) return '—';
+  return formatMoney(n, 'VND');
 }
 
 // ─── StatCard ─────────────────────────────────────────────────────────────────
 
-function StatCard({ title, value, sub, icon: Icon, color = 'blue', badge }: {
-  title: string; value: string | number; sub?: string;
+function StatCard({ title, value, valueTitle, sub, icon: Icon, color = 'blue', badge }: {
+  title: string; value: string | number; valueTitle?: string; sub?: string;
   icon: React.ElementType; color?: string; badge?: string;
 }) {
   const colorMap: Record<string, string> = {
@@ -40,7 +49,7 @@ function StatCard({ title, value, sub, icon: Icon, color = 'blue', badge }: {
         <div className="flex items-start justify-between">
           <div>
             <p className="text-sm text-gray-500">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <p className="text-2xl font-bold mt-1" title={valueTitle}>{value}</p>
             {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
           </div>
           <div className={`p-2.5 rounded-lg ${colorMap[color]}`}><Icon size={18} /></div>
@@ -64,6 +73,7 @@ function SectionHeading({ icon: Icon, children }: { icon: React.ElementType; chi
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SalesPipelineStatsPage() {
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const { selectedMallId } = useMallStore();
 
   const { data: bookingStatsData, refetch: refetchBooking, isFetching: fetchingBooking, isError: bookingError } = useQuery({
@@ -93,8 +103,9 @@ export default function SalesPipelineStatsPage() {
     refetchSlot();
   }
 
-  const bs = bookingStatsData?.data ?? bookingStatsData;
-  const ps = pipelineStatsData?.data ?? pipelineStatsData;
+  const longBookingStats = bookingStatsData?.data ?? bookingStatsData;
+  const rawPipelineStats = pipelineStatsData?.data ?? pipelineStatsData;
+  const ps = rawPipelineStats?.byLeaseTerm?.[leaseTermType] ?? rawPipelineStats;
 
   const allSlotBookings: any[] = slotBookingsData?.data ?? slotBookingsData ?? [];
   const slotStats = {
@@ -104,6 +115,12 @@ export default function SalesPipelineStatsPage() {
     revenue:   allSlotBookings
       .filter((b) => ['CONFIRMED', 'COMPLETED'].includes(b.status))
       .reduce((sum: number, b: any) => sum + (b.totalAmount ?? 0), 0),
+  };
+  const bs = leaseTermType === 'LONG' ? longBookingStats : {
+    active: slotStats.confirmed,
+    pending: slotStats.pending,
+    completed: slotStats.completed,
+    revenue: slotStats.revenue,
   };
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -194,6 +211,13 @@ export default function SalesPipelineStatsPage() {
         </Button>
       </div>
 
+      <Tabs value={leaseTermType} onValueChange={(value) => setLeaseTermType(value as 'LONG' | 'SHORT')}>
+        <TabsList>
+          <TabsTrigger value="LONG">Cho thuê dài hạn</TabsTrigger>
+          <TabsTrigger value="SHORT">Cho thuê ngắn hạn</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* ─── Funnel ───────────────────────────────────────────────────────────── */}
       <div>
         <SectionHeading icon={TrendingUp}>Phễu Quy Trình Bán Hàng</SectionHeading>
@@ -226,7 +250,7 @@ export default function SalesPipelineStatsPage() {
               <DollarSign size={14} className="text-green-500" />
               Tổng giá trị Proposal:
               <span className="font-bold text-gray-800 ml-1">
-                {new Intl.NumberFormat('vi-VN').format(totalProposalValue)} ₫
+                {fmtMoneyFullVnd(totalProposalValue)}
               </span>
             </div>
           )}
@@ -272,7 +296,7 @@ export default function SalesPipelineStatsPage() {
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge}`}>{label}</span>
                     <div className="text-right">
                       <span className="text-sm font-bold text-gray-800">{count}</span>
-                      {value > 0 && <div className="text-xs text-gray-400">{fmtMoney(value)}</div>}
+                      {value > 0 && <div className="text-xs text-gray-400" title={fmtMoneyFullVnd(value)}>{fmtMoney(value)}</div>}
                     </div>
                   </div>
                 );
@@ -339,8 +363,8 @@ export default function SalesPipelineStatsPage() {
             <StatCard title="Chờ xác nhận"   value={slotStats.pending}          icon={Hourglass}     color="blue"   sub="Cần xử lý" />
             <StatCard title="Đã xác nhận"    value={slotStats.confirmed}         icon={CheckCircle2}  color="purple" sub="Đang hiệu lực" />
             <StatCard title="Hoàn thành"     value={slotStats.completed}         icon={CalendarRange} color="green"  sub="Đã kết thúc" />
-            <StatCard title="Doanh thu slot" value={fmtMoney(slotStats.revenue)} icon={DollarSign}    color="teal"
-              sub="Confirmed + Completed" badge={slotStats.revenue > 0 ? '₫' : undefined} />
+            <StatCard title="Doanh thu slot" value={fmtMoney(slotStats.revenue)} valueTitle={fmtMoneyFullVnd(slotStats.revenue)} icon={DollarSign} color="teal"
+              sub="Confirmed + Completed" />
           </div>
         </TabsContent>
       </Tabs>

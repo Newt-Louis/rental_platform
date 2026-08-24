@@ -350,10 +350,15 @@
     "title": "Thông báo",
     "markAllRead": "Đọc tất cả",
     "noNotifications": "Không có thông báo",
+    "noTasks": "Không có việc cần xử lý",
     "viewAll": "Xem tất cả thông báo",
     "pendingApprovals": "{{count}} phê duyệt đang chờ bạn",
     "pendingApprovalsAction": "Nhấn để xử lý ngay",
     "minutesAgo": "{{count}} phút trước",
-    "hoursAgo": "{{count}} giờ trước"
+    "hoursAgo": "{{count}} giờ trước",
+    "tabs": {
+      "tasks": "Việc cần làm",
+      "notifications": "Thông báo"
+    }
   }
 }

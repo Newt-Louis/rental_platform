@@ -34,7 +34,11 @@ describe('BookingService — unit status lock (#20)', () => {
       create: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
-    $transaction: jest.fn((ops: any[]) => Promise.all(ops)),
+    // runSerializable() uses the interactive-callback form ($transaction(fn, opts)), not the
+    // array form — invoke the callback with `prisma` itself standing in for `tx`, so the
+    // per-call mocks above double as the transaction-scoped ones too (same pattern as
+    // contract-activation.spec.ts / proposals.service.spec.ts).
+    $transaction: jest.fn((fn: any) => fn(prisma)),
   } as any;
 
   const unitStatus = {
@@ -47,7 +51,7 @@ describe('BookingService — unit status lock (#20)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', isActive: true });
+    prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', mallId: 'mall-1', isActive: true });
     prisma.unitBooking.findFirst.mockResolvedValue(null);
     prisma.unitBooking.create.mockResolvedValue({ id: 'booking-1' });
     prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 0 } });

@@ -134,6 +134,16 @@ enum PriceApprovalStatus {
   REJECTED
 }
 
+// Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+// Adding a new currency is: one enum value here + one migration + one entry
+// in common/currency/currency.constants.ts (backend) and lib/currency.ts
+// (frontend) -- no lifecycle model changes.
+enum CurrencyCode {
+  VND
+  USD
+  MMK
+}
+
 // ===========================================================================
 // CATEGORY MASTER DATA
 // ===========================================================================
@@ -269,6 +279,34 @@ enum ServiceContractType {
   OTHER
 }
 
+enum ServiceContractServiceCategory {
+  CLEANING
+  SECURITY
+  MAINTENANCE
+  TECHNICAL
+  IT_SOFTWARE
+  CONSULTING
+  INSURANCE
+  CONSTRUCTION
+  LABOR_SUPPLY
+  MARKETING
+  PARKING
+  LANDSCAPING
+  PEST_CONTROL
+  WASTE_MANAGEMENT
+  UTILITIES
+  OTHER
+}
+
+enum ServiceContractValueBasis {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  PROJECT
+  OTHER
+}
+
 enum BillingCycle {
   MONTHLY
   QUARTERLY
@@ -359,6 +397,18 @@ enum SapStatus {
   SUCCESS
   FAILED
   RETRYING
+}
+
+enum InvoiceAdjustmentType {
+  CREDIT_NOTE
+  DEBIT_NOTE
+  WRITE_OFF
+  REFUND
+}
+
+enum InvoiceAdjustmentStatus {
+  APPROVED
+  CANCELLED
 }
 
 model User {
@@ -494,6 +544,7 @@ model Mall {
   parkingIncidents      ParkingIncident[]
   parkingContracts      ParkingCustomerContract[]
   billingParties        BillingParty[]
+  invoices              Invoice[]
 }
 
 enum InventoryItemType {
@@ -852,6 +903,7 @@ model ParkingCustomerContract {
   tenantId        String
   tenant          Tenant                     @relation(fields: [tenantId], references: [id])
   title           String
+  contractType    String                     @default("FIXED_QUOTA")
   status          String                     @default("DRAFT")
   signedDate      DateTime?
   startDate       DateTime
@@ -873,6 +925,7 @@ model ParkingCustomerContract {
 
   @@index([mallId, status, endDate])
   @@index([tenantId, status])
+  @@index([contractType, status])
 }
 
 model ParkingContractRate {
@@ -1166,7 +1219,7 @@ model Unit {
   virtualTourUrl String? // 360deg tour / video link
 
   // GAP #3 -- Phn loi hnh thc thu
-  leaseTermType UnitLeaseTermType? // LONG hoc SHORT; LONG c th cho thu ngn hn khi trng
+  leaseTermType UnitLeaseTermType @default(LONG) // Khu cho thue dai han hoac ngan han
 
   // GAP #4 -- Loi mt bng
   spaceType SpaceType? // RETAIL_UNIT, LED, ESCALATOR_WRAP...
@@ -1250,7 +1303,7 @@ model Tenant {
 }
 
 model Lead {
-  id                String       @id @default(cuid())
+  id                String            @id @default(cuid())
   brandName         String
   company           String?
   contactName       String
@@ -1258,31 +1311,32 @@ model Lead {
   email             String?
   category          String? // Legacy: free text
   categoryId        String? // NEW: FK to Category master
-  categoryRef       Category?    @relation(fields: [categoryId], references: [id])
-  source            LeadSource   @default(WALK_IN)
-  status            LeadStatus   @default(NEW)
-  priority          LeadPriority @default(WARM)
+  categoryRef       Category?         @relation(fields: [categoryId], references: [id])
+  source            LeadSource        @default(WALK_IN)
+  status            LeadStatus        @default(NEW)
+  priority          LeadPriority      @default(WARM)
   assignedToId      String?
-  assignedTo        User?        @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  assignedTo        User?             @relation("AssignedLeads", fields: [assignedToId], references: [id])
   tenantId          String?
-  tenant            Tenant?      @relation(fields: [tenantId], references: [id])
+  tenant            Tenant?           @relation(fields: [tenantId], references: [id])
   customerId        String?
-  customer          Customer?    @relation(fields: [customerId], references: [id])
+  customer          Customer?         @relation(fields: [customerId], references: [id])
   mallId            String?
-  mall              Mall?        @relation(fields: [mallId], references: [id])
+  mall              Mall?             @relation(fields: [mallId], references: [id])
+  leaseTermType     UnitLeaseTermType @default(LONG)
   notes             String?
   expectedRent      Float?
   expectedArea      Float?
   estimatedValue    Float?
   expectedCloseDate DateTime?
   preferredCategory String?
-  position          Int          @default(0)
+  position          Int               @default(0)
   lastActivityAt    DateTime?
   lostReason        String?
-  isActive          Boolean      @default(true)
+  isActive          Boolean           @default(true)
   deletedAt         DateTime?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   activities   LeadActivity[]
   proposals    Proposal[]
@@ -1333,13 +1387,13 @@ model Proposal {
   status              ProposalStatus @default(DRAFT)
   notes               String?
   pricingRuleId       String? // Rule version used when pricing was evaluated
-  pricingSnapshot     Json?   // Immutable effective values + source metadata
+  pricingSnapshot     Json? // Immutable effective values + source metadata
 
   // T Trnh fields
   businessModel         BusinessModelEnum? // GAP #8: enum SHOP/KIOSK/POP_UP/EVENT/CHAIN
   serviceFeeSqm         Float              @default(0) // Ph Dch v (USD/m2/thng)
   businessSupportFeeSqm Float              @default(0) // Ph h tr Kinh doanh
-  rentCurrency          String             @default("VND") // VND hoc USD
+  rentCurrency          CurrencyCode       @default(VND) // Canonical Proposal currency field (kept named rentCurrency for backward compat -- see MULTI_CURRENCY_ARCHITECTURE.md)
   fitoutDays            Int                @default(90) // Thi hn hon thin ni tht (ngy)
   handoverDate          DateTime? // Ngy Bn giao Mt bng
   openingDate           DateTime? // Ngy Khai trng d kin
@@ -1503,6 +1557,7 @@ model Contract {
   rent              Float
   cam               Float          @default(0)
   deposit           Float
+  currencyCode      CurrencyCode   @default(VND) // Authoritative currency for rent/cam/deposit and all downstream billing; propagated from Proposal.rentCurrency at creation, immutable outside the Amendment workflow once ACTIVE
   billingCycle      BillingCycle   @default(MONTHLY)
   paymentTerm       Int            @default(30)
   rentFree          Int            @default(0)
@@ -1549,21 +1604,22 @@ enum BillingScheduleStatus {
 }
 
 model BillingScheduleEntry {
-  id          String                @id @default(cuid())
-  contractId  String
-  contract    Contract              @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  period      String
-  periodStart DateTime
-  periodEnd   DateTime
-  rentAmount  Float
-  camAmount   Float
-  subtotal    Float
-  dueDate     DateTime
-  status      BillingScheduleStatus @default(PENDING)
-  invoiceId   String?               @unique
-  invoice     Invoice?              @relation(fields: [invoiceId], references: [id])
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  id           String                @id @default(cuid())
+  contractId   String
+  contract     Contract              @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  period       String
+  periodStart  DateTime
+  periodEnd    DateTime
+  rentAmount   Float
+  camAmount    Float
+  subtotal     Float
+  currencyCode CurrencyCode          @default(VND) // Derived from Contract.currencyCode at schedule-build time
+  dueDate      DateTime
+  status       BillingScheduleStatus @default(PENDING)
+  invoiceId    String?               @unique
+  invoice      Invoice?              @relation(fields: [invoiceId], references: [id])
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   @@unique([contractId, period])
   @@index([status, dueDate])
@@ -1588,43 +1644,45 @@ model ContractFile {
 
 /// Service and operations contracts, separate from leasing Contract records.
 model ServiceContract {
-  id                    String                @id @default(cuid())
-  contractNumber        String                @unique
+  id                    String                         @id @default(cuid())
+  contractNumber        String                         @unique
   title                 String
   mallId                String
   counterpartyName      String
   counterpartyTax       String?
   counterpartyEmail     String?
   counterpartyPhone     String?
-  type                  ServiceContractType   @default(SERVICE)
-  status                ServiceContractStatus @default(DRAFT)
+  type                  ServiceContractType            @default(SERVICE)
+  status                ServiceContractStatus          @default(DRAFT)
   workflowStage         String?
   workflowColor         String?
   signedDate            DateTime?
   startDate             DateTime?
   endDate               DateTime?
   terminatedDate        DateTime?
-  totalValue            Float                 @default(0)
-  currency              String                @default("VND")
-  paymentDirection      String                @default("PAYABLE")
+  totalValue            Float                          @default(0)
+  currency              String                         @default("VND")
+  paymentDirection      String                         @default("PAYABLE")
   billingPartyId        String?
-  billingParty          BillingParty?         @relation(fields: [billingPartyId], references: [id])
-  invoiceLeadDays       Int                   @default(7)
-  defaultVatRate        Float                 @default(10)
-  paymentTermDays       Int                   @default(15)
+  billingParty          BillingParty?                  @relation(fields: [billingPartyId], references: [id])
+  invoiceLeadDays       Int                            @default(7)
+  defaultVatRate        Float                          @default(10)
+  paymentTermDays       Int                            @default(15)
+  serviceCategory       ServiceContractServiceCategory @default(OTHER)
+  valueBasis            ServiceContractValueBasis      @default(ONE_TIME)
   productName           String?
-  riskScore             Int                   @default(0)
-  hasAllRequiredClauses Boolean               @default(false)
+  riskScore             Int                            @default(0)
+  hasAllRequiredClauses Boolean                        @default(false)
   ownerId               String?
   createdById           String
   parentContractId      String?
-  parentContract        ServiceContract?      @relation("ServiceContractRenewals", fields: [parentContractId], references: [id])
-  renewals              ServiceContract[]     @relation("ServiceContractRenewals")
+  parentContract        ServiceContract?               @relation("ServiceContractRenewals", fields: [parentContractId], references: [id])
+  renewals              ServiceContract[]              @relation("ServiceContractRenewals")
   notes                 String?
   tags                  String?
-  isDeleted             Boolean               @default(false)
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
+  isDeleted             Boolean                        @default(false)
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
 
   documents  ServiceContractDocument[]
   events     ServiceContractEvent[]
@@ -1634,6 +1692,7 @@ model ServiceContract {
 
   @@index([mallId, status])
   @@index([mallId, isDeleted, status, type, paymentDirection])
+  @@index([mallId, serviceCategory, valueBasis])
   @@index([endDate])
   @@index([counterpartyName])
 }
@@ -2087,30 +2146,42 @@ model SalesTurnover {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  invoiceNumber  String        @unique
-  contractId     String?
-  contract       Contract?     @relation(fields: [contractId], references: [id])
-  tenantId       String?
-  tenant         Tenant?       @relation(fields: [tenantId], references: [id])
-  billingPartyId String?
-  billingParty   BillingParty? @relation(fields: [billingPartyId], references: [id])
-  sourceType     String        @default("LEASE_CONTRACT")
-  sourceId       String?
-  period         String
-  type           InvoiceType   @default(MONTHLY_RENT)
-  status         InvoiceStatus @default(DRAFT)
-  subtotal       Float
-  vatRate        Float         @default(10)
-  vatAmount      Float
-  totalAmount    Float
-  dueDate        DateTime
-  issuedAt       DateTime?
-  paidAt         DateTime?
-  notes          String?
-  isActive       Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id                        String        @id @default(cuid())
+  invoiceNumber             String        @unique
+  contractId                String?
+  contract                  Contract?     @relation(fields: [contractId], references: [id])
+  tenantId                  String?
+  tenant                    Tenant?       @relation(fields: [tenantId], references: [id])
+  billingPartyId            String?
+  billingParty              BillingParty? @relation(fields: [billingPartyId], references: [id])
+  mallId                    String?
+  mall                      Mall?         @relation(fields: [mallId], references: [id])
+  counterpartyName          String?
+  counterpartyTaxCode       String?
+  sourceType                String        @default("LEASE_CONTRACT")
+  sourceId                  String?
+  period                    String
+  type                      InvoiceType   @default(MONTHLY_RENT)
+  status                    InvoiceStatus @default(DRAFT)
+  subtotal                  Float
+  vatRate                   Float         @default(10)
+  vatAmount                 Float
+  totalAmount               Float
+  currencyCode              CurrencyCode  @default(VND) // Derived from the source Contract/BillingScheduleEntry at invoice-creation time
+  adjustmentAmount          Float         @default(0)
+  refundedAmount            Float         @default(0)
+  dueDate                   DateTime
+  issuedAt                  DateTime?
+  paidAt                    DateTime?
+  notes                     String?
+  electronicInvoiceStatus   String        @default("NOT_SENT")
+  electronicInvoiceRef      String?
+  electronicInvoiceIssuedAt DateTime?
+  electronicInvoiceError    String?
+  legalInvoiceNumber        String?
+  isActive                  Boolean       @default(true)
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
 
   // Hu ho n c kim sot -- khng xo bn ghi, ch nh du CANCELLED + lu vt ai/khi no/v sao.
   voidedAt   DateTime?
@@ -2123,9 +2194,31 @@ model Invoice {
   billingSchedule        BillingScheduleEntry?
   arDunningLogs          ArDunningLog[]
   serviceContractPayment ServiceContractPayment?
+  adjustments            InvoiceAdjustment[]
 
   @@index([sourceType, sourceId])
+  @@index([mallId, status, dueDate])
+  @@index([electronicInvoiceStatus])
   @@index([billingPartyId, status, dueDate])
+}
+
+model InvoiceAdjustment {
+  id            String                  @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice                 @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type          InvoiceAdjustmentType
+  status        InvoiceAdjustmentStatus @default(APPROVED)
+  amount        Float
+  reason        String
+  reference     String?
+  createdById   String
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@index([invoiceId, status, createdAt])
 }
 
 model BillingParty {
@@ -2202,6 +2295,7 @@ model Payment {
   billingPartyId  String?
   billingParty    BillingParty? @relation(fields: [billingPartyId], references: [id])
   amount          Float
+  currencyCode    CurrencyCode  @default(VND) // Always equal to Invoice.currencyCode -- enforced server-side, never client-suppliable independently
   method          PaymentMethod @default(BANK_TRANSFER)
   reference       String?
   idempotencyKey  String?       @unique
@@ -2392,6 +2486,28 @@ model AuditLog {
   @@index([userId])
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+/// Job execution ledger (docs/reliability/OBSERVABILITY.md, sprint brief
+/// section 25) - every scheduled job that runs through SchedulerLockService
+/// gets one row per attempt, so "when did this last run, did it succeed, how
+/// long did it take, is it failing repeatedly" is a query away instead of a
+/// log-grep. Deliberately does not store job payload/business data (no
+/// records_processed detail beyond an optional summary count) - this is an
+/// execution ledger, not an audit trail of what each job did.
+model JobExecution {
+  id           String    @id @default(cuid())
+  jobName      String
+  instance     String // hostname/pid - identifies which replica ran it
+  status       String // RUNNING | SUCCEEDED | FAILED | SKIPPED_LOCKED
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  durationMs   Int?
+  errorSummary String? // truncated message only - never a full stack trace with request/user data
+  createdAt    DateTime  @default(now())
+
+  @@index([jobName, startedAt])
+  @@index([jobName, status, startedAt])
 }
 
 model OutboxEvent {
@@ -2609,24 +2725,25 @@ model TicketEscalation {
 // ===============================================================================
 
 model OccupancySnapshot {
-  id              String   @id @default(cuid())
+  id              String            @id @default(cuid())
   mallId          String
-  mall            Mall     @relation(fields: [mallId], references: [id])
+  mall            Mall              @relation(fields: [mallId], references: [id])
   floorId         String?
   category        String?
+  leaseTermType   UnitLeaseTermType @default(LONG)
   period          String
   snapshotDate    DateTime
   totalUnits      Int
   occupiedUnits   Int
   vacantUnits     Int
-  underFitout     Int      @default(0)
+  underFitout     Int               @default(0)
   totalAreaSqm    Float
   occupiedAreaSqm Float
   occupancyRate   Float
   revenuePerSqm   Float?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime          @default(now())
 
-  @@unique([mallId, floorId, category, period])
+  @@unique([mallId, floorId, category, leaseTermType, period])
   @@index([mallId, period])
 }
 
@@ -2962,6 +3079,7 @@ model UnitBooking {
   requestedArea Float? // Din tch yu cu
   requestedTerm Int? // Thi hn thu mong mun (thng)
   expectedRent  Float? // Mc gi k vng (khch)
+  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE
@@ -2979,8 +3097,8 @@ model UnitBooking {
   priceApprovedBy       User?                @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
   priceApprovedAt       DateTime?
   priceDeviationPercent Float? // % chnh lch so vi gi sn
-  pricingRuleId          String? // Rule version used for the latest validation
-  pricingSnapshot        Json?   // Effective pricing values and inheritance sources
+  pricingRuleId         String? // Rule version used for the latest validation
+  pricingSnapshot       Json? // Effective pricing values and inheritance sources
 
   createdById  String
   createdBy    User     @relation("BookingCreatedBy", fields: [createdById], references: [id])
@@ -3140,31 +3258,36 @@ model SlotPricingRule {
 }
 
 model SlotBooking {
-  id            String            @id @default(cuid())
-  bookingRef    String            @unique
-  slotId        String
-  slot          UnitSlot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  leadId        String?
-  lead          Lead?             @relation(fields: [leadId], references: [id])
-  customerId    String?
-  customer      Customer?         @relation(fields: [customerId], references: [id])
-  type          String // DAILY, HOURLY, MONTHLY
-  startDatetime DateTime
-  endDatetime   DateTime
-  totalArea     Float?
-  baseAmount    Float?
-  discountPct   Float?            @default(0)
-  totalAmount   Float // Final amount after discount
-  status        SlotBookingStatus @default(PENDING)
-  notes         String?
-  cancelReason  String?
-  createdById   String?
-  createdBy     User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                        String            @id @default(cuid())
+  bookingRef                String            @unique
+  slotId                    String
+  slot                      UnitSlot          @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  leadId                    String?
+  lead                      Lead?             @relation(fields: [leadId], references: [id])
+  customerId                String?
+  customer                  Customer?         @relation(fields: [customerId], references: [id])
+  type                      String // DAILY, HOURLY, MONTHLY
+  installationStartDatetime DateTime?
+  installationEndDatetime   DateTime?
+  startDatetime             DateTime
+  endDatetime               DateTime
+  dismantlingStartDatetime  DateTime?
+  dismantlingEndDatetime    DateTime?
+  totalArea                 Float?
+  baseAmount                Float?
+  discountPct               Float?            @default(0)
+  totalAmount               Float // Final amount after discount
+  status                    SlotBookingStatus @default(PENDING)
+  notes                     String?
+  cancelReason              String?
+  createdById               String?
+  createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
+  @@index([installationStartDatetime, dismantlingEndDatetime])
 }
 
 // Cu hnh thng hiu hin th  mn hnh ng nhp (logo + nh nn) -- bng singleton,

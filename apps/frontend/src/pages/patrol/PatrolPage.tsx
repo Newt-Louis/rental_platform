@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -20,8 +20,9 @@ import {
   Upload,
   UserCog,
 } from "lucide-react";
-import { patrolApi, spacesApi, usersApi } from "@/api";
+import { patrolApi, usersApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
+import { AuthenticatedImage } from "@/components/ui/authenticated-image";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,8 +125,10 @@ function getGeo(): Promise<{ latitude: number; longitude: number } | null> {
 export default function PatrolPage() {
   const qc = useQueryClient(),
     { toast } = useToast(),
-    selectedMallId = useMallStore((s) => s.selectedMallId);
-  const [mallId, setMallId] = useState(selectedMallId || "");
+    selectedMallId = useMallStore((s) => s.selectedMallId),
+    selectedMallName = useMallStore((s) => s.selectedMallName),
+    openMallContextModal = useMallStore((s) => s.openMallContextModal);
+  const mallId = selectedMallId || "";
   const [routeOpen, setRouteOpen] = useState(false),
     [shiftOpen, setShiftOpen] = useState(false),
     [scheduleOpen, setScheduleOpen] = useState(false),
@@ -150,7 +153,17 @@ export default function PatrolPage() {
   });
   const [reportRange, setReportRange] = useState({ from: "", to: "" });
 
-  const mallsQ = useQuery({ queryKey: ["malls"], queryFn: spacesApi.listMalls });
+  useEffect(() => {
+    setSelectedId(null);
+    setRouteOpen(false);
+    setShiftOpen(false);
+    setScheduleOpen(false);
+    setRouteForm({ ...routeBlank, mallId });
+    setShiftForm({ ...shiftBlank, mallId });
+    setScheduleForm({ ...scheduleBlank, mallId });
+    setShiftFilters((current) => ({ ...current, routeId: "", page: 1 }));
+  }, [mallId]);
+
   const usersQ = useQuery({
     queryKey: ["patrol-users"],
     queryFn: () => usersApi.listUsers({ limit: 200 }),
@@ -191,10 +204,7 @@ export default function PatrolPage() {
     enabled: !!selectedId,
   });
 
-  const malls: any[] = Array.isArray(mallsQ.data)
-      ? mallsQ.data
-      : (mallsQ.data as any)?.data || [],
-    users: any[] = ((usersQ.data as any)?.data || usersQ.data || []).filter(
+  const users: any[] = ((usersQ.data as any)?.data || usersQ.data || []).filter(
       (u: any) => u.role !== "TENANT",
     ),
     routes: any[] = routesQ.data || [],
@@ -392,18 +402,6 @@ export default function PatrolPage() {
             Tuyến · điểm kiểm tra · ca trực · lịch định kỳ · minh chứng · xử lý bất thường
           </p>
         </div>
-        <select
-          className="h-10 min-w-72 rounded-md border px-3"
-          value={mallId}
-          onChange={(e) => setMallId(e.target.value)}
-        >
-          <option value="">Tất cả trung tâm thương mại</option>
-          {malls.map((x: any) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-            </option>
-          ))}
-        </select>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -486,7 +484,11 @@ export default function PatrolPage() {
             <Button
               className="ml-auto"
               onClick={() => {
-                setShiftForm({ ...shiftBlank, mallId: mallId || malls[0]?.id || "" });
+                if (!mallId) {
+                  openMallContextModal();
+                  return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+                }
+                setShiftForm({ ...shiftBlank, mallId });
                 setShiftOpen(true);
               }}
             >
@@ -565,7 +567,11 @@ export default function PatrolPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setRouteForm({ ...routeBlank, mallId: mallId || malls[0]?.id || "" });
+                if (!mallId) {
+                  openMallContextModal();
+                  return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+                }
+                setRouteForm({ ...routeBlank, mallId });
                 setRouteOpen(true);
               }}
             >
@@ -687,7 +693,11 @@ export default function PatrolPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setScheduleForm({ ...scheduleBlank, mallId: mallId || malls[0]?.id || "" });
+                if (!mallId) {
+                  openMallContextModal();
+                  return toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+                }
+                setScheduleForm({ ...scheduleBlank, mallId });
                 setScheduleOpen(true);
               }}
             >
@@ -845,18 +855,9 @@ export default function PatrolPage() {
           <DialogHeader>
             <DialogTitle>Tạo tuyến tuần tra</DialogTitle>
           </DialogHeader>
-          <select
-            className="h-10 rounded-md border px-3"
-            value={routeForm.mallId}
-            onChange={(e) => setRouteForm({ ...routeForm, mallId: e.target.value })}
-          >
-            <option value="">Chọn Mall</option>
-            {malls.map((x: any) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+            {selectedMallName}
+          </div>
           <Input
             placeholder="Mã tuyến"
             value={routeForm.code}
@@ -883,18 +884,9 @@ export default function PatrolPage() {
           <DialogHeader>
             <DialogTitle>Lên ca tuần tra</DialogTitle>
           </DialogHeader>
-          <select
-            className="h-10 rounded-md border px-3"
-            value={shiftForm.mallId}
-            onChange={(e) => setShiftForm({ ...shiftForm, mallId: e.target.value, routeId: "" })}
-          >
-            <option value="">Chọn Mall</option>
-            {malls.map((x: any) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+            {selectedMallName}
+          </div>
           <select
             className="h-10 rounded-md border px-3"
             value={shiftForm.routeId}
@@ -1034,20 +1026,9 @@ export default function PatrolPage() {
           <DialogHeader>
             <DialogTitle>Tạo lịch tuần tra định kỳ</DialogTitle>
           </DialogHeader>
-          <select
-            className="h-10 rounded-md border px-3"
-            value={scheduleForm.mallId}
-            onChange={(e) =>
-              setScheduleForm({ ...scheduleForm, mallId: e.target.value, routeId: "" })
-            }
-          >
-            <option value="">Chọn Mall</option>
-            {malls.map((x: any) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm">
+            {selectedMallName}
+          </div>
           <select
             className="h-10 rounded-md border px-3"
             value={scheduleForm.routeId}
@@ -1316,18 +1297,13 @@ export default function PatrolPage() {
                       </div>
                     )}
                     {c.filePath && (
-                      <a
-                        href={`/uploads/${c.filePath}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 block w-32 overflow-hidden rounded-md border"
-                      >
-                        <img
-                          src={`/uploads/${c.filePath}`}
+                      <div className="mt-2 block w-32 overflow-hidden rounded-md border">
+                        <AuthenticatedImage
+                          src={`/files/patrol-checks/${c.id}`}
                           className="h-20 w-32 object-cover"
                           alt="Minh chứng"
                         />
-                      </a>
+                      </div>
                     )}
                     {c.workOrderId && (
                       <div className="mt-2 text-sm text-destructive">

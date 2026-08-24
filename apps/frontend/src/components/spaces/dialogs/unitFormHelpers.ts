@@ -19,7 +19,7 @@ export interface UnitFormValues {
 export const UNIT_FORM_DEFAULT_VALUES: UnitFormValues = {
   code: '', name: '', category: '', floorId: '', zoneId: '',
   areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
-  spaceType: '', leaseTermType: '', tier: '', isFlexibleArea: false,
+  spaceType: '', leaseTermType: 'LONG', tier: '', isFlexibleArea: false,
   minFlexArea: '', maxFlexArea: '',
 };
 
@@ -35,7 +35,7 @@ export function seedUnitFormValues(unit: any, defaultFloorId?: string): UnitForm
     baseRentPerSqm: unit?.baseRentPerSqm?.toString() ?? '',
     camPerSqm: unit?.camPerSqm?.toString() ?? '',
     spaceType: unit?.spaceType ?? '',
-    leaseTermType: unit?.leaseTermType ?? '',
+    leaseTermType: unit?.leaseTermType ?? 'LONG',
     tier: unit?.tier ?? '',
     isFlexibleArea: unit?.isFlexibleArea ?? false,
     minFlexArea: unit?.minFlexArea?.toString() ?? '',
@@ -95,6 +95,9 @@ export function buildUnitFormPayload(data: Record<string, any>, mallId: string, 
 export function validateUnitFormValues(data: Record<string, any>, mallId: string): string | null {
   if (!mallId) return 'Vui lòng chọn trung tâm thương mại trước khi lưu mặt bằng.';
   if (!String(data.code ?? '').trim()) return 'Vui lòng nhập mã mặt bằng.';
+  if (!['LONG', 'SHORT'].includes(data.leaseTermType)) {
+    return 'Vui lòng chọn khu cho thuê dài hạn hoặc khu cho thuê ngắn hạn.';
+  }
 
   const requiredArea = parseUnitNumber(data.areaGFA);
   if (requiredArea == null || !Number.isFinite(requiredArea) || requiredArea <= 0) {

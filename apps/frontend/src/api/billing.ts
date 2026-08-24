@@ -23,6 +23,15 @@ export const billingApi = {
   getSchedule: (contractId: string) => api.get(`/billing/schedule/${contractId}`).then((r) => r.data),
   buildSchedule: (contractId: string) => api.post(`/billing/schedule/${contractId}/build`).then((r) => r.data),
   getInvoiceSummary: (id: string) => api.get(`/billing/invoices/${id}/summary`).then((r) => r.data),
+  listInvoiceDocuments: (id: string) => api.get(`/billing/invoices/${id}/documents`).then((r) => r.data),
+  uploadInvoiceDocument: (id: string, file: File, documentType = 'SUPPORTING_DOCUMENT') => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('documentType', documentType);
+    return api.post(`/billing/invoices/${id}/documents`, form).then((r) => r.data);
+  },
+  requestElectronicInvoice: (id: string) => api.post(`/billing/invoices/${id}/e-invoice/request`).then((r) => r.data),
+  syncInvoiceToSap: (id: string) => api.post('/sap/sync/invoice', { invoiceId: id }).then((r) => r.data),
   addInvoiceLine: (id: string, data: { type: string; description: string; qty: number; unitPrice: number }) =>
     api.post(`/billing/invoices/${id}/lines`, data).then((r) => r.data),
   updateInvoiceLine: (id: string, lineId: string, data: { description?: string; qty?: number; unitPrice?: number }) =>
@@ -33,6 +42,10 @@ export const billingApi = {
     api.post(`/billing/invoices/${id}/void`, { reason }).then((r) => r.data),
   reversePayment: (paymentId: string, reason: string) =>
     api.post(`/billing/payments/${paymentId}/reverse`, { reason }).then((r) => r.data),
+  createAdjustment: (invoiceId: string, data: Record<string, unknown>) =>
+    api.post(`/billing/invoices/${invoiceId}/adjustments`, data).then((r) => r.data),
+  cancelAdjustment: (adjustmentId: string, reason: string) =>
+    api.post(`/billing/adjustments/${adjustmentId}/cancel`, { reason }).then((r) => r.data),
   generateDueInvoices: () => api.post('/billing/schedule/generate-due').then((r) => r.data),
   listDunningPolicies: () => api.get('/billing/dunning/policies').then((r) => r.data),
   runDunning: () => api.post('/billing/dunning/run').then((r) => r.data),

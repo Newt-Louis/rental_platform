@@ -74,9 +74,21 @@ async function bootstrap() {
   app.use(json({ limit: '20mb' }));
   app.use(urlencoded({ extended: true, limit: '20mb' }));
 
-  // Serve uploaded files (unit media, floor plans) as static assets
+  // Static uploads mount — deliberately narrow (docs/security/SECRET_INCIDENT_REMEDIATION.md
+  // P1). This used to serve the *entire* uploads directory unauthenticated,
+  // which meant Contract/Billing/Fitout/service business documents were
+  // fetchable by anyone who had or guessed a URL. Those now go through the
+  // authenticated, per-record-authorized routes in FilesController instead
+  // (see src/files/files.controller.ts). Only genuinely public, low-sensitivity
+  // assets stay on this static mount: unit/floor-plan images (shown in the
+  // Spaces/Booking UI and AI floor-plan analysis, no PII/financial data) and
+  // mall branding logos (rendered as plain <img> tags, including on the login
+  // screen before authentication).
   const uploadRoot = path.resolve(process.env.UPLOAD_DIR?.replace('/unit-media', '') ?? 'uploads');
-  app.use('/uploads', expressStatic(uploadRoot, { maxAge: '1d' }));
+  const PUBLIC_UPLOAD_SUBPATHS = ['floor-plans', 'branding', 'unit-media'];
+  for (const subpath of PUBLIC_UPLOAD_SUBPATHS) {
+    app.use(`/uploads/${subpath}`, expressStatic(path.join(uploadRoot, subpath), { maxAge: '1d' }));
+  }
 
   app.setGlobalPrefix('api');
 

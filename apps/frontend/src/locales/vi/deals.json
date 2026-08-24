@@ -32,7 +32,19 @@
       "search": "Tìm proposal, khách thuê, mặt bằng...",
       "status": "Trạng thái",
       "dateRange": "Khoảng ngày tạo",
-      "all": "Tất cả"
+      "all": "Tất cả",
+      "clear": "Xóa bộ lọc"
+    },
+    "createEntry": {
+      "title": "Tạo đề xuất từ Booking",
+      "subtitle": "Chọn một booking đang giữ chỗ để lập đề xuất cho thuê",
+      "searchPlaceholder": "Tìm theo mã booking, mặt bằng, khách hàng...",
+      "loading": "Đang tải danh sách booking...",
+      "empty": "Chưa có booking nào đang giữ chỗ để tạo đề xuất.",
+      "noResultsForFilter": "Không có đề xuất phù hợp với bộ lọc hiện tại.",
+      "noMatch": "Không tìm thấy booking phù hợp.",
+      "goToBookings": "Tạo Booking trước",
+      "noParty": "Chưa có khách hàng"
     },
     "stats": {
       "total": "Tổng đề xuất",
@@ -189,7 +201,9 @@
       "floorPrice": "Giá sàn (₫/m²)",
       "proposed": "Đề xuất (₫/m²)",
       "ceiling": "Giá trần (₫/m²)",
-      "deviation": "Lệch %"
+      "deviation": "Lệch %",
+      "rentFreeDays": "{{count}} ngày miễn phí",
+      "policyReasonTitle": "Lý do bước duyệt này áp dụng"
     },
     "actions": {
       "detail": "Chi tiết",

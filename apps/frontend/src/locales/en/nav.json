@@ -3,11 +3,12 @@
     "overview": "Overview",
     "salesProcess": "Sales Process",
     "crm": "Prospects (CRM)",
-    "operations": "Operations",
+    "fitoutOps": "Fitout & Handover",
+    "incidentOps": "Incidents & Maintenance",
+    "securityParking": "Security & Parking",
     "finance": "Finance",
     "analytics": "Analytics",
-    "system": "System",
-    "parkingCentral": "Parking Central"
+    "system": "System"
   },
   "items": {
     "dashboard": "Dashboard",

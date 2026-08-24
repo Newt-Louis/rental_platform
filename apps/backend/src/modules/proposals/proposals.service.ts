@@ -22,6 +22,7 @@ import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
+import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
 @Injectable()
 export class ProposalsService {
@@ -35,6 +36,7 @@ export class ProposalsService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private categoriesService: CategoriesService,
+    private metrics: OperationalMetricsService,
   ) {}
 
   private generateProposalNumber() {
@@ -47,14 +49,15 @@ export class ProposalsService {
     proposal: Record<string, unknown>,
     createdById?: string,
     changeReason?: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const latest = await this.prisma.proposalVersion.findFirst({
+    const latest = await client.proposalVersion.findFirst({
       where: { proposalId: proposal.id as string },
       orderBy: { version: 'desc' },
     });
     const version = (latest?.version ?? 0) + 1;
 
-    return this.prisma.proposalVersion.create({
+    return client.proposalVersion.create({
       data: {
         proposalId: proposal.id as string,
         version,
@@ -94,20 +97,22 @@ export class ProposalsService {
     };
   }
 
-  async findAll(query: { status?: ProposalStatus; unitId?: string; floorId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
+  async findAll(query: { status?: ProposalStatus; leaseTermType?: string; unitId?: string; floorId?: string; tenantId?: string; mallId?: string; mallIds?: string[]; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number }) {
     const { ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null };
-    if (filters.status) where.status = filters.status;
+    if (filters.status === 'PENDING_APPROVAL' as any) where.status = { in: [ProposalStatus.SUBMITTED, ProposalStatus.UNDER_REVIEW] };
+    else if (filters.status) where.status = filters.status;
     if (filters.unitId) where.unitId = filters.unitId;
     if (filters.tenantId) where.tenantId = filters.tenantId;
     const mallIds = filters.mallId ? [filters.mallId] : filters.mallIds;
-    if (mallIds || filters.floorId) where.unit = {
+    if (mallIds || filters.floorId || filters.leaseTermType) where.unit = {
       ...(mallIds ? { mallId: { in: mallIds } } : {}),
       ...(filters.floorId ? { floorId: filters.floorId } : {}),
+      ...(filters.leaseTermType ? { leaseTermType: filters.leaseTermType } : {}),
     };
     if (filters.search?.trim()) {
       const search = filters.search.trim();
@@ -130,7 +135,7 @@ export class ProposalsService {
         skip,
         take: +limit,
         include: {
-          unit: { select: { id: true, code: true, name: true, floor: { select: { id: true, name: true, level: true } } } },
+          unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true, level: true } } } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
           lead: { select: { id: true, brandName: true, contactName: true } },
           booking: {
@@ -150,9 +155,12 @@ export class ProposalsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async getStats(mallIds?: string[]) {
+  async getStats(mallIds?: string[], leaseTermType?: string) {
     const base: any = { isActive: true, deletedAt: null };
-    if (mallIds) base.unit = { mallId: { in: mallIds } };
+    if (mallIds || leaseTermType) base.unit = {
+      ...(mallIds ? { mallId: { in: mallIds } } : {}),
+      ...(leaseTermType ? { leaseTermType } : {}),
+    };
     const statuses = Object.values(ProposalStatus);
     const grouped = await this.prisma.proposal.groupBy({ by: ['status'], where: base, _count: { _all: true } });
     const counts = Object.fromEntries(statuses.map((status) => [status, 0]));
@@ -288,6 +296,17 @@ export class ProposalsService {
     return updated;
   }
 
+  /**
+   * Phase 3 hardening (docs/program/02-E2E-WORKFLOW.md, backlog #4): this used to do three
+   * unwrapped writes (pricing update → workflow create → status update) — a crash between
+   * them could leave a live ApprovalWorkflow against a still-DRAFT proposal. All state
+   * writes now happen inside one Serializable transaction, re-checking DRAFT status inside
+   * it to close the double-submit race (browser retry / double-click / concurrent API
+   * calls). `ApprovalWorkflow.proposalId` already has a DB-level unique constraint
+   * (schema.prisma), so a genuine concurrent double-submit resolves via the same
+   * P2002-repair pattern already proven in `createContractFromProposal`, rather than a new
+   * idempotency-key mechanism this flow doesn't need.
+   */
   async submit(id: string) {
     const proposal = await this.findOne(id);
     if (proposal.status !== ProposalStatus.DRAFT) {
@@ -317,7 +336,14 @@ export class ProposalsService {
     let priceDeviationPct = 0;
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
-    if (proposal.unit?.categoryId) {
+    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
+    // currency field (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a USD/MMK
+    // proposal.rentPerSqm against a VND floor/ceiling produces a nonsensical deviation (e.g. a
+    // $2,500/sqm proposal read as ~99.6% below a 700,000 VND floor), which then feeds straight
+    // into buildApprovalStepsFromRules()'s PRICE_DEVIATION_PCT rule matching -- silently forcing
+    // or skipping CEO/Director escalation based on a meaningless number. Skip the check for a
+    // non-VND proposal, same as the equivalent guard in BookingService.create()/update().
+    if (proposal.unit?.categoryId && proposal.rentCurrency === 'VND') {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: proposal.unit.mallId,
         categoryId: proposal.unit.categoryId,
@@ -336,10 +362,6 @@ export class ProposalsService {
         camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
         sources: validation.categoryPricing?.sources ?? null,
       };
-      await this.prisma.proposal.update({
-        where: { id },
-        data: { pricingRuleId, pricingSnapshot },
-      });
     }
 
     const steps = buildApprovalStepsFromRules(rules, {
@@ -356,25 +378,88 @@ export class ProposalsService {
       );
     }
 
-    await this.snapshotProposal({ ...proposal, pricingRuleId, pricingSnapshot } as unknown as Record<string, unknown>, undefined, 'SUBMITTED');
+    let workflow: { id: string };
+    const startedAt = Date.now();
+    this.logger.log(JSON.stringify({ event: 'proposal.submit.started', proposalId: id, tenantId: proposal.tenantId ?? null }));
+    try {
+      workflow = await this.prisma.$transaction(async (tx) => {
+        // Re-check inside the transaction: closes the TOCTOU window between the pre-check
+        // above and here, so a double-click/browser-retry/concurrent-API-call can't create
+        // two workflows for the same proposal.
+        const current = await tx.proposal.findUniqueOrThrow({ where: { id } });
+        if (current.status !== ProposalStatus.DRAFT) {
+          throw new BadRequestException('Proposal is not in DRAFT status');
+        }
 
-    const workflow = await this.prisma.approvalWorkflow.create({
-      data: {
-        entityType: 'PROPOSAL',
-        entityId: id,
+        if (pricingRuleId || pricingSnapshot) {
+          await tx.proposal.update({ where: { id }, data: { pricingRuleId, pricingSnapshot } });
+        }
+
+        await this.snapshotProposal(
+          { ...proposal, pricingRuleId, pricingSnapshot } as unknown as Record<string, unknown>,
+          undefined,
+          'SUBMITTED',
+          tx,
+        );
+
+        const created = await tx.approvalWorkflow.create({
+          data: {
+            entityType: 'PROPOSAL',
+            entityId: id,
+            proposalId: id,
+            status: WorkflowStatus.IN_PROGRESS,
+            steps: {
+              create: steps,
+            },
+          },
+        });
+
+        await tx.proposal.update({
+          where: { id },
+          data: { status: ProposalStatus.SUBMITTED },
+        });
+
+        return created;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      this.logger.log(JSON.stringify({
+        event: 'proposal.submit.completed',
         proposalId: id,
-        status: WorkflowStatus.IN_PROGRESS,
-        steps: {
-          create: steps,
-        },
-      },
-    });
+        tenantId: proposal.tenantId ?? null,
+        workflowId: workflow.id,
+        durationMs: Date.now() - startedAt,
+      }));
+    } catch (error: any) {
+      // Concurrent request won the race: our insert hit the unique constraint on
+      // ApprovalWorkflow.proposalId. Resolve to the workflow that now exists instead of
+      // surfacing a raw database error — the proposal was submitted exactly once either way.
+      if (error?.code === 'P2002') {
+        const winner = await this.prisma.approvalWorkflow.findUnique({ where: { proposalId: id } });
+        if (winner) {
+          this.metrics.increment('duplicate_transition_blocked_total');
+          this.logger.log(JSON.stringify({
+            event: 'proposal.submit.completed',
+            proposalId: id,
+            workflowId: winner.id,
+            durationMs: Date.now() - startedAt,
+            resolvedConcurrentSubmit: true,
+          }));
+          return { message: 'Proposal submitted for approval', workflowId: winner.id };
+        }
+      }
+      this.metrics.increment('proposal_submit_failure_total');
+      this.logger.warn(JSON.stringify({
+        event: 'proposal.submit.failed',
+        proposalId: id,
+        durationMs: Date.now() - startedAt,
+        error: error?.message ?? String(error),
+      }));
+      throw error;
+    }
 
-    await this.prisma.proposal.update({
-      where: { id },
-      data: { status: ProposalStatus.SUBMITTED },
-    });
-
+    // Best-effort, not part of the atomic core: in-app + email notifications to approvers.
+    // A failure here must not roll back a proposal that was already correctly submitted —
+    // matches the "notification is not state" rule (network side effects stay out of the
+    // DB transaction; the workflow itself is already durable at this point).
     await this.notifyPendingApprovers(workflow.id, 1);
 
     return { message: 'Proposal submitted for approval', workflowId: workflow.id };
@@ -546,6 +631,29 @@ export class ProposalsService {
     return { success: true, contractId: contract.id, created: true };
   }
 
+  /**
+   * Data integrity hardening (docs/security/DATA_INTEGRITY_PROPOSAL_CONTRACT.md):
+   * this used to run Contract create → Unit status transition → Booking
+   * cancellation → Proposal status update → Lead status update as separate,
+   * unwrapped writes. A failure partway through (e.g. the unit-status
+   * transition's own validation throwing) left a Contract row committed with
+   * everything after it silently skipped — a half-created state. The
+   * existing-contract idempotency check (`existing`) was also a
+   * check-then-act race: two concurrent calls could both pass it before
+   * either committed. `Contract.proposalId` is `@unique` in the schema, so
+   * true duplicates were never actually possible, but the loser of that race
+   * used to get a raw unhandled Prisma P2002 error instead of the existing
+   * contract back.
+   *
+   * Fix: every write that must be consistent with "a contract now exists for
+   * this proposal" runs inside one Serializable transaction (same isolation
+   * level already used for approval decisions in ApprovalsService, for the
+   * same reason — this is a decision-with-side-effects, not a simple CRUD
+   * write). A concurrent-duplicate attempt now either serializes cleanly
+   * behind the winner, or hits the P2002 unique-constraint path, both of
+   * which are caught and resolved to "return the contract that now exists"
+   * rather than surfacing a raw database error.
+   */
   async createContractFromProposal(
     id: string,
     options?: { userId?: string; markConverted?: boolean },
@@ -564,86 +672,128 @@ export class ProposalsService {
     const existing = await this.prisma.contract.findFirst({ where: { proposalId: id } });
     if (existing) return existing;
 
-    // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal khác nhau
-    // cho cùng unit đều được duyệt và cùng cố tạo hợp đồng (sẽ ghi đè tenantId/lease dates âm thầm
-    // ở bước transition CONTRACTED→CONTRACTED bên dưới nếu không chặn ở đây).
-    const existingUnitContract = await this.prisma.contract.findFirst({
-      where: {
-        unitId: proposal.unitId,
-        isActive: true,
-        deletedAt: null,
-        status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
-      },
-    });
-    if (existingUnitContract) {
-      throw new BadRequestException(
-        `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
-      );
+    let contract: Awaited<ReturnType<typeof this.prisma.contract.create>>;
+    try {
+      contract = await this.prisma.$transaction(async (tx) => {
+        // Re-check inside the transaction: closes the TOCTOU window between the
+        // pre-check above and here under Serializable isolation.
+        const alreadyExists = await tx.contract.findFirst({ where: { proposalId: id } });
+        if (alreadyExists) return alreadyExists;
+
+        // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal khác
+        // nhau cho cùng unit đều được duyệt và cùng cố tạo hợp đồng.
+        const existingUnitContract = await tx.contract.findFirst({
+          where: {
+            unitId: proposal.unitId,
+            isActive: true,
+            deletedAt: null,
+            status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+          },
+        });
+        if (existingUnitContract) {
+          throw new BadRequestException(
+            `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
+          );
+        }
+
+        const year = new Date().getFullYear();
+        const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
+        const contractNumber = `CTR-${year}-${rand}`;
+
+        const created = await tx.contract.create({
+          data: {
+            contractNumber,
+            proposalId: id,
+            tenantId: proposal.tenantId,
+            unitId: proposal.unitId,
+            status: ContractStatus.DRAFT,
+            startDate: proposal.startDate,
+            endDate: proposal.endDate!,
+            term: proposal.term,
+            rent: proposal.monthlyRent,
+            cam: proposal.monthlyCAM,
+            deposit: proposal.depositAmount,
+            rentFree: proposal.rentFree,
+            escalationPercent: proposal.escalationPercent,
+            // Multi-currency (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): this is the actual
+            // Proposal->Contract conversion path wired to the UI's "Convert to Contract" action
+            // (ContractsService.create() is a separate direct-create path with its own currency
+            // resolution) -- without this, the Contract row silently fell back to the schema's
+            // VND default regardless of the Proposal's real currency, reproducing exactly the
+            // silent-currency-loss bug the original audit found and thought it had closed.
+            currencyCode: proposal.rentCurrency,
+            // GAP #41 — carry-over 3 khoản cọc từ Proposal
+            depositLease: (proposal as any).depositLease ?? undefined,
+            depositFitout: (proposal as any).depositFitout ?? 0,
+            fitoutFee: (proposal as any).fitoutFee ?? 0,
+            // GAP #91, #93 — carry-over phí tiện ích & ngoài giờ
+            utilityFee: (proposal as any).utilityFee ?? 0,
+            afterHoursFee: (proposal as any).afterHoursFee ?? 0,
+            operatingHours: (proposal as any).operatingHours ?? undefined,
+          },
+        });
+
+        await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
+          userId: options?.userId,
+          reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
+          tenantId: proposal.tenantId,
+          leaseStartDate: proposal.startDate,
+          leaseEndDate: proposal.endDate ?? undefined,
+        }, tx);
+
+        // Mặt bằng đã có hợp đồng chính thức — mọi booking khác còn xếp hàng (queue) cho unit này
+        // không còn ý nghĩa, huỷ để tránh tồn đọng booking "ma" trỏ vào unit đã ký hợp đồng.
+        await tx.unitBooking.updateMany({
+          where: {
+            unitId: proposal.unitId,
+            isActive: true,
+            status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
+          },
+          data: { status: BookingStatus.CANCELLED },
+        });
+
+        if (options?.markConverted !== false) {
+          await tx.proposal.update({
+            where: { id },
+            data: { status: ProposalStatus.CONVERTED },
+          });
+        }
+
+        if (proposal.leadId) {
+          await tx.lead.update({
+            where: { id: proposal.leadId },
+            data: { status: 'WON' as any },
+          });
+        }
+
+        return created;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error: any) {
+      // Concurrent request won the race: our insert hit the unique constraint
+      // on Contract.proposalId. Resolve to the contract that now exists
+      // instead of surfacing a raw database error — same idempotent outcome
+      // as the pre-check above, just for the case where two requests both
+      // passed it before either committed.
+      if (error?.code === 'P2002') {
+        const winner = await this.prisma.contract.findFirst({ where: { proposalId: id } });
+        if (winner) return winner;
+      }
+      throw error;
     }
 
-    const year = new Date().getFullYear();
-    const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
-    const contractNumber = `CTR-${year}-${rand}`;
-
-    const contract = await this.prisma.contract.create({
-      data: {
-        contractNumber,
-        proposalId: id,
-        tenantId: proposal.tenantId,
-        unitId: proposal.unitId,
-        status: ContractStatus.DRAFT,
-        startDate: proposal.startDate,
-        endDate: proposal.endDate!,
-        term: proposal.term,
-        rent: proposal.monthlyRent,
-        cam: proposal.monthlyCAM,
-        deposit: proposal.depositAmount,
-        rentFree: proposal.rentFree,
-        escalationPercent: proposal.escalationPercent,
-        // GAP #41 — carry-over 3 khoản cọc từ Proposal
-        depositLease: (proposal as any).depositLease ?? undefined,
-        depositFitout: (proposal as any).depositFitout ?? 0,
-        fitoutFee: (proposal as any).fitoutFee ?? 0,
-        // GAP #91, #93 — carry-over phí tiện ích & ngoài giờ
-        utilityFee: (proposal as any).utilityFee ?? 0,
-        afterHoursFee: (proposal as any).afterHoursFee ?? 0,
-        operatingHours: (proposal as any).operatingHours ?? undefined,
-      },
-    });
-
-    await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
-      userId: options?.userId,
-      reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
-      tenantId: proposal.tenantId,
-      leaseStartDate: proposal.startDate,
-      leaseEndDate: proposal.endDate ?? undefined,
-    });
-
-    // Mặt bằng đã có hợp đồng chính thức — mọi booking khác còn xếp hàng (queue) cho unit này
-    // không còn ý nghĩa, huỷ để tránh tồn đọng booking "ma" trỏ vào unit đã ký hợp đồng.
-    await this.prisma.unitBooking.updateMany({
-      where: {
-        unitId: proposal.unitId,
-        isActive: true,
-        status: { in: [BookingStatus.ACTIVE, BookingStatus.PENDING] },
-      },
-      data: { status: BookingStatus.CANCELLED },
-    });
-
-    if (options?.markConverted !== false) {
-      await this.prisma.proposal.update({
-        where: { id },
-        data: { status: ProposalStatus.CONVERTED },
-      });
-    }
-
+    // Best-effort, not part of the atomic core: a CRM customer profile is a
+    // downstream convenience derived from the lead, not something the
+    // Contract/Unit/Proposal state machine's correctness depends on. It's
+    // already idempotent on its own (createFromLead returns the existing
+    // customer if one is already linked), so a transient failure here is
+    // logged and swallowed rather than rolling back a successful contract.
     if (proposal.leadId) {
-      await this.prisma.lead.update({
-        where: { id: proposal.leadId },
-        data: { status: 'WON' as any },
-      });
       const creatorId = proposal.createdById ?? options?.userId ?? 'system';
-      await this.customersService.createFromLead(proposal.leadId, creatorId);
+      try {
+        await this.customersService.createFromLead(proposal.leadId, creatorId);
+      } catch (error: any) {
+        this.logger.warn(`createFromLead failed after contract ${contract.id} was created: ${error.message}`);
+      }
     }
 
     return contract;

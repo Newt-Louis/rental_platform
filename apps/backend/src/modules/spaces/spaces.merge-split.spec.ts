@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SpacesService } from './spaces.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { MallAccessService } from '../../common/services/mall-access.service';
 import { UnitStatus } from '@prisma/client';
 
 const mockUnit = (overrides: any = {}) => ({
@@ -44,6 +45,7 @@ describe('SpacesService — mergeUnits / splitUnit', () => {
   } as any;
 
   const unitStatus = { transition: jest.fn() } as any;
+  const mallAccess = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() } as any;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -52,6 +54,7 @@ describe('SpacesService — mergeUnits / splitUnit', () => {
         SpacesService,
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
+        { provide: MallAccessService, useValue: mallAccess },
       ],
     }).compile();
     service = module.get(SpacesService);

@@ -156,6 +156,19 @@ The canonical contract-expiry notification job is owned by
 `NotificationsModule`. Do not register a second contract-expiry scheduler in
 another module because it can create duplicate notifications and email.
 
+Shutdown:
+
+```bash
+docker compose down          # stops containers, keeps named volumes (DB/uploads data)
+docker compose down -v       # DESTRUCTIVE — also deletes named volumes; never run in production
+```
+
+Job health: `GET /api/operations/jobs` (ADMIN/CEO) returns, per job, the
+last run's status/timestamp/duration and `consecutiveFailures` computed
+from its last 5 attempts — this is the authoritative way to check "did
+scheduled job X actually run and succeed," replacing log-grepping. See
+`docs/reliability/OBSERVABILITY.md`.
+
 ## 6. Backup and restore
 
 Production targets:
@@ -271,23 +284,128 @@ code. Migration deployment remains explicit operator evidence: record
 
 Before upgrading:
 
-1. Record the current image tags and migration name.
-2. Back up PostgreSQL and uploads.
+1. Record the current image tags and migration name (`SELECT * FROM
+   "_prisma_migrations" ORDER BY finished_at DESC LIMIT 1;`).
+2. Back up PostgreSQL and uploads (§6). Confirm the backup's manifest
+   checksum before proceeding — do not upgrade on an unverified backup.
 3. Run the pre-deployment gate and migration against UAT.
 4. Deploy immutable image tags, never `latest`.
+5. Run the migration job exactly once, as its own step, **before**
+   bringing up the new application containers — never let a container's
+   startup command run migrations implicitly (§3; this is also a static
+   CI check, `ops-static-check.mjs`). This mirrors the fix made in
+   `deploy-uat.sh` during the Production Hardening A sprint, where the UAT
+   deploy previously relied on the backend image auto-migrating on boot —
+   see `docs/reliability/MIGRATION_SAFETY.md` for why that was unsafe
+   (silent migration skips, multi-replica races) and apply the same
+   explicit-migration-step discipline to every environment, not only UAT.
 
-Rollback application containers to the previous image tag. Database migrations
-must be designed forward-compatible; never run destructive rollback commands
-without an approved data-recovery plan.
+### "A release just broke 10 minutes after deploy" — decision procedure
+
+1. **Check `GET /api/health/ready` first.** If it's `degraded`, the
+   problem is a dependency (DB/Redis/MSSQL), not the new release itself —
+   go to the DB/dependency incident playbook below instead of rolling back
+   application code.
+2. **Check `GET /api/operations/metrics`.** A spike in `serverErrors` or
+   `byStatus["5xx"]` confirms an application-level regression, not a
+   dependency issue.
+3. **Did this release include a migration?**
+   - **No migration in this release** → roll back the application
+     container to the previous known-good image tag. This is always safe:
+     `docker compose up -d --no-deps <service>` pointed at the prior tag.
+     No database action needed.
+   - **Migration included** → this is the dangerous case. Prisma
+     migrations in this codebase are expected to be forward-compatible
+     (additive: new columns nullable or defaulted, new tables, no
+     same-deploy column drops/renames — see `docs/reliability/
+     MIGRATION_SAFETY.md`). If the migration followed that discipline,
+     rolling back the **application** container to the previous image
+     while leaving the **schema** at the new migration is safe — the old
+     code should not reference the new columns/tables. **Never run a
+     manual "down" migration or restore the database to roll back schema
+     changes** unless a data-loss incident specifically requires it, and
+     only with an approved data-recovery plan (§6 restore procedure) — a
+     schema rollback risks losing every write made after the migration
+     ran, not just the buggy release's changes.
+4. **If application rollback doesn't resolve it**, treat as a full
+   incident (§10) — the cause may be data-level, not code-level.
+5. Document what happened, even if resolved quickly: which tag was rolled
+   back to, whether a migration was involved, and total time to recovery.
 
 ## 10. Incident response
+
+### General procedure
 
 1. Disable public traffic at the reverse proxy if data integrity is at risk.
 2. Preserve backend, proxy, database and audit logs.
 3. Capture affected user, endpoint, request ID/time range and entity IDs.
+   Every request is tagged with an `X-Request-Id` (`RequestObservabilityInterceptor`)
+   present in both the response header and the structured backend log line —
+   use it to correlate a user-reported issue with the exact log entry.
 4. Restore service from known-good images; restore data only after validating the backup.
 5. Rotate JWT, SMTP, SAP and AI credentials if exposure is suspected.
 6. Document root cause, impact, remediation and regression tests.
+
+### Playbook: a scheduled job failed or didn't run
+
+1. `GET /api/operations/jobs` — find the job by name. `lastStatus: FAILED`
+   with `lastErrorSummary` gives the immediate cause; `consecutiveFailures
+   >= 2` means it's not a one-off. `lastStatus: null` (job never appears)
+   means it hasn't executed even once since the ledger table existed —
+   check the container is actually running that replica's scheduler and
+   that Redis is reachable (`SchedulerLockService` logs a warning on
+   startup if Redis is unavailable and falls back to single-instance mode).
+2. Cross-reference `docker compose logs backend` around `lastStartedAt` for
+   the full stack trace — the ledger's `errorSummary` is deliberately
+   truncated to a message only (§ Observability, no stack traces stored).
+3. Most scheduled jobs are idempotent (upsert/skip-if-exists patterns) or
+   safe to simply wait for the next tick. Do not manually re-trigger a job
+   by calling its service method directly in a shell unless you have
+   confirmed it's safe to run twice.
+
+### Playbook: file/storage issue (uploads, documents)
+
+1. Confirm which route: business documents (contracts, invoices, tickets,
+   fitout, patrol, work orders) are served exclusively through the
+   authenticated `FilesController` (`/api/files/...`) since the P1 fix in
+   `docs/security/PUBLIC_UPLOADS_REMEDIATION.md` — a 403/404 there is
+   usually a real permission/tenant-scope check, not a storage fault.
+   Only `floor-plans`, `branding`, and `unit-media` remain on the public
+   static `/uploads/...` mount.
+2. Check the backend container's `/app/uploads` volume is mounted and
+   writable (`StorageService.saveFile`); an `ENOSPC` or permission error
+   surfaces in backend logs at the write call site.
+3. Disk usage: not currently instrumented in `OperationalMetricsService`
+   (documented gap, `docs/reliability/OBSERVABILITY.md` §4) — check host
+   disk directly (`df -h`) against the Docker volume mount until that gap
+   is closed.
+
+### Playbook: authentication issue (users can't log in / getting logged out)
+
+1. Check `JWT_SECRET` hasn't changed since the affected tokens were issued
+   — rotating it invalidates every existing session immediately (this is
+   expected during a credential-rotation incident, see
+   `docs/security/SECRET_INCIDENT_REMEDIATION.md`, not a bug).
+2. Check Redis is reachable — the token-blacklist check in `JwtAuthGuard`
+   depends on it; if Redis is down, revoked tokens may briefly be treated
+   as valid (fail-open on the blacklist check only, not on JWT signature
+   verification itself).
+3. A wave of 401s in `GET /api/operations/metrics`'s `byStatus` breakdown
+   pinpoints when it started; correlate with any recent secret rotation or
+   deploy.
+
+### Playbook: database issue
+
+1. `GET /api/health/ready` — `components.database: "down"` confirms it's
+   DB-level, not application-level.
+2. Check `docker compose ps postgres` / `docker compose logs postgres`.
+3. If the database is up but slow: check for a long-running migration or
+   an unindexed query introduced by the latest release; `GET /api/operations/metrics`'s
+   `averageDurationMs` trend indicates whether this is systemic.
+4. If data was corrupted or lost: stop writes (disable public traffic),
+   do **not** attempt an in-place fix, follow the restore procedure in §6
+   against a freshly verified backup, restoring to an isolated database
+   first to confirm integrity before touching production.
 
 ## 11. Go-live acceptance
 
@@ -296,5 +414,8 @@ without an approved data-recovery plan.
 - Migration succeeds on a production-like database.
 - Backup and restore drill succeeds.
 - All seven smoke-test journeys pass with correct RBAC.
-- Monitoring, alert ownership and escalation contacts are assigned.
+- Monitoring, alert ownership and escalation contacts are assigned — the
+  minimum target alert set is defined in `docs/reliability/OBSERVABILITY.md`
+  §4; no monitoring platform is wired up yet, so this remains a target
+  spec until one is configured, not a live alert today.
 - UAT sign-off is recorded for Leasing, Legal, Operation, Finance and Tenant users.

@@ -346,10 +346,15 @@
     "title": "Notifications",
     "markAllRead": "Mark all as read",
     "noNotifications": "No notifications",
+    "noTasks": "Nothing needs your attention",
     "viewAll": "View all notifications",
     "pendingApprovals": "{{count}} approval(s) awaiting you",
     "pendingApprovalsAction": "Click to handle now",
     "minutesAgo": "{{count}} minutes ago",
-    "hoursAgo": "{{count}} hours ago"
+    "hoursAgo": "{{count}} hours ago",
+    "tabs": {
+      "tasks": "Tasks",
+      "notifications": "Notifications"
+    }
   }
 }

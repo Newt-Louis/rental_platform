@@ -8,12 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { useMallStore } from '@/store/mall.store';
 import { Controller, useForm } from 'react-hook-form';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tags, DollarSign,
   Building2, RefreshCw, AlertTriangle,
 } from 'lucide-react';
-import type { Category, CategoryMallPricing, Mall, Floor, Zone } from '@/types';
+import type { Category, CategoryMallPricing, Floor, Zone } from '@/types';
 
 function formatCurrency(value: number | undefined | null) {
   if (value == null) return 'Kế thừa';
@@ -373,7 +374,9 @@ export function CategoriesTab() {
   const [confirmDelete, setConfirmDelete] = useState<Category | null>(null);
 
   // Pricing state
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [showCreatePricing, setShowCreatePricing] = useState(false);
   const [editPricing, setEditPricing] = useState<CategoryMallPricing | null>(null);
   const [confirmDeletePricing, setConfirmDeletePricing] = useState<CategoryMallPricing | null>(null);
@@ -384,20 +387,6 @@ export function CategoriesTab() {
     queryFn: () => categoriesApi.getTree(),
   });
   const categories: Category[] = categoriesData ?? [];
-
-  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: Mall[] = mallsData?.data ?? mallsData ?? [];
-
-  // Keep state updates out of render and preserve the current selection when possible.
-  useEffect(() => {
-    if (malls.length === 0) {
-      setSelectedMallId('');
-      return;
-    }
-    if (!selectedMallId || !malls.some((mall) => mall.id === selectedMallId)) {
-      setSelectedMallId(malls[0].id);
-    }
-  }, [malls, selectedMallId]);
 
   const { data: pricingData, isLoading: loadingPricing } = useQuery({
     queryKey: ['category-pricing', selectedMallId],
@@ -454,16 +443,14 @@ export function CategoriesTab() {
           </Button>
         ) : (
           <>
-            <select
-              value={selectedMallId}
-              onChange={(e) => setSelectedMallId(e.target.value)}
-              className="border rounded-lg px-3 py-2 text-sm bg-white"
+            <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm">{selectedMallName}</div>
+            <Button
+              onClick={() => {
+                if (!selectedMallId) return openMallContextModal();
+                setShowCreatePricing(true);
+              }}
+              className="gap-2"
             >
-              {malls.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-            <Button onClick={() => setShowCreatePricing(true)} className="gap-2" disabled={!selectedMallId}>
               <Plus size={15} /> Thêm giá
             </Button>
           </>

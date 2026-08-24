@@ -17,7 +17,13 @@ import { Response } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { MallAccessService } from "../../common/services/mall-access.service";
+import { Scope } from "../../common/decorators/scope.decorator";
+import { ScopeType, EnforcementStatus } from "../../common/constants/scope.types";
 import { ParkingService } from "./parking.service";
+import {
+  CreateParkingContractDto, GenerateParkingStatementDto, ParkingAdjustmentDto,
+  ParkingPaymentDto, ParkingReconcileDto, ParkingStatusDto, UpdateParkingContractDto,
+} from "./dto/parking.dto";
 const VIEW = [
   Role.ADMIN,
   Role.CEO,
@@ -33,9 +39,12 @@ const EDIT = [
   Role.FINANCE,
   Role.LEASING_MANAGER,
 ];
+const FINANCE_EDIT = [Role.ADMIN, Role.MALL_DIRECTOR, Role.FINANCE];
+// CR-101 Phase 1: descriptive only.
 @ApiTags("Parking Contracts & Receivables")
 @ApiBearerAuth("JWT-auth")
 @Roles(...VIEW)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
 @Controller("parking")
 export class ParkingController {
   constructor(
@@ -83,7 +92,7 @@ export class ParkingController {
     return this.service.contract(id);
   }
   @Post("contracts") @Roles(...EDIT) async create(
-    @Body() b: any,
+    @Body() b: CreateParkingContractDto,
     @CurrentUser() u: any,
   ) {
     await this.access.assertMallAccess(u.id, u.role, b.mallId);
@@ -91,7 +100,7 @@ export class ParkingController {
   }
   @Patch("contracts/:id") @Roles(...EDIT) async update(
     @Param("id") id: string,
-    @Body() b: any,
+    @Body() b: UpdateParkingContractDto,
     @CurrentUser() u: any,
   ) {
     await this.assertContract(id, u);
@@ -99,15 +108,15 @@ export class ParkingController {
   }
   @Patch("contracts/:id/status") @Roles(...EDIT) async status(
     @Param("id") id: string,
-    @Body("status") status: string,
+    @Body() body: ParkingStatusDto,
     @CurrentUser() u: any,
   ) {
     await this.assertContract(id, u);
-    return this.service.updateStatus(id, status);
+    return this.service.updateStatus(id, body.status);
   }
   @Post("contracts/:id/adjustments") @Roles(...EDIT) async adjustment(
     @Param("id") id: string,
-    @Body() b: any,
+    @Body() b: ParkingAdjustmentDto,
     @CurrentUser() u: any,
   ) {
     await this.assertContract(id, u);
@@ -115,11 +124,23 @@ export class ParkingController {
   }
   @Post("contracts/:id/statements") @Roles(...EDIT) async statement(
     @Param("id") id: string,
-    @Body() b: any,
+    @Body() b: GenerateParkingStatementDto,
     @CurrentUser() u: any,
   ) {
     await this.assertContract(id, u);
-    return this.service.generateStatement(id, b.period, b.actualQuantities);
+    return this.service.generateStatement(
+      id, b.period, b.actualQuantities, b.adjustment, b.notes,
+    );
+  }
+  @Post("contracts/:id/statements/preview") @Roles(...EDIT) async statementPreview(
+    @Param("id") id: string,
+    @Body() b: GenerateParkingStatementDto,
+    @CurrentUser() u: any,
+  ) {
+    await this.assertContract(id, u);
+    return this.service.previewStatement(
+      id, b.period, b.actualQuantities, b.adjustment, b.notes,
+    );
   }
   @Post("contracts/:id/documents")
   @Roles(...EDIT)
@@ -151,17 +172,17 @@ export class ParkingController {
       b.notes,
     );
   }
-  @Patch("statements/:id/reconcile") @Roles(...EDIT) async reconcile(
+  @Patch("statements/:id/reconcile") @Roles(...FINANCE_EDIT) async reconcile(
     @Param("id") id: string,
-    @Body("status") status: string,
+    @Body() body: ParkingReconcileDto,
     @CurrentUser() u: any,
   ) {
     await this.assertStatement(id, u);
-    return this.service.reconcile(id, status);
+    return this.service.reconcile(id, body.status);
   }
-  @Post("statements/:id/payments") @Roles(...EDIT) async payment(
+  @Post("statements/:id/payments") @Roles(...FINANCE_EDIT) async payment(
     @Param("id") id: string,
-    @Body() b: any,
+    @Body() b: ParkingPaymentDto,
     @CurrentUser() u: any,
   ) {
     await this.assertStatement(id, u);

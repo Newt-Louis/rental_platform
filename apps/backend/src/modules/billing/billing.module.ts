@@ -7,9 +7,12 @@ import { ArDunningService } from './ar-dunning.service';
 import { PenaltyInterestService } from './penalty-interest.service';
 import { CollectionKpiService } from './collection-kpi.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StorageModule } from '../../storage/storage.module';
+import { MulterModule } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, StorageModule, MulterModule.register({ storage: memoryStorage() })],
   controllers: [BillingController],
   providers: [
     BillingService,
