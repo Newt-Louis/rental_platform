@@ -2,7 +2,7 @@
 
 Assessment date: 2026-08-24
 
-Overall completion: **79%**
+Overall completion: **80%**
 
 The percentage reflects completion of the canonical inventory, all seven
 planned implementation/audit waves and the supporting-presentation/localization
@@ -108,7 +108,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Authorization | **FAIL** — confirmed reachable scope gaps remain |
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
 | Cross-Module Journeys | **FAIL** — 2/12 UAT scenarios evidenced; full Lead-to-Collection and exception journeys not run |
-| Frontend Tests | **252/262** — 10 isolated pre-existing failures across 6 suite groups; no new wave regression identified |
+| Frontend Tests | **262/262 PASS** — 44/44 files; obsolete baseline assertions remediated without production-code changes |
 | Backend Tests | **598/598 PASS** — 91/91 suites |
 | Integration Tests | **2/12 UAT scenarios PASS** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |

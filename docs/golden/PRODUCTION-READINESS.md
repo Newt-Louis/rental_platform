@@ -13,7 +13,7 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 598/598 and both builds pass. The frontend full suite is 249/259; all ten failures reproduce the isolated pre-program Booking/navigation baseline and no implementation-wave regression was identified. |
+| Engineering | PASS | Backend is 598/598; frontend is 262/262 across 44 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
 | Authorization | FAIL | Core audited paths are scoped, but CRM unified deals, Ticket secondary paths, and Analytics Compliance exports retain confirmed ownership/scope gaps. |
 | Tenant isolation | FAIL | Live Contract/Invoice cross-tenant IDOR checks passed, but confirmed Ticket secondary-path ownership gaps remain. Files have focused tests but no live cross-tenant UAT. |

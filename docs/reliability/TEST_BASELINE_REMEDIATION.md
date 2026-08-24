@@ -1,7 +1,8 @@
 # Test Baseline Remediation
 
-**Status:** Backend RESOLVED (100%). Frontend substantially resolved — 39 → 9
-failures, all 9 precisely diagnosed and classified, not blindly hidden.
+**Status:** RESOLVED (100%). Backend and frontend suites are green; the final
+frontend baseline assertion remediation completed on 2026-08-24 without
+changing production behavior or disabling tests.
 2026-08-19 · Sprint: Production Hardening A
 
 ## Before / after
@@ -120,11 +121,24 @@ redesign is already scoped as Option C work, not this hardening sprint.
 Documented here precisely enough that whoever picks this up doesn't need to
 re-diagnose it.
 
+## Final frontend closure — 2026-08-24
+
+The later Golden ERP completion gate reproduced ten failures: the nine stale
+Booking assertions documented above plus one navigation invariant that assumed
+one permission module could have only one route. All were test defects:
+
+- repeated Booking labels are now scoped to the authoritative row or dialog;
+- cancel tests enter the already-required reason and assert the existing
+  `cancel(id, reason)` call;
+- delete tests use the current localized action title;
+- navigation still verifies complete module coverage and unique paths while
+  recognizing that `/ai` and `/ai/codebase` intentionally share the `ai`
+  permission module.
+
+Focused result: 46/46. Full frontend result: **262/262 across 44 files**.
+No test was skipped or disabled, and no runtime file changed in this closure.
+
 ## Exit criteria check (section 32: "0 unexplained failures")
 
 - Backend: 0 failures, period.
-- Frontend: 9 failures remain, but **all 9 have a specific, code-verified root
-  cause identified** (query over-matching for 2, confirmed bulk-cancel-flow
-  consolidation for the other 7) — none are unexplained, none are hidden via
-  `.skip`, and the underlying product behavior was directly read from source,
-  not guessed.
+- Frontend: 0 failures; 262/262 pass.

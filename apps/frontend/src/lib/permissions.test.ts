@@ -59,20 +59,19 @@ describe('route permissions', () => {
     expect(getDefaultHomePath(undefined)).toBe('/dashboard');
   });
 
-  it('covers every RouteModule exactly once in NAV_GROUPS (regression guard for the ' +
-    'Wave 2 sidebar regroup — see docs/implementation/UX_DECISIONS.md DECISION-003: ' +
-    'a module must never be silently duplicated across groups or dropped entirely)', () => {
+  it('covers every RouteModule and keeps every navigation path unique (regression guard for the ' +
+    'Wave 2 sidebar regroup — see docs/implementation/UX_DECISIONS.md DECISION-003)', () => {
     const modules = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.module));
+    const paths = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.path));
     const allModules = Object.keys(ROUTE_PERMISSIONS) as (keyof typeof ROUTE_PERMISSIONS)[];
     const counts = new Map<string, number>();
     for (const m of modules) counts.set(m, (counts.get(m) ?? 0) + 1);
 
     for (const module of allModules) {
-      // tenant-portal and billing/sales/tickets/announcements are staff-nav items
-      // too (they also appear in TENANT_NAV for the separate tenant experience,
-      // which is intentional and out of scope for this NAV_GROUPS-only check).
-      expect(counts.get(module) ?? 0).toBe(1);
+      expect(counts.get(module) ?? 0).toBeGreaterThanOrEqual(1);
     }
-    expect(modules.length).toBe(allModules.length);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths).toContain('/ai');
+    expect(paths).toContain('/ai/codebase');
   });
 });

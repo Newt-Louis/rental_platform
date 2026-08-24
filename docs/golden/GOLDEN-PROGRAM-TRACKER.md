@@ -31,6 +31,45 @@ The following pre-existing paths are excluded from program staging unless their 
 | Platform verification | correctness, security, reconciliation, E2E, build | COMPLETE — 17/17 invariants and builds pass; full UAT/security/operations gates remain open |
 | 8 | Supporting presentation consistency | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 9 | Golden/reference localization safety sweep | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 10 | Frontend baseline test remediation | COMPLETE — test assertions only; frontend 262/262 PASS |
+
+## Wave 10 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W10-TEST-BASELINE`
+
+Business reason: restore a truthful green frontend suite after confirmed UI
+architecture and localized-copy changes made existing tests ambiguous or
+obsolete. This wave changes test selectors/assertions only; production code is
+not modified.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Frontend navigation test coverage and Golden Booking list test coverage |
+| Runtime/business behavior | None; assertions are aligned to the currently approved rendered structure and locale copy |
+| Data/state/workflow | No status, transition, action or source-of-truth change |
+| Financial/currency | No amount, formatter, formula, precision or currency change |
+| Mall/Tenant/authorization | Existing permissions remain unchanged; the test still proves every route module is reachable from navigation and every path is unique |
+| API/backend/schema/database | No change |
+| Tests | Replace ambiguous global text lookups with row/dialog-scoped queries; recognize two distinct AI navigation paths sharing one permission module |
+| Golden scenarios | Preserve the approved Booking cancel/delete interactions and current navigation coverage |
+| Rollback | Revert the test-only checkpoint; no runtime or persisted data affected |
+| Open questions | None |
+
+## Wave 10 technical gate — 2026-08-24
+
+- `permissions.test.ts` now verifies every permission module is represented and
+  every navigation path is unique, while correctly allowing `/ai` and
+  `/ai/codebase` to share the same authoritative permission module.
+- `BookingsPage.test.tsx` now scopes repeated labels to their row/dialog,
+  follows the existing mandatory cancellation-reason flow, and asserts the
+  current localized delete action. Production Booking code was not changed.
+- Focused frontend: PASS, 2 files / 46 tests.
+- Frontend full: PASS, 44 files / 262 tests. The previously classified ten
+  baseline failures are closed with no skipped/disabled tests.
+- Frontend TypeScript and production build: PASS. `git diff --check`: PASS.
+- Backend, Docker and database behavior are unchanged from the passing Wave 9
+  gate; no rebuild or data mutation was required for this test-only wave.
+- Business logic/API/backend/schema/database/financial/currency changes: NO.
 
 ## Wave 9 Change Request and Impact Map
 
