@@ -19,5 +19,8 @@ Status: ACTIVE
 | Lead estimate currency provenance | Tier 0; BC-001 business confirmation required | Display current documented VND semantics exactly; no schema or FX inference |
 | Unit merge transition semantics | Tier 1; BC-010 business confirmation required | `MERGED` bypasses the shared transition matrix; preserve behavior until intent is approved |
 | Slot pricing currency provenance | Tier 0; no persisted currency | Do not infer VND or combine with Unit/Contract money; requires explicit design |
+| Ticket escalation/rating/SLA-policy Tenant isolation | Tier 1; `CONTRA-003` / `INV-006` / BC-020 | Quarantine secondary endpoints; require authoritative ownership decision and negative Tenant/cross-Mall tests |
+| Work Order status/event atomicity | Tier 1 reliability | Status write and audit-event insert are currently separate; preserve until a reviewed transaction change |
+| Patrol abnormal-check → Work Order transaction boundary | Tier 1 cross-module; XMOD-007 | Existing one-way/idempotent automation is preserved; verify atomicity before any correctness change |
 
 This backlog records risks; it is not authorization to change Tier 0/Tier 1 behavior.

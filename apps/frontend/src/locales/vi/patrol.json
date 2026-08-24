@@ -1,0 +1,11 @@
+{
+  "page": { "eyebrow": "Vận hành", "title": "Tuần tra an ninh", "subtitle": "Tuyến · điểm kiểm tra · ca trực · lịch định kỳ · minh chứng · xử lý bất thường" },
+  "summary": { "total": "Tổng ca", "active": "Đang chờ/xử lý", "completed": "Hoàn thành", "abnormal": "Bất thường", "suspicious": "Nghi vấn gian lận" },
+  "tabs": { "shifts": "Ca tuần tra", "routes": "Tuyến & điểm", "schedules": "Lịch định kỳ", "reports": "Báo cáo" },
+  "status": { "SCHEDULED": "Đã lên lịch", "OVERDUE": "Quá hạn", "IN_PROGRESS": "Đang thực hiện", "COMPLETED": "Hoàn thành", "CANCELLED": "Đã hủy" },
+  "result": { "PENDING": "Chờ kiểm tra", "NORMAL": "Bình thường", "ABNORMAL": "Bất thường", "SKIPPED": "Đã bỏ qua" },
+  "severity": { "LOW": "Thấp", "MEDIUM": "Trung bình", "HIGH": "Cao", "URGENT": "Khẩn cấp" },
+  "filters": { "allStatuses": "Mọi trạng thái", "allRoutes": "Mọi tuyến", "allAssignees": "Mọi người phụ trách" },
+  "actions": { "createShift": "Lên ca tuần tra", "createRoute": "Tạo tuyến", "createSchedule": "Tạo lịch định kỳ" },
+  "empty": { "shifts": "Không có ca tuần tra phù hợp bộ lọc" }
+}

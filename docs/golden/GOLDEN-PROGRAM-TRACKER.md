@@ -24,7 +24,8 @@ The following pre-existing paths are excluded from program staging unless their 
 | 1 | Golden Fitout presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 2 | CRM / Customer / Tenant presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 3 | Unit / Space Inventory presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
-| 4+ | Remaining modules in dependency order | PENDING |
+| 4 | Operations / Ticket / Maintenance presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 5+ | Remaining modules in dependency order | PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | PENDING |
 
 ## Wave 1 Change Request and Impact Map
@@ -127,6 +128,43 @@ Approval boundary: the user's master execution authorization permits this presen
 - Authorization: Lead and Tenant controller paths verified; CRM unified deals remains a confirmed Tier 1 gap and Customer Mall ownership remains BC-016. Neither was silently changed.
 - Business logic/API contract/backend/schema/database changes: NO.
 
+## Wave 4 Change Request and Impact Map
+
+Business objective: consolidate Ticket, scheduled Maintenance, Work Order and Patrol into dense ERP operations worklists whose priorities, authoritative statuses and allowed actions are immediately legible, without changing any operational workflow or system-of-record behavior.
+
+In scope:
+
+- Presentation hierarchy, density, responsive composition and localization for Ticket, the Ticket Maintenance tab, Work Order and Patrol frontend surfaces.
+- Presentation-only mapping of existing Ticket, Work Order, Patrol Shift and Patrol Check enums.
+- Reuse of the existing ERP page header and toolbar components; preserve the established Ticket worklist/detail architecture.
+- Focused frontend presentation tests and locale resources.
+
+Out of scope:
+
+- Ticket, Maintenance, Work Order or Patrol transition rules, SLA calculations, scheduling/execution semantics, QR/geofence validation and abnormal-check automation.
+- Backend controllers/services, API contracts, authorization policy, Prisma schema/migrations and database.
+- Known Ticket tenant-isolation gaps on escalation/rating/SLA-policy paths; these remain a Tier 1 correctness quarantine.
+- Service Contract currency/invoice-transfer correctness, Announcements, Inventory, Parking, Dashboard and protected Proposal/Approval working-tree changes.
+
+Impact dimensions:
+
+| Dimension | Finding |
+|---|---|
+| Upstream | Tenant/staff creates Ticket; operations schedules Maintenance, Work Orders and Patrol Shifts through existing routes; unchanged |
+| Downstream | Ticket SLA escalation remains job-driven. An abnormal Patrol Check may create one Security Work Order through the existing backend path; unchanged |
+| Financial/currency | No money or currency field is displayed or calculated by the in-scope operational worklists |
+| Mall/Tenant | Main Ticket, Work Order and Patrol paths remain Mall-scoped. Confirmed Ticket isolation gaps on three secondary paths are not hidden or treated as UI-secured |
+| Events/jobs | Ticket SLA cron, Maintenance reminder/execution jobs and Patrol-to-Work-Order automation are unchanged |
+| Concurrency/idempotency | Existing Patrol abnormal-check idempotency and separate Work Order status/audit writes are preserved; no new client-side transition semantics |
+| API/schema/database | No change |
+| Protected modules | Dashboard, Booking and active Proposal/Approval paths remain excluded |
+
+Golden scenarios to preserve: GS-09 (cross-Mall access), GS-10 (Tenant isolation) and GS-15 (retry/idempotency), subject to the already-recorded Ticket secondary-endpoint gap.
+
+Unknowns: BC-020 (authoritative ownership for Ticket escalation/rating/SLA-policy reads) remains `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`. XMOD-007 (transaction boundary for an abnormal Patrol Check and its generated Work Order) remains unverified and quarantined. Neither is inferred in Wave 4.
+
+Approval boundary: the user's master execution authorization permits presentation work. Workflow, authorization, operational automation and transaction-boundary changes are Tier 1 boundaries and remain unchanged.
+
 ## Wave 3 Change Request and Impact Map
 
 Business objective: turn the existing Space surface into a dense inventory cockpit where availability, physical hierarchy, authoritative Unit status and current commercial context are immediately legible, without altering the Unit lifecycle or leasing eligibility.
@@ -175,4 +213,17 @@ Approval boundary: the user's master execution authorization permits presentatio
 - Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
 - Reconciliation: Unit rate-card fields remain existing implicit-VND data and are now presented exact with explicit `VND`; Proposal/Contract values continue using their persisted currency. Slot pricing remains unclassified and is not combined or relabeled.
 - Authorization: current Unit/Floor/Zone/map paths remain backend-scoped and focused authorization tests pass; no frontend role check is treated as security.
+- Business logic/API contract/backend/schema/database changes: NO.
+
+## Wave 4 technical gate — 2026-08-24
+
+- Frontend Work Order behavior and Operations presentation focused: PASS, 2 files / 6 tests.
+- Backend Ticket/Maintenance and Work Order role-scope focused: PASS, 2 suites / 18 tests.
+- Backend full: PASS, 91 suites / 598 tests.
+- TypeScript, frontend production build and backend production build: PASS.
+- Docker/runtime: PASS; rebuilt the current compose dependency chain, all four services are healthy, and `http://localhost:8080/` plus `http://localhost:3000/api/health` return HTTP 200. Existing UAT orphan containers were reported and deliberately left untouched.
+- Frontend full: BASELINE FAILURES only — `permissions.test.ts` RouteModule duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. All Wave 4 focused tests passed in the same full run.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
+- Reconciliation: Ticket, Maintenance, Work Order and Patrol surfaces contain no financial fields. Existing status/action transitions and Patrol-to-Work-Order automation remain backend-authoritative and unchanged.
+- Authorization: core paths remain server-scoped; the known Ticket secondary-endpoint Tenant gap remains explicitly quarantined and is not presented as secured by UI.
 - Business logic/API contract/backend/schema/database changes: NO.

@@ -170,6 +170,21 @@
     "title": "Requests & Tickets",
     "subtitle": "Manage maintenance tickets, support requests and site inspections",
     "totalActive": "{{count}} active tickets",
-    "totalHistory": "{{count}} history records"
+    "totalHistory": "{{count}} history records",
+    "eyebrow": "Operations",
+    "createInspection": "Create inspection ticket",
+    "queueHealthy": "Queue is within SLA",
+    "queueOverdue": "{{count}} requests are past SLA",
+    "queueHint": "Open, assign and progress requests through their operational record.",
+    "open": "Open",
+    "new": "New intake",
+    "unassigned": "Unassigned",
+    "overdue": "Past SLA",
+    "urgent": "Urgent",
+    "noMatch": "No tickets match the filters",
+    "empty": "No tickets yet",
+    "adjustFilters": "Change the search term or filters.",
+    "emptyHint": "Create the first ticket to begin operational tracking.",
+    "clearFilters": "Clear filters"
   }
 }

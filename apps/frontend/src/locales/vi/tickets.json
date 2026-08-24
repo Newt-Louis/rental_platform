@@ -170,6 +170,21 @@
     "title": "Yêu cầu & Ticket",
     "subtitle": "Quản lý ticket bảo trì, yêu cầu hỗ trợ và kiểm tra hiện trường",
     "totalActive": "{{count}} ticket đang xử lý",
-    "totalHistory": "{{count}} lịch sử"
+    "totalHistory": "{{count}} lịch sử",
+    "eyebrow": "Vận hành",
+    "createInspection": "Tạo phiếu kiểm tra",
+    "queueHealthy": "Hàng đợi đang trong SLA",
+    "queueOverdue": "{{count}} yêu cầu đã quá SLA",
+    "queueHint": "Mở phiếu, phân công và chuyển trạng thái theo hồ sơ vận hành.",
+    "open": "Đang mở",
+    "new": "Mới tiếp nhận",
+    "unassigned": "Chưa phân công",
+    "overdue": "Quá SLA",
+    "urgent": "Khẩn cấp",
+    "noMatch": "Không có ticket phù hợp bộ lọc",
+    "empty": "Chưa có ticket nào",
+    "adjustFilters": "Hãy thay đổi từ khóa hoặc bộ lọc.",
+    "emptyHint": "Tạo phiếu đầu tiên để bắt đầu theo dõi xử lý.",
+    "clearFilters": "Xóa bộ lọc"
   }
 }

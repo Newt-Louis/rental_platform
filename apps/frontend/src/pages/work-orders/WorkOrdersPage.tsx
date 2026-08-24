@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -26,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import WorkOrderTemplates from "./WorkOrderTemplates";
+import { PageHeader } from "@/components/ui/page-header";
+import { ERPToolbar } from "@/components/erp";
 
 const CATEGORIES: Record<string, string> = {
   TECHNICAL: "Kỹ thuật",
@@ -66,6 +69,7 @@ const err = (e: any) =>
   e?.response?.data?.message || e?.message || "Có lỗi xảy ra";
 
 export default function WorkOrdersPage() {
+  const { t } = useTranslation("workOrders");
   const qc = useQueryClient(),
     { toast } = useToast(),
     selectedMallId = useMallStore((s) => s.selectedMallId),
@@ -253,22 +257,15 @@ export default function WorkOrdersPage() {
     }
   };
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <ClipboardCheck />
-            Điều phối công việc
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Work Order liên phòng ban · checklist · minh chứng · SLA · nghiệm
-            thu
-          </p>
-        </div>
-        <div className="flex gap-2">
+    <div className="space-y-4 p-4 sm:p-6">
+      <PageHeader
+        eyebrow={t("page.eyebrow")}
+        title={t("page.title")}
+        description={t("page.subtitle")}
+        actions={<>
           <Button variant="outline" onClick={exportCsv}>
             <Download className="mr-2 h-4 w-4" />
-            Xuất báo cáo
+            {t("actions.export")}
           </Button>
           <Button
             onClick={() => {
@@ -282,82 +279,72 @@ export default function WorkOrdersPage() {
             }}
           >
             <Plus className="mr-2 h-4 w-4" />
-            Tạo công việc
+            {t("actions.create")}
           </Button>
-        </div>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        </>}
+      />
+      <div className="grid grid-cols-2 border-y bg-card lg:grid-cols-4">
         {[
-          ["Tổng công việc", summary.total || 0, ClipboardCheck],
+          [t("summary.total"), summary.total || 0, ClipboardCheck],
           [
-            "Đang xử lý",
+            t("summary.active"),
             (summary.byStatus?.IN_PROGRESS || 0) +
               (summary.byStatus?.ASSIGNED || 0),
             Clock,
           ],
-          ["Chờ nghiệm thu", summary.pendingReview || 0, CheckCircle2],
-          ["Quá hạn", summary.overdue || 0, AlertTriangle],
+          [t("summary.review"), summary.pendingReview || 0, CheckCircle2],
+          [t("summary.overdue"), summary.overdue || 0, AlertTriangle],
         ].map(([l, v, I]: any) => (
-          <div className="rounded-lg border bg-card p-4" key={l}>
-            <div className="flex justify-between text-sm text-muted-foreground">
-              {l}
-              <I className="h-4 w-4" />
-            </div>
-            <div className="mt-2 text-2xl font-bold">{v}</div>
+          <div className="border-b px-4 py-3 even:border-l lg:border-b-0 lg:border-l lg:first:border-l-0" key={l}>
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><I className="h-3.5 w-3.5" />{l}</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums">{v}</div>
           </div>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 border-y bg-card lg:grid-cols-4">
         {[
-          ["DUE_SOON", "Sắp đến hạn trong 24h", summary.dueSoon || 0],
-          ["OVERDUE", "Công việc quá hạn", summary.overdue || 0],
-          ["UNASSIGNED", "Chưa phân công", summary.unassigned || 0],
-          ["CRITICAL", "Ưu tiên khẩn cấp", summary.critical || 0],
-        ].map(([key, title, count]) => <button key={String(key)} className={`rounded-lg border p-4 text-left hover:bg-muted/40 ${alert === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><div className="flex items-center justify-between text-sm"><span>{title}</span><AlertTriangle className="h-4 w-4" /></div><div className="mt-2 text-2xl font-bold">{String(count)}</div></button>)}
+          ["DUE_SOON", t("summary.dueSoon"), summary.dueSoon || 0],
+          ["OVERDUE", t("summary.overdue"), summary.overdue || 0],
+          ["UNASSIGNED", t("summary.unassigned"), summary.unassigned || 0],
+          ["CRITICAL", t("summary.critical"), summary.critical || 0],
+        ].map(([key, title, count]) => <button key={String(key)} className={`flex items-center justify-between border-b px-4 py-2.5 text-left hover:bg-muted/40 even:border-l lg:border-b-0 lg:border-l lg:first:border-l-0 ${alert === key ? "bg-muted ring-1 ring-inset ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><span className="text-xs font-medium text-muted-foreground">{title}</span><span className="text-lg font-semibold tabular-nums">{String(count)}</span></button>)}
       </div>
       <WorkOrderTemplates mallId={mallId} mallName={selectedMallName} users={users} />
-      <div className="flex flex-wrap gap-3 rounded-lg border p-4">
+      <ERPToolbar>
         <select
           className="h-10 rounded-md border px-3"
           value={status}
           onChange={(e) => { setStatus(e.target.value); setAlert(""); setPage(1); }}
         >
-          <option value="">Tất cả trạng thái</option>
-          {Object.entries(STATUS).map(([k, v]) => (
+          <option value="">{t("filters.allStatuses")}</option>
+          {Object.keys(STATUS).map((k) => (
             <option key={k} value={k}>
-              {v}
+              {t(`status.${k}`)}
             </option>
           ))}
         </select>
-        <select className="h-10 rounded-md border px-3" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm</option>{Object.entries(CATEGORIES).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select>
-        <select className="h-10 rounded-md border px-3" value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }}><option value="">Tất cả ưu tiên</option><option value="LOW">Thấp</option><option value="MEDIUM">Trung bình</option><option value="HIGH">Cao</option><option value="CRITICAL">Khẩn cấp</option></select>
-        <select className="h-10 rounded-md border px-3" value={department} onChange={(e) => { setDepartment(e.target.value); setPage(1); }}><option value="">Tất cả bộ phận xử lý</option>{departments.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+        <select className="h-10 rounded-md border px-3" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">{t("filters.allCategories")}</option>{Object.keys(CATEGORIES).map((key) => <option key={key} value={key}>{t(`category.${key}`)}</option>)}</select>
+        <select className="h-10 rounded-md border px-3" value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }}><option value="">{t("filters.allPriorities")}</option>{["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((key) => <option key={key} value={key}>{t(`priority.${key}`)}</option>)}</select>
+        <select className="h-10 rounded-md border px-3" value={department} onChange={(e) => { setDepartment(e.target.value); setPage(1); }}><option value="">{t("filters.allDepartments")}</option>{departments.map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <div className="relative flex-1">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Tìm số phiếu, tiêu đề, vị trí..."
+            placeholder={t("filters.search")}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
-      </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} công việc</span><div className="flex items-center gap-2"><span>Mặc định: công việc đang hoạt động</span>{(status || category || priority || department || alert) && <Button size="sm" variant="outline" onClick={() => { setStatus(""); setCategory(""); setPriority(""); setDepartment(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}</div></div>
+      </ERPToolbar>
+      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>{t("table.showing", { shown: rows.length, total: total.toLocaleString() })}</span><div className="flex items-center gap-2"><span>{t("filters.activeDefault")}</span>{(status || category || priority || department || alert) && <Button size="sm" variant="outline" onClick={() => { setStatus(""); setCategory(""); setPriority(""); setDepartment(""); setAlert(""); setPage(1); }}>{t("actions.reset")}</Button>}</div></div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/60">
             <tr>
               {[
-                "Số phiếu",
-                "Công việc",
-                "Nhóm",
-                "Bộ phận gửi",
-                "Bộ phận xử lý",
-                "Ưu tiên",
-                "Người xử lý",
-                "Hạn hoàn thành",
-                "Trạng thái",
-                "Checklist/Ảnh",
+                t("table.number"), t("table.work"), t("table.category"), t("table.requesterDepartment"),
+                t("table.assignedDepartment"), t("table.priority"), t("table.assignee"), t("table.due"),
+                t("table.status"), t("table.evidence"),
               ].map((x) => (
                 <th className="px-4 py-3 text-left" key={x}>
                   {x}
@@ -382,7 +369,7 @@ export default function WorkOrdersPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  {CATEGORIES[w.category] || w.category}
+                  {t(`category.${w.category}`, { defaultValue: w.category })}
                 </td>
                 <td className="px-4 py-3">{w.requester?.department || "—"}</td>
                 <td className="px-4 py-3">{w.assignedDepartment || "—"}</td>
@@ -392,11 +379,11 @@ export default function WorkOrdersPage() {
                       w.priority === "CRITICAL" ? "destructive" : "outline"
                     }
                   >
-                    {w.priority}
+                    {t(`priority.${w.priority}`, { defaultValue: w.priority })}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  {w.assignee?.fullName || "Chưa giao"}
+                  {w.assignee?.fullName || t("table.unassigned")}
                 </td>
                 <td
                   className={`px-4 py-3 ${w.dueDate && new Date(w.dueDate) < new Date() && !["COMPLETED", "CANCELLED"].includes(w.status) ? "font-semibold text-red-600" : ""}`}
@@ -406,7 +393,7 @@ export default function WorkOrdersPage() {
                     : "—"}
                 </td>
                 <td className="px-4 py-3">
-                  <Badge>{STATUS[w.status] || w.status}</Badge>
+                  <Badge>{t(`status.${w.status}`, { defaultValue: w.status })}</Badge>
                 </td>
                 <td className="px-4 py-3">
                   {w._count?.checklist || 0} / {w._count?.evidence || 0}
@@ -419,7 +406,7 @@ export default function WorkOrdersPage() {
                   colSpan={10}
                   className="p-10 text-center text-muted-foreground"
                 >
-                  Chưa có công việc vận hành
+                  {t("table.empty")}
                 </td>
               </tr>
             )}
@@ -567,9 +554,9 @@ export default function WorkOrdersPage() {
             <div className="space-y-5">
               <div className="flex flex-wrap gap-2">
                 <Badge>{item.workOrderNumber}</Badge>
-                <Badge variant="outline">{STATUS[item.status]}</Badge>
+                <Badge variant="outline">{t(`status.${item.status}`, { defaultValue: item.status })}</Badge>
                 <Badge variant="outline">
-                  {CATEGORIES[item.category] || item.category}
+                  {t(`category.${item.category}`, { defaultValue: item.category })}
                 </Badge>
               </div>
               <p className="rounded-lg bg-muted p-3 text-sm">
@@ -706,7 +693,7 @@ export default function WorkOrdersPage() {
                         alt={e.evidenceType}
                       />
                       <div className="p-1 text-center text-xs">
-                        {e.evidenceType}
+                        {t(`evidence.${e.evidenceType}`, { defaultValue: e.evidenceType })}
                       </div>
                     </div>
                   ))}
@@ -757,7 +744,7 @@ export default function WorkOrdersPage() {
                 <div className="max-h-40 space-y-2 overflow-y-auto border-l-2 pl-3">
                   {item.events?.map((event: any) => (
                     <div key={event.id} className="text-sm">
-                      <b>{event.eventType}</b> · {event.user?.fullName}
+                      <b>{t(`event.${event.eventType}`, { defaultValue: event.eventType })}</b> · {event.user?.fullName}
                       <div className="text-xs text-muted-foreground">
                         {new Date(event.createdAt).toLocaleString("vi-VN")}
                         {event.description ? ` · ${event.description}` : ""}
@@ -775,7 +762,7 @@ export default function WorkOrdersPage() {
                       action.mutate({ kind: "status", data: { status: s } })
                     }
                   >
-                    {STATUS[s]}
+                    {t(`status.${s}`, { defaultValue: s })}
                   </Button>
                 ))}
                 {item.status === "WAITING_REVIEW" && (

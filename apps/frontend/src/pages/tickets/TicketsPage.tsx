@@ -16,8 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
 import { useToast } from '@/components/ui/use-toast';
-import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Compass, Inbox, UserRoundCheck, Play, UploadCloud, BellRing, ListChecks, History } from 'lucide-react';
+import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Inbox, UserRoundCheck, Play, UploadCloud, BellRing, ListChecks, History } from 'lucide-react';
 import type { Ticket as TicketType } from '@/types';
 import { useSearchParams } from 'react-router-dom';
 
@@ -529,6 +531,7 @@ function CompleteMaintenanceDialog({ schedule, onClose }: { schedule: any | null
 }
 
 function MaintenanceTab() {
+  const { t } = useTranslation('tickets');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
@@ -566,15 +569,13 @@ function MaintenanceTab() {
 
   return (
     <div>
-      <section className="mb-4 rounded-2xl bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-5 text-white">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200"><Compass size={14} /> Điều phối bảo trì chủ động</div><h3 className="text-xl font-semibold">{overdueCount ? `${overdueCount} kế hoạch đang quá hạn` : 'Mọi kế hoạch đang trong hạn'}</h3><p className="mt-1 text-sm text-emerald-100/70">Lập lịch · giao việc · nhắc hạn · thực hiện checklist · lưu evidence hiện trường.</p></div><div className="flex gap-2"><Button variant="outline" className="gap-2 border-white/20 bg-white/10 text-white hover:bg-white/20" onClick={() => reminderMutation.mutate()}><BellRing size={14} /> Gửi nhắc việc</Button><Button onClick={() => selectedMallId ? setShowCreate(true) : openMallContextModal()} className="gap-2 bg-white text-slate-900 hover:bg-emerald-50"><Plus size={15} /> Lập kế hoạch</Button></div></div>
-      </section>
-      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{[
-        ['Quá hạn', overdueCount, AlertTriangle, 'border-red-100 bg-red-50 text-red-700'],
-        ['Đến hạn trong 7 ngày', dueSoonCount, Clock3, 'border-amber-100 bg-amber-50 text-amber-700'],
-        ['Đang thực hiện', inProgressCount, Play, 'border-blue-100 bg-blue-50 text-blue-700'],
-        ['Lần hoàn tất gần đây', completedCount, CheckCircle2, 'border-emerald-100 bg-emerald-50 text-emerald-700'],
-      ].map(([label, value, Icon, tone]: any) => <div key={label} className={`rounded-xl border p-3 ${tone}`}><div className="flex items-center justify-between"><Icon size={17} /><span className="text-2xl font-bold">{value}</span></div><p className="mt-2 text-sm font-semibold">{label}</p></div>)}</div>
+      <div className="mb-3 flex flex-col justify-between gap-3 border-y bg-card px-4 py-3 lg:flex-row lg:items-center"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('maintenance.title')}</p><h3 className="text-lg font-semibold">{overdueCount ? `${overdueCount} kế hoạch đang quá hạn` : 'Mọi kế hoạch đang trong hạn'}</h3><p className="text-sm text-muted-foreground">Lập lịch · giao việc · nhắc hạn · checklist · evidence hiện trường.</p></div><div className="flex gap-2"><Button variant="outline" className="gap-2" onClick={() => reminderMutation.mutate()}><BellRing size={14} /> Gửi nhắc việc</Button><Button onClick={() => selectedMallId ? setShowCreate(true) : openMallContextModal()} className="gap-2"><Plus size={15} /> Lập kế hoạch</Button></div></div>
+      <div className="mb-4 grid grid-cols-2 border-y bg-card xl:grid-cols-4">{[
+        ['Quá hạn', overdueCount, AlertTriangle],
+        ['Đến hạn trong 7 ngày', dueSoonCount, Clock3],
+        ['Đang thực hiện', inProgressCount, Play],
+        ['Lần hoàn tất gần đây', completedCount, CheckCircle2],
+      ].map(([label, value, Icon]: any) => <div key={label} className="border-b px-4 py-2.5 even:border-l xl:border-b-0 xl:border-l xl:first:border-l-0"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Icon size={14} />{label}</div><p className="mt-1 text-xl font-semibold tabular-nums">{value}</p></div>)}</div>
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 rounded" />)}</div>
       ) : isError ? (
@@ -692,32 +693,22 @@ export default function TicketsPage() {
   useEffect(() => setPage(1), [search, status, priority, queue, selectedMallId]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{tl('page.title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{tl('page.subtitle')}</p>
-        </div>
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <ClipboardList size={15} /> Tạo phiếu kiểm tra
-        </Button>
-      </div>
+    <div className="space-y-4 p-4 sm:p-6">
+      <PageHeader eyebrow={tl('page.eyebrow')} title={tl('page.title')} description={tl('page.subtitle')} actions={<Button onClick={() => setShowCreate(true)} className="gap-2"><ClipboardList size={15} /> {tl('page.createInspection')}</Button>} />
 
-      <section className="mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-cyan-950 to-blue-900 p-5 text-white sm:p-6">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-          <div><div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200"><Compass size={14} /> Trung tâm điều phối vận hành</div><h2 className="text-xl font-semibold">{overdueCount ? `${overdueCount} yêu cầu đã quá SLA` : 'Hàng đợi đang trong SLA'}</h2><p className="mt-1 text-sm text-cyan-100/75">Chọn nhóm việc cần xử lý, mở phiếu, phân công và chuyển trạng thái theo gợi ý trong hồ sơ.</p></div>
-          <Button className="gap-2 bg-white text-slate-900 hover:bg-cyan-50" onClick={() => setShowCreate(true)}><Plus size={15} /> Ghi nhận yêu cầu mới</Button>
-        </div>
+      <section className="flex flex-col justify-between gap-3 border-y bg-card px-4 py-3 lg:flex-row lg:items-center">
+        <div><h2 className="text-lg font-semibold">{overdueCount ? tl('page.queueOverdue', { count: overdueCount }) : tl('page.queueHealthy')}</h2><p className="text-sm text-muted-foreground">{tl('page.queueHint')}</p></div>
+        <Button variant="outline" className="gap-2" onClick={() => setShowCreate(true)}><Plus size={15} /> {tl('page.createInspection')}</Button>
       </section>
 
-      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 border-y bg-card xl:grid-cols-5">
         {[
-          { label: 'Đang mở', value: openCount, hint: 'Tổng việc cần hoàn tất', icon: Inbox, tone: 'border-blue-100 bg-blue-50 text-blue-700', action: () => { setQueue('open'); setStatus(''); setPriority(''); } },
-          { label: 'Mới tiếp nhận', value: byStatus.NEW ?? 0, hint: 'Cần phân loại và giao việc', icon: Ticket, tone: 'border-slate-200 bg-slate-50 text-slate-700', action: () => { setQueue(''); setStatus('NEW'); } },
-          { label: 'Chưa phân công', value: unassignedCount, hint: 'Cần người chịu trách nhiệm', icon: UserRoundCheck, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => { setQueue('unassigned'); setStatus(''); setPriority(''); } },
-          { label: 'Quá SLA', value: overdueCount, hint: 'Ưu tiên xử lý ngay', icon: Clock3, tone: 'border-amber-100 bg-amber-50 text-amber-700', action: () => { setQueue('overdue'); setStatus(''); setPriority(''); } },
-          { label: 'Khẩn cấp', value: urgentCount, hint: 'Mức ưu tiên cao nhất', icon: AlertTriangle, tone: 'border-red-100 bg-red-50 text-red-700', action: () => { setQueue(''); setPriority('URGENT'); setStatus(''); } },
-        ].map(({ label, value, hint, icon: Icon, tone, action }) => <button key={label} onClick={() => { action(); setPage(1); }} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}><div className="flex items-center justify-between"><Icon size={17} /><span className="text-xl font-bold">{value}</span></div><div className="mt-2 text-sm font-semibold">{label}</div><div className="text-[11px] opacity-70">{hint}</div></button>)}
+          { label: tl('page.open'), value: openCount, icon: Inbox, action: () => { setQueue('open'); setStatus(''); setPriority(''); } },
+          { label: tl('page.new'), value: byStatus.NEW ?? 0, icon: Ticket, action: () => { setQueue(''); setStatus('NEW'); } },
+          { label: tl('page.unassigned'), value: unassignedCount, icon: UserRoundCheck, action: () => { setQueue('unassigned'); setStatus(''); setPriority(''); } },
+          { label: tl('page.overdue'), value: overdueCount, icon: Clock3, action: () => { setQueue('overdue'); setStatus(''); setPriority(''); } },
+          { label: tl('page.urgent'), value: urgentCount, icon: AlertTriangle, action: () => { setQueue(''); setPriority('URGENT'); setStatus(''); } },
+        ].map(({ label, value, icon: Icon, action }) => <button key={label} onClick={() => { action(); setPage(1); }} className="flex items-center justify-between border-b px-4 py-2.5 text-left hover:bg-muted/40 even:border-l xl:border-b-0 xl:border-l xl:first:border-l-0"><span className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><Icon size={14} />{label}</span><span className="text-lg font-semibold tabular-nums">{value}</span></button>)}
       </div>
 
       <Tabs defaultValue={searchParams.get('tab') === 'maintenance' ? 'maintenance' : 'tickets'}>
@@ -730,7 +721,7 @@ export default function TicketsPage() {
         <TabsContent value="tickets">
 
       {/* Status quick filter */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <ERPToolbar className="mb-4">
         {Object.entries(STATUS_MAP).map(([key, val]) => (
           <button
             key={key}
@@ -741,9 +732,8 @@ export default function TicketsPage() {
             {tl('status.' + key)}
           </button>
         ))}
-      </div>
 
-      <div className="flex gap-3 mb-4">
+      <div className="flex min-w-64 flex-1 gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
@@ -765,6 +755,7 @@ export default function TicketsPage() {
           </SelectContent>
         </Select>
       </div>
+      </ERPToolbar>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -802,7 +793,7 @@ export default function TicketsPage() {
                     <td className="px-4 py-3 font-medium max-w-48 truncate">{t.subject}</td>
                     <td className="px-4 py-3 text-gray-500">{t.tenant?.brandName}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-xs">{t.type}</Badge>
+                      <Badge variant="outline" className="text-xs">{tl('types.' + t.type, { defaultValue: t.type })}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge className={`${pr?.color} border-0 text-xs`}>{tl('priority.' + t.priority)}</Badge>
@@ -823,15 +814,15 @@ export default function TicketsPage() {
             <div className="text-center py-12 text-gray-400">
               <Ticket size={40} className="mx-auto mb-2 opacity-30" />
               <p className="font-medium text-gray-600">
-                {search || status || priority ? 'Không có ticket phù hợp bộ lọc' : 'Chưa có ticket nào'}
+                {search || status || priority ? tl('page.noMatch') : tl('page.empty')}
               </p>
               <p className="mt-1 text-sm">
-                {search || status || priority ? 'Hãy thay đổi từ khóa hoặc bộ lọc.' : 'Tạo phiếu đầu tiên để bắt đầu theo dõi xử lý.'}
+                {search || status || priority ? tl('page.adjustFilters') : tl('page.emptyHint')}
               </p>
               {search || status || priority ? (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setStatus(''); setPriority(''); }}>Xóa bộ lọc</Button>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(''); setStatus(''); setPriority(''); }}>{tl('page.clearFilters')}</Button>
               ) : (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>Tạo phiếu kiểm tra</Button>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>{tl('page.createInspection')}</Button>
               )}
             </div>
           )}
