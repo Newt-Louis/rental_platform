@@ -111,10 +111,10 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Money/Currency | **FAIL** — Golden presentation convention is applied in changed workspaces, but platform correctness items above remain |
 | Authorization | **FAIL** — confirmed reachable scope gaps remain |
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
-| Cross-Module Journeys | **FAIL** — 2/12 UAT scenarios evidenced; full Lead-to-Collection and exception journeys not run |
+| Cross-Module Journeys | **FAIL** — 2/12 live UAT scenarios evidenced; read-only fixture verifier covers 5/8 supporting segments, with rejected approval, one linked Lead-to-Collection fixture and a second Mall missing |
 | Frontend Tests | **264/264 PASS** — 44/44 files; obsolete baseline assertions remediated without production-code changes and enum fallback coverage added |
 | Backend Tests | **598/598 PASS** — 91/91 suites |
-| Integration Tests | **2/12 UAT scenarios PASS** — remaining scenarios unexecuted or blocked |
+| Integration Tests | **2/12 live UAT scenarios PASS**; automated fixture evidence **5/8 segments** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |
 | Frontend Build | **PASS** |
 | Backend Build | **PASS** |

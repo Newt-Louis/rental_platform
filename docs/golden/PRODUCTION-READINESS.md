@@ -33,7 +33,7 @@ the newest source where older readiness documents conflict, especially
 | Rate limiting | BLOCKED | No current production load/throttle verification closes the security readiness finding. |
 | Upload security | PASS | Legacy public upload access is closed, authenticated file routes have focused coverage, and unsafe storage paths are rejected. Live cross-tenant file UAT remains part of the Tenant-isolation blocker. |
 | Recovery procedures | BLOCKED | Backup/restore runbooks exist, but off-site recovery, production-scale RTO and a release rollback rehearsal are unverified. |
-| UAT | FAIL | Only UAT-08 and UAT-09 are evidenced. UAT-01 through -07, -10 through -12 and the new-user study are not complete. |
+| UAT | FAIL | Only UAT-08 and UAT-09 are live-evidenced. A read-only fixture verifier now evidences 5/8 supporting journey segments, but UAT-01 through -07, -10 through -12 and the new-user study are not complete; fixture gaps include rejected approval, one linked Lead-to-Collection chain and a second Mall. |
 | Cross-module journeys | FAIL | Focused service tests and reconciliation cover handoff invariants, but the full Lead-to-Collection and exception journey matrix has not been executed end-to-end. |
 | Visual verification | BLOCKED | Automated browser runtime was unavailable. Fitout, CRM, Inventory, Operations, Reporting, Admin and the protected Dashboard audit still require rendered human review at the required viewports. |
 | Release procedure | BLOCKED | The runbook exists, but a release candidate containing this commit chain has not been cut, deployed or signed off. |

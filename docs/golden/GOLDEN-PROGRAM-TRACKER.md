@@ -33,6 +33,50 @@ The following pre-existing paths are excluded from program staging unless their 
 | 9 | Golden/reference localization safety sweep | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 10 | Frontend baseline test remediation | COMPLETE — test assertions only; frontend 262/262 PASS |
 | 11 | Unknown-enum presentation safety | COMPLETE — neutral fallback/localization only; HUMAN VISUAL REVIEW PENDING |
+| 12 | Cross-module journey evidence | COMPLETE — 5/8 fixture segments evidenced; 3 gaps explicit; UAT remains 2/12 |
+
+## Wave 12 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W12-JOURNEY-EVIDENCE`
+
+Business reason: production readiness currently records only two live UAT
+scenarios, while the development database contains linked records spanning
+multiple Golden domains. A read-only verifier can prove which journey segments
+are represented and identify fixture gaps without mutating data or falsely
+claiming human UAT completion.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Verification tooling and canonical Golden readiness documentation only |
+| Runtime/business behavior | None; the verifier executes SQL `SELECT` statements through the existing Compose PostgreSQL service |
+| Data/state/workflow | No writes, transitions, retries or fixture changes |
+| Financial/currency | Counts linked persisted records only; no amount calculation, FX or currency reinterpretation |
+| Mall/Tenant/authorization | Reports whether multi-Mall fixture coverage exists; does not claim or modify authorization |
+| API/backend/frontend/schema/database | No application or schema change |
+| Protected work | Dashboard and Proposal/Approval concurrent files remain excluded |
+| Tests | Unit-test evidence classification; execute verifier against current local Docker data |
+| Golden scenarios | Measures coverage supporting UAT-01 through UAT-10 while preserving UAT as a separate human/live gate |
+| Reconciliation | Complements, but does not replace, the 17 zero-violation backbone invariants |
+| Rollback | Revert the verifier and documentation checkpoint; no persisted data affected |
+| Open questions | None; missing fixtures are reported as `MISSING`, never inferred as PASS |
+
+## Wave 12 technical gate — 2026-08-24
+
+- Added `scripts/golden-journey-evidence.mjs`, a read-only PostgreSQL verifier
+  that classifies fixture coverage as `EVIDENCED` or `MISSING`. It performs no
+  database writes and does not replace human/live UAT.
+- Current local evidence: 5/8 represented — two approved
+  Lead→Booking→Proposal→Contract chains, 13 active Contract Fitout/Billing
+  handoffs, 15 Invoice→Payment links, six completed Tickets and three distinct
+  persisted currencies.
+- Explicit fixture gaps: zero rejected approval workflows, zero single-record
+  Lead→Collection chains and only one Mall. These remain missing rather than
+  being inferred from narrower tests.
+- Verifier unit tests: PASS, 2/2. Read-only live execution: PASS.
+- Backbone reconciliation: PASS, 17/17 clean. Docker/runtime remains healthy.
+- UAT status remains 2/12 PASS; Wave 12 improves automated integration evidence
+  only and makes the remaining fixture prerequisites precise.
+- Business logic/API contract/frontend/backend/schema/database changes: NO.
 
 ## Wave 11 Change Request and Impact Map
 
