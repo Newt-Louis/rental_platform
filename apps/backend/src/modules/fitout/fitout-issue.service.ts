@@ -66,16 +66,23 @@ export class FitoutIssueService {
     positionX?: number;
     positionY?: number;
   }, createdById: string) {
-    const project = await this.prisma.fitoutProject.findUnique({ where: { id: projectId } });
+    const project = await this.prisma.fitoutProject.findUnique({
+      where: { id: projectId },
+      select: { id: true, unitId: true },
+    });
     if (!project) throw new NotFoundException('Fitout project not found');
 
-    const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
+    if (dto.unitId !== project.unitId) {
+      throw new BadRequestException('Unit does not belong to this fitout project');
+    }
+
+    const unit = await this.prisma.unit.findUnique({ where: { id: project.unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
 
     const issue = await this.prisma.fitoutIssue.create({
       data: {
         projectId,
-        unitId: dto.unitId,
+        unitId: project.unitId,
         floorId: unit.floorId,
         title: dto.title,
         description: dto.description,

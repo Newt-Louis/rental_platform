@@ -17,8 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useTranslation } from 'react-i18next';
-import { getFitoutPresentationLabel, groupChangeOrderAmountsByCurrency } from '@/pages/fitout/fitoutPresentation';
-import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
+import { formatDecimalAmountWithoutCurrency, formatDecimalMoneyWithCode, getFitoutPresentationLabel, groupChangeOrderAmountsByCurrency } from '@/pages/fitout/fitoutPresentation';
+import type { CurrencyCode } from '@/lib/currency';
 
 const unwrapList = <T,>(value: unknown): T[] => {
   if (Array.isArray(value)) return value as T[];
@@ -36,7 +36,7 @@ const riskTone = (score: number) => {
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message ?? fallback;
 
 export function RiskRegister({ projectId }: { projectId: string }) {
-  const { t } = useTranslation('fitout');
+  const { t, i18n } = useTranslation('fitout');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -115,9 +115,9 @@ export function RiskRegister({ projectId }: { projectId: string }) {
           const tone = riskTone(score);
           const ownerName = typeof risk.owner === 'string' ? risk.owner : risk.owner?.fullName;
           return <Card key={risk.id}><CardContent className="p-3 space-y-2">
-            <div className="flex items-start justify-between gap-2"><div className="flex items-start gap-2 min-w-0"><ShieldAlert size={16} className="mt-0.5 text-amber-600 shrink-0" /><div><p className="text-sm font-medium">{risk.title}</p><p className="text-xs text-muted-foreground">{risk.category ? t(`riskControl.category.${risk.category}`, { defaultValue: risk.category }) : t('riskControl.other')} · {ownerName || t('riskControl.unassigned')}</p></div></div><Badge className={tone.className}>{t(`riskControl.level.${tone.level}`)} {score}</Badge></div>
+            <div className="flex items-start justify-between gap-2"><div className="flex items-start gap-2 min-w-0"><ShieldAlert size={16} className="mt-0.5 text-amber-600 shrink-0" /><div><p className="text-sm font-medium">{risk.title}</p><p className="text-xs text-muted-foreground">{risk.category ? getFitoutPresentationLabel(t, 'riskControl.category', risk.category) : t('riskControl.other')} · {ownerName || t('riskControl.unassigned')}</p></div></div><Badge className={tone.className}>{t(`riskControl.level.${tone.level}`)} {score}</Badge></div>
             {risk.mitigation && <p className="text-xs rounded bg-muted p-2">{risk.mitigation}</p>}
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{risk.dueDate ? t('riskControl.due', { date: new Date(risk.dueDate).toLocaleDateString() }) : t('riskControl.noDueDate')}</span><Select value={risk.status} onValueChange={(status) => transitionMutation.mutate({ id: risk.id, status: status as FitoutRiskStatus })}><SelectTrigger className="h-8 w-36" aria-label={t('riskControl.statusLabel', { title: risk.title })}><SelectValue /></SelectTrigger><SelectContent>{['OPEN', 'MITIGATING', 'CLOSED'].map((status) => <SelectItem key={status} value={status}>{t(`riskControl.status.${status}`)}</SelectItem>)}</SelectContent></Select></div>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{risk.dueDate ? t('riskControl.due', { date: new Date(risk.dueDate).toLocaleDateString(i18n.resolvedLanguage) }) : t('riskControl.noDueDate')}</span><Select value={risk.status} onValueChange={(status) => transitionMutation.mutate({ id: risk.id, status: status as FitoutRiskStatus })}><SelectTrigger className="h-8 w-36" aria-label={t('riskControl.statusLabel', { title: risk.title })}><SelectValue /></SelectTrigger><SelectContent>{['OPEN', 'MITIGATING', 'CLOSED'].map((status) => <SelectItem key={status} value={status}>{t(`riskControl.status.${status}`)}</SelectItem>)}</SelectContent></Select></div>
           </CardContent></Card>;
         })}
       </div>
@@ -126,7 +126,8 @@ export function RiskRegister({ projectId }: { projectId: string }) {
 }
 
 export function ChangeOrderControl({ projectId }: { projectId: string }) {
-  const { t } = useTranslation('fitout');
+  const { t, i18n } = useTranslation('fitout');
+  const locale = i18n.resolvedLanguage ?? 'vi-VN';
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -139,7 +140,7 @@ export function ChangeOrderControl({ projectId }: { projectId: string }) {
     byCurrency: groupChangeOrderAmountsByCurrency(orders),
   }), [orders]);
   const createMutation = useMutation({
-    mutationFn: () => fitoutChangeOrderApi.create({ projectId, title: form.title.trim(), reason: form.reason.trim() || undefined, estimatedCost: Number(form.estimatedCost), scheduleImpactDays: Number(form.scheduleImpactDays) }),
+    mutationFn: () => fitoutChangeOrderApi.create({ projectId, title: form.title.trim(), reason: form.reason.trim() || undefined, estimatedCost: form.estimatedCost, scheduleImpactDays: Number(form.scheduleImpactDays) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey }); setShowForm(false); setForm({ title: '', reason: '', estimatedCost: '', scheduleImpactDays: '0' }); toast({ title: t('changeOrder.toast.created') }); },
     onError: (error) => toast({ title: errorMessage(error, t('changeOrder.errorUpdate')), variant: 'destructive' }),
   });
@@ -147,7 +148,7 @@ export function ChangeOrderControl({ projectId }: { projectId: string }) {
     mutationFn: ({ id, status }: { id: string; status: 'APPROVED' | 'REJECTED' }) =>
       fitoutChangeOrderApi.transition(projectId, id, status, {
         approvedCost: status === 'APPROVED'
-          ? Number(orders.find((order) => order.id === id)?.estimatedCost ?? 0)
+          ? orders.find((order) => order.id === id)?.estimatedCost ?? '0.00'
           : undefined,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
@@ -155,7 +156,7 @@ export function ChangeOrderControl({ projectId }: { projectId: string }) {
   });
 
   return <section aria-labelledby="change-order-title" className="space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.pending')}</div><div className="text-xl font-semibold">{totals.pending}</div></CardContent></Card><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.proposed')}</div><div className="space-y-0.5 text-sm font-semibold">{Object.entries(totals.byCurrency).map(([currency, values]) => <div key={currency}>{formatMoneyWithCode(values.estimated, currency as CurrencyCode)}</div>)}</div></CardContent></Card><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.approved')}</div><div className="space-y-0.5 text-sm font-semibold text-emerald-700">{Object.entries(totals.byCurrency).map(([currency, values]) => <div key={currency}>{formatMoneyWithCode(values.approved, currency as CurrencyCode)}</div>)}</div></CardContent></Card></div>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2"><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.pending')}</div><div className="text-xl font-semibold">{totals.pending}</div></CardContent></Card><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.proposed')}</div><div className="space-y-0.5 text-sm font-semibold">{Object.entries(totals.byCurrency).map(([currency, values]) => <div key={currency}>{currency === 'UNSPECIFIED' ? t('changeOrder.currencyMissing') : formatDecimalMoneyWithCode(values.estimated, currency as CurrencyCode, locale)}</div>)}</div></CardContent></Card><Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">{t('changeOrder.approved')}</div><div className="space-y-0.5 text-sm font-semibold text-emerald-700">{Object.entries(totals.byCurrency).map(([currency, values]) => <div key={currency}>{currency === 'UNSPECIFIED' ? t('changeOrder.currencyMissing') : formatDecimalMoneyWithCode(values.approved, currency as CurrencyCode, locale)}</div>)}</div></CardContent></Card></div>
     <div className="flex items-center justify-between gap-2"><div><h3 id="change-order-title" className="font-semibold">{t('changeOrder.title')}</h3><p className="text-xs text-muted-foreground">{t('changeOrder.description')}</p></div><Button size="sm" className="gap-1 shrink-0" onClick={() => setShowForm((v) => !v)} aria-expanded={showForm}><Plus size={14} /> {t('changeOrder.add')}</Button></div>
     {showForm && <Card><CardContent className="p-4 space-y-3"><div><Label htmlFor="co-title">{t('changeOrder.fields.title')}</Label><Input id="co-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div><div><Label htmlFor="co-reason">{t('changeOrder.fields.reason')}</Label><Textarea id="co-reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><Label htmlFor="co-cost">{t('changeOrder.fields.estimatedCost')}</Label><Input id="co-cost" inputMode="numeric" type="number" min="0" value={form.estimatedCost} onChange={(e) => setForm({ ...form, estimatedCost: e.target.value })} /></div><div><Label htmlFor="co-days">{t('changeOrder.fields.scheduleImpact')}</Label><Input id="co-days" type="number" min="0" value={form.scheduleImpactDays} onChange={(e) => setForm({ ...form, scheduleImpactDays: e.target.value })} /></div></div><p className="text-xs text-muted-foreground">{t('changeOrder.requesterHint')}</p><Button className="w-full" disabled={!form.title.trim() || !form.estimatedCost || createMutation.isPending} onClick={() => createMutation.mutate()}>{t('changeOrder.save')}</Button></CardContent></Card>}
     {isLoading && <p role="status" className="text-sm text-muted-foreground">{t('changeOrder.loading')}</p>}
@@ -163,7 +164,12 @@ export function ChangeOrderControl({ projectId }: { projectId: string }) {
     {!isLoading && !isError && orders.length === 0 && <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{t('changeOrder.empty')}</div>}
     <div className="space-y-2">{orders.map((order) => {
       const requesterName = typeof order.requestedBy === 'string' ? order.requestedBy : order.requestedBy?.fullName;
-      return <Card key={order.id}><CardContent className="p-3 space-y-2"><div className="flex items-start justify-between gap-2"><div className="flex gap-2 min-w-0"><CircleDollarSign size={16} className="mt-0.5 text-blue-600 shrink-0" /><div><p className="text-sm font-medium">{order.code ? `${order.code} · ` : ''}{order.title}</p><p className="text-xs text-muted-foreground">{requesterName || t('changeOrder.unknownRequester')}</p></div></div><Badge variant="outline">{getFitoutPresentationLabel(t, 'changeOrder.status', order.status)}</Badge></div>{order.reason && <p className="text-xs rounded bg-muted p-2">{order.reason}</p>}<div className="grid grid-cols-2 gap-2 text-xs"><div><span className="text-muted-foreground">{t('changeOrder.cost')}</span><p className="font-medium">{formatMoneyWithCode(order.approvedCost ?? order.estimatedCost, (order.currency ?? 'VND') as CurrencyCode)}</p></div><div><span className="text-muted-foreground">{t('changeOrder.schedule')}</span><p className="font-medium">{t('changeOrder.days', { count: order.scheduleImpactDays || 0 })}</p></div></div>{['SUBMITTED', 'UNDER_REVIEW'].includes(order.status) && <Select onValueChange={(status) => transitionMutation.mutate({ id: order.id, status: status as 'APPROVED' | 'REJECTED' })}><SelectTrigger className="h-8 w-full" aria-label={t('changeOrder.decisionLabel', { title: order.title })}><SelectValue placeholder={t('changeOrder.selectDecision')} /></SelectTrigger><SelectContent><SelectItem value="APPROVED">{t('changeOrder.approve')}</SelectItem><SelectItem value="REJECTED">{t('changeOrder.reject')}</SelectItem></SelectContent></Select>}</CardContent></Card>;
+      const approvedAmountMissing = order.status === 'APPROVED' && order.approvedCost == null;
+      const displayedAmount = order.status === 'APPROVED' ? order.approvedCost : order.estimatedCost;
+      const formatOrderMoney = (amount: string | number) => order.currency
+        ? formatDecimalMoneyWithCode(amount, order.currency as CurrencyCode, i18n.resolvedLanguage)
+        : `${formatDecimalAmountWithoutCurrency(amount, i18n.resolvedLanguage)} · ${t('changeOrder.currencyMissing')}`;
+      return <Card key={order.id}><CardContent className="p-3 space-y-2"><div className="flex items-start justify-between gap-2"><div className="flex gap-2 min-w-0"><CircleDollarSign size={16} className="mt-0.5 text-blue-600 shrink-0" /><div><p className="text-sm font-medium">{order.code ? `${order.code} · ` : ''}{order.title}</p><p className="text-xs text-muted-foreground">{requesterName || t('changeOrder.unknownRequester')}</p></div></div><Badge variant="outline">{getFitoutPresentationLabel(t, 'changeOrder.status', order.status)}</Badge></div>{order.reason && <p className="text-xs rounded bg-muted p-2">{order.reason}</p>}<div className="grid grid-cols-2 gap-2 text-xs"><div><span className="text-muted-foreground">{order.status === 'APPROVED' ? t('changeOrder.approved') : t('changeOrder.proposed')}</span><p className="font-medium">{approvedAmountMissing || displayedAmount == null ? t('changeOrder.approvedAmountMissing') : formatOrderMoney(displayedAmount)}</p>{approvedAmountMissing && <p className="text-muted-foreground">{t('changeOrder.proposedValue', { value: formatOrderMoney(order.estimatedCost) })}</p>}</div><div><span className="text-muted-foreground">{t('changeOrder.schedule')}</span><p className="font-medium">{t('changeOrder.days', { count: order.scheduleImpactDays || 0 })}</p></div></div>{['SUBMITTED', 'UNDER_REVIEW'].includes(order.status) && <Select onValueChange={(status) => transitionMutation.mutate({ id: order.id, status: status as 'APPROVED' | 'REJECTED' })}><SelectTrigger className="h-8 w-full" aria-label={t('changeOrder.decisionLabel', { title: order.title })}><SelectValue placeholder={t('changeOrder.selectDecision')} /></SelectTrigger><SelectContent><SelectItem value="APPROVED">{t('changeOrder.approve')}</SelectItem><SelectItem value="REJECTED">{t('changeOrder.reject')}</SelectItem></SelectContent></Select>}</CardContent></Card>;
     })}</div>
   </section>;
 }

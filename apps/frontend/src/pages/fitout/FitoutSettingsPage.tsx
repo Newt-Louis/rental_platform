@@ -229,14 +229,16 @@ export default function FitoutSettingsPage() {
 
   const canManage = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
 
-  const { data: stages = [], isLoading: stagesLoading } = useQuery({
+  const { data: stages = [], isLoading: stagesLoading, isError: stagesError, refetch: refetchStages } = useQuery({
     queryKey: ['fitout-stage-configs'],
     queryFn: () => fitoutApi.listStageConfigs(),
+    enabled: canManage,
   });
 
-  const { data: formTypes = [], isLoading: formTypesLoading } = useQuery({
+  const { data: formTypes = [], isLoading: formTypesLoading, isError: formTypesError, refetch: refetchFormTypes } = useQuery({
     queryKey: ['fitout-form-types'],
     queryFn: () => fitoutApi.listFormTypes(),
+    enabled: canManage,
   });
 
   const deactivateStageMutation = useMutation({
@@ -288,6 +290,11 @@ export default function FitoutSettingsPage() {
             <CardContent>
               {stagesLoading ? (
                 <p className="text-sm text-gray-400 py-6 text-center">{t('settings.loading')}</p>
+              ) : stagesError ? (
+                <div role="alert" className="py-6 text-center">
+                  <p className="text-sm text-red-600">{t('settings.loadError')}</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchStages()}>{t('settings.retry')}</Button>
+                </div>
               ) : (
                 <Table>
                   <TableHeader>
@@ -314,10 +321,11 @@ export default function FitoutSettingsPage() {
                         <TableCell>{s.meetingRequired ? '✓' : ''}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setStageDialog({ open: true, initial: s })}>
+                            <Button aria-label={t('settings.editStage', { name: s.name })} size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setStageDialog({ open: true, initial: s })}>
                               <Pencil size={13} />
                             </Button>
                             <Button
+                              aria-label={t('settings.deactivateStage', { name: s.name })}
                               size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500"
                               onClick={() => deactivateStageMutation.mutate(s.code)}
                               disabled={deactivateStageMutation.isPending}
@@ -346,6 +354,11 @@ export default function FitoutSettingsPage() {
             <CardContent>
               {formTypesLoading ? (
                 <p className="text-sm text-gray-400 py-6 text-center">{t('settings.loading')}</p>
+              ) : formTypesError ? (
+                <div role="alert" className="py-6 text-center">
+                  <p className="text-sm text-red-600">{t('settings.loadError')}</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchFormTypes()}>{t('settings.retry')}</Button>
+                </div>
               ) : (
                 <Table>
                   <TableHeader>
@@ -370,10 +383,11 @@ export default function FitoutSettingsPage() {
                         <TableCell>{f.approvalLevels}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setFormTypeDialog({ open: true, initial: f })}>
+                            <Button aria-label={t('settings.editFormType', { name: f.name })} size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setFormTypeDialog({ open: true, initial: f })}>
                               <Pencil size={13} />
                             </Button>
                             <Button
+                              aria-label={t('settings.deactivateFormType', { name: f.name })}
                               size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500"
                               onClick={() => deactivateFormTypeMutation.mutate(f.code)}
                               disabled={deactivateFormTypeMutation.isPending}

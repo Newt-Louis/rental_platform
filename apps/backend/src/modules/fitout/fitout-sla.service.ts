@@ -193,7 +193,7 @@ export class FitoutSlaService {
     });
   }
 
-  async getFitoutProgress() {
+  async getFitoutProgress(mallIds?: string[] | null) {
     const stages = await this.prisma.fitoutStageConfig.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' },
@@ -202,7 +202,12 @@ export class FitoutSlaService {
     const lastStageCode = stageCodes[stageCodes.length - 1];
 
     const projects = await this.prisma.fitoutProject.findMany({
-      where: { status: { not: lastStageCode } },
+      where: {
+        status: { not: lastStageCode },
+        ...(mallIds
+          ? { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } }
+          : {}),
+      },
       include: {
         tenant: { select: { brandName: true } },
         unit: { select: { code: true } },

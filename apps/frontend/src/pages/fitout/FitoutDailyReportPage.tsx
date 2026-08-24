@@ -37,7 +37,7 @@ export default function FitoutDailyReportPage() {
   });
   const contractors: any[] = (contractorsData as any)?.data ?? contractorsData ?? [];
 
-  const { data: merged, isLoading } = useQuery({
+  const { data: merged, isLoading, isError, refetch } = useQuery({
     queryKey: ['fitout-daily-report-merged', projectId, date],
     queryFn: () => fitoutDailyReportApi.getMerged(projectId!, date),
     enabled: !!projectId,
@@ -66,11 +66,11 @@ export default function FitoutDailyReportPage() {
     <div>
       <PageHeader className="mb-5" title={t('dailyReport.title')} description={p ? `${p.tenant?.brandName} — ${p.unit?.code}` : t('dailyReport.loading_project')} actions={<Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout')}><ArrowLeft size={16} /> {t('common.back')}</Button>} />
 
-      <div className="flex items-center gap-3 mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Calendar size={16} className="text-gray-400" />
-        <Input type="date" className="w-44 h-9" value={date} onChange={(e) => setDate(e.target.value)} />
+        <Input type="date" aria-label={t('dailyReport.dateLabel')} className="w-44 h-9" value={date} onChange={(e) => setDate(e.target.value)} />
         {merged && (
-          <div className="flex items-center gap-4 text-sm text-gray-600 ml-4">
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 sm:ml-4">
             <span className="flex items-center gap-1"><Users size={14} /> {t('dailyReport.workforce', { count: merged.totalWorkforce })}</span>
             <span>{t('dailyReport.entries', { count: merged.entryCount })}</span>
           </div>
@@ -81,7 +81,7 @@ export default function FitoutDailyReportPage() {
         <Card className="md:col-span-1">
           <CardHeader className="pb-2"><CardTitle className="text-base">{t('dailyReport.addReport')}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
-            <select className="w-full text-sm h-9 border border-input rounded-md px-2 bg-white"
+            <select aria-label={t('dailyReport.contractorLabel')} className="w-full text-sm h-9 border border-input rounded-md px-2 bg-white"
               value={form.contractorId} onChange={(e) => setForm((f) => ({ ...f, contractorId: e.target.value }))}>
               <option value="">{t('dailyReport.noContractor')}</option>
               {contractors.map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
@@ -109,6 +109,8 @@ export default function FitoutDailyReportPage() {
           <CardContent>
             {isLoading ? (
               <p className="text-sm text-gray-400 text-center py-6">{t('dailyReport.loading')}</p>
+            ) : isError ? (
+              <div role="alert" className="border-l-2 border-red-500 bg-red-50 p-4 text-sm text-red-700"><p>{t('dailyReport.loadError')}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>{t('page.retry')}</Button></div>
             ) : !merged || merged.entryCount === 0 ? (
               <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">{t('dailyReport.empty')}</p>
             ) : (

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 
@@ -81,6 +81,14 @@ export class FitoutDailyReportService {
   }, createdById: string) {
     const project = await this.prisma.fitoutProject.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Fitout project not found');
+
+    if (dto.contractorId) {
+      const contractor = await this.prisma.fitoutContractor.findFirst({
+        where: { id: dto.contractorId, projectId, isActive: true },
+        select: { id: true },
+      });
+      if (!contractor) throw new BadRequestException('Contractor does not belong to this fitout project');
+    }
 
     return this.prisma.fitoutDailyReportEntry.create({
       data: {

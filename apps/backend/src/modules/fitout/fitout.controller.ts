@@ -100,8 +100,9 @@ export class FitoutController {
 
   @Get('progress')
   @ApiOperation({ summary: 'Get fitout progress report' })
-  getProgress() {
-    return this.slaService.getFitoutProgress();
+  async getProgress(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.slaService.getFitoutProgress(mallIds);
   }
 
   @Get('stage-configs')
@@ -142,8 +143,9 @@ export class FitoutController {
 
   @Get('dashboard/overview')
   @ApiOperation({ summary: 'Get fitout dashboard overview across all active projects' })
-  getDashboardOverview() {
-    return this.dashboardService.getOverview();
+  async getDashboardOverview(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.dashboardService.getOverview(mallIds);
   }
 
   // ── ':id/*' routes ───────────────────────────────────────────────────────────
@@ -312,14 +314,14 @@ export class FitoutController {
   @ApiOperation({ summary: 'Update contractor' })
   async updateContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @Body() dto: any, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.updateContractor(contractorId, dto);
+    return this.contractorService.updateContractor(id, contractorId, dto);
   }
 
   @Delete(':id/contractors/:contractorId')
   @ApiOperation({ summary: 'Deactivate contractor' })
   async deleteContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.deleteContractor(contractorId);
+    return this.contractorService.deleteContractor(id, contractorId);
   }
 
   // ── Worker Access Logs ───────────────────────────────────────────────────────
@@ -341,6 +343,6 @@ export class FitoutController {
   @ApiOperation({ summary: 'Log worker exit' })
   async logWorkerExit(@Param('id') id: string, @Param('logId') logId: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.logWorkerExit(logId);
+    return this.contractorService.logWorkerExit(id, logId);
   }
 }

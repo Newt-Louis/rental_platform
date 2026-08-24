@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterFitoutProjects, getFitoutPresentationLabel, groupChangeOrderAmountsByCurrency, humanizeFitoutCode } from './fitoutPresentation';
+import { filterFitoutProjects, formatDecimalAmountWithoutCurrency, formatDecimalMoneyWithCode, getFitoutPresentationLabel, groupChangeOrderAmountsByCurrency, humanizeFitoutCode } from './fitoutPresentation';
 import en from '@/locales/en/fitout.json';
 import vi from '@/locales/vi/fitout.json';
 
@@ -13,6 +13,17 @@ describe('Fitout presentation helpers', () => {
     expect(filterFitoutProjects(projects, 'alpha', '')).toEqual([projects[0]]);
     expect(filterFitoutProjects(projects, 'tầng 2', 'OPENED')).toEqual([projects[1]]);
     expect(filterFitoutProjects(projects, '', 'OPENED')).toEqual([projects[1]]);
+  });
+
+  it('applies meaningful attention filters without changing project status semantics', () => {
+    const now = new Date('2026-08-24T00:00:00Z');
+    const attentionProjects = [
+      { ...projects[0], expectedOpenDate: '2026-08-30T00:00:00Z' },
+      { ...projects[1], expectedOpenDate: '2026-08-20T00:00:00Z' },
+    ];
+    expect(filterFitoutProjects(attentionProjects, '', '', 'OPENING_SOON', now)).toEqual([attentionProjects[0]]);
+    expect(filterFitoutProjects(attentionProjects, '', '', 'UNASSIGNED', now)).toEqual([attentionProjects[1]]);
+    expect(filterFitoutProjects(attentionProjects, '', '', 'COMPLETED', now)).toEqual([attentionProjects[1]]);
   });
 
   it('uses a localized label when available', () => {
@@ -42,12 +53,35 @@ describe('Fitout presentation helpers', () => {
 
   it('keeps change-order totals separated by persisted currency', () => {
     expect(groupChangeOrderAmountsByCurrency([
-      { currency: 'VND', status: 'APPROVED', estimatedCost: 1_000, approvedCost: 900 },
-      { currency: 'USD', status: 'SUBMITTED', estimatedCost: 25.5 },
-      { currency: 'USD', status: 'APPROVED', estimatedCost: 10, approvedCost: 8 },
+      { currency: 'VND', status: 'APPROVED', estimatedCost: '1000.00', approvedCost: '900.00' },
+      { currency: 'USD', status: 'SUBMITTED', estimatedCost: '25.50' },
+      { currency: 'USD', status: 'APPROVED', estimatedCost: '10.00', approvedCost: '8.00' },
+      { currency: 'USD', costType: 'DEDUCTION', status: 'APPROVED', estimatedCost: '0.25', approvedCost: '0.15' },
     ])).toEqual({
-      VND: { estimated: 1_000, approved: 900 },
-      USD: { estimated: 35.5, approved: 8 },
+      VND: { estimated: '1000.00', approved: '900.00' },
+      USD: { estimated: '35.25', approved: '7.85' },
     });
+  });
+
+  it('never silently assumes VND when persisted currency is absent', () => {
+    expect(groupChangeOrderAmountsByCurrency([
+      { currency: null, status: 'APPROVED', estimatedCost: '1000.00', approvedCost: '900.00' },
+    ])).toEqual({
+      UNSPECIFIED: { estimated: '1000.00', approved: '900.00' },
+    });
+  });
+
+  it('does not substitute the proposed amount for a missing approved amount', () => {
+    expect(groupChangeOrderAmountsByCurrency([
+      { currency: 'USD', status: 'APPROVED', estimatedCost: '1000.00', approvedCost: null },
+    ])).toEqual({
+      USD: { estimated: '1000.00', approved: '0.00' },
+    });
+  });
+
+  it('formats Decimal strings without coercing them through JavaScript Number', () => {
+    expect(formatDecimalMoneyWithCode('9007199254740991.25', 'USD', 'en-US')).toBe('9,007,199,254,740,991.25 USD');
+    expect(formatDecimalMoneyWithCode('3165855000.00', 'VND', 'vi-VN')).toBe('3.165.855.000 VND');
+    expect(formatDecimalAmountWithoutCurrency('9007199254740991.25', 'en-US')).toBe('9,007,199,254,740,991.25');
   });
 });

@@ -11,9 +11,9 @@ import { ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/ui/page-header';
 
-function fmtDate(d?: string | null) {
+function fmtDate(d?: string | null, locale = 'vi-VN') {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  return new Date(d).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' });
 }
 
 function depthOf(task: any, byId: Map<string, any>): number {
@@ -28,7 +28,8 @@ function depthOf(task: any, byId: Map<string, any>): number {
 }
 
 export default function FitoutGanttPage() {
-  const { t } = useTranslation('fitout');
+  const { t, i18n } = useTranslation('fitout');
+  const locale = i18n.resolvedLanguage ?? 'vi-VN';
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -42,7 +43,7 @@ export default function FitoutGanttPage() {
     enabled: !!projectId,
   });
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['fitout-tasks', projectId],
     queryFn: () => fitoutGanttApi.list(projectId!),
     enabled: !!projectId,
@@ -121,10 +122,13 @@ export default function FitoutGanttPage() {
         <CardContent className="pt-4">
           {isLoading ? (
             <p className="text-sm text-gray-400 text-center py-6">{t('gantt.loading')}</p>
+          ) : isError ? (
+            <div role="alert" className="border-l-2 border-red-500 bg-red-50 p-4 text-sm text-red-700"><p>{t('gantt.loadError')}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>{t('page.retry')}</Button></div>
           ) : taskList.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-10 bg-gray-50 rounded-lg">{t('gantt.empty')}</p>
           ) : (
-            <div className="space-y-3">
+            <div className="overflow-x-auto pb-1">
+            <div className="min-w-[760px] space-y-3">
               {taskList.map((t) => {
                 const depth = depthOf(t, byId);
                 const left = pctOf(t.plannedStart);
@@ -137,7 +141,7 @@ export default function FitoutGanttPage() {
                         {t.name}
                         {t.isLate && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
                       </p>
-                      <p className="text-xs text-gray-400">{fmtDate(t.plannedStart)} → {fmtDate(t.plannedEnd)}</p>
+                      <p className="text-xs text-gray-400">{fmtDate(t.plannedStart, locale)} → {fmtDate(t.plannedEnd, locale)}</p>
                     </div>
                     <div className="flex-1 relative h-6 bg-gray-100 rounded">
                       <div
@@ -157,10 +161,12 @@ export default function FitoutGanttPage() {
                         onChange={(e) => setPercentDraft((d) => ({ ...d, [t.id]: e.target.value }))}
                       />
                       <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        aria-label={t('gantt.saveProgress', { title: t.name })}
                         onClick={() => updateMutation.mutate({ id: t.id, data: { percentComplete: +draft } })}>
                         %
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400"
+                        aria-label={t('gantt.deleteTask', { title: t.name })}
                         onClick={() => deleteMutation.mutate(t.id)}>
                         <Trash2 size={13} />
                       </Button>
@@ -168,6 +174,7 @@ export default function FitoutGanttPage() {
                   </div>
                 );
               })}
+            </div>
             </div>
           )}
         </CardContent>

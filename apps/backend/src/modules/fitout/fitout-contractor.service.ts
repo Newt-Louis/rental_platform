@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -39,7 +39,7 @@ export class FitoutContractorService {
     });
   }
 
-  async updateContractor(contractorId: string, dto: Partial<{
+  async updateContractor(projectId: string, contractorId: string, dto: Partial<{
     companyName: string;
     licenseNo: string;
     contactName: string;
@@ -49,7 +49,7 @@ export class FitoutContractorService {
     endDate: string;
     isActive: boolean;
   }>) {
-    const existing = await this.prisma.fitoutContractor.findUnique({ where: { id: contractorId } });
+    const existing = await this.prisma.fitoutContractor.findFirst({ where: { id: contractorId, projectId } });
     if (!existing) throw new NotFoundException('Contractor not found');
 
     return this.prisma.fitoutContractor.update({
@@ -62,8 +62,8 @@ export class FitoutContractorService {
     });
   }
 
-  async deleteContractor(contractorId: string) {
-    const existing = await this.prisma.fitoutContractor.findUnique({ where: { id: contractorId } });
+  async deleteContractor(projectId: string, contractorId: string) {
+    const existing = await this.prisma.fitoutContractor.findFirst({ where: { id: contractorId, projectId } });
     if (!existing) throw new NotFoundException('Contractor not found');
     return this.prisma.fitoutContractor.update({ where: { id: contractorId }, data: { isActive: false } });
   }
@@ -86,6 +86,12 @@ export class FitoutContractorService {
     entryDate: string;
     purpose?: string;
   }) {
+    const contractor = await this.prisma.fitoutContractor.findFirst({
+      where: { id: dto.contractorId, projectId, isActive: true },
+      select: { id: true },
+    });
+    if (!contractor) throw new BadRequestException('Contractor does not belong to this fitout project');
+
     return this.prisma.workerAccessLog.create({
       data: {
         projectId,
@@ -98,8 +104,8 @@ export class FitoutContractorService {
     });
   }
 
-  async logWorkerExit(logId: string) {
-    const existing = await this.prisma.workerAccessLog.findUnique({ where: { id: logId } });
+  async logWorkerExit(projectId: string, logId: string) {
+    const existing = await this.prisma.workerAccessLog.findFirst({ where: { id: logId, projectId } });
     if (!existing) throw new NotFoundException('Worker log not found');
     return this.prisma.workerAccessLog.update({ where: { id: logId }, data: { exitDate: new Date() } });
   }

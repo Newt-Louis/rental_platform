@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { BulkSelectionBar } from '@/components/BulkSelectionBar';
-import { proposalsApi, dealScoringApi, proposalScenariosApi, spacesApi } from '@/api';
+import { proposalsApi, proposalScenariosApi, spacesApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,27 +21,29 @@ import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import {
   Search, FileText, Send, Building2, DollarSign, Calendar, User, CheckCircle, XCircle,
   Download, History, Plus, Star, Trash2, ArrowRight, Link2, AlertTriangle, PenSquare,
-  X, Loader2, Pencil, CheckSquare, Square, SlidersHorizontal, Clock3, Sparkles,
+  X, Loader2, Pencil, CheckSquare, Square, Clock3, Sparkles,
 } from 'lucide-react';
 import type { Proposal, UnitBooking } from '@/types';
-import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { ProposalEditorDialog } from './ProposalEditor';
 import { CreateProposalEntryDialog } from './CreateProposalDialog';
 import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
+import {
+  PROPOSAL_STATUS_TONES,
+  WORKFLOW_STATUS_TONES,
+  canEditProposalDocument,
+  getApprovalPosition,
+  getContractHandoff,
+  getProposalParty,
+  getProposalRoleCapabilities,
+} from './proposalApprovalPresentation';
 
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT:        'bg-gray-100 text-gray-700',
-  SUBMITTED:    'bg-yellow-100 text-yellow-700',
-  UNDER_REVIEW: 'bg-blue-100 text-gray-700',
-  APPROVED:     'bg-green-100 text-green-700',
-  REJECTED:     'bg-red-100 text-red-700',
-  CONVERTED:    'bg-purple-100 text-purple-700',
-};
-
-function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
-  return formatMoney(n, currencyCode);
+function fmtFull(n: number, currencyCode?: CurrencyCode) {
+  return currencyCode ? formatMoneyWithCode(n, currencyCode) : '—';
 }
 
 function fmtDate(d?: string | null) {
@@ -194,7 +196,7 @@ function AddScenarioDialog({
   );
 }
 
-function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposalId: string; rentCurrency?: CurrencyCode }) {
+function ProposalScenariosPanel({ proposalId, rentCurrency }: { proposalId: string; rentCurrency: CurrencyCode }) {
   const { t } = useTranslation('deals');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -250,6 +252,10 @@ function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposal
         </Button>
       </div>
 
+      <p className="border-l-2 border-blue-300 pl-3 text-xs leading-5 text-gray-500">
+        {t('proposals.scenarios.simulationNotice')}
+      </p>
+
       {scenarios.length === 0 ? (
         <div className="text-center py-6 text-gray-400 text-sm">{t('proposals.scenarios.empty')}</div>
       ) : (
@@ -262,11 +268,6 @@ function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposal
                   <div className="flex items-center gap-2">
                     {s.isSelected && <Star size={13} className="text-gray-500 fill-blue-500" />}
                     <span className="font-semibold text-sm">{s.name}</span>
-                    {s.score != null && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${s.score >= 70 ? 'bg-green-100 text-green-700' : s.score >= 40 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                        {s.score.toFixed(0)} pts
-                      </span>
-                    )}
                   </div>
                   <div className="flex gap-1">
                     {!s.isSelected && (
@@ -281,13 +282,13 @@ function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposal
                 </div>
                 <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-600">
                   <div><span className="text-gray-400">DT:</span> {terms.area?.toLocaleString()} m²</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.rentPerSqm')}:</span> {terms.rentPerSqm != null ? formatMoney(terms.rentPerSqm, rentCurrency) : '—'}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.rentPerSqm')}:</span> {terms.rentPerSqm != null ? formatMoneyWithCode(terms.rentPerSqm, rentCurrency) : '—'}</div>
                   <div><span className="text-gray-400">{t('proposals.scenarios.compare.term')}:</span> {terms.term} th</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.monthlyRent')}:</span> <span className="font-medium text-gray-700">{terms.monthlyRent != null ? formatMoney(terms.monthlyRent, rentCurrency) : '—'}</span></div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount != null ? formatMoney(terms.depositAmount, rentCurrency) : '—'}</div>
-                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue != null ? formatMoney(terms.totalValue, rentCurrency) : '—'}</span></div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.monthlyRent')}:</span> <span className="font-medium text-gray-700">{terms.monthlyRent != null ? formatMoneyWithCode(terms.monthlyRent, rentCurrency) : '—'}</span></div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount != null ? formatMoneyWithCode(terms.depositAmount, rentCurrency) : '—'}</div>
+                  <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue != null ? formatMoneyWithCode(terms.totalValue, rentCurrency) : '—'}</span></div>
                   {terms.discount > 0 && <div><span className="text-gray-400">CK:</span> {terms.discount}%</div>}
-                  {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} th</div>}
+                  {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} {t('proposals.scenarios.days')}</div>}
                   {terms.escalation > 0 && <div><span className="text-gray-400">{t('proposals.scenarios.fields.escalation')}:</span> {terms.escalation}%/năm</div>}
                 </div>
               </div>
@@ -313,21 +314,20 @@ function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposal
             <tbody>
               {[
                 { labelKey: 'proposals.scenarios.compare.area', key: 'area', fmt: (v: number) => v?.toLocaleString() },
-                { labelKey: 'proposals.scenarios.compare.rentPerSqm', key: 'rentPerSqm', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
-                { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
+                { labelKey: 'proposals.scenarios.compare.rentPerSqm', key: 'rentPerSqm', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined },
+                { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined },
                 { labelKey: 'proposals.scenarios.compare.term', key: 'term', fmt: (v: number) => `${v} th` },
                 { labelKey: 'proposals.scenarios.compare.discount', key: 'discount', fmt: (v: number) => `${v}%` },
-                { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} th` },
-                { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined, highlight: true },
-                { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined },
-                { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v != null ? formatMoney(v, rentCurrency) : undefined, highlight: true },
-                { labelKey: 'proposals.scenarios.compare.score', key: '_score', fmt: (_v: number, s: any) => s.score?.toFixed(1) },
+                { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} ${t('proposals.scenarios.days')}` },
+                { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined, highlight: true },
+                { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined },
+                { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined, highlight: true },
               ].map(({ labelKey, key, fmt: f, highlight }) => (
                 <tr key={key} className={`border-t ${highlight ? 'bg-gray-50/40' : ''}`}>
                   <td className="px-3 py-1.5 text-gray-500">{t(labelKey)}</td>
                   {scenarios.map((s: any) => (
                     <td key={s.id} className={`px-3 py-1.5 text-center ${highlight ? 'font-semibold' : ''}`}>
-                      {key === '_score' ? s.score?.toFixed(1) : f?.(s.terms?.[key], s) ?? '—'}
+                      {f?.(s.terms?.[key]) ?? '—'}
                     </td>
                   ))}
                 </tr>
@@ -343,9 +343,15 @@ function ProposalScenariosPanel({ proposalId, rentCurrency = 'VND' }: { proposal
 function ProposalDetailSheet({
   proposal,
   onClose,
+  canEdit,
+  canConvert,
+  canDirectReject,
 }: {
   proposal: Proposal | null;
   onClose: () => void;
+  canEdit: boolean;
+  canConvert: boolean;
+  canDirectReject: boolean;
 }) {
   const { t } = useTranslation(['deals', 'common']);
   const qc = useQueryClient();
@@ -358,7 +364,6 @@ function ProposalDetailSheet({
   });
 
   const p: any = detail?.data ?? detail ?? proposal;
-  const statusColor = p ? STATUS_COLOR[p.status] ?? STATUS_COLOR.DRAFT : null;
   const statusLabel = p ? t(`proposals.status.${p.status}`, p.status as string) : null;
 
   const navigate = useNavigate();
@@ -405,13 +410,11 @@ function ProposalDetailSheet({
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
   });
 
-  const scoreMutation = useMutation({
-    mutationFn: () => dealScoringApi.scoreProposal(p!.id),
-    onSuccess: (r) => toast({ title: `Deal score: ${r?.grade ?? r?.data?.grade} (${r?.totalScore ?? r?.data?.totalScore})` }),
-  });
-
   // Approval steps from detail
   const approvals: any[] = p?.approvalWorkflow?.steps ?? p?.approvals ?? [];
+  const approvalPosition = getApprovalPosition(approvals);
+  const party = getProposalParty(p);
+  const contractHandoff = getContractHandoff(p);
 
   return (
     <>
@@ -424,8 +427,36 @@ function ProposalDetailSheet({
     <Sheet
       open={!!proposal}
       onClose={onClose}
-      title={p?.proposalNumber ?? 'Proposal'}
-      subtitle={p?.tenant?.brandName}
+      title={p ? (
+        <span className="block min-w-0">
+          <span className="block font-mono text-xs font-semibold tracking-wide text-gray-500">{p.proposalNumber}</span>
+          <span className="mt-1 block truncate text-lg font-semibold text-gray-950">{party.name}</span>
+          <span className="mt-0.5 block text-xs font-normal text-gray-500">
+            {p.unit?.code ?? '—'}{p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}{p.area != null ? ` · ${Number(p.area).toLocaleString('vi-VN')} m²` : ''}
+          </span>
+          <span className="mt-2 flex flex-wrap items-center gap-1.5">
+            <ERPStatusBadge tone={PROPOSAL_STATUS_TONES[p.status] ?? 'neutral'}>{statusLabel}</ERPStatusBadge>
+            {p.approvalWorkflow?.status && (
+              <ERPStatusBadge tone={WORKFLOW_STATUS_TONES[p.approvalWorkflow.status] ?? 'neutral'}>
+                {String(t(`approvals.workflow.statusValues.${p.approvalWorkflow.status}`, { defaultValue: p.approvalWorkflow.status }))}
+              </ERPStatusBadge>
+            )}
+          </span>
+          <span className="mt-2 block text-base font-semibold tabular-nums text-gray-950">
+            {t('proposals.objectHeader.monthlyValue', { amount: fmtFull(p.monthlyRent, p.rentCurrency) })}
+          </span>
+          {approvalPosition.state === 'CURRENT' && (
+            <span className="mt-1 block text-xs font-medium text-blue-700">
+              {t('proposals.objectHeader.approvalPosition', {
+                current: approvalPosition.current,
+                total: approvalPosition.total,
+                role: t(`approvals.roles.${approvalPosition.step?.approverRole}`, { defaultValue: approvalPosition.step?.approverRole ?? '—' }),
+              })}
+            </span>
+          )}
+        </span>
+      ) : t('proposals.detail')}
+      className="w-[min(700px,100vw)] sm:max-w-[96vw]"
     >
       {p && (
         <>
@@ -487,18 +518,10 @@ function ProposalDetailSheet({
             {/* Scrollable content */}
             <div className="px-6 py-4">
               <TabsContent value="detail" className="space-y-4 mt-0">
-                {/* Status */}
-                <div className="flex items-center gap-2">
-                  {statusColor && <Badge className={`${statusColor} border-0 px-3 py-1 text-sm font-medium`}>{statusLabel}</Badge>}
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => scoreMutation.mutate()}>
-                    {t('proposals.actions.score')}
-                  </Button>
-                </div>
-
                 {/* Lead source */}
                 {p.lead && (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                    <div className="text-xs font-semibold text-gray-700 mb-1.5 flex items-center gap-1">
+                  <div className="border-b border-gray-200 pb-3">
+                    <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-gray-500">
                       <Link2 size={11} /> {t('proposals.sections.leadSource')}
                     </div>
                     <button
@@ -509,10 +532,7 @@ function ProposalDetailSheet({
                         <div className="font-medium text-gray-900">{p.lead.brandName}</div>
                         <div className="text-xs text-gray-500">{p.lead.contactName}</div>
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-500">
-                        <span>{p.lead.status}</span>
-                        <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                      </div>
+                      <ArrowRight size={12} className="text-gray-400 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   </div>
                 )}
@@ -520,24 +540,17 @@ function ProposalDetailSheet({
                 {/* Contract result — màu phản ánh đúng trạng thái thật của hợp đồng, không mặc định
                     xanh lá (đã xong) ngay cả khi hợp đồng vẫn còn ở DRAFT/chưa ký. */}
                 {p.contract && (() => {
-                  const inForce = ['ACTIVE', 'EXPIRING'].includes(p.contract.status);
-                  const ended = ['EXPIRED', 'TERMINATED'].includes(p.contract.status);
-                  const tone = inForce
-                    ? { border: 'border-green-200', bg: 'bg-green-50', text: 'text-green-600', hover: 'hover:text-green-700' }
-                    : ended
-                    ? { border: 'border-gray-200', bg: 'bg-gray-50', text: 'text-gray-500', hover: 'hover:text-gray-700' }
-                    : { border: 'border-amber-200', bg: 'bg-amber-50', text: 'text-amber-600', hover: 'hover:text-amber-700' };
                   return (
-                    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3`}>
-                      <div className={`text-xs font-semibold ${tone.text} mb-1.5 flex items-center gap-1`}>
+                    <div className="border-b border-gray-200 pb-3">
+                      <div className="mb-1.5 flex items-center gap-1 text-xs font-semibold text-gray-500">
                         <CheckCircle size={11} /> {t('proposals.sections.contractResult')}
                       </div>
                       <button
-                        className={`flex items-center justify-between w-full text-sm ${tone.hover} group`}
+                        className="group flex w-full items-center justify-between text-sm hover:text-blue-700"
                         onClick={() => { onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
                       >
                         <div className="font-medium text-gray-900">{p.contract.contractNumber}</div>
-                        <div className={`flex items-center gap-1 text-xs ${tone.text}`}>
+                        <div className="flex items-center gap-1 text-xs text-gray-500">
                           <span>{t(`contracts.status.${p.contract.status}`, p.contract.status as string)}</span>
                           <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                         </div>
@@ -547,9 +560,9 @@ function ProposalDetailSheet({
                 })()}
 
                 {/* Parties */}
-                <SheetSection label={t('proposals.sections.proposedFor')} className="bg-gray-50">
-                  <SheetRow label={t('proposals.fields.tenant')} value={p.tenant?.brandName} icon={User} />
-                  <SheetRow label={t('common:labels.name')} value={p.tenant?.companyName} icon={Building2} />
+                <SheetSection label={t('proposals.sections.proposedFor')} className="rounded-none border-b border-gray-200 bg-transparent px-0">
+                  <SheetRow label={t('proposals.fields.party')} value={`${party.name} · ${t(`proposals.partyTypes.${party.type}`, { defaultValue: party.type })}`} icon={User} />
+                  <SheetRow label={t('common:labels.name')} value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
                   <SheetRow label={t('proposals.fields.unit')} value={p.unit?.code} icon={Building2} />
                   <SheetRow label={t('common:labels.area')} value={p.area ? `${p.area.toLocaleString()} m²` : null} icon={Building2} />
                 </SheetSection>
@@ -557,7 +570,7 @@ function ProposalDetailSheet({
                 {/* Financials */}
                 <SheetSection
                   label={t('proposals.sections.financials')}
-                  className="bg-gray-50"
+                  className="rounded-none border-b border-gray-200 bg-transparent px-0"
                   action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency}</span>}
                 >
                   <SheetRow
@@ -574,10 +587,10 @@ function ProposalDetailSheet({
                     <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee, p.rentCurrency)} icon={DollarSign} />
                   )}
                   {p.rentFree > 0 && (
-                    <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} tháng`} icon={Calendar} />
+                    <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} ${t('proposals.scenarios.days')}`} icon={Calendar} />
                   )}
                   {p.discount > 0 && (
-                    <SheetRow label={t('common:labels.deposit')} value={`${p.discount}%`} icon={DollarSign} />
+                    <SheetRow label={t('proposals.scenarios.fields.discount')} value={`${p.discount}%`} icon={DollarSign} />
                   )}
                   <SheetRow
                     label={t('contracts.fields.rentAmount')}
@@ -587,7 +600,7 @@ function ProposalDetailSheet({
                 </SheetSection>
 
                 {/* Term */}
-                <SheetSection label={t('proposals.sections.term')} className="bg-gray-50">
+                <SheetSection label={t('proposals.sections.term')} className="rounded-none border-b border-gray-200 bg-transparent px-0">
                   <SheetRow label={t('proposals.fields.startDate')} value={fmtDate(p.startDate)} icon={Calendar} />
                   <SheetRow label={t('proposals.fields.endDate')} value={fmtDate(p.endDate)} icon={Calendar} />
                   <SheetRow
@@ -616,7 +629,7 @@ function ProposalDetailSheet({
                     </div>
                     <div className="space-y-2">
                       {approvals.map((a: any) => (
-                        <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
+                        <div key={a.id} className="flex items-center gap-3 border-b border-gray-100 py-3 last:border-0">
                           {a.status === 'APPROVED' ? (
                             <CheckCircle size={16} className="text-green-500 shrink-0" />
                           ) : a.status === 'REJECTED' ? (
@@ -626,7 +639,13 @@ function ProposalDetailSheet({
                           )}
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium">
-                              {t('proposals.approval.level', { level: a.level })}: {a.approver?.fullName ?? '—'}
+                              {t('proposals.approval.stepRole', {
+                                order: a.stepOrder,
+                                role: t(`approvals.roles.${a.approverRole}`, { defaultValue: a.approverRole }),
+                              })}
+                            </div>
+                            <div className="mt-0.5 text-xs text-gray-500">
+                              {a.approver?.fullName ?? t(`approvals.roles.${a.approverRole}`, { defaultValue: a.approverRole ?? '—' })}
                             </div>
                             {a.comment && (
                               <div className="text-xs text-gray-500 mt-0.5 truncate">{a.comment}</div>
@@ -654,9 +673,23 @@ function ProposalDetailSheet({
               </TabsContent>
             </div>
 
-            {/* Action footer — sticky at bottom of scroll area */}
+            {/* State-aware action footer */}
             <div className="px-6 py-4 border-t border-gray-100 bg-white sticky bottom-0 space-y-2">
-              {p.status === 'DRAFT' && (
+              {contractHandoff.state === 'CONTRACT_CREATED' && (
+                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-emerald-700">
+                  <span>{t('proposals.handoff.created')}</span>
+                  <button className="font-semibold hover:underline" onClick={() => { onClose(); navigate(`/contracts?id=${contractHandoff.contract.id}`); }}>
+                    {contractHandoff.contract.contractNumber ?? t('proposals.handoff.openContract')}
+                  </button>
+                </div>
+              )}
+              {contractHandoff.state === 'AUTOMATIC_PROCESSING' && (
+                <p className="mb-2 text-xs text-blue-700">{t('proposals.handoff.automatic')}</p>
+              )}
+              {contractHandoff.state === 'TENANT_REQUIRED' && (
+                <p className="mb-2 text-xs text-amber-700">{t('proposals.handoff.tenantRequired')}</p>
+              )}
+              {canEdit && p.status === 'DRAFT' && (
                 <Button
                   className="w-full gap-2"
                   onClick={() => submitMutation.mutate()}
@@ -665,7 +698,7 @@ function ProposalDetailSheet({
                   <Send size={15} /> {t('proposals.actions.submit')}
                 </Button>
               )}
-              {p.status === 'APPROVED' && (
+              {canConvert && contractHandoff.state === 'TENANT_REQUIRED' && (
                 <Button
                   className="w-full gap-2 bg-green-600 hover:bg-green-700"
                   onClick={() => { if (p.tenantId) convertMutation.mutate(undefined); else { setTenantForm({ companyName: p.lead?.company || p.lead?.brandName || '', brandName: p.lead?.brandName || '', taxCode: '', contactName: p.lead?.contactName || '', contactEmail: p.lead?.email || '', contactPhone: p.lead?.phone || '', address: '' }); setShowTenantDialog(true); } }}
@@ -674,7 +707,7 @@ function ProposalDetailSheet({
                   <FileText size={15} /> {t('proposals.actions.convert')}
                 </Button>
               )}
-              {['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
+              {canDirectReject && ['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
                 <Button
                   variant="outline"
                   className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
@@ -684,12 +717,14 @@ function ProposalDetailSheet({
                 </Button>
               )}
               <div className="flex gap-2">
-                <Button
-                  className="flex-1 gap-2 text-white bg-indigo-600 hover:bg-indigo-700"
-                  onClick={() => setShowEditor(true)}
-                >
-                  <PenSquare size={15} /> {t('proposals.actions.editDoc')}
-                </Button>
+                {canEditProposalDocument(p.status, canEdit) && (
+                  <Button
+                    className="flex-1 gap-2 text-white bg-blue-600 hover:bg-blue-700"
+                    onClick={() => setShowEditor(true)}
+                  >
+                    <PenSquare size={15} /> {t('proposals.actions.editDoc')}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="gap-2"
@@ -742,8 +777,7 @@ export default function ProposalsPage() {
   const { toast } = useToast();
   const { role } = usePermission();
   const { selectedMallId } = useMallStore();
-  const canEdit = !!role && ['ADMIN', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR'].includes(role);
-  const canConvert = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
+  const { canEdit, canConvert, canDirectReject } = getProposalRoleCapabilities(role);
 
   const { data: floorsResponse } = useQuery({
     queryKey: ['proposal-filter-floors', selectedMallId],
@@ -935,54 +969,40 @@ export default function ProposalsPage() {
         )}
       </BulkSelectionBar>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('proposals.title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('proposals.manage')}</p>
-        </div>
-        {canEdit && (
+      <PageHeader
+        className="mb-4"
+        eyebrow={t('proposals.command.eyebrow')}
+        title={t('proposals.title')}
+        description={t('proposals.manage')}
+        actions={canEdit ? (
           <Button className="gap-1.5" onClick={() => setCreatePickerOpen(true)}>
             <Plus size={16} /> {t('proposals.create')}
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
-      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
-        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
-          <button key={key || 'ALL'} onClick={() => { const next = { ...draft, leaseTermType: key }; setDraft(next); setApplied({ ...applied, leaseTermType: key }); setPage(1); }}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${applied.leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-4">
+      <div className="mb-3 flex max-w-full gap-1 overflow-x-auto border-b border-gray-200 pb-2">
         {[
-          { key: '', label: t('proposals.stats.total'), value: stats.total ?? 0, color: 'text-gray-900' },
-          { key: 'DRAFT', label: t('proposals.stats.draft'), value: stats.DRAFT ?? 0, color: 'text-gray-700' },
-          { key: 'PENDING_APPROVAL', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0), color: 'text-amber-600' },
-          { key: 'APPROVED', label: t('proposals.stats.approved'), value: stats.APPROVED ?? 0, color: 'text-green-600' },
-          { key: 'REJECTED', label: t('proposals.status.REJECTED'), value: stats.REJECTED ?? 0, color: 'text-red-600' },
-          { key: 'CONVERTED', label: t('proposals.stats.converted'), value: stats.CONVERTED ?? 0, color: 'text-purple-600' },
+          { key: '', label: t('proposals.stats.total'), value: stats.total ?? 0 },
+          { key: 'DRAFT', label: t('proposals.stats.draft'), value: stats.DRAFT ?? 0 },
+          { key: 'PENDING_APPROVAL', label: t('proposals.stats.pending'), value: (stats.SUBMITTED ?? 0) + (stats.UNDER_REVIEW ?? 0) },
+          { key: 'APPROVED', label: t('proposals.stats.approved'), value: stats.APPROVED ?? 0 },
+          { key: 'REJECTED', label: t('proposals.status.REJECTED'), value: stats.REJECTED ?? 0 },
+          { key: 'CONVERTED', label: t('proposals.stats.converted'), value: stats.CONVERTED ?? 0 },
         ].map((item) => (
-          <Card key={item.label} className={`cursor-pointer transition-all hover:border-blue-300 hover:shadow-sm ${applied.status === item.key ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}>
-            <CardContent className="p-4"><p className="text-xs text-gray-500">{item.label}</p><p className={`text-2xl font-semibold mt-1 ${item.color}`}>{item.value}</p></CardContent>
-          </Card>
+          <button
+            key={item.label}
+            className={`shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition ${applied.status === item.key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-gray-600 hover:bg-gray-100'}`}
+            onClick={() => { const next = { ...draft, status: item.key }; setDraft(next); setApplied(next); setPage(1); }}
+          >
+            {item.label} <span className="ml-1 tabular-nums opacity-80">{item.value}</span>
+          </button>
         ))}
       </div>
       {statsError && <button className="text-sm text-amber-700 mb-3" onClick={() => refetchStats()}>{t('proposals.errorLoad')} {t('common:actions.refresh')}</button>}
 
-      {/* Search and filters */}
-      <Card className="mb-4 border-gray-200 shadow-sm">
-      <CardContent className="p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-          <SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc
-          {appliedFilterCount > 0 && <Badge className="bg-blue-100 text-blue-700 border-0">{appliedFilterCount} bộ lọc</Badge>}
-        </div>
-        <span className="text-xs text-gray-500">{total} đề xuất</span>
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Compact operational filters */}
+      <ERPToolbar className="mb-4">
         <div className="relative flex-1 min-w-[200px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
@@ -993,6 +1013,14 @@ export default function ProposalsPage() {
             className="pl-9 h-9"
           />
         </div>
+        <Select value={draft.leaseTermType || 'ALL'} onValueChange={(v) => setDraftField('leaseTermType', v === 'ALL' ? '' : v)}>
+          <SelectTrigger className="h-9 w-44"><SelectValue placeholder={t('proposals.filters.leaseType')} /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">{t('proposals.filters.allLeaseTypes')}</SelectItem>
+            <SelectItem value="LONG">{t('proposals.filters.longTerm')}</SelectItem>
+            <SelectItem value="SHORT">{t('proposals.filters.shortTerm')}</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={draft.status || 'ALL'} onValueChange={(v) => setDraftField('status', v === 'ALL' ? '' : v)}>
           <SelectTrigger className="h-9 w-40">
             <SelectValue placeholder={t('proposals.filters.status')} />
@@ -1049,9 +1077,10 @@ export default function ProposalsPage() {
             <X size={13} /> {t('common:actions.reset')}
           </Button>
         )}
-      </div>
-      </CardContent>
-      </Card>
+        <span className="ml-auto whitespace-nowrap text-xs text-gray-500">
+          {total} {t('proposals.command.records')}{appliedFilterCount > 0 ? ` · ${appliedFilterCount} ${t('proposals.command.filters')}` : ''}
+        </span>
+      </ERPToolbar>
 
       {isLoading ? (
         <div className="space-y-3">
@@ -1065,7 +1094,7 @@ export default function ProposalsPage() {
         <>
           {!selectedProposal && !editingProposal && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
           <div ref={gridRef} className="bg-white rounded-lg border overflow-x-auto select-none">
-            <table className="min-w-[1300px] w-full text-sm">
+            <table className="min-w-[1160px] w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
                   <th className="px-3 py-3 w-8">
@@ -1085,28 +1114,35 @@ export default function ProposalsPage() {
                     </div>
                   </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.proposalNo')}</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">Thời gian tạo</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.tenant')}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.unit')}</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.area')}</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.monthlyRent')}</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.contractValue')}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('common:labels.currency')}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.status')}</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs tracking-wider">{t('proposals.table.approval')}</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {proposals.map((p) => {
-                  const st = STATUS_MAP[p.status] ?? STATUS_MAP.DRAFT;
                   const isNew = isNewProposal(p.createdAt);
+                  const party = getProposalParty(p);
+                  const workflowStatus = (p as any).approvalWorkflow?.status;
                   return (
                     <tr
                       key={p.id}
                       className={`${DRAG_SELECT_CLASS} hover:bg-gray-50 cursor-pointer transition-colors ${selectedIds.has(p.id) ? 'bg-blue-50' : isNew ? 'bg-sky-50/40' : ''}`}
                       data-proposal-id={p.id}
+                      tabIndex={0}
+                      aria-label={t('proposals.actions.openDetails', { number: p.proposalNumber })}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest('[data-checkbox]')) return;
+                        setSelectedProposal(p);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key)) return;
+                        e.preventDefault();
                         setSelectedProposal(p);
                       }}
                     >
@@ -1114,7 +1150,16 @@ export default function ProposalsPage() {
                         <div
                           data-checkbox
                           className="cursor-pointer"
+                          role="checkbox"
+                          tabIndex={0}
+                          aria-checked={selectedIds.has(p.id)}
+                          aria-label={t('proposals.actions.select', { number: p.proposalNumber })}
                           onClick={(e) => { e.stopPropagation(); setSelectedIds((prev) => { const next = new Set(prev); next.has(p.id) ? next.delete(p.id) : next.add(p.id); return next; }); }}
+                          onKeyDown={(e) => {
+                            if (!['Enter', ' '].includes(e.key)) return;
+                            e.preventDefault(); e.stopPropagation();
+                            setSelectedIds((prev) => { const next = new Set(prev); next.has(p.id) ? next.delete(p.id) : next.add(p.id); return next; });
+                          }}
                         >
                           {selectedIds.has(p.id)
                             ? <CheckSquare size={15} className="text-blue-600" />
@@ -1124,10 +1169,8 @@ export default function ProposalsPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs font-semibold text-gray-900">{p.proposalNumber}</span>
-                          {isNew && <Badge className="gap-1 border-0 bg-blue-600 text-white text-[10px] px-1.5 py-0"><Sparkles size={10} /> Mới</Badge>}
+                          {isNew && <Badge className="gap-1 border-0 bg-blue-600 text-white text-[10px] px-1.5 py-0"><Sparkles size={10} /> {t('proposals.new')}</Badge>}
                         </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
                         <div className={`flex items-center gap-1.5 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}>
                           <Clock3 size={13} /> {proposalAge(p.createdAt)}
                         </div>
@@ -1136,24 +1179,31 @@ export default function ProposalsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {p.tenant?.brandName ?? p.lead?.brandName ?? p.booking?.lead?.brandName ?? p.booking?.customer?.brandName ?? '—'}
+                        <div className="font-medium text-gray-900">{party.name}</div>
+                        <div className="mt-0.5 text-[11px] text-gray-400">{t(`proposals.partyTypes.${party.type}`, party.type)}</div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-800">{p.unit?.code}</div>
-                        <div className="text-xs text-gray-400">{p.unit?.floor?.name ?? 'Chưa xác định tầng'}</div>
-                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${p.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{p.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>
+                        <div className="text-xs text-gray-400">{p.unit?.floor?.name ?? t('proposals.fields.floorUnknown')}</div>
+                        <div className="mt-1 text-[11px] tabular-nums text-gray-500">{p.area.toLocaleString()} m² · {p.unit?.leaseTermType === 'SHORT' ? t('proposals.filters.shortTerm') : t('proposals.filters.longTerm')}</div>
                       </td>
-                      <td className="px-4 py-3 text-right">{p.area.toLocaleString()} m²</td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">{formatMoneyAmount(p.monthlyRent, p.rentCurrency)}</td>
-                      <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatMoneyAmount(p.totalContractValue, p.rentCurrency)}</td>
+                      <td className="px-4 py-3 text-right"><ERPAmount amount={p.monthlyRent} currencyCode={p.rentCurrency} /></td>
+                      <td className="px-4 py-3 text-right"><ERPAmount amount={p.totalContractValue} currencyCode={p.rentCurrency} strong /></td>
                       <td className="px-4 py-3 text-xs font-mono text-gray-500">{p.rentCurrency}</td>
                       <td className="px-4 py-3">
-                        <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                        <ERPStatusBadge tone={PROPOSAL_STATUS_TONES[p.status] ?? 'neutral'}>{t(`proposals.status.${p.status}`, p.status)}</ERPStatusBadge>
                         {p.status === 'CONVERTED' && p.contract && (
                           <div className="mt-1 text-[11px] text-gray-400">
                             {t(`contracts.status.${p.contract.status}`, p.contract.status as string)}
                           </div>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {workflowStatus ? (
+                          <ERPStatusBadge tone={WORKFLOW_STATUS_TONES[workflowStatus] ?? 'neutral'}>
+                            {String(t(`approvals.workflow.statusValues.${workflowStatus}`, { defaultValue: workflowStatus }))}
+                          </ERPStatusBadge>
+                        ) : <span className="text-xs text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
@@ -1168,7 +1218,7 @@ export default function ProposalsPage() {
                               <Send size={12} /> {t('proposals.actions.send')}
                             </Button>
                           )}
-                          {canConvert && p.status === 'APPROVED' && (
+                          {canConvert && p.status === 'APPROVED' && !(p as any).tenantId && !(p as any).tenant && (
                             <Button
                               size="sm"
                               className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700 text-white"
@@ -1244,6 +1294,9 @@ export default function ProposalsPage() {
       <ProposalDetailSheet
         proposal={selectedProposal}
         onClose={() => setSelectedProposal(null)}
+        canEdit={canEdit}
+        canConvert={canConvert}
+        canDirectReject={canDirectReject}
       />
 
       {editingProposal && (

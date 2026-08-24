@@ -2,9 +2,6 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import Selecto from 'react-selecto';
-import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
-import { BulkSelectionBar } from '@/components/BulkSelectionBar';
 import { approvalsApi, bookingApi, proposalsApi, spacesApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,13 +14,21 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import {
-  CheckCircle, XCircle, CheckSquare, Square, DollarSign, AlertTriangle,
+  CheckCircle, XCircle, CheckSquare, DollarSign, AlertTriangle,
   Building2, Loader2, History, ChevronLeft, ChevronRight, Eye, Download,
-  FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck, Search, SlidersHorizontal, Sparkles, X,
+  FileText, User, CalendarDays, Clock3, MessageSquare, ShieldCheck, Search, Sparkles, X,
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
-import { formatMoney, formatMoneyAmount } from '@/lib/currency';
+import { formatMoneyWithCode } from '@/lib/currency';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
+import {
+  PROPOSAL_STATUS_TONES,
+  WORKFLOW_STATUS_TONES,
+  getApprovalPosition,
+  getProposalParty,
+} from '../proposals/proposalApprovalPresentation';
 
 function fmtPrice(n: number | null | undefined) {
   if (!n) return '—';
@@ -46,93 +51,23 @@ function approvalAge(value: string) {
   return days < 7 ? `${days} ngày trước` : new Date(value).toLocaleDateString('vi-VN');
 }
 
-function ApprovalPipeline({ steps, workflowStatus }: { steps: any[]; workflowStatus?: string }) {
-  const approvedCount = steps.filter((step) => step.status === 'APPROVED').length;
-  const rejectedIndex = steps.findIndex((step) => step.status === 'REJECTED');
-  const pendingIndex = steps.findIndex((step) => step.status !== 'APPROVED' && step.status !== 'REJECTED');
-  const currentIndex = rejectedIndex >= 0 ? rejectedIndex : pendingIndex;
-  const progress = steps.length ? Math.round((approvedCount / steps.length) * 100) : 0;
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <ShieldCheck size={17} className="text-blue-600" /> Tiến trình phê duyệt
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500">
-              {workflowStatus === 'APPROVED'
-                ? 'Tất cả các bước đã hoàn thành'
-                : workflowStatus === 'REJECTED'
-                  ? `Dừng tại bước ${rejectedIndex + 1}`
-                  : currentIndex >= 0 ? `Đang chờ xử lý bước ${currentIndex + 1} trên ${steps.length}` : 'Chưa có bước duyệt'}
-            </p>
-          </div>
-          <div className="min-w-[150px] text-right">
-            <span className="text-sm font-bold text-slate-900">{progress}%</span>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto px-4 py-5">
-        <div className="flex min-w-max items-stretch">
-          {steps.map((step, index) => {
-            const approved = step.status === 'APPROVED';
-            const rejected = step.status === 'REJECTED';
-            const active = index === currentIndex && !rejected;
-            const waiting = !approved && !rejected && !active;
-            return (
-              <div key={step.id} className="flex items-center">
-                <div className={`w-44 rounded-xl border p-3 transition-colors ${
-                  approved ? 'border-emerald-200 bg-emerald-50' :
-                  rejected ? 'border-red-300 bg-red-50' :
-                  active ? 'border-blue-300 bg-blue-50 ring-2 ring-blue-100' :
-                  'border-slate-200 bg-slate-50'
-                }`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                      approved ? 'bg-emerald-600 text-white' : rejected ? 'bg-red-600 text-white' : active ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-500'
-                    }`}>
-                      {approved ? <CheckCircle size={17} /> : rejected ? <XCircle size={17} /> : index + 1}
-                    </span>
-                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${
-                      approved ? 'text-emerald-700' : rejected ? 'text-red-700' : active ? 'text-blue-700' : 'text-slate-400'
-                    }`}>
-                      {approved ? 'Đã duyệt' : rejected ? 'Từ chối' : active ? 'Đang xử lý' : 'Chưa đến lượt'}
-                    </span>
-                  </div>
-                  <p className="mt-3 line-clamp-2 min-h-10 text-sm font-semibold text-slate-900">{step.stepName}</p>
-                  <p className="mt-1 truncate text-xs text-slate-500">{step.approverRole}</p>
-                  <div className="mt-3 border-t border-current/10 pt-2 text-[11px] text-slate-500">
-                    {step.approver?.fullName ? (
-                      <><p className="truncate font-medium text-slate-700">{step.approver.fullName}</p><p className="mt-0.5">{fmtDateTime(step.decidedAt)}</p></>
-                    ) : active ? <p className="font-medium text-blue-700">Đang chờ người duyệt</p>
-                      : waiting ? <p>Chờ hoàn tất bước trước</p> : null}
-                  </div>
-                </div>
-                {index < steps.length - 1 && (
-                  <div className={`mx-2 h-0.5 w-8 ${approved ? 'bg-emerald-400' : 'bg-slate-200'}`}>
-                    <span className={`block h-2 w-2 -translate-y-[3px] translate-x-7 rotate-45 border-r-2 border-t-2 ${approved ? 'border-emerald-400' : 'border-slate-300'}`} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {steps.length > 3 && <p className="border-t border-slate-100 px-4 py-2 text-center text-[11px] text-slate-400">Kéo ngang để xem toàn bộ quy trình</p>}
-    </section>
-  );
-}
-
-function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | null; onClose: () => void }) {
+function ApprovalDetailSheet({
+  workflowId,
+  decisionStepId,
+  onClose,
+}: {
+  workflowId: string | null;
+  decisionStepId: string | null;
+  onClose: () => void;
+}) {
   const { t } = useTranslation(['deals', 'common']);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const qc = useQueryClient();
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [approveComment, setApproveComment] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
   const { data: workflow, isLoading, isError, refetch } = useQuery({
     queryKey: ['approval-workflow', workflowId],
     queryFn: () => approvalsApi.getWorkflow(workflowId!),
@@ -142,6 +77,42 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
   const p: any = w?.proposal;
   const steps: any[] = w?.steps ?? [];
   const completed = w?.status === 'APPROVED';
+  const position = getApprovalPosition(steps);
+  const approvedStepCount = steps.filter((step) => step.status === 'APPROVED').length;
+  const party = getProposalParty(p);
+  const decisionStep = steps.find((step) => step.id === decisionStepId && step.status === 'PENDING');
+
+  const invalidateDecisionData = () => {
+    qc.invalidateQueries({ queryKey: ['pending-approvals'] });
+    qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
+    qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
+    qc.invalidateQueries({ queryKey: ['approvals-history'] });
+    qc.invalidateQueries({ queryKey: ['proposals'] });
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: () => approvalsApi.approve(decisionStep!.id, approveComment.trim() || undefined),
+    onSuccess: () => {
+      invalidateDecisionData();
+      toast({ title: t('approvals.approveSuccess') });
+      setApproveOpen(false);
+      setApproveComment('');
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => approvalsApi.reject(decisionStep!.id, rejectReason.trim()),
+    onSuccess: () => {
+      invalidateDecisionData();
+      toast({ title: t('approvals.rejectSuccess'), variant: 'destructive' });
+      setRejectOpen(false);
+      setRejectReason('');
+      onClose();
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
+  });
 
   const getPdf = async (mode: 'open' | 'download') => {
     if (!p?.id) return;
@@ -164,15 +135,29 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
   };
 
   return (
-    <Sheet open={!!workflowId} onClose={onClose} title={p?.proposalNumber ?? t('approvals.workflow.title')} subtitle={p?.tenant?.brandName ?? p?.lead?.brandName} className="w-[720px] max-w-[96vw]">
+    <>
+    <Sheet open={!!workflowId} onClose={onClose} title={p?.proposalNumber ?? t('approvals.workflow.title')} subtitle={party.name} className="w-[min(760px,100vw)] sm:max-w-[96vw]">
       {isLoading ? <div className="space-y-3 p-6">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       : isError ? <div className="p-6"><AsyncState isLoading={false} isError onRetry={refetch} errorTitle={t('approvals.workflow.errorLoad')}><div /></AsyncState></div>
       : w && p ? (
         <div className="space-y-5 p-6">
-          <div className={`rounded-2xl border p-4 ${completed ? 'border-emerald-200 bg-emerald-50' : w.status === 'REJECTED' ? 'border-red-200 bg-red-50' : 'border-blue-200 bg-blue-50'}`}>
+          <div className="border-b border-slate-200 pb-4">
             <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-semibold uppercase tracking-wider opacity-60">{t('approvals.workflow.status')}</p><p className="mt-1 text-lg font-bold">{completed ? t('approvals.workflow.completed') : w.status === 'REJECTED' ? t('approvals.workflow.rejected') : t('approvals.workflow.inProgress')}</p><p className="mt-1 text-xs opacity-70">{t('approvals.workflow.timestamps', { created: fmtDateTime(w.createdAt), updated: fmtDateTime(w.updatedAt) })}</p></div>
-              <Badge className="border-0 bg-white/80 text-slate-700">{t('approvals.workflow.steps', { done: steps.filter((s) => s.status === 'APPROVED').length, total: steps.length })}</Badge>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ERPStatusBadge tone={WORKFLOW_STATUS_TONES[w.status] ?? 'neutral'}>{String(t(`approvals.workflow.statusValues.${w.status}`, { defaultValue: w.status }))}</ERPStatusBadge>
+                  {p.status && <ERPStatusBadge tone={PROPOSAL_STATUS_TONES[p.status] ?? 'neutral'}>{String(t(`proposals.status.${p.status}`, { defaultValue: p.status }))}</ERPStatusBadge>}
+                </div>
+                <p className="mt-2 text-base font-semibold text-slate-900">{party.name}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{p.unit?.code ?? '—'}{p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''} · {Number(p.area ?? 0).toLocaleString('vi-VN')} m²</p>
+                {position.state === 'CURRENT' && <p className="mt-2 text-xs font-medium text-blue-700">{t('approvals.decision.currentStep', { current: position.current, total: position.total })}</p>}
+                <p className="mt-1 text-[11px] text-slate-400">{t('approvals.workflow.timestamps', { created: fmtDateTime(w.createdAt), updated: fmtDateTime(w.updatedAt) })}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('approvals.workflow.fields.contractValue')}</p>
+                <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">{p.rentCurrency ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : '—'}</p>
+                <p className="mt-1 text-xs text-slate-500">{t('approvals.workflow.completedSteps', { done: approvedStepCount, total: steps.length })}</p>
+              </div>
             </div>
             {p.id && (
               <button
@@ -184,10 +169,8 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
             )}
           </div>
 
-          <ApprovalPipeline steps={steps} workflowStatus={w.status} />
-
-          <SheetSection label={t('approvals.workflow.section.proposalInfo')} className="bg-slate-50">
-            <div className="grid grid-cols-2 gap-x-4">
+          <SheetSection label={t('approvals.workflow.section.proposalInfo')} className="rounded-none border-b border-slate-200 bg-transparent px-0">
+            <div className="grid gap-x-4 sm:grid-cols-2">
               <SheetRow label={t('approvals.workflow.fields.tenantBrand')} value={p.tenant?.brandName ?? p.lead?.brandName} icon={User} />
               <SheetRow label={t('approvals.workflow.fields.company')} value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
               <SheetRow label={t('approvals.workflow.fields.unit')} value={`${p.unit?.code ?? '—'}${p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}`} icon={Building2} />
@@ -199,16 +182,16 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
 
           <SheetSection
             label={t('approvals.workflow.section.financial')}
-            className="bg-slate-50"
-            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency ?? 'VND'}</span>}
+            className="rounded-none border-b border-slate-200 bg-transparent px-0"
+            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency ?? '—'}</span>}
           >
-            <div className="grid grid-cols-2 gap-x-4">
-              <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentPerSqm ? `${fmtPrice(p.rentPerSqm)} ${p.rentCurrency ?? 'VND'}` : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.monthlyRent ? formatMoney(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.monthlyCAM ? formatMoney(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
+            <div className="grid gap-x-4 sm:grid-cols-2">
+              <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentCurrency && p.rentPerSqm != null ? formatMoneyWithCode(p.rentPerSqm, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.rentCurrency && p.monthlyRent != null ? formatMoneyWithCode(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.rentCurrency && p.monthlyCAM != null ? formatMoneyWithCode(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ngày/tháng`} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.totalContractValue ? formatMoney(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.days')}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.rentCurrency && p.totalContractValue != null ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
           </SheetSection>
@@ -216,20 +199,62 @@ function ApprovalDetailSheet({ workflowId, onClose }: { workflowId: string | nul
           <section>
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-slate-500"><ShieldCheck size={15} /> {t('approvals.workflow.section.log')}</div>
             <div className="space-y-0">
-              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-5 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepLabel', { order: step.stepOrder, name: step.stepName })}</p><p className="mt-0.5 text-xs text-slate-500">{t('approvals.workflow.step.role', { role: step.approverRole })}</p></div><Badge className={`border-0 ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : t('approvals.workflow.step.pending')}</Badge></div>{step.approver && <div className="mt-3 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.department ?? step.approver.role}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
+              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-4 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : decisionStep?.id === step.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 border-b border-slate-100 pb-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepRole', { order: step.stepOrder, role: t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole }) })}</p><p className="mt-0.5 text-xs text-slate-500">{t('approvals.workflow.step.position', { order: step.stepOrder, total: steps.length })}</p></div><ERPStatusBadge tone={step.status === 'APPROVED' ? 'success' : step.status === 'REJECTED' ? 'danger' : decisionStep?.id === step.id ? 'brand' : 'neutral'}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : decisionStep?.id === step.id ? t('approvals.decision.current') : t('approvals.workflow.step.pending')}</ERPStatusBadge></div>{step.approver && <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.department ?? t(`approvals.roles.${step.approver.role}`, { defaultValue: step.approver.role })}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 border-l-2 border-slate-200 pl-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
             </div>
           </section>
 
-          {completed ? <div className="sticky bottom-0 flex gap-2 border-t bg-white pt-4"><Button className="flex-1 gap-2" onClick={() => getPdf('open')}><Eye size={15} /> {t('approvals.workflow.printReady')}</Button><Button variant="outline" className="flex-1 gap-2" onClick={() => getPdf('download')}><Download size={15} /> {t('approvals.workflow.savePdf')}</Button></div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"><FileText size={15} className="mr-2 inline" />{t('approvals.workflow.printPending')}</div>}
+          {decisionStep ? (
+            <div className="sticky bottom-0 -mx-6 flex gap-2 border-t bg-white px-6 pt-4">
+              <Button variant="outline" className="flex-1 gap-2 border-red-200 text-red-700 hover:bg-red-50" onClick={() => setRejectOpen(true)}><XCircle size={15} /> {t('approvals.actions.reject')}</Button>
+              <Button className="flex-1 gap-2 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setApproveOpen(true)}><CheckCircle size={15} /> {t('approvals.actions.approve')}</Button>
+            </div>
+          ) : completed ? <div className="sticky bottom-0 flex gap-2 border-t bg-white pt-4"><Button className="flex-1 gap-2" onClick={() => getPdf('open')}><Eye size={15} /> {t('approvals.workflow.printReady')}</Button><Button variant="outline" className="flex-1 gap-2" onClick={() => getPdf('download')}><Download size={15} /> {t('approvals.workflow.savePdf')}</Button></div> : <div className="border-l-2 border-amber-300 pl-3 text-sm text-amber-800"><FileText size={15} className="mr-2 inline" />{t('approvals.workflow.printPending')}</div>}
         </div>
       ) : null}
     </Sheet>
+    <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{t('approvals.decision.approveTitle')}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="border-y border-slate-200 py-3">
+            <p className="font-mono text-xs font-semibold text-slate-700">{p?.proposalNumber}</p>
+            <p className="mt-1 font-medium text-slate-900">{party.name}</p>
+            <p className="mt-1 text-xs text-slate-500">{decisionStep ? t('approvals.workflow.step.stepRole', { order: decisionStep.stepOrder, role: t(`approvals.roles.${decisionStep.approverRole}`, { defaultValue: decisionStep.approverRole }) }) : '—'} · {p?.unit?.code}</p>
+            <p className="mt-2 text-base font-semibold tabular-nums">{p?.rentCurrency ? formatMoneyWithCode(p?.totalContractValue, p.rentCurrency) : '—'}</p>
+          </div>
+          <label className="block text-xs font-medium text-slate-600">
+            {t('approvals.decision.optionalComment')}
+            <textarea className="mt-1 h-24 w-full resize-none rounded-md border border-slate-200 p-2 text-sm" value={approveComment} onChange={(e) => setApproveComment(e.target.value)} />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setApproveOpen(false)}>{t('common:actions.cancel')}</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" disabled={!decisionStep || approveMutation.isPending} onClick={() => approveMutation.mutate()}>{t('approvals.decision.confirmApprove')}</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{t('approvals.decision.rejectTitle')}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <p className="text-slate-600">{p?.proposalNumber} · {decisionStep ? t('approvals.workflow.step.stepRole', { order: decisionStep.stepOrder, role: t(`approvals.roles.${decisionStep.approverRole}`, { defaultValue: decisionStep.approverRole }) }) : '—'}</p>
+          <label className="block text-xs font-medium text-slate-600">
+            {t('approvals.decision.requiredReason')}
+            <textarea className="mt-1 h-28 w-full resize-none rounded-md border border-red-200 p-2 text-sm" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>{t('common:actions.cancel')}</Button>
+            <Button variant="destructive" disabled={!decisionStep || rejectReason.trim().length < 5 || rejectMutation.isPending} onClick={() => rejectMutation.mutate()}>{t('approvals.decision.confirmReject')}</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
 export default function ApprovalsPage() {
   const { t } = useTranslation(['deals', 'common']);
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -242,6 +267,7 @@ export default function ApprovalsPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(searchParams.get('workflowId'));
+  const [selectedDecisionStepId, setSelectedDecisionStepId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [floorId, setFloorId] = useState('');
   const [unitId, setUnitId] = useState('');
@@ -259,30 +285,13 @@ export default function ApprovalsPage() {
   const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
 
   useEffect(() => {
-    setProposalPage(1); setHistoryPage(1); setSelectedWorkflowId(null);
-    setSelectedProposalIds(new Set()); setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType('');
+    setProposalPage(1); setHistoryPage(1); setSelectedWorkflowId(null); setSelectedDecisionStepId(null);
+    setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType('');
   }, [selectedMallId]);
 
-  // ── Selection state ──
-  const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
-  const [selectedPriceIds, setSelectedPriceIds] = useState<Set<string>>(new Set());
-
-  // ── Drag select hooks ──
-  const { gridRef: proposalGridRef, selectoRef: proposalSelectoRef, selectoProps: proposalSelectoProps } = useDragSelect({
-    onSelect: (ids) => setSelectedProposalIds(new Set(ids)),
-    onClear: () => setSelectedProposalIds(new Set()),
-    idAttribute: 'data-step-id',
-    selectFromInside: true,
-  });
-  const { gridRef: priceGridRef, selectoRef: priceSelectoRef, selectoProps: priceSelectoProps } = useDragSelect({
-    onSelect: (ids) => setSelectedPriceIds(new Set(ids)),
-    onClear: () => setSelectedPriceIds(new Set()),
-    idAttribute: 'data-price-id',
-    selectFromInside: true,
-  });
-
-  // ── Reject dialog ──
-  const [rejectDialog, setRejectDialog] = useState<{ ids: string[]; type: 'proposal' | 'price'; bulk?: boolean } | null>(null);
+  // Booking price approval remains a separate individual-decision queue.
+  const [rejectDialog, setRejectDialog] = useState<{ id: string; type: 'price' } | null>(null);
+  const [priceApproveTarget, setPriceApproveTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
   // ── Queries ──
@@ -322,20 +331,10 @@ export default function ApprovalsPage() {
   const historyTotalPages: number = historyData?.totalPages ?? 1;
   const historyTotal: number = historyData?.total ?? 0;
 
-  // ── Mutations — single ──
-  const approveMutation = useMutation({
-    mutationFn: ({ id, comment }: { id: string; comment?: string }) => approvalsApi.approve(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: t('approvals.approveSuccess') }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
-  });
-  const rejectMutation = useMutation({
-    mutationFn: ({ id, comment }: { id: string; comment: string }) => approvalsApi.reject(id, comment),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] }); qc.invalidateQueries({ queryKey: ['approvals-pending-count'] }); qc.invalidateQueries({ queryKey: ['approvals-history'] }); qc.invalidateQueries({ queryKey: ['proposals'] }); toast({ title: t('approvals.rejectSuccess'), variant: 'destructive' }); closeRejectDialog(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
-  });
+  // ── Booking price mutations — individual only ──
   const approvePriceMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => bookingApi.approvePrice(id, note),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.approvePriceSuccess') }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.approvePriceSuccess') }); setPriceApproveTarget(null); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
   const rejectPriceMutation = useMutation({
@@ -344,189 +343,58 @@ export default function ApprovalsPage() {
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
-  // ── Bulk mutations ──
-  const bulkApproveMutation = useMutation({
-    mutationFn: async (ids: string[]) => {
-      // Approve sequentially to satisfy the "earlier step must be approved first" constraint.
-      let ok = 0, fail = 0;
-      for (const id of ids) {
-        try { await approvalsApi.approve(id); ok++; }
-        catch { fail++; }
-      }
-      return { ok, fail };
-    },
-    onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['pending-approvals'] });
-      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
-      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
-      setSelectedProposalIds(new Set());
-      if (fail > 0) toast({ title: t('approvals.bulk.approvePartial', { ok, fail }), variant: 'destructive' });
-      else toast({ title: t('approvals.bulk.approveSuccess', { ok }) });
-    },
-    onError: () => toast({ title: t('approvals.bulk.errorApprove'), variant: 'destructive' }),
-  });
-  const bulkRejectMutation = useMutation({
-    mutationFn: async ({ ids, comment }: { ids: string[]; comment: string }) => {
-      let ok = 0, fail = 0;
-      for (const id of ids) {
-        try { await approvalsApi.reject(id, comment); ok++; }
-        catch { fail++; }
-      }
-      return { ok, fail };
-    },
-    onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['pending-approvals'] });
-      qc.invalidateQueries({ queryKey: ['approvals-pending-nav'] });
-      qc.invalidateQueries({ queryKey: ['approvals-pending-count'] });
-      setSelectedProposalIds(new Set());
-      closeRejectDialog();
-      if (fail > 0) toast({ title: t('approvals.bulk.rejectPartial', { ok, fail }), variant: 'destructive' });
-      else toast({ title: t('approvals.bulk.rejectSuccess', { ok }), variant: 'destructive' });
-    },
-    onError: () => toast({ title: t('approvals.bulk.errorReject'), variant: 'destructive' }),
-  });
-  const bulkApprovePriceMutation = useMutation({
-    mutationFn: (ids: string[]) =>
-      Promise.allSettled(ids.map((id) => bookingApi.approvePrice(id))).then((results) => ({
-        ok: results.filter((r) => r.status === 'fulfilled').length,
-        fail: results.filter((r) => r.status === 'rejected').length,
-      })),
-    onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['pending-price-approvals'] });
-      setSelectedPriceIds(new Set());
-      if (fail > 0) toast({ title: t('approvals.bulk.approvePartial', { ok, fail }), variant: 'destructive' });
-      else toast({ title: t('approvals.bulk.approvePriceSuccess', { ok }) });
-    },
-    onError: () => toast({ title: t('approvals.bulk.errorApprovePrice'), variant: 'destructive' }),
-  });
-  const bulkRejectPriceMutation = useMutation({
-    mutationFn: ({ ids, reason }: { ids: string[]; reason: string }) =>
-      Promise.allSettled(ids.map((id) => bookingApi.rejectPrice(id, reason))).then((results) => ({
-        ok: results.filter((r) => r.status === 'fulfilled').length,
-        fail: results.filter((r) => r.status === 'rejected').length,
-      })),
-    onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['pending-price-approvals'] });
-      setSelectedPriceIds(new Set());
-      closeRejectDialog();
-      if (fail > 0) toast({ title: t('approvals.bulk.rejectPartial', { ok, fail }), variant: 'destructive' });
-      else toast({ title: t('approvals.bulk.rejectPriceSuccess', { ok }), variant: 'destructive' });
-    },
-    onError: () => toast({ title: t('approvals.bulk.errorRejectPrice'), variant: 'destructive' }),
-  });
-
   function closeRejectDialog() { setRejectDialog(null); setRejectReason(''); }
 
   function handleRejectConfirm() {
     if (!rejectDialog) return;
     const reason = rejectReason.trim();
     if (reason.length < 5) return;
-    if (rejectDialog.type === 'price') {
-      if (rejectDialog.bulk) bulkRejectPriceMutation.mutate({ ids: rejectDialog.ids, reason });
-      else rejectPriceMutation.mutate({ id: rejectDialog.ids[0], reason });
-    } else {
-      if (rejectDialog.bulk) bulkRejectMutation.mutate({ ids: rejectDialog.ids, comment: reason });
-      else rejectMutation.mutate({ id: rejectDialog.ids[0], comment: reason });
-    }
+    rejectPriceMutation.mutate({ id: rejectDialog.id, reason });
   }
 
-  const anyPending = approveMutation.isPending || rejectMutation.isPending
-    || approvePriceMutation.isPending || rejectPriceMutation.isPending
-    || bulkApproveMutation.isPending || bulkRejectMutation.isPending
-    || bulkApprovePriceMutation.isPending || bulkRejectPriceMutation.isPending;
+  const anyPending = approvePriceMutation.isPending || rejectPriceMutation.isPending;
 
   return (
     <div>
-      {/* ── Bulk bar — Proposals ── */}
-      <BulkSelectionBar
-        selectedCount={view === 'proposals' ? selectedProposalIds.size : 0}
-        totalCount={steps.length}
-        onSelectAll={() => setSelectedProposalIds(new Set(steps.map((s: any) => s.id)))}
-        onClear={() => setSelectedProposalIds(new Set())}
-      >
-        <Button size="sm" variant="ghost" className="text-green-400 gap-1.5 shrink-0"
-          disabled={bulkApproveMutation.isPending}
-          onClick={() => bulkApproveMutation.mutate(Array.from(selectedProposalIds))}>
-          {bulkApproveMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-          {t('approvals.actions.approveAll')}
-        </Button>
-        <Button size="sm" variant="ghost" className="text-red-400 gap-1.5 shrink-0"
-          onClick={() => setRejectDialog({ ids: Array.from(selectedProposalIds), type: 'proposal', bulk: true })}>
-          <XCircle size={14} /> {t('approvals.actions.rejectAll')}
-        </Button>
-      </BulkSelectionBar>
+      <PageHeader
+        className="mb-4"
+        eyebrow={t('approvals.command.eyebrow')}
+        title={t('approvals.title')}
+        description={t('approvals.subtitle')}
+        actions={<ERPStatusBadge tone="brand">{t('approvals.pendingCount', { count: proposalTotal })}</ERPStatusBadge>}
+      />
 
-      {/* ── Bulk bar — Prices ── */}
-      <BulkSelectionBar
-        selectedCount={view === 'prices' ? selectedPriceIds.size : 0}
-        totalCount={priceApprovals.length}
-        onSelectAll={() => setSelectedPriceIds(new Set(priceApprovals.map((b: any) => b.id)))}
-        onClear={() => setSelectedPriceIds(new Set())}
-      >
-        <Button size="sm" variant="ghost" className="text-green-400 gap-1.5 shrink-0"
-          disabled={bulkApprovePriceMutation.isPending}
-          onClick={() => bulkApprovePriceMutation.mutate(Array.from(selectedPriceIds))}>
-          {bulkApprovePriceMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-          {t('approvals.actions.approvePrice')}
-        </Button>
-        <Button size="sm" variant="ghost" className="text-red-400 gap-1.5 shrink-0"
-          onClick={() => setRejectDialog({ ids: Array.from(selectedPriceIds), type: 'price', bulk: true })}>
-          <XCircle size={14} /> {t('approvals.actions.rejectPrice')}
-        </Button>
-      </BulkSelectionBar>
-
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('approvals.title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('approvals.subtitle')}</p>
-        </div>
-        <div className="flex gap-2">
-          <Badge className="bg-blue-100 text-gray-700 border-0 text-sm px-3 py-1">{t('approvals.pendingCount', { count: proposalTotal })}</Badge>
-          {canApprovePrices && <Badge className="bg-amber-100 text-amber-700 border-0 text-sm px-3 py-1">{t('approvals.pendingPriceCount', { count: priceTotal })}</Badge>}
-        </div>
-      </div>
-
-      {/* ── Status cards ── */}
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Compact decision queue switch */}
+      <div className="mb-3 flex max-w-full gap-1 overflow-x-auto border-y border-gray-200 py-2">
         <button
-          onClick={() => { setView('proposals'); setProposalPage(1); setSelectedPriceIds(new Set()); }}
-          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'proposals' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-blue-200 bg-white'}`}
+          onClick={() => { setView('proposals'); setProposalPage(1); }}
+          className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'proposals' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
         >
-          <div className="flex items-center gap-2 text-sm font-medium text-blue-700"><CheckSquare size={15} />{t('approvals.views.proposals')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{proposalTotal}</div>
+          {t('approvals.views.proposals')} <span className="ml-1 tabular-nums opacity-80">{proposalTotal}</span>
         </button>
         {canApprovePrices && <button
-          onClick={() => { setView('prices'); setSelectedProposalIds(new Set()); setPricePage(1); }}
-          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'prices' ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100' : 'border-amber-200 bg-white'}`}
+          onClick={() => { setView('prices'); setPricePage(1); }}
+          className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'prices' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
         >
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-700"><DollarSign size={15} />{t('approvals.views.prices')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{priceTotal}</div>
+          {t('approvals.views.prices')} <span className="ml-1 tabular-nums opacity-80">{priceTotal}</span>
         </button>}
         <button
-          onClick={() => { setView('history'); setSelectedProposalIds(new Set()); setSelectedPriceIds(new Set()); setHistoryPage(1); }}
-          className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${view === 'history' ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-emerald-200 bg-white'}`}
+          onClick={() => { setView('history'); setHistoryPage(1); }}
+          className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'history' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
         >
-          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700"><History size={15} />{t('approvals.views.history')}</div><div className="mt-1 text-2xl font-bold text-slate-900">{historyTotal}</div>
+          {t('approvals.views.history')} <span className="ml-1 tabular-nums opacity-80">{historyTotal}</span>
         </button>
-      </div>
-
-      <div className="mb-5 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
-        {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setProposalPage(1); setPricePage(1); setHistoryPage(1); }}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>{label}</button>)}
       </div>
 
       {view !== 'prices' && (
-        <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800"><SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc</div>
-            <span className="text-xs text-gray-500">{view === 'history' ? historyTotal : proposalTotal} hồ sơ</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
+        <ERPToolbar className="mb-4">
             <div className="relative min-w-[240px] flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><Input className="h-9 pl-9" value={search} onChange={(e) => { setSearch(e.target.value); setProposalPage(1); setHistoryPage(1); }} placeholder="Số đề xuất, khách thuê, mã mặt bằng..." /></div>
+            <Select value={leaseTermType || 'ALL'} onValueChange={(value) => { setLeaseTermType(value === 'ALL' ? '' : value); setProposalPage(1); setHistoryPage(1); }}><SelectTrigger className="h-9 w-44"><SelectValue placeholder={t('proposals.filters.leaseType')} /></SelectTrigger><SelectContent><SelectItem value="ALL">{t('proposals.filters.allLeaseTypes')}</SelectItem><SelectItem value="LONG">{t('proposals.filters.longTerm')}</SelectItem><SelectItem value="SHORT">{t('proposals.filters.shortTerm')}</SelectItem></SelectContent></Select>
             <Select value={floorId || 'ALL'} onValueChange={(value) => { setFloorId(value === 'ALL' ? '' : value); setUnitId(''); }}><SelectTrigger className="h-9 w-44"><SelectValue placeholder="Tầng" /></SelectTrigger><SelectContent><SelectItem value="ALL">Tất cả tầng</SelectItem>{floors.map((floor) => <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>)}</SelectContent></Select>
             <Select value={unitId || 'ALL'} onValueChange={(value) => setUnitId(value === 'ALL' ? '' : value)}><SelectTrigger className="h-9 w-52"><SelectValue placeholder="Mặt bằng" /></SelectTrigger><SelectContent><SelectItem value="ALL">Tất cả mặt bằng</SelectItem>{units.map((unit) => <SelectItem key={unit.id} value={unit.id}>{unit.code}{unit.name ? ` — ${unit.name}` : ''}</SelectItem>)}</SelectContent></Select>
-            {(search || floorId || unitId) && <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={() => { setSearch(''); setFloorId(''); setUnitId(''); }}><X size={13} /> Đặt lại</Button>}
-          </div>
-        </CardContent></Card>
+            {(search || floorId || unitId || leaseTermType) && <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={() => { setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType(''); }}><X size={13} /> {t('common:actions.reset')}</Button>}
+            <span className="ml-auto whitespace-nowrap text-xs text-gray-500">{view === 'history' ? historyTotal : proposalTotal} {t('approvals.command.records')}</span>
+        </ERPToolbar>
       )}
 
       {/* ══════════ PROPOSALS TABLE ══════════ */}
@@ -553,26 +421,13 @@ export default function ApprovalsPage() {
             </div>
           ) : (
             <>
-              {!rejectDialog && <Selecto ref={proposalSelectoRef} container={proposalGridRef.current} {...proposalSelectoProps} />}
-              <div ref={proposalGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none">
-                <table className="min-w-[1300px] w-full text-sm">
+              <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                <table className="min-w-[1100px] w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-blue-50/40">
-                      <th className="px-3 py-3 w-8">
-                        <div className="cursor-pointer" onClick={() => {
-                          if (selectedProposalIds.size === steps.length) setSelectedProposalIds(new Set());
-                          else setSelectedProposalIds(new Set(steps.map((s: any) => s.id)));
-                        }}>
-                          {selectedProposalIds.size === steps.length && steps.length > 0
-                            ? <CheckSquare size={15} className="text-blue-600" />
-                            : <Square size={15} className="text-gray-300" />}
-                        </div>
-                      </th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposal')}</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian tạo</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.tenant')} / {t('approvals.table.unit')}</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.approvalStep')}</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.role')}</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.tenant')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.monthlyRent')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.discount')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.contractValue')}</th>
@@ -583,58 +438,36 @@ export default function ApprovalsPage() {
                   <tbody className="divide-y divide-gray-50">
                     {steps.map((step: any) => {
                       const proposal = step.workflow?.proposal;
-                      const isSelected = selectedProposalIds.has(step.id);
+                      const party = getProposalParty(proposal);
                       const createdAt = step.workflow?.createdAt ?? step.createdAt;
                       const isNew = isRecent(createdAt);
                       return (
                         <tr key={step.id}
-                          className={`${DRAG_SELECT_CLASS} cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : isNew ? 'bg-sky-50/40' : 'hover:bg-gray-50/60'}`}
-                          data-step-id={step.id}
-                          onClick={() => setSelectedWorkflowId(step.workflowId)}
+                          className={`cursor-pointer transition-colors ${isNew ? 'bg-sky-50/40' : 'hover:bg-gray-50/60'}`}
+                          tabIndex={0}
+                          aria-label={t('approvals.actions.reviewFile', { number: proposal?.proposalNumber ?? '' })}
+                          onClick={() => { setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(step.id); }}
+                          onKeyDown={(e) => {
+                            if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key)) return;
+                            e.preventDefault(); setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(step.id);
+                          }}
                         >
-                          <td className="px-3 py-3 w-8" data-checkbox>
-                            <div className="cursor-pointer" onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedProposalIds((prev) => {
-                                const next = new Set(prev);
-                                next.has(step.id) ? next.delete(step.id) : next.add(step.id);
-                                return next;
-                              });
-                            }}>
-                              {isSelected
-                                ? <CheckSquare size={15} className="text-blue-600" />
-                                : <Square size={15} className="text-gray-300 hover:text-gray-500" />}
-                            </div>
-                          </td>
                           <td className="px-4 py-3">
                             <span className="font-mono text-xs font-semibold text-gray-700">
                               {proposal?.proposalNumber ?? '—'}
                             </span>
-                            {isNew && <Badge className="ml-2 gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> Mới</Badge>}
-                            {proposal?.unit?.leaseTermType && <div><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap"><div className={`flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-600'}`}><Clock3 size={13} />{approvalAge(createdAt)}</div><div className="mt-0.5 text-[11px] text-gray-400">{fmtDateTime(createdAt)}</div></td>
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-gray-800 text-sm">{step.stepName}</div>
-                            <Badge className="bg-gray-100 text-gray-500 border-0 text-xs mt-0.5">{t('approvals.table.step', { order: step.stepOrder })}</Badge>
-                            {step.policyReason && (
-                              <div className="mt-1 flex items-start gap-1 text-[11px] text-gray-400" title={t('approvals.table.policyReasonTitle')}>
-                                <ShieldCheck size={11} className="mt-0.5 shrink-0" />
-                                <span className="line-clamp-2">{step.policyReason}</span>
-                              </div>
-                            )}
+                            {isNew && <Badge className="ml-2 gap-1 border-0 bg-blue-600 px-1.5 py-0 text-[10px] text-white"><Sparkles size={10} /> {t('approvals.new')}</Badge>}
+                            <div className={`mt-1 flex items-center gap-1 text-xs ${isNew ? 'font-medium text-blue-700' : 'text-gray-500'}`}><Clock3 size={12} />{approvalAge(createdAt)} · {fmtDateTime(createdAt)}</div>
                           </td>
                           <td className="px-4 py-3">
-                            <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{step.approverRole}</Badge>
+                            <div className="font-medium text-gray-900">{party.name}</div>
+                            <div className="mt-0.5 text-xs text-gray-500">{proposal?.unit?.code ?? '—'}{proposal?.unit?.floor?.name ? ` · ${proposal.unit.floor.name}` : ''}</div>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="font-medium">{proposal?.tenant?.brandName ?? <span className="text-gray-400">—</span>}</div>
+                            <div className="font-medium text-gray-800 text-sm">{t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole })}</div>
+                            <div className="mt-1 flex items-center gap-2"><ERPStatusBadge tone="brand">{step.workflow?.steps?.length ? t('approvals.table.stepOfTotal', { order: step.stepOrder, total: step.workflow.steps.length }) : t('approvals.table.step', { order: step.stepOrder })}</ERPStatusBadge></div>
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
-                            {proposal?.monthlyRent ? (
-                              <span className="text-gray-700">{formatMoneyAmount(proposal.monthlyRent, proposal.rentCurrency)}</span>
-                            ) : '—'}
-                          </td>
+                          <td className="px-4 py-3 text-right"><ERPAmount amount={proposal?.monthlyRent} currencyCode={proposal?.rentCurrency} /></td>
                           <td className="px-4 py-3 text-right tabular-nums">
                             {proposal?.discount > 0 ? (
                               <span className="text-red-600 font-medium">{proposal.discount}%</span>
@@ -648,37 +481,16 @@ export default function ApprovalsPage() {
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
-                            {proposal?.totalContractValue ? (
-                              <span className="font-bold text-green-600">{formatMoneyAmount(proposal.totalContractValue, proposal.rentCurrency)}</span>
-                            ) : '—'}
-                          </td>
+                          <td className="px-4 py-3 text-right"><ERPAmount amount={proposal?.totalContractValue} currencyCode={proposal?.rentCurrency} strong /></td>
                           <td className="px-4 py-3 text-xs font-mono text-gray-500">{proposal?.rentCurrency ?? '—'}</td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
-                                className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                                className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
                                 title={t('approvals.actions.detail')}
-                                onClick={(e) => { e.stopPropagation(); setSelectedWorkflowId(step.workflowId); }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(step.id); }}
                               >
-                                <Eye size={13} /> {t('approvals.actions.detail')}
-                              </button>
-                              <button
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.reject')}
-                                disabled={anyPending}
-                                onClick={(e) => { e.stopPropagation(); setRejectDialog({ ids: [step.id], type: 'proposal' }); }}
-                              >
-                                <XCircle size={13} /> {t('approvals.actions.reject')}
-                              </button>
-                              <button
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.approve')}
-                                disabled={anyPending}
-                                onClick={(e) => { e.stopPropagation(); approveMutation.mutate({ id: step.id }); }}
-                              >
-                                {approveMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                                {t('approvals.actions.approve')}
+                                <Eye size={13} /> {t('approvals.actions.review')}
                               </button>
                             </div>
                           </td>
@@ -695,12 +507,12 @@ export default function ApprovalsPage() {
               <span>{t('approvals.dealsPending', { count: proposalTotal })}</span>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" disabled={proposalPage === 1}
-                  onClick={() => { setProposalPage(p => p - 1); setSelectedProposalIds(new Set()); }}>
+                  onClick={() => setProposalPage(p => p - 1)}>
                   <ChevronLeft size={14} />
                 </Button>
                 <span className="px-2 py-1 text-xs">{t('proposals.page', { current: proposalPage, total: proposalTotalPages })}</span>
                 <Button variant="outline" size="sm" disabled={proposalPage >= proposalTotalPages}
-                  onClick={() => { setProposalPage(p => p + 1); setSelectedProposalIds(new Set()); }}>
+                  onClick={() => setProposalPage(p => p + 1)}>
                   <ChevronRight size={14} />
                 </Button>
               </div>
@@ -734,21 +546,10 @@ export default function ApprovalsPage() {
             </div>
           ) : (
             <>
-              {!rejectDialog && <Selecto ref={priceSelectoRef} container={priceGridRef.current} {...priceSelectoProps} />}
-              <div ref={priceGridRef} className="bg-white rounded-xl border border-gray-200 overflow-x-auto select-none" key={pricePage}>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" key={pricePage}>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-amber-50/40">
-                      <th className="px-3 py-3 w-8">
-                        <div className="cursor-pointer" onClick={() => {
-                          if (selectedPriceIds.size === priceApprovals.length) setSelectedPriceIds(new Set());
-                          else setSelectedPriceIds(new Set(priceApprovals.map((b: any) => b.id)));
-                        }}>
-                          {selectedPriceIds.size === priceApprovals.length && priceApprovals.length > 0
-                            ? <CheckSquare size={15} className="text-blue-600" />
-                            : <Square size={15} className="text-gray-300" />}
-                        </div>
-                      </th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.bookingNo')}</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.unit')}</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.customer')}</th>
@@ -767,26 +568,10 @@ export default function ApprovalsPage() {
                       const dev: number = booking.priceDeviationPercent ?? 0;
                       const devColor = dev > 10 ? 'text-red-600' : dev > 5 ? 'text-orange-500' : 'text-yellow-600';
                       const devBg = dev > 10 ? 'bg-red-50' : dev > 5 ? 'bg-orange-50' : 'bg-yellow-50';
-                      const isSelected = selectedPriceIds.has(booking.id);
                       return (
                         <tr key={booking.id}
-                          className={`${DRAG_SELECT_CLASS} transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50/60'}`}
-                          data-price-id={booking.id}
+                          className="transition-colors hover:bg-gray-50/60"
                         >
-                          <td className="px-3 py-3 w-8" data-checkbox>
-                            <div className="cursor-pointer" onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedPriceIds((prev) => {
-                                const next = new Set(prev);
-                                next.has(booking.id) ? next.delete(booking.id) : next.add(booking.id);
-                                return next;
-                              });
-                            }}>
-                              {isSelected
-                                ? <CheckSquare size={15} className="text-blue-600" />
-                                : <Square size={15} className="text-gray-300 hover:text-gray-500" />}
-                            </div>
-                          </td>
                           <td className="px-4 py-3 font-mono text-xs text-gray-600">{booking.bookingNumber}</td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
@@ -825,7 +610,7 @@ export default function ApprovalsPage() {
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
                                 title={t('approvals.actions.rejectPrice')}
                                 disabled={anyPending}
-                                onClick={(e) => { e.stopPropagation(); setRejectDialog({ ids: [booking.id], type: 'price' }); }}
+                                onClick={(e) => { e.stopPropagation(); setRejectDialog({ id: booking.id, type: 'price' }); }}
                               >
                                 <XCircle size={13} /> {t('approvals.actions.reject')}
                               </button>
@@ -833,7 +618,7 @@ export default function ApprovalsPage() {
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
                                 title={t('approvals.actions.approvePrice')}
                                 disabled={anyPending}
-                                onClick={(e) => { e.stopPropagation(); approvePriceMutation.mutate({ id: booking.id }); }}
+                                onClick={(e) => { e.stopPropagation(); setPriceApproveTarget(booking); }}
                               >
                                 {approvePriceMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
                                 {t('approvals.actions.approve')}
@@ -852,9 +637,9 @@ export default function ApprovalsPage() {
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
               <span>{t('approvals.pricesPending', { count: priceTotal })}</span>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={pricePage === 1} onClick={() => { setPricePage(p => p - 1); setSelectedPriceIds(new Set()); }}>{t('proposals.prev')}</Button>
+                <Button variant="outline" size="sm" disabled={pricePage === 1} onClick={() => setPricePage(p => p - 1)}>{t('proposals.prev')}</Button>
                 <span className="px-2 py-1">{t('proposals.page', { current: pricePage, total: priceTotalPages })}</span>
-                <Button variant="outline" size="sm" disabled={pricePage >= priceTotalPages} onClick={() => { setPricePage(p => p + 1); setSelectedPriceIds(new Set()); }}>{t('proposals.next')}</Button>
+                <Button variant="outline" size="sm" disabled={pricePage >= priceTotalPages} onClick={() => setPricePage(p => p + 1)}>{t('proposals.next')}</Button>
               </div>
             </div>
           )}
@@ -924,7 +709,7 @@ export default function ApprovalsPage() {
                   {historySteps.map((step: any) => {
                     const proposal = step.workflow?.proposal;
                     return (
-                      <tr key={step.id} className="cursor-pointer hover:bg-gray-50/60 transition-colors" onClick={() => setSelectedWorkflowId(step.workflowId)}>
+                      <tr key={step.id} className="cursor-pointer hover:bg-gray-50/60 transition-colors" tabIndex={0} aria-label={t('approvals.actions.reviewFile', { number: proposal?.proposalNumber ?? '' })} onClick={() => { setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }} onKeyDown={(e) => { if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key)) return; e.preventDefault(); setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }}>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs text-gray-600">
                             {proposal?.proposalNumber ?? '—'}
@@ -942,14 +727,14 @@ export default function ApprovalsPage() {
                           {proposal?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${proposal.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{proposal.unit.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span>}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-sm font-medium text-gray-800">{step.stepName}</div>
+                          <div className="text-sm font-medium text-gray-800">{t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole })}</div>
                           <span className="text-xs text-gray-400">{t('approvals.table.step', { order: step.stepOrder })}</span>
                         </td>
                         <td className="px-4 py-3">
                           {step.approver ? (
                             <div>
                               <div className="text-sm font-medium">{step.approver.fullName}</div>
-                              <div className="text-xs text-gray-400">{step.approver.role}</div>
+                              <div className="text-xs text-gray-400">{t(`approvals.roles.${step.approver.role}`, { defaultValue: step.approver.role })}</div>
                             </div>
                           ) : (
                             <span className="text-gray-400">—</span>
@@ -1012,18 +797,40 @@ export default function ApprovalsPage() {
         </>
       )}
 
-      {/* ── Reject Dialog ── */}
-      <ApprovalDetailSheet workflowId={selectedWorkflowId} onClose={() => setSelectedWorkflowId(null)} />
+      <ApprovalDetailSheet
+        workflowId={selectedWorkflowId}
+        decisionStepId={selectedDecisionStepId}
+        onClose={() => { setSelectedWorkflowId(null); setSelectedDecisionStepId(null); }}
+      />
+
+      <Dialog open={!!priceApproveTarget} onOpenChange={(open) => { if (!open) setPriceApproveTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CheckCircle size={18} className="text-emerald-600" />{t('approvals.priceDecision.approveTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <p className="text-gray-600">{t('approvals.priceDecision.approvePrompt')}</p>
+            <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-y border-gray-100 py-3">
+              <span className="text-gray-500">{t('approvals.table.bookingNo')}</span><span className="text-right font-mono font-medium">{priceApproveTarget?.bookingNumber ?? '—'}</span>
+              <span className="text-gray-500">{t('approvals.table.unit')}</span><span className="text-right font-medium">{priceApproveTarget?.unit?.code ?? '—'}</span>
+              <span className="text-gray-500">{t('approvals.table.proposed')}</span><span className="text-right font-semibold tabular-nums">{fmtPrice(priceApproveTarget?.proposedRentPerSqm)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceApproveTarget(null)}>{t('common:actions.cancel')}</Button>
+            <Button disabled={!priceApproveTarget || approvePriceMutation.isPending} onClick={() => approvePriceMutation.mutate({ id: priceApproveTarget.id })}>
+              {approvePriceMutation.isPending && <Loader2 size={14} className="mr-1 animate-spin" />}{t('approvals.priceDecision.confirmApprove')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!rejectDialog} onOpenChange={() => closeRejectDialog()}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle size={18} className="text-red-500" />
-              {t('approvals.rejectDialog.title', { type: rejectDialog?.type === 'price' ? t('approvals.rejectDialog.typePrice') : t('approvals.rejectDialog.typeProposal') })}
-              {rejectDialog?.bulk && rejectDialog.ids.length > 1 && (
-                <Badge className="bg-red-100 text-red-700 border-0 text-xs ml-1">{t('approvals.rejectDialog.items', { count: rejectDialog.ids.length })}</Badge>
-              )}
+              {t('approvals.rejectDialog.title', { type: t('approvals.rejectDialog.typePrice') })}
             </DialogTitle>
           </DialogHeader>
           <div className="py-2">
@@ -1038,7 +845,7 @@ export default function ApprovalsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={closeRejectDialog}>{t('common:actions.cancel')}</Button>
             <Button variant="destructive" onClick={handleRejectConfirm}
-              disabled={rejectReason.trim().length < 5 || rejectMutation.isPending || rejectPriceMutation.isPending || bulkRejectMutation.isPending || bulkRejectPriceMutation.isPending}>
+              disabled={rejectReason.trim().length < 5 || rejectPriceMutation.isPending}>
               {t('approvals.rejectDialog.confirm')}
             </Button>
           </DialogFooter>
