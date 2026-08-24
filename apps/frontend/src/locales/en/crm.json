@@ -1,6 +1,7 @@
 {
   "title": "CRM Management",
   "overview": {
+    "followUpFallback": "Follow-up task",
     "title": "CRM Overview",
     "subtitle": "Prospect overview",
     "description": "Prioritize action items, pipeline health and lead source effectiveness. Detailed actions are performed in CRM.",
@@ -291,6 +292,7 @@
     "analytics": "Analytics",
     "customerProfiles": "Customer Profiles",
     "pipelineValue": "Pipeline value:",
+    "pipelineValueDisclosure": "Current Lead estimate data is stored in VND",
     "filterPanel": "Filters",
     "clearFilter": "Clear filters",
     "assignee": "Assignee",
@@ -298,6 +300,10 @@
     "source": "Source",
     "priority": "Priority",
     "allValues": "All"
+  },
+  "leaseTerm": {
+    "LONG": "Long-term",
+    "SHORT": "Short-term"
   },
   "bulk": {
     "selected": "{{count}} leads selected",
@@ -444,7 +450,8 @@
     "completeError": "Cannot complete follow-up",
     "loadError": "Cannot load follow-up schedule",
     "loadErrorHint": "Please check your connection and reload.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "fallbackName": "Follow-up task"
   },
   "leadSheet": {
     "contact": "CONTACT",

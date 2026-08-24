@@ -22,7 +22,8 @@ The following pre-existing paths are excluded from program staging unless their 
 |---|---|---|
 | Baseline and canonical truth | Repository and governance reconstruction | COMPLETE |
 | 1 | Golden Fitout presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
-| 2+ | Remaining modules in dependency order | PENDING |
+| 2 | CRM / Customer / Tenant presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 3+ | Remaining modules in dependency order | PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | PENDING |
 
 ## Wave 1 Change Request and Impact Map
@@ -74,3 +75,53 @@ Approval boundary: the user's master execution authorization permits this presen
 - Frontend full: BASELINE FAILURES outside Fitout — `permissions.test.ts` navigation duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. Fitout focused tests passed within the same run; protected Booking/navigation work was not modified.
 - Automated rendered viewport review: UNAVAILABLE (no browser instance). Human visual gate remains open, so Wave 1 is not yet declared Golden.
 - Business logic/API contract/backend/schema/database changes: NO. The frontend adapter now preserves an already-existing `FitoutChangeOrder.currency` response field and passes the optional existing DTO field on create; no endpoint shape changed.
+
+## Wave 2 Change Request and Impact Map
+
+Business objective: make CRM, Customer/Tenant master data and the Tenant Portal read as one dense ERP handoff from prospect to operating tenant, while preserving the approved Booking/Proposal/Contract chain and all authoritative state transitions.
+
+In scope:
+
+- CRM, CRM overview, Tenant master and Tenant Portal frontend information hierarchy, density, responsive behavior and localized presentation.
+- Presentation-only mapping of existing statuses, priorities, lease-term types and workflow labels.
+- Exact-money presentation through the existing shared currency formatter where an authoritative currency is available.
+- Focused frontend presentation tests and locale updates.
+
+Out of scope:
+
+- Lead, Customer or Tenant lifecycle/business rules; Booking/Proposal/Contract handoff semantics.
+- Backend controllers/services, API contracts, Prisma schema/migrations and database.
+- Resolving global Customer ownership or adding Mall scope to `Customer`.
+- Inventing currency provenance for Lead estimates, FX, aggregation across currencies, or changing financial calculations.
+- Dashboard and protected Booking/Proposal/Approval working-tree changes.
+
+Impact dimensions:
+
+| Dimension | Finding |
+|---|---|
+| Upstream | Lead is the entry point; existing import/manual-create and mall association remain unchanged |
+| Downstream | Booking/Proposal reference Lead/Customer and Proposal snapshots commercial terms; unchanged |
+| Financial/currency | `Lead.expectedRent`/`estimatedValue` have no currency field; current backend documents them as VND while BC-001 remains open. No mixed-currency inference or formula change is authorized |
+| Mall/Tenant | Lead routes are Mall-scoped. `Customer` has no `mallId` and global ownership is an open business decision (BC-016); no UI-only security fiction will be introduced. Tenant Portal continues to rely on server-forced `currentUser.tenantId` |
+| Events/jobs | CRM follow-up reminder job and notifications are unchanged |
+| Concurrency/idempotency | Existing Lead/Customer synchronization and Booking/Proposal transaction behavior remain unchanged |
+| API/schema/database | No change |
+| Protected modules | Dashboard, Booking and active Proposal/Approval paths remain excluded |
+
+Golden scenarios to preserve: GS-01, GS-03, GS-09, GS-10 and GS-11 through GS-15.
+
+Unknowns: BC-001 (whether Lead estimates can ever be non-VND) and BC-016 (whether Customer is intentionally global) remain `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`. They are tracked, not guessed or silently fixed in Wave 2.
+
+Approval boundary: the user's master execution authorization permits this presentation wave. Tier 0 currency semantics and Tier 1 authorization/data-ownership changes remain non-self-approved and are excluded.
+
+## Wave 2 technical gate — 2026-08-24
+
+- Frontend CRM / Tenant Portal / currency focused: PASS, 3 files / 9 tests.
+- Backend CRM / Customer / Tenant focused: PASS, 4 suites / 16 tests.
+- TypeScript + production build: PASS.
+- `git diff --check`: PASS.
+- Frontend full: BASELINE FAILURES only — `permissions.test.ts` RouteModule duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. CRM focused, Tenant Portal presentation and currency tests passed in the same full run.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive PASS is not claimed.
+- Reconciliation: CRM Lead values remain exact documented VND; Tenant Portal pending invoice totals are separated by persisted ISO currency with no mixed-currency sum or FX.
+- Authorization: Lead and Tenant controller paths verified; CRM unified deals remains a confirmed Tier 1 gap and Customer Mall ownership remains BC-016. Neither was silently changed.
+- Business logic/API contract/backend/schema/database changes: NO.

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
 import { useAuthStore } from '@/store/auth.store';
 import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
@@ -716,7 +717,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 <SheetSection label={t('leadSheet.rentRequirements')} className="bg-gray-50">
                   {displayLead.category && <SheetRow label={t('leadSheet.fieldCategory')} value={displayLead.category} icon={Tag} />}
                   {displayLead.expectedArea && <SheetRow label={t('leadSheet.fieldArea')} value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${new Intl.NumberFormat('vi-VN').format(displayLead.expectedRent)} ₫/m²`} icon={TrendingUp} />}
+                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatMoney(displayLead.expectedRent, 'VND')}/m²`} icon={TrendingUp} />}
                   <SheetRow label={t('leadSheet.fieldCreated')} value={fmtDate(displayLead.createdAt)} icon={Calendar} />
                 </SheetSection>
 
@@ -1041,6 +1042,7 @@ interface LeadCardProps {
 }
 
 function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, selectionMode }: LeadCardProps) {
+  const { t } = useTranslation('crm');
   const priority = lead.priority ?? 'WARM';
   const priorityStyle = LEAD_PRIORITIES[priority] ?? LEAD_PRIORITIES.WARM;
   const daysAgo = getDaysAgo(lead.lastActivityAt);
@@ -1074,7 +1076,7 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
           </div>
           <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${priorityStyle.color}`}>
             {priority === 'HOT' && <Flame size={9} className="inline mr-0.5" />}
-            {priority}
+            {t(`priority.${priority}`, { defaultValue: priority })}
           </span>
         </div>
 
@@ -1546,22 +1548,22 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { key: 'my-leads', label: t('quickFilters.myLeads'), value: discoveryStats.mine, hint: t('quickFilters.myLeadsHint'), className: 'border-blue-100 bg-blue-50/60 text-blue-700' },
-          { key: 'hot-leads', label: t('quickFilters.hotLeads'), value: discoveryStats.hot, hint: t('quickFilters.hotLeadsHint'), className: 'border-red-100 bg-red-50/60 text-red-700' },
-          { key: 'stale-leads', label: t('quickFilters.staleLeads'), value: discoveryStats.stale, hint: t('quickFilters.staleLeadsHint'), className: 'border-amber-100 bg-amber-50/60 text-amber-700' },
-          { key: 'unassigned', label: t('quickFilters.unassigned'), value: discoveryStats.unassigned, hint: t('quickFilters.unassignedHint'), className: 'border-gray-200 bg-gray-50 text-gray-700' },
-        ].map((item) => <button key={item.label} type="button" onClick={() => item.key && updateFilter('quickFilter', filters.quickFilter === item.key ? null : item.key)} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${item.className}`}>
-          <div className="flex items-center justify-between"><span className="text-sm font-semibold">{item.label}</span><span className="text-xl font-bold">{item.value}</span></div><p className="mt-1 text-xs opacity-70">{item.hint}</p>
+          { key: 'my-leads', label: t('quickFilters.myLeads'), value: discoveryStats.mine, hint: t('quickFilters.myLeadsHint'), valueClassName: 'text-blue-700' },
+          { key: 'hot-leads', label: t('quickFilters.hotLeads'), value: discoveryStats.hot, hint: t('quickFilters.hotLeadsHint'), valueClassName: 'text-red-700' },
+          { key: 'stale-leads', label: t('quickFilters.staleLeads'), value: discoveryStats.stale, hint: t('quickFilters.staleLeadsHint'), valueClassName: 'text-amber-700' },
+          { key: 'unassigned', label: t('quickFilters.unassigned'), value: discoveryStats.unassigned, hint: t('quickFilters.unassignedHint'), valueClassName: 'text-slate-700' },
+        ].map((item, index) => <button key={item.label} type="button" onClick={() => item.key && updateFilter('quickFilter', filters.quickFilter === item.key ? null : item.key)} className={`px-3 py-2.5 text-left transition hover:bg-slate-50 ${index > 0 ? 'border-t border-slate-100 sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0' : ''} ${filters.quickFilter === item.key ? 'bg-slate-50 ring-1 ring-inset ring-slate-300' : ''}`}>
+          <div className="flex items-baseline justify-between gap-3"><span className="text-xs font-semibold text-slate-600">{item.label}</span><span className={`text-xl font-bold tabular-nums ${item.valueClassName}`}>{item.value}</span></div><p className="mt-0.5 truncate text-[11px] text-slate-400">{item.hint}</p>
         </button>)}
       </div>
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <ERPToolbar>
         <div className="inline-flex rounded-lg border bg-white p-1">
           {(['LONG', 'SHORT'] as const).map((term) => (
             <button key={term} type="button" onClick={() => setLeaseTermType(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
-              {term === 'LONG' ? 'Dài hạn' : 'Ngắn hạn'}
+              {t(`leaseTerm.${term}`)}
             </button>
           ))}
         </div>
@@ -1602,10 +1604,10 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
         </div>
         {totalValue > 0 && (
           <div className="text-xs text-gray-500 ml-auto">
-            {t('toolbar.pipelineValue')} <span className="font-semibold text-gray-700">{new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(totalValue)} ₫</span>
+            {t('toolbar.pipelineValue')} <span className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>{formatMoney(totalValue, 'VND')}</span>
           </div>
         )}
-      </div>
+      </ERPToolbar>
 
       {/* Bulk Action Bar */}
       {selectionMode && selectedIds.size > 0 && (
@@ -2845,7 +2847,7 @@ function FollowUpsWorkspace() {
                       type="button"
                       className="text-left text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
                       onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}
-                    >{item.lead?.brandName ?? item.customer?.companyName ?? 'Follow-up'}</button>
+                    >{item.lead?.brandName ?? item.customer?.companyName ?? t('followUpsWorkspace.fallbackName')}</button>
                     {leadStage && <Badge className={`${leadStage.color} border-0 text-[10px] shrink-0`}>{leadStage.short}</Badge>}
                   </div>
                   {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}

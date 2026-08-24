@@ -14,5 +14,8 @@ Status: ACTIVE
 | Remaining cross-Mall scope gaps in adjacent modules | Security verification | Fix only with endpoint evidence and reviewed impact map |
 | Fitout change-order creation currency | Persisted currency/display is authoritative and fixed; creation still defaults VND | Confirm whether new change orders must inherit Contract currency |
 | Whether Fitout checklist/issues are gates | Current backend says not generally authoritative | UI must not imply blocking unless service says so |
+| CRM unified-deals Mall scope | Tier 1; confirmed `AUTH-01` / `CONTRA-008` | Quarantine from UI wave; require reviewed endpoint fix plus cross-Mall denial tests |
+| Customer ownership scope | Tier 1; BC-016 business confirmation required | Do not invent `mallId` or imply Mall isolation in UI |
+| Lead estimate currency provenance | Tier 0; BC-001 business confirmation required | Display current documented VND semantics exactly; no schema or FX inference |
 
 This backlog records risks; it is not authorization to change Tier 0/Tier 1 behavior.

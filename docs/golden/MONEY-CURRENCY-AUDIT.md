@@ -25,3 +25,5 @@ Status: ACTIVE CONTINUOUS AUDIT
 - Revenue-share currency semantics for non-VND scenarios: business confirmation required.
 - Fitout change-order display: persisted `FitoutChangeOrder.currency` is now preserved by the frontend adapter and totals are grouped per currency; no mixed-currency sum is shown.
 - Fitout change-order creation: backend currently defaults omitted currency to VND while Fitout detail does not expose Contract currency. Whether creation must inherit Contract currency is `UNKNOWN — BUSINESS CONFIRMATION REQUIRED` and remains quarantined.
+- CRM Lead expected/estimated values have no currency field. Current backend semantics describe them as VND, while BC-001 asks whether non-VND entry can occur. Wave 2 now shows exact VND values without compact notation but does not close BC-001.
+- Tenant Portal pending invoices are grouped and displayed separately by persisted `Invoice.currencyCode`; VND, USD and MMK are never summed together and no FX is performed.

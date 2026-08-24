@@ -60,6 +60,18 @@
     "PARTIALLY_PAID": "Partial",
     "DRAFT": "Draft"
   },
+  "ticketStatus": {
+    "NEW": "New",
+    "ASSIGNED": "Assigned",
+    "IN_PROGRESS": "In progress",
+    "WAITING_TENANT": "Waiting for tenant",
+    "RESOLVED": "Resolved",
+    "CLOSED": "Closed"
+  },
+  "leaseTerm": {
+    "LONG": "Long-term lease",
+    "SHORT": "Short-term lease"
+  },
   "kpi": {
     "contracts": "Contracts",
     "monthlyRent": "Rent/month",
@@ -114,6 +126,77 @@
     "accountCreated": "Portal account created",
     "emailRequiredForLegacy": "Update the contact email before creating an account."
   },
+  "portalWorkspace": {
+    "eyebrow": "Self-service workspace",
+    "title": "Tenant portal",
+    "description": "Contracts, finance, operations and fit-out in one workspace.",
+    "createRequest": "Submit support request",
+    "createRequestShort": "Create request",
+    "createFirstRequest": "Create first request",
+    "activeContracts": "Active contracts",
+    "pendingPayment": "Pending payment",
+    "overdueInvoices": "Overdue invoices",
+    "openRequests": "Open requests",
+    "all": "All",
+    "pay": "Pay",
+    "searchRequests": "Search requests...",
+    "fileCount": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "fitoutProgress": "Progress: step {{current}}/{{total}}",
+    "tabs": {
+      "contracts": "Contracts",
+      "invoices": "Invoices",
+      "requests": "Requests",
+      "fitout": "Fit-out"
+    },
+    "errors": {
+      "contracts": "Cannot load contracts",
+      "invoices": "Cannot load invoices",
+      "requests": "Cannot load service requests",
+      "fitout": "Cannot load fit-out progress"
+    },
+    "empty": {
+      "contracts": "No active contracts",
+      "invoices": "No invoices",
+      "requests": "No requests yet",
+      "fitout": "No fit-out projects"
+    },
+    "priority": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High",
+      "URGENT": "Urgent"
+    },
+    "ticketType": {
+      "ELECTRICAL": "Electrical",
+      "WATER": "Water",
+      "HVAC": "HVAC",
+      "CLEANING": "Cleaning",
+      "SECURITY": "Security",
+      "PARKING": "Parking",
+      "INTERNET": "Internet / network",
+      "DELIVERY": "Delivery / logistics",
+      "MARKETING_EVENT": "Marketing / event",
+      "OTHER": "Other"
+    },
+    "payment": {
+      "title": "Record payment",
+      "total": "Total",
+      "amount": "Amount",
+      "date": "Payment date",
+      "method": "Method",
+      "reference": "Reference",
+      "referencePlaceholder": "Journal or transaction reference...",
+      "confirm": "Confirm",
+      "success": "Payment recorded",
+      "error": "Could not record payment",
+      "methods": {
+        "BANK_TRANSFER": "Bank transfer",
+        "CASH": "Cash",
+        "CHECK": "Check"
+      }
+    }
+  },
   "form": {
     "addTitle": "Add new tenant",
     "editTitle": "Edit tenant",
@@ -158,7 +241,11 @@
     "errorLoad": "Cannot load tenant list",
     "errorDesc": "Please check your connection and try again.",
     "retry": "Try again",
-    "edit": "Edit"
+    "edit": "Edit",
+    "statusAll": "All",
+    "statusActive": "Active leases",
+    "statusInactive": "No active lease",
+    "termAll": "All"
   },
   "validation": {
     "brandRequired": "Required",

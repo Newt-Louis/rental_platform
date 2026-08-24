@@ -60,6 +60,18 @@
     "PARTIALLY_PAID": "Một phần",
     "DRAFT": "Nháp"
   },
+  "ticketStatus": {
+    "NEW": "Mới",
+    "ASSIGNED": "Đã phân công",
+    "IN_PROGRESS": "Đang xử lý",
+    "WAITING_TENANT": "Chờ khách thuê",
+    "RESOLVED": "Đã xử lý",
+    "CLOSED": "Đã đóng"
+  },
+  "leaseTerm": {
+    "LONG": "Thuê dài hạn",
+    "SHORT": "Thuê ngắn hạn"
+  },
   "kpi": {
     "contracts": "Hợp đồng",
     "monthlyRent": "Thuê/tháng",
@@ -114,6 +126,76 @@
     "accountCreated": "Đã tạo tài khoản Portal",
     "emailRequiredForLegacy": "Hãy cập nhật email liên hệ trước khi tạo tài khoản."
   },
+  "portalWorkspace": {
+    "eyebrow": "Không gian tự phục vụ",
+    "title": "Cổng thông tin khách thuê",
+    "description": "Hợp đồng, tài chính, vận hành và fit-out trong một không gian làm việc.",
+    "createRequest": "Gửi yêu cầu hỗ trợ",
+    "createRequestShort": "Tạo yêu cầu",
+    "createFirstRequest": "Tạo yêu cầu đầu tiên",
+    "activeContracts": "HĐ đang hiệu lực",
+    "pendingPayment": "Chờ thanh toán",
+    "overdueInvoices": "Hóa đơn quá hạn",
+    "openRequests": "Yêu cầu đang xử lý",
+    "all": "Tất cả",
+    "pay": "Thanh toán",
+    "searchRequests": "Tìm yêu cầu...",
+    "fileCount": "{{count}} tệp",
+    "fitoutProgress": "Tiến độ: bước {{current}}/{{total}}",
+    "tabs": {
+      "contracts": "Hợp đồng",
+      "invoices": "Hóa đơn",
+      "requests": "Yêu cầu",
+      "fitout": "Fit-out"
+    },
+    "errors": {
+      "contracts": "Không thể tải hợp đồng",
+      "invoices": "Không thể tải hóa đơn",
+      "requests": "Không thể tải yêu cầu vận hành",
+      "fitout": "Không thể tải tiến độ fit-out"
+    },
+    "empty": {
+      "contracts": "Không có hợp đồng đang hiệu lực",
+      "invoices": "Không có hóa đơn",
+      "requests": "Chưa có yêu cầu nào",
+      "fitout": "Không có dự án fit-out nào"
+    },
+    "priority": {
+      "LOW": "Thấp",
+      "MEDIUM": "Trung bình",
+      "HIGH": "Cao",
+      "URGENT": "Khẩn cấp"
+    },
+    "ticketType": {
+      "ELECTRICAL": "Điện",
+      "WATER": "Nước",
+      "HVAC": "Điều hòa / thông gió",
+      "CLEANING": "Vệ sinh",
+      "SECURITY": "An ninh",
+      "PARKING": "Bãi đỗ xe",
+      "INTERNET": "Internet / mạng",
+      "DELIVERY": "Giao hàng / logistics",
+      "MARKETING_EVENT": "Marketing / sự kiện",
+      "OTHER": "Khác"
+    },
+    "payment": {
+      "title": "Ghi nhận thanh toán",
+      "total": "Tổng",
+      "amount": "Số tiền",
+      "date": "Ngày thanh toán",
+      "method": "Phương thức",
+      "reference": "Mã tham chiếu",
+      "referencePlaceholder": "Số bút toán, mã giao dịch...",
+      "confirm": "Xác nhận",
+      "success": "Đã ghi nhận thanh toán",
+      "error": "Không thể ghi nhận thanh toán",
+      "methods": {
+        "BANK_TRANSFER": "Chuyển khoản",
+        "CASH": "Tiền mặt",
+        "CHECK": "Séc"
+      }
+    }
+  },
   "form": {
     "addTitle": "Thêm khách thuê mới",
     "editTitle": "Chỉnh sửa khách thuê",
@@ -158,7 +240,11 @@
     "errorLoad": "Không thể tải danh sách khách thuê",
     "errorDesc": "Vui lòng kiểm tra kết nối và thử lại.",
     "retry": "Thử lại",
-    "edit": "Sửa"
+    "edit": "Sửa",
+    "statusAll": "Tất cả",
+    "statusActive": "Đang thuê",
+    "statusInactive": "Chưa hiệu lực",
+    "termAll": "Tất cả"
   },
   "validation": {
     "brandRequired": "Bắt buộc nhập",
