@@ -23,7 +23,7 @@ Status: ACTIVE
 | Ticket escalation/rating/SLA-policy HTTP authorization | RESOLVED in Wave 15 | Per-ticket routes reuse core Mall/Tenant ownership checks; SLA policy is ADMIN-only; SLA/CSAT aggregates are Mall-scoped and staff-only |
 | Ticket scheduled escalation recipient Mall policy | Tier 1; `BC-020-R` | Confirm whether recipient discovery must be Mall-scoped before changing scheduler semantics |
 | Work Order status/event atomicity | RESOLVED in Wave 18 | Update/transition/review mutations and their existing audit events now share one Prisma transaction; notifications remain post-commit |
-| Patrol abnormal-check → Work Order transaction boundary | Tier 1 cross-module; XMOD-007 | Existing one-way/idempotent automation is preserved; verify atomicity before any correctness change |
+| Patrol abnormal-check → Work Order transaction boundary | RESOLVED in Wave 21 | Optional Work Order creation and Patrol result/link update share a Serializable transaction; retries reuse the committed link and notifications remain post-commit |
 | Analytics Compliance export Mall ownership | RESOLVED in Wave 17 | Worklist, request and generation enforce Mall ownership; global writes/manual all-Mall trigger are ADMIN-only; source payloads use authoritative Mall relations and scoped exports omit SAP logs that lack Mall provenance |
 | CEO operational capability contradiction | Tier 0 authorization; business confirmation required | Current Parking, Work Order and Proposal write access conflicts with the documented aggregate/read persona; do not normalize roles from the UI |
 

@@ -42,6 +42,47 @@ The following pre-existing paths are excluded from program staging unless their 
 | 18 | Work Order state/event atomicity | COMPLETE — state mutation and audit event share one transaction |
 | 19 | Short-term Slot allocation concurrency | COMPLETE — serialized conflict-check and write with bounded retry |
 | 20 | Contract direct-create/update atomicity | COMPLETE — Contract, Unit and audit writes share transaction boundaries |
+| 21 | Patrol abnormal-check automation atomicity | COMPLETE — Patrol result and auto-created Work Order share one transaction |
+
+## Wave 21 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W21-PATROL-WORK-ORDER-ATOMICITY`
+
+Business reason: An ABNORMAL Patrol check currently creates a Work Order before
+updating `PatrolCheck.workOrderId`. If the second write fails, the Work Order is
+orphaned and a retry can create another Work Order. Both records share one
+database and the existing source link explicitly establishes one-way ownership.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Patrol → Operations Work Order automation |
+| Runtime behavior | Re-read the Patrol check and commit optional Work Order creation plus Patrol result/link update in one Serializable transaction with bounded retry |
+| Data/workflow | Existing NORMAL/ABNORMAL/SKIPPED results, severity defaults, Work Order fields and escalation recipients unchanged |
+| Financial/currency | None |
+| Mall/Tenant | Work Order continues to inherit the authoritative Patrol Shift Mall |
+| Authorization | Existing controller role/Mall checks unchanged |
+| API | Route, DTO and response shape unchanged |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Transaction rollback prevents orphan Work Orders; concurrent retries reuse the committed `workOrderId`; notifications remain post-commit |
+| Protected work | Concurrent schema, Dashboard and Proposal/Approval/frontend currency work excluded |
+| Tests | Focused atomicity/idempotency tests, backend full suite/build, reconciliation and `git diff --check` |
+| Golden scenarios | Abnormal Patrol finding creates exactly one linked Work Order |
+| Rollback | Restore sequential Work Order then Patrol update writes |
+| Unknowns | None; Mall-director escalation policy is already explicit in current code and is unchanged |
+
+## Wave 21 technical gate — 2026-08-24
+
+- ABNORMAL Patrol processing re-reads the persisted Work Order link, optionally
+  creates the Work Order and updates the Patrol result/link inside one
+  Serializable transaction with bounded retry.
+- A retry reuses the committed link, preventing duplicate/orphan Work Orders.
+  High/Urgent Mall-director notifications remain post-commit.
+- Focused Patrol atomicity: PASS, 1 suite / 3 tests.
+- Backend full: PASS, 98/98 suites and 635/635 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Patrol results, severity, Work Order fields, escalation recipients, API,
+  authorization, schema and database structure: UNCHANGED.
 
 ## Wave 20 Change Request and Impact Map
 
