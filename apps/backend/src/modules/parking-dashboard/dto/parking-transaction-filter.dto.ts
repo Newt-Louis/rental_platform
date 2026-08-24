@@ -13,17 +13,6 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class ParkingDashboardKpiFilterDto {
-  @IsString() @MinLength(1) @MaxLength(50)
-  parkingCode!: string;
-
-  @IsDateString()
-  startDate!: string;
-
-  @IsDateString()
-  endDate!: string;
-}
-
 const TRANSACTION_SORT_FIELDS = ['check_in_time', 'check_out_time', 'total_fee', 'duration'] as const;
 export type ParkingTransactionSortField = (typeof TRANSACTION_SORT_FIELDS)[number];
 
@@ -97,4 +86,28 @@ export class ParkingTransactionExportFilterDto {
 
   @IsDateString()
   endDate!: string;
+}
+
+export class ParkingMonthlySummaryFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+}
+
+export class ParkingMonthlyChartFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  year!: number;
+}
+
+export class ParkingYearlyChartFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  fromYear!: number;
+
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  toYear!: number;
 }

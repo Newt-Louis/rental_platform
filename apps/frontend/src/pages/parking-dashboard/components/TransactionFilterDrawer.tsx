@@ -52,6 +52,7 @@ export function TransactionFilterDrawer({ open, onClose, value, onChange, onAppl
               to={value.endDate}
               onFromChange={(v) => set({ startDate: v })}
               onToChange={(v) => set({ endDate: v })}
+              showTime
             />
           </div>
 

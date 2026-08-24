@@ -5,16 +5,31 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
-export function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+export function Calendar({
+  className,
+  classNames,
+  showOutsideDays = true,
+  captionLayout = 'dropdown',
+  ...props
+}: CalendarProps) {
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      captionLayout={captionLayout}
       className={cn('p-3', className)}
       classNames={{
         months: 'flex flex-col sm:flex-row gap-4',
         month: 'flex flex-col gap-4',
         month_caption: 'flex justify-center pt-1 relative items-center',
-        caption_label: 'text-sm font-medium text-foreground',
+        // Also applies to a decorative label span next to the real <select> — hide it so
+        // the month/year text doesn't show twice.
+        caption_label: 'sr-only',
+        dropdown_root: 'relative inline-flex items-center',
+        dropdowns: 'flex items-center gap-1.5',
+        months_dropdown:
+          'h-7 rounded-md border border-border bg-transparent px-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring',
+        years_dropdown:
+          'h-7 rounded-md border border-border bg-transparent px-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring',
         nav: 'flex items-center gap-1',
         button_previous: cn(
           'absolute left-1 top-0 h-7 w-7 bg-transparent p-0 flex items-center justify-center',

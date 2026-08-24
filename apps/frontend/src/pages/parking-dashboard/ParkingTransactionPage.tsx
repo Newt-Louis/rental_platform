@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
 import { parkingDashboardApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,8 +14,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DataTable, DataTableSort } from '@/components/ui/data-table';
-import { ScanLine, Search, Download, ImageIcon, X, Tag, SlidersHorizontal, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ScanLine, Search, Download, ImageIcon, X, Tag, SlidersHorizontal, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { formatDateTimeVN } from '@/lib/utils';
 import { formatMoney } from '@/lib/currency';
 import { TransactionFilterDrawer, TransactionFilterState } from './components/TransactionFilterDrawer';
@@ -91,6 +92,19 @@ const emptyDrawerFilter: TransactionFilterState = {
   invoiceStatus: '',
 };
 
+const PAGE_SIZE = 50;
+const SENTINEL_BUFFER_ROWS = 15;
+
+function unwrapTransactionsPage(page: unknown): { items: ParkingTransactionRow[]; hasMore: boolean; nextCursor: string | null } {
+  const result = (page as { data?: unknown })?.data ?? page;
+  const payload = result as { items?: ParkingTransactionRow[]; hasMore?: boolean; nextCursor?: string | null };
+  return {
+    items: payload?.items ?? [],
+    hasMore: payload?.hasMore ?? false,
+    nextCursor: payload?.nextCursor ?? null,
+  };
+}
+
 export default function ParkingTransactionPage() {
   const { t } = useTranslation('parking');
   const { toast } = useToast();
@@ -106,10 +120,21 @@ export default function ParkingTransactionPage() {
   const [drawerForm, setDrawerForm] = useState<TransactionFilterState>(emptyDrawerFilter);
   const [appliedDrawer, setAppliedDrawer] = useState<TransactionFilterState>(emptyDrawerFilter);
   const [sort, setSort] = useState<DataTableSort>({ field: 'check_in_time', dir: 'desc' });
-  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
-  const [pageIndex, setPageIndex] = useState(0);
   const [previewRow, setPreviewRow] = useState<ParkingTransactionRow | null>(null);
   const [exporting, setExporting] = useState(false);
+  const now = new Date();
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportMonth, setExportMonth] = useState(now.getMonth() + 1);
+  const [exportYear, setExportYear] = useState(now.getFullYear());
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLTableRowElement>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+
+  // Cancel an in-flight export on unmount, so navigating away doesn't leave it running
+  // orphaned on the server.
+  useEffect(() => {
+    return () => exportAbortRef.current?.abort();
+  }, []);
 
   if (!parkingCode && tenants.length > 0) setParkingCode(tenants[0].parkingCode);
 
@@ -129,18 +154,37 @@ export default function ParkingTransactionPage() {
     [parkingCode, appliedDrawer, sort],
   );
 
-  const cursor = cursorStack[pageIndex] ?? undefined;
-
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['parking-transactions-v2', appliedFilter, cursor],
-    queryFn: () => parkingDashboardApi.getTransactionsV2({ ...appliedFilter, cursor, limit: 25 }),
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['parking-transactions-v2', appliedFilter],
+    queryFn: ({ pageParam }) =>
+      parkingDashboardApi.getTransactionsV2({
+        ...appliedFilter,
+        cursor: pageParam,
+        limit: PAGE_SIZE,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => {
+      const { hasMore, nextCursor } = unwrapTransactionsPage(lastPage);
+      return hasMore && nextCursor ? nextCursor : undefined;
+    },
     enabled: !!parkingCode && !!appliedFilter.startDate && !!appliedFilter.endDate,
+    // Without this, a sort/filter change flips isLoading and AsyncState unmounts the whole
+    // table mid-refetch. keepPreviousData keeps old rows on screen until the new page lands.
+    placeholderData: keepPreviousData,
   });
 
-  const result = data?.data ?? data;
-  const rawItems: ParkingTransactionRow[] = result?.items ?? [];
-  const hasMore: boolean = result?.hasMore ?? false;
-  const nextCursor: string | null = result?.nextCursor ?? null;
+  const rawItems: ParkingTransactionRow[] = useMemo(
+    () => (data?.pages ?? []).flatMap((page) => unwrapTransactionsPage(page).items),
+    [data],
+  );
 
   const items = useMemo(
     () =>
@@ -152,45 +196,72 @@ export default function ParkingTransactionPage() {
     [rawItems],
   );
 
+  const sentinelAfterRowIndex =
+    items.length > 0 ? Math.max(0, items.length - SENTINEL_BUFFER_ROWS - 1) : undefined;
+
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+  }, [appliedFilter]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    const root = scrollContainerRef.current;
+    if (!el || !root || !hasNextPage || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          fetchNextPage();
+        }
+      },
+      { root, threshold: 0 },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, items.length, sentinelAfterRowIndex]);
+
   function applyFilters() {
     setAppliedDrawer(drawerForm);
-    setCursorStack([null]);
-    setPageIndex(0);
     setDrawerOpen(false);
   }
 
   function handleSort(field: string) {
     setSort((s) => (s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'desc' }));
-    setCursorStack([null]);
-    setPageIndex(0);
   }
 
-  function goNext() {
-    if (!hasMore || !nextCursor) return;
-    setCursorStack((stack) => (pageIndex + 1 < stack.length ? stack : [...stack, nextCursor]));
-    setPageIndex((p) => p + 1);
-  }
-
-  function goPrev() {
-    setPageIndex((p) => Math.max(0, p - 1));
+  // Export always targets one calendar month picked in a dedicated dialog — never the
+  // filter bar's (arbitrary-width) date range.
+  function monthRange(year: number, month1to12: number): { startDate: string; endDate: string } {
+    const lastDay = new Date(year, month1to12, 0).getDate();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return {
+      startDate: `${year}-${pad(month1to12)}-01T00:00`,
+      endDate: `${year}-${pad(month1to12)}-${pad(lastDay)}T23:59`,
+    };
   }
 
   const handleExport = async () => {
+    setExportDialogOpen(false);
+    const { startDate, endDate } = monthRange(exportYear, exportMonth);
+
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
     setExporting(true);
     try {
-      const blob = await parkingDashboardApi.exportTransactions({
-        parkingCode,
-        startDate: appliedDrawer.startDate,
-        endDate: appliedDrawer.endDate,
-      });
+      const blob = await parkingDashboardApi.exportTransactions({ parkingCode, startDate, endDate }, controller.signal);
       const url = URL.createObjectURL(blob as Blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'ParkingHistory.xlsx';
+      a.download = `ParkingHistory-${exportYear}-${String(exportMonth).padStart(2, '0')}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast({ title: t('transaction.exportError', 'Không thể xuất Excel'), variant: 'destructive' });
+    } catch (error: any) {
+      if (error?.code === 'ERR_CANCELED') return; // navigated away — not a real failure
+      toast({
+        title: error?.response?.data?.message ?? t('transaction.exportError', 'Không thể xuất Excel'),
+        variant: 'destructive',
+      });
     } finally {
       setExporting(false);
     }
@@ -204,13 +275,16 @@ export default function ParkingTransactionPage() {
       id: 'plates',
       header: t('transaction.col.plates', 'Biển số (vào / ra)'),
       cell: ({ row }) => (
-        <span className="inline-flex items-center gap-1.5">
-          {row.original.entryLicensePlate} / {row.original.exitLicensePlate}
+        <span className="inline-flex items-start gap-1.5">
+          <span className="flex flex-col leading-tight">
+            <span>{row.original.entryLicensePlate}</span>
+            <span>{row.original.exitLicensePlate}</span>
+          </span>
           {row.original.alprMatched === false && (
-            <AlertTriangle size={12} className="text-amber-500" aria-label={t('transaction.col.alprMismatch', 'ALPR không khớp')} />
+            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-500" aria-label={t('transaction.col.alprMismatch', 'ALPR không khớp')} />
           )}
           {row.original.alprMatched === true && (
-            <CheckCircle2 size={12} className="text-green-500" aria-label={t('transaction.col.alprMatched', 'ALPR khớp')} />
+            <CheckCircle2 size={12} className="mt-0.5 shrink-0 text-green-500" aria-label={t('transaction.col.alprMatched', 'ALPR khớp')} />
           )}
         </span>
       ),
@@ -220,7 +294,12 @@ export default function ParkingTransactionPage() {
     {
       id: 'lane',
       header: t('transaction.col.lane', 'Làn (vào/ra)'),
-      cell: ({ row }) => `${row.original.checkInLaneId ?? '—'} / ${row.original.checkOutLaneId ?? '—'}`,
+      cell: ({ row }) => (
+        <span className="flex flex-col leading-tight">
+          <span>{row.original.checkInLaneId ?? '—'}</span>
+          <span>{row.original.checkOutLaneId ?? '—'}</span>
+        </span>
+      ),
     },
     { accessorKey: 'durationDisplay', header: t('transaction.col.duration', 'Thời gian đỗ'), meta: { sortField: 'duration' } },
     { accessorKey: 'voucherCode', header: t('transaction.col.voucherCode', 'Mã voucher') },
@@ -331,6 +410,7 @@ export default function ParkingTransactionPage() {
                 onFromChange={(v) => setDrawerForm((f) => ({ ...f, startDate: v }))}
                 onToChange={(v) => setDrawerForm((f) => ({ ...f, endDate: v }))}
                 placeholder={t('transaction.dateRange', 'Khoảng ngày')}
+                showTime
               />
             </div>
             <div className="space-y-1.5 md:col-span-2">
@@ -351,7 +431,16 @@ export default function ParkingTransactionPage() {
             <Button variant="outline" className="gap-1.5" onClick={() => setDrawerOpen(true)}>
               <SlidersHorizontal size={15} /> {t('transaction.filterDrawer.title', 'Bộ lọc nâng cao')}
             </Button>
-            <Button variant="outline" className="gap-1.5" disabled={exporting} onClick={handleExport}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              disabled={exporting}
+              onClick={() => {
+                setExportMonth(now.getMonth() + 1);
+                setExportYear(now.getFullYear());
+                setExportDialogOpen(true);
+              }}
+            >
               <Download size={15} /> {exporting ? t('transaction.exporting', 'Đang xuất...') : t('transaction.export', 'Xuất Excel')}
             </Button>
             <Button className="gap-1.5" onClick={applyFilters}>
@@ -371,18 +460,29 @@ export default function ParkingTransactionPage() {
             emptyTitle={t('transaction.empty', 'Không có giao dịch nào')}
             loading={<div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>}
           >
-            <DataTable columns={columns} data={items} sort={sort} onSortChange={handleSort} getRowId={(r) => r.id} />
+            <div ref={scrollContainerRef} className="max-h-[60vh] overflow-auto">
+              <DataTable
+                columns={columns}
+                data={items}
+                sort={sort}
+                onSortChange={handleSort}
+                getRowId={(r) => r.id}
+                sentinelRef={sentinelRef}
+                sentinelAfterRowIndex={sentinelAfterRowIndex}
+              />
 
-            <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
-              <span>{t('transaction.pageInfo', 'Trang {{page}}', { page: pageIndex + 1 })}</span>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" disabled={pageIndex <= 0} onClick={goPrev}>
-                  {t('transaction.prev', 'Trước')}
-                </Button>
-                <Button size="sm" variant="outline" disabled={!hasMore} onClick={goNext}>
-                  {t('transaction.next', 'Sau')}
-                </Button>
-              </div>
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center gap-2 py-3 text-xs text-gray-500">
+                  <Loader2 size={16} className="animate-spin text-gray-400" />
+                  {t('transaction.loadingMore', 'Đang tải thêm...')}
+                </div>
+              )}
+
+              {!hasNextPage && items.length > 0 && !isFetchingNextPage && (
+                <p className="py-3 text-center text-xs text-gray-400">
+                  {t('transaction.noMoreResults', 'Đã hiển thị tất cả kết quả')}
+                </p>
+              )}
             </div>
           </AsyncState>
         </CardContent>
@@ -430,6 +530,55 @@ export default function ParkingTransactionPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('transaction.exportDialog.title', 'Chọn tháng xuất Excel')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-500">
+            {t('transaction.exportDialog.description', 'Xuất toàn bộ giao dịch trong tháng đã chọn, không phụ thuộc bộ lọc ngày ở trên.')}
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 space-y-1.5">
+              <Label className="text-xs text-gray-500">{t('transaction.exportDialog.monthLabel', 'Tháng')}</Label>
+              <Select value={String(exportMonth)} onValueChange={(v) => setExportMonth(Number(v))}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <SelectItem key={m} value={String(m)}>
+                      {t('transaction.exportDialog.month', 'Tháng {{m}}', { m })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <Label className="text-xs text-gray-500">{t('transaction.exportDialog.year', 'Năm')}</Label>
+              <Select value={String(exportYear)} onValueChange={(v) => setExportYear(Number(v))}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 9 + i).map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportDialogOpen(false)}>
+              {t('transaction.filterDrawer.cancel', 'Hủy')}
+            </Button>
+            <Button onClick={handleExport}>
+              <Download size={15} className="mr-1.5" /> {t('transaction.export', 'Xuất Excel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

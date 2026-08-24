@@ -1,15 +1,23 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Response } from 'express';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { PrismaParkingService } from '../../prisma-parking/prisma-parking.service';
-import { Prisma, parking_transaction, tenants } from '../../../node_modules/.prisma/parking-client';
+import { Prisma, parking_transactions, tenants } from '../../../node_modules/.prisma/parking-client';
 import {
-  ParkingDashboardKpiFilterDto,
   ParkingTransactionExportFilterDto,
   ParkingTransactionFilterDto,
   ParkingTransactionFilterV2Dto,
 } from './dto/parking-transaction-filter.dto';
 
 function toNumber(v: unknown): number {
-  return v == null ? 0 : Number(v);
+  if (v == null) return 0;
+  if (typeof v === 'object' && v !== null && 'toNumber' in v && typeof (v as { toNumber: () => number }).toNumber === 'function') {
+    return (v as { toNumber: () => number }).toNumber();
+  }
+  return Number(v);
 }
 
 function addDays(d: Date, days: number): Date {
@@ -30,18 +38,52 @@ function startOfDay(d: Date): Date {
   return r;
 }
 
+// Date-only strings keep the whole-day behavior (midnight to next midnight); a string with a
+// time component is used as-is, so a picked time range isn't widened back to whole days.
+function parseRangeBoundary(dateStr: string, isEnd: boolean): Date {
+  if (dateStr.includes('T')) {
+    return new Date(dateStr);
+  }
+  const day = startOfDay(new Date(dateStr));
+  return isEnd ? addDays(day, 1) : day;
+}
+
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
-export interface ChartPoint {
+export interface MonthlyBucket {
+  cash: number;
+  online: number;
+  voucher: number;
+  total: number;
+  vehicleCount: number;
+}
+
+export interface RevenueVehicleSeriesPoint {
   label: string;
-  value: number;
+  bucketKey: string;
+  totalRevenue: number;
+  cashRevenue: number;
+  onlineRevenue: number;
+  voucherRevenue: number;
+  vehicleCount: number;
+  vehicleCountByType: Record<string, number>;
 }
 
 @Injectable()
 export class ParkingDashboardService {
   private readonly logger = new Logger(ParkingDashboardService.name);
+
+  // Each concurrent export can run ~90s and push RSS up several hundred MB — cap concurrency
+  // to avoid OOM. In-memory counter only works for a single instance (would need Redis behind a LB).
+  private activeExports = 0;
+  private static readonly MAX_CONCURRENT_EXPORTS = 2;
+
+  // TEMPORARY server-side cache (os.tmpdir(), not a volume — wiped on rebuild/recreate) for
+  // exported workbooks. Identical requests reuse the file. TTL 2 weeks, refreshed on hit.
+  private static readonly EXPORT_CACHE_DIR = path.join(os.tmpdir(), 'thiso-parking-export-cache');
+  private static readonly EXPORT_CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 2 weeks
 
   constructor(private readonly prisma: PrismaParkingService) {}
 
@@ -75,124 +117,190 @@ export class ParkingDashboardService {
     return map;
   }
 
-  async getRevenueReport(parkingCode: string) {
+  // Same resolution order as mapTransactionRow: vehicle_type_mappings first, then the raw
+  // (often null) vehicle_type_name, then a literal fallback.
+  private resolveVehicleTypeLabel(
+    vehicleTypeNames: Map<string, string>,
+    vehicleTypeId: number | null,
+    rawName: string | null,
+  ): string {
+    return (vehicleTypeId != null && vehicleTypeNames.get(String(vehicleTypeId))) || rawName || 'Khác';
+  }
+
+  // Calendar this-month vs last-month totals, cash/online/voucher + vehicle count, in one
+  // CASE WHEN GROUP BY query instead of two separate round trips.
+  async getMonthlySummary(parkingCode: string): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
 
     const now = new Date();
-    const todayStart = startOfDay(now);
-    const todayEnd = addDays(todayStart, 1);
+    const thisMonthStart = startOfMonth(now);
+    const thisMonthEnd = startOfMonth(addMonths(now, 1));
     const lastMonthStart = startOfMonth(addMonths(now, -1));
-    const lastMonthEnd = startOfMonth(now);
 
-    const [todayAgg, lastMonthAgg] = await Promise.all([
-      this.prisma.parking_transaction.aggregate({
-        _sum: { total_fee: true },
-        _count: { _all: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: todayStart, lt: todayEnd } },
-      }),
-      this.prisma.parking_transaction.aggregate({
-        _sum: { total_fee: true },
-        _count: { _all: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: lastMonthStart, lt: lastMonthEnd } },
-      }),
-    ]);
+    const rows = await this.prisma.$queryRaw<Array<{
+      period: string; cash: number; online: number; voucher: number; total: number; count: bigint;
+    }>>`
+      SELECT
+        CASE WHEN check_out_time >= ${thisMonthStart} THEN 'current' ELSE 'previous' END AS period,
+        COALESCE(SUM(cash_amount), 0) AS cash,
+        COALESCE(SUM(bank_transfer_amount), 0) AS online,
+        COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+        COALESCE(SUM(total_fee), 0) AS total,
+        COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${lastMonthStart} AND check_out_time < ${thisMonthEnd}
+      GROUP BY 1
+    `;
+
+    const byPeriod = new Map(rows.map((r) => [r.period, r]));
+    const toBucket = (r: (typeof rows)[number] | undefined): MonthlyBucket => ({
+      cash: toNumber(r?.cash),
+      online: toNumber(r?.online),
+      voucher: toNumber(r?.voucher),
+      total: toNumber(r?.total),
+      vehicleCount: r ? toNumber(r.count) : 0,
+    });
 
     return {
-      todayRevenue: toNumber(todayAgg._sum.total_fee),
-      totalTodayTransaction: todayAgg._count._all,
-      totalRevenueLastMonth: toNumber(lastMonthAgg._sum.total_fee),
-      totalTransactionLastMonth: lastMonthAgg._count._all,
+      currentMonth: toBucket(byPeriod.get('current')),
+      previousMonth: toBucket(byPeriod.get('previous')),
     };
   }
 
-  async getTransactionChart(parkingCode: string, startTime: string, finishTime: string): Promise<ChartPoint[]> {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(parkingCode);
-    const start = startOfDay(new Date(startTime));
-    const end = addDays(startOfDay(new Date(finishTime)), 1);
-
-    const rows = await this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
-      SELECT date_trunc('day', check_out_time) AS day, COUNT(*)::bigint AS count
-      FROM parking_transaction
-      WHERE tenant_id = ${tenant.tenant_id}
-        AND check_out_time >= ${start} AND check_out_time < ${end}
-      GROUP BY 1
-      ORDER BY 1
-    `;
-
-    const byDay = new Map<string, number>();
-    for (const row of rows) byDay.set(formatDay(row.day), toNumber(row.count));
-    return fillDays(start, end, byDay);
-  }
-
-  async getRevenueChart(parkingCode: string, startTime: string, finishTime: string): Promise<ChartPoint[]> {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(parkingCode);
-    const start = startOfDay(new Date(startTime));
-    const end = addDays(startOfDay(new Date(finishTime)), 1);
-
-    const rows = await this.prisma.$queryRaw<Array<{ day: Date; total: number }>>`
-      SELECT date_trunc('day', check_out_time) AS day, COALESCE(SUM(total_fee), 0) AS total
-      FROM parking_transaction
-      WHERE tenant_id = ${tenant.tenant_id}
-        AND check_out_time >= ${start} AND check_out_time < ${end}
-      GROUP BY 1
-      ORDER BY 1
-    `;
-
-    const byDay = new Map<string, number>();
-    for (const row of rows) byDay.set(formatDay(row.day), toNumber(row.total));
-    return fillDays(start, end, byDay);
-  }
-
-  async getRevenueChartByYear(parkingCode: string, year: number): Promise<ChartPoint[]> {
+  // Revenue (total + cash/online/voucher split) and vehicle count, bucketed by calendar
+  // month within one year, filled to all 12 months.
+  async getRevenueVehicleChartByMonth(parkingCode: string, year: number): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
     const start = new Date(year, 0, 1);
     const end = new Date(year + 1, 0, 1);
 
-    const rows = await this.prisma.$queryRaw<Array<{ month: Date; total: number }>>`
-      SELECT date_trunc('month', check_out_time) AS month, COALESCE(SUM(total_fee), 0) AS total
-      FROM parking_transaction
+    const rows = await this.prisma.$queryRaw<Array<{
+      month: Date; cash: number; online: number; voucher: number; total: number; count: bigint;
+    }>>`
+      SELECT date_trunc('month', check_out_time) AS month,
+             COALESCE(SUM(cash_amount), 0) AS cash,
+             COALESCE(SUM(bank_transfer_amount), 0) AS online,
+             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(total_fee), 0) AS total,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
       WHERE tenant_id = ${tenant.tenant_id}
         AND check_out_time >= ${start} AND check_out_time < ${end}
       GROUP BY 1
       ORDER BY 1
     `;
 
-    const byMonth = new Map<number, number>();
-    for (const row of rows) byMonth.set(new Date(row.month).getMonth(), toNumber(row.total));
+    const typeRows = await this.prisma.$queryRaw<Array<{
+      month: Date; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
+    }>>`
+      SELECT date_trunc('month', check_out_time) AS month,
+             vehicle_type_id, vehicle_type_name,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1, 2, 3
+    `;
 
-    const points: ChartPoint[] = [];
+    const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
+    const byMonth = new Map(rows.map((r) => [new Date(r.month).getMonth(), r]));
+    const typeByMonth = new Map<number, Record<string, number>>();
+    for (const r of typeRows) {
+      const m = new Date(r.month).getMonth();
+      const label = this.resolveVehicleTypeLabel(vehicleTypeNames, r.vehicle_type_id, r.vehicle_type_name);
+      const byType = typeByMonth.get(m) ?? {};
+      byType[label] = (byType[label] ?? 0) + toNumber(r.count);
+      typeByMonth.set(m, byType);
+    }
+
+    const points: RevenueVehicleSeriesPoint[] = [];
     for (let m = 0; m < 12; m++) {
-      points.push({ label: formatMonth(new Date(year, m, 1)), value: byMonth.get(m) ?? 0 });
+      const r = byMonth.get(m);
+      points.push({
+        label: formatMonth(new Date(year, m, 1)),
+        bucketKey: `${year}-${String(m + 1).padStart(2, '0')}`,
+        totalRevenue: toNumber(r?.total),
+        cashRevenue: toNumber(r?.cash),
+        onlineRevenue: toNumber(r?.online),
+        voucherRevenue: toNumber(r?.voucher),
+        vehicleCount: r ? toNumber(r.count) : 0,
+        vehicleCountByType: typeByMonth.get(m) ?? {},
+      });
     }
     return points;
   }
 
-  async getPaymentBreakdown(parkingCode: string, startTime: string, finishTime: string) {
+  // Same shape as the monthly chart, bucketed by calendar year across a range instead.
+  // fromYear/toYear are swapped if reversed and the span is capped at 15 years.
+  async getRevenueVehicleChartByYear(
+    parkingCode: string,
+    fromYearIn: number,
+    toYearIn: number,
+  ): Promise<RevenueVehicleSeriesPoint[]> {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(parkingCode);
-    const start = startOfDay(new Date(startTime));
-    const end = addDays(startOfDay(new Date(finishTime)), 1);
+    const fromYear = Math.min(fromYearIn, toYearIn);
+    const toYearRaw = Math.max(fromYearIn, toYearIn);
+    const toYear = Math.min(toYearRaw, fromYear + 14);
+    const start = new Date(fromYear, 0, 1);
+    const end = new Date(toYear + 1, 0, 1);
 
-    const agg = await this.prisma.parking_transaction.aggregate({
-      _sum: {
-        cash_amount: true,
-        bank_transfer_amount: true,
-        voucher_coupon_amount: true,
-        voucher_bill_amount: true,
-      },
-      where: { tenant_id: tenant.tenant_id, check_out_time: { gte: start, lt: end } },
-    });
+    const rows = await this.prisma.$queryRaw<Array<{
+      yr: number; cash: number; online: number; voucher: number; total: number; count: bigint;
+    }>>`
+      SELECT EXTRACT(YEAR FROM check_out_time)::int AS yr,
+             COALESCE(SUM(cash_amount), 0) AS cash,
+             COALESCE(SUM(bank_transfer_amount), 0) AS online,
+             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(total_fee), 0) AS total,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1
+      ORDER BY 1
+    `;
 
-    return {
-      cash: toNumber(agg._sum.cash_amount),
-      bankTransfer: toNumber(agg._sum.bank_transfer_amount),
-      voucherCoupon: toNumber(agg._sum.voucher_coupon_amount),
-      voucherBill: toNumber(agg._sum.voucher_bill_amount),
-    };
+    const typeRows = await this.prisma.$queryRaw<Array<{
+      yr: number; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
+    }>>`
+      SELECT EXTRACT(YEAR FROM check_out_time)::int AS yr,
+             vehicle_type_id, vehicle_type_name,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1, 2, 3
+    `;
+
+    const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
+    const byYear = new Map(rows.map((r) => [r.yr, r]));
+    const typeByYear = new Map<number, Record<string, number>>();
+    for (const r of typeRows) {
+      const label = this.resolveVehicleTypeLabel(vehicleTypeNames, r.vehicle_type_id, r.vehicle_type_name);
+      const byType = typeByYear.get(r.yr) ?? {};
+      byType[label] = (byType[label] ?? 0) + toNumber(r.count);
+      typeByYear.set(r.yr, byType);
+    }
+
+    const points: RevenueVehicleSeriesPoint[] = [];
+    for (let y = fromYear; y <= toYear; y++) {
+      const r = byYear.get(y);
+      points.push({
+        label: String(y),
+        bucketKey: String(y),
+        totalRevenue: toNumber(r?.total),
+        cashRevenue: toNumber(r?.cash),
+        onlineRevenue: toNumber(r?.online),
+        voucherRevenue: toNumber(r?.voucher),
+        vehicleCount: r ? toNumber(r.count) : 0,
+        vehicleCountByType: typeByYear.get(y) ?? {},
+      });
+    }
+    return points;
   }
 
   async getTenants() {
@@ -202,186 +310,6 @@ export class ParkingDashboardService {
       orderBy: { name: 'asc' },
     });
     return tenants.map((t) => ({ parkingCode: t.tenant_code, name: t.name }));
-  }
-
-  async getKpiSummary(filter: ParkingDashboardKpiFilterDto) {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(filter.parkingCode);
-    const { start, end } = dayRange(filter.startDate, filter.endDate);
-    const { priorStart, priorEnd } = trailingPriorWindow(start, end);
-
-    const [
-      revenueAgg,
-      priorRevenueAgg,
-      activeOccupancy,
-      completedCount,
-      peakHourRows,
-      promotionAgg,
-      durationAgg,
-      priorDurationAgg,
-    ] = await Promise.all([
-      this.prisma.parking_transaction.aggregate({
-        _sum: { total_fee: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: start, lt: end } },
-      }),
-      this.prisma.parking_transaction.aggregate({
-        _sum: { total_fee: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: priorStart, lt: priorEnd } },
-      }),
-      this.prisma.parking_transaction.count({
-        where: { tenant_id: tenant.tenant_id, check_out_time: null },
-      }),
-      this.prisma.parking_transaction.count({
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: start, lt: end } },
-      }),
-      this.prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT COUNT(*)::bigint AS count
-        FROM parking_transaction
-        WHERE tenant_id = ${tenant.tenant_id}
-          AND check_out_time >= ${start} AND check_out_time < ${end}
-        GROUP BY date_trunc('hour', check_out_time)
-        ORDER BY count DESC
-        LIMIT 1
-      `,
-      this.prisma.parking_transaction.aggregate({
-        _sum: { promotion_amount: true, voucher_bill_amount: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: start, lt: end } },
-      }),
-      this.prisma.parking_transaction.aggregate({
-        _avg: { duration: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: start, lt: end } },
-      }),
-      this.prisma.parking_transaction.aggregate({
-        _avg: { duration: true },
-        where: { tenant_id: tenant.tenant_id, check_out_time: { gte: priorStart, lt: priorEnd } },
-      }),
-    ]);
-
-    const revenue = toNumber(revenueAgg._sum.total_fee);
-    const priorRevenue = toNumber(priorRevenueAgg._sum.total_fee);
-    const promotionsTotal = toNumber(promotionAgg._sum.promotion_amount) + toNumber(promotionAgg._sum.voucher_bill_amount);
-    const avgDuration = durationAgg._avg.duration != null ? Number(durationAgg._avg.duration) : 0;
-    const priorAvgDuration = priorDurationAgg._avg.duration != null ? Number(priorDurationAgg._avg.duration) : 0;
-
-    return {
-      revenue: { value: revenue, changePct: pctChange(revenue, priorRevenue) },
-      activeOccupancy: { value: activeOccupancy },
-      completedSessions: {
-        value: completedCount,
-        peakHourlyThroughput: peakHourRows.length ? toNumber(peakHourRows[0].count) : 0,
-      },
-      promotionsApplied: {
-        value: promotionsTotal,
-        pctOfRevenue: revenue > 0 ? (promotionsTotal / revenue) * 100 : null,
-      },
-      avgDuration: { value: avgDuration, changePct: pctChange(avgDuration, priorAvgDuration) },
-    };
-  }
-
-  async getRevenueVolumeChart(filter: ParkingDashboardKpiFilterDto) {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(filter.parkingCode);
-    const { start, end } = dayRange(filter.startDate, filter.endDate);
-    const isSingleDay = end.getTime() - start.getTime() <= 86400000;
-    const bucket = isSingleDay ? 'hour' : 'day';
-
-    const rows = await this.prisma.$queryRaw<Array<{ bucket: Date; revenue: number; volume: bigint }>>`
-      SELECT date_trunc(${bucket}, check_out_time) AS bucket,
-             COALESCE(SUM(total_fee), 0) AS revenue,
-             COUNT(*)::bigint AS volume
-      FROM parking_transaction
-      WHERE tenant_id = ${tenant.tenant_id}
-        AND check_out_time >= ${start} AND check_out_time < ${end}
-      GROUP BY 1
-      ORDER BY 1
-    `;
-
-    return rows.map((r) => ({
-      label: isSingleDay ? formatHour(r.bucket) : formatDay(r.bucket),
-      revenue: toNumber(r.revenue),
-      volume: toNumber(r.volume),
-    }));
-  }
-
-  async getRevenueSplitChart(filter: ParkingDashboardKpiFilterDto, dimension: 'vehicle_type_name' | 'card_type_name') {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(filter.parkingCode);
-    const { start, end } = dayRange(filter.startDate, filter.endDate);
-    const column = dimension === 'card_type_name' ? Prisma.sql`card_type_name` : Prisma.sql`vehicle_type_name`;
-
-    const rows = await this.prisma.$queryRaw<Array<{ label: string | null; revenue: number; count: bigint }>>`
-      SELECT ${column} AS label, COALESCE(SUM(total_fee), 0) AS revenue, COUNT(*)::bigint AS count
-      FROM parking_transaction
-      WHERE tenant_id = ${tenant.tenant_id}
-        AND check_out_time >= ${start} AND check_out_time < ${end}
-      GROUP BY 1
-      ORDER BY revenue DESC
-    `;
-
-    return rows.map((r) => ({
-      label: r.label ?? 'Không xác định',
-      revenue: toNumber(r.revenue),
-      count: toNumber(r.count),
-    }));
-  }
-
-  async getInflowOutflowChart(filter: ParkingDashboardKpiFilterDto) {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(filter.parkingCode);
-    const { start, end } = dayRange(filter.startDate, filter.endDate);
-
-    const [inflowRows, outflowRows] = await Promise.all([
-      this.prisma.$queryRaw<Array<{ hour: number; count: bigint }>>`
-        SELECT EXTRACT(HOUR FROM check_in_time)::int AS hour, COUNT(*)::bigint AS count
-        FROM parking_transaction
-        WHERE tenant_id = ${tenant.tenant_id}
-          AND check_in_time >= ${start} AND check_in_time < ${end}
-        GROUP BY 1
-      `,
-      this.prisma.$queryRaw<Array<{ hour: number; count: bigint }>>`
-        SELECT EXTRACT(HOUR FROM check_out_time)::int AS hour, COUNT(*)::bigint AS count
-        FROM parking_transaction
-        WHERE tenant_id = ${tenant.tenant_id}
-          AND check_out_time >= ${start} AND check_out_time < ${end}
-        GROUP BY 1
-      `,
-    ]);
-
-    const inflowByHour = new Map(inflowRows.map((r) => [r.hour, toNumber(r.count)]));
-    const outflowByHour = new Map(outflowRows.map((r) => [r.hour, toNumber(r.count)]));
-
-    const points = [];
-    for (let hour = 0; hour < 24; hour++) {
-      points.push({
-        label: `${String(hour).padStart(2, '0')}:00`,
-        inflow: inflowByHour.get(hour) ?? 0,
-        outflow: outflowByHour.get(hour) ?? 0,
-      });
-    }
-    return points;
-  }
-
-  async getPromotionUtilizationChart(filter: ParkingDashboardKpiFilterDto) {
-    this.ensureConfigured();
-    const tenant = await this.resolveTenant(filter.parkingCode);
-    const { start, end } = dayRange(filter.startDate, filter.endDate);
-
-    const rows = await this.prisma.$queryRaw<Array<{ company: string | null; count: bigint; amount: number }>>`
-      SELECT voucher_bill_company AS company, COUNT(*)::bigint AS count,
-             COALESCE(SUM(promotion_amount + voucher_bill_amount), 0) AS amount
-      FROM parking_transaction
-      WHERE tenant_id = ${tenant.tenant_id}
-        AND check_out_time >= ${start} AND check_out_time < ${end}
-        AND promotion_used = true
-      GROUP BY 1
-      ORDER BY amount DESC
-    `;
-
-    return rows.map((r) => ({
-      label: r.company ?? 'Khuyến mãi trực tiếp',
-      count: toNumber(r.count),
-      amount: toNumber(r.amount),
-    }));
   }
 
   async getTransactionsV2(filter: ParkingTransactionFilterV2Dto) {
@@ -401,11 +329,11 @@ export class ParkingDashboardService {
       const cursor = decodeCursor(filter.cursor);
       where.OR = [
         { check_in_time: { lt: cursor.checkInTime } },
-        { check_in_time: cursor.checkInTime, parking_session_id: { lt: BigInt(cursor.sessionId) } },
+        { check_in_time: cursor.checkInTime, parking_session_id: { lt: cursor.sessionId } },
       ];
     }
 
-    const rows = await this.prisma.parking_transaction.findMany({
+    const rows = await this.prisma.parking_transactions.findMany({
       where,
       orderBy: usesKeyset
         ? [{ check_in_time: 'desc' }, { parking_session_id: 'desc' }]
@@ -422,7 +350,7 @@ export class ParkingDashboardService {
       items: pageRows.map((r) => mapTransactionRowV2(r, tenant.tenant_code, vehicleTypeNames)),
       hasMore,
       nextCursor:
-        hasMore && lastRow ? encodeCursor(lastRow.check_in_time, lastRow.parking_session_id.toString()) : null,
+        hasMore && lastRow ? encodeCursor(lastRow.check_in_time, lastRow.parking_session_id) : null,
     };
   }
 
@@ -431,14 +359,14 @@ export class ParkingDashboardService {
     start: Date,
     end: Date,
     filter: ParkingTransactionFilterV2Dto,
-  ): Prisma.parking_transactionWhereInput {
-    const where: Prisma.parking_transactionWhereInput = {
+  ): Prisma.parking_transactionsWhereInput {
+    const where: Prisma.parking_transactionsWhereInput = {
       tenant_id: tenantId,
       check_in_time: { gte: start, lt: end },
     };
     // laneId/search live under `AND` (not the top-level `OR`), since
     // getTransactionsV2 uses `where.OR` for the keyset cursor predicate.
-    const and: Prisma.parking_transactionWhereInput[] = [];
+    const and: Prisma.parking_transactionsWhereInput[] = [];
 
     if (filter.laneId != null) {
       and.push({ OR: [{ check_in_lane_id: filter.laneId }, { check_out_lane_id: filter.laneId }] });
@@ -460,7 +388,7 @@ export class ParkingDashboardService {
     }
 
     if (filter.promotionUsed != null) {
-      where.promotion_used = filter.promotionUsed;
+      where.promotion_used = filter.promotionUsed ? 1 : 0;
     }
     if (filter.paymentStatus?.length) {
       where.online_payment_status = { in: filter.paymentStatus };
@@ -484,8 +412,8 @@ export class ParkingDashboardService {
     });
 
     const [totalItems, rows] = await Promise.all([
-      this.prisma.parking_transaction.count({ where }),
-      this.prisma.parking_transaction.findMany({
+      this.prisma.parking_transactions.count({ where }),
+      this.prisma.parking_transactions.findMany({
         where,
         orderBy: { check_out_time: 'desc' },
         skip: (pageIndex - 1) * pageSize,
@@ -504,31 +432,184 @@ export class ParkingDashboardService {
     };
   }
 
-  async exportTransactions(filter: ParkingTransactionExportFilterDto) {
+  // Streamed one day at a time — a single findMany() over a full month (up to ~280k rows for
+  // a high-volume tenant) reliably crashes Prisma's Rust<->Node bridge, confirmed live.
+  async exportTransactions(filter: ParkingTransactionExportFilterDto, res: Response): Promise<void> {
     this.ensureConfigured();
+    const start = parseRangeBoundary(filter.startDate, false);
+    const end = parseRangeBoundary(filter.endDate, true);
+    const maxRangeMs = 31 * 24 * 60 * 60 * 1000; // 1 month
+    if (end.getTime() - start.getTime() > maxRangeMs) {
+      throw new BadRequestException('Khoảng ngày xuất Excel tối đa là 1 tháng');
+    }
+
+    const cachePath = this.exportCachePath(filter.parkingCode, filter.startDate, filter.endDate);
+    if (await this.tryServeExportCache(cachePath, res)) {
+      return;
+    }
+
+    if (this.activeExports >= ParkingDashboardService.MAX_CONCURRENT_EXPORTS) {
+      throw new BadRequestException(
+        `Đang có ${this.activeExports} yêu cầu xuất Excel khác được xử lý. Vui lòng thử lại sau ít phút.`,
+      );
+    }
+    this.activeExports += 1;
+    try {
+      await this.streamTransactionsWorkbook(filter, start, end, cachePath);
+      await this.serveExportFile(cachePath, res);
+    } finally {
+      this.activeExports -= 1;
+    }
+  }
+
+  private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
+    const key = crypto.createHash('sha1').update(`${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
+  }
+
+  private async tryServeExportCache(cachePath: string, res: Response): Promise<boolean> {
+    try {
+      const stat = await fs.promises.stat(cachePath);
+      if (Date.now() - stat.mtimeMs > ParkingDashboardService.EXPORT_CACHE_TTL_MS) return false;
+      const now = new Date();
+      await fs.promises.utimes(cachePath, now, now); // refresh TTL on hit
+      this.logger.log(`EXPORT_DEBUG cache hit path=${cachePath}`);
+      await this.serveExportFile(cachePath, res);
+      return true;
+    } catch {
+      return false; // no cache file, or stat failed — fall through to a fresh export
+    }
+  }
+
+  private async serveExportFile(cachePath: string, res: Response): Promise<void> {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="ParkingHistory.xlsx"');
+    await new Promise<void>((resolve, reject) => {
+      const stream = fs.createReadStream(cachePath);
+      stream.on('error', reject);
+      stream.on('close', resolve);
+      stream.pipe(res);
+    });
+  }
+
+  private async streamTransactionsWorkbook(
+    filter: ParkingTransactionExportFilterDto,
+    start: Date,
+    end: Date,
+    cachePath: string,
+  ): Promise<void> {
     const tenant = await this.resolveTenant(filter.parkingCode);
-    const where = this.buildTransactionWhere(tenant.tenant_id, filter.startDate, filter.endDate);
+    const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
+    const baseWhere: Prisma.parking_transactionsWhereInput = { tenant_id: tenant.tenant_id };
 
-    const [rows, vehicleTypeNames, overviewAgg] = await Promise.all([
-      this.prisma.parking_transaction.findMany({ where, orderBy: { check_out_time: 'desc' } }),
-      this.loadVehicleTypeNames(tenant.tenant_id),
-      this.prisma.parking_transaction.groupBy({
-        by: ['vehicle_type_id'],
-        where,
-        _count: { _all: true },
-        _sum: {
-          total_fee: true,
-          promotion_amount: true,
-          cash_amount: true,
-          bank_transfer_amount: true,
-        },
-      }),
-    ]);
+    // TEMPORARY diagnostic logging — remove once day-chunked streaming is confirmed stable
+    // for a full high-volume month end to end.
+    const t0 = Date.now();
+    this.logger.log(`EXPORT_DEBUG starting parkingCode=${filter.parkingCode} ${filter.startDate}..${filter.endDate} activeExports=${this.activeExports}`);
 
-    return buildTransactionWorkbook(
-      rows.map((r) => mapTransactionRow(r, tenant.tenant_code, vehicleTypeNames)),
-      overviewAgg.map((row) => mapOverviewRow(row, vehicleTypeNames)),
-    );
+    const overviewAgg = await this.prisma.parking_transactions.groupBy({
+      by: ['vehicle_type_id'],
+      where: { ...baseWhere, check_out_time: { gte: start, lt: end } },
+      _count: { _all: true },
+      _sum: { total_fee: true, promotion_amount: true, cash_amount: true, bank_transfer_amount: true },
+    });
+
+    await fs.promises.mkdir(ParkingDashboardService.EXPORT_CACHE_DIR, { recursive: true });
+    const tmpPath = `${cachePath}.tmp-${crypto.randomBytes(6).toString('hex')}`;
+    const fileStream = fs.createWriteStream(tmpPath);
+    const fileFinished = new Promise<void>((resolve, reject) => {
+      fileStream.on('finish', resolve);
+      fileStream.on('error', reject);
+    });
+
+    try {
+      await this.writeWorkbookToStream(fileStream, overviewAgg, tenant, vehicleTypeNames, baseWhere, start, end, t0);
+      await fileFinished;
+      await fs.promises.rename(tmpPath, cachePath);
+    } catch (err) {
+      await fs.promises.unlink(tmpPath).catch(() => {}); // best-effort — don't mask the real error
+      throw err;
+    }
+  }
+
+  private async writeWorkbookToStream(
+    fileStream: fs.WriteStream,
+    overviewAgg: Array<{
+      vehicle_type_id: number | null;
+      _count: { _all: number };
+      _sum: { total_fee: Prisma.Decimal | null; promotion_amount: Prisma.Decimal | null; cash_amount: Prisma.Decimal | null; bank_transfer_amount: Prisma.Decimal | null };
+    }>,
+    tenant: tenants,
+    vehicleTypeNames: Map<string, string>,
+    baseWhere: Prisma.parking_transactionsWhereInput,
+    start: Date,
+    end: Date,
+    t0: number,
+  ): Promise<void> {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: fileStream });
+
+    const overviewSheet = workbook.addWorksheet('OverViewReport');
+    overviewSheet.columns = [
+      { header: 'Loại Xe', key: 'vehicleTypeName', width: 20 },
+      { header: 'Tổng Giao Dịch', key: 'totalTransaction', width: 16 },
+      { header: 'Phí Gửi Xe', key: 'totalParkingFee', width: 16 },
+      { header: 'Voucher', key: 'totalVoucherValue', width: 16 },
+      { header: 'Tiền Mặt', key: 'totalCash', width: 16 },
+      { header: 'Chuyển Khoản', key: 'totalBankTransfer', width: 16 },
+      { header: 'Tổng Thu', key: 'totalRevenue', width: 16 },
+    ];
+    for (const row of overviewAgg.map((r) => mapOverviewRow(r, vehicleTypeNames))) {
+      overviewSheet.addRow(row).commit();
+    }
+    overviewSheet.commit();
+
+    const detailSheet = workbook.addWorksheet('ReportParkingHistory');
+    detailSheet.columns = [
+      { header: 'STT', key: 'stt', width: 6 },
+      { header: 'Mã', key: 'recordId', width: 12 },
+      { header: 'Loại Xe', key: 'vehicleTypeName', width: 14 },
+      { header: 'Mã Thẻ', key: 'cardCode', width: 14 },
+      { header: 'Biển Số Vào', key: 'entryLicensePlate', width: 14 },
+      { header: 'Biển Số Ra', key: 'exitLicensePlate', width: 14 },
+      { header: 'Thời Gian Vào', key: 'entryTime', width: 18 },
+      { header: 'Thời Gian Ra', key: 'exitTime', width: 18 },
+      { header: 'Tổng Thời Gian', key: 'totalTime', width: 14 },
+      { header: 'Loại Voucher', key: 'voucherTypeName', width: 14 },
+      { header: 'Mã Voucher', key: 'voucherCode', width: 14 },
+      { header: 'Giá Trị Voucher', key: 'voucherValue', width: 14 },
+      { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14 },
+      { header: 'Tiền Mặt', key: 'cash', width: 14 },
+      { header: 'Ngân Lượng', key: 'bankTransfer', width: 14 },
+      { header: 'Tổng Thu', key: 'totalAmount', width: 14 },
+      { header: 'Khuyến Mãi', key: 'promotion', width: 14 },
+    ];
+
+    let stt = 0;
+    let dayCursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    while (dayCursor < end) {
+      const nextDay = addDays(dayCursor, 1);
+      const dayStart = dayCursor > start ? dayCursor : start;
+      const dayEnd = nextDay < end ? nextDay : end;
+
+      const dayRows = await this.prisma.parking_transactions.findMany({
+        where: { ...baseWhere, check_out_time: { gte: dayStart, lt: dayEnd } },
+        orderBy: { check_out_time: 'desc' },
+      });
+      for (const r of dayRows) {
+        stt += 1;
+        detailSheet.addRow({ stt, ...mapTransactionRow(r, tenant.tenant_code, vehicleTypeNames) }).commit();
+      }
+      this.logger.log(
+        `EXPORT_DEBUG day=${dayStart.toISOString().slice(0, 10)} rows=${dayRows.length} runningTotal=${stt} rssMb=${Math.round(process.memoryUsage().rss / 1024 / 1024)}`,
+      );
+
+      dayCursor = nextDay;
+    }
+    detailSheet.commit();
+    await workbook.commit(); // triggers fileStream.end() internally
+
+    this.logger.log(`EXPORT_DEBUG done totalRows=${stt} totalMs=${Date.now() - t0} rssMb=${Math.round(process.memoryUsage().rss / 1024 / 1024)}`);
   }
 
   private buildTransactionWhere(
@@ -536,10 +617,10 @@ export class ParkingDashboardService {
     startDate: string,
     endDate: string,
     opts?: { cardCode?: string; licensePlate?: string },
-  ): Prisma.parking_transactionWhereInput {
-    const where: Prisma.parking_transactionWhereInput = {
+  ): Prisma.parking_transactionsWhereInput {
+    const where: Prisma.parking_transactionsWhereInput = {
       tenant_id: tenantId,
-      check_out_time: { gte: startOfDay(new Date(startDate)), lt: addDays(startOfDay(new Date(endDate)), 1) },
+      check_out_time: { gte: parseRangeBoundary(startDate, false), lt: parseRangeBoundary(endDate, true) },
     };
     const cardCode = opts?.cardCode?.trim();
     if (cardCode) {
@@ -557,43 +638,29 @@ export class ParkingDashboardService {
   }
 }
 
-function formatDay(d: Date): string {
-  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function formatHour(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:00`;
-}
-
 function dayRange(startDate: string, endDate: string): { start: Date; end: Date } {
-  const start = startOfDay(new Date(startDate));
-  const end = addDays(startOfDay(new Date(endDate)), 1);
+  const start = parseRangeBoundary(startDate, false);
+  const end = parseRangeBoundary(endDate, true);
   return { start, end };
-}
-
-function trailingPriorWindow(start: Date, end: Date): { priorStart: Date; priorEnd: Date } {
-  const windowMs = end.getTime() - start.getTime();
-  return { priorStart: new Date(start.getTime() - windowMs), priorEnd: start };
-}
-
-function pctChange(current: number, previous: number): number | null {
-  if (previous === 0) return current === 0 ? 0 : null;
-  return ((current - previous) / previous) * 100;
 }
 
 interface TransactionCursor {
   checkInTime: Date;
-  sessionId: string;
+  sessionId: number;
 }
 
-function encodeCursor(checkInTime: Date, sessionId: string): string {
+function encodeCursor(checkInTime: Date, sessionId: number): string {
   return Buffer.from(JSON.stringify({ t: checkInTime.toISOString(), id: sessionId }), 'utf8').toString('base64');
 }
 
 function decodeCursor(cursor: string): TransactionCursor {
   try {
     const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8'));
-    return { checkInTime: new Date(decoded.t), sessionId: String(decoded.id) };
+    const sessionId = Number(decoded.id);
+    if (!Number.isFinite(sessionId)) {
+      throw new Error('invalid session id');
+    }
+    return { checkInTime: new Date(decoded.t), sessionId };
   } catch {
     throw new BadRequestException('Cursor phân trang không hợp lệ');
   }
@@ -609,7 +676,7 @@ function formatDurationHms(minutes: number | null): string {
 }
 
 function mapTransactionRowV2(
-  row: parking_transaction,
+  row: parking_transactions,
   parkingCode: string,
   vehicleTypeNames: Map<string, string>,
 ) {
@@ -627,8 +694,9 @@ function mapTransactionRowV2(
     checkOutOperatorId: row.check_out_operator_id,
     alprMatched,
     durationDisplay: formatDurationHms(row.duration),
-    inFee: toNumber(row.in_fee),
-    outFee: toNumber(row.out_fee),
+    parkingFee: toNumber(row.parking_fee),
+    calculationTime: row.calculation_time,
+    paymentDate: row.payment_date,
     bankPaymentMethod: row.bank_payment_method,
     onlinePaymentStatus: row.online_payment_status,
     invoiceStatus: row.invoice_status,
@@ -646,19 +714,6 @@ function formatMonth(d: Date): string {
   return MONTH_NAMES_VI[d.getMonth()];
 }
 
-function fillDays(start: Date, endExclusive: Date, byDay: Map<string, number>): ChartPoint[] {
-  const dayMs = 86400000;
-  const dayCount = Math.round((endExclusive.getTime() - start.getTime()) / dayMs);
-  const points = new Array<ChartPoint>(dayCount);
-  let cursor = start.getTime();
-  for (let i = 0; i < dayCount; i++) {
-    const key = formatDay(new Date(cursor));
-    points[i] = { label: key, value: byDay.get(key) ?? 0 };
-    cursor += dayMs;
-  }
-  return points;
-}
-
 // Ảnh lưu đường dẫn tương đối, mỗi bãi đỗ trỏ về một image server riêng (Sala/PHI/PVT) —
 // khớp AppConfig.ImageSalaParkingUrl/ImagePHIParkingUrl/ImagePVTParkingUrl bên WebCore.Server.
 const PARKING_IMAGE_BASE_URL: Record<string, string> = {
@@ -668,7 +723,7 @@ const PARKING_IMAGE_BASE_URL: Record<string, string> = {
 };
 
 function mapTransactionRow(
-  row: parking_transaction,
+  row: parking_transactions,
   parkingCode: string,
   vehicleTypeNames: Map<string, string>,
 ) {
@@ -676,8 +731,8 @@ function mapTransactionRow(
   const imageIn = parseImageJson(row.check_in_images);
   const imageOut = parseImageJson(row.check_out_images);
   return {
-    id: row.parking_session_id.toString(),
-    recordId: row.parking_session_id.toString(),
+    id: String(row.parking_session_id),
+    recordId: String(row.parking_session_id),
     vehicleTypeName: (row.vehicle_type_id != null && vehicleTypeNames.get(String(row.vehicle_type_id))) || row.vehicle_type_name,
     cardCode: row.card_number,
     entryLicensePlate: row.check_in_alpr_vehicle_number ?? row.vehicle_number,
@@ -688,10 +743,12 @@ function mapTransactionRow(
     voucherTypeName: row.voucher_type,
     voucherCode: row.voucher_coupon_code ?? row.voucher_bill_number,
     voucherValue: toNumber(row.voucher_coupon_amount) + toNumber(row.voucher_bill_amount),
-    parkingFee: toNumber(row.total_fee),
+    parkingFee: toNumber(row.parking_fee),
     cash: toNumber(row.cash_amount),
     bankTransfer: toNumber(row.bank_transfer_amount),
-    totalAmount: toNumber(row.total_fee),
+    // total_fee is the charged amount; if 0 (fully covered by promo), fall back to
+    // promotion_amount's magnitude (stored negative) instead of showing a bare 0.
+    totalAmount: toNumber(row.total_fee) || Math.abs(toNumber(row.promotion_amount)),
     isOnlinePayment: row.online_payment_type === 'WebPayment',
     promotion: toNumber(row.promotion_amount),
     promotionDetail: {
@@ -713,10 +770,10 @@ interface OverviewAggRow {
   vehicle_type_id: number | null;
   _count: { _all: number };
   _sum: {
-    total_fee: number | null;
-    promotion_amount: number | null;
-    cash_amount: number | null;
-    bank_transfer_amount: number | null;
+    total_fee: Prisma.Decimal | null;
+    promotion_amount: Prisma.Decimal | null;
+    cash_amount: Prisma.Decimal | null;
+    bank_transfer_amount: Prisma.Decimal | null;
   };
 }
 
@@ -743,46 +800,3 @@ function parseImageJson(v: unknown): { front?: string; back?: string } | null {
   }
 }
 
-async function buildTransactionWorkbook(
-  transactions: ReturnType<typeof mapTransactionRow>[],
-  overview: ReturnType<typeof mapOverviewRow>[],
-) {
-  const ExcelJS = await import('exceljs');
-  const workbook = new ExcelJS.Workbook();
-
-  const overviewSheet = workbook.addWorksheet('OverViewReport');
-  overviewSheet.columns = [
-    { header: 'Loại Xe', key: 'vehicleTypeName', width: 20 },
-    { header: 'Tổng Giao Dịch', key: 'totalTransaction', width: 16 },
-    { header: 'Phí Gửi Xe', key: 'totalParkingFee', width: 16 },
-    { header: 'Voucher', key: 'totalVoucherValue', width: 16 },
-    { header: 'Tiền Mặt', key: 'totalCash', width: 16 },
-    { header: 'Chuyển Khoản', key: 'totalBankTransfer', width: 16 },
-    { header: 'Tổng Thu', key: 'totalRevenue', width: 16 },
-  ];
-  overview.forEach((row) => overviewSheet.addRow(row));
-
-  const sheet = workbook.addWorksheet('ReportParkingHistory');
-  sheet.columns = [
-    { header: 'STT', key: 'stt', width: 6 },
-    { header: 'Mã', key: 'recordId', width: 12 },
-    { header: 'Loại Xe', key: 'vehicleTypeName', width: 14 },
-    { header: 'Mã Thẻ', key: 'cardCode', width: 14 },
-    { header: 'Biển Số Vào', key: 'entryLicensePlate', width: 14 },
-    { header: 'Biển Số Ra', key: 'exitLicensePlate', width: 14 },
-    { header: 'Thời Gian Vào', key: 'entryTime', width: 18 },
-    { header: 'Thời Gian Ra', key: 'exitTime', width: 18 },
-    { header: 'Tổng Thời Gian', key: 'totalTime', width: 14 },
-    { header: 'Loại Voucher', key: 'voucherTypeName', width: 14 },
-    { header: 'Mã Voucher', key: 'voucherCode', width: 14 },
-    { header: 'Giá Trị Voucher', key: 'voucherValue', width: 14 },
-    { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14 },
-    { header: 'Tiền Mặt', key: 'cash', width: 14 },
-    { header: 'Ngân Lượng', key: 'bankTransfer', width: 14 },
-    { header: 'Tổng Thu', key: 'totalAmount', width: 14 },
-    { header: 'Khuyến Mãi', key: 'promotion', width: 14 },
-  ];
-  transactions.forEach((row, idx) => sheet.addRow({ stt: idx + 1, ...row }));
-
-  return workbook.xlsx.writeBuffer();
-}
