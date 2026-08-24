@@ -17,5 +17,7 @@ Status: ACTIVE
 | CRM unified-deals Mall scope | Tier 1; confirmed `AUTH-01` / `CONTRA-008` | Quarantine from UI wave; require reviewed endpoint fix plus cross-Mall denial tests |
 | Customer ownership scope | Tier 1; BC-016 business confirmation required | Do not invent `mallId` or imply Mall isolation in UI |
 | Lead estimate currency provenance | Tier 0; BC-001 business confirmation required | Display current documented VND semantics exactly; no schema or FX inference |
+| Unit merge transition semantics | Tier 1; BC-010 business confirmation required | `MERGED` bypasses the shared transition matrix; preserve behavior until intent is approved |
+| Slot pricing currency provenance | Tier 0; no persisted currency | Do not infer VND or combine with Unit/Contract money; requires explicit design |
 
 This backlog records risks; it is not authorization to change Tier 0/Tier 1 behavior.

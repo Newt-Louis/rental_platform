@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, bookingApi, proposalsApi, slotsApi, categoriesApi } from '@/api';
@@ -33,6 +34,7 @@ import {
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { useAuthStore } from '@/store/auth.store';
+import { getUnitStatusLabel, humanizeWorkflowValue } from '@/pages/spaces/spacesPresentation';
 
 export function UnitDetailSheet({
   unit, onClose, onEdit, onDelete,
@@ -42,6 +44,7 @@ export function UnitDetailSheet({
   onEdit: (unit: any) => void;
   onDelete: (unit: any) => void;
 }) {
+  const { t } = useTranslation(['spaces', 'contracts']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -79,7 +82,10 @@ export function UnitDetailSheet({
   const submitUnitInfo = (data: any) => {
     const currentStatus = (detail as any)?.status ?? unit?.status;
     if (currentStatus !== 'VACANT') {
-      const message = `Chỉ có thể điều chỉnh thông tin khi mặt bằng đang trống (VACANT). Trạng thái hiện tại: ${currentStatus}.`;
+      const message = t('spaces:detail.lockedInfo', {
+        status: getUnitStatusLabel(t, currentStatus),
+        vacant: getUnitStatusLabel(t, 'VACANT'),
+      });
       setUpdateInfoError(message);
       toast({ title: 'Không thể chỉnh sửa mặt bằng', description: message, variant: 'destructive' });
       return;
@@ -209,7 +215,7 @@ export function UnitDetailSheet({
           {/* Status + category */}
           <div className="flex items-center gap-2 flex-wrap">
             {cfg && (
-              <Badge className={`${cfg.color} border px-3 py-1 text-sm font-medium`}>{cfg.label}</Badge>
+              <Badge className={`${cfg.color} border px-3 py-1 text-sm font-medium`}>{getUnitStatusLabel(t, d.status)}</Badge>
             )}
             {d.category && <Badge variant="outline" className="text-sm">{d.category}</Badge>}
             {d.mall?.name && <Badge variant="outline" className="text-xs text-gray-500">{d.mall.name}</Badge>}
@@ -305,7 +311,10 @@ export function UnitDetailSheet({
             <div className="text-xs font-semibold tracking-wider text-gray-400 mb-3">THÔNG TIN MẶT BẰNG</div>
             {canManageSpaces && d.status !== 'VACANT' && (
               <div role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Thông tin đang được khóa vì mặt bằng ở trạng thái <strong>{d.status}</strong>. Chỉ được điều chỉnh khi mặt bằng đang trống (VACANT).
+                {t('spaces:detail.lockedInfo', {
+                  status: getUnitStatusLabel(t, d.status),
+                  vacant: getUnitStatusLabel(t, 'VACANT'),
+                })}
               </div>
             )}
             {updateInfoError && (
@@ -387,7 +396,9 @@ export function UnitDetailSheet({
                       <FileText size={14} className="text-gray-400" />
                       <span className="text-sm font-mono font-medium">{c.contractNumber}</span>
                     </div>
-                    <Badge className="text-xs bg-green-100 text-green-700 border-0">{c.status}</Badge>
+                    <Badge className="text-xs bg-green-100 text-green-700 border-0">
+                      {t(`contracts:status.${c.status}`, { defaultValue: humanizeWorkflowValue(c.status) })}
+                    </Badge>
                   </div>
                 ))}
               </div>

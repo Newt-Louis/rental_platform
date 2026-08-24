@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Selecto from 'react-selecto';
 import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +42,7 @@ export function SpacesGrid({
   onDeleteUnit,
   onCreateUnit,
 }: SpacesGridProps) {
+  const { t } = useTranslation('spaces');
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -71,12 +73,12 @@ export function SpacesGrid({
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['units'] });
       qc.invalidateQueries({ queryKey: ['occupancy'] });
-      toast({ title: `Đã cập nhật ${result.updated} mặt bằng` });
+      toast({ title: t('bulk.updateSuccess', { count: result.updated }) });
       clearSelection();
       setSelectionMode(false);
       setBulkActionOpen(null);
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('bulk.updateError'), variant: 'destructive' }),
   });
 
   if (isLoading) {
@@ -101,12 +103,12 @@ export function SpacesGrid({
         >
           {selectedIds.size >= 2 && selectedIds.size <= 5 && (
             <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setCompareOpen(true)}>
-              <Columns size={14} /> So sánh
+              <Columns size={14} /> {t('bulk.compare')}
             </Button>
           )}
           {selectedIds.size >= 2 && (
             <Button size="sm" variant="ghost" className="text-violet-300 hover:bg-gray-800 gap-1.5 shrink-0" onClick={() => setMergeDialogOpen(true)}>
-              <GitMerge size={14} /> Gộp sảnh
+              <GitMerge size={14} /> {t('bulk.mergeHalls')}
             </Button>
           )}
           <Button
@@ -114,26 +116,26 @@ export function SpacesGrid({
             variant="ghost"
             className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
             disabled={selectedHasNonVacant}
-            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            title={selectedHasNonVacant ? t('bulk.vacantOnly') : undefined}
             onClick={() => setBulkActionOpen('category')}
           >
-            <Filter size={14} /> Đổi ngành hàng
+            <Filter size={14} /> {t('bulk.changeCategory')}
           </Button>
           <Button
             size="sm"
             variant="ghost"
             className="text-white hover:bg-gray-800 gap-1.5 shrink-0"
             disabled={selectedHasNonVacant}
-            title={selectedHasNonVacant ? 'Chỉ điều chỉnh được mặt bằng đang trống' : undefined}
+            title={selectedHasNonVacant ? t('bulk.vacantOnly') : undefined}
             onClick={() => setBulkActionOpen('rent')}
           >
-            <DollarSign size={14} /> Đổi giá thuê
+            <DollarSign size={14} /> {t('bulk.changeRent')}
           </Button>
         </BulkSelectionBar>
       )}
 
       {/* Unit Grid */}
-      <div className="text-sm text-gray-400 mb-3">{units.length} mặt bằng</div>
+      <div className="text-sm text-gray-500 mb-2 tabular-nums">{t('unit.count', { count: units.length })}</div>
       {selectionMode && !dialogOpen && (
         <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />
       )}
@@ -159,7 +161,7 @@ export function SpacesGrid({
       {units.length === 0 && (
         <div className="text-center py-16 text-gray-400">
           <Building2 size={48} className="mx-auto mb-3 opacity-20" />
-          <p className="font-medium">Không tìm thấy mặt bằng</p>
+          <p className="font-medium">{t('unit.notFound')}</p>
           {isAdmin && mallId && (
             <Button
               variant="outline"
@@ -167,7 +169,7 @@ export function SpacesGrid({
               className="mt-3 gap-2"
               onClick={onCreateUnit}
             >
-              <Plus size={14} /> Thêm mặt bằng đầu tiên
+              <Plus size={14} /> {t('unit.addFirst')}
             </Button>
           )}
         </div>

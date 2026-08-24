@@ -27,3 +27,14 @@ Known historical gaps were remediated in CR101 phases, but adjacent domains must
 | Tenant Portal core data | Billing/Contract/Ticket/Fitout APIs remain responsible for server-forced Tenant scope; frontend filtering is not treated as authorization | Checked-but-not-changed; GS-10 remains a platform gate |
 
 Wave 2 makes no backend or authorization changes. The two open CRM boundaries require reviewed Tier 1 decisions and negative cross-Mall tests before remediation.
+
+## Wave 3 evidence — Unit / Space Inventory
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Unit list/detail/create/update/delete | Controller resolves explicit Mall access and service mutations use the scoped Unit lookup introduced by CR-101 | VERIFIED by focused authorization/controller suites; unchanged |
+| Floor/Zone and map data | Mall ownership is checked before current map/floor mutations and reads | VERIFIED for current Space controller paths; unchanged |
+| Merge/split | Current authorization and hierarchy/integrity suites pass; merge still writes `MERGED` outside the shared transition matrix | Authorization verified; lifecycle semantics remain BC-010 and were not changed |
+| UI roles | Action visibility remains aligned with existing roles | Presentation aid only; backend remains authoritative |
+
+Wave 3 makes no backend, authorization or data-scope changes. Focused Space authorization/integrity verification passed 8 suites / 77 tests.

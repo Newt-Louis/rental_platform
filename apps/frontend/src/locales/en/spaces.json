@@ -1,5 +1,14 @@
 {
   "title": "Space Management",
+  "eyebrow": "Space inventory",
+  "description": "Track supply, operating status, and commercial context for every space.",
+  "rentalZone": {
+    "label": "Spaces by lease model",
+    "LONG": "Long-term leasing",
+    "LONG_DESC": "Long-term lease contracts",
+    "SHORT": "Short-term leasing",
+    "SHORT_DESC": "Short-term bookings and proposals"
+  },
   "views": {
     "grid": "List",
     "floor": "Floor plan",
@@ -38,8 +47,8 @@
     "namePlaceholder": "Unit A01...",
     "areaGFA": "GFA area (m²) *",
     "areaNLA": "NLA area (m²) *",
-    "baseRent": "Base rent (₫/m²)",
-    "cam": "CAM fee (₫/m²)",
+    "baseRent": "Base rent (VND/m²)",
+    "cam": "CAM fee (VND/m²)",
     "spaceType": "Space type",
     "flexibleArea": "Flexible space (rent by non-fixed m²)",
     "minFlexArea": "Minimum area (m²)",
@@ -76,10 +85,35 @@
   },
   "status": {
     "VACANT": "Vacant",
+    "BOOKING": "Booking in progress",
+    "NEGOTIATING": "Negotiating",
+    "CONTRACTED": "Contracted",
+    "UNDER_FITOUT": "Under fitout",
     "OCCUPIED": "Occupied",
+    "MERGED": "Merged",
     "MAINTENANCE": "Maintenance",
     "RESERVED": "Reserved",
     "BOOKED": "Booked"
+  },
+  "bookingStatus": {
+    "ACTIVE": "Held",
+    "PENDING": "Pending",
+    "EXPIRED": "Expired",
+    "CANCELLED": "Cancelled",
+    "CONVERTED": "Converted"
+  },
+  "proposalStatus": {
+    "DRAFT": "Draft",
+    "SUBMITTED": "Pending approval",
+    "UNDER_REVIEW": "Under review",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "CONVERTED": "Contract created"
+  },
+  "approvalStatus": {
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "PENDING": "Pending"
   },
   "filters": {
     "search": "Search by name, code...",
@@ -104,8 +138,8 @@
     "advanced": "Advanced filters",
     "minAreaLabel": "Min area (m²)",
     "maxAreaLabel": "Max area (m²)",
-    "minRentLabel": "Min rent (₫/m²)",
-    "maxRentLabel": "Max rent (₫/m²)",
+    "minRentLabel": "Min rent (VND/m²)",
+    "maxRentLabel": "Max rent (VND/m²)",
     "categoryLabel": "Category",
     "spaceTypeLabel": "Space type",
     "tierLabel": "Tier",
@@ -120,8 +154,8 @@
     "loading": "Loading analytics...",
     "totalUnits": "Total units",
     "occupiedUnits": "Occupied",
-    "avgRent": "Avg rent (₫/m²)",
-    "monthlyRevenue": "Monthly revenue (₫)",
+    "avgRent": "Avg rent (VND/m²)",
+    "monthlyRevenue": "Monthly revenue (VND)",
     "occupancyBar": "Occupancy",
     "allStatus": "All",
     "rentByFloor": "Rent by floor",
@@ -150,6 +184,11 @@
     "exitFullscreen": "Exit fullscreen",
     "floorHint": "No plan",
     "legend": "Legend:",
+    "placedCount": "{{placed}}/{{total}} positioned spaces",
+    "occupancy": "Occupancy",
+    "areaNLA": "NLA area:",
+    "zone": "Zone:",
+    "rent": "Rent:",
     "clickHint": "Click a unit to view info · F = fullscreen · ← → change floor",
     "noMallSelected": "Please select a specific mall in the header (not \"All Malls\")"
   },
@@ -169,6 +208,8 @@
     "selectNewStatus": "Select new status",
     "selectNewCategory": "Select new category",
     "updateSuccess": "Updated {{count}} spaces",
+    "updateError": "Could not update spaces",
+    "vacantOnly": "Only vacant spaces can be edited",
     "updating": "Updating..."
   },
   "booking": {
@@ -186,10 +227,10 @@
     "leadsHint": "Showing new, contacted, and qualified leads.",
     "requestedArea": "Area (m²)",
     "requestedTerm": "Term (months)",
-    "expectedRent": "Expected rent (₫/m²)",
+    "expectedRent": "Expected rent (VND/m²)",
     "holdDays": "Hold days *",
-    "proposedRent": "Proposed rent (₫/m²)",
-    "proposedCam": "Proposed CAM (₫/m²)",
+    "proposedRent": "Proposed rent (VND/m²)",
+    "proposedCam": "Proposed CAM (VND/m²)",
     "notes": "Notes",
     "notesPlaceholder": "Client has visited site, high potential...",
     "priceNeedsApproval": "Price needs approval",
@@ -200,7 +241,7 @@
     "priceCeiling": "Ceiling:",
     "priceSuggested": "Suggested:",
     "areaHint": "Suggestion: full NLA area ({{area}} m²) — adjust if partial rental",
-    "rentHint": "Suggested by category: {{price}} ₫",
+    "rentHint": "Suggested by category: {{price}} VND",
     "existingTenant": "Existing tenant",
     "existingTenantDesc": "— has an active contract",
     "creating": "Creating...",
@@ -311,7 +352,9 @@
     "submitProposalSuccess": "Sent for approval",
     "convertProposalSuccess": "Converted to contract",
     "cancelBookingSuccess": "Booking cancelled",
-    "updateStatusSuccess": "Status updated"
+    "updateStatusSuccess": "Status updated",
+    "lockedInfo": "Information is locked because the space status is {{status}}. It can only be edited while the space is vacant ({{vacant}}).",
+    "combined": "Combined"
   },
   "media": {
     "all": "All",

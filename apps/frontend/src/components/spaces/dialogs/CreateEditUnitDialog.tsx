@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { spacesApi, categoriesApi } from '@/api';
@@ -14,6 +15,7 @@ import {
   getUnitMutationError,
   validateUnitFormValues,
 } from './unitFormHelpers';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 export function CreateEditUnitDialog({
   open, unit, mallId, defaultFloorId, onClose,
@@ -24,6 +26,7 @@ export function CreateEditUnitDialog({
   defaultFloorId?: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation('spaces');
   const qc = useQueryClient();
   const { toast } = useToast();
   const isEdit = !!unit;
@@ -116,7 +119,10 @@ export function CreateEditUnitDialog({
 
   const submitForm = (data: any) => {
     if (!canModify) {
-      const message = `Chỉ có thể điều chỉnh thông tin khi mặt bằng đang trống (VACANT). Trạng thái hiện tại: ${unit?.status}.`;
+      const message = t('detail.lockedInfo', {
+        status: getUnitStatusLabel(t, unit?.status),
+        vacant: getUnitStatusLabel(t, 'VACANT'),
+      });
       setSubmitError(message);
       toast({ title: 'Không thể chỉnh sửa mặt bằng', description: message, variant: 'destructive' });
       return;
@@ -166,7 +172,10 @@ export function CreateEditUnitDialog({
 
             {!canModify && (
               <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Mặt bằng đang ở trạng thái <strong>{unit?.status}</strong>. Chỉ mặt bằng đang trống (VACANT) mới được điều chỉnh thông tin.
+                {t('detail.lockedInfo', {
+                  status: getUnitStatusLabel(t, unit?.status),
+                  vacant: getUnitStatusLabel(t, 'VACANT'),
+                })}
               </div>
             )}
 

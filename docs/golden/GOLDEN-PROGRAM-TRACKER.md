@@ -23,7 +23,8 @@ The following pre-existing paths are excluded from program staging unless their 
 | Baseline and canonical truth | Repository and governance reconstruction | COMPLETE |
 | 1 | Golden Fitout presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 2 | CRM / Customer / Tenant presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
-| 3+ | Remaining modules in dependency order | PENDING |
+| 3 | Unit / Space Inventory presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 4+ | Remaining modules in dependency order | PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | PENDING |
 
 ## Wave 1 Change Request and Impact Map
@@ -124,4 +125,54 @@ Approval boundary: the user's master execution authorization permits this presen
 - Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive PASS is not claimed.
 - Reconciliation: CRM Lead values remain exact documented VND; Tenant Portal pending invoice totals are separated by persisted ISO currency with no mixed-currency sum or FX.
 - Authorization: Lead and Tenant controller paths verified; CRM unified deals remains a confirmed Tier 1 gap and Customer Mall ownership remains BC-016. Neither was silently changed.
+- Business logic/API contract/backend/schema/database changes: NO.
+
+## Wave 3 Change Request and Impact Map
+
+Business objective: turn the existing Space surface into a dense inventory cockpit where availability, physical hierarchy, authoritative Unit status and current commercial context are immediately legible, without altering the Unit lifecycle or leasing eligibility.
+
+In scope:
+
+- Space inventory header, view controls, filter density, Unit grid/detail hierarchy and localized presentation.
+- Presentation-only localization of Unit, Booking, Proposal and Contract statuses already returned by existing APIs.
+- Exact display of the existing Unit VND rate-card fields; no abbreviations or symbol-only ambiguity.
+- Focused frontend presentation tests and locale updates.
+
+Out of scope:
+
+- `UnitStatusService`, transition matrix, Booking eligibility/queue rules, Contract/Fitout side effects and merge/split behavior.
+- Slot allocation, SlotBooking concurrency, slot-pricing currency design or any short-term pricing formula.
+- Backend controllers/services, API contracts, Prisma schema/migrations and database.
+- Dashboard, Booking and protected Proposal/Approval working-tree changes.
+
+Impact dimensions:
+
+| Dimension | Finding |
+|---|---|
+| Upstream | Mall → Floor/Zone defines Unit ownership and physical hierarchy; unchanged |
+| Downstream | Booking locks Unit; Proposal/Contract commit Unit; Fitout advances Unit to `UNDER_FITOUT`/`OCCUPIED`; unchanged |
+| Financial/currency | Unit base rent/CAM fields have no currency field and existing UI/backend treat the rate card as VND. Wave 3 only makes VND explicit and exact; it does not propagate Unit rates as authoritative contract currency |
+| Mall/Tenant | Current Unit list/detail/mutation routes enforce Mall access after CR-101; frontend visibility remains non-authoritative |
+| Events/jobs | Contract/Fitout/Booking status side effects and occupancy readers are unchanged |
+| Concurrency/idempotency | Shared status transitions remain centralized; merge/split bypass and slot concurrency findings are not modified |
+| API/schema/database | No change |
+| Protected modules | Dashboard, Booking and active Proposal/Approval paths remain excluded |
+
+Golden scenarios to preserve: GS-01, GS-02, GS-04, GS-05, GS-07, GS-08 and GS-09 through GS-15.
+
+Unknowns: BC-010 (whether `MERGED` was deliberately excluded from the shared transition matrix) remains `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`. Unit-slot currency provenance and slot allocation concurrency remain separately quarantined.
+
+Approval boundary: the user's master execution authorization permits presentation work. Unit lifecycle, eligibility, financial semantics and authorization behavior are Tier 0/Tier 1 boundaries and remain unchanged.
+
+## Wave 3 technical gate — 2026-08-24
+
+- Frontend Unit/Space presentation and form-safety focused: PASS, 2 files / 8 tests.
+- Backend Unit status, authorization, CRUD, hierarchy, map and merge/split focused: PASS, 8 suites / 77 tests.
+- Backend full: PASS, 91 suites / 598 tests.
+- TypeScript, frontend production build and backend production build: PASS.
+- Docker/runtime: PASS; rebuilt current compose frontend/backend dependency chain, all four services healthy, `http://localhost:8080/` and `http://localhost:3000/api/health` return HTTP 200. Existing UAT orphan containers were reported and deliberately left untouched.
+- Frontend full: BASELINE FAILURES only — `permissions.test.ts` RouteModule duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. Space focused tests passed in the same run.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
+- Reconciliation: Unit rate-card fields remain existing implicit-VND data and are now presented exact with explicit `VND`; Proposal/Contract values continue using their persisted currency. Slot pricing remains unclassified and is not combined or relabeled.
+- Authorization: current Unit/Floor/Zone/map paths remain backend-scoped and focused authorization tests pass; no frontend role check is treated as security.
 - Business logic/API contract/backend/schema/database changes: NO.
