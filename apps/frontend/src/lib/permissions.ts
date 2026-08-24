@@ -369,14 +369,16 @@ export const NAV_GROUPS = [
       },
       { label: "Doanh thu", path: "/sales", module: "sales" as RouteModule },
       {
-        label: "Billing & AR",
-        path: "/billing",
-        module: "billing" as RouteModule,
-      },
-      {
+        // Đặt trước "Billing & AR": vận hành nhập/chốt số liệu add-in trước, Kế toán mới lập
+        // hoá đơn từ dữ liệu đã chốt — thứ tự nav phản ánh đúng thứ tự quy trình nghiệp vụ.
         label: "Billing Add-in vận hành",
         path: "/billing-addin",
         module: "billing-addin" as RouteModule,
+      },
+      {
+        label: "Billing & AR",
+        path: "/billing",
+        module: "billing" as RouteModule,
       },
       { label: "SAP", path: "/sap", module: "sap" as RouteModule },
     ],

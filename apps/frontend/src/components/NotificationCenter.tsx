@@ -35,6 +35,7 @@ function entityLink(entityType?: string, entityId?: string): string | null {
     MAINTENANCE_REMINDER: '/tickets?tab=maintenance',
     BOOKING: '/bookings',
     LEAD: '/crm',
+    PERIODIC_CHARGE_ENTRY: '/billing-addin',
   };
   return map[entityType.toUpperCase()] ?? null;
 }

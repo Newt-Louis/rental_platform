@@ -33,7 +33,7 @@ describe('BillingAddInService', () => {
         findFirst: jest.fn(),
         update: jest.fn((args: any) => ({ id: 'entry-1', ...args.data })),
         findUnique: jest.fn(),
-        create: jest.fn(),
+        create: jest.fn((args: any) => ({ id: `generated-${Math.random()}`, ...args.data })),
       },
       periodicChargeRateConfig: {
         findFirst: jest.fn().mockResolvedValue(rateConfig),
@@ -163,12 +163,26 @@ describe('BillingAddInService', () => {
 
     it('creates one PENDING entry per contract charge type not yet generated', async () => {
       prisma.contract.findMany.mockResolvedValue([
-        { id: 'contract-1', periodicChargeTypes: ['UTILITY', 'AFTER_HOURS_COOLING'] },
+        { id: 'contract-1', contractNumber: 'CTR-1', periodicChargeTypes: ['UTILITY', 'AFTER_HOURS_COOLING'], unit: { mallId: 'mall-1' } },
       ]);
       prisma.periodicChargeEntry.findUnique.mockResolvedValue(null);
       const result = await service.generatePendingForPeriod('2026-08');
       expect(result.created).toBe(2);
       expect(prisma.periodicChargeEntry.create).toHaveBeenCalledTimes(2);
+      expect(result.entries).toHaveLength(2);
+      expect(result.entries[0]).toMatchObject({ mallId: 'mall-1', contractNumber: 'CTR-1' });
+    });
+  });
+
+  describe('listDueSoonOrOverdue', () => {
+    it('returns PENDING/DRAFT entries due within the given window, ordered by dueDate', async () => {
+      prisma.periodicChargeEntry.findMany = jest.fn().mockResolvedValue([{ id: 'entry-1' }]);
+      const result = await service.listDueSoonOrOverdue(3, new Date('2026-08-24'));
+      expect(prisma.periodicChargeEntry.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ['PENDING', 'DRAFT'] } }),
+        orderBy: { dueDate: 'asc' },
+      }));
+      expect(result).toEqual([{ id: 'entry-1' }]);
     });
   });
 

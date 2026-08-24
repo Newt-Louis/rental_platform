@@ -163,23 +163,48 @@ export class BillingAddInService {
         status: { in: ['ACTIVE', 'EXPIRING'] },
         periodicChargeTypes: { isEmpty: false },
       },
-      select: { id: true, periodicChargeTypes: true },
+      select: {
+        id: true,
+        contractNumber: true,
+        periodicChargeTypes: true,
+        unit: { select: { mallId: true } },
+      },
     });
 
     let created = 0;
+    // Chi tiết entry vừa sinh, gộp theo mall — dùng để scheduler thông báo cho vận hành theo mall,
+    // không cần BillingAddInService biết gì về NotificationsService (giữ service thuần/dễ test).
+    const createdEntries: { id: string; mallId: string; contractNumber: string; chargeType: PeriodicChargeType }[] = [];
     for (const contract of contracts) {
       for (const chargeType of contract.periodicChargeTypes) {
         const existing = await this.prisma.periodicChargeEntry.findUnique({
           where: { contractId_chargeType_period: { contractId: contract.id, chargeType, period: targetPeriod } },
         });
         if (existing) continue;
-        await this.prisma.periodicChargeEntry.create({
+        const entry = await this.prisma.periodicChargeEntry.create({
           data: { contractId: contract.id, chargeType, period: targetPeriod, periodStart, periodEnd, dueDate },
         });
+        createdEntries.push({ id: entry.id, mallId: contract.unit.mallId, contractNumber: contract.contractNumber, chargeType });
         created++;
       }
     }
-    return { period: targetPeriod, created };
+    return { period: targetPeriod, created, entries: createdEntries };
+  }
+
+  /** Danh sách entry PENDING/DRAFT sắp/đã quá hạn — dùng cho nhắc nhở vận hành theo mall. */
+  async listDueSoonOrOverdue(withinDays: number, asOf: Date = new Date()) {
+    const threshold = new Date(asOf.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    return this.prisma.periodicChargeEntry.findMany({
+      where: {
+        status: { in: [PeriodicChargeStatus.PENDING, PeriodicChargeStatus.DRAFT] },
+        dueDate: { lte: threshold },
+      },
+      select: {
+        id: true, period: true, chargeType: true, dueDate: true,
+        contract: { select: { contractNumber: true, unit: { select: { mallId: true } } } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
   }
 
   /** Danh sách đơn giá đã cấu hình — dùng cho màn hình quản trị rate config. */
