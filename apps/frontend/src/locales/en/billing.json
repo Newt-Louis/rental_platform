@@ -132,7 +132,7 @@
     "invoicePaidFull": "Invoice fully paid",
     "cancelledReason": "Cancelled — reason: {{reason}}",
     "qtyLabel": "Quantity",
-    "unitPriceLabel": "Unit price (₫)",
+    "unitPriceLabel": "Unit price ({{currency}})",
     "subtotalPreview": "Amount: {{amount}}",
     "paymentAmount": "Payment amount *",
     "paymentMethod": "Method",
@@ -191,14 +191,15 @@
     "clearFilters": "Clear filters"
   },
   "header": {
+    "eyebrow": "Financial operations",
     "title": "Invoices & collections",
-    "subtitle": "Control the full revenue lifecycle: schedule → issue → collect → dunning → reconcile.",
+    "subtitle": "Monitor invoices, receivables, and collections by authoritative business status.",
     "collectionRate": "Collection rate",
     "dso": "DSO",
     "dsoUnit": "days",
     "arOutstanding": "AR outstanding",
     "operationsCenter": "Billing operations center",
-    "selectStep": "Select a step to continue"
+    "selectStep": "Prioritize actionable invoices, review receivables, and open contextual details"
   },
   "voidDialog": {
     "title": "Cancel invoice",

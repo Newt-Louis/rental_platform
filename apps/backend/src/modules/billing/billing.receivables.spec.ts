@@ -1,4 +1,5 @@
 import { BillingService } from './billing.service';
+import * as ExcelJS from 'exceljs';
 
 describe('BillingService receivables workbench', () => {
   const prisma = {
@@ -48,6 +49,39 @@ describe('BillingService receivables workbench', () => {
     expect(result.summary.totalOutstanding).toBe(2_900_000);
     expect(result.summary.overdue).toEqual({ count: 1, amount: 900_000 });
     expect(result.summary.draft).toEqual({ count: 1, amount: 2_000_000 });
+  });
+
+  it('exports filtered numeric amounts with an explicit currency and cap metadata', async () => {
+    prisma.invoice.findMany.mockResolvedValue([{
+      id: 'invoice-usd', invoiceNumber: 'INV-USD-001', status: 'ISSUED',
+      sourceType: 'LEASE_CONTRACT', type: 'MONTHLY_RENT', period: '2026-08',
+      currencyCode: 'USD', subtotal: 1250.25, vatAmount: 0,
+      adjustmentAmount: 0, totalAmount: 1250.25, dueDate: new Date('2026-08-31'),
+      createdAt: new Date('2026-08-01'), counterpartyName: 'Tenant USD',
+      tenant: { brandName: 'Tenant USD', companyName: 'USD Co' }, contract: null,
+      mall: { code: 'M1', name: 'Mall 1' }, payments: [],
+    }]);
+
+    const exported = await service.exportInvoicesExcel({
+      sourceType: 'LEASE_CONTRACT', bucket: 'CURRENT', period: '2026-08',
+    }, ['mall-1']);
+
+    expect(prisma.invoice.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      take: 5001,
+      where: expect.objectContaining({ sourceType: 'LEASE_CONTRACT', period: '2026-08' }),
+    }));
+    expect(exported).toMatchObject({ rowCount: 1, truncated: false, limit: 5000 });
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(exported.buffer as any);
+    const sheet = workbook.getWorksheet('Hóa đơn')!;
+    expect(sheet.getRow(1).values).toContain('Tiền tệ');
+    const headers = (sheet.getRow(1).values as unknown[]).map(String);
+    const currencyColumn = headers.indexOf('Tiền tệ');
+    const subtotalColumn = headers.indexOf('Tạm tính');
+    expect(sheet.getRow(2).getCell(currencyColumn).value).toBe('USD');
+    expect(sheet.getRow(2).getCell(subtotalColumn).value).toBe(1250.25);
+    expect(sheet.getRow(2).getCell(subtotalColumn).numFmt).toBe('#,##0.00');
   });
 
   it('groups service-contract aging by billing party instead of merging null tenants', async () => {

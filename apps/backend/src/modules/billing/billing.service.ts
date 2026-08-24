@@ -7,7 +7,7 @@ import { EmailService } from '../notifications/email.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { formatMoney } from '../../common/utils/format-money';
-import { SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
+import { CURRENCIES, SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
 
 // ServiceContract/ServiceContractPayment.currency are still free-text String columns
 // (docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- tightening them to the CurrencyCode enum
@@ -86,6 +86,7 @@ export class BillingService {
     sourceType?: string;
     search?: string;
   }, mallIds?: string[]) {
+    const sourceLimit = 200;
     const now = new Date();
     const search = query.search?.trim();
     const includeLease = !query.sourceType || query.sourceType === 'LEASE_CONTRACT';
@@ -123,10 +124,10 @@ export class BillingService {
       },
     };
 
-    const [leaseRows, serviceRows, shortTermCandidates, parkingCandidates] = await Promise.all([
+    const [leaseCandidates, serviceCandidates, shortTermSourceCandidates, parkingSourceCandidates] = await Promise.all([
       includeLease ? this.prisma.billingScheduleEntry.findMany({
         where: leaseWhere,
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { dueDate: 'asc' },
         include: { contract: { select: {
           id: true, contractNumber: true,
@@ -136,7 +137,7 @@ export class BillingService {
       }) : [],
       includeService ? this.prisma.serviceContractPayment.findMany({
         where: serviceWhere,
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { dueDate: 'asc' },
         include: { contract: { select: {
           id: true, contractNumber: true, title: true, mallId: true,
@@ -154,7 +155,7 @@ export class BillingService {
             { lead: { brandName: { contains: search, mode: 'insensitive' } } },
           ] } : {}),
         },
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { startDatetime: 'asc' },
         include: {
           customer: { select: { companyName: true, brandName: true, taxCode: true, tenantId: true } },
@@ -180,7 +181,7 @@ export class BillingService {
             ] } : {}),
           },
         },
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { issueDate: 'asc' },
         include: {
           contract: { include: { tenant: true } },
@@ -189,6 +190,17 @@ export class BillingService {
         },
       }) : [],
     ]);
+
+    const truncatedSources = [
+      includeLease && leaseCandidates.length > sourceLimit ? 'LEASE_CONTRACT' : null,
+      includeService && serviceCandidates.length > sourceLimit ? 'SERVICE_CONTRACT' : null,
+      includeShortTerm && shortTermSourceCandidates.length > sourceLimit ? 'SHORT_TERM_BOOKING' : null,
+      includeParking && parkingSourceCandidates.length > sourceLimit ? 'PARKING' : null,
+    ].filter((source): source is string => Boolean(source));
+    const leaseRows = leaseCandidates.slice(0, sourceLimit);
+    const serviceRows = serviceCandidates.slice(0, sourceLimit);
+    const shortTermCandidates = shortTermSourceCandidates.slice(0, sourceLimit);
+    const parkingCandidates = parkingSourceCandidates.slice(0, sourceLimit);
 
     const [billedShortTermIds, billedParkingIds] = await Promise.all([
       shortTermCandidates.length
@@ -319,6 +331,8 @@ export class BillingService {
     return {
       data,
       total: data.length,
+      sourceLimit,
+      truncatedSources,
       summary: {
         count: data.length,
         amount: vndOnly(data).reduce((sum, row) => sum + collectible(row), 0),
@@ -1444,12 +1458,22 @@ export class BillingService {
     return { created: created.length, invoices: created.map((i) => i.invoiceNumber) };
   }
 
-  async exportInvoicesExcel(query: { status?: InvoiceStatus; tenantId?: string; period?: string; search?: string; mallId?: string }, mallIds?: string[]) {
+  async exportInvoicesExcel(query: {
+    status?: InvoiceStatus;
+    tenantId?: string;
+    period?: string;
+    search?: string;
+    mallId?: string;
+    sourceType?: string;
+    bucket?: string;
+  }, mallIds?: string[]) {
+    const exportLimit = 5000;
     const filters: any[] = [];
     const where: any = { isActive: true, AND: filters };
     if (query.status) where.status = query.status;
     if (query.tenantId) where.tenantId = query.tenantId;
     if (query.period) where.period = query.period;
+    if (query.sourceType) where.sourceType = query.sourceType;
     if (mallIds) filters.push({ OR: [
       { mallId: { in: mallIds } },
       { contract: { unit: { mallId: { in: mallIds } } } },
@@ -1463,7 +1487,13 @@ export class BillingService {
       ] });
     }
 
-    const invoices = await this.prisma.invoice.findMany({
+    const now = new Date();
+    if (query.bucket === 'DRAFT') filters.push({ status: InvoiceStatus.DRAFT });
+    if (query.bucket === 'CURRENT') filters.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] }, dueDate: { gte: now } });
+    if (query.bucket === 'PARTIAL') filters.push({ status: InvoiceStatus.PARTIALLY_PAID, dueDate: { gte: now } });
+    if (query.bucket === 'OVERDUE') filters.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] }, dueDate: { lt: now } });
+
+    const exportRows = await this.prisma.invoice.findMany({
       where,
       include: {
         tenant: { select: { brandName: true, companyName: true } },
@@ -1472,8 +1502,10 @@ export class BillingService {
         payments: { select: { amount: true, reversedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: exportLimit + 1,
     });
+    const truncated = exportRows.length > exportLimit;
+    const invoices = exportRows.slice(0, exportLimit);
 
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -1490,6 +1522,7 @@ export class BillingService {
       { header: 'Nguồn', key: 'sourceType', width: 22 },
       { header: 'Kỳ', key: 'period', width: 12 },
       { header: 'Loại', key: 'type', width: 22 },
+      { header: 'Tiền tệ', key: 'currencyCode', width: 12 },
       { header: 'Tạm tính', key: 'subtotal', width: 18 },
       { header: 'VAT', key: 'vatAmount', width: 18 },
       { header: 'Điều chỉnh', key: 'adjustmentAmount', width: 18 },
@@ -1502,7 +1535,7 @@ export class BillingService {
     ];
     invoices.forEach((inv, index) => {
       const { adjustedTotal, totalPaid, balance } = this.financials(inv);
-      sheet.addRow({
+      const row = sheet.addRow({
         index: index + 1,
         mall: inv.mall ? `${inv.mall.code} — ${inv.mall.name}` : '',
         invoiceNumber: inv.invoiceNumber,
@@ -1512,6 +1545,7 @@ export class BillingService {
         sourceType: inv.sourceType || '',
         period: inv.period,
         type: inv.type,
+        currencyCode: inv.currencyCode,
         subtotal: inv.subtotal,
         vatAmount: inv.vatAmount,
         adjustmentAmount: inv.adjustmentAmount,
@@ -1522,6 +1556,11 @@ export class BillingService {
         status: inv.status,
         createdAt: inv.createdAt,
       });
+      const decimalPlaces = CURRENCIES[inv.currencyCode].decimalPlaces;
+      const numberFormat = decimalPlaces === 0 ? '#,##0' : `#,##0.${'0'.repeat(decimalPlaces)}`;
+      for (const key of ['subtotal', 'vatAmount', 'adjustmentAmount', 'adjustedTotal', 'totalPaid', 'balance']) {
+        row.getCell(key).numFmt = numberFormat;
+      }
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columnCount } };
     sheet.getRow(1).height = 26;
@@ -1530,12 +1569,10 @@ export class BillingService {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
-    for (const key of ['subtotal', 'vatAmount', 'adjustmentAmount', 'adjustedTotal', 'totalPaid', 'balance']) {
-      sheet.getColumn(key).numFmt = '#,##0';
-    }
     sheet.getColumn('dueDate').numFmt = 'dd/mm/yyyy';
     sheet.getColumn('createdAt').numFmt = 'dd/mm/yyyy';
-    return workbook.xlsx.writeBuffer();
+    const buffer = await workbook.xlsx.writeBuffer();
+    return { buffer, rowCount: invoices.length, truncated, limit: exportLimit };
   }
 
   async getArAging(mallIds?: string[]) {

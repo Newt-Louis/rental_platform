@@ -132,7 +132,7 @@
     "invoicePaidFull": "Hóa đơn đã thanh toán đầy đủ",
     "cancelledReason": "Đã hủy — lý do: {{reason}}",
     "qtyLabel": "Số lượng",
-    "unitPriceLabel": "Đơn giá (₫)",
+    "unitPriceLabel": "Đơn giá ({{currency}})",
     "subtotalPreview": "Thành tiền: {{amount}}",
     "paymentAmount": "Số tiền thanh toán *",
     "paymentMethod": "Phương thức",
@@ -191,14 +191,15 @@
     "clearFilters": "Xóa bộ lọc"
   },
   "header": {
+    "eyebrow": "Vận hành tài chính",
     "title": "Hóa đơn và thu tiền",
-    "subtitle": "Kiểm soát trọn vòng đời doanh thu: lập lịch → phát hành → thu tiền → nhắc nợ → đối soát hiệu quả.",
+    "subtitle": "Theo dõi hóa đơn, công nợ và thu tiền theo đúng trạng thái nghiệp vụ.",
     "collectionRate": "Tỷ lệ thu",
     "dso": "DSO",
     "dsoUnit": "ngày",
     "arOutstanding": "AR còn lại",
     "operationsCenter": "Trung tâm điều hành Billing",
-    "selectStep": "Chọn một bước để tiếp tục xử lý"
+    "selectStep": "Ưu tiên hóa đơn cần xử lý, kiểm tra công nợ và mở chi tiết theo ngữ cảnh"
   },
   "voidDialog": {
     "title": "Hủy hóa đơn",

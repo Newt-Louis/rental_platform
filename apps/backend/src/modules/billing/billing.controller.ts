@@ -84,20 +84,25 @@ export class BillingController {
   }
 
   @Get('invoices/export')
-  @ApiOperation({ summary: 'Export invoices as CSV' })
+  @ApiOperation({ summary: 'Export filtered invoices as XLSX with explicit currency' })
   @Roles(...MODULE_ROLES.billingStaff)
   @ApiQuery({ name: 'status', required: false, enum: InvoiceStatus })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'period', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'sourceType', required: false })
+  @ApiQuery({ name: 'bucket', required: false })
   async exportExcel(@Query() query: any, @CurrentUser() user: any, @Res() res: Response) {
     if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
     const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
-    const workbook = await this.billingService.exportInvoicesExcel(query, mallIds ?? undefined);
+    const exported = await this.billingService.exportInvoicesExcel(query, mallIds ?? undefined);
     const filename = `invoices_${new Date().toISOString().slice(0, 10)}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(Buffer.from(workbook));
+    res.setHeader('X-Export-Row-Count', exported.rowCount.toString());
+    res.setHeader('X-Export-Truncated', exported.truncated.toString());
+    res.setHeader('X-Export-Limit', exported.limit.toString());
+    res.send(Buffer.from(exported.buffer));
   }
 
   @Get('ar-aging')
