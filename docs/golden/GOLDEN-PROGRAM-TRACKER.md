@@ -45,6 +45,55 @@ The following pre-existing paths are excluded from program staging unless their 
 | 20 | Contract direct-create/update atomicity | COMPLETE — Contract, Unit and audit writes share transaction boundaries |
 | 21 | Patrol abnormal-check automation atomicity | COMPLETE — Patrol result and auto-created Work Order share one transaction |
 | 22 | Contract termination/amendment atomicity | COMPLETE — lifecycle, Unit, Billing and audit writes share transactions |
+| 23 | Reports revenue-export money/cap compliance | COMPLETE — raw Amount + Currency, sentinel cap detection and explicit truncation disclosure |
+
+## Independent progress scores
+
+- **Engineering Golden Completion: 96%** — all independently provable P0/P1/P2
+  corrections found in Waves 1–23 are implemented and checkpointed. The
+  remaining 4% is limited to protected concurrent work and tasks requiring an
+  approved business interpretation; production-only evidence is not deducted
+  from this score.
+- **Production Readiness: 28%** — 7 of 25 release gates are PASS. Credential,
+  off-site backup, observability, two-Mall UAT, human acceptance and controlled
+  release/rollback evidence remain external no-go conditions.
+
+## Wave 23 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W23-REPORT-EXPORT-COMPLIANCE`
+
+Business reason: Reports revenue CSV silently caps at 5,000 rows, omits
+currency and rounds every amount to zero decimals. That can lose USD/MMK
+precision and mislabel mixed-currency records. The persisted authoritative
+fields are already `Invoice.totalAmount` and `Invoice.currencyCode`.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Reports revenue CSV export |
+| Runtime behavior | Query one sentinel row beyond the cap, export at most 5,000 rows, add separate raw Amount/Currency columns and disclose row count/limit/truncation in response headers and UI toast |
+| Data/workflow | Read-only export; active filters and Mall scope unchanged |
+| Financial/currency | No calculation/FX; preserves persisted numeric amount and ISO currency without rounding or aggregation |
+| Mall/Tenant | Existing Reports scope helper remains authoritative |
+| Authorization | Unchanged |
+| API | CSV columns become compliant; additive `X-Export-*` headers; route/query unchanged |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | None |
+| Protected work | Concurrent Billing Add-in/schema, Dashboard and Proposal/Approval files excluded |
+| Tests | Service exact-money/cap test, controller header/scope test, focused frontend export test where practical, builds and `git diff --check` |
+| Golden scenarios | Financial export retains filters, exact amount/currency and cap disclosure |
+| Rollback | Restore prior CSV columns/string result and remove additive headers/toast |
+| Unknowns | None; no FX or cross-currency total is introduced |
+
+Wave 23 technical gate:
+
+- backend exact-money/cap utility: **2/2 PASS**;
+- frontend Reports-focused presentation: **4/4 PASS**;
+- frontend full suite and production build: **PASS**;
+- `git diff --check`: **PASS**;
+- backend integrated build: **BASELINE BLOCKED** by protected concurrent
+  Billing Add-in code referencing newly added Prisma models/enums before its
+  generated client is updated. All 23 diagnostics are confined to the protected
+  Billing Add-in/Billing paths; the Reports-only utility suite passes.
 
 ## Wave 22 Change Request and Impact Map
 

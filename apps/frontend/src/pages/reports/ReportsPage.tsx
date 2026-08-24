@@ -20,6 +20,7 @@ import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { formatExactReportingMoney, formatVndBillionsAxis } from './reportingPresentation';
 import { invoiceTypeTranslationKey, localizedEnumLabel } from '@/lib/erpEnumPresentation';
+import { getReportsExportCap } from './reportsExportPresentation';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -417,6 +418,14 @@ export default function ReportsPage() {
       a.download = `report_${type}_${dateFrom}_${dateTo}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      const exportCap = getReportsExportCap(res.headers);
+      if (exportCap.truncated) {
+        toast({
+          title: t('exportTruncatedTitle', { count: exportCap.rowCount }),
+          description: t('exportTruncatedDescription', { limit: exportCap.limit }),
+          variant: 'destructive',
+        });
+      }
     } catch {
       toast({ title: t('exportError'), variant: 'destructive' });
     } finally {

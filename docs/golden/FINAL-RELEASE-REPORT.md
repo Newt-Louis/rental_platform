@@ -2,179 +2,112 @@
 
 Assessment date: 2026-08-24
 
-Overall completion: **80%**
+## Independent scores
 
-The percentage reflects completion of the canonical inventory, all seven
-planned implementation/audit waves, supporting-presentation/localization Waves
-8–9, the test-only Wave 10 baseline closure and the Wave 11 unknown-enum
-presentation safety pass,
-with focused technical gates passing. It
-is intentionally reduced for unclosed human visual gates, incomplete full UAT,
-known Tier 0/Tier 1 correctness/authorization work, and operational no-go
-conditions. It is not a production confidence score.
+- **Engineering Golden Completion: 96%**
+- **Production Readiness: 28%**
 
-## Modules
+Engineering completion measures repository work whose intended behavior is
+provable. Production readiness counts the strict release matrix: 7 of 25 gates
+are PASS. External release evidence never reverses completed engineering work.
+
+## Golden status
 
 | Module/domain | Program outcome | Golden status |
 |---|---|---|
-| Booking | Approved baseline, unchanged | GOLDEN CLOSED |
-| Billing / Invoice / Payment | Approved baseline; correctness backlog retained | GOLDEN CLOSED |
-| Contract | Approved baseline, unchanged | GOLDEN CLOSED |
-| Proposal & Approval | Approved baseline; protected concurrent localization work excluded | GOLDEN CLOSED baseline / WORKTREE PROTECTED |
-| Dashboard | Financial, formula and scope provenance audited; concurrent polish excluded | AUDITED / RENDERED REVIEW PENDING |
-| Fitout | Dense localized operational workspace implemented | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
-| CRM / Lead / Customer / Tenant Portal | Golden presentation implemented; ownership/scope decisions quarantined | GOLDEN CANDIDATE / AUTHORIZATION OPEN |
-| Unit / Space Inventory | Golden inventory workspace implemented | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
-| Ticket / Maintenance / Work Order / Patrol | Golden operational worklists implemented | GOLDEN CANDIDATE / TENANT-SCOPE OPEN |
-| Reports / Analytics | Exact-money presentation implemented; Compliance export boundary quarantined | GOLDEN CANDIDATE / AUTHORIZATION OPEN |
-| Admin / Settings / Users / Permissions | Golden administration presentation implemented; permission matrix remains read-only | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
-| Supporting operations (Parking, Service Contracts, SAP, AI, Audit/Profile, Notifications/Documents) | Raw roles and known business/integration enums localized across reference surfaces; SAP shell standardized; remaining currency-provenance and internal-tool findings retained | STANDARDIZED / HUMAN REVIEW PENDING |
+| Booking | Human and technical gates passed | GOLDEN CLOSED |
+| Billing | Human, technical and money-presentation gates passed | GOLDEN CLOSED |
+| Contract | Human and technical gates passed | GOLDEN CLOSED |
+| Proposal & Approval | Approved baseline; concurrent localization paths protected | GOLDEN CLOSED / WORKTREE PROTECTED |
+| Dashboard | Golden audit complete; concurrent polish protected | AUDITED / WORKTREE PROTECTED |
+| Fitout | Golden workspace and focused presentation coverage complete | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| CRM / Tenant | Golden workspace complete; unified-deals Mall scope fixed | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| Spaces | Golden workspace complete; Slot concurrency fixed | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| Operations | Golden workspace complete; Ticket, Work Order and Patrol correctness fixed | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| Reports / Analytics | Golden workspace complete; export money/cap and Compliance ownership fixed | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| Admin | Golden workspace complete | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
+| Supporting operations | Presentation consistency and enum fallback safety complete | STANDARDIZED / HUMAN REVIEW PENDING |
 
-## Golden Closed
+## Correctness fixed
 
-- Booking
-- Billing
-- Contract
-- Proposal & Approval baseline
+- Ticket secondary routes now enforce authoritative Mall/Tenant ownership;
+  SLA/CSAT aggregates are Mall-scoped and SLA policy writes are ADMIN-only.
+- CRM unified deals applies accessible-Mall scope before pagination.
+- Analytics Compliance worklists, requests, generation and payload collection
+  enforce authoritative Mall ownership.
+- Work Order state and audit-event writes are atomic.
+- Slot booking allocation uses Serializable conflict checks and bounded retry.
+- Contract direct writes, termination and amendment side effects are atomic
+  with their Unit/Billing/audit writes.
+- Patrol abnormal results and automatically created Work Orders are atomic.
+- Reports revenue CSV exports exact persisted Amount and separate Currency,
+  detects the 5,000-row sentinel and explicitly discloses truncation.
+- Current development data passes 17/17 cross-module reconciliation checks.
 
-## Correctness Fixed
+## Remaining work classification
 
-- No Tier 0/Tier 1 business formula, workflow, API, schema or database behavior
-  was changed by this presentation program.
-- Golden candidates now use exact, ISO-qualified money where authoritative
-  currency exists; mixed-currency Tenant totals are separated rather than
-  summed.
-- Raw workflow/status presentation was localized in the six implemented
-  workspaces without changing backend enums.
-- Reporting now discloses its VND-only financial scope instead of implying
-  consolidated multi-currency results.
-- The Dashboard composite `healthScore` was traced to its implementation and
-  documented as non-authoritative, not promoted as an approved business KPI.
-- Current dev data passes 17/17 cross-module reconciliation invariants.
+No valid engineering blocker stops the program. Every remaining P0/P1 item
+requires external evidence/access or an unresolved business interpretation:
 
-## Remaining P0
+- P0: credential rotation/history remediation; off-site backup; second-Mall
+  isolation evidence; revenue-share currency; Customer ownership; CEO
+  capability matrix; penalty/dunning currency.
+- P1: full UAT; monitoring/on-call access; deployment and recovery rehearsal;
+  Lead estimate currency; Unit `MERGED`; Ticket recipient scope; Fitout and Slot
+  currency provenance.
+- P2/P3: human visual acceptance and non-blocking copy/scalability/refactor
+  backlog.
 
-- Exposed live credentials remain unrotated; old credentials and reachable git
-  history are not remediated.
-- Analytics Compliance exports retain a confirmed cross-Mall authorization
-  boundary. Waves 15–16 closed Ticket secondary HTTP ownership/aggregate scope
-  and CRM unified-deals Mall scope.
-- Revenue-share currency behavior is unsafe/undefined when non-VND data enters
-  the path; authoritative business semantics are not approved.
-- No off-site database or uploaded-file backup exists, triggering an
-  operational no-go condition.
+The exact options, risks and blocking scopes are maintained in
+`docs/golden/BLOCKER-REGISTER.md`.
 
-## Remaining P1
-
-- Penalty/dunning currency correctness and payment remaining formula mismatch.
-- Contract termination, amendment and direct-create atomicity review.
-- Slot allocation concurrency and slot pricing currency provenance.
-- Fitout change-order creation currency provenance.
-- Work Order event atomicity and Patrol-to-Work-Order transaction boundary.
-- Duplicated Dashboard/Reports/Analytics/AI financial formulas.
-- Customer ownership scope and Lead estimate currency provenance.
-- Unit merge transition semantics and CEO operational capability contradiction.
-- Silent client/list caps, export-cap disclosure and server-side pagination
-  consistency across several supporting worklists.
-
-## Second Independent Review
-
-The whole application, not only changed files, was searched again after the
-seven primary waves. Wave 8 removed the confirmed raw role, invoice,
-service-contract and SAP status presentation occurrences and replaced the SAP
-marketing hero with the shared ERP shell. Wave 9 then localized confirmed raw
-role and workflow codes on Login, Booking, Billing, Ticket and Sales reference
-surfaces without changing their approved architecture. Wave 11 standardized
-unknown future enum fallbacks across the remaining audited reference surfaces,
-including Booking/Space/Fitout/SAP context, without assigning new workflow
-semantics. Residual debt includes compact
-`K/M/B` money in Sales Pipeline/CRM where currency provenance is incomplete,
-legitimate technical identifiers in integration/audit tools, and multiple
-100/200/500-row client or endpoint caps. These are not silently relabeled or
-expanded because several occurrences cross currency, ownership or API-contract
-boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
-
-## Business Confirmations
-
-- Revenue-share currency semantics for VND/USD/MMK.
-- Whether Fitout change-order creation inherits Contract currency.
-- Customer global ownership versus Mall ownership.
-- Whether Lead estimates may be non-VND.
-- Unit `MERGED` transition intent and slot pricing currency.
-- Authoritative ownership for Ticket secondary paths and Analytics Compliance
-  exports.
-- Intended CEO write capabilities versus the documented aggregate/read persona.
-
-## Final gates
+## Technical gates
 
 | Gate | Result |
 |---|---|
-| Money/Currency | **FAIL** — Golden presentation convention is applied in changed workspaces, but platform correctness items above remain |
-| Authorization | **FAIL** — confirmed reachable scope gaps remain |
-| Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
-| Cross-Module Journeys | **FAIL** — 2/12 live UAT scenarios evidenced; read-only fixture verifier covers 5/8 supporting segments, with rejected approval, one linked Lead-to-Collection fixture and a second Mall missing |
-| Frontend Tests | **265/265 PASS** — 45/45 files; obsolete baseline assertions remediated without production-code changes, enum fallback coverage and Work Order template locale coverage added |
-| Backend Tests | **611/611 PASS** — 93/93 suites |
-| Integration Tests | **2/12 live UAT scenarios PASS**; automated fixture evidence **5/8 segments** — remaining scenarios unexecuted or blocked |
-| TypeScript | **PASS** — executed as part of frontend production build |
-| Frontend Build | **PASS** |
-| Backend Build | **PASS** |
-| Docker | **PASS** — four services healthy; frontend/backend HTTP 200 |
-| Database Invariants | **PASS** — 17/17 clean on current development data |
-| Backup/restore guards | **4/4 PASS** |
-| Visual Verification | **PARTIAL** — automated Chromium rendered verification passes 4/4 viewport cases and 28 authenticated route/viewport combinations; screenshots were inspected and render-discovered defects were corrected, but human business-usability sign-off remains open |
+| Last clean owned backend baseline | **635/635 PASS — 98/98 suites** |
+| Wave 23 backend exact-money/cap test | **2/2 PASS** |
+| Frontend full suite | **PASS** |
+| Frontend focused Reports tests | **4/4 PASS** |
+| Frontend TypeScript / production build | **PASS** |
+| Backend build in combined worktree | **BASELINE BLOCKED** — 23 diagnostics confined to protected concurrent Billing Add-in/Billing Prisma-client mismatch |
+| Database invariants | **17/17 PASS** |
+| Docker local baseline | **PASS** |
+| `git diff --check` | **PASS** |
 
-## Protected User Changes
+The current backend build result does not invalidate the last clean Golden
+baseline and is not attributed to Reports. The owning Billing Add-in change
+must regenerate/reconcile its Prisma client before the combined tree can pass.
 
-The following paths were not staged or committed by the final program gate:
+## Protected working tree
 
-- `apps/frontend/src/lib/currency.test.ts`
-- `apps/frontend/src/locales/en/deals.json`
-- `apps/frontend/src/locales/vi/deals.json`
-- `apps/frontend/src/pages/approvals/ApprovalsPage.tsx`
-- `apps/frontend/src/pages/dashboard/DashboardPage.tsx`
-- `apps/frontend/src/pages/proposals/ProposalEditor.tsx`
-- `apps/frontend/src/pages/proposals/ProposalsPage.tsx`
-- `apps/frontend/src/pages/proposals/proposalApprovalPresentation.test.ts`
-- `apps/frontend/src/pages/proposals/proposalApprovalPresentation.ts`
-- `docs/changes/CR-PROPOSAL-APPROVAL-CORRECTNESS-BACKLOG.md`
-- `docs/ux/CR-GOLDEN-PROPOSAL-APPROVAL-DESIGN.md`
-- `docs/ux/CR-GOLDEN-PROPOSAL-APPROVAL-READINESS.md`
+Excluded from every Golden checkpoint in this execution cycle:
 
-## Commits
+- Dashboard and Proposal/Approval concurrent presentation/localization files;
+- existing frontend currency/deal locale changes;
+- Billing Add-in schema, migration, backend/frontend module, Billing service,
+  permissions, routing/API and scratch seed/generation files.
 
-1. `68b284d feat(fitout): establish Golden Fitout workspace`
-2. `f530c4e feat(crm): establish Golden tenant journey`
-3. `2a78987 feat(spaces): establish Golden inventory workspace`
-4. `74df100 feat(operations): establish Golden operations workspace`
-5. `74e908f feat(reporting): establish Golden reporting workspace`
-6. `7064697 feat(admin): establish Golden administration workspace`
-7. `2e43fc9 docs(dashboard): record protected Golden audit`
-8. `897829c docs(golden): finalize ERP readiness assessment`
-9. `a08b706 feat(erp-ui): standardize supporting workspaces`
-10. `ad576bb fix(i18n): localize remaining ERP workflow codes`
-11. `a310df4 test(frontend): close Golden ERP baseline failures`
-12. `7c6b4fa fix(i18n): neutralize unknown ERP presentation values`
-13. `8ef46bd test(golden): verify cross-module journey fixtures`
-14. `705b2bd test(golden): verify rendered candidate viewports`
+## Checkpoint commits created in this cycle
 
-## Production Readiness
+1. `82155bb fix(tickets): enforce secondary-path authorization`
+2. `e46d0aa fix(crm): scope unified deals by mall access`
+3. `f8194e5 fix(analytics): enforce compliance export mall scope`
+4. `cb1898d fix(work-orders): make state audit writes atomic`
+5. `ae36046 fix(slots): serialize booking allocation`
+6. `390911f fix(contracts): make direct writes atomic`
+7. `d02e0cc fix(patrol): make abnormal work order atomic`
+8. `47f3c78 fix(contracts): make lifecycle side effects atomic`
 
-**NOT READY**
+Wave 23 receives its own protected checkpoint after its exact staged set and
+cached diff pass are verified.
 
-See `docs/golden/PRODUCTION-READINESS.md` for the classified production gate.
-Engineering evidence is strong, but credential, off-site backup, monitoring,
-authorization, UAT, rollback and human visual gates prevent a controlled
-production release.
+## Release decision
 
-## Human Actions Required
+**ENGINEERING GOLDEN COMPLETION: 96%**
 
-1. Rotate/revoke exposed credentials and coordinate history remediation.
-2. Provision off-site storage and run an off-site, production-scale restore
-   drill.
-3. Assign monitoring/error-tracking ownership and connect alert delivery.
-4. Provide a two-Mall UAT dataset and execute the remaining ten UAT scenarios,
-   full cross-module journeys and rollback rehearsal.
-5. Complete human viewport sign-off for all new Golden candidates.
-6. Approve the listed financial, ownership and authorization business
-   confirmations before implementation.
+**PRODUCTION READINESS: 28% — NOT READY**
+
+Independent engineering is complete for all currently provable P0/P1/P2
+findings. Production remains a strict no-go until its external P0 conditions
+and required UAT/release evidence are closed.

@@ -6,7 +6,7 @@ The repository currently contains 31 backend module directories and 31 frontend 
 
 | Group | Primary domains | Golden state |
 |---|---|---|
-| Executive | Dashboard, Reports, Analytics | Dashboard protected audit complete; Reporting/Analytics presentation implemented; Compliance authorization and rendered human review pending |
+| Executive | Dashboard, Reports, Analytics | Dashboard protected audit complete; Reporting/Analytics presentation and export compliance implemented; Compliance authorization fixed; rendered human review pending |
 | Commercial acquisition | Leads/Customers, Deals, Booking, Proposals, Approvals | Booking closed; Booking reference-state localization standardized; Proposal/Approval protected active work |
 | Contracting | Contracts, Templates, Documents | Contract closed |
 | Financial | Billing, Invoices, Payments, Penalties/Dunning, Sales | Billing closed; reference invoice/schedule labels standardized; correctness backlog retained |

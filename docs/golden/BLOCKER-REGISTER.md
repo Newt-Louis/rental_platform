@@ -71,9 +71,10 @@ overlap; independent modules must continue.
 | Ticket SLA policy access | Proven exploitable role defect; source comment and global policy model establish ADMIN-only intent | RESOLVED in Wave 15 with role/scope tests |
 | Analytics Compliance export Mall scope | Proven security defect; export records persist `mallId`, business entities have authoritative Mall relations and Analytics already has a scope helper | RESOLVED in Wave 17 with ownership checks, payload predicates and negative tests |
 | Payment remaining mismatch | Not a blocker; backend `balance` is already the approved authority | Keep UI on backend value; isolate any formula divergence test |
-| Contract/Work Order atomicity | Engineering correctness work, not a business blocker where the all-or-nothing invariant is provable | Audit transaction boundaries and fix scoped defects |
-| Slot allocation concurrency | Engineering correctness work | Add concurrency guard/tests without inventing allocation policy |
-| Pagination, caps and export disclosure | Engineering quality work | Add safe pagination/disclosure where API semantics are provable |
+| Contract/Work Order/Patrol atomicity | Proven all-or-nothing invariants, not business blockers | RESOLVED in Waves 18, 20–22 with transaction boundaries and focused tests |
+| Slot allocation concurrency | Proven engineering correctness work | RESOLVED in Wave 19 with Serializable conflict checks and bounded retry |
+| Financial export caps and disclosure | Proven engineering quality work | RESOLVED for Golden Billing and Reports; remaining generic worklist scaling is P3 and not a blocker |
+| Protected concurrent Billing Add-in Prisma-client mismatch | Scope/ownership constraint, not a program blocker; the owning change has schema and generated-client responsibility | Exclude it from Golden commits and retain the last clean owned backend baseline until reconciled |
 | Human visual verification | Automated verification exists; human review blocks approval/release only | Continue engineering independently |
 
 ## Program impact

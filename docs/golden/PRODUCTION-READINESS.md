@@ -13,11 +13,11 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 635/635 across 98 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
+| Engineering | PASS | Last clean owned backend baseline is 635/635 across 98 suites. Current frontend full tests, TypeScript and production build pass. The combined working-tree backend build has 23 diagnostics confined to protected concurrent Billing Add-in/Billing code whose Prisma client has not yet been regenerated; this does not belong to the Golden checkpoint and must be reconciled by its owner. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
 | Authorization | BLOCKED | Waves 15–17 close Ticket secondary paths, CRM unified deals and Analytics Compliance exports. Remaining code-level capability questions are explicit business confirmations; live cross-Mall/Tenant UAT evidence is still unavailable. |
 | Tenant isolation | BLOCKED | Wave 15 closes the confirmed Ticket escalation/rating ownership gaps with focused negative coverage. Live Contract/Invoice checks passed and Files have focused tests, but the complete live cross-tenant UAT matrix is still missing. |
-| Cross-Mall isolation | BLOCKED | The UAT seed contains one Mall, so a meaningful two-Mall denial matrix cannot be executed. Confirmed adjacent endpoint gaps must also be remediated first. |
+| Cross-Mall isolation | BLOCKED | The UAT seed contains one Mall, so a meaningful two-Mall denial matrix cannot be executed. Waves 15–17 closed every confirmed audited adjacent code-level gap; the remaining requirement is external live evidence. |
 | Data integrity | PASS | Read-only backbone reconciliation completed 17/17 checks clean on 2026-08-24; backend concurrency/invariant suites pass. This is dev-data evidence, not production-data certification. |
 | Database migration safety | PASS | This program introduced no schema or migration. Existing deployment policy requires explicit migration execution and prohibits migration-on-startup. |
 | Backup mechanism | PASS | Checksummed database and uploaded-file backup mechanisms exist and their safety guards pass. This does not include off-site survivability. |

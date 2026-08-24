@@ -60,6 +60,8 @@
   "subtitle": "Aggregated reports · VND financial totals exclude USD/MMK records",
   "exportCsv": "Export CSV",
   "exportError": "Export error",
+  "exportTruncatedTitle": "Exported {{count}} rows (limited)",
+  "exportTruncatedDescription": "The export is capped at {{limit}} rows. Narrow the active filters to retrieve the remaining records.",
   "exporting": "Exporting...",
   "dateFrom": "From",
   "dateTo": "To",

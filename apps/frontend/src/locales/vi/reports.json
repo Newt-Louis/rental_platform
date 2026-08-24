@@ -60,6 +60,8 @@
   "subtitle": "Báo cáo tổng hợp · số liệu tài chính VND không bao gồm USD/MMK",
   "exportCsv": "Xuất CSV",
   "exportError": "Lỗi xuất báo cáo",
+  "exportTruncatedTitle": "Đã xuất {{count}} dòng (bị giới hạn)",
+  "exportTruncatedDescription": "Tệp xuất bị giới hạn ở {{limit}} dòng. Hãy thu hẹp bộ lọc đang áp dụng để lấy phần dữ liệu còn lại.",
   "exporting": "Đang xuất...",
   "dateFrom": "Từ",
   "dateTo": "Đến",
