@@ -504,7 +504,7 @@ export default function PatrolPage() {
                       {x._count?.checks || 0} điểm
                     </div>
                   </button>
-                  <Badge>{t(`status.${x.status}`, { defaultValue: x.status })}</Badge>
+                  <Badge>{t(`status.${x.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                   {["SCHEDULED", "OVERDUE"].includes(x.status) && (
                     <Button
                       size="sm"
@@ -1168,7 +1168,7 @@ export default function PatrolPage() {
           {detail && (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge>{t(`status.${detail.status}`, { defaultValue: detail.status })}</Badge>
+                <Badge>{t(`status.${detail.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 {["SCHEDULED", "OVERDUE"].includes(detail.status) && (
                   <>
                     <Button size="sm" onClick={() => shiftMutation.mutate({ kind: "start", data: detail })}>
@@ -1235,7 +1235,7 @@ export default function PatrolPage() {
                                 : "secondary"
                           }
                         >
-                          {t(`result.${c.result}`, { defaultValue: c.result })}
+                          {t(`result.${c.result}`, { defaultValue: t('common:unknownValue') })}
                           {c.severity ? ` · ${t(`severity.${c.severity}`, { defaultValue: SEVERITY_LABEL[c.severity] || c.severity })}` : ""}
                         </Badge>
                       </div>

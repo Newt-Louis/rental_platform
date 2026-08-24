@@ -267,7 +267,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                             <User size={12} className="text-blue-400 shrink-0" />
                             <span className="font-medium truncate">{l.brandName}</span>
                             <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
-                            <span className="ml-auto text-xs text-gray-400 shrink-0" title={l.status}>
+                            <span className="ml-auto text-xs text-gray-400 shrink-0">
                               {t(`crm:lead.stages.${l.status}`, { defaultValue: t('common:unknownValue') })}
                             </span>
                           </button>
@@ -406,7 +406,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <span className="font-medium">{d.proposal.proposalNumber}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Badge className="bg-green-100 text-green-700 border-0 text-xs" title={d.proposal.status}>
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">
                     {t(`crm:proposalStatus.${d.proposal.status}`, { defaultValue: t('common:unknownValue') })}
                   </Badge>
                   <ArrowRight size={12} className="text-green-500" />
@@ -456,7 +456,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                     <div key={a.id} className="flex gap-2 text-xs">
                       <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
                       <div>
-                        <span className="font-medium" title={a.type}>
+                        <span className="font-medium">
                           {t(`bookings:activityTypes.${a.type}`, { defaultValue: t('common:unknownValue') })}
                         </span>
                         {' — '}<span className="text-gray-500">{a.note}</span>

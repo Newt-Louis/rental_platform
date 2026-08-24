@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { mediaUrl } from '@/pages/spaces/spaces.constants';
 import { Upload, Image, Trash2, Star, X, FileText } from 'lucide-react';
 import type { UnitMedia } from '@/types';
+import { useTranslation } from 'react-i18next';
 
 const MEDIA_TYPE_LABELS: Record<string, string> = {
   PHOTO: 'Ảnh',
@@ -16,6 +17,7 @@ const MEDIA_TYPE_LABELS: Record<string, string> = {
 };
 
 export function UnitMediaTab({ unitId }: { unitId: string }) {
+  const { t } = useTranslation('common');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [mediaType, setMediaType] = useState('');
@@ -132,7 +134,7 @@ export function UnitMediaTab({ unitId }: { unitId: string }) {
               ) : (
                 <div className="w-full aspect-square bg-gray-100 flex flex-col items-center justify-center text-gray-400 gap-1">
                   <FileText size={24} />
-                  <span className="text-xs text-center px-1 leading-tight">{MEDIA_TYPE_LABELS[m.type] ?? m.type}</span>
+                  <span className="text-xs text-center px-1 leading-tight">{MEDIA_TYPE_LABELS[m.type] ?? t('unknownValue')}</span>
                 </div>
               )}
               {m.isCover && (

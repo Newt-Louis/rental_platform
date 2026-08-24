@@ -1058,11 +1058,11 @@ function InvoicesTab() {
                     onClick={() => setSelectedId(isSelected ? null : inv.id)}>
                     <td className="px-3 py-2 font-medium text-foreground"><div>{inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name}</div><div className="font-mono text-[11px] font-normal text-muted-foreground">{inv.invoiceNumber}</div></td>
                     <td className="px-3 py-2">
-                      <Badge className={`border text-[11px] ${SOURCE_COLORS[inv.sourceType || ''] || 'border-slate-200 bg-slate-50 text-slate-700'}`} title={inv.sourceType || inv.type}>{SOURCE_LABELS[inv.sourceType || ''] || t(invoiceTypeTranslationKey(inv.type))}</Badge>
+                      <Badge className={`border text-[11px] ${SOURCE_COLORS[inv.sourceType || ''] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[inv.sourceType || ''] || t(invoiceTypeTranslationKey(inv.type))}</Badge>
                       <div className="mt-0.5 text-[11px] font-medium text-muted-foreground">{inv.sourceContractNumber || inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
                       {inv.sourceType === 'PARKING' && <div className={`text-[11px] ${inv.sourceStatus === 'PAID' ? 'text-emerald-700' : inv.sourceStatus === 'PARTIAL' ? 'text-amber-700' : 'text-muted-foreground'}`}>Parking: {inv.sourceStatus === 'PAID' ? 'đã thanh toán' : inv.sourceStatus === 'PARTIAL' ? 'đã thu một phần' : 'chưa thu'}{inv.sourceContractType ? ` · ${inv.sourceContractType === 'PRINCIPLE_ACTUAL' ? 'theo thực tế' : 'định mức'}` : ''}</div>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-muted-foreground/70" title={inv.type}>{t(invoiceTypeTranslationKey(inv.type))}</div></td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-muted-foreground/70">{t(invoiceTypeTranslationKey(inv.type))}</div></td>
                     <td className="px-3 py-2 text-right">
                       <ERPAmount amount={inv.totalAmount} currencyCode={inv.currencyCode} strong />
                     </td>

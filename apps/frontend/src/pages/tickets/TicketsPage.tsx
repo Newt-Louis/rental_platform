@@ -487,7 +487,7 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
               <Label>Người chịu trách nhiệm *</Label>
               <Select onValueChange={(v) => setValue('assignedToId', v, { shouldValidate: true })}>
                 <SelectTrigger><SelectValue placeholder="Chọn nhân viên..." /></SelectTrigger>
-                <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · <span title={user.role}>{t(roleTranslationKey(user.role))}</span></SelectItem>)}</SelectContent>
+                <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · <span>{t(roleTranslationKey(user.role))}</span></SelectItem>)}</SelectContent>
               </Select>
               <input type="hidden" {...register('assignedToId', { required: 'Vui lòng chọn người chịu trách nhiệm' })} />
               {errors.assignedToId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.assignedToId.message)}</p>}
@@ -795,7 +795,7 @@ export default function TicketsPage() {
                     <td className="px-4 py-3 font-medium max-w-48 truncate">{t.subject}</td>
                     <td className="px-4 py-3 text-gray-500">{t.tenant?.brandName}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-xs">{tl('types.' + t.type, { defaultValue: t.type })}</Badge>
+                      <Badge variant="outline" className="text-xs">{tl('types.' + t.type, { defaultValue: tl('common:unknownValue') })}</Badge>
                     </td>
                     <td className="px-4 py-3">
                       <Badge className={`${pr?.color} border-0 text-xs`}>{tl('priority.' + t.priority)}</Badge>

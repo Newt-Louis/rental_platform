@@ -428,7 +428,7 @@ export default function ServiceContractsPage() {
                     {c.counterpartyName}
                   </div>
                 </td>
-                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground" title={c.type}>{t(serviceContractTypeTranslationKey(c.type))}</div></td>
+                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground">{t(serviceContractTypeTranslationKey(c.type))}</div></td>
                 <td>
                   {c.startDate
                     ? new Date(c.startDate).toLocaleDateString()

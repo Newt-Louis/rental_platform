@@ -144,7 +144,7 @@ export default function CrmOverviewPage() {
                     const priority = PRIORITY_CONFIG[lead.priority] ?? PRIORITY_CONFIG.WARM;
                     return (
                       <button key={lead.id} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:border-blue-200 hover:bg-blue-50" onClick={() => navigate(`/crm?leadId=${lead.id}`)}>
-                        <Badge className={priority.className}>{t(`priority.${lead.priority}`, lead.priority as string)}</Badge>
+                        <Badge className={priority.className}>{t(`priority.${lead.priority}`, { defaultValue: t('common:unknownValue') })}</Badge>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{lead.brandName ?? lead.contactName}</span>
                         <span className="flex items-center gap-1 text-xs text-amber-700"><Clock size={12} /> {daysSince(lead.lastActivityAt ?? lead.createdAt)} {t('common:date.days')}</span>
                       </button>

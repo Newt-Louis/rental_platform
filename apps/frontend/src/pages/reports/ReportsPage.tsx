@@ -19,7 +19,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { formatExactReportingMoney, formatVndBillionsAxis } from './reportingPresentation';
-import { invoiceTypeTranslationKey } from '@/lib/erpEnumPresentation';
+import { invoiceTypeTranslationKey, localizedEnumLabel } from '@/lib/erpEnumPresentation';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -47,7 +47,10 @@ function OccupancyReport() {
   const raw = data?.data ?? data;
   const d = raw?.byLeaseTerm?.[leaseTermType] ?? raw;
   const statusData = d?.byStatus
-    ? Object.entries(d.byStatus).map(([k, v]: any) => ({ name: k, value: v }))
+    ? Object.entries(d.byStatus).map(([k, v]: any) => ({
+        name: localizedEnumLabel(t, 'spaces:status', k),
+        value: v,
+      }))
     : [];
 
   const floorData = d?.byFloor
@@ -158,7 +161,7 @@ function PipelineReport() {
           <div className="space-y-2">
             {leads.map((l: any, i: number) => (
               <div key={i} className="flex justify-between items-center">
-                <span className="text-sm">{t(`pipeline.leadStatus.${l.status}`, { defaultValue: l.status })}</span>
+                <span className="text-sm">{localizedEnumLabel(t, 'reports:pipeline.leadStatus', l.status)}</span>
                 <Badge variant="secondary">{l._count}</Badge>
               </div>
             ))}
@@ -175,7 +178,7 @@ function PipelineReport() {
               const currencies = Object.entries(p.valueByCurrency ?? {}).filter(([, v]) => (v as number) > 0);
               return (
                 <div key={i} className="flex justify-between items-center">
-                  <span className="text-sm">{t(`pipeline.proposalStatus.${p.status}`, { defaultValue: p.status })}</span>
+                  <span className="text-sm">{localizedEnumLabel(t, 'reports:pipeline.proposalStatus', p.status)}</span>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     <Badge variant="secondary">{p._count}</Badge>
                     {currencies.map(([code, value]) => (
@@ -290,7 +293,7 @@ function RevenueReceivablesReport() {
             <div className="space-y-2">
               {byType.map((inv: any) => (
                 <div key={inv.type} className="flex justify-between items-center text-sm">
-                  <span title={inv.type}>{t(invoiceTypeTranslationKey(inv.type))}</span>
+                  <span>{t(invoiceTypeTranslationKey(inv.type))}</span>
                   <span className="text-gray-500" title={`${fmtMoneyFullVnd(inv.collected)} / ${fmtMoneyFullVnd(inv.billed)}`}>{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
                 </div>
               ))}

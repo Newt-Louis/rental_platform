@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { getDefaultHomePath } from '@/lib/permissions';
 import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 export default function ForbiddenPage() {
   const navigate = useNavigate();
@@ -17,7 +18,7 @@ export default function ForbiddenPage() {
       </div>
       <h1 className="text-xl font-bold text-gray-900 mb-2">{t('forbidden.title')}</h1>
       <p className="text-sm text-gray-500 max-w-md mb-6">
-        Tài khoản <span className="font-medium">{user?.role}</span> {t('forbidden.description')}
+        {t('forbidden.accountDescription', { role: t(roleTranslationKey(user?.role)) })}
       </p>
       <Button onClick={() => navigate(getDefaultHomePath(user?.role))}>
         {t('forbidden.backHome')}

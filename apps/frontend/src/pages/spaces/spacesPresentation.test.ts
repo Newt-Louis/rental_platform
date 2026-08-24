@@ -15,16 +15,24 @@ const labels: Record<string, string> = {
   UNDER_FITOUT: 'Đang thi công',
   OCCUPIED: 'Đang thuê',
   MERGED: 'Đã gộp',
+  unknownValue: 'Không xác định',
 };
 
 describe('space presentation', () => {
   it('maps every authoritative Unit status to a localized presentation label', () => {
     const t = (key: string, options?: { defaultValue?: string }) => labels[key.replace('status.', '')] ?? options?.defaultValue ?? key;
-    expect(UNIT_STATUSES.map((status) => getUnitStatusLabel(t, status))).toEqual(Object.values(labels));
+    expect(UNIT_STATUSES.map((status) => getUnitStatusLabel(t, status))).toEqual(
+      UNIT_STATUSES.map((status) => labels[status]),
+    );
   });
 
   it('humanizes an unknown workflow value rather than exposing a raw enum', () => {
     expect(humanizeWorkflowValue('PENDING_REVIEW')).toBe('Pending Review');
+  });
+
+  it('uses a neutral localized fallback for an unknown Unit status', () => {
+    const t = (key: string, options?: { defaultValue?: string }) => labels[key.replace('common:', '').replace('status.', '')] ?? options?.defaultValue ?? key;
+    expect(getUnitStatusLabel(t, 'FUTURE_STATUS')).toBe('Không xác định');
   });
 
   it('shows exact, unscaled VND amounts and rates with an explicit ISO code', () => {

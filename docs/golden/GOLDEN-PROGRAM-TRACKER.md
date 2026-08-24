@@ -32,6 +32,58 @@ The following pre-existing paths are excluded from program staging unless their 
 | 8 | Supporting presentation consistency | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 9 | Golden/reference localization safety sweep | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 10 | Frontend baseline test remediation | COMPLETE — test assertions only; frontend 262/262 PASS |
+| 11 | Unknown-enum presentation safety | COMPLETE — neutral fallback/localization only; HUMAN VISUAL REVIEW PENDING |
+
+## Wave 11 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W11-UNKNOWN-ENUM-SAFETY`
+
+Business reason: the independent post-program sweep found remaining reference
+surfaces where an unknown future role/status/type could be rendered as a raw
+backend code, plus one Forbidden-page role and known Sales audit actions that
+are currently exposed verbatim. Known current values already have authoritative
+locale labels; this wave standardizes the fallback behavior without assigning
+meaning to unknown values.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Shared presentation utility; Auth/Profile/Audit, Reports, Booking workspace/reference finder, Billing reference presentation, Contract/Service Contract, CRM, Ticket/Tenant Portal, Fitout/Operations/Parking, Sales, SAP and Unit/Space presentation |
+| Runtime/business behavior | Display labels only; comparisons, filters, actions and payload values remain raw authoritative enums internally |
+| Data/state/workflow | No transition, eligibility, workflow or source-of-truth change |
+| Financial/currency | No amount, formatter, formula, aggregation, precision or currency change |
+| Mall/Tenant/authorization | No route, permission, query scope or action visibility change |
+| API/backend/schema/database | No change |
+| Protected work | Dashboard and Proposal/Approval concurrent files remain excluded |
+| Tests | Extend shared enum fallback coverage and existing Reporting/Operations presentation locale coverage; run full frontend/backend/build gates |
+| Golden scenarios | Preserve GS-01 through GS-15; presentation-only reads |
+| Reconciliation | No value changes; rerun the 17 read-only invariants |
+| Rollback | Revert the Wave 11 presentation commit; no persisted data affected |
+| Open questions | None; unrecognized values use the localized neutral fallback rather than invented semantics |
+
+## Wave 11 technical gate — 2026-08-24
+
+- Added one shared localized enum-label fallback and applied it to the audited
+  Auth/Profile, Reporting, Booking, Billing reference, Contract/Service
+  Contract, CRM, Ticket/Tenant, Fitout/Operations/Parking, Sales, SAP and
+  Unit/Space presentation points. Unknown future values
+  now render the neutral localized label while the raw authoritative value is
+  retained internally for comparisons, filters and API payloads.
+- Known Sales audit actions received explicit English/Vietnamese labels. No
+  new workflow meaning or backend enum was introduced.
+- Focused frontend: PASS, 9 files / 34 tests.
+- Frontend full: PASS, 44/44 files and 264/264 tests.
+- Backend full: PASS, 91/91 suites and 598/598 tests.
+- TypeScript, frontend production build and backend production build: PASS.
+- Database invariants: PASS, 17/17 clean. Backup/restore safety guards: PASS,
+  4/4. `git diff --check`: PASS.
+- Docker/runtime: PASS; rebuilt the frontend/backend dependency chain and
+  verified `http://localhost:8080/` and `/api/health` return HTTP 200. Existing
+  UAT orphan containers were reported and deliberately left untouched.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery
+  returned no browser instances; responsive or visual PASS is not claimed.
+- The quarantined Analytics Compliance authorization surface and protected
+  Dashboard/Proposal/Approval worktree were not modified.
+- Business logic/API contract/backend/schema/database changes: NO.
 
 ## Wave 10 Change Request and Impact Map
 

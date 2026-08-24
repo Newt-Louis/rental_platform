@@ -229,7 +229,7 @@ export default function SapPage() {
                               : 'bg-yellow-100 text-yellow-700'
                         }`}
                       >
-                        <span title={rec.status}>{t(sapStatusTranslationKey(rec.status))}</span>
+                        <span>{t(sapStatusTranslationKey(rec.status))}</span>
                       </Badge>
                     </div>
                   ))}
@@ -335,7 +335,7 @@ export default function SapPage() {
                         <Icon size={16} className={`mt-0.5 shrink-0 ${log.status === 'SUCCESS' ? 'text-green-500' : log.status === 'FAILED' ? 'text-red-500' : 'text-yellow-500'}`} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <Badge className={`${st?.color ?? 'bg-gray-100 text-gray-700'} border-0 text-xs`} title={log.status}>{t(sapStatusTranslationKey(log.status))}</Badge>
+                            <Badge className={`${st?.color ?? 'bg-gray-100 text-gray-700'} border-0 text-xs`}>{t(sapStatusTranslationKey(log.status))}</Badge>
                             <Badge variant="outline" className="text-xs">{log.entityType}</Badge>
                             <span className="text-xs text-gray-400 font-mono">{log.endpoint}</span>
                           </div>

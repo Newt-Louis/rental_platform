@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
 import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
-import { humanizeFitoutCode } from '@/pages/fitout/fitoutPresentation';
+import { getFitoutPresentationLabel } from '@/pages/fitout/fitoutPresentation';
 import { groupPendingInvoiceAmounts } from './tenantPortalPresentation';
 import {
   File, Receipt, Ticket, Plus, Send, Building2,
@@ -225,6 +225,7 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
 // ─── Ticket Detail Sheet ─────────────────────────────────────────────────────
 
 function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onClose: () => void }) {
+  const { t: translate } = useTranslation('common');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [comment, setComment] = useState('');
@@ -303,7 +304,7 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
           <SheetSection label="CHI TIẾT">
             <SheetRow label="Khách thuê"  value={t.tenant?.brandName}      icon={Building2} />
             <SheetRow label="Mặt bằng"   value={t.unit?.code}             icon={Building2} />
-            <SheetRow label="Loại"        value={TICKET_TYPES.find((x) => x.value === t.type)?.label ?? t.type} icon={Ticket} />
+            <SheetRow label="Loại"        value={TICKET_TYPES.find((x) => x.value === t.type)?.label ?? translate('unknownValue')} icon={Ticket} />
             <SheetRow label="Phụ trách"  value={t.assignedTo?.fullName}   icon={User} />
             <SheetRow label="Ngày tạo"   value={fmtDate(t.createdAt)}     icon={Calendar} />
             {t.resolvedAt && (
@@ -802,7 +803,7 @@ export default function TenantPortalPage() {
               {tickets.map((ticket: any) => {
                 const st = TICKET_STATUS[ticket.status];
                 const pr = PRIORITIES.find((p) => p.value === ticket.priority);
-                const typeLabel = t(`tenants:portalWorkspace.ticketType.${ticket.type}`, { defaultValue: TICKET_TYPES.find((x) => x.value === ticket.type)?.label ?? humanizeFitoutCode(ticket.type) });
+                const typeLabel = t(`tenants:portalWorkspace.ticketType.${ticket.type}`, { defaultValue: TICKET_TYPES.find((x) => x.value === ticket.type)?.label ?? t('common:unknownValue') });
                 const isDone = ['RESOLVED', 'CLOSED'].includes(ticket.status);
                 return (
                   <Card
@@ -863,7 +864,7 @@ export default function TenantPortalPage() {
                           <p className="text-sm text-gray-500 mt-0.5">{f.unit?.code} — {f.unit?.floor?.name}</p>
                         </div>
                         <Badge className="border-0 text-xs" style={fitoutBadgeStyle(step?.colorHex)}>
-                          {step?.name ?? humanizeFitoutCode(f.status)}
+                          {step?.name ?? getFitoutPresentationLabel(t, 'fitout:project.status', f.status)}
                         </Badge>
                       </div>
                     </CardHeader>

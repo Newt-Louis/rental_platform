@@ -6,7 +6,7 @@ import {
   ArrowRight, BookmarkPlus, Users, FileText, Clock, X, Plus, CheckCircle, Lock,
 } from 'lucide-react';
 import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
-import { getUnitStatusLabel, humanizeWorkflowValue } from '@/pages/spaces/spacesPresentation';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 const BOOKING_STATUS_CONFIG: Record<string, { color: string }> = {
   ACTIVE:    { color: 'bg-amber-100 text-amber-700' },
@@ -119,7 +119,7 @@ export function SalesPipelineTab({
                         </span>
                       )}
                       <Badge className={`text-xs border-0 ${bcfg.color}`}>
-                        {t(`spaces:bookingStatus.${b.status}`, { defaultValue: humanizeWorkflowValue(b.status) })}
+                        {t(`spaces:bookingStatus.${b.status}`, { defaultValue: t('common:unknownValue') })}
                       </Badge>
                     </div>
                   </div>
@@ -139,7 +139,7 @@ export function SalesPipelineTab({
                       <FileText size={11} className="text-gray-400" />
                       <span className="font-mono">{b.proposal.proposalNumber}</span>
                       <Badge className={`text-xs border-0 ${PROP_STATUS_CFG[b.proposal.status]?.color}`}>
-                        {t(`spaces:proposalStatus.${b.proposal.status}`, { defaultValue: humanizeWorkflowValue(b.proposal.status) })}
+                        {t(`spaces:proposalStatus.${b.proposal.status}`, { defaultValue: t('common:unknownValue') })}
                       </Badge>
                       {canManageSales && (
                         <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
@@ -205,7 +205,7 @@ export function SalesPipelineTab({
                       <span className="text-xs text-gray-500 ml-2">{clientName}</span>
                     </div>
                     <Badge className={`text-xs border-0 flex-shrink-0 ${ps.color}`}>
-                      {t(`spaces:proposalStatus.${pr.status}`, { defaultValue: humanizeWorkflowValue(pr.status) })}
+                      {t(`spaces:proposalStatus.${pr.status}`, { defaultValue: t('common:unknownValue') })}
                     </Badge>
                   </div>
 
@@ -304,7 +304,7 @@ export function SalesPipelineTab({
                               s.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-500'
                             }`}>
-                              {t(`spaces:approvalStatus.${s.status}`, { defaultValue: humanizeWorkflowValue(s.status) })}
+                              {t(`spaces:approvalStatus.${s.status}`, { defaultValue: t('common:unknownValue') })}
                             </span>
                           </div>
                         ))}
@@ -318,7 +318,7 @@ export function SalesPipelineTab({
                       <FileText size={12} className="text-purple-500" />
                       <span className="font-mono font-medium">{pr.contract.contractNumber}</span>
                       <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
-                        {t(`contracts:status.${pr.contract.status}`, { defaultValue: humanizeWorkflowValue(pr.contract.status) })}
+                        {t(`contracts:status.${pr.contract.status}`, { defaultValue: t('common:unknownValue') })}
                       </Badge>
                     </div>
                   )}
@@ -361,7 +361,7 @@ export function SalesPipelineTab({
                 <div key={b.id} className="flex items-center justify-between py-1.5 px-2 text-xs text-gray-500 border border-gray-100 rounded-lg bg-gray-50">
                   <span className="font-medium text-gray-700">{name}</span>
                   <Badge className={`text-xs border-0 ${bcfg.color}`}>
-                    {t(`spaces:bookingStatus.${b.status}`, { defaultValue: humanizeWorkflowValue(b.status) })}
+                    {t(`spaces:bookingStatus.${b.status}`, { defaultValue: t('common:unknownValue') })}
                   </Badge>
                 </div>
               );

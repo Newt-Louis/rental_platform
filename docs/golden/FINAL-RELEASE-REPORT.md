@@ -6,7 +6,8 @@ Overall completion: **80%**
 
 The percentage reflects completion of the canonical inventory, all seven
 planned implementation/audit waves, supporting-presentation/localization Waves
-8–9 and the test-only Wave 10 baseline closure,
+8–9, the test-only Wave 10 baseline closure and the Wave 11 unknown-enum
+presentation safety pass,
 with focused technical gates passing. It
 is intentionally reduced for unclosed human visual gates, incomplete full UAT,
 known Tier 0/Tier 1 correctness/authorization work, and operational no-go
@@ -82,7 +83,10 @@ seven primary waves. Wave 8 removed the confirmed raw role, invoice,
 service-contract and SAP status presentation occurrences and replaced the SAP
 marketing hero with the shared ERP shell. Wave 9 then localized confirmed raw
 role and workflow codes on Login, Booking, Billing, Ticket and Sales reference
-surfaces without changing their approved architecture. Residual debt includes compact
+surfaces without changing their approved architecture. Wave 11 standardized
+unknown future enum fallbacks across the remaining audited reference surfaces,
+including Booking/Space/Fitout/SAP context, without assigning new workflow
+semantics. Residual debt includes compact
 `K/M/B` money in Sales Pipeline/CRM where currency provenance is incomplete,
 legitimate technical identifiers in integration/audit tools, and multiple
 100/200/500-row client or endpoint caps. These are not silently relabeled or
@@ -108,7 +112,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Authorization | **FAIL** — confirmed reachable scope gaps remain |
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
 | Cross-Module Journeys | **FAIL** — 2/12 UAT scenarios evidenced; full Lead-to-Collection and exception journeys not run |
-| Frontend Tests | **262/262 PASS** — 44/44 files; obsolete baseline assertions remediated without production-code changes |
+| Frontend Tests | **264/264 PASS** — 44/44 files; obsolete baseline assertions remediated without production-code changes and enum fallback coverage added |
 | Backend Tests | **598/598 PASS** — 91/91 suites |
 | Integration Tests | **2/12 UAT scenarios PASS** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |

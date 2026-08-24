@@ -25,6 +25,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/currency";
+import { localizedEnumLabel } from "@/lib/erpEnumPresentation";
 import { PartyFinder, type BookingLead } from "./PartyFinder";
 import { UnitFinder } from "./UnitFinder";
 
@@ -150,7 +151,7 @@ export function BookingWorkspaceDialog({
       toast({
         title: "Đã tạo Booking",
         description: booking?.status
-          ? `${booking.bookingNumber ?? ""} · ${booking.status}${booking.priority ? ` · Ưu tiên ${booking.priority}` : ""}`
+          ? `${booking.bookingNumber ?? ""} · ${localizedEnumLabel(t, "bookings:status", booking.status)}${booking.priority ? ` · Ưu tiên ${booking.priority}` : ""}`
           : undefined,
       });
       onClose();

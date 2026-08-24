@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   invoiceTypeTranslationKey,
+  localizedEnumLabel,
   roleTranslationKey,
   sapStatusTranslationKey,
   serviceContractTypeTranslationKey,
@@ -21,6 +22,17 @@ describe('ERP enum presentation', () => {
     expect(sapStatusTranslationKey('NEW_STATUS')).toBe('common:unknownValue');
     expect(invoiceTypeTranslationKey(undefined)).toBe('common:unknownValue');
     expect(serviceContractTypeTranslationKey('NEW_TYPE')).toBe('common:unknownValue');
+  });
+
+  it('localizes dynamic enum values and keeps unknown values neutral', () => {
+    const translate = ((key: string, options?: { defaultValue?: string }) => ({
+      'common:unknownValue': 'Unknown',
+      'status.ACTIVE': 'Active',
+    })[key] ?? options?.defaultValue ?? key) as any;
+
+    expect(localizedEnumLabel(translate, 'status', 'ACTIVE')).toBe('Active');
+    expect(localizedEnumLabel(translate, 'status', 'FUTURE_STATUS')).toBe('Unknown');
+    expect(localizedEnumLabel(translate, 'status', undefined)).toBe('Unknown');
   });
 
   it('has localized booking activity labels without exposing workflow enums', () => {

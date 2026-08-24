@@ -398,7 +398,7 @@ export default function ParkingPage() {
                       .join(" · ")}
                   </div>
                 </div>
-                <Badge title={c.status}>{STATUS[c.status] || "Trạng thái khác"}</Badge>
+                <Badge>{STATUS[c.status] || "Trạng thái khác"}</Badge>
               </button>
             ))}
             {!visibleContracts.length && <div className="p-10 text-center text-sm text-muted-foreground">Không có hợp đồng phù hợp</div>}

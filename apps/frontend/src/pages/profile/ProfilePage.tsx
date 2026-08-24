@@ -87,7 +87,7 @@ export default function ProfilePage() {
             <div>
               <div className="font-medium text-gray-900">{user?.fullName}</div>
               <div className="text-sm text-gray-500">{user?.email}</div>
-              <div className="text-xs text-gray-500 mt-0.5" title={user?.role}>
+              <div className="text-xs text-gray-500 mt-0.5">
                 {t(roleTranslationKey(user?.role))}
               </div>
             </div>

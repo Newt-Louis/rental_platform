@@ -454,7 +454,7 @@ function unitStatusLabel(
   status: string,
   t: (key: string, options?: { defaultValue?: string }) => string,
 ) {
-  return t(`workspace.unitStatus.${status}`, { defaultValue: status });
+  return t(`workspace.unitStatus.${status}`, { defaultValue: t('common:unknownValue') });
 }
 
 function unitRowClass(unit: BookingUnitFinderRow, selected: boolean) {

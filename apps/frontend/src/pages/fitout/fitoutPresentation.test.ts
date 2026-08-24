@@ -22,7 +22,7 @@ describe('Fitout presentation helpers', () => {
 
   it('never exposes an untranslated enum as the fallback label', () => {
     expect(humanizeFitoutCode('IN_PROGRESS')).toBe('In Progress');
-    expect(getFitoutPresentationLabel(() => '', 'status', 'APPROVED_TO_OPEN')).toBe('Approved To Open');
+    expect(getFitoutPresentationLabel(() => '', 'status', 'APPROVED_TO_OPEN')).toBe('Unknown');
   });
 
   it('defines localized labels for every status rendered by Fitout workspaces', () => {

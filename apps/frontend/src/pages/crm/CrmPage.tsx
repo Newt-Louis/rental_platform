@@ -832,7 +832,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                               >
                                 <ArrowRight size={10} />
                                 <span className="font-mono">{b.proposal.proposalNumber}</span>
-                                <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{t(`proposalStatus.${b.proposal.status}`, { defaultValue: PROPOSAL_STATUS[b.proposal.status]?.label })}</Badge>
+                                <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{t(`proposalStatus.${b.proposal.status}`, { defaultValue: PROPOSAL_STATUS[b.proposal.status]?.label ?? t('common:unknownValue') })}</Badge>
                               </button>
                             )}
                           </div>
@@ -907,7 +907,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                                 <FileText size={11} className="text-purple-500" />
                                 <span className="font-mono font-medium">{p.contract.contractNumber}</span>
                                 <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
-                                  {t(`contractStatus.${p.contract.status}`, { defaultValue: p.contract.status })}
+                                  {t(`contractStatus.${p.contract.status}`, { defaultValue: t('common:unknownValue') })}
                                 </Badge>
                                 <ArrowRight size={11} className="text-purple-300" />
                               </button>
@@ -1076,7 +1076,7 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
           </div>
           <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${priorityStyle.color}`}>
             {priority === 'HOT' && <Flame size={9} className="inline mr-0.5" />}
-            {t(`priority.${priority}`, { defaultValue: priority })}
+            {t(`priority.${priority}`, { defaultValue: t('common:unknownValue') })}
           </span>
         </div>
 
@@ -1888,7 +1888,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
                         <Badge className={`${s?.color} border-0 text-xs`}>{s ? t(`lead.stages.${s.key}`, { defaultValue: s.short }) : ''}</Badge>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{lead.source ? t(`sources.${lead.source}`, { defaultValue: SOURCE_LABELS[lead.source] ?? lead.source }) : '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{lead.source ? t(`sources.${lead.source}`, { defaultValue: SOURCE_LABELS[lead.source] ?? t('common:unknownValue') }) : '—'}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{fmtDate(lead.createdAt)}</td>
                   </tr>
                 );
@@ -2099,7 +2099,7 @@ function PipelineAnalytics() {
           <div className="space-y-2">
             {Object.entries(winLossBySource).map(([source, data]: [string, any]) => (
               <div key={source} className="flex items-center gap-3">
-                <div className="w-24 text-xs text-gray-600 truncate">{t(`sources.${source}`, { defaultValue: SOURCE_LABELS[source] ?? source })}</div>
+                <div className="w-24 text-xs text-gray-600 truncate">{t(`sources.${source}`, { defaultValue: SOURCE_LABELS[source] ?? t('common:unknownValue') })}</div>
                 <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden flex">
                   <div className="h-full bg-green-500" style={{ width: `${data.rate}%` }} />
                   <div className="h-full bg-red-400" style={{ width: `${100 - data.rate}%` }} />

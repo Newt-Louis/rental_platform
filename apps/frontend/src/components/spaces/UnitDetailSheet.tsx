@@ -34,7 +34,7 @@ import {
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { useAuthStore } from '@/store/auth.store';
-import { getUnitStatusLabel, humanizeWorkflowValue } from '@/pages/spaces/spacesPresentation';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 export function UnitDetailSheet({
   unit, onClose, onEdit, onDelete,
@@ -397,7 +397,7 @@ export function UnitDetailSheet({
                       <span className="text-sm font-mono font-medium">{c.contractNumber}</span>
                     </div>
                     <Badge className="text-xs bg-green-100 text-green-700 border-0">
-                      {t(`contracts:status.${c.status}`, { defaultValue: humanizeWorkflowValue(c.status) })}
+                      {t(`contracts:status.${c.status}`, { defaultValue: t('common:unknownValue') })}
                     </Badge>
                   </div>
                 ))}

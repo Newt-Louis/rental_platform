@@ -379,7 +379,7 @@ export default function WorkOrdersPage() {
                       w.priority === "CRITICAL" ? "destructive" : "outline"
                     }
                   >
-                    {t(`priority.${w.priority}`, { defaultValue: w.priority })}
+                    {t(`priority.${w.priority}`, { defaultValue: t('common:unknownValue') })}
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
@@ -393,7 +393,7 @@ export default function WorkOrdersPage() {
                     : "—"}
                 </td>
                 <td className="px-4 py-3">
-                  <Badge>{t(`status.${w.status}`, { defaultValue: w.status })}</Badge>
+                  <Badge>{t(`status.${w.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 </td>
                 <td className="px-4 py-3">
                   {w._count?.checklist || 0} / {w._count?.evidence || 0}
@@ -554,7 +554,7 @@ export default function WorkOrdersPage() {
             <div className="space-y-5">
               <div className="flex flex-wrap gap-2">
                 <Badge>{item.workOrderNumber}</Badge>
-                <Badge variant="outline">{t(`status.${item.status}`, { defaultValue: item.status })}</Badge>
+                <Badge variant="outline">{t(`status.${item.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 <Badge variant="outline">
                   {t(`category.${item.category}`, { defaultValue: item.category })}
                 </Badge>

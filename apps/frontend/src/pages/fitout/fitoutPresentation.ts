@@ -23,7 +23,8 @@ export function getFitoutPresentationLabel(
   if (!value) return '—';
   const key = `${keyPrefix}.${value}`;
   const translated = translate(key, { defaultValue: '' });
-  return translated && translated !== key ? translated : humanizeFitoutCode(value);
+  const unknown = translate('common:unknownValue', { defaultValue: 'Unknown' });
+  return translated && translated !== key ? translated : unknown || 'Unknown';
 }
 
 export function filterFitoutProjects<T extends FitoutProjectPresentation>(

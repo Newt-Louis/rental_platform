@@ -693,7 +693,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
           <span className="block truncate font-mono text-base font-semibold">{detail.contractNumber}</span>
           <span className="mt-0.5 block truncate text-base font-semibold text-foreground">{detail.tenant?.brandName}</span>
           <span className="mt-1 block truncate text-xs font-normal text-muted-foreground">
-            {detail.unit?.code}{detail.unit?.floor?.name ? ` · ${detail.unit.floor.name}` : ''} · {t('status.' + detail.status)} · {t(`type.${detail.type}`, { defaultValue: detail.type })}
+            {detail.unit?.code}{detail.unit?.floor?.name ? ` · ${detail.unit.floor.name}` : ''} · {t('status.' + detail.status)} · {t(`type.${detail.type}`, { defaultValue: t('common:unknownValue') })}
           </span>
           <span className="mt-2 block text-lg font-semibold tabular-nums text-foreground">
             {formatMoneyWithCode(detail.rent, detail.currencyCode ?? 'VND')}{t('sheet.fields.perMonthSuffix')}
@@ -922,7 +922,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     <div className="font-medium">{a.amendmentNumber} — {t(`amendments.type.${a.type}`, a.type)}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <ERPStatusBadge tone={a.status === 'APPLIED' ? 'success' : a.status === 'SUBMITTED' ? 'warning' : 'neutral'}>
-                        {t(`amendments.status.${a.status}`, { defaultValue: a.status })}
+                        {t(`amendments.status.${a.status}`, { defaultValue: t('common:unknownValue') })}
                       </ERPStatusBadge>
                       <span className="text-xs text-muted-foreground">{t('amendments.effectiveDate')}: {fmtDate(a.effectiveDate)}</span>
                     </div>
@@ -1115,7 +1115,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`border-0 ${term.status === 'COMPLETED' ? 'bg-gray-200 text-gray-600' : 'bg-orange-100 text-orange-700'}`}>
-                      {t('termination.statuses.' + term.status, { defaultValue: term.status })}
+                      {t('termination.statuses.' + term.status, { defaultValue: t('common:unknownValue') })}
                     </Badge>
                     <span className="text-xs text-gray-500">{t('termination.effectiveFrom', { date: fmtDate(term.effectiveDate) })}</span>
                   </div>
@@ -1507,7 +1507,7 @@ export default function ContractsPage() {
                     <td className="px-4 py-3 font-medium">{c.tenant?.brandName}</td>
                     <td className="px-4 py-3"><div className="font-medium text-gray-800">{c.unit?.code}</div><div className="text-xs text-gray-400">{c.unit?.floor?.name ?? 'Chưa xác định tầng'}</div></td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{t(`type.${c.type}`, { defaultValue: c.type })}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
+                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{t(`type.${c.type}`, { defaultValue: t('common:unknownValue') })}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <ERPAmount amount={c.rent} currencyCode={c.currencyCode ?? 'VND'} strong />

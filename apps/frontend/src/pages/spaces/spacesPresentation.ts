@@ -23,7 +23,7 @@ export function humanizeWorkflowValue(value?: string | null): string {
 
 export function getUnitStatusLabel(t: Translate, status?: string | null): string {
   if (!status) return '—';
-  return t(`status.${status}`, { defaultValue: humanizeWorkflowValue(status) });
+  return t(`status.${status}`, { defaultValue: t('common:unknownValue', { defaultValue: 'Unknown' }) });
 }
 
 export function formatVndAmount(value?: number | null): string {

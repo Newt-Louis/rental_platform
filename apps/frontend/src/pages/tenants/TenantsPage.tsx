@@ -643,7 +643,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                     <div className="font-mono text-xs text-gray-500">{tk.ticketNumber}</div>
                     <div className="text-sm text-gray-700 mt-0.5">{tk.subject ?? tk.title}</div>
                   </div>
-                  <Badge variant="outline" className="text-xs shrink-0">{t(`ticketStatus.${tk.status}`, { defaultValue: tk.status })}</Badge>
+                  <Badge variant="outline" className="text-xs shrink-0">{t(`ticketStatus.${tk.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="w-full gap-1.5 mt-2 text-xs h-8"

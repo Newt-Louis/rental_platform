@@ -14,7 +14,7 @@ import { AsyncState } from '@/components/ui/async-state';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle, Sparkles, Store, ReceiptText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { roleTranslationKey } from '@/lib/erpEnumPresentation';
+import { localizedEnumLabel, roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Chờ duyệt', color: 'bg-gray-100 text-gray-600' },
@@ -54,11 +54,13 @@ function AuditTrailDialog({ salesId, open, onClose }: { salesId: string; open: b
         {logs.length === 0 ? <p className="text-sm text-gray-400 text-center py-4">Chưa có log</p> : logs.map((l: any) => (
           <div key={l.id} className="border-b py-2 text-xs">
             <div className="flex justify-between mb-1">
-              <Badge className={`${ACTION_COLOR[l.action] ?? 'bg-gray-100 text-gray-600'} border-0 text-xs`}>{l.action}</Badge>
+              <Badge className={`${ACTION_COLOR[l.action] ?? 'bg-gray-100 text-gray-600'} border-0 text-xs`}>
+                {localizedEnumLabel(t, 'common:workflowActions', l.action)}
+              </Badge>
               <span className="text-gray-400">{new Date(l.performedAt).toLocaleString('vi-VN')}</span>
             </div>
             <div className="text-gray-600">
-              {l.performedBy?.fullName ?? '—'}{l.performedBy?.role ? <> (<span title={l.performedBy.role}>{t(roleTranslationKey(l.performedBy.role))}</span>)</> : null}
+              {l.performedBy?.fullName ?? '—'}{l.performedBy?.role ? <> (<span>{t(roleTranslationKey(l.performedBy.role))}</span>)</> : null}
             </div>
             {l.oldValue != null && <div className="text-gray-400">Thay đổi: {l.oldValue?.toLocaleString()} → {l.newValue?.toLocaleString()}</div>}
             {l.reason && <div className="text-gray-500 italic mt-0.5">{l.reason}</div>}

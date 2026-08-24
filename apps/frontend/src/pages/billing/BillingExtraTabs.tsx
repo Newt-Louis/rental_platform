@@ -95,7 +95,7 @@ export function ScheduleTab() {
                   <td className="px-3 py-2 text-right tabular-nums">{formatMoneyAmount(e.camAmount, (e.currencyCode ?? 'VND') as CurrencyCode)}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{e.currencyCode ?? 'VND'}</td>
                   <td className="px-3 py-2">{new Date(e.dueDate).toLocaleDateString('vi-VN')}</td>
-                  <td className="px-3 py-2"><Badge variant="outline" title={e.status}>{t(`contracts:billingTab.entryStatus.${e.status}`, { defaultValue: t('common:unknownValue') })}</Badge></td>
+                  <td className="px-3 py-2"><Badge variant="outline">{t(`contracts:billingTab.entryStatus.${e.status}`, { defaultValue: t('common:unknownValue') })}</Badge></td>
                 </tr>
               ))}
             </tbody>

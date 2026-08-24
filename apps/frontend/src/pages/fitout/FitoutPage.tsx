@@ -347,7 +347,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           <div>
             <div className="flex items-center justify-between mb-2">
               <Badge className="border-0" style={stageBadgeStyle(currentStage?.colorHex)}>
-                {currentStage?.name ?? humanizeFitoutCode(p.status)}
+                {currentStage?.name ?? presentationLabel('project.status', p.status)}
               </Badge>
               <span className="text-xs text-gray-500">{Math.round(getProgress(stages, p.status))}{t('detail.progressComplete')}</span>
             </div>
@@ -1097,7 +1097,7 @@ export default function FitoutPage() {
                 return (
                   <tr key={p.id} tabIndex={0} className="cursor-pointer transition-colors hover:bg-muted/35 focus:bg-muted/35 focus:outline-none" onClick={() => setSelectedId(p.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(p.id); } }}>
                     <td className="px-3 py-2.5"><div className="font-medium text-foreground">{p.tenant?.brandName ?? '—'}</div><div className="text-xs text-muted-foreground">{p.unit?.code ?? '—'}{p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}</div></td>
-                    <td className="px-3 py-2.5"><Badge className="border-0 text-xs" style={stageBadgeStyle(step?.colorHex)}>{step?.name ?? humanizeFitoutCode(p.status)}</Badge></td>
+                    <td className="px-3 py-2.5"><Badge className="border-0 text-xs" style={stageBadgeStyle(step?.colorHex)}>{step?.name ?? getFitoutPresentationLabel(t, 'project.status', p.status)}</Badge></td>
                     <td className="px-3 py-2.5"><div className="flex w-32 items-center gap-2"><Progress value={progress} className="h-1.5" /><span className="w-9 text-right text-xs tabular-nums text-muted-foreground">{Math.round(progress)}%</span></div></td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{fmtDate(p.expectedOpenDate)}</td>
                     <td className="px-3 py-2.5"><span className={p.operationManager ? 'text-slate-700' : 'font-medium text-red-700'}>{p.operationManager?.fullName ?? t('detail.noOpManager')}</span></td>

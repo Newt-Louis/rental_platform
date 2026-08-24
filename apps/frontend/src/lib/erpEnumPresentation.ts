@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 const ROLE_VALUES = new Set([
   'ADMIN',
   'CEO',
@@ -49,6 +51,17 @@ const SERVICE_CONTRACT_TYPE_VALUES = new Set([
 
 function enumTranslationKey(values: Set<string>, prefix: string, value?: string | null) {
   return value && values.has(value) ? `${prefix}.${value}` : 'common:unknownValue';
+}
+
+export function localizedEnumLabel(
+  t: TFunction,
+  prefix: string,
+  value?: string | null,
+) {
+  const fallback = String(t('common:unknownValue'));
+  return value
+    ? String(t(`${prefix}.${value}`, { defaultValue: fallback }))
+    : fallback;
 }
 
 export const roleTranslationKey = (value?: string | null) =>
