@@ -30,6 +30,68 @@ The following pre-existing paths are excluded from program staging unless their 
 | 7 | Golden Dashboard | AUDITED — PROTECTED CONCURRENT POLISH; RENDERED REVIEW PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | COMPLETE — 17/17 invariants and builds pass; full UAT/security/operations gates remain open |
 | 8 | Supporting presentation consistency | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 9 | Golden/reference localization safety sweep | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+
+## Wave 9 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W9-LOCALIZATION-SAFETY`
+
+Business reason: close remaining confirmed cases where otherwise-approved
+Booking/Billing/reference surfaces expose backend role or workflow codes to
+operators, without reopening their architecture or changing business behavior.
+
+Current behavior: development login accounts, Ticket staff selection and Sales
+audit show raw role codes; Booking detail shows raw Lead/Proposal/activity
+values; Billing schedule/service-contract rows show raw status/type values.
+
+Expected behavior: each known enum uses the existing authoritative locale map
+or the shared enum-presentation mapper, with the raw code retained only in a
+`title` attribute for traceability and a neutral fallback for future values.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Authentication presentation, Booking, Billing, Ticket and Sales presentation |
+| Journeys | GS-01, GS-03, GS-06, GS-07 and staff support/audit reads |
+| Upstream/downstream | Existing API enums remain inputs; no payload, persistence, navigation or downstream output changes |
+| Data/state/workflow | No status comparison, transition or source-of-truth change |
+| Financial/currency | No amount, formatter, formula, precision or currency change |
+| Mall/Tenant/authorization | No route, permission, role capability, query scope or action visibility change |
+| Transaction/event/job/document | N/A — presentation reads only |
+| API/schema/database/migration | No change; backward compatible |
+| Tests | Extend pure enum-mapping coverage and run Booking/Billing/Ticket focused plus full frontend/backend/build gates |
+| Golden scenarios | Preserve GS-01, GS-03, GS-06, GS-07 and GS-09 through GS-15 |
+| Reconciliation | No value changes; rerun the 17 read-only platform invariants |
+| Rollback | Revert the Wave 9 presentation commit; no persisted data affected |
+| Open questions | None; unknown future values receive no invented business label |
+
+Approval boundary: this is the P3 localization cleanup explicitly allowed by
+the master program. Golden architecture and all Tier 0/Tier 1 semantics remain
+closed to change.
+
+## Wave 9 technical gate — 2026-08-24
+
+- Login development accounts, Ticket staff selection and Sales audit now use
+  the shared localized role mapper; unknown future roles receive the neutral
+  localized fallback.
+- Booking detail localizes Lead and linked-Proposal states plus all eight
+  existing activity types. Billing localizes schedule-entry states and invoice
+  types using existing authoritative locale namespaces. Raw codes remain only
+  in traceability `title` attributes.
+- Frontend focused: PASS, 6 files / 62 tests. Frontend TypeScript and production
+  build: PASS.
+- Frontend full: 252/262; the same ten pre-program failures remain (one
+  permission navigation invariant plus nine legacy Booking assertions). No
+  Wave 9 regression was identified.
+- Backend full: PASS, 91 suites / 598 tests. Backend production build: PASS.
+- Database invariants: PASS, 17/17 clean. Backup/restore safety guards: PASS,
+  4/4. `git diff --check`: PASS.
+- Docker rebuild: PASS; current frontend/backend images rebuilt, all four
+  services healthy, and localhost frontend/backend returned HTTP 200.
+  Pre-existing UAT orphan containers were reported and deliberately retained.
+- Automated rendered verification: UNAVAILABLE. Browser discovery returned no
+  available instance after the required troubleshooting check; responsive or
+  visual PASS is not claimed.
+- Business logic/API/backend/schema/database/financial/currency changes: NO.
 
 ## Wave 8 Change Request and Impact Map
 

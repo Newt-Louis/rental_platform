@@ -22,6 +22,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Search, Ticket, Plus, Send, Building2, Calendar, CheckCircle2, User, ImagePlus, ClipboardList, Wrench, Power, AlertTriangle, Clock3, Inbox, UserRoundCheck, Play, UploadCloud, BellRing, ListChecks, History } from 'lucide-react';
 import type { Ticket as TicketType } from '@/types';
 import { useSearchParams } from 'react-router-dom';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 const STATUS_MAP: Record<string, { color: string }> = {
   NEW: { color: 'bg-gray-100 text-gray-700' },
@@ -415,6 +416,7 @@ const FREQUENCY_MAP: Record<string, string> = {
 };
 
 function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { selectedMallId, selectedMallName } = useMallStore();
@@ -485,7 +487,7 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
               <Label>Người chịu trách nhiệm *</Label>
               <Select onValueChange={(v) => setValue('assignedToId', v, { shouldValidate: true })}>
                 <SelectTrigger><SelectValue placeholder="Chọn nhân viên..." /></SelectTrigger>
-                <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · {user.role}</SelectItem>)}</SelectContent>
+                <SelectContent>{staff.map((user: any) => <SelectItem key={user.id} value={user.id}>{user.fullName} · <span title={user.role}>{t(roleTranslationKey(user.role))}</span></SelectItem>)}</SelectContent>
               </Select>
               <input type="hidden" {...register('assignedToId', { required: 'Vui lòng chọn người chịu trách nhiệm' })} />
               {errors.assignedToId && <p className="mt-1 text-xs font-medium text-red-600">{String(errors.assignedToId.message)}</p>}

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingApi, spacesApi, crmApi, usersApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
 import { formatMoney, CURRENCIES } from '@/lib/currency';
-import { UNIT_STATUS_CONFIG, ACTIVITY_LABELS, daysLeft, fmtDate } from './bookings-constants';
+import { UNIT_STATUS_CONFIG, daysLeft, fmtDate } from './bookings-constants';
 import { ConvertToProposalDialog } from './ConvertToProposalDialog';
 import { ExtendDialog } from './ExtendDialog';
 
@@ -34,6 +35,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useTranslation(['bookings', 'crm', 'common']);
   const { selectedMallId } = useMallStore();
   const [convertOpen, setConvertOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
@@ -265,7 +267,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                             <User size={12} className="text-blue-400 shrink-0" />
                             <span className="font-medium truncate">{l.brandName}</span>
                             <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
-                            <span className="ml-auto text-xs text-gray-400 shrink-0">{l.status}</span>
+                            <span className="ml-auto text-xs text-gray-400 shrink-0" title={l.status}>
+                              {t(`crm:lead.stages.${l.status}`, { defaultValue: t('common:unknownValue') })}
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -402,7 +406,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <span className="font-medium">{d.proposal.proposalNumber}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs" title={d.proposal.status}>
+                    {t(`crm:proposalStatus.${d.proposal.status}`, { defaultValue: t('common:unknownValue') })}
+                  </Badge>
                   <ArrowRight size={12} className="text-green-500" />
                 </div>
               </button>
@@ -450,7 +456,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                     <div key={a.id} className="flex gap-2 text-xs">
                       <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
                       <div>
-                        <span className="font-medium">{ACTIVITY_LABELS[a.type] ?? a.type}</span>
+                        <span className="font-medium" title={a.type}>
+                          {t(`bookings:activityTypes.${a.type}`, { defaultValue: t('common:unknownValue') })}
+                        </span>
                         {' — '}<span className="text-gray-500">{a.note}</span>
                         <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
                       </div>

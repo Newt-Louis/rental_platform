@@ -350,5 +350,15 @@
     "fitoutFee": "Fitout fee (₫)",
     "creating": "Creating...",
     "createBtn": "Create Proposal"
+  },
+  "activityTypes": {
+    "CREATED": "Created",
+    "ACTIVATED": "Activated",
+    "PRIORITY_CHANGED": "Priority changed",
+    "EXTENDED": "Extended",
+    "NOTE_ADDED": "Note added",
+    "CONVERTED": "Converted to proposal",
+    "CANCELLED": "Cancelled",
+    "EXPIRED": "Expired"
   }
 }

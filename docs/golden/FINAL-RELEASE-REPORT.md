@@ -2,10 +2,11 @@
 
 Assessment date: 2026-08-24
 
-Overall completion: **77%**
+Overall completion: **79%**
 
 The percentage reflects completion of the canonical inventory, all seven
-planned implementation/audit waves and the supporting-presentation Wave 8,
+planned implementation/audit waves and the supporting-presentation/localization
+Waves 8–9,
 with focused technical gates passing. It
 is intentionally reduced for unclosed human visual gates, incomplete full UAT,
 known Tier 0/Tier 1 correctness/authorization work, and operational no-go
@@ -26,7 +27,7 @@ conditions. It is not a production confidence score.
 | Ticket / Maintenance / Work Order / Patrol | Golden operational worklists implemented | GOLDEN CANDIDATE / TENANT-SCOPE OPEN |
 | Reports / Analytics | Exact-money presentation implemented; Compliance export boundary quarantined | GOLDEN CANDIDATE / AUTHORIZATION OPEN |
 | Admin / Settings / Users / Permissions | Golden administration presentation implemented; permission matrix remains read-only | GOLDEN CANDIDATE / HUMAN REVIEW PENDING |
-| Supporting operations (Parking, Service Contracts, SAP, AI, Audit/Profile, Notifications/Documents) | Raw roles and known business/integration enums localized; SAP shell standardized; remaining currency-provenance and internal-tool findings retained | STANDARDIZED / HUMAN REVIEW PENDING |
+| Supporting operations (Parking, Service Contracts, SAP, AI, Audit/Profile, Notifications/Documents) | Raw roles and known business/integration enums localized across reference surfaces; SAP shell standardized; remaining currency-provenance and internal-tool findings retained | STANDARDIZED / HUMAN REVIEW PENDING |
 
 ## Golden Closed
 
@@ -79,7 +80,9 @@ conditions. It is not a production confidence score.
 The whole application, not only changed files, was searched again after the
 seven primary waves. Wave 8 removed the confirmed raw role, invoice,
 service-contract and SAP status presentation occurrences and replaced the SAP
-marketing hero with the shared ERP shell. Residual debt includes compact
+marketing hero with the shared ERP shell. Wave 9 then localized confirmed raw
+role and workflow codes on Login, Booking, Billing, Ticket and Sales reference
+surfaces without changing their approved architecture. Residual debt includes compact
 `K/M/B` money in Sales Pipeline/CRM where currency provenance is incomplete,
 legitimate technical identifiers in integration/audit tools, and multiple
 100/200/500-row client or endpoint caps. These are not silently relabeled or
@@ -105,7 +108,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Authorization | **FAIL** — confirmed reachable scope gaps remain |
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
 | Cross-Module Journeys | **FAIL** — 2/12 UAT scenarios evidenced; full Lead-to-Collection and exception journeys not run |
-| Frontend Tests | **251/261** — 10 isolated pre-existing failures across 6 suite groups; no new wave regression identified |
+| Frontend Tests | **252/262** — 10 isolated pre-existing failures across 6 suite groups; no new wave regression identified |
 | Backend Tests | **598/598 PASS** — 91/91 suites |
 | Integration Tests | **2/12 UAT scenarios PASS** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |
@@ -143,7 +146,8 @@ The following paths were not staged or committed by the final program gate:
 6. `7064697 feat(admin): establish Golden administration workspace`
 7. `2e43fc9 docs(dashboard): record protected Golden audit`
 8. `897829c docs(golden): finalize ERP readiness assessment`
-9. Wave 8 supporting-presentation checkpoint (current uncommitted checkpoint)
+9. `a08b706 feat(erp-ui): standardize supporting workspaces`
+10. Wave 9 localization-safety checkpoint (current uncommitted checkpoint)
 
 ## Production Readiness
 

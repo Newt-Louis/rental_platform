@@ -350,5 +350,15 @@
     "fitoutFee": "Phí thi công (₫)",
     "creating": "Đang tạo...",
     "createBtn": "Tạo Proposal"
+  },
+  "activityTypes": {
+    "CREATED": "Đã tạo",
+    "ACTIVATED": "Đã kích hoạt",
+    "PRIORITY_CHANGED": "Đã đổi ưu tiên",
+    "EXTENDED": "Đã gia hạn",
+    "NOTE_ADDED": "Đã thêm ghi chú",
+    "CONVERTED": "Đã chuyển thành tờ trình",
+    "CANCELLED": "Đã hủy",
+    "EXPIRED": "Đã hết hạn"
   }
 }

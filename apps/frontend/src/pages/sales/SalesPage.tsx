@@ -13,6 +13,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { TrendingUp, Trophy, AlertTriangle, CheckCircle2, Clock, History, XCircle, Sparkles, Store, ReceiptText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 const SALES_STATUS_MAP: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Chờ duyệt', color: 'bg-gray-100 text-gray-600' },
@@ -31,6 +33,7 @@ function fmt(n: number) {
 }
 
 function AuditTrailDialog({ salesId, open, onClose }: { salesId: string; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   const { data } = useQuery({
     queryKey: ['sales-audit', salesId],
     queryFn: () => salesApi.getAuditTrail(salesId),
@@ -54,7 +57,9 @@ function AuditTrailDialog({ salesId, open, onClose }: { salesId: string; open: b
               <Badge className={`${ACTION_COLOR[l.action] ?? 'bg-gray-100 text-gray-600'} border-0 text-xs`}>{l.action}</Badge>
               <span className="text-gray-400">{new Date(l.performedAt).toLocaleString('vi-VN')}</span>
             </div>
-            <div className="text-gray-600">{l.performedBy?.fullName ?? '—'} ({l.performedBy?.role})</div>
+            <div className="text-gray-600">
+              {l.performedBy?.fullName ?? '—'}{l.performedBy?.role ? <> (<span title={l.performedBy.role}>{t(roleTranslationKey(l.performedBy.role))}</span>)</> : null}
+            </div>
             {l.oldValue != null && <div className="text-gray-400">Thay đổi: {l.oldValue?.toLocaleString()} → {l.newValue?.toLocaleString()}</div>}
             {l.reason && <div className="text-gray-500 italic mt-0.5">{l.reason}</div>}
           </div>
