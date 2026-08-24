@@ -60,3 +60,15 @@ Wave 4 makes no backend, authorization or data-scope changes. Focused Ticket/Mai
 | Analytics retention policy | Per-Mall reads/writes validate Mall access; config writes exclude CEO | VERIFIED for current controller path; unchanged |
 
 Wave 5 changes presentation only. Focused Report/Analytics verification passed 6 suites / 29 tests; this evidence corrects the stale broad-gap wording without claiming the Compliance sub-surface is secure.
+
+## Wave 6 evidence — Admin / Users / Mall Access / Permissions
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Users list/stats/detail/create/update/reset/delete | `UsersController` applies class-level `@Roles(Role.ADMIN)`; the frontend Admin route is also ADMIN-only | VERIFIED role boundary for current paths; backend remains authoritative |
+| UserMallAccess list/grant/revoke | User-specific, Mall-specific and mutation routes are ADMIN-only; service validates both User and Mall and restricts grantable staff roles | VERIFIED by focused controller read and service tests; unchanged |
+| Current-user Mall list | `GET /mall-access/my-malls` is available to authenticated module roles and resolves only the current user's active grants | VERIFIED self-scope; unchanged |
+| Permission matrix | Read-only presentation is derived from `ROUTE_PERMISSIONS`; it does not mutate or claim to replace backend `@Roles`/Mall checks | PRESENTATION ONLY; backend metadata and data-query scope remain authoritative |
+| CEO capability model | Current operational write capabilities contradict the aggregate/read-oriented persona documented elsewhere | `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`; not normalized in Wave 6 |
+
+Wave 6 makes no backend, role, permission or Mall-scope changes. Frontend action visibility is treated as usability only and never as an authorization control.

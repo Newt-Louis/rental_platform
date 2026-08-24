@@ -278,3 +278,55 @@ Approval boundary: the user's master authorization permits presentation work. Ma
 - Financial reconciliation: VND-only revenue/receivables scope is disclosed; chart axes declare `Tỷ VND`; tooltips, KPI values and per-currency pipeline/risk values are exact and use ISO currency. No FX, mixed-currency sum or formula change was introduced.
 - Authorization: core Reports/Analytics Mall scope is verified under CR-101 Phase 3G. Analytics Compliance export list/request/generate/manual-monthly remains a Tier 1 quarantine, so Wave 5 is not Golden Closed.
 - Business logic/API contract/backend/schema/database changes: NO.
+
+## Wave 6 Change Request and Impact Map
+
+Business objective: standardize Admin, Settings, Users and Permissions as a dense ERP control workspace where account state, role and authoritative Mall scope are immediately legible, without changing any authorization policy or access-control behavior.
+
+In scope:
+
+- Admin workspace header/navigation hierarchy, account worklist density, compact account summary and Mall-access presentation.
+- Presentation-only localization of the existing role and account-access values returned by current APIs.
+- Reuse of the established ERP page header/toolbar and existing UI components; focused presentation tests and locale resources.
+- Read-only verification that frontend actions correspond to existing ADMIN-restricted backend routes.
+
+Out of scope:
+
+- Role definitions, `ROUTE_PERMISSIONS`, backend `@Roles` metadata, `MallAccessGuard`, UserMallAccess grant rules or any authorization-policy change.
+- User/account lifecycle semantics, password policy, approval-policy behavior, Mall/space master-data behavior and system-health semantics.
+- Backend controllers/services, API contracts, Prisma schema/migrations, database, jobs and audit behavior.
+- The known concurrent `permissions.test.ts` change and all protected Dashboard/Proposal/Approval worktree changes.
+
+Impact dimensions:
+
+| Dimension | Finding |
+|---|---|
+| Upstream | Users, roles, Malls and UserMallAccess grants are read from existing Users/Spaces/MallAccess APIs; unchanged |
+| Downstream | Route navigation and backend guards consume the role/access model. The presentation will not write or duplicate a new permission model |
+| Financial/currency | No financial amount, currency field, calculation or export is in scope |
+| Mall/Tenant | UserMallAccess is the authoritative staff-to-Mall scope. ADMIN/CEO/TENANT bypass semantics and Tenant service-layer isolation remain unchanged and will not be represented as a frontend security guarantee |
+| Authorization | Users CRUD and grant/revoke endpoints are ADMIN-only. The matrix remains read-only and sourced from current frontend route configuration; backend remains authoritative |
+| State machine | Existing active/locked account state and approval-policy behavior are unchanged |
+| Events/jobs | No event, queue, cron, health polling contract or audit-log behavior changes |
+| Concurrency/idempotency | Existing grant upsert/revoke and account-write behavior remain unchanged; no new writes are introduced |
+| API/schema/database | No change |
+| Protected modules | Dashboard and active Proposal/Approval paths, plus the concurrent permissions test, remain excluded |
+
+Golden scenarios to preserve: GS-09 (cross-Mall denial), GS-10 (Tenant isolation) and the role-specific entry points exercised by the permanent GS-01 through GS-08 journey baseline. No financial reconciliation is required because Wave 6 displays no money.
+
+Unknowns: the documented CEO capability contradictions and any future editable permission-policy model remain `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`. Wave 6 will neither normalize nor expand those capabilities.
+
+Approval boundary: the user authorized presentation standardization. Authorization and role semantics are Tier 0; no Tier 0 implementation is self-approved or included in this wave.
+
+## Wave 6 technical gate — 2026-08-24
+
+- Frontend Admin presentation, Mall-access display, System health and Approval-policy focused: PASS, 5 files / 20 tests.
+- Backend Users/UserMallAccess focused: PASS, 2 suites / 17 tests.
+- Backend full: PASS, 91 suites / 598 tests.
+- TypeScript and frontend production build: PASS.
+- Docker/runtime: PASS; rebuilt the current frontend/backend dependency chain and verified `http://localhost:8080/` plus `http://localhost:3000/api/health` return HTTP 200. Existing UAT orphan containers were reported and deliberately left untouched.
+- Frontend full: BASELINE FAILURES only — `permissions.test.ts` RouteModule duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. All Wave 6 focused tests passed in the same run.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
+- Authorization: Users CRUD remains ADMIN-only; UserMallAccess service validation and grantable-role restrictions remain unchanged. The permission matrix is explicitly read-only and frontend presentation is not treated as security.
+- Reconciliation: no financial or currency values are present in the Wave 6 surface. Account role/state and Mall scope are presented from their existing authoritative fields without new semantics.
+- Business logic/API contract/backend/schema/database changes: NO.

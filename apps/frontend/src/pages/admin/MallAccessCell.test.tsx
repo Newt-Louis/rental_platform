@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MallAccessCell } from './AdminPage';
 import type { User } from '@/types';
+import i18n from '@/lib/i18n';
+
+void i18n.changeLanguage('vi');
 
 function makeUser(overrides: Partial<User>): User {
   return {
@@ -27,7 +30,7 @@ describe('MallAccessCell', () => {
 
   it('shows an unassigned label for a mall-scoped role with no grants', () => {
     render(<MallAccessCell user={makeUser({ role: 'LEASING_EXECUTIVE', mallAccess: [] })} />);
-    expect(screen.getByText('Chưa gán')).toBeInTheDocument();
+    expect(screen.getByText('Chưa gán Mall')).toBeInTheDocument();
   });
 
   it('shows one badge per mall for a mall-scoped role with grants', () => {
