@@ -1,0 +1,25 @@
+{
+  "eyebrow": "Kiểm soát tích hợp tài chính",
+  "title": "Tích hợp SAP FI/CO",
+  "subtitle": "Theo dõi độ tin cậy đồng bộ, xử lý ngoại lệ và đối chiếu dữ liệu với hệ thống tài chính.",
+  "live": "Đang kết nối",
+  "demo": "Chế độ mô phỏng · SAP_ENABLED=false",
+  "runReconciliation": "Chạy đối soát",
+  "syncPending": "Đồng bộ {{count}} bản ghi đang chờ",
+  "refresh": "Làm mới",
+  "stats": {
+    "success": "Log thành công",
+    "failed": "Log thất bại",
+    "pending": "Log đang chờ",
+    "mappings": "Ánh xạ SAP"
+  },
+  "statuses": {
+    "PENDING": "Đang chờ",
+    "SUCCESS": "Thành công",
+    "FAILED": "Thất bại",
+    "RETRYING": "Đang thử lại",
+    "SYNCED": "Đã đồng bộ",
+    "MATCHED": "Khớp",
+    "MISMATCH": "Chênh lệch"
+  }
+}

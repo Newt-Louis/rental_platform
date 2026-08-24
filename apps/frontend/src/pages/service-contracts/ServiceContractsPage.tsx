@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { usePermission } from "@/hooks/usePermission";
 import type { Role } from "@/types";
 import { formatMoney, formatMoneyAmount, type CurrencyCode } from "@/lib/currency";
+import { serviceContractTypeTranslationKey } from "@/lib/erpEnumPresentation";
 
 const STATUSES = [
   "DRAFT",
@@ -391,7 +392,7 @@ export default function ServiceContractsPage() {
             </option>
           ))}
         </select>
-        <select className="rounded-md border bg-background px-3 text-sm" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}><option value="">Tất cả loại hợp đồng</option>{TYPES.map(value => <option key={value} value={value}>{value}</option>)}</select>
+        <select className="rounded-md border bg-background px-3 text-sm" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}><option value="">Tất cả loại hợp đồng</option>{TYPES.map(value => <option key={value} value={value}>{t(serviceContractTypeTranslationKey(value))}</option>)}</select>
         <select className="rounded-md border bg-background px-3 text-sm" value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm dịch vụ</option>{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select className="rounded-md border bg-background px-3 text-sm" value={valueBasis} onChange={(e) => { setValueBasis(e.target.value); setPage(1); }}><option value="">Tất cả cơ sở giá trị</option>{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         <select className="rounded-md border bg-background px-3 text-sm" value={paymentDirection} onChange={(e) => { setPaymentDirection(e.target.value); setAlert(""); setPage(1); }}><option value="">Tất cả phải thu / phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option><option value="PAYABLE">Hợp đồng phải trả</option></select>
@@ -427,7 +428,7 @@ export default function ServiceContractsPage() {
                     {c.counterpartyName}
                   </div>
                 </td>
-                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground">{c.type}</div></td>
+                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground" title={c.type}>{t(serviceContractTypeTranslationKey(c.type))}</div></td>
                 <td>
                   {c.startDate
                     ? new Date(c.startDate).toLocaleDateString()
@@ -658,7 +659,7 @@ export default function ServiceContractsPage() {
             <label className="text-sm">Email<Input name="counterpartyEmail" type="email" defaultValue={item.counterpartyEmail || ""} /></label>
             <label className="text-sm">Điện thoại<Input name="counterpartyPhone" defaultValue={item.counterpartyPhone || ""} /></label>
             <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" defaultValue={item.billingParty?.address || ""} /></label>
-            <label className="text-sm">Loại hợp đồng<select name="type" defaultValue={item.type} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+            <label className="text-sm">Loại hợp đồng<select name="type" defaultValue={item.type} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map(type => <option key={type} value={type}>{t(serviceContractTypeTranslationKey(type))}</option>)}</select></label>
             <label className="text-sm">Chiều thanh toán<select name="paymentDirection" defaultValue={item.paymentDirection} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Phải trả</option><option value="RECEIVABLE">Phải thu</option></select></label>
             <label className="text-sm">Nhóm sản phẩm/dịch vụ<select name="serviceCategory" defaultValue={item.serviceCategory || "OTHER"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm">Mô tả chi tiết<Input name="productName" defaultValue={item.productName || ""} /></label>

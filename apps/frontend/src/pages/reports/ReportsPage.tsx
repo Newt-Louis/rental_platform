@@ -19,6 +19,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { formatExactReportingMoney, formatVndBillionsAxis } from './reportingPresentation';
+import { invoiceTypeTranslationKey } from '@/lib/erpEnumPresentation';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -289,7 +290,7 @@ function RevenueReceivablesReport() {
             <div className="space-y-2">
               {byType.map((inv: any) => (
                 <div key={inv.type} className="flex justify-between items-center text-sm">
-                  <span>{inv.type}</span>
+                  <span title={inv.type}>{t(invoiceTypeTranslationKey(inv.type))}</span>
                   <span className="text-gray-500" title={`${fmtMoneyFullVnd(inv.collected)} / ${fmtMoneyFullVnd(inv.billed)}`}>{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
                 </div>
               ))}

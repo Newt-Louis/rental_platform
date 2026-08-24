@@ -29,6 +29,69 @@ The following pre-existing paths are excluded from program staging unless their 
 | 6 | Admin / Settings / Users / Permissions | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 7 | Golden Dashboard | AUDITED — PROTECTED CONCURRENT POLISH; RENDERED REVIEW PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | COMPLETE — 17/17 invariants and builds pass; full UAT/security/operations gates remain open |
+| 8 | Supporting presentation consistency | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+
+## Wave 8 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W8-SUPPORTING-PRESENTATION`
+
+Business reason: complete the presentation audit on reachable supporting
+surfaces that still expose raw backend enums or a decorative integration hero,
+so operators receive consistent ERP terminology without changing the facts or
+actions owned by those modules.
+
+Current behavior: Profile/Audit display raw role codes; SAP reconciliation,
+Reports invoice breakdown and Service Contract type controls expose raw enum
+values; Parking has a raw status fallback; SAP uses a marketing-style gradient
+hero inconsistent with the approved ERP shell.
+
+Expected behavior: known authoritative enum values are mapped to localized
+labels, unknown values retain a neutral explicit fallback for traceability, and
+SAP uses the existing shared `PageHeader`/`ERPToolbar` presentation pattern.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Administration/Audit, Integration, Reporting, Service Contracts and Parking presentation only |
+| Affected journeys | Supporting reads around GS-06 through GS-10; no primary handoff or write changes |
+| Upstream/downstream | Existing API responses remain the only input; no output data, export, event or downstream consumer changes |
+| Data ownership | Read-only presentation mapping; no entity write changes |
+| State machine | Existing role, invoice, reconciliation, contract and parking enum values remain unchanged |
+| Financial/currency | No amount, formula, precision, aggregation or currency formatter change |
+| Mall/Tenant/authorization | No route, role, query or action visibility change; backend remains authoritative |
+| Reporting | Invoice-type labels only; report formula and VND-only scope unchanged |
+| Transaction/event/job/document | N/A — no mutation path or artifact payload changes |
+| API/schema/database/migration | No change; backward compatible |
+| Golden scenarios | Preserve GS-06 through GS-10 and GS-11 through GS-15; focused presentation tests plus full frontend/build gate |
+| Reconciliation | No duplicated values changed; rerun the 17 read-only platform invariants after implementation |
+| Rollback | Revert the Wave 8 presentation commit; persisted data is unaffected |
+| Open business questions | None introduced. Unknown future enum values are not assigned invented semantics |
+
+Approval boundary: the master program authorizes presentation standardization.
+No Tier 0/Tier 1 behavior, authorization or financial semantics are included.
+
+## Wave 8 technical gate — 2026-08-24
+
+- Profile and Audit role codes, SAP sync/reconciliation states, Reports invoice
+  types and Service Contract types now use one shared locale-key mapper with a
+  neutral unknown-value fallback; backend enum values remain visible only as
+  traceability titles.
+- SAP now uses the shared ERP `PageHeader` and `ERPToolbar`, with a compact
+  divided attention strip instead of the decorative gradient/card hero.
+- Frontend focused: PASS, 3 files / 7 tests.
+- Frontend full: 251/261; the same ten pre-program failures remain (one
+  permission navigation invariant plus nine legacy Booking assertions). No
+  Wave 8 regression was identified.
+- Backend full: PASS, 91 suites / 598 tests. Frontend TypeScript/production
+  build and backend production build: PASS.
+- Database invariants: PASS, 17/17 clean. Backup/restore safety guards: PASS,
+  4/4.
+- Docker rebuild: PASS; current frontend/backend images rebuilt, four services
+  running and localhost frontend/backend returned HTTP 200. Pre-existing UAT
+  orphan containers were reported and deliberately retained.
+- Automated rendered verification: UNAVAILABLE. Browser discovery returned no
+  available instances after the required troubleshooting check; responsive or
+  visual PASS is not claimed.
+- Business logic/API/backend/schema/database/currency changes: NO.
 
 ## Wave 1 Change Request and Impact Map
 

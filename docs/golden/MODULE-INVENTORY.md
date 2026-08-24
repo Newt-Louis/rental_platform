@@ -12,6 +12,6 @@ The repository currently contains 31 backend module directories and 31 frontend 
 | Financial | Billing, Invoices, Payments, Penalties/Dunning, Sales | Billing closed; correctness backlog retained |
 | Space operations | Malls, Units/Spaces, Fitout, Parking | Fitout and Unit/Space presentation implemented; human visual review pending |
 | Operational execution | Tickets, scheduled Maintenance, Work Orders, Patrol | Presentation implemented; human visual review pending |
-| Supporting operations | Service contracts, Announcements, Notifications, Files, AI, Settings/Admin | Admin/Users/Permissions presentation implemented; authorization and human visual review pending; remaining supporting modules pending |
+| Supporting operations | Service contracts, Parking, SAP, Audit/Profile, Announcements, Notifications, Files, AI, Settings/Admin | Admin plus Wave 8 supporting presentation consistency implemented; human visual review pending; remaining internal tools audited but not Golden Closed |
 
 Every implementation wave must record exact files and routes in `GOLDEN-PROGRAM-TRACKER.md`; this document stays at domain-inventory level.

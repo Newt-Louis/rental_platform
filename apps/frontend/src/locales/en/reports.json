@@ -114,7 +114,17 @@
     "byType": "By invoice type",
     "issued": "Issued",
     "collected": "Collected",
-    "empty": "No revenue and receivables data yet"
+    "empty": "No revenue and receivables data yet",
+    "invoiceTypes": {
+      "MONTHLY_RENT": "Recurring rent",
+      "DEPOSIT": "Deposit",
+      "UTILITY": "Utilities",
+      "MARKETING_FEE": "Marketing fee",
+      "PARKING": "Parking",
+      "PENALTY": "Payment penalty",
+      "REVENUE_SHARE": "Revenue share",
+      "SERVICE_CONTRACT": "Service contract"
+    }
   },
   "arAging": {
     "tenant": "Tenant",

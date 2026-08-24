@@ -114,7 +114,17 @@
     "byType": "Theo loại hoá đơn",
     "issued": "Phát hành",
     "collected": "Đã thu",
-    "empty": "Chưa có dữ liệu doanh thu và công nợ"
+    "empty": "Chưa có dữ liệu doanh thu và công nợ",
+    "invoiceTypes": {
+      "MONTHLY_RENT": "Tiền thuê định kỳ",
+      "DEPOSIT": "Tiền đặt cọc",
+      "UTILITY": "Tiện ích",
+      "MARKETING_FEE": "Phí marketing",
+      "PARKING": "Phí giữ xe",
+      "PENALTY": "Phạt thanh toán",
+      "REVENUE_SHARE": "Chia sẻ doanh thu",
+      "SERVICE_CONTRACT": "Hợp đồng dịch vụ"
+    }
   },
   "arAging": {
     "tenant": "Khách thuê",
