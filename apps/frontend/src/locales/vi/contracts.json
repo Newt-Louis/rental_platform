@@ -58,6 +58,9 @@
     "daysRemaining": "{{count}} ngày"
   },
   "handoff": {
+    "title": "Bàn giao vận hành",
+    "billing": "Lịch thu phí",
+    "fitout": "Dự án Fitout",
     "fitoutStarted": "Fitout đã được khởi tạo",
     "fitoutNotStarted": "Fitout chưa được khởi tạo",
     "viewFitout": "Xem Fitout",
@@ -84,6 +87,9 @@
   "sheet": {
     "defaultTitle": "Hợp đồng",
     "tabs": {
+      "overview": "Tổng quan",
+      "financial": "Tài chính & Billing",
+      "activity": "Hoạt động",
       "detail": "Chi tiết",
       "documents": "Tài liệu",
       "events": "Timeline",
@@ -100,6 +106,7 @@
       "lead": "Lead: "
     },
     "sections": {
+      "keyFacts": "Thông tin chính",
       "parties": "CÁC BÊN",
       "financial": "ĐIỀU KHOẢN TÀI CHÍNH",
       "period": "THỜI HẠN HỢP ĐỒNG",
@@ -184,6 +191,10 @@
     "deleteConfirm": "Xóa tài liệu"
   },
   "amendments": {
+    "status": { "DRAFT": "Bản nháp", "SUBMITTED": "Đã trình", "APPLIED": "Đã áp dụng" },
+    "effectiveDate": "Ngày hiệu lực",
+    "fields": { "newRent": "Tiền thuê mới", "newCam": "Phí CAM mới", "newRentFree": "Tháng miễn thuê", "newEndDate": "Ngày kết thúc mới" },
+    "confirm": { "title": "Áp dụng phụ lục này?", "description": "Phụ lục {{number}} sẽ được áp dụng vào hợp đồng theo vòng đời hiện hành." },
     "createBtn": "Tạo phụ lục",
     "createSuccess": "Đã tạo phụ lục bản nháp",
     "submitSuccess": "Đã gửi phụ lục để duyệt",
@@ -212,9 +223,26 @@
     "noAmendments": "Chưa có phụ lục nào cho hợp đồng này."
   },
   "template": {
+    "utilityTitle": "Xem trước mẫu",
+    "utilityDescription": "Xem trước tài liệu được tạo từ mẫu. Hồ sơ hợp đồng đã lưu vẫn nằm ở danh sách phía trên.",
+    "preview": "Xem trước",
     "select": "Chọn mẫu hợp đồng...",
     "render": "Xuất hợp đồng",
     "renderSuccess": "Đã xuất mẫu hợp đồng"
+  },
+  "activity": {
+    "title": "Hoạt động hợp đồng",
+    "description": "Các sự kiện hợp đồng do hệ thống ghi nhận.",
+    "empty": "Chưa có hoạt động được ghi nhận."
+  },
+  "financialTerms": {
+    "title": "Điều khoản tài chính",
+    "rent": "Tiền thuê / tháng",
+    "cam": "Phí CAM / tháng",
+    "deposit": "Tiền đặt cọc",
+    "fitoutDeposit": "Đặt cọc Fitout",
+    "fitoutFee": "Phí Fitout",
+    "currency": "Tiền tệ"
   },
   "billingTab": {
     "summary": {
@@ -247,6 +275,14 @@
     "viewInvoice": "Xem hóa đơn"
   },
   "termination": {
+    "workspaceAction": "Khu vực chấm dứt",
+    "workspaceTitle": "Xử lý chấm dứt hợp đồng",
+    "backToContract": "Quay lại hợp đồng",
+    "confirm": {
+      "initiate": { "title": "Khởi tạo chấm dứt?", "description": "Thao tác này bắt đầu quy trình chấm dứt hợp đồng hiện hành.", "action": "Khởi tạo chấm dứt" },
+      "complete": { "title": "Hoàn tất chấm dứt?", "description": "Thao tác này hoàn tất quy trình chấm dứt và các hiệu ứng backend hiện hành.", "action": "Hoàn tất chấm dứt" },
+      "cancel": { "title": "Hủy quy trình chấm dứt?", "description": "Thao tác này hủy quy trình chấm dứt hiện tại.", "action": "Hủy quy trình" }
+    },
     "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",
     "reasonLabel": "Lý do chấm dứt *",
     "reasonPlaceholder": "VD: Khách thuê ngừng kinh doanh, vi phạm hợp đồng...",

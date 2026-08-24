@@ -58,6 +58,9 @@
     "daysRemaining": "{{count}} days"
   },
   "handoff": {
+    "title": "Operational handoffs",
+    "billing": "Billing schedule",
+    "fitout": "Fitout project",
     "fitoutStarted": "Fitout has been started",
     "fitoutNotStarted": "Fitout has not been started yet",
     "viewFitout": "View Fitout",
@@ -84,6 +87,9 @@
   "sheet": {
     "defaultTitle": "Contract",
     "tabs": {
+      "overview": "Overview",
+      "financial": "Financial & Billing",
+      "activity": "Activity",
       "detail": "Details",
       "documents": "Documents",
       "events": "Timeline",
@@ -100,6 +106,7 @@
       "lead": "Lead: "
     },
     "sections": {
+      "keyFacts": "Key facts",
       "parties": "PARTIES",
       "financial": "FINANCIAL TERMS",
       "period": "CONTRACT PERIOD",
@@ -184,6 +191,10 @@
     "deleteConfirm": "Delete document"
   },
   "amendments": {
+    "status": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "APPLIED": "Applied" },
+    "effectiveDate": "Effective date",
+    "fields": { "newRent": "New rent", "newCam": "New CAM", "newRentFree": "Rent-free months", "newEndDate": "New end date" },
+    "confirm": { "title": "Apply this amendment?", "description": "Amendment {{number}} will be applied to the contract. This action follows the existing authoritative lifecycle." },
     "createBtn": "Create amendment",
     "createSuccess": "Amendment draft created",
     "submitSuccess": "Amendment submitted for approval",
@@ -212,9 +223,26 @@
     "noAmendments": "No amendments for this contract yet."
   },
   "template": {
+    "utilityTitle": "Template preview",
+    "utilityDescription": "Preview a generated document. Persisted contract files remain listed above.",
+    "preview": "Preview",
     "select": "Select template...",
     "render": "Render contract",
     "renderSuccess": "Template rendered"
+  },
+  "activity": {
+    "title": "Contract activity",
+    "description": "Authoritative contract events recorded by the system.",
+    "empty": "No activity recorded yet."
+  },
+  "financialTerms": {
+    "title": "Financial terms",
+    "rent": "Base rent / month",
+    "cam": "CAM / month",
+    "deposit": "Deposit",
+    "fitoutDeposit": "Fitout deposit",
+    "fitoutFee": "Fitout fee",
+    "currency": "Currency"
   },
   "billingTab": {
     "summary": {
@@ -247,6 +275,14 @@
     "viewInvoice": "View invoice"
   },
   "termination": {
+    "workspaceAction": "Termination workspace",
+    "workspaceTitle": "Contract termination workspace",
+    "backToContract": "Back to contract",
+    "confirm": {
+      "initiate": { "title": "Initiate termination?", "description": "This starts the existing contract termination process.", "action": "Initiate termination" },
+      "complete": { "title": "Complete termination?", "description": "This completes the existing termination process and its current backend effects.", "action": "Complete termination" },
+      "cancel": { "title": "Cancel termination?", "description": "This cancels the current termination process.", "action": "Cancel process" }
+    },
     "noRequest": "No termination request exists for this contract.",
     "reasonLabel": "Termination reason *",
     "reasonPlaceholder": "e.g. Tenant ceasing operations, contract breach...",
