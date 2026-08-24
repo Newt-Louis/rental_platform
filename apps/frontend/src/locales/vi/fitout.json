@@ -1,7 +1,7 @@
 {
   "title": "Quản lý Fitout",
   "dashboard": {
-    "title": "Dashboard Fitout",
+    "title": "Tổng quan Fitout",
     "overview": "Tổng quan tiến độ toàn bộ dự án fitout",
     "backToOverview": "Quay lại tổng quan",
     "projectList": "Danh sách dự án",
@@ -25,8 +25,10 @@
     "submittalByStatus": "Đệ trình theo trạng thái"
   },
   "page": {
+    "eyebrow": "Vận hành mặt bằng",
     "title": "Điều hành Fitout",
     "subtitle": "Đi từ bàn giao mặt bằng đến khai trương theo một quy trình rõ ràng",
+    "dashboardAction": "Tổng quan",
     "config": "Cấu hình",
     "projectCount": "{{count}} dự án",
     "operationMap": "Bản đồ vận hành Fitout",
@@ -48,6 +50,21 @@
       "completedHint": "Dự án đã bàn giao"
     },
     "filterAll": "Tất cả ({{count}})",
+    "attentionLabel": "Tóm tắt công việc Fitout cần chú ý",
+    "searchPlaceholder": "Tìm khách thuê, mặt bằng, tầng hoặc người phụ trách...",
+    "searchLabel": "Tìm dự án Fitout",
+    "stageFilterLabel": "Lọc theo giai đoạn",
+    "clearFilters": "Xóa lọc",
+    "resultCount": "{{count}} kết quả",
+    "noNextStage": "Giai đoạn cuối",
+    "table": {
+      "tenantUnit": "Khách thuê / Mặt bằng",
+      "stage": "Giai đoạn hiện tại",
+      "progress": "Tiến độ",
+      "expectedOpen": "Dự kiến khai trương",
+      "manager": "Phụ trách vận hành",
+      "nextStage": "Giai đoạn tiếp theo"
+    },
     "errorTitle": "Không thể tải danh sách dự án fitout",
     "errorSubtitle": "Dữ liệu tiến độ chưa sẵn sàng. Vui lòng thử lại.",
     "retry": "Thử lại",
@@ -90,9 +107,9 @@
     "actualOpenDate": "Khai trương thực tế",
     "contract": "Hợp đồng",
     "opManager": "PHỤ TRÁCH VẬN HÀNH",
-    "selectOpManager": "Chọn OP Manager",
+    "selectOpManager": "Chọn người phụ trách vận hành",
     "noOpManager": "Chưa phân công",
-    "noOpUsers": "Không tìm thấy OPERATION user",
+    "noOpUsers": "Không tìm thấy người dùng Vận hành",
     "gate": {
       "title": "Cần hoàn thành trước khi chuyển giai đoạn",
       "description": "Các tài liệu sau chưa được phê duyệt:",
@@ -103,7 +120,7 @@
     "advanceTo": "Chuyển sang:",
     "completed": "Đã khai trương — hoàn thành quy trình",
     "navDailyReport": "Nhật ký công trường",
-    "navGantt": "Tiến độ Gantt",
+    "navGantt": "Tiến độ thi công",
     "tabs": {
       "checklist": "Việc cần làm",
       "documents": "Hồ sơ duyệt",
@@ -123,9 +140,9 @@
     }
   },
   "checklist": {
-    "title": "CHECKLIST",
-    "addPlaceholder": "Thêm checklist item...",
-    "empty": "Chưa có checklist items — thêm bên trên",
+    "title": "DANH SÁCH CÔNG VIỆC",
+    "addPlaceholder": "Thêm công việc...",
+    "empty": "Chưa có công việc — thêm bên trên",
     "completedAt": "Hoàn thành: {{date}}"
   },
   "submittal": {
@@ -138,7 +155,15 @@
     "approve": "Duyệt",
     "reject": "Từ chối",
     "resubmit": "Nộp lại",
-    "publish": "Publish",
+    "publish": "Phát hành",
+    "status": {
+      "SUBMITTED": "Đã nộp",
+      "IN_PROGRESS": "Đang duyệt",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Từ chối",
+      "PUBLISHED": "Đã phát hành",
+      "OBSOLETED": "Hết hiệu lực"
+    },
     "rejectDialog": {
       "title": "Từ chối hồ sơ",
       "description": "Lý do sẽ được gửi cho người nộp và lưu trong lịch sử phê duyệt.",
@@ -149,12 +174,12 @@
       "approved": "Đã duyệt",
       "rejected": "Đã từ chối",
       "resubmitted": "Đã nộp lại",
-      "published": "Đã publish",
+      "published": "Đã phát hành",
       "errorSubmit": "Lỗi nộp đệ trình",
       "errorApprove": "Lỗi duyệt",
       "errorReject": "Lỗi từ chối",
       "errorResubmit": "Lỗi nộp lại",
-      "errorPublish": "Lỗi publish"
+      "errorPublish": "Lỗi phát hành"
     }
   },
   "issue": {
@@ -174,6 +199,14 @@
       "HIGH": "Cao",
       "CRITICAL": "Nghiêm trọng"
     },
+    "status": {
+      "OPENED": "Mới mở",
+      "IN_PROGRESS": "Đang xử lý",
+      "DONE": "Đã xử lý",
+      "CLOSED": "Đã đóng",
+      "REOPENED": "Mở lại",
+      "CANCELLED": "Đã hủy"
+    },
     "create": "Tạo vấn đề",
     "empty": "Chưa có vấn đề nào",
     "assignee": "Giao: {{name}}",
@@ -184,6 +217,22 @@
       "errorCreate": "Lỗi tạo vấn đề",
       "errorUpdate": "Lỗi cập nhật"
     }
+  },
+  "workflow": {
+    "status": {
+      "PENDING": "Chờ duyệt",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Từ chối",
+      "CANCELLED": "Đã hủy"
+    }
+  },
+  "roles": {
+    "ADMIN": "Quản trị viên",
+    "MALL_DIRECTOR": "Giám đốc TTTM",
+    "OPERATION": "Vận hành",
+    "LEASING_MANAGER": "Quản lý cho thuê",
+    "FINANCE": "Tài chính",
+    "TENANT": "Khách thuê"
   },
   "milestone": {
     "empty": "Chưa có milestone SLA nào",
@@ -222,7 +271,7 @@
     "advanceError": "Không thể kiểm tra điều kiện chuyển giai đoạn — vui lòng thử lại",
     "checklistUpdated": "Đã cập nhật checklist item",
     "checklistAdded": "Đã thêm checklist item",
-    "assignSuccess": "Đã phân công OP Manager",
+    "assignSuccess": "Đã phân công người phụ trách vận hành",
     "toast": {
       "checklistError": "Lỗi cập nhật checklist",
       "checklistCreateError": "Lỗi tạo checklist",
@@ -231,7 +280,7 @@
     }
   },
   "gantt": {
-    "title": "Tiến độ thi công (Gantt)",
+    "title": "Tiến độ thi công",
     "addTask": "Thêm công việc",
     "taskName": "Tên công việc",
     "noParent": "Không có cha (WBS gốc)",
@@ -270,9 +319,9 @@
   },
   "settings": {
     "title": "Cấu hình Fitout",
-    "subtitle": "Quản lý pipeline giai đoạn & loại hồ sơ — không cần deploy code để thêm/sửa",
-    "stages": "Giai đoạn (Pipeline)",
-    "formTypes": "Loại hồ sơ (Form)",
+    "subtitle": "Quản lý quy trình giai đoạn và loại hồ sơ cấu hình",
+    "stages": "Giai đoạn",
+    "formTypes": "Loại hồ sơ",
     "requirements": "Yêu cầu",
     "noAccess": "Bạn không có quyền truy cập cấu hình fitout.",
     "back": "Quay lại",
@@ -348,6 +397,53 @@
       "MEDIUM": "Trung bình",
       "HIGH": "Cao"
     }
+  },
+  "riskControl": {
+    "title": "Sổ đăng ký rủi ro",
+    "description": "Đánh giá xác suất × tác động và theo dõi biện pháp giảm thiểu.",
+    "open": "Đang mở",
+    "critical": "Nghiêm trọng",
+    "add": "Thêm",
+    "save": "Lưu rủi ro",
+    "loading": "Đang tải sổ đăng ký rủi ro...",
+    "loadError": "Không tải được sổ đăng ký rủi ro.",
+    "errorUpdate": "Không thể cập nhật dữ liệu rủi ro. Vui lòng thử lại.",
+    "empty": "Chưa ghi nhận rủi ro cho dự án.",
+    "other": "Khác",
+    "unassigned": "Chưa phân công",
+    "due": "Hạn {{date}}",
+    "noDueDate": "Chưa có hạn",
+    "statusLabel": "Trạng thái {{title}}",
+    "fields": { "title": "Tên rủi ro *", "category": "Nhóm", "probability": "Xác suất (1–5)", "impact": "Tác động (1–5)", "dueDate": "Hạn xử lý", "mitigation": "Biện pháp giảm thiểu" },
+    "category": { "SAFETY": "An toàn", "COST": "Chi phí", "SCHEDULE": "Tiến độ", "QUALITY": "Chất lượng", "COMPLIANCE": "Tuân thủ" },
+    "level": { "LOW": "Thấp", "MEDIUM": "Trung bình", "HIGH": "Cao", "CRITICAL": "Nghiêm trọng" },
+    "status": { "OPEN": "Đang mở", "MITIGATING": "Đang giảm thiểu", "CLOSED": "Đã đóng" },
+    "toast": { "created": "Đã thêm rủi ro vào sổ đăng ký" }
+  },
+  "changeOrder": {
+    "title": "Kiểm soát thay đổi và chi phí",
+    "description": "Kiểm soát thay đổi phạm vi, chi phí và tác động tiến độ.",
+    "pending": "Chờ xử lý",
+    "proposed": "Đề xuất",
+    "approved": "Đã duyệt",
+    "add": "Thêm",
+    "save": "Lưu yêu cầu thay đổi",
+    "loading": "Đang tải yêu cầu thay đổi...",
+    "loadError": "Không tải được yêu cầu thay đổi.",
+    "errorUpdate": "Không thể cập nhật dữ liệu thay đổi. Vui lòng thử lại.",
+    "empty": "Chưa có yêu cầu thay đổi.",
+    "unknownRequester": "Chưa rõ người đề xuất",
+    "requesterHint": "Người đề xuất được ghi nhận theo tài khoản đang đăng nhập.",
+    "cost": "Chi phí",
+    "schedule": "Tiến độ",
+    "days": "{{count}} ngày",
+    "decisionLabel": "Quyết định cho {{title}}",
+    "selectDecision": "Chọn quyết định",
+    "approve": "Phê duyệt",
+    "reject": "Từ chối",
+    "fields": { "title": "Nội dung thay đổi *", "reason": "Lý do / phạm vi", "estimatedCost": "Chi phí dự kiến (VND) *", "scheduleImpact": "Tác động tiến độ (ngày)" },
+    "status": { "DRAFT": "Bản nháp", "SUBMITTED": "Đã gửi", "UNDER_REVIEW": "Đang xem xét", "APPROVED": "Đã duyệt", "REJECTED": "Từ chối", "CANCELLED": "Đã hủy" },
+    "toast": { "created": "Đã tạo yêu cầu thay đổi" }
   },
   "common": {
     "back": "Quay lại",

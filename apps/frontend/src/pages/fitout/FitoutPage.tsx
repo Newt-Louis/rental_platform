@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { fitoutApi, fitoutSubmittalApi, fitoutIssueApi, approvalsApi, usersApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,10 +18,13 @@ import { useToast } from '@/components/ui/use-toast';
 import { MallMapViewer } from '@/components/MallMapViewer';
 import { ChangeOrderControl, RiskRegister } from '@/components/fitout/RiskChangeControl';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
+import { filterFitoutProjects, getFitoutPresentationLabel, humanizeFitoutCode } from './fitoutPresentation';
 import {
-  Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar,
+  Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar, Search,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
-  Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3, Compass, Sparkles, HardHat, FolderCheck,
+  Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3,
 } from 'lucide-react';
 
 interface StageConfig {
@@ -65,6 +67,7 @@ function fmtDate(d?: string | null) {
 
 function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; onClose: () => void }) {
   const { t } = useTranslation('fitout');
+  const presentationLabel = (prefix: string, value?: string | null) => getFitoutPresentationLabel(t, prefix, value);
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -323,15 +326,14 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       ) : p && (
         <div className="px-6 pb-8 space-y-5 pt-4">
 
-          <section className="rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+          <section className="border-l-2 border-amber-500 bg-amber-50/50 px-3 py-2.5">
             <div className="flex items-start gap-3">
-              <span className="rounded-xl bg-orange-600 p-2 text-white"><Sparkles size={17} /></span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">{t('detail.nextActions')}</p>
+                <p className="text-xs font-semibold text-amber-800">{t('detail.nextActions')}</p>
                 {nextActions.length > 0 ? (
-                  <ol className="mt-2 space-y-2">
+                  <ol className="mt-1.5 space-y-1">
                     {nextActions.slice(0, 4).map((action, index) => (
-                      <li key={action} className="flex gap-2 text-sm text-slate-700"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-orange-700 shadow-sm">{index + 1}</span><span>{action}</span></li>
+                      <li key={action} className="flex gap-2 text-sm text-slate-700"><span className="w-4 shrink-0 text-right text-xs font-semibold text-amber-700">{index + 1}.</span><span>{action}</span></li>
                     ))}
                   </ol>
                 ) : (
@@ -345,7 +347,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           <div>
             <div className="flex items-center justify-between mb-2">
               <Badge className="border-0" style={stageBadgeStyle(currentStage?.colorHex)}>
-                {currentStage?.name ?? p.status}
+                {currentStage?.name ?? humanizeFitoutCode(p.status)}
               </Badge>
               <span className="text-xs text-gray-500">{Math.round(getProgress(stages, p.status))}{t('detail.progressComplete')}</span>
             </div>
@@ -423,10 +425,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   <p className="text-sm text-gray-600">{t('detail.gate.description')}</p>
                   <div className="space-y-2">
                     {gateWarning.missing.map((m) => (
-                      <div key={m.documentType} className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                        <div key={m.documentType} className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg border border-amber-200">
                         <AlertTriangle size={14} className="text-amber-500 shrink-0" />
                         <div>
-                          <p className="text-sm font-medium text-amber-800">{m.documentType.replace(/_/g, ' ')}</p>
+                          <p className="text-sm font-medium text-amber-800">{humanizeFitoutCode(m.documentType)}</p>
                           {m.description && <p className="text-xs text-amber-600">{m.description}</p>}
                         </div>
                       </div>
@@ -648,7 +650,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                             <p className="text-xs text-gray-400">{sub.formType?.name}</p>
                           </div>
                           <Badge className={`border-0 text-xs shrink-0 ${statusStyle[sub.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                            {sub.status}
+                            {presentationLabel('submittal.status', sub.status)}
                           </Badge>
                         </div>
 
@@ -660,7 +662,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                                 className={`text-xs px-1.5 py-0.5 rounded font-medium
                                   ${s.status === 'APPROVED' ? 'bg-green-100 text-green-700' : s.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}
                               >
-                                {s.stepOrder}. {s.approverRole}{s.approver ? ` (${s.approver.fullName})` : ''}
+                                {s.stepOrder}. {presentationLabel('roles', s.approverRole)} · {presentationLabel('workflow.status', s.status)}{s.approver ? ` (${s.approver.fullName})` : ''}
                               </span>
                             ))}
                           </div>
@@ -781,15 +783,15 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                             </p>
                           </div>
                           <div className="flex gap-1 shrink-0">
-                            <Badge className={`border-0 text-xs ${severityColor[iss.severity] ?? ''}`}>{iss.severity}</Badge>
-                            <Badge className={`border-0 text-xs ${statusColor[iss.status] ?? ''}`}>{iss.status}</Badge>
+                            <Badge className={`border-0 text-xs ${severityColor[iss.severity] ?? ''}`}>{presentationLabel('issue.severity', iss.severity)}</Badge>
+                            <Badge className={`border-0 text-xs ${statusColor[iss.status] ?? ''}`}>{presentationLabel('issue.status', iss.status)}</Badge>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {(nextOptions[iss.status] ?? []).map((next) => (
                             <Button key={next} size="sm" variant="outline" className="h-6 text-xs px-2"
                               onClick={() => transitionIssueMutation.mutate({ id: iss.id, status: next })}>
-                              → {next}
+                              → {presentationLabel('issue.status', next)}
                             </Button>
                           ))}
                         </div>
@@ -824,7 +826,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                          m.completedAt ? <CheckCircle2 size={16} className="text-green-500" /> :
                          <Clock size={16} className="text-gray-400" />}
                         <div>
-                          <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? m.stage}</p>
+                          <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? humanizeFitoutCode(m.stage)}</p>
                           <p className="text-xs text-gray-400">{t('milestone.slaDays', { count: m.slaDays ?? '—' })}</p>
                         </div>
                       </div>
@@ -968,6 +970,7 @@ export default function FitoutPage() {
   const [searchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('projectId'));
   const [filterStatus, setFilterStatus] = useState('');
+  const [search, setSearch] = useState('');
   const stages = useStageConfigs();
   const { user } = useAuthStore();
   const navigate = useNavigate();
@@ -988,21 +991,22 @@ export default function FitoutPage() {
   });
 
   const allProjects: any[] = data?.data ?? [];
-  const projects = filterStatus ? allProjects.filter((p) => p.status === filterStatus) : allProjects;
+  const projects = filterFitoutProjects(allProjects, search, filterStatus);
   const withoutManager = allProjects.filter((project) => !project.operationManager).length;
   const openingSoon = allProjects.filter((project) => project.expectedOpenDate && new Date(project.expectedOpenDate).getTime() - Date.now() <= 14 * 86400000 && new Date(project.expectedOpenDate).getTime() >= Date.now()).length;
   const completed = allProjects.filter((project) => ['OPENED', 'COMPLETED'].includes(project.status)).length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('page.title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('page.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="min-w-0">
+      <PageHeader
+        className="mb-4"
+        eyebrow={t('page.eyebrow')}
+        title={t('page.title')}
+        description={t('page.subtitle')}
+        actions={(
+          <>
           <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
-            <BarChart3 size={14} /> Dashboard
+            <BarChart3 size={14} /> {t('page.dashboardAction')}
           </Button>
           {canManageConfig && (
             <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/settings')}>
@@ -1012,72 +1016,51 @@ export default function FitoutPage() {
           <Badge className="bg-orange-100 text-orange-700 border-0 text-sm px-3 py-1">
             {t('page.projectCount', { count: allProjects.length })}
           </Badge>
-        </div>
-      </div>
+          </>
+        )}
+      />
 
-      <section className="mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-orange-950 to-amber-900 p-5 text-white sm:p-6">
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200"><Compass size={14} /> {t('page.operationMap')}</div>
-            <h2 className="text-xl font-semibold sm:text-2xl">{withoutManager ? t('page.bannerTitle_withoutManager', { count: withoutManager }) : t('page.bannerTitle_default')}</h2>
-            <p className="mt-2 text-sm leading-6 text-amber-100/75">{t('page.bannerSubtitle')}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs sm:flex">
-            {([['1', t('page.step1')], ['2', t('page.step2')], ['3', t('page.step3')], ['4', t('page.step4')]] as [string, string][]).map(([step, label]) => (
-              <div key={step} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2">
-                <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white font-bold text-slate-900">{step}</span>{label}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <div className="mb-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label={t('page.attentionLabel')} className="mb-3 grid grid-cols-2 border-y border-border bg-card lg:grid-cols-4">
         {[
-          { label: t('page.stats.activeProjects'), value: allProjects.length - completed, hint: t('page.stats.activeHint'), icon: HardHat, tone: 'border-orange-100 bg-orange-50 text-orange-700', action: () => setFilterStatus('') },
-          { label: t('page.stats.noManager'), value: withoutManager, hint: t('page.stats.noManagerHint'), icon: User, tone: 'border-red-100 bg-red-50 text-red-700', action: () => setFilterStatus('') },
-          { label: t('page.stats.openingSoon'), value: openingSoon, hint: t('page.stats.openingSoonHint'), icon: Rocket, tone: 'border-violet-100 bg-violet-50 text-violet-700', action: () => setFilterStatus('') },
-          { label: t('page.stats.completed'), value: completed, hint: t('page.stats.completedHint'), icon: FolderCheck, tone: 'border-emerald-100 bg-emerald-50 text-emerald-700', action: () => setFilterStatus(stages.find((stage) => ['OPENED', 'COMPLETED'].includes(stage.code))?.code ?? '') },
-        ].map(({ label, value, hint, icon: Icon, tone, action }) => (
-          <button key={label} onClick={action} className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}>
-            <div className="flex items-center justify-between"><Icon size={18} /><span className="text-2xl font-bold">{value}</span></div>
-            <div className="mt-2 text-sm font-semibold">{label}</div>
-            <div className="text-[11px] opacity-70">{hint}</div>
+          { label: t('page.stats.activeProjects'), value: allProjects.length - completed, hint: t('page.stats.activeHint'), tone: 'text-slate-900', action: () => setFilterStatus('') },
+          { label: t('page.stats.noManager'), value: withoutManager, hint: t('page.stats.noManagerHint'), tone: withoutManager ? 'text-red-700' : 'text-slate-900', action: () => setFilterStatus('') },
+          { label: t('page.stats.openingSoon'), value: openingSoon, hint: t('page.stats.openingSoonHint'), tone: openingSoon ? 'text-amber-700' : 'text-slate-900', action: () => setFilterStatus('') },
+          { label: t('page.stats.completed'), value: completed, hint: t('page.stats.completedHint'), tone: 'text-emerald-700', action: () => setFilterStatus(stages.find((stage) => ['OPENED', 'COMPLETED'].includes(stage.code))?.code ?? '') },
+        ].map(({ label, value, hint, tone, action }, index) => (
+          <button key={label} onClick={action} className={`min-w-0 px-3 py-2.5 text-left hover:bg-muted/40 ${index % 2 ? 'border-l border-border' : ''} ${index >= 2 ? 'border-t border-border lg:border-t-0 lg:border-l' : ''}`}>
+            <div className="flex items-baseline gap-2"><span className={`text-xl font-semibold tabular-nums ${tone}`}>{value}</span><span className="truncate text-xs font-medium text-muted-foreground">{label}</span></div>
+            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</div>
           </button>
         ))}
-      </div>
+      </section>
 
-      {/* Filter chips */}
-      <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-none">
-        <button
-          onClick={() => setFilterStatus('')}
-          className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-            ${!filterStatus ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-        >
-          {t('page.filterAll', { count: allProjects.length })}
-        </button>
-        {stages.map((s) => {
-          const count = allProjects.filter((p: any) => p.status === s.code).length;
-          const active = filterStatus === s.code;
-          return (
-            <button
-              key={s.code}
-              onClick={() => setFilterStatus(active ? '' : s.code)}
-              style={stageBadgeStyle(s.colorHex)}
-              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-                ${active ? 'ring-2 ring-offset-1 ring-blue-400' : 'border-transparent'}`}
-            >
-              {s.name}{count > 0 && ` (${count})`}
-            </button>
-          );
-        })}
-      </div>
+      <ERPToolbar className="mb-3 gap-2 rounded-md px-2.5 py-2">
+        <div className="relative min-w-56 flex-[2_1_320px]">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t('page.searchPlaceholder')}
+            aria-label={t('page.searchLabel')}
+            className="h-8 pl-9"
+          />
+        </div>
+        <Select value={filterStatus || 'ALL'} onValueChange={(value) => setFilterStatus(value === 'ALL' ? '' : value)}>
+          <SelectTrigger aria-label={t('page.stageFilterLabel')} className="h-8 w-[220px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">{t('page.filterAll', { count: allProjects.length })}</SelectItem>
+            {stages.map((stage) => (
+              <SelectItem key={stage.code} value={stage.code}>{stage.name} ({allProjects.filter((project) => project.status === stage.code).length})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {(search || filterStatus) && <Button variant="ghost" size="sm" className="h-8" onClick={() => { setSearch(''); setFilterStatus(''); }}>{t('page.clearFilters')}</Button>}
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{t('page.resultCount', { count: projects.length })}</span>
+      </ERPToolbar>
 
       {isLoading ? (
-        <div className="grid md:grid-cols-2 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}><CardContent className="pt-4"><Skeleton className="h-40" /></CardContent></Card>
-          ))}
+        <div className="space-y-1 rounded-lg border border-border p-2">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-11" />)}
         </div>
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 py-14 text-center">
@@ -1093,66 +1076,38 @@ export default function FitoutPage() {
           {filterStatus && <Button variant="outline" size="sm" className="mt-4" onClick={() => setFilterStatus('')}>{t('page.viewAll')}</Button>}
         </div>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          {projects.map((p: any) => {
-            const step = stages.find((s) => s.code === p.status);
-            const progress = getProgress(stages, p.status);
-            const nextS = getNextStep(stages, p.status);
-
-            return (
-              <Card
-                key={p.id}
-                className="hover:shadow-md transition-all cursor-pointer border hover:border-gray-300 group"
-                onClick={() => setSelectedId(p.id)}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <CardTitle className="text-base truncate">{p.tenant?.brandName}</CardTitle>
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        {p.unit?.code} — {p.unit?.floor?.name}
-                      </p>
-                    </div>
-                    <Badge className="border-0 text-xs shrink-0" style={stageBadgeStyle(step?.colorHex)}>
-                      {step?.name ?? p.status}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="mb-3">
-                    <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                      <span>{t('page.processProgress')}</span>
-                      <span className="font-medium">{Math.round(progress)}%</span>
-                    </div>
-                    <Progress value={progress} className="h-2" />
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-gray-400">
-                    <div className="flex items-center gap-3">
-                      {p.expectedOpenDate && (
-                        <span className="flex items-center gap-1">
-                          <Calendar size={11} />
-                          {fmtDate(p.expectedOpenDate)}
-                        </span>
-                      )}
-                      {nextS && (
-                        <span className="flex items-center gap-1 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <ChevronRight size={11} />
-                          {nextS.name}
-                        </span>
-                      )}
-                    </div>
-                    {p.operationManager && (
-                      <span className="flex items-center gap-1">
-                        <User size={11} />
-                        {p.operationManager.fullName}
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <table className="w-full min-w-[940px] text-sm">
+            <thead className="border-b border-border bg-muted/40">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.tenantUnit')}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.stage')}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.progress')}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.expectedOpen')}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.manager')}</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('page.table.nextStage')}</th>
+                <th className="w-10 px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {projects.map((p: any) => {
+                const step = stages.find((stage) => stage.code === p.status);
+                const progress = getProgress(stages, p.status);
+                const nextStage = getNextStep(stages, p.status);
+                return (
+                  <tr key={p.id} tabIndex={0} className="cursor-pointer transition-colors hover:bg-muted/35 focus:bg-muted/35 focus:outline-none" onClick={() => setSelectedId(p.id)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(p.id); } }}>
+                    <td className="px-3 py-2.5"><div className="font-medium text-foreground">{p.tenant?.brandName ?? '—'}</div><div className="text-xs text-muted-foreground">{p.unit?.code ?? '—'}{p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}</div></td>
+                    <td className="px-3 py-2.5"><Badge className="border-0 text-xs" style={stageBadgeStyle(step?.colorHex)}>{step?.name ?? humanizeFitoutCode(p.status)}</Badge></td>
+                    <td className="px-3 py-2.5"><div className="flex w-32 items-center gap-2"><Progress value={progress} className="h-1.5" /><span className="w-9 text-right text-xs tabular-nums text-muted-foreground">{Math.round(progress)}%</span></div></td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{fmtDate(p.expectedOpenDate)}</td>
+                    <td className="px-3 py-2.5"><span className={p.operationManager ? 'text-slate-700' : 'font-medium text-red-700'}>{p.operationManager?.fullName ?? t('detail.noOpManager')}</span></td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">{nextStage?.name ?? t('page.noNextStage')}</td>
+                    <td className="px-2 py-2.5 text-right"><ChevronRight size={15} className="text-muted-foreground" /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 

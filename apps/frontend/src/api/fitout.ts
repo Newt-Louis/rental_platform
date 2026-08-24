@@ -1,4 +1,5 @@
 import api from '@/lib/axios';
+import type { CurrencyCode } from '@/lib/currency';
 
 export const fitoutApi = {
   listFitouts: (params?: Record<string, unknown>) =>
@@ -164,6 +165,7 @@ export interface FitoutChangeOrder {
   reason?: string;
   estimatedCost: number;
   approvedCost?: number;
+  currency?: CurrencyCode;
   scheduleImpactDays?: number;
   status: ChangeOrderStatus;
   requestedBy?: string | { id: string; fullName: string };
@@ -186,6 +188,7 @@ export const fitoutChangeOrderApi = {
   create: (data: Omit<FitoutChangeOrder, 'id' | 'status' | 'code'>) =>
     api.post(`/fitouts/${data.projectId}/controls/change-orders`, {
       title: data.title, reason: data.reason, proposedAmount: data.estimatedCost,
+      currency: data.currency,
       scheduleImpactDays: data.scheduleImpactDays,
     }).then((r) => r.data),
   transition: (projectId: string, id: string, status: 'APPROVED' | 'REJECTED', data?: { approvedCost?: number }) =>

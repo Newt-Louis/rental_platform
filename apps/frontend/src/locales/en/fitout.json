@@ -25,8 +25,10 @@
     "submittalByStatus": "Submittals by status"
   },
   "page": {
+    "eyebrow": "Space operations",
     "title": "Fitout Operations",
     "subtitle": "From space handover to grand opening through a clear process",
+    "dashboardAction": "Overview",
     "config": "Settings",
     "projectCount": "{{count}} projects",
     "operationMap": "Fitout Operations Map",
@@ -48,6 +50,21 @@
       "completedHint": "Handed over projects"
     },
     "filterAll": "All ({{count}})",
+    "attentionLabel": "Fitout attention summary",
+    "searchPlaceholder": "Search tenant, space, floor or manager...",
+    "searchLabel": "Search fitout projects",
+    "stageFilterLabel": "Filter by stage",
+    "clearFilters": "Clear filters",
+    "resultCount": "{{count}} results",
+    "noNextStage": "Final stage",
+    "table": {
+      "tenantUnit": "Tenant / Space",
+      "stage": "Current stage",
+      "progress": "Progress",
+      "expectedOpen": "Expected opening",
+      "manager": "Operations owner",
+      "nextStage": "Next stage"
+    },
     "errorTitle": "Cannot load fitout project list",
     "errorSubtitle": "Progress data is not ready. Please try again.",
     "retry": "Retry",
@@ -139,6 +156,14 @@
     "reject": "Reject",
     "resubmit": "Resubmit",
     "publish": "Publish",
+    "status": {
+      "SUBMITTED": "Submitted",
+      "IN_PROGRESS": "In review",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "PUBLISHED": "Published",
+      "OBSOLETED": "Obsolete"
+    },
     "rejectDialog": {
       "title": "Reject document",
       "description": "The reason will be sent to the submitter and saved in the approval history.",
@@ -174,6 +199,14 @@
       "HIGH": "High",
       "CRITICAL": "Critical"
     },
+    "status": {
+      "OPENED": "Open",
+      "IN_PROGRESS": "In progress",
+      "DONE": "Resolved",
+      "CLOSED": "Closed",
+      "REOPENED": "Reopened",
+      "CANCELLED": "Cancelled"
+    },
     "create": "Create issue",
     "empty": "No issues yet",
     "assignee": "Assigned: {{name}}",
@@ -184,6 +217,22 @@
       "errorCreate": "Error creating issue",
       "errorUpdate": "Error updating"
     }
+  },
+  "workflow": {
+    "status": {
+      "PENDING": "Pending",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled"
+    }
+  },
+  "roles": {
+    "ADMIN": "Administrator",
+    "MALL_DIRECTOR": "Mall director",
+    "OPERATION": "Operations",
+    "LEASING_MANAGER": "Leasing manager",
+    "FINANCE": "Finance",
+    "TENANT": "Tenant"
   },
   "milestone": {
     "empty": "No SLA milestones yet",
@@ -348,6 +397,53 @@
       "MEDIUM": "Medium",
       "HIGH": "High"
     }
+  },
+  "riskControl": {
+    "title": "Risk register",
+    "description": "Assess probability × impact and track mitigation measures.",
+    "open": "Open",
+    "critical": "Critical",
+    "add": "Add",
+    "save": "Save risk",
+    "loading": "Loading risk register...",
+    "loadError": "Cannot load risk register.",
+    "errorUpdate": "Cannot update risk data. Please try again.",
+    "empty": "No risks recorded for this project.",
+    "other": "Other",
+    "unassigned": "Unassigned",
+    "due": "Due {{date}}",
+    "noDueDate": "No due date",
+    "statusLabel": "Status for {{title}}",
+    "fields": { "title": "Risk name *", "category": "Category", "probability": "Probability (1–5)", "impact": "Impact (1–5)", "dueDate": "Due date", "mitigation": "Mitigation measure" },
+    "category": { "SAFETY": "Safety", "COST": "Cost", "SCHEDULE": "Schedule", "QUALITY": "Quality", "COMPLIANCE": "Compliance" },
+    "level": { "LOW": "Low", "MEDIUM": "Medium", "HIGH": "High", "CRITICAL": "Critical" },
+    "status": { "OPEN": "Open", "MITIGATING": "Mitigating", "CLOSED": "Closed" },
+    "toast": { "created": "Risk added to the register" }
+  },
+  "changeOrder": {
+    "title": "Change order & cost control",
+    "description": "Control scope, cost and schedule impact.",
+    "pending": "Pending",
+    "proposed": "Proposed",
+    "approved": "Approved",
+    "add": "Add",
+    "save": "Save change order",
+    "loading": "Loading change orders...",
+    "loadError": "Cannot load change orders.",
+    "errorUpdate": "Cannot update change-order data. Please try again.",
+    "empty": "No change requests yet.",
+    "unknownRequester": "Requester unavailable",
+    "requesterHint": "The requester is recorded from the signed-in account.",
+    "cost": "Cost",
+    "schedule": "Schedule",
+    "days": "{{count}} days",
+    "decisionLabel": "Decision for {{title}}",
+    "selectDecision": "Select decision",
+    "approve": "Approve",
+    "reject": "Reject",
+    "fields": { "title": "Change description *", "reason": "Reason / scope", "estimatedCost": "Estimated cost (VND) *", "scheduleImpact": "Schedule impact (days)" },
+    "status": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "UNDER_REVIEW": "Under review", "APPROVED": "Approved", "REJECTED": "Rejected", "CANCELLED": "Cancelled" },
+    "toast": { "created": "Change order created" }
   },
   "common": {
     "back": "Back",
