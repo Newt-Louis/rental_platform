@@ -5,8 +5,8 @@ Assessment date: 2026-08-24
 Overall completion: **80%**
 
 The percentage reflects completion of the canonical inventory, all seven
-planned implementation/audit waves and the supporting-presentation/localization
-Waves 8–9,
+planned implementation/audit waves, supporting-presentation/localization Waves
+8–9 and the test-only Wave 10 baseline closure,
 with focused technical gates passing. It
 is intentionally reduced for unclosed human visual gates, incomplete full UAT,
 known Tier 0/Tier 1 correctness/authorization work, and operational no-go
@@ -148,6 +148,7 @@ The following paths were not staged or committed by the final program gate:
 8. `897829c docs(golden): finalize ERP readiness assessment`
 9. `a08b706 feat(erp-ui): standardize supporting workspaces`
 10. `ad576bb fix(i18n): localize remaining ERP workflow codes`
+11. `a310df4 test(frontend): close Golden ERP baseline failures`
 
 ## Production Readiness
 

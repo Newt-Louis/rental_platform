@@ -57,6 +57,8 @@ not modified.
 
 ## Wave 10 technical gate — 2026-08-24
 
+Checkpoint: `a310df4 test(frontend): close Golden ERP baseline failures`
+
 - `permissions.test.ts` now verifies every permission module is represented and
   every navigation path is unique, while correctly allowing `/ai` and
   `/ai/codebase` to share the same authoritative permission module.
