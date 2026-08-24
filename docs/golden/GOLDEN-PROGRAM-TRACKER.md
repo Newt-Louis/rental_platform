@@ -62,6 +62,8 @@ claiming human UAT completion.
 
 ## Wave 12 technical gate — 2026-08-24
 
+Checkpoint: `8ef46bd test(golden): verify cross-module journey fixtures`
+
 - Added `scripts/golden-journey-evidence.mjs`, a read-only PostgreSQL verifier
   that classifies fixture coverage as `EVIDENCED` or `MISSING`. It performs no
   database writes and does not replace human/live UAT.
