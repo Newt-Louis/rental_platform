@@ -19,6 +19,13 @@ export interface BookingLead {
   phone?: string | null;
   email?: string | null;
   status: string;
+  expectedArea?: number | null;
+  notes?: string | null;
+  assignedToId?: string | null;
+  assignedTo?: {
+    id: string;
+    fullName?: string | null;
+  } | null;
   customer?: {
     id: string;
     customerCode?: string | null;

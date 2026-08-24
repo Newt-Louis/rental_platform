@@ -102,6 +102,18 @@ export function BookingWorkspaceDialog({
     setSubmitError(null);
   }, []);
 
+  const selectLead = (lead: BookingLead) => {
+    setSelectedLead(lead);
+    setDetails((current) => ({
+      ...current,
+      requestedArea:
+        lead.expectedArea != null ? String(lead.expectedArea) : "",
+      notes: lead.notes ?? "",
+      assignedToId: lead.assignedToId ?? lead.assignedTo?.id ?? "",
+    }));
+    setSubmitError(null);
+  };
+
   const mutation = useMutation({
     mutationFn: () =>
       bookingApi.create({
@@ -181,8 +193,8 @@ export function BookingWorkspaceDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-[min(96vw,1180px)] overflow-hidden p-0">
-        <DialogHeader className="border-b px-6 py-5 pr-12">
+      <DialogContent className="!flex h-[calc(100dvh-1rem)] max-w-[min(96vw,1180px)] !max-h-none flex-col gap-0 overflow-hidden p-0 sm:h-[90dvh]">
+        <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6 sm:py-5">
           <DialogTitle className="flex items-center gap-2">
             <BookmarkPlus
               className="h-5 w-5 text-amber-600"
@@ -196,7 +208,7 @@ export function BookingWorkspaceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[calc(90vh-150px)] overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
           <div className="mb-4 rounded-lg border bg-gray-50 p-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -249,10 +261,7 @@ export function BookingWorkspaceDialog({
                 <PartyFinder
                   mallId={workspaceMallId}
                   selectedLead={selectedLead}
-                  onSelect={(lead) => {
-                    setSelectedLead(lead);
-                    setSubmitError(null);
-                  }}
+                  onSelect={selectLead}
                 />
               </div>
 
@@ -367,6 +376,10 @@ export function BookingWorkspaceDialog({
                 <h3 className="font-semibold text-gray-900">
                   Chi tiết Booking
                 </h3>
+                <p className="text-xs text-gray-500">
+                  Dữ liệu có sẵn từ Lead đã được điền tự động. Chỉ điều chỉnh
+                  khi thông tin của Booking này khác với nhu cầu đã ghi nhận.
+                </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <Field label="Diện tích yêu cầu (m²)">
                     <Input
@@ -484,7 +497,7 @@ export function BookingWorkspaceDialog({
           </div>
         </div>
 
-        <DialogFooter className="border-t bg-white px-6 py-4">
+        <DialogFooter className="shrink-0 border-t bg-white px-4 py-3 sm:px-6 sm:py-4">
           <Button type="button" variant="outline" onClick={onClose}>
             Hủy
           </Button>
@@ -492,7 +505,7 @@ export function BookingWorkspaceDialog({
             type="button"
             disabled={!canSubmit}
             onClick={() => mutation.mutate()}
-            className="gap-2 bg-amber-600 text-white hover:bg-amber-700"
+            className="max-w-full gap-2 whitespace-normal bg-amber-600 text-center text-white hover:bg-amber-700"
           >
             <BookmarkPlus className="h-4 w-4" aria-hidden="true" />
             {mutation.isPending

@@ -10,7 +10,11 @@ const toast = vi.fn();
 vi.mock("@/api", () => ({
   bookingApi: { create: (...args: any[]) => create(...args) },
   spacesApi: { listMalls: vi.fn().mockResolvedValue([]) },
-  usersApi: { listUsers: vi.fn().mockResolvedValue({ data: [] }) },
+  usersApi: {
+    listUsers: vi
+      .fn()
+      .mockResolvedValue({ data: [{ id: "user-1", fullName: "Lan" }] }),
+  },
 }));
 
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -55,6 +59,8 @@ vi.mock("./PartyFinder", () => ({
           brandName: "NIKE",
           contactName: "An",
           status: "QUALIFIED",
+          expectedArea: 88,
+          assignedToId: "user-1",
         })
       }
     >
@@ -124,6 +130,30 @@ describe("BookingWorkspaceDialog", () => {
     expect(screen.getByText(/A101 — Corner/)).toBeInTheDocument();
     expect(screen.getByText("NIKE")).toBeInTheDocument();
     expect(screen.getByLabelText("Ghi chú Booking")).toHaveValue("Keep me");
+  });
+
+  it("prefills available Lead details and still allows adjustments", async () => {
+    create.mockResolvedValue({ bookingNumber: "BK-2", status: "ACTIVE" });
+    renderWorkspace(vi.fn());
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Mock select Unit" }));
+    await user.click(screen.getByRole("button", { name: "Mock select Lead" }));
+
+    expect(screen.getByLabelText("Diện tích yêu cầu")).toHaveDisplayValue("88");
+    expect(screen.getByLabelText("Phụ trách (Sale)")).toHaveValue("user-1");
+
+    await user.clear(screen.getByLabelText("Diện tích yêu cầu"));
+    await user.type(screen.getByLabelText("Diện tích yêu cầu"), "95");
+    await user.click(
+      screen.getByRole("button", { name: "Tạo Booking vào hàng chờ" }),
+    );
+
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ requestedArea: 95, assignedToId: "user-1" }),
+      ),
+    );
   });
 });
 
