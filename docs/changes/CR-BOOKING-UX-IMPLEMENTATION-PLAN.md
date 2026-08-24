@@ -489,3 +489,33 @@ Closure evidence:
 
 Deferred without scope expansion: Customer integration, Unit rent/currency,
 and NLA/GFA business defaults. Wave 2 was not started.
+
+## 15. Golden Booking Final Human Sign-off
+
+**Human visual sign-off:** PASS
+
+**Golden Booking status:** APPROVED / CLOSED
+
+**Sign-off date:** 2026-08-24
+
+Human review was completed from rendered screenshots covering both the initial
+Booking workspace and the ready-to-create state with a selected Lead and an
+eligible Unit. The approved Golden Booking includes the 60/40 transaction
+workspace, Unit Finder, compact selected-party summary, persistent Booking
+Context, selected-Unit hierarchy, eligibility presentation, readiness footer,
+primary create action, contained Unit-results scrolling, ERP information
+density, and the current responsive desktop composition.
+
+The earlier source-level note that responsive viewports were not verified by
+the implementation agent remains part of the historical closure evidence. It
+is superseded for the approval gate by the completed human review of rendered
+screenshots recorded here.
+
+Minor presentation terms such as `VACANT`, `IMMEDIATE`, and `Lead` are accepted
+as P3 localization cleanup. They do not keep Golden Booking open and are
+tracked separately in
+`docs/changes/CR-BOOKING-UX-P3-LOCALIZATION-BACKLOG.md`.
+
+No further Golden Booking visual iteration is authorized by this closure.
+Business logic, API contracts, backend behavior, schema, and database remain
+unchanged by the final visual-polish and close-out work.

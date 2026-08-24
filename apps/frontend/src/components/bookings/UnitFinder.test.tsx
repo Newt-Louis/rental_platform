@@ -16,6 +16,23 @@ vi.mock("@/api", () => ({
   },
 }));
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { defaultValue?: string }) =>
+      ({
+        "workspace.unitFinder": "Tìm mặt bằng",
+        "workspace.eligibility.immediate": "Có thể giữ",
+        "workspace.eligibility.queue": "Hàng chờ",
+        "workspace.eligibility.blocked": "Không khả dụng",
+        "workspace.unitStatus.VACANT": "Còn trống",
+        "workspace.unitStatus.BOOKING": "Đang giữ",
+        "workspace.unitStatus.CONTRACTED": "Đã ký hợp đồng",
+      })[key] ??
+      options?.defaultValue ??
+      key,
+  }),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   listFloors.mockResolvedValue([{ id: "floor-1", name: "Tầng 1" }]);
@@ -34,11 +51,14 @@ describe("UnitFinder", () => {
     const onSelect = vi.fn();
     renderFinder(onSelect);
 
-    expect(await screen.findByText("AVAILABLE")).toBeInTheDocument();
-    expect(screen.getByText("QUEUE ELIGIBLE · 2")).toBeInTheDocument();
-    expect(screen.getByText("NOT ELIGIBLE")).toBeInTheDocument();
+    expect(await screen.findByText("Có thể giữ")).toBeInTheDocument();
+    expect(screen.getByText("Hàng chờ")).toBeInTheDocument();
+    expect(screen.getByText("2 Booking đang chờ")).toBeInTheDocument();
+    expect(screen.getByText("Không khả dụng")).toBeInTheDocument();
     expect(
-      screen.getByText("Không thể chọn vì Unit đang ở trạng thái CONTRACTED."),
+      screen.getByText(
+        "Không thể chọn vì mặt bằng đang ở trạng thái Đã ký hợp đồng.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Chọn Unit A103" }),
