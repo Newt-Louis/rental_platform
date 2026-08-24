@@ -152,32 +152,36 @@ export class TicketSlaService {
     this.logger.log(`Ticket SLA check: ${breachedTickets.length} breached, ${escalated} escalated`);
   }
 
-  async getStats() {
+  async getStats(mallIds?: string[]) {
     const now = new Date();
+    const mallScope = mallIds
+      ? { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } }
+      : {};
+    const activeScope = { isActive: true, ...mallScope };
 
     const [total, openTickets, breached, byPriority] = await Promise.all([
-      this.prisma.ticket.count({ where: { isActive: true } }),
+      this.prisma.ticket.count({ where: activeScope }),
       this.prisma.ticket.findMany({
-        where: { isActive: true, status: { notIn: ['RESOLVED', 'CLOSED'] } },
+        where: { ...activeScope, status: { notIn: ['RESOLVED', 'CLOSED'] } },
         select: { slaDueAt: true, resolvedAt: true, createdAt: true },
       }),
       this.prisma.ticket.count({
         where: {
-          isActive: true,
+          ...activeScope,
           status: { notIn: ['RESOLVED', 'CLOSED'] },
           slaDueAt: { lt: now },
         },
       }),
       this.prisma.ticket.groupBy({
         by: ['priority'],
-        where: { isActive: true },
+        where: activeScope,
         _count: true,
       }),
     ]);
 
     const resolvedTickets = await this.prisma.ticket.findMany({
       where: {
-        isActive: true,
+        ...activeScope,
         status: { in: ['RESOLVED', 'CLOSED'] },
         resolvedAt: { not: null },
       },

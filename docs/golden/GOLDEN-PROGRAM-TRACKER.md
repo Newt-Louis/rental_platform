@@ -36,6 +36,52 @@ The following pre-existing paths are excluded from program staging unless their 
 | 12 | Cross-module journey evidence | COMPLETE — 5/8 fixture segments evidenced; 3 gaps explicit; UAT remains 2/12 |
 | 13 | Automated rendered viewport verification | COMPLETE — 28 route/viewport renders pass automated checks; HUMAN SIGN-OFF PENDING |
 | 14 | Render-discovered presentation defects | COMPLETE — report artifacts removed and Work Order templates localized |
+| 15 | Ticket secondary-path authorization | COMPLETE — per-ticket ownership and Mall-scoped aggregates enforced |
+
+## Wave 15 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W15-TICKET-SECONDARY-AUTHORIZATION`
+
+Business reason: Ticket core CRUD validates authoritative Ticket ownership, but
+escalation/rating routes bypass that same validation, global SLA policy writes
+are reachable by Tenant users, and aggregate SLA/CSAT statistics are not scoped.
+These are confirmed authorization defects with an existing safe pattern, not
+open business semantics.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Tickets / SLA / CSAT authorization only |
+| Runtime behavior | Reuse existing Ticket Mall/Tenant validation for per-ticket secondary routes; restrict global SLA policy configuration to ADMIN; scope aggregate statistics to accessible Malls and exclude Tenant aggregate access |
+| Data/workflow | No Ticket status, SLA calculation, rating formula, escalation generation or lifecycle change |
+| Financial/currency | Not applicable; Ticket surfaces contain no money |
+| Mall/Tenant | Closes `CONTRA-003`/`INV-006` on the selected HTTP paths; scheduler recipient semantics remain `BC-020-R` |
+| Authorization | Backend remains authoritative; no frontend permission expansion |
+| API | Response shapes and paths unchanged; unauthorized callers now receive the existing guard/access denial |
+| Schema/database/migration | No change |
+| Events/jobs | Scheduled escalation generation unchanged; only HTTP read/write authorization and aggregate query scope change |
+| Concurrency/idempotency | Rating upsert behavior unchanged |
+| Protected work | Dashboard and Proposal/Approval concurrent files excluded |
+| Tests | New focused controller/service denial and scope tests; backend focused/full, builds, reconciliation and `git diff --check` |
+| Golden scenarios | GS-09/GS-10 authorization boundaries; no UAT scenario upgraded from unit evidence |
+| Rollback | Revert controller role/scope wiring and scoped aggregate predicates |
+| Unknowns | Mall-specific escalation-recipient policy remains `UNKNOWN — BUSINESS CONFIRMATION REQUIRED` and is out of scope |
+
+## Wave 15 technical gate — 2026-08-24
+
+- Ticket SLA policy list/write is now ADMIN-only; per-ticket escalation/rating
+  routes reuse the authoritative Mall and Tenant ownership checks from core
+  Ticket CRUD.
+- Aggregate SLA and CSAT statistics exclude Tenant access and apply the caller's
+  accessible Mall set at the Prisma query.
+- Focused Ticket authorization/workflow: PASS, 2 suites / 12 tests.
+- Backend full: PASS, 92/92 suites and 606/606 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Ticket workflow, SLA calculation, rating formula, scheduler behavior, API
+  response shapes, schema and database: UNCHANGED.
+- Remaining `BC-020-R` concerns only which Mall-specific users should receive
+  scheduled escalation notifications; it does not reopen the corrected HTTP
+  authorization paths.
 
 ## Wave 14 Change Request and Impact Map
 

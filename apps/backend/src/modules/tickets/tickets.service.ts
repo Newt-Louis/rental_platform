@@ -339,8 +339,8 @@ export class TicketsService {
     return { total, byStatus, byPriority, unassigned, overdue };
   }
 
-  async getEscalations(ticketId: string) {
-    await this.findOne(ticketId);
+  async getEscalations(ticketId: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketEscalation.findMany({
       where: { ticketId },
       orderBy: { level: 'asc' },
@@ -354,9 +354,9 @@ export class TicketsService {
     });
   }
 
-  async rateTicket(ticketId: string, rating: number, comment?: string) {
+  async rateTicket(ticketId: string, rating: number, comment?: string, currentUser?: CurrentUser) {
     if (rating < 1 || rating > 5) throw new BadRequestException('Rating must be 1-5');
-    await this.findOne(ticketId);
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketRating.upsert({
       where: { ticketId },
       create: { ticketId, rating, comment, ratedAt: new Date() },
@@ -364,13 +364,18 @@ export class TicketsService {
     });
   }
 
-  async getTicketRating(ticketId: string) {
+  async getTicketRating(ticketId: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketRating.findUnique({ where: { ticketId } });
   }
 
-  async getCsatSummary() {
+  async getCsatSummary(mallIds?: string[]) {
+    const where = mallIds
+      ? { ticket: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } }
+      : {};
     const ratings = await this.prisma.ticketRating.groupBy({
       by: ['rating'],
+      where,
       _count: { rating: true },
     });
     const totalRated = ratings.reduce((s, r) => s + r._count.rating, 0);

@@ -44,11 +44,14 @@ Wave 3 makes no backend, authorization or data-scope changes. Focused Space auth
 | Surface | Current evidence | Decision |
 |---|---|---|
 | Ticket core list/detail/mutations | Current staff paths apply Mall access and Tenant paths derive Tenant identity server-side | VERIFIED for core paths; unchanged |
-| Ticket escalation, rating and SLA-policy secondary paths | Current endpoint ownership is incomplete/inconsistent with the core Tenant boundary | CONFIRMED GAP (`CONTRA-003` / `INV-006` / `BC-020`); quarantined from presentation Wave 4 |
+| Ticket escalation, rating and SLA-policy secondary paths | Wave 15 applies core Ticket Mall/Tenant ownership checks to per-ticket routes, makes global SLA configuration ADMIN-only and Mall-scopes staff aggregate statistics | VERIFIED for current HTTP paths; scheduled escalation-recipient Mall policy remains `BC-020-R` |
 | Work Order | Controller role-scope suite verifies current allowed roles; service scopes operational records by Mall | VERIFIED for current focused paths; unchanged |
 | Patrol | Current Shift/Route/Schedule paths validate Mall access; abnormal Check automation remains backend-owned | CHECKED-BUT-NOT-CHANGED; no UI role check is treated as security |
 
-Wave 4 makes no backend, authorization or data-scope changes. Focused Ticket/Maintenance/Work Order verification passed 2 suites / 18 tests; the full backend gate passed 91 suites / 598 tests.
+Wave 4 made no backend authorization changes. Wave 15 subsequently closed the
+provable HTTP gaps with 2 focused suites / 12 tests; the full backend gate now
+passes 92 suites / 606 tests. Scheduler recipient policy remains a separate
+business confirmation and no workflow semantics were changed.
 
 ## Wave 5 evidence — Reports / Analytics
 

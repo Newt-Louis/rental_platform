@@ -13,10 +13,10 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 598/598; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
+| Engineering | PASS | Backend is 606/606 across 92 suites; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
 | Authorization | FAIL | Core audited paths are scoped, but CRM unified deals, Ticket secondary paths, and Analytics Compliance exports retain confirmed ownership/scope gaps. |
-| Tenant isolation | FAIL | Live Contract/Invoice cross-tenant IDOR checks passed, but confirmed Ticket secondary-path ownership gaps remain. Files have focused tests but no live cross-tenant UAT. |
+| Tenant isolation | BLOCKED | Wave 15 closes the confirmed Ticket escalation/rating ownership gaps with focused negative coverage. Live Contract/Invoice checks passed and Files have focused tests, but the complete live cross-tenant UAT matrix is still missing. |
 | Cross-Mall isolation | BLOCKED | The UAT seed contains one Mall, so a meaningful two-Mall denial matrix cannot be executed. Confirmed adjacent endpoint gaps must also be remediated first. |
 | Data integrity | PASS | Read-only backbone reconciliation completed 17/17 checks clean on 2026-08-24; backend concurrency/invariant suites pass. This is dev-data evidence, not production-data certification. |
 | Database migration safety | PASS | This program introduced no schema or migration. Existing deployment policy requires explicit migration execution and prohibits migration-on-startup. |
