@@ -22,5 +22,6 @@ Status: ACTIVE
 | Ticket escalation/rating/SLA-policy Tenant isolation | Tier 1; `CONTRA-003` / `INV-006` / BC-020 | Quarantine secondary endpoints; require authoritative ownership decision and negative Tenant/cross-Mall tests |
 | Work Order status/event atomicity | Tier 1 reliability | Status write and audit-event insert are currently separate; preserve until a reviewed transaction change |
 | Patrol abnormal-check → Work Order transaction boundary | Tier 1 cross-module; XMOD-007 | Existing one-way/idempotent automation is preserved; verify atomicity before any correctness change |
+| Analytics Compliance export Mall ownership | Tier 1; BC required | Core Analytics reads were fixed in CR-101 Phase 3G, but export list/request/generate/manual-monthly paths still require authoritative ownership, scoped entity lookups and negative cross-Mall tests |
 
 This backlog records risks; it is not authorization to change Tier 0/Tier 1 behavior.

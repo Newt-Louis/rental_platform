@@ -49,3 +49,14 @@ Wave 3 makes no backend, authorization or data-scope changes. Focused Space auth
 | Patrol | Current Shift/Route/Schedule paths validate Mall access; abnormal Check automation remains backend-owned | CHECKED-BUT-NOT-CHANGED; no UI role check is treated as security |
 
 Wave 4 makes no backend, authorization or data-scope changes. Focused Ticket/Maintenance/Work Order verification passed 2 suites / 18 tests; the full backend gate passed 91 suites / 598 tests.
+
+## Wave 5 evidence — Reports / Analytics
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Reports core and CSV export | CR-101 Phase 3G controller resolves explicit or accessible Mall sets through `MallAccessService`; service tests prove scopes reach Prisma/Billing queries | VERIFIED for focused paths; earlier System Truth characterization is stale |
+| Analytics occupancy/vacancy/renewal/multi-Mall | Controller resolves accessible Mall scope; multi-Mall comparison receives that scope rather than returning global data to ordinary Mall roles | VERIFIED by focused controller/service suites; unchanged |
+| Analytics Compliance exports | List/request/generate/manual-monthly endpoints do not validate requested/entity Mall ownership and inherit the broad Analytics role set | CONFIRMED REMAINING GAP; Tier 1 quarantine pending ownership decision and negative tests |
+| Analytics retention policy | Per-Mall reads/writes validate Mall access; config writes exclude CEO | VERIFIED for current controller path; unchanged |
+
+Wave 5 changes presentation only. Focused Report/Analytics verification passed 6 suites / 29 tests; this evidence corrects the stale broad-gap wording without claiming the Compliance sub-surface is secure.

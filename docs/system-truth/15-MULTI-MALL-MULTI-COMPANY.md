@@ -1,5 +1,7 @@
 # System Truth — 15 — Multi-Mall / Multi-Company
 
+> Current-state correction (2026-08-24): CR-101 Phase 3G closed the broad Reports/Analytics read gaps described in this reconstruction by resolving explicit/accessible Mall scopes through `MallAccessService`. Analytics Compliance export list/request/generate/manual-monthly remains a narrower open gap. See `docs/golden/AUTHORIZATION-AUDIT.md` Wave 5 for current evidence.
+
 ## Structural correction
 
 **There is no "Multi-Company" model.** No `Company` Prisma entity exists; `Mall` is flat and ungrouped. This document covers Multi-Mall only. See `00-SYSTEM-OVERVIEW.md` and `SYSTEM_SCOPE_MAP.md`.

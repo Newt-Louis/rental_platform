@@ -25,7 +25,8 @@ The following pre-existing paths are excluded from program staging unless their 
 | 2 | CRM / Customer / Tenant presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 3 | Unit / Space Inventory presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 4 | Operations / Ticket / Maintenance presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
-| 5+ | Remaining modules in dependency order | PENDING |
+| 5 | Reporting / Statistics presentation | IMPLEMENTED — AUTHORIZATION + HUMAN REVIEW PENDING |
+| 6+ | Remaining modules in dependency order | PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | PENDING |
 
 ## Wave 1 Change Request and Impact Map
@@ -226,4 +227,54 @@ Approval boundary: the user's master execution authorization permits presentatio
 - Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
 - Reconciliation: Ticket, Maintenance, Work Order and Patrol surfaces contain no financial fields. Existing status/action transitions and Patrol-to-Work-Order automation remain backend-authoritative and unchanged.
 - Authorization: core paths remain server-scoped; the known Ticket secondary-endpoint Tenant gap remains explicitly quarantined and is not presented as secured by UI.
+- Business logic/API contract/backend/schema/database changes: NO.
+
+## Wave 5 Change Request and Impact Map
+
+Business objective: make Reports and Analytics a dense, decision-oriented management workspace with explicit financial units, exact monetary detail and localized analytical labels, while preserving every current formula and refusing to represent the remaining unscoped Compliance-export paths as Golden-secure.
+
+In scope:
+
+- Reports and Analytics frontend hierarchy, density, responsive composition and localized presentation.
+- Exact financial display with ISO currency; chart axes may use a declared scale while tooltips remain exact.
+- Presentation-only status/risk/lease-term labels and visibility alignment for the existing CEO/ADMIN cross-Mall capability.
+- Focused frontend presentation and currency tests.
+
+Out of scope:
+
+- Revenue, collection, occupancy, risk, compliance or AR-aging formula changes and formula consolidation.
+- Compliance export/list/generate/manual-monthly authorization remediation; the remaining exposure is Tier 1 and requires the governance review chain before implementation.
+- Backend controllers/services, API contracts, schema/migrations, database, jobs and persisted analytics snapshots.
+- Dashboard, Sales, Billing and protected Proposal/Approval working-tree changes.
+
+Impact dimensions:
+
+| Dimension | Finding |
+|---|---|
+| Upstream | Reports/Analytics read CRM, Proposal, Contract, Invoice/Payment, Unit and audit data directly; no source writes are introduced |
+| Downstream | CSV/compliance exports and management decisions consume these views; export payloads and formulas remain unchanged |
+| Financial/currency | Revenue/receivables endpoints are explicitly VND-scoped and silently exclude non-VND records. Pipeline and renewal-risk values are already separated by persisted currency. Wave 5 will disclose these semantics and never combine currencies |
+| Mall/Tenant | CR-101 Phase 3G now scopes core Reports and Analytics reads through `MallAccessService` and accessible Mall ID sets. Analytics Compliance export list/request/generate/manual-monthly paths still do not resolve or validate Mall ownership; this narrower Tier 1 gap prevents full closure |
+| Events/jobs | Occupancy snapshot, renewal-risk and compliance scheduler behavior is unchanged; the dead duplicate analytics expiry scheduler remains unregistered |
+| Concurrency/idempotency | Read-side presentation only; existing SchedulerLock/job-ledger behavior and per-item failure gaps are unchanged |
+| API/schema/database | No change |
+| Protected modules | Dashboard and active Proposal/Approval paths remain excluded |
+
+Golden scenarios to preserve: GS-09 (cross-Mall authorization), GS-10 (Tenant isolation), GS-11 through GS-14 (currency), and GS-15 (retry/idempotency). GS-09 passes for the focused core Report/Analytics reads and remains blocked for the Compliance-export sub-surface.
+
+Unknowns: authoritative ownership/role policy for Compliance exports remains `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`; UI presentation will not be treated as authorization. Metric formula ownership also remains unresolved and no formula is selected as canonical in Wave 5.
+
+Approval boundary: the user's master authorization permits presentation work. Mall-scope remediation and shared financial-formula ownership cross Tier 0/Tier 1 boundaries and are not self-approved.
+
+## Wave 5 technical gate — 2026-08-24
+
+- Frontend Reporting presentation and currency focused: PASS, 2 files / 5 tests.
+- Backend Reports/Analytics scope, currency and breakdown focused: PASS, 6 suites / 29 tests.
+- Backend full: PASS, 91 suites / 598 tests (same backend working tree; no Wave 5 backend changes).
+- TypeScript and frontend production build: PASS.
+- Docker/runtime: PASS; rebuilt the current frontend/backend dependency chain, all four services are healthy, and `http://localhost:8080/` plus `http://localhost:3000/api/health` return HTTP 200. Existing UAT orphan containers were reported and deliberately left untouched.
+- Frontend full: BASELINE FAILURES only — `permissions.test.ts` RouteModule duplication and 9 legacy `BookingsPage.test.tsx` selector/assertion failures. Reporting/currency focused tests passed.
+- Automated rendered viewport review: UNAVAILABLE. Browser runtime discovery returned no browser instances; responsive or visual PASS is not claimed.
+- Financial reconciliation: VND-only revenue/receivables scope is disclosed; chart axes declare `Tỷ VND`; tooltips, KPI values and per-currency pipeline/risk values are exact and use ISO currency. No FX, mixed-currency sum or formula change was introduced.
+- Authorization: core Reports/Analytics Mall scope is verified under CR-101 Phase 3G. Analytics Compliance export list/request/generate/manual-monthly remains a Tier 1 quarantine, so Wave 5 is not Golden Closed.
 - Business logic/API contract/backend/schema/database changes: NO.

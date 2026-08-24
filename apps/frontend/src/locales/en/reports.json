@@ -1,7 +1,17 @@
 {
   "title": "Reports",
+  "eyebrow": "Performance management",
+  "financialUnit": "Unit: VND billion",
+  "leaseTerm": { "LONG": "Long-term leasing", "SHORT": "Short-term leasing" },
   "analytics": {
-    "title": "Analytics"
+    "title": "Performance analytics",
+    "subtitle": "Occupancy, renewal risk and operational indicators from current source data",
+    "tabs": { "occupancy": "Occupancy & vacancy", "renewalRisk": "Renewal risk", "multiMall": "Mall comparison", "compliance": "Compliance" },
+    "occupancyRate": "Occupancy rate", "effectiveOccupancy": "Effective occupancy", "includesFitout": "Includes fitout units",
+    "vacantArea": "Vacant area", "estimatedLoss": "Estimated loss", "units": "units",
+    "riskCritical": "Critical risk", "riskHigh": "High risk", "actNow": "Action required", "monitor": "Monitor closely",
+    "revenueAtRisk": "Revenue at risk", "perMonth": "per month", "trackedContracts": "Tracked contracts",
+    "exportStatus": { "PENDING": "Pending", "COMPLETED": "Completed", "FAILED": "Failed" }
   },
   "filters": {
     "period": "Reporting period",
@@ -47,7 +57,7 @@
     "noConversation": "Start a conversation with AI"
   },
   "noData": "No report data available",
-  "subtitle": "Aggregated reports",
+  "subtitle": "Aggregated reports · VND financial totals exclude USD/MMK records",
   "exportCsv": "Export CSV",
   "exportError": "Export error",
   "exporting": "Exporting...",
@@ -79,7 +89,9 @@
   "pipeline": {
     "leadsByStatus": "Leads by status",
     "proposalsByStatus": "Proposals by status",
-    "empty": "No pipeline data yet"
+    "empty": "No pipeline data yet",
+    "leadStatus": { "NEW": "New", "CONTACTED": "Contacted", "QUALIFIED": "Qualified", "PROPOSAL": "Proposal", "NEGOTIATION": "Negotiation", "WON": "Won", "LOST": "Lost" },
+    "proposalStatus": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "UNDER_REVIEW": "Under review", "APPROVED": "Approved", "REJECTED": "Rejected", "CONVERTED": "Converted to contract" }
   },
   "expiry": {
     "title": "Expiring contracts",
