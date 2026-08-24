@@ -56,9 +56,9 @@ conditions. It is not a production confidence score.
 
 - Exposed live credentials remain unrotated; old credentials and reachable git
   history are not remediated.
-- Confirmed cross-Mall authorization boundaries remain open in CRM unified
-  deals and Analytics Compliance exports. Wave 15 closed Ticket secondary HTTP
-  ownership and aggregate-scope gaps.
+- Analytics Compliance exports retain a confirmed cross-Mall authorization
+  boundary. Waves 15–16 closed Ticket secondary HTTP ownership/aggregate scope
+  and CRM unified-deals Mall scope.
 - Revenue-share currency behavior is unsafe/undefined when non-VND data enters
   the path; authoritative business semantics are not approved.
 - No off-site database or uploaded-file backup exists, triggering an
@@ -114,7 +114,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
 | Cross-Module Journeys | **FAIL** — 2/12 live UAT scenarios evidenced; read-only fixture verifier covers 5/8 supporting segments, with rejected approval, one linked Lead-to-Collection fixture and a second Mall missing |
 | Frontend Tests | **265/265 PASS** — 45/45 files; obsolete baseline assertions remediated without production-code changes, enum fallback coverage and Work Order template locale coverage added |
-| Backend Tests | **606/606 PASS** — 92/92 suites |
+| Backend Tests | **611/611 PASS** — 93/93 suites |
 | Integration Tests | **2/12 live UAT scenarios PASS**; automated fixture evidence **5/8 segments** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |
 | Frontend Build | **PASS** |

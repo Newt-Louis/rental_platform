@@ -66,7 +66,7 @@ overlap; independent modules must continue.
 
 | Finding | Classification after challenge | Autonomous action |
 |---|---|---|
-| CRM unified-deals Mall scope | Proven security defect; Lead already has authoritative `mallId` and controller already has the scope helper | Fix and add negative scope tests |
+| CRM unified-deals Mall scope | Proven security defect; Lead already has authoritative `mallId` and controller already has the scope helper | RESOLVED in Wave 16 with pre-pagination scope tests |
 | Ticket escalation/rate/rating ownership | Proven defect; reuse the same authoritative Ticket validation used by core CRUD | RESOLVED in Wave 15 with ownership tests |
 | Ticket SLA policy access | Proven exploitable role defect; source comment and global policy model establish ADMIN-only intent | RESOLVED in Wave 15 with role/scope tests |
 | Analytics Compliance export Mall scope | Proven defect; export and requested records persist `mallId` and Analytics already has a scope helper | Fix and add negative scope tests |

@@ -37,6 +37,48 @@ The following pre-existing paths are excluded from program staging unless their 
 | 13 | Automated rendered viewport verification | COMPLETE — 28 route/viewport renders pass automated checks; HUMAN SIGN-OFF PENDING |
 | 14 | Render-discovered presentation defects | COMPLETE — report artifacts removed and Work Order templates localized |
 | 15 | Ticket secondary-path authorization | COMPLETE — per-ticket ownership and Mall-scoped aggregates enforced |
+| 16 | CRM unified-deals authorization | COMPLETE — authoritative Lead scope enforced before pagination |
+
+## Wave 16 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W16-CRM-DEALS-MALL-SCOPE`
+
+Business reason: `GET /crm/deals` currently accepts an unvalidated `mallId`,
+does not pass caller scope into the service, and applies a partial Mall filter
+only after pagination. Lead already persists authoritative `mallId` and the CRM
+controller/service already implement the approved scope helper for every sibling
+Lead worklist.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | CRM unified Deal read model |
+| Runtime behavior | Validate explicit Mall access, pass caller scope and apply Lead scope/Mall predicate before query pagination |
+| Data/workflow | Read-only; no Lead/Booking/Proposal/Contract state change |
+| Financial/currency | Existing estimated-value/currency presentation unchanged |
+| Mall/Tenant | Closes `CONTRA-008` / `AUTH-01` for `GET /crm/deals`; Customer ownership `BC-016` remains out of scope |
+| Authorization | Reuses the same authoritative CRM scope as Lead list/pipeline; backend remains authoritative |
+| API | Route, query parameters and response shape unchanged; inaccessible records are no longer returned |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Not applicable; read-only |
+| Protected work | Concurrent frontend Deals locales and Proposal/Approval/Dashboard files excluded |
+| Tests | Controller scope propagation plus service query predicate tests; focused/full backend, build, reconciliation and `git diff --check` |
+| Golden scenarios | GS-09 cross-Mall denial and Lead-to-Booking identity boundary |
+| Rollback | Revert controller scope propagation and service where predicate |
+| Unknowns | Customer global-vs-Mall ownership remains `BC-016`; no Customer behavior changes |
+
+## Wave 16 technical gate — 2026-08-24
+
+- `GET /crm/deals` validates explicit Mall access, propagates the caller's
+  accessible Mall set and applies the existing CRM Lead scope before pagination.
+- Leasing Executives remain limited to assigned Leads; explicit Mall requests
+  require the Lead's persisted `mallId` to match.
+- Focused CRM controller/service: PASS, 2 suites / 11 tests.
+- Backend full: PASS, 93/93 suites and 611/611 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- API response, Deal stage/next-action logic, estimated-value currency behavior,
+  schema and database: UNCHANGED.
+- Customer ownership remains `BC-016` and was not inferred from Deal behavior.
 
 ## Wave 15 Change Request and Impact Map
 
