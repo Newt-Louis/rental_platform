@@ -64,6 +64,8 @@ provable presentation defects rather than business-policy questions.
 
 ## Wave 14 technical gate — 2026-08-24
 
+Checkpoint: `705b2bd test(golden): verify rendered candidate viewports`
+
 - Render-discovered fixes: PASS. Occupancy report wrapper artifacts are absent,
   and the Work Order template workspace follows the active English locale.
 - Existing persisted department values remain unchanged when locale changes;
@@ -103,6 +105,8 @@ desktop viewports and replace indirect responsive claims with rendered evidence.
 | Open questions | Human business-usability sign-off remains separate even if automated rendering passes |
 
 ## Wave 13 technical gate — 2026-08-24
+
+Checkpoint: `705b2bd test(golden): verify rendered candidate viewports`
 
 - Playwright Chromium: PASS, 4/4 viewport cases and 28 authenticated
   route/viewport renders against the rebuilt production Docker frontend.

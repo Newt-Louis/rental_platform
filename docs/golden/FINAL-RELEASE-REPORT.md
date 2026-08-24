@@ -155,6 +155,7 @@ The following paths were not staged or committed by the final program gate:
 11. `a310df4 test(frontend): close Golden ERP baseline failures`
 12. `7c6b4fa fix(i18n): neutralize unknown ERP presentation values`
 13. `8ef46bd test(golden): verify cross-module journey fixtures`
+14. `705b2bd test(golden): verify rendered candidate viewports`
 
 ## Production Readiness
 
