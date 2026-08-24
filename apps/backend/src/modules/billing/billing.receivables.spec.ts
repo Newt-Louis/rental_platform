@@ -8,6 +8,7 @@ describe('BillingService receivables workbench', () => {
     serviceContractPayment: { findMany: jest.fn() },
     slotBooking: { findMany: jest.fn() },
     parkingMonthlyStatement: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    periodicChargeEntry: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     $transaction: jest.fn(),
   } as any;
   let service: BillingService;
@@ -17,6 +18,7 @@ describe('BillingService receivables workbench', () => {
     prisma.invoice.findMany.mockResolvedValue([]);
     prisma.slotBooking.findMany.mockResolvedValue([]);
     prisma.parkingMonthlyStatement.findMany.mockResolvedValue([]);
+    prisma.periodicChargeEntry.findMany.mockResolvedValue([]);
     prisma.invoice.findFirst.mockResolvedValue(null);
     service = new BillingService(
       prisma,
@@ -191,6 +193,61 @@ describe('BillingService receivables workbench', () => {
       mallId: 'mall-1', subtotal: 1_000, totalAmount: 1_100,
     });
     expect(result.summary.bySource.PARKING).toEqual({ count: 1, amount: 1_100 });
+  });
+
+  it('adds confirmed periodic charge add-in entries to pending receivables', async () => {
+    const dueDate = new Date(Date.now() + 5 * 86400000);
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.serviceContractPayment.findMany.mockResolvedValue([]);
+    prisma.periodicChargeEntry.findMany.mockResolvedValue([{
+      id: 'addin-2026-08', contractId: 'contract-1', chargeType: 'AFTER_HOURS_COOLING',
+      period: '2026-08', dueDate, subtotal: 2_750_000,
+      contract: {
+        contractNumber: 'CTR-2026-0001', currencyCode: 'VND',
+        tenant: { brandName: 'Highlands Coffee' }, unit: { mallId: 'mall-1', code: 'GF-A01' },
+      },
+    }]);
+
+    const result = await service.getPendingReceivables({ sourceType: 'PERIODIC_CHARGE' }, ['mall-1']);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      id: 'addin-2026-08', sourceType: 'PERIODIC_CHARGE', counterpartyName: 'Highlands Coffee',
+      mallId: 'mall-1', subtotal: 2_750_000, currencyCode: 'VND',
+    });
+    expect(result.data[0].totalAmount).toBeCloseTo(3_025_000);
+    expect(result.summary.bySource.PERIODIC_CHARGE.count).toBe(1);
+    expect(result.summary.bySource.PERIODIC_CHARGE.amount).toBeCloseTo(3_025_000);
+  });
+
+  it('creates an invoice from a confirmed periodic charge add-in entry', async () => {
+    const tx = {
+      invoice: { create: jest.fn().mockResolvedValue({ id: 'invoice-addin', invoiceNumber: 'PERIODIC-entry-1' }) },
+      periodicChargeEntry: { update: jest.fn().mockResolvedValue({}) },
+    };
+    prisma.$transaction.mockImplementation((callback: any) => callback(tx));
+    prisma.periodicChargeEntry.findFirst.mockResolvedValue({
+      id: 'entry-1', contractId: 'contract-1', chargeType: 'AFTER_HOURS_COOLING',
+      period: '2026-08', dueDate: new Date(), status: 'CONFIRMED', invoiceId: null,
+      subtotal: 2_750_000,
+      lines: [{ type: 'AFTER_HOURS_COOLING', description: '12.5 giờ x 220.000đ', qty: 12.5, unitPrice: 220000, amount: 2_750_000 }],
+      contract: {
+        contractNumber: 'CTR-2026-0001', currencyCode: 'VND', tenantId: 'tenant-1',
+        unit: { mallId: 'mall-1' }, tenant: { companyName: 'Highlands Coffee Vietnam Co., Ltd', taxCode: 'TAX' },
+      },
+    });
+
+    await service.createInvoiceFromPending('PERIODIC_CHARGE', 'entry-1', 'user-1');
+
+    const invoiceData = tx.invoice.create.mock.calls[0][0].data;
+    expect(invoiceData).toMatchObject({ sourceType: 'PERIODIC_CHARGE', sourceId: 'entry-1', type: 'PERIODIC_CHARGE', subtotal: 2_750_000 });
+    expect(invoiceData.vatAmount).toBeCloseTo(275_000);
+    expect(invoiceData.totalAmount).toBeCloseTo(3_025_000);
+    expect(invoiceData.lines.create).toEqual([expect.objectContaining({ type: 'AFTER_HOURS_COOLING', amount: 2_750_000, order: 0 })]);
+    expect(tx.periodicChargeEntry.update).toHaveBeenCalledWith({
+      where: { id: 'entry-1' },
+      data: { status: 'INVOICED', invoiceId: 'invoice-addin' },
+    });
   });
 
   it('carries a Parking payment into the draft Billing invoice', async () => {

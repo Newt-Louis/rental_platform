@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsDateString, IsInt, IsEnum } from 'class-validator';
-import { ContractType, BillingCycle, CurrencyCode } from '@prisma/client';
+import { IsString, IsOptional, IsNumber, IsDateString, IsInt, IsEnum, IsArray } from 'class-validator';
+import { ContractType, BillingCycle, CurrencyCode, PeriodicChargeType } from '@prisma/client';
 
 export class CreateContractDto {
   @ApiPropertyOptional()
@@ -116,4 +116,14 @@ export class CreateContractDto {
   @IsOptional()
   @IsString()
   operatingHours?: string;
+
+  @ApiPropertyOptional({
+    enum: PeriodicChargeType,
+    isArray: true,
+    description: 'Loại phí Billing Add-in vận hành cần nhập mỗi kỳ cho hợp đồng này (Phụ thu PQL chỉ hợp lệ khi Mall.leaseCategory = OFFICE)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(PeriodicChargeType, { each: true })
+  periodicChargeTypes?: PeriodicChargeType[];
 }

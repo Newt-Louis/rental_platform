@@ -38,6 +38,7 @@ const FitoutDashboardPage = lazy(
 const TicketsPage = lazy(() => import("@/pages/tickets/TicketsPage"));
 const SalesPage = lazy(() => import("@/pages/sales/SalesPage"));
 const BillingPage = lazy(() => import("@/pages/billing/BillingPage"));
+const BillingAddInPage = lazy(() => import("@/pages/billing-addin/BillingAddInPage"));
 const SapPage = lazy(() => import("@/pages/sap/SapPage"));
 const AiPage = lazy(() => import("@/pages/ai/AiPage"));
 const CodebaseChatPage = lazy(() => import("@/pages/ai/CodebaseChatPage"));
@@ -307,6 +308,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <BillingPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="billing-addin"
+                    element={
+                      <RoleRoute>
+                        <BillingAddInPage />
                       </RoleRoute>
                     }
                   />

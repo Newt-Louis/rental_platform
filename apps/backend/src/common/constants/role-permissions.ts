@@ -44,6 +44,9 @@ export const MODULE_ROLES = {
   billing: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.TENANT],
   // Các endpoint quản trị billing (tạo/sửa hóa đơn, dunning, đối soát, cấu hình...) — KHÔNG cho TENANT dù module chung có.
   billingStaff: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR],
+  // Billing Add-in vận hành: vận hành (OPERATION) nhập/chốt số liệu mỗi kỳ; Finance/Mall Director chỉ xem để theo dõi tiến độ trước khi lập hóa đơn.
+  billingAddIn: [Role.ADMIN, Role.OPERATION, Role.MALL_DIRECTOR, Role.FINANCE],
+  billingAddInWrite: [Role.ADMIN, Role.OPERATION],
   sap: [Role.ADMIN, Role.FINANCE],
   reports: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER],
   analytics: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER],

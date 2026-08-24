@@ -118,4 +118,44 @@ describe('ContractsService direct-write atomicity', () => {
       tx,
     );
   });
+
+  // Billing Add-in: Phụ thu Phí Quản Lý (MANAGEMENT_FEE_SURCHARGE) chỉ hợp lệ cho hợp đồng
+  // thuộc Mall Văn phòng (leaseCategory = OFFICE) — chặn sớm khi bật periodicChargeTypes.
+  describe('periodicChargeTypes MANAGEMENT_FEE_SURCHARGE — OFFICE-only guard', () => {
+    beforeEach(() => {
+      prisma.contract.findUnique.mockResolvedValue({
+        id: 'contract-1', status: ContractStatus.DRAFT, unitId: 'unit-1', periodicChargeTypes: [],
+      });
+    });
+
+    it('rejects enabling MANAGEMENT_FEE_SURCHARGE for a MALL-category unit', async () => {
+      prisma.unit.findUnique.mockResolvedValue({ mall: { leaseCategory: 'MALL' } });
+
+      await expect(
+        service.update('contract-1', { periodicChargeTypes: ['MANAGEMENT_FEE_SURCHARGE'] as any }, 'user-1'),
+      ).rejects.toThrow('leaseCategory = OFFICE');
+      expect(tx.contract.update).not.toHaveBeenCalled();
+    });
+
+    it('allows enabling MANAGEMENT_FEE_SURCHARGE for an OFFICE-category unit', async () => {
+      prisma.unit.findUnique.mockResolvedValue({ mall: { leaseCategory: 'OFFICE' } });
+      tx.contract.update.mockResolvedValue({ id: 'contract-1', periodicChargeTypes: ['MANAGEMENT_FEE_SURCHARGE'] });
+
+      await service.update('contract-1', { periodicChargeTypes: ['MANAGEMENT_FEE_SURCHARGE'] as any }, 'user-1');
+
+      expect(tx.contract.update).toHaveBeenCalledWith({
+        where: { id: 'contract-1' },
+        data: { periodicChargeTypes: ['MANAGEMENT_FEE_SURCHARGE'] },
+      });
+    });
+
+    it('does not check leaseCategory for UTILITY/AFTER_HOURS_COOLING (both lease types)', async () => {
+      tx.contract.update.mockResolvedValue({ id: 'contract-1', periodicChargeTypes: ['UTILITY'] });
+
+      await service.update('contract-1', { periodicChargeTypes: ['UTILITY'] as any }, 'user-1');
+
+      expect(prisma.unit.findUnique).not.toHaveBeenCalled();
+      expect(tx.contract.update).toHaveBeenCalled();
+    });
+  });
 });

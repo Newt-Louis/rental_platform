@@ -38,7 +38,7 @@ const CONTRACT_PRE_ACTIVATION_STATUSES: ContractStatus[] = [
 ];
 
 // Field luôn sửa được trực tiếp, không ảnh hưởng tài chính/pháp lý của hợp đồng.
-const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours'];
+const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours', 'periodicChargeTypes'];
 
 // Field tài chính/thời hạn/đối tượng hợp đồng — chỉ sửa trực tiếp được khi hợp đồng chưa ACTIVE
 // (còn đang soạn thảo). Sau khi ACTIVE, mọi thay đổi phải đi qua workflow Amendment để có
@@ -373,6 +373,16 @@ export class ContractsService {
         throw new BadRequestException(
           `Mặt bằng này đã có hợp đồng đang hiệu lực (${conflict.contractNumber}).`,
         );
+      }
+    }
+
+    // Billing Add-in: Phụ thu Phí Quản Lý chỉ áp dụng HĐT Văn phòng (Mall.leaseCategory = OFFICE) —
+    // chặn sớm ở đây thay vì để BillingAddInService âm thầm tính phụ thu cho hợp đồng TTTM.
+    if (dto.periodicChargeTypes?.includes('MANAGEMENT_FEE_SURCHARGE')) {
+      const targetUnitId = dto.unitId ?? before.unitId;
+      const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId }, select: { mall: { select: { leaseCategory: true } } } });
+      if (unit?.mall.leaseCategory !== 'OFFICE') {
+        throw new BadRequestException('Phụ thu Phí Quản Lý (MANAGEMENT_FEE_SURCHARGE) chỉ áp dụng cho hợp đồng thuộc Mall có leaseCategory = OFFICE.');
       }
     }
 

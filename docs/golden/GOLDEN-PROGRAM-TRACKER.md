@@ -15,7 +15,7 @@ The following pre-existing paths are excluded from program staging unless their 
 - `apps/frontend/src/pages/proposals/*` current modified/untracked presentation files
 - `docs/changes/CR-PROPOSAL-APPROVAL-CORRECTNESS-BACKLOG.md`
 - `docs/ux/CR-GOLDEN-PROPOSAL-APPROVAL-*.md`
-- Concurrent Periodic Charge / Billing Add-in work: `apps/backend/prisma/schema.prisma`, its new migration, `apps/backend/src/modules/billing-addin/`, `apps/backend/src/modules/billing/billing.service.ts`, `apps/backend/src/app.module.ts` and `apps/backend/src/common/constants/role-permissions.ts`
+- Concurrent Periodic Charge / Billing Add-in work (Wave 24): `apps/backend/prisma/schema.prisma`, its migrations, `apps/backend/src/modules/billing-addin/`, `apps/backend/src/modules/billing/billing.service.ts`, `apps/backend/src/modules/billing/billing.receivables.spec.ts`, `apps/backend/src/app.module.ts`, `apps/backend/src/common/constants/role-permissions.ts`, `apps/backend/src/modules/spaces/dto/create-mall.dto.ts`, `apps/backend/src/modules/contracts/dto/create-contract.dto.ts`, `apps/backend/src/modules/contracts/contracts.service.ts`, `apps/backend/src/modules/contracts/contract-write-atomicity.spec.ts`, `apps/frontend/src/lib/permissions.ts`, `apps/frontend/src/App.tsx`, `apps/frontend/src/api/billing-addin.ts`, `apps/frontend/src/api/index.ts`, `apps/frontend/src/pages/billing-addin/`, `apps/frontend/src/locales/{vi,en}/billing.json`
 
 ## Wave status
 
@@ -46,17 +46,111 @@ The following pre-existing paths are excluded from program staging unless their 
 | 21 | Patrol abnormal-check automation atomicity | COMPLETE — Patrol result and auto-created Work Order share one transaction |
 | 22 | Contract termination/amendment atomicity | COMPLETE — lifecycle, Unit, Billing and audit writes share transactions |
 | 23 | Reports revenue-export money/cap compliance | COMPLETE — raw Amount + Currency, sentinel cap detection and explicit truncation disclosure |
+| 24 | Billing Add-in engineering closure | COMPLETE — 2 P0s (currency, scheduler timezone) found and fixed by independent 5-domain audit + QA re-verification; BC-BILLING-ADDIN-001 (Phí HTKD renewal lock) and CAM label-split deferred, not invented; HUMAN VISUAL REVIEW PENDING (no browser tool in this environment) |
 
 ## Independent progress scores
 
-- **Engineering Golden Completion: 96%** — all independently provable P0/P1/P2
-  corrections found in Waves 1–23 are implemented and checkpointed. The
-  remaining 4% is limited to protected concurrent work and tasks requiring an
-  approved business interpretation; production-only evidence is not deducted
-  from this score.
+- **Engineering Golden Completion: 97%** — all independently provable P0/P1/P2
+  corrections found in Waves 1–24 are implemented and checkpointed. The
+  remaining 3% is limited to protected concurrent work and tasks requiring an
+  approved business interpretation (incl. `BC-BILLING-ADDIN-001`); production-only
+  evidence is not deducted from this score.
 - **Production Readiness: 28%** — 7 of 25 release gates are PASS. Credential,
   off-site backup, observability, two-Mall UAT, human acceptance and controlled
-  release/rollback evidence remain external no-go conditions.
+  release/rollback evidence remain external no-go conditions. Wave 24 adds no
+  new release-gate PASS (Billing Add-in has no production traffic/rollout
+  gate defined yet) but removes a build-blocking condition Wave 23 recorded.
+
+## Wave 24 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W24-BILLING-ADDIN-CLOSURE`
+
+Business reason: P.CSKT (mall operations) needed a way to enter three variable
+lease charges each billing period — Management Fee Surcharge (Office leases
+only, headcount over an 8m²/person norm), Utility (electricity/water meter
+readings) and After-Hours Cooling (hours) — through a Draft → Confirm (locked)
+→ Invoiced state machine, feeding the existing Billing invoice pipeline. An
+independent 5-domain audit (Business/System Truth, Backend/Transaction,
+Database/Prisma, Authorization/Mall-isolation, Financial/Multi-currency) found
+two P0 defects and a real completeness gap before this could be called done;
+this wave is the fix-and-close pass plus independent QA re-verification.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Billing Add-in (new `billing-addin` module) + its two integration points in existing Billing |
+| Runtime behavior | New state machine (PENDING→DRAFT→CONFIRMED→INVOICED, or →NO_CHARGE) per contract/chargeType/period; new admin CRUD for per-mall rate configs; new `Mall.leaseCategory`/`Contract.periodicChargeTypes` write paths |
+| Data/workflow | New models `PeriodicChargeEntry`/`PeriodicChargeRateConfig`; `PeriodicChargeEntry.lines` promoted into real `InvoiceLine` rows only at INVOICED |
+| Financial/currency | **P0 fixed**: rate configs are VND-authored only — `saveDraft` now rejects any non-VND contract instead of silently billing a VND figure as the contract's currency (a ~24,000x-scale defect for a USD contract, confirmed and fixed) |
+| Mall/Tenant | `MANAGEMENT_FEE_SURCHARGE` is now enforced OFFICE-only at both the `ContractsService.update` write path and the `BillingAddInService` compute path (defense in depth); mall-scoping threaded through every billing-addin endpoint (verified live per-role) |
+| Authorization | New `billingAddIn`/`billingAddInWrite` role matrix (ADMIN/OPERATION/MALL_DIRECTOR/FINANCE read, ADMIN/OPERATION write, ADMIN-only for rate-config writes and reopen alongside MALL_DIRECTOR) — verified live for every role incl. TENANT/LEASING_MANAGER denial |
+| API | New `/api/billing/addin/*` routes incl. `/rates` CRUD; two new branches in existing `getPendingReceivables`/`createInvoiceFromPending` (`PERIODIC_CHARGE` source) |
+| Schema/database/migration | New enums `MallLeaseCategory`/`PeriodicChargeType`/`PeriodicChargeStatus`, new models, `Contract.periodicChargeTypes` scalar list, `InvoiceType.PERIODIC_CHARGE` — migration `20260824122923_add_periodic_charge_addin` |
+| Events/jobs/concurrency | **P0 fixed**: monthly scheduler's `currentPeriod()` read a UTC instant with UTC getters while the cron fires at a fixed Asia/Ho_Chi_Minh wall-clock hour — every run computed the already-generated previous period and silently created nothing, forever. Fixed with an explicit +7h (VN has no DST) offset before reading UTC getters. Also closed an ungraceful-500 double-invoke race on `createInvoiceFromPending` (P2002 now recovers idempotently, mirroring the existing `generateDueInvoices` pattern) |
+| Protected work | Dashboard, Proposal/Approval and this wave's own concurrent files (see manifest above) mutually excluded |
+| Tests | `billing-addin.util.spec.ts` (14), `billing-addin.service.spec.ts` (24), `contract-write-atomicity.spec.ts` OFFICE-only guard cases, `billing.receivables.spec.ts` PERIODIC_CHARGE cases — full focused + module suites, plus independent QA live E2E and regression re-run |
+| Golden scenarios | New lifecycle: Periodic Charge → Confirm → Pending Receivable → Invoice; existing Billing sources (LEASE_CONTRACT/SERVICE_CONTRACT/SHORT_TERM_BOOKING/PARKING) regression-clean |
+| Rollback | Revert the `billing-addin` module, its Billing integration branches, the migration, and the Mall/Contract DTO field additions |
+| Unknowns | "Phí hỗ trợ kinh doanh → renewal-only" lock rule is a genuine BC blocker (see below) — not implemented, not invented |
+
+## Wave 24 technical gate — 2026-08-24
+
+Independent 5-domain pre-fix audit (each domain read-only, no shared context
+with the implementer):
+
+- Business/System Truth: **BLOCKED** — no admin write path existed for
+  `Mall.leaseCategory`/`Contract.periodicChargeTypes`/rate configs (DB-write-only);
+  OFFICE-only rule unenforced; confirmed `businessSupportFeeSqm` exists only on
+  `Proposal`, never on `Contract`, with zero renewal gating (genuine BC gap, not
+  invented).
+- Backend/Transaction correctness: **FAIL** — P0 timezone bug (above); P2
+  ungraceful double-invoke race; state-machine INVOICED-immutability itself had
+  no exploit found.
+- Database/Prisma: **PASS** — P1 (no rate-config CRUD/overlap protection existed
+  yet — closed in this wave using the same pattern as `CategoryMallPricing`'s
+  `ensurePricingDoesNotOverlap`), P2s (cascade-on-inert-path, JSON-shape trust).
+- Authorization/Mall-isolation: **PASS** — full role matrix and mall-scope
+  threading verified live per endpoint; one functional (not security) gap noted:
+  OPERATION/FINANCE have no seeded `UserMallAccess` rows in dev data.
+- Financial/multi-currency: **FAIL** — P0 confirmed live: a VND-authored rate
+  applied without conversion to a USD contract would have billed ~24,000x the
+  intended amount.
+
+Fix pass (this session): added the VND-only currency guard (service + defense
+in compute), fixed `currentPeriod()`'s timezone math, added OFFICE-only
+enforcement at both the Contract-update and Billing-Add-in compute layers,
+built the missing `PeriodicChargeRateConfig` CRUD with overlap validation,
+added `Mall.leaseCategory`/`Contract.periodicChargeTypes` write paths, closed
+the double-invoke race with idempotent recovery.
+
+- Focused new/updated suites: `billing-addin.util.spec.ts`,
+  `billing-addin.service.spec.ts`, `contract-write-atomicity.spec.ts`,
+  `billing.receivables.spec.ts` — all passing.
+- Module-wide re-run: `billing`, `billing-addin`, `contracts`, `spaces` —
+  **22/22 suites, 178/178 tests PASS**.
+- Independent QA gate (fresh session, no implementer context): **PASS** — all 5
+  fixes re-proven live against the running API (not re-read from code), full
+  Periodic-Charge→Confirm→Pending-Receivable→Invoice lifecycle proven with
+  formula-exact amounts on a fresh VND fixture, a real 3-way concurrent
+  double-invoke race reproduced and confirmed idempotent (identical invoice id,
+  no 500s), and the same 22/22 suites / 178/178 tests re-run independently.
+  All QA-created fixtures and mall/contract field changes confirmed reverted.
+- Business logic outside this feature, other Billing sources' API contracts,
+  and protected/concurrent files (Dashboard, Proposal/Approval, currency test,
+  deals locale): **UNCHANGED** — confirmed via `git status --porcelain` showing
+  zero overlap with the protected manifest.
+
+Open item carried forward (not resolved, not invented): **BC-BILLING-ADDIN-001**
+— "Phí hỗ trợ kinh doanh" (business support fee) exists today only as
+`Proposal.businessSupportFeeSqm`, is never carried onto `Contract`, and has no
+renewal-only lock. Needs a business decision on: (a) should it move onto
+`Contract`, and if so populated only from a renewal Proposal; (b) what field/flag
+represents "this Proposal is a renewal" to gate on (none currently exists); (c)
+enforcement point (Proposal creation vs. Contract update). Deferred CAM→"Phí
+Quản Lý/Phí Dịch vụ" presentation-label wave: touches
+`ContractsPage.tsx`/`BillingPage.tsx`/`BillingExtraTabs.tsx`/locale files —
+none currently protected/dirty, but cross-cutting across 3 modules and this
+feature's own still-uncommitted `billing.json`; recommend its own wave rather
+than folding in here.
 
 ## Wave 23 Change Request and Impact Map
 

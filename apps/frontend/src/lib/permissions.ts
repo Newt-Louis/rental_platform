@@ -32,6 +32,7 @@ export type RouteModule =
   | "tickets"
   | "sales"
   | "billing"
+  | "billing-addin"
   | "sap"
   | "reports"
   | "analytics"
@@ -146,6 +147,8 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
+  // Billing Add-in vận hành: OPERATION nhập/chốt số liệu mỗi kỳ; Finance/Mall Director theo dõi tiến độ.
+  "billing-addin": ["ADMIN", "OPERATION", "MALL_DIRECTOR", "FINANCE"],
   sap: ["ADMIN", "FINANCE"],
   reports: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
   analytics: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
@@ -194,6 +197,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   tickets: "tickets",
   sales: "sales",
   billing: "billing",
+  "billing-addin": "billing-addin",
   sap: "sap",
   reports: "reports",
   analytics: "analytics",
@@ -368,6 +372,11 @@ export const NAV_GROUPS = [
         label: "Billing & AR",
         path: "/billing",
         module: "billing" as RouteModule,
+      },
+      {
+        label: "Billing Add-in vận hành",
+        path: "/billing-addin",
+        module: "billing-addin" as RouteModule,
       },
       { label: "SAP", path: "/sap", module: "sap" as RouteModule },
     ],
