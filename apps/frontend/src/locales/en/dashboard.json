@@ -22,6 +22,7 @@
     "totalNla": "Total NLA: {{area}}",
     "leased": "Leased",
     "vacant": "Vacant",
+    "total": "Total",
     "other": "Other",
     "leasedFull": "Currently leased",
     "noData": "No data yet"
@@ -82,5 +83,73 @@
   },
   "error": {
     "loadFailed": "Failed to load operations overview"
+  },
+  "strip": {
+    "ariaLabel": "Executive financial summary",
+    "title": "Financial intelligence",
+    "exactValues": "Exact values · VND",
+    "currentPeriod": "Current period",
+    "collectedPeriod": "Collected this period",
+    "outstandingPeriod": "Current period outstanding",
+    "revenue": "Monthly revenue",
+    "collected": "Collected",
+    "uncollected": "Uncollected (this period)",
+    "overdue": "Overdue",
+    "occupancy": "Occupancy rate"
+  },
+  "portfolio": {
+    "title": "Portfolio status",
+    "occupiedArea": "Leased area",
+    "activeTenants": "Active tenants",
+    "activeBookings": "Active bookings",
+    "pendingBookings": "{{count}} pending activation",
+    "expiringContracts": "Contracts expiring (30 days)",
+    "expiringContracts90": "Within 90 days: {{count}}",
+    "healthScore": "Reference composite indicator",
+    "healthMethodology": "Indicator methodology",
+    "healthFormulaBlend": "Occupancy {{occupancy}}% × 0.55 + Collection {{collection}}% × 0.45",
+    "healthFormulaCollection": "Reflects current collection rate ({{collection}}%)",
+    "healthFormulaOccupancy": "Reflects current occupancy rate ({{occupancy}}%)",
+    "healthDisclaimer": "Internal analytical indicator; not an approved business KPI."
+  },
+  "trend": {
+    "title": "Business trend",
+    "revenue": "Monthly revenue",
+    "occupancy": "Monthly occupancy",
+    "ar": "Monthly receivables",
+    "current": "Current",
+    "overdue": "Overdue",
+    "unitBillionVnd": "Unit: VND billions",
+    "unitMillionVnd": "Unit: VND millions",
+    "unitThousandVnd": "Unit: VND thousands",
+    "unitVnd": "Unit: VND",
+    "unitPercent": "Unit: %",
+    "month": "Month",
+    "tooltipPrecision": "Tooltips show exact values",
+    "noData": "Not enough historical data yet",
+    "noAccess": "No access"
+  },
+  "worklist": {
+    "title": "Needs attention",
+    "description": "Highest-priority items, sorted by urgency",
+    "invoiceContext": "{{count}} invoices · {{amount}}",
+    "contractContext": "{{count}} contracts",
+    "approvalContext": "{{count}} records",
+    "ticketContext": "{{count}} tickets",
+    "projectContext": "{{count}} projects",
+    "bookingContext": "{{count}} bookings",
+    "queueCount": "{{count}} open",
+    "priorityCritical": "Critical",
+    "priorityHigh": "High priority",
+    "priorityNormal": "Monitor",
+    "process": "Process",
+    "view": "View",
+    "approve": "Approve"
+  },
+  "header": {
+    "lastRefresh": "Updated {{time}}",
+    "leaseTerm": "Lease term type",
+    "longTerm": "Long term",
+    "shortTerm": "Short term"
   }
 }

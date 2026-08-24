@@ -49,6 +49,15 @@ export function formatMoneyAmount(amount: number | null | undefined, currencyCod
   }).format(amount);
 }
 
+// Exact financial presentation for surfaces where the currency must be
+// explicit but a currency symbol would add ambiguity (executive KPIs and
+// chart tooltips). This intentionally keeps the unscaled amount and appends
+// the canonical ISO code.
+export function formatMoneyWithCode(amount: number | null | undefined, currencyCode: CurrencyCode = 'VND', locale = 'vi-VN'): string {
+  const formatted = formatMoneyAmount(amount, currencyCode, locale);
+  return formatted === '—' ? formatted : `${formatted} ${currencyCode}`;
+}
+
 // CR-109 Wave 2 (Dashboard/KPI compact exception): compact notation is allowed
 // only for aggregate KPI tiles/charts, and only when the currency code is
 // explicitly and unambiguously attached to the compact number itself -- never

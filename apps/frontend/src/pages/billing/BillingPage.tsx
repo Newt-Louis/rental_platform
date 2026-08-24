@@ -17,8 +17,8 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Search, Download, Receipt, ChevronRight, Plus, Trash2, Send,
   CheckCircle2, Banknote, FileText, Zap, Droplets, Settings, Package,
-  AlertTriangle, Clock, X, Edit2, ChevronDown, ArrowRight, Ban, Undo2,
-  Sparkles, Activity, ShieldCheck, TrendingUp,
+  AlertTriangle, Clock, X, Edit2, ArrowRight, Ban, Undo2,
+  Activity, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import api from '@/lib/axios';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
@@ -28,16 +28,19 @@ import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { AsyncState } from '@/components/ui/async-state';
 import { useMallStore } from '@/store/mall.store';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPStatCard, ERPStatusBadge, ERPToolbar, ERPAmount } from '@/components/erp';
+import type { ERPTone } from '@/lib/erp-tones';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<string, { color: string; step: number }> = {
-  DRAFT:          { color: 'bg-gray-100 text-gray-700 border-gray-200',     step: 1 },
-  ISSUED:         { color: 'bg-blue-100 text-blue-700 border-blue-200',     step: 3 },
-  PARTIALLY_PAID: { color: 'bg-amber-100 text-amber-700 border-amber-200', step: 4 },
-  PAID:           { color: 'bg-green-100 text-green-700 border-green-200',  step: 4 },
-  OVERDUE:        { color: 'bg-red-100 text-red-700 border-red-200',        step: 3 },
-  CANCELLED:      { color: 'bg-gray-200 text-gray-500 border-gray-300',     step: 0 },
+const STATUS_MAP: Record<string, { tone: ERPTone; step: number }> = {
+  DRAFT:          { tone: 'neutral', step: 1 },
+  ISSUED:         { tone: 'brand',   step: 3 },
+  PARTIALLY_PAID: { tone: 'warning', step: 4 },
+  PAID:           { tone: 'success', step: 4 },
+  OVERDUE:        { tone: 'danger',  step: 3 },
+  CANCELLED:      { tone: 'neutral', step: 0 },
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -106,22 +109,22 @@ function WorkflowBar({ active }: { active?: number }) {
     violet: 'bg-violet-600 text-white', green: 'bg-emerald-600 text-white',
   };
   return (
-    <div className="flex items-stretch gap-0 mb-6 rounded-xl overflow-hidden border border-gray-100">
+    <div className="flex items-stretch gap-0 mb-6 rounded-lg overflow-hidden border border-border">
       {steps.map((s, i) => {
         const isActive = s.n === active;
         return (
           <div key={s.n} className={`flex-1 flex items-center gap-3 px-4 py-3 ${
-            isActive ? 'bg-blue-50 border-b-2 border-blue-500' : 'bg-white'
+            isActive ? 'bg-blue-50 border-b-2 border-blue-500 dark:bg-blue-950/30' : 'bg-card'
           }`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-              isActive ? colorMap[s.color] : 'bg-gray-100 text-gray-400'
+              isActive ? colorMap[s.color] : 'bg-muted text-muted-foreground'
             }`}>{s.n}</div>
             <div>
-              <div className="text-xs font-semibold text-gray-800 whitespace-pre-line leading-tight">{s.label}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{s.desc}</div>
+              <div className="text-xs font-semibold text-foreground whitespace-pre-line leading-tight">{s.label}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{s.desc}</div>
             </div>
             {i < steps.length - 1 && (
-              <ArrowRight size={14} className="ml-auto text-gray-300 flex-shrink-0" />
+              <ArrowRight size={14} className="ml-auto text-muted-foreground/50 flex-shrink-0" />
             )}
           </div>
         );
@@ -397,16 +400,16 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
   };
 
   return (
-    <div className={`fixed inset-y-0 right-0 z-50 flex flex-col bg-white border-l border-gray-200 shadow-2xl transition-transform duration-300 ${invoiceId ? 'translate-x-0' : 'translate-x-full'}`}
+    <div className={`fixed inset-y-0 right-0 z-50 flex flex-col bg-card border-l border-border shadow-2xl transition-transform duration-300 ${invoiceId ? 'translate-x-0' : 'translate-x-full'}`}
       style={{ width: '520px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/40">
         <div>
           {isLoading ? <Skeleton className="h-6 w-40" /> : (
             <>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm font-bold text-gray-800">{inv?.invoiceNumber}</span>
-                <Badge className={`${statusCfg.color} border text-xs`}>{t(`billing:invoice.status.${inv?.status ?? 'DRAFT'}`)}</Badge>
+                <ERPStatusBadge tone={statusCfg.tone}>{t(`billing:invoice.status.${inv?.status ?? 'DRAFT'}`)}</ERPStatusBadge>
               </div>
               <p className="text-xs text-gray-500 mt-0.5">
                 {inv?.tenant?.brandName || inv?.billingParty?.name} · {t('billing:list.period')} {inv?.period} · {t('billing:list.dueDate')} {fmtDate(inv?.dueDate)}
@@ -744,7 +747,7 @@ function InvoiceDetailSheet({ invoiceId, onClose }: { invoiceId: string | null; 
       </div>
 
       {/* Footer actions */}
-      <div className="px-5 py-4 border-t border-gray-100 bg-gray-50 space-y-2">
+      <div className="px-5 py-4 border-t border-border bg-muted/40 space-y-2">
         {isStaff && isDraft && (
           <>
             <p className="text-xs text-amber-600 flex items-center gap-1.5 mb-3">
@@ -953,20 +956,24 @@ function InvoicesTab() {
       <WorkflowBar active={activeStep} />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {[
-          ['', 'Tổng phải thu dự kiến (VND)', (summary.totalOutstanding || 0) + (pendingSummary.amount || 0), (summary.draft?.count || 0) + (summary.current?.count || 0) + (summary.partial?.count || 0) + (summary.overdue?.count || 0) + (pendingSummary.count || 0), 'border-slate-200 bg-white text-slate-900'],
-          ['UNBILLED', 'Chờ xuất hóa đơn (VND)', pendingSummary.amount || 0, pendingSummary.count || 0, 'border-violet-200 bg-violet-50 text-violet-800'],
-          ['DRAFT', 'Hóa đơn nháp (VND)', summary.draft?.amount || 0, summary.draft?.count || 0, 'border-amber-200 bg-amber-50 text-amber-800'],
-          ['CURRENT', 'Chờ thu trong hạn (VND)', summary.current?.amount || 0, summary.current?.count || 0, 'border-blue-200 bg-blue-50 text-blue-800'],
-          ['PARTIAL', 'Đã thu một phần (VND)', summary.partial?.amount || 0, summary.partial?.count || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
-          ['OVERDUE', 'Quá hạn (VND)', summary.overdue?.amount || 0, summary.overdue?.count || 0, 'border-red-200 bg-red-50 text-red-800'],
-        ].map(([key, label, amount, count, color]) => (
-          <button key={String(key)} onClick={() => { setBucket(String(key)); setStatus(''); setPage(1); }}
-            className={`rounded-xl border p-3 text-left transition-shadow hover:shadow-sm ${color} ${bucket === key ? 'ring-2 ring-slate-700' : ''}`}>
-            <div className="text-xs font-medium">{label}</div>
-            <div className="mt-1 text-lg font-bold">{fmtCompact(Number(amount))} ₫</div>
-            <div className="mt-1 text-xs opacity-70">{count} khoản</div>
-          </button>
+        {([
+          ['', 'Tổng phải thu dự kiến (VND)', (summary.totalOutstanding || 0) + (pendingSummary.amount || 0), (summary.draft?.count || 0) + (summary.current?.count || 0) + (summary.partial?.count || 0) + (summary.overdue?.count || 0) + (pendingSummary.count || 0), 'neutral'],
+          ['UNBILLED', 'Chờ xuất hóa đơn (VND)', pendingSummary.amount || 0, pendingSummary.count || 0, 'info'],
+          ['DRAFT', 'Hóa đơn nháp (VND)', summary.draft?.amount || 0, summary.draft?.count || 0, 'warning'],
+          ['CURRENT', 'Chờ thu trong hạn (VND)', summary.current?.amount || 0, summary.current?.count || 0, 'brand'],
+          ['PARTIAL', 'Đã thu một phần (VND)', summary.partial?.amount || 0, summary.partial?.count || 0, 'warning'],
+          ['OVERDUE', 'Quá hạn (VND)', summary.overdue?.amount || 0, summary.overdue?.count || 0, 'danger'],
+        ] as [string, string, number, number, ERPTone][]).map(([key, label, amount, count, tone]) => (
+          <ERPStatCard
+            key={key}
+            size="compact"
+            label={label}
+            value={`${fmtCompact(Number(amount))} ₫`}
+            helpText={`${count} khoản`}
+            tone={tone}
+            selected={bucket === key}
+            onClick={() => { setBucket(key); setStatus(''); setPage(1); }}
+          />
         ))}
       </div>
       {nonVndCurrencies.length > 0 && (
@@ -1040,10 +1047,10 @@ function InvoicesTab() {
       )}
 
       <div className="mb-4">
-        <div className="mb-2 flex items-center justify-between"><div><h3 className="text-sm font-semibold text-slate-800">Phân loại theo nguồn thu</h3><p className="text-xs text-slate-500">Chọn một nguồn để kiểm tra đúng nhóm hợp đồng và khoản thu.</p></div><button onClick={() => { setSourceType(''); setPage(1); }} className={`rounded-full border px-3 py-1.5 text-xs ${!sourceType ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'}`}>Tất cả nguồn</button></div>
+        <div className="mb-2 flex items-center justify-between"><div><h3 className="text-sm font-semibold text-foreground">Phân loại theo nguồn thu</h3><p className="text-xs text-muted-foreground">Chọn một nguồn để kiểm tra đúng nhóm hợp đồng và khoản thu.</p></div><button onClick={() => { setSourceType(''); setPage(1); }} className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${!sourceType ? 'bg-foreground text-background border-foreground' : 'bg-card text-muted-foreground border-border hover:border-foreground/30'}`}>Tất cả nguồn</button></div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {sourceBreakdown.map(({ source, count, amount }) => (
-            <button key={source} onClick={() => { setSourceType(source); setPage(1); }} className={`rounded-xl border p-3 text-left transition-all ${SOURCE_COLORS[source] || 'border-slate-200 bg-slate-50 text-slate-700'} ${sourceType === source ? 'ring-2 ring-slate-800 shadow-sm' : 'hover:shadow-sm'}`}>
+            <button key={source} onClick={() => { setSourceType(source); setPage(1); }} className={`rounded-lg border p-3 text-left transition-all ${SOURCE_COLORS[source] || 'border-slate-200 bg-slate-50 text-slate-700'} ${sourceType === source ? 'ring-2 ring-foreground/60' : 'hover:shadow-sm'}`}>
               <div className="text-xs font-semibold">{SOURCE_LABELS[source] || source}</div>
               <div className="mt-1 text-base font-bold">{fmtCompact(amount)} ₫</div>
               <div className="mt-1 text-[11px] opacity-75">{count} khoản cần kiểm tra</div>
@@ -1052,17 +1059,17 @@ function InvoicesTab() {
         </div>
       </div>
 
-      <div className="flex gap-3 mb-4 flex-wrap">
+      <ERPToolbar className="mb-4">
         <div className="relative flex-1 min-w-48">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder={t('billing:list.searchPlaceholder')}
             value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9 h-9" />
         </div>
-        <div className="flex gap-0.5 rounded-lg border overflow-hidden h-9">
+        <div className="flex gap-0.5 rounded-md border border-border overflow-hidden h-9">
           {['', 'DRAFT', 'ISSUED', 'OVERDUE', 'PARTIALLY_PAID', 'PAID'].map((s) => (
             <button key={s} onClick={() => { setStatus(s); setBucket(''); setPage(1); }}
               className={`px-3 text-xs font-medium transition-colors whitespace-nowrap ${
-                status === s ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+                status === s ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted'
               }`}>
               {s === '' ? t('billing:filters.allStatuses') : t(`billing:invoice.status.${s}`)}
             </button>
@@ -1071,7 +1078,7 @@ function InvoicesTab() {
         <Button variant="outline" size="sm" className="gap-1.5 h-9 shrink-0" onClick={handleExportExcel} disabled={exporting}>
           <Download size={13} /> {exporting ? t('billing:list.exporting') : 'Excel'}
         </Button>
-      </div>
+      </ERPToolbar>
 
       {bucket !== 'UNBILLED' && (isError ? (
         <AsyncState isLoading={false} isError onRetry={refetch}
@@ -1079,54 +1086,56 @@ function InvoicesTab() {
       ) : isLoading ? (
         <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="min-w-[1280px] w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-100">
+            <thead className="bg-muted/40 border-b border-border">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.invoiceNo')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.tenant')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Nguồn / Hợp đồng</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Kỳ thu</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.totalAmount')}</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Đã thu</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Còn phải thu</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('common:labels.currency')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.dueDate')}</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('billing:list.status')}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('billing:list.invoiceNo')}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('billing:list.tenant')}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Nguồn / Hợp đồng</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Kỳ thu</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('billing:list.totalAmount')}</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Đã thu</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">Còn phải thu</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('common:labels.currency')}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('billing:list.dueDate')}</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('billing:list.status')}</th>
                 <th className="px-3 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border">
               {invoices.map((inv) => {
                 const st = STATUS_MAP[inv.status];
                 const overdue = inv.status === 'OVERDUE';
                 const isSelected = selectedId === inv.id;
                 return (
                   <tr key={inv.id}
-                    className={`cursor-pointer transition-colors ${overdue ? 'bg-red-50/50' : ''} ${
-                      isSelected ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'
+                    className={`cursor-pointer transition-colors ${overdue ? 'bg-red-50/50 dark:bg-red-950/20' : ''} ${
+                      isSelected ? 'bg-blue-50 border-l-2 border-l-blue-500 dark:bg-blue-950/30' : 'hover:bg-muted/40'
                     }`}
                     onClick={() => setSelectedId(isSelected ? null : inv.id)}>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{inv.invoiceNumber}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{inv.invoiceNumber}</td>
+                    <td className="px-4 py-3 font-medium text-foreground">{inv.counterpartyName || inv.tenant?.brandName || inv.billingParty?.name}</td>
                     <td className="px-4 py-3">
                       <Badge className={`border text-[11px] ${SOURCE_COLORS[inv.sourceType || ''] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>{SOURCE_LABELS[inv.sourceType || ''] || inv.type}</Badge>
-                      <div className="mt-1 text-[11px] font-medium text-slate-500">{inv.sourceContractNumber || inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
-                      {inv.sourceType === 'PARKING' && <div className={`mt-1 text-[11px] ${inv.sourceStatus === 'PAID' ? 'text-emerald-700' : inv.sourceStatus === 'PARTIAL' ? 'text-amber-700' : 'text-slate-400'}`}>Parking: {inv.sourceStatus === 'PAID' ? 'đã thanh toán' : inv.sourceStatus === 'PARTIAL' ? 'đã thu một phần' : 'chưa thu'}{inv.sourceContractType ? ` · ${inv.sourceContractType === 'PRINCIPLE_ACTUAL' ? 'theo thực tế' : 'định mức'}` : ''}</div>}
+                      <div className="mt-1 text-[11px] font-medium text-muted-foreground">{inv.sourceContractNumber || inv.contract?.contractNumber || inv.serviceContractPayment?.contract?.contractNumber || 'Không có số hợp đồng'}</div>
+                      {inv.sourceType === 'PARKING' && <div className={`mt-1 text-[11px] ${inv.sourceStatus === 'PAID' ? 'text-emerald-700' : inv.sourceStatus === 'PARTIAL' ? 'text-amber-700' : 'text-muted-foreground'}`}>Parking: {inv.sourceStatus === 'PAID' ? 'đã thanh toán' : inv.sourceStatus === 'PARTIAL' ? 'đã thu một phần' : 'chưa thu'}{inv.sourceContractType ? ` · ${inv.sourceContractType === 'PRINCIPLE_ACTUAL' ? 'theo thực tế' : 'định mức'}` : ''}</div>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-slate-400">{inv.type}</div></td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
-                      {formatMoneyAmount(inv.totalAmount, inv.currencyCode)}
+                    <td className="px-4 py-3 text-muted-foreground text-xs"><div>{inv.serviceContractPayment?.milestone || inv.period}</div><div className="text-[11px] text-muted-foreground/70">{inv.type}</div></td>
+                    <td className="px-4 py-3 text-right">
+                      <ERPAmount amount={inv.totalAmount} currencyCode={inv.currencyCode} strong />
                     </td>
-                    <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">{inv.totalPaid ? formatMoneyAmount(inv.totalPaid, inv.currencyCode) : '—'}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-900 whitespace-nowrap">{formatMoneyAmount(inv.balance ?? inv.totalAmount, inv.currencyCode)}</td>
-                    <td className="px-4 py-3 text-xs font-mono text-gray-500">{inv.currencyCode ?? 'VND'}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="px-4 py-3 text-right">{inv.totalPaid ? <ERPAmount amount={inv.totalPaid} currencyCode={inv.currencyCode} tone="success" /> : '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <ERPAmount amount={inv.balance ?? inv.totalAmount} currencyCode={inv.currencyCode} strong tone={overdue ? 'danger' : 'default'} />
+                    </td>
+                    <td className="px-4 py-3 text-xs font-mono text-muted-foreground">{inv.currencyCode ?? 'VND'}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
                       {fmtDate(inv.dueDate)}
                       {(inv.daysOverdue || overdue) ? <div className="mt-0.5 font-medium text-red-600">Quá {inv.daysOverdue || 0} ngày</div> : null}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={`${st?.color} border text-xs`}>{t(`billing:invoice.status.${inv.status}`)}</Badge>
+                      <ERPStatusBadge tone={st?.tone ?? 'neutral'}>{t(`billing:invoice.status.${inv.status}`)}</ERPStatusBadge>
                     </td>
                     <td className="px-3 py-3">
                       <ChevronRight size={15} className={`transition-transform ${isSelected ? 'rotate-90 text-blue-500' : 'text-gray-300'}`} />
@@ -1137,27 +1146,21 @@ function InvoicesTab() {
             </tbody>
           </table>
           {invoices.length === 0 && (
-            <div className="text-center py-12 text-gray-400 space-y-3">
-              <Receipt size={36} className="mx-auto mb-2 opacity-30" />
-              {(search || status || bucket || sourceType) ? (
-                <>
-                  <p className="text-sm font-medium text-gray-600">{t('billing:list.noInvoicesFiltered')}</p>
-                  <p className="text-sm">{t('billing:list.noInvoicesFilteredHint')}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setSearch(''); setStatus(''); setBucket(''); setSourceType(''); }}
-                  >
+            (search || status || bucket || sourceType) ? (
+              <AsyncState
+                isLoading={false}
+                isEmpty
+                emptyTitle={t('billing:list.noInvoicesFiltered')}
+                emptyDescription={t('billing:list.noInvoicesFilteredHint')}
+                emptyAction={(
+                  <Button variant="outline" size="sm" onClick={() => { setSearch(''); setStatus(''); setBucket(''); setSourceType(''); }}>
                     {t('billing:list.clearFilters')}
                   </Button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium text-gray-600">{t('billing:list.noInvoices')}</p>
-                  <p className="text-sm">{t('billing:list.noInvoicesHint')}</p>
-                </>
-              )}
-            </div>
+                )}
+              ><div /></AsyncState>
+            ) : (
+              <AsyncState isLoading={false} isEmpty emptyTitle={t('billing:list.noInvoices')} emptyDescription={t('billing:list.noInvoicesHint')}><div /></AsyncState>
+            )
           )}
         </div>
       ))}
@@ -1301,25 +1304,28 @@ export default function BillingPage() {
   const kpi = executiveKpi?.data ?? executiveKpi ?? {};
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-6 text-white shadow-[0_25px_65px_-35px_rgba(6,78,59,0.8)]">
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-emerald-200/10 bg-emerald-200/5" />
-        <div className="relative grid gap-6 xl:grid-cols-[1.4fr_1fr] xl:items-end">
-          <div><div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200"><Sparkles size={13} /> Revenue operations</div><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('header.title')}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{t('header.subtitle')}</p></div>
-          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.07]">
-            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.collectionRate')}</div><div className="mt-2 text-2xl font-semibold text-emerald-300">{kpi.collectionRate ?? 0}%</div></div>
-            <div className="border-r border-white/10 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.dso')}</div><div className="mt-2 text-2xl font-semibold">{kpi.dso ?? 0}<span className="ml-1 text-xs text-slate-400">{t('header.dsoUnit')}</span></div></div>
-            <div className="p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('header.arOutstanding')}</div><div className="mt-2 text-lg font-semibold text-amber-300">{fmtCompact(kpi.outstandingAr ?? 0)}</div></div>
-          </div>
+      <PageHeader
+        eyebrow="Revenue operations"
+        title={t('header.title')}
+        description={t('header.subtitle')}
+      />
+
+      {isStaff && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <ERPStatCard label={t('header.collectionRate')} value={`${kpi.collectionRate ?? 0}%`} icon={TrendingUp} tone="success" />
+          <ERPStatCard label={t('header.dso')} value={<>{kpi.dso ?? 0}<span className="text-sm text-muted-foreground"> {t('header.dsoUnit')}</span></>} icon={Clock} tone="brand" />
+          <ERPStatCard label={t('header.arOutstanding')} value={`${fmtCompact(kpi.outstandingAr ?? 0)} ₫`} icon={AlertTriangle} tone="warning" />
         </div>
-      </section>
-      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-700" /><div><h2 className="text-lg font-semibold text-slate-950">{t('header.operationsCenter')}</h2><p className="text-xs text-slate-500">{t('header.selectStep')}</p></div></div>
+      )}
+
+      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-emerald-700" /><div><h2 className="text-lg font-semibold text-foreground">{t('header.operationsCenter')}</h2><p className="text-xs text-muted-foreground">{t('header.selectStep')}</p></div></div>
       <Tabs defaultValue="invoices">
-        <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
-          <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-lg"><Receipt size={13} /> {t('tabs.invoices')}</TabsTrigger>
-          {isStaff && <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-lg"><Activity size={13} /> {t('tabs.arAging')}</TabsTrigger>}
-          {isStaff && <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-lg"><Clock size={13} /> {t('tabs.schedule')}</TabsTrigger>}
-          {isStaff && <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-lg"><AlertTriangle size={13} /> {t('tabs.dunning')}</TabsTrigger>}
-          {isStaff && <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-lg"><TrendingUp size={13} /> {t('tabs.kpi')}</TabsTrigger>}
+        <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg bg-muted p-1">
+          <TabsTrigger value="invoices" className="gap-1.5 whitespace-nowrap rounded-md"><Receipt size={13} /> {t('tabs.invoices')}</TabsTrigger>
+          {isStaff && <TabsTrigger value="ar-aging" className="gap-1.5 whitespace-nowrap rounded-md"><Activity size={13} /> {t('tabs.arAging')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="schedule" className="gap-1.5 whitespace-nowrap rounded-md"><Clock size={13} /> {t('tabs.schedule')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="dunning" className="gap-1.5 whitespace-nowrap rounded-md"><AlertTriangle size={13} /> {t('tabs.dunning')}</TabsTrigger>}
+          {isStaff && <TabsTrigger value="kpi" className="gap-1.5 whitespace-nowrap rounded-md"><TrendingUp size={13} /> {t('tabs.kpi')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="invoices"><InvoicesTab /></TabsContent>
         {isStaff && <TabsContent value="ar-aging"><ArAgingTab /></TabsContent>}

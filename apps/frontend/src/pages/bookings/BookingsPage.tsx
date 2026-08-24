@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/ui/page-header';
 import { AsyncState } from '@/components/ui/async-state';
+import { ERPStatCard, ERPToolbar } from '@/components/erp';
 import {
   BookmarkCheck, Clock, BookmarkX, CalendarDays,
   Search, AlertTriangle, CheckSquare, Square, Trash2,
@@ -421,18 +422,21 @@ export default function BookingsPage() {
               { label: t('unitStats.expiringSoon'), value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
               { label: t('unitStats.converted'), value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
             ].map((item) => (
-              <button key={item.label} type="button" onClick={() => filterUnit(item.status, !!item.expiring)}
-                className={`rounded-xl border bg-white p-3 text-left transition-colors hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${item.urgent && item.value > 0 ? 'border-red-200' : 'border-gray-200'}`}>
-                <div className="text-xs text-gray-500">{item.label}</div>
-                <div className={`mt-1 text-xl font-bold ${item.urgent && item.value > 0 ? 'text-red-600' : 'text-gray-900'}`}>{item.value}</div>
-              </button>
+              <ERPStatCard
+                key={item.label}
+                size="compact"
+                label={item.label}
+                value={item.value}
+                tone={item.urgent && item.value > 0 ? 'danger' : 'neutral'}
+                onClick={() => filterUnit(item.status, !!item.expiring)}
+              />
             ))}
           </div>
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
               aria-label={t('filterLabels.bookingStatusTabs')}
-              className="inline-flex min-w-max items-center gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-1"
+              className="inline-flex min-w-max items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 p-1 dark:border-amber-900/40 dark:bg-amber-950/20"
             >
               {[
                 { status: '', label: t('filterLabels.all'), count: stats?.total },
@@ -466,9 +470,9 @@ export default function BookingsPage() {
             </div>
           </div>
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
+          <ERPToolbar className="mb-4">
             <div className="relative flex-1 min-w-48">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder={t('filterLabels.searchUnit')} className="pl-9 h-9"
                 value={unitDraft.search}
                 onChange={(e) => setUnitField('search', e.target.value)}
@@ -516,8 +520,8 @@ export default function BookingsPage() {
               </SelectContent>
             </Select>
             <button
-              className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
-                unitDraft.expiringSoon ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border transition-colors ${
+                unitDraft.expiringSoon ? 'border-red-300 bg-red-50 text-red-600 dark:bg-red-950/30' : 'border-border text-muted-foreground hover:border-foreground/30'
               }`}
               onClick={() => setUnitField('expiringSoon', !unitDraft.expiringSoon)}
             >
@@ -534,19 +538,19 @@ export default function BookingsPage() {
               <Search size={14} /> {t('filters.search')}
             </Button>
             {(unitHasApplied || unitIsDirty) && (
-              <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearUnit}>
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={clearUnit}>
                 <span>✕</span> {t('actions.clear')}
               </Button>
             )}
-            <Button className="gap-2 bg-amber-600 hover:bg-amber-700 text-white h-9 ml-auto"
+            <Button className="gap-2 h-9 ml-auto"
               onClick={() => setCreateUnitOpen(true)}>
               <Plus size={14} /> {t('page.createUnitBooking')}
             </Button>
-          </div>
+          </ERPToolbar>
 
           {/* Table */}
           {!selectedBooking && !dialogOpen && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
-          <div ref={gridRef} className="bg-white rounded-xl border border-gray-200 overflow-hidden select-none">
+          <div ref={gridRef} className="bg-card rounded-lg border border-border overflow-hidden select-none">
             {unitError ? (
               <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle={t('page.unitBookingError')}><div /></AsyncState>
             ) : unitLoading ? (
@@ -559,15 +563,11 @@ export default function BookingsPage() {
                 ))}
               </div>
             ) : unitBookings.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <BookmarkX size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">{t('noBookings')}</p>
-                <p className="text-sm mt-1">{t('page.noBookingHint')}</p>
-              </div>
+              <AsyncState isLoading={false} isEmpty emptyTitle={t('noBookings')} emptyDescription={t('page.noBookingHint')}><div /></AsyncState>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-amber-50/50">
+                  <tr className="border-b border-border bg-muted/40">
                     <th className="px-3 py-3 w-8">
                       <div
                         className="cursor-pointer"
@@ -581,17 +581,17 @@ export default function BookingsPage() {
                       >
                         {selectedUnitIds.size === unitBookings.length && unitBookings.length > 0
                           ? <CheckSquare size={15} className="text-blue-600" />
-                          : <Square size={15} className="text-gray-300" />}
+                          : <Square size={15} className="text-muted-foreground/40" />}
                       </div>
                     </th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.bookingNo')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
-                    <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.priority')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.expiry')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.status')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.createdAt')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.updatedAt')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.sale')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.bookingNo')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.customer')}</th>
+                    <th className="text-center px-3 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.priority')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.expiry')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.updatedAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.sale')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
@@ -744,18 +744,21 @@ export default function BookingsPage() {
               { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
               { label: t('slotStats.revenue'), value: fmtMoney(slotStats.revenue), status: '' },
             ].map((item) => (
-              <button key={item.label} type="button" onClick={() => filterSlot(item.status)}
-                className="rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
-                <div className="text-xs text-gray-500">{item.label}</div>
-                <div className="mt-1 text-xl font-bold text-gray-900">{item.value}</div>
-              </button>
+              <ERPStatCard
+                key={item.label}
+                size="compact"
+                label={item.label}
+                value={item.value}
+                tone="neutral"
+                onClick={() => filterSlot(item.status)}
+              />
             ))}
           </div>
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
               aria-label={t('filterLabels.bookingStatusTabs')}
-              className="inline-flex min-w-max items-center gap-1 rounded-xl border border-violet-200 bg-violet-50/60 p-1"
+              className="inline-flex min-w-max items-center gap-1 rounded-lg border border-violet-200 bg-violet-50/60 p-1 dark:border-violet-900/40 dark:bg-violet-950/20"
             >
               {[
                 { status: '', label: t('filterLabels.all'), count: allSlotBookings.length },
@@ -786,9 +789,9 @@ export default function BookingsPage() {
             </div>
           </div>
           {/* Filters + Create */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
+          <ERPToolbar className="mb-4">
             <div className="relative flex-1 min-w-48">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input placeholder={t('filterLabels.searchSlot')} className="pl-9 h-9"
                 value={slotDraft.search}
                 onChange={(e) => setSlotField('search', e.target.value)}
@@ -851,20 +854,20 @@ export default function BookingsPage() {
               <Search size={14} /> {t('filters.search')}
             </Button>
             {(slotHasApplied || slotIsDirty) && (
-              <Button variant="outline" size="sm" className="h-9 gap-1 text-gray-500" onClick={clearSlot}>
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={clearSlot}>
                 <span>✕</span> {t('actions.clear')}
               </Button>
             )}
             <Button
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9 ml-auto"
+              className="gap-2 h-9 ml-auto"
               onClick={() => setCreateSlotOpen(true)}
             >
               <Plus size={14} /> {t('page.createSlotBooking')}
             </Button>
-          </div>
+          </ERPToolbar>
 
           {/* Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <div className="bg-card rounded-lg border border-border overflow-x-auto">
             {slotError ? (
               <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle={t('page.slotBookingError')}><div /></AsyncState>
             ) : slotLoading ? (
@@ -877,24 +880,20 @@ export default function BookingsPage() {
                 ))}
               </div>
             ) : slotBookings.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <CalendarDays size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">{t('noSlotBookings')}</p>
-                <p className="text-sm mt-1">{t('page.noSlotHint')}</p>
-              </div>
+              <AsyncState isLoading={false} isEmpty emptyTitle={t('noSlotBookings')} emptyDescription={t('page.noSlotHint')}><div /></AsyncState>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-violet-50/50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.ref')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.type')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.slot')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.customer')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.timeRange')}</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.amount')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.status')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.createdAt')}</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('table.updatedAt')}</th>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.ref')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.type')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.slot')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.customer')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.timeRange')}</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.amount')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.updatedAt')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
