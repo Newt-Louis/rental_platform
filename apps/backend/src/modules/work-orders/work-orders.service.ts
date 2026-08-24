@@ -426,8 +426,11 @@ export class WorkOrdersService {
             ? new Date(body[key])
             : body[key] || (key === "assigneeId" ? null : body[key]);
     if (body.assigneeId && before.status === "NEW") data.status = "ASSIGNED";
-    const row = await this.prisma.workOrder.update({ where: { id }, data });
-    await this.event(id, "UPDATED", userId, undefined, JSON.stringify(data));
+    const row = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.workOrder.update({ where: { id }, data });
+      await this.event(id, "UPDATED", userId, undefined, JSON.stringify(data), undefined, tx);
+      return updated;
+    });
     if (body.assigneeId && body.assigneeId !== before.assigneeId) {
       await this.notify(
         body.assigneeId,
@@ -460,8 +463,11 @@ export class WorkOrdersService {
     const data: any = { status };
     if (status === "IN_PROGRESS") data.startedAt = row.startedAt || new Date();
     if (status === "COMPLETED") data.completedAt = new Date();
-    const updated = await this.prisma.workOrder.update({ where: { id }, data });
-    await this.event(id, "STATUS_CHANGED", userId, row.status, status, note);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.workOrder.update({ where: { id }, data });
+      await this.event(id, "STATUS_CHANGED", userId, row.status, status, note, tx);
+      return next;
+    });
     const recipient =
       status === "WAITING_REVIEW" ? row.requesterId : row.assigneeId;
     if (recipient && recipient !== userId)
@@ -485,25 +491,29 @@ export class WorkOrdersService {
         "Công việc chưa ở trạng thái chờ nghiệm thu",
       );
     const status = approved ? "COMPLETED" : "IN_PROGRESS";
-    const updated = await this.prisma.workOrder.update({
-      where: { id },
-      data: {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.workOrder.update({
+        where: { id },
+        data: {
+          status,
+          reviewerId: userId,
+          reviewedAt: new Date(),
+          reviewStatus: approved ? "APPROVED" : "REJECTED",
+          reviewNote: note,
+          completedAt: approved ? new Date() : null,
+        },
+      });
+      await this.event(
+        id,
+        approved ? "APPROVED" : "REJECTED",
+        userId,
+        "WAITING_REVIEW",
         status,
-        reviewerId: userId,
-        reviewedAt: new Date(),
-        reviewStatus: approved ? "APPROVED" : "REJECTED",
-        reviewNote: note,
-        completedAt: approved ? new Date() : null,
-      },
+        note,
+        tx,
+      );
+      return next;
     });
-    await this.event(
-      id,
-      approved ? "APPROVED" : "REJECTED",
-      userId,
-      "WAITING_REVIEW",
-      status,
-      note,
-    );
     if (row.assigneeId && row.assigneeId !== userId)
       await this.notify(
         row.assigneeId,
@@ -736,8 +746,9 @@ export class WorkOrdersService {
     oldValue?: string,
     newValue?: string,
     description?: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ) {
-    return this.prisma.workOrderEvent.create({
+    return db.workOrderEvent.create({
       data: { workOrderId, eventType, userId, oldValue, newValue, description },
     });
   }

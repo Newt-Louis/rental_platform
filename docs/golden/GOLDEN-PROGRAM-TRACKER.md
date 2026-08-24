@@ -39,6 +39,47 @@ The following pre-existing paths are excluded from program staging unless their 
 | 15 | Ticket secondary-path authorization | COMPLETE — per-ticket ownership and Mall-scoped aggregates enforced |
 | 16 | CRM unified-deals authorization | COMPLETE — authoritative Lead scope enforced before pagination |
 | 17 | Analytics compliance-export authorization | COMPLETE — Mall scope, payload isolation and global-write control enforced |
+| 18 | Work Order state/event atomicity | COMPLETE — state mutation and audit event share one transaction |
+
+## Wave 18 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W18-WORK-ORDER-AUDIT-ATOMICITY`
+
+Business reason: Work Order update, transition and review currently commit the
+business row before inserting the corresponding audit event. An event-write
+failure can therefore leave an authoritative status/assignment change without
+its required audit history. Both writes use the same database and their
+intended one-to-one operation is explicit in existing code.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Operations / Work Orders |
+| Runtime behavior | Execute each Work Order mutation and its existing audit-event insert in one Prisma transaction; notifications remain post-commit side effects |
+| Data/workflow | Existing allowed fields, transition matrix, checklist/evidence gates and review outcomes unchanged |
+| Financial/currency | None |
+| Mall/Tenant | Existing controller/service ownership checks unchanged |
+| Authorization | Roles and Mall scope unchanged |
+| API | Routes, DTOs, errors and response shape unchanged |
+| Schema/database/migration | No schema or migration; transaction boundary only |
+| Events/jobs/concurrency | Audit insert failure rolls back the associated mutation; notification delivery remains after commit and unchanged |
+| Protected work | Dashboard and concurrent Proposal/Approval/frontend currency files excluded |
+| Tests | Focused rollback/commit tests, backend full suite/build, reconciliation and `git diff --check` |
+| Golden scenarios | Operations status transition and review audit continuity |
+| Rollback | Restore sequential mutation/event calls |
+| Unknowns | None; this does not alter concurrent transition conflict semantics or notification delivery policy |
+
+## Wave 18 technical gate — 2026-08-24
+
+- General Work Order updates, status transitions and review outcomes now write
+  their existing audit events through the same Prisma transaction client.
+- An audit insert failure rejects and rolls back the mutation; notifications
+  remain post-commit and are not sent after a failed transaction.
+- Focused Work Order service/controller: PASS, 2 suites / 18 tests.
+- Backend full: PASS, 95/95 suites and 624/624 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Transition matrix, checklist/evidence gates, roles, Mall scope, API, schema,
+  database structure and notification policy: UNCHANGED.
 
 ## Wave 17 Change Request and Impact Map
 
