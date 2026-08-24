@@ -72,3 +72,14 @@ Wave 5 changes presentation only. Focused Report/Analytics verification passed 6
 | CEO capability model | Current operational write capabilities contradict the aggregate/read-oriented persona documented elsewhere | `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`; not normalized in Wave 6 |
 
 Wave 6 makes no backend, role, permission or Mall-scope changes. Frontend action visibility is treated as usability only and never as an authorization control.
+
+## Wave 7 evidence — Dashboard
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Main Dashboard with explicit Mall | `DashboardService` calls `assertMallAccess(..., { crossMallRead: true })` before querying | VERIFIED; unchanged |
+| Main Dashboard without Mall | Service resolves `getAccessibleMallIds` and applies the set to Unit, Contract, Invoice, Ticket, Booking and Fitout readers | VERIFIED by focused service test; unchanged |
+| Cross-Mall Dashboard | Controller overrides the role gate with `MODULE_ROLES.crossMall` (`ADMIN`, `CEO`) | VERIFIED role boundary; unchanged |
+| Dashboard UI actions | Existing routes and role-shaped response fields only | PRESENTATION ONLY; not treated as authorization |
+
+Wave 7 is a protected read-only audit and makes no Dashboard or authorization change.

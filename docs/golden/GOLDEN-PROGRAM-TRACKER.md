@@ -26,7 +26,8 @@ The following pre-existing paths are excluded from program staging unless their 
 | 3 | Unit / Space Inventory presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 4 | Operations / Ticket / Maintenance presentation | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
 | 5 | Reporting / Statistics presentation | IMPLEMENTED — AUTHORIZATION + HUMAN REVIEW PENDING |
-| 6+ | Remaining modules in dependency order | PENDING |
+| 6 | Admin / Settings / Users / Permissions | IMPLEMENTED — HUMAN VISUAL REVIEW PENDING |
+| 7 | Golden Dashboard | AUDITED — PROTECTED CONCURRENT POLISH; RENDERED REVIEW PENDING |
 | Platform verification | correctness, security, reconciliation, E2E, build | PENDING |
 
 ## Wave 1 Change Request and Impact Map
@@ -330,3 +331,28 @@ Approval boundary: the user authorized presentation standardization. Authorizati
 - Authorization: Users CRUD remains ADMIN-only; UserMallAccess service validation and grantable-role restrictions remain unchanged. The permission matrix is explicitly read-only and frontend presentation is not treated as security.
 - Reconciliation: no financial or currency values are present in the Wave 6 surface. Account role/state and Mall scope are presented from their existing authoritative fields without new semantics.
 - Business logic/API contract/backend/schema/database changes: NO.
+
+## Wave 7 protected Dashboard audit — 2026-08-24
+
+Decision: Dashboard is an existing Golden surface with an active, pre-existing minor-polish diff. Wave 7 is therefore read-only: no Dashboard application, locale or test file is modified or staged by this program checkpoint.
+
+Audit findings:
+
+- Financial strip values remain exact and explicitly labeled `VND`; no compact financial transaction value is used.
+- Financial chart axes declare their scale (`Đơn vị: Tỷ VND`) while exact tooltips use ISO currency.
+- Action Center derives counts and overdue amount from the existing Dashboard payload and navigates only to existing routes.
+- `healthScore` provenance is confirmed as the private, role-dependent `DashboardService.healthScoreForRole()` composite. It has no approved business-KPI definition and is correctly presented only as a secondary reference composite indicator with methodology/disclaimer—not authoritative portfolio health.
+- Main Dashboard reads resolve requested or accessible Mall scope inside `DashboardService`; the dedicated cross-Mall endpoint remains restricted to `MODULE_ROLES.crossMall` (`ADMIN`, `CEO`).
+- Dashboard financial data remains explicitly VND-scoped. This avoids mixed-currency arithmetic but excludes USD/MMK rather than converting them; that platform limitation remains disclosed and unchanged.
+- Revenue/collection and occupancy formulas remain duplicated across Dashboard/Reports/Analytics/AI. No formula was selected or rewritten under this presentation program.
+
+Technical evidence:
+
+- Frontend Dashboard focused: PASS, 1 file / 3 tests.
+- Backend Dashboard focused: PASS, 1 suite / 4 tests.
+- Backend full, TypeScript, production build, Docker and localhost results are shared with the immediately preceding Wave 6 gate and remain PASS on the same working tree.
+- Frontend full retains the same 10 unrelated baseline failures; Dashboard focused tests pass in that run.
+- `git diff --check`: PASS.
+- Automated rendered viewport review: UNAVAILABLE. The protected minor-polish diff is not staged and responsive/visual PASS is not claimed.
+
+Business logic/API contract/backend/schema/database changes by Wave 7: NO.
