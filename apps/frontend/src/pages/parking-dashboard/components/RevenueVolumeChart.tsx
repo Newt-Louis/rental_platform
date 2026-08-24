@@ -7,9 +7,10 @@ import { AsyncState } from '@/components/ui/async-state';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { formatMoneyCompact } from '@/lib/currency';
 
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n) + ' đ';
+  return formatMoneyCompact(n, 'VND');
 }
 
 export function RevenueVolumeChart({ filter }: { filter: ParkingDashboardKpiFilter }) {

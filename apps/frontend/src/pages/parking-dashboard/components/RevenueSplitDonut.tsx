@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AsyncState } from '@/components/ui/async-state';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { formatMoneyCompact } from '@/lib/currency';
 
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#8b5cf6'];
 
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n) + ' đ';
+  return formatMoneyCompact(n, 'VND');
 }
 
 export function RevenueSplitDonut({ filter }: { filter: ParkingDashboardKpiFilter }) {

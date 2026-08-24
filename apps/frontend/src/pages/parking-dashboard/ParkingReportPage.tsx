@@ -13,11 +13,14 @@ import { RevenueVolumeChart } from './components/RevenueVolumeChart';
 import { RevenueSplitDonut } from './components/RevenueSplitDonut';
 import { InflowOutflowChart } from './components/InflowOutflowChart';
 import { PromotionUtilizationChart } from './components/PromotionUtilizationChart';
+import { formatMoneyCompact } from '@/lib/currency';
 
 const PAYMENT_COLORS = { cash: '#10b981', bankTransfer: '#4f46e5', voucherCoupon: '#f59e0b', voucherBill: '#ec4899' };
 
+// Parking revenue is currency-less by design (VND is the platform's implicit
+// unit) — see apps/frontend/src/lib/currency.ts and CR-111.
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n) + ' đ';
+  return formatMoneyCompact(n, 'VND');
 }
 
 function fmtPct(n: number | null | undefined) {

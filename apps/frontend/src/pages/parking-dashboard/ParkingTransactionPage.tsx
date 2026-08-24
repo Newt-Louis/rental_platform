@@ -17,10 +17,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { DataTable, DataTableSort } from '@/components/ui/data-table';
 import { ScanLine, Search, Download, ImageIcon, X, Tag, SlidersHorizontal, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { formatDateTimeVN } from '@/lib/utils';
+import { formatMoney } from '@/lib/currency';
 import { TransactionFilterDrawer, TransactionFilterState } from './components/TransactionFilterDrawer';
 
+// Parking transactions are currency-less by design (VND is the platform's
+// implicit unit) — see apps/frontend/src/lib/currency.ts and CR-111.
 function fmtVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' đ';
+  return formatMoney(n, 'VND');
 }
 
 function yesterdayIso() {
