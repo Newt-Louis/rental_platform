@@ -147,7 +147,7 @@ The following paths were not staged or committed by the final program gate:
 7. `2e43fc9 docs(dashboard): record protected Golden audit`
 8. `897829c docs(golden): finalize ERP readiness assessment`
 9. `a08b706 feat(erp-ui): standardize supporting workspaces`
-10. Wave 9 localization-safety checkpoint (current uncommitted checkpoint)
+10. `ad576bb fix(i18n): localize remaining ERP workflow codes`
 
 ## Production Readiness
 

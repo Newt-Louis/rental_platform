@@ -70,6 +70,8 @@ closed to change.
 
 ## Wave 9 technical gate — 2026-08-24
 
+Checkpoint: `ad576bb fix(i18n): localize remaining ERP workflow codes`
+
 - Login development accounts, Ticket staff selection and Sales audit now use
   the shared localized role mapper; unknown future roles receive the neutral
   localized fallback.
