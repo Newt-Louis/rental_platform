@@ -1,52 +1,9 @@
 services:
   # ===========================================
-  # PostgreSQL Database
-  # ===========================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: leasing-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-leasing}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:-leasing_platform}
-      TZ: Asia/Ho_Chi_Minh
-    volumes:
-      - ./docker/postgres-data:/var/lib/postgresql/data
-      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "${DB_PORT:-5432}:5432"
-    networks:
-      - leasing-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leasing} -d ${POSTGRES_DB:-leasing_platform}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
-  # ===========================================
-  # Redis Cache (Optional - for sessions/caching)
-  # ===========================================
-  redis:
-    image: redis:7-alpine
-    container_name: leasing-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - leasing-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ===========================================
   # Backend API (NestJS)
+  # Postgres and Redis are shared machine-wide services, not project-local
+  # containers — see C:\Users\LEGION\infra\docker-compose.yml and the native
+  # Postgres install. Backend reaches both via host.docker.internal.
   # ===========================================
   backend:
     build:
@@ -57,8 +14,8 @@ services:
     container_name: leasing-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@host.docker.internal:5432/${POSTGRES_DB:-leasing_platform}
+      REDIS_URL: redis://host.docker.internal:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
@@ -70,18 +27,14 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-THISO Leasing <noreply@thiso.com.vn>}
-      MSSQL_ENABLED: ${MSSQL_ENABLED:-false}
-      MSSQL_DATABASE_URL: ${MSSQL_DATABASE_URL:-}
+      PARKING_DATABASE_URL: ${PARKING_DATABASE_URL:-}
       NODE_ENV: production
       PORT: 3000
       TZ: Asia/Ho_Chi_Minh
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-3000}:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
@@ -93,26 +46,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-
-  # ===========================================
-  # Database Migration & Seed (Run Once)
-  # ===========================================
-  migrate:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile.dev
-    container_name: leasing-migrate
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
-      SEED_DATABASE: ${SEED_DATABASE:-false}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - leasing-network
-    command: sh -c "npx prisma migrate deploy && if [ \"$$SEED_DATABASE\" = \"true\" ]; then npx ts-node --transpile-only prisma/seed.ts; fi"
-    profiles:
-      - migrate
 
   # ===========================================
   # Frontend (React + Nginx)
@@ -150,8 +83,6 @@ networks:
 # Volumes
 # ===========================================
 volumes:
-  redis_data:
-    name: leasing-redis-data
   uploads_data:
     name: leasing-uploads
   logs_data:

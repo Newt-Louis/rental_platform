@@ -60,3 +60,6 @@ apps/backend/prisma/migrations/.DS_Store
 .agents/*
 .codex/
 .codex/*
+
+# ─── Playwright MCP debug artifacts ───────────────────────────────────────────
+.playwright-mcp/

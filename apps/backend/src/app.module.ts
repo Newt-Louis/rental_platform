@@ -9,7 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
-import { PrismaMssqlModule } from './prisma-mssql/prisma-mssql.module';
+import { PrismaParkingModule } from './prisma-parking/prisma-parking.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
@@ -59,7 +59,7 @@ import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dash
       ignoreUserAgents: [/googlebot/i, /bingbot/i],
     }),
     PrismaModule,
-    PrismaMssqlModule,
+    PrismaParkingModule,
     CommonModule,
     AuthModule,
     UsersModule,

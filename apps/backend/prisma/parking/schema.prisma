@@ -1,0 +1,194 @@
+// Second Prisma client - read-only external PostgreSQL database populated by a sync
+// process (parking hardware -> test_sync), not owned/migrated by this project.
+//   npm run prisma:parking:pull      (prisma db pull - refresh models from the live DB)
+//   npm run prisma:parking:generate  (regenerate the client after pulling)
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  output        = "../../node_modules/.prisma/parking-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PARKING_DATABASE_URL")
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model parking_transaction {
+  tenant_id                     Int
+  parking_session_id            BigInt
+  card_id                       Int?
+  card_number                   String?   @db.VarChar(128)
+  card_label                    String?   @db.VarChar(128)
+  card_type_id                  Int?
+  card_type_name                String?   @db.VarChar(100)
+  vehicle_type_id               Int?
+  vehicle_type_name             String?   @db.VarChar(100)
+  vehicle_type_category         Int?
+  vehicle_number                String?   @db.VarChar(20)
+  check_in_alpr_vehicle_number  String?   @db.VarChar(20)
+  check_in_operator_id          Int?
+  check_in_time                 DateTime  @db.Timestamp(6)
+  check_in_lane_id              Int?
+  check_in_images               Json?
+  in_fee                        Int?
+  in_fee_detail                 String?   @db.VarChar(1000)
+  in_calculation_time           DateTime? @db.Timestamp(6)
+  in_payment_date               DateTime? @db.Timestamp(6)
+  check_out_alpr_vehicle_number String?   @db.VarChar(20)
+  check_out_operator_id         Int?
+  check_out_time                DateTime? @db.Timestamp(6)
+  check_out_lane_id             Int?
+  check_out_images              Json?
+  duration                      Int?
+  total_fee                     Float?    @db.Real
+  out_fee                       Int?
+  out_fee_detail                String?   @db.VarChar(1000)
+  out_calculation_time          DateTime? @db.Timestamp(6)
+  out_payment_date              DateTime? @db.Timestamp(6)
+  cash_amount                   Int?
+  bank_transfer_amount          Int?
+  bank_transaction_code         String?   @db.VarChar(255)
+  bank_payment_method           String?   @db.VarChar(255)
+  online_payment_status         String?   @db.VarChar(45)
+  online_payment_type           String?   @db.VarChar(45)
+  promotion_raw_amount          Int?
+  promotion_amount              Int?
+  promotion_used                Boolean?
+  voucher_bill_id               BigInt?
+  voucher_bill_number           String?   @db.VarChar(250)
+  voucher_bill_amount           Int?
+  voucher_bill_company          String?   @db.VarChar(512)
+  voucher_coupon_id             BigInt?
+  voucher_coupon_code           String?   @db.VarChar(250)
+  voucher_coupon_amount         Int?
+  voucher_coupon_company        String?   @db.VarChar(512)
+  voucher_id                    BigInt?
+  voucher_type                  String?   @db.VarChar(512)
+  invoice_transaction_type      String?   @db.VarChar(45)
+  invoice_status                String?   @db.VarChar(45)
+  invoice_transaction_id        String?   @db.VarChar(45)
+  invoice_no                    String?   @db.VarChar(45)
+  reservation_code              String?   @db.VarChar(45)
+  code_of_tax                   String?   @db.VarChar(45)
+  created_at                    DateTime  @default(now()) @db.Timestamp(6)
+  updated_at                    DateTime  @default(now()) @db.Timestamp(6)
+  tenants                       tenants   @relation(fields: [tenant_id], references: [tenant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([parking_session_id, tenant_id, check_in_time])
+  @@index([check_out_time], map: "idx_pt_check_out_time")
+  @@index([tenant_id], map: "idx_pt_tenant_id")
+  // Dashboard/index additions below are documentation only - this file is
+  // `prisma db pull` output, not migration source. The actual indexes are
+  // applied out-of-band via prisma/scripts/parking-dashboard-indexes.sql
+  // (npm run parking:apply-indexes), since this DB isn't owned/migrated by
+  // this project. Keep these entries in sync with that .sql file.
+  // idx_pt_tenant_checkout_fee    (tenant_id, check_out_time) INCLUDE (total_fee, promotion_amount, voucher_bill_amount)
+  // idx_pt_tenant_checkin         (tenant_id, check_in_time)
+  // idx_pt_tenant_checkout_null   (tenant_id, check_out_time) WHERE check_out_time IS NULL
+  // idx_pt_tenant_promo           (tenant_id, check_out_time) WHERE promotion_used = true
+  // idx_pt_tenant_lane_checkin    (tenant_id, check_in_lane_id, check_in_time)
+  // idx_pt_tenant_lane_checkout   (tenant_id, check_out_lane_id, check_out_time)
+  // idx_pt_vehicle_number         (tenant_id, vehicle_number text_pattern_ops)
+  // idx_pt_card_number            (tenant_id, card_number text_pattern_ops)
+  // idx_pt_invoice_no             (tenant_id, invoice_no)
+  // idx_pt_reservation_code       (tenant_id, reservation_code)
+  // idx_pt_invoice_status         (tenant_id, invoice_status)
+  // idx_pt_payment_status         (tenant_id, online_payment_status)
+  // idx_pt_keyset                 (tenant_id, check_in_time DESC, parking_session_id DESC)
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model parking_transaction_session {
+  tenant_id                     Int
+  fee_session_id                BigInt
+  parking_session_id            BigInt
+  session_type                  String    @db.VarChar(10)
+  parking_fee                   Int?
+  parking_fee_detail            String?   @db.VarChar(1000)
+  calculation_time              DateTime? @db.Timestamp(6)
+  payment_date                  DateTime? @db.Timestamp(6)
+  card_id                       Int?
+  card_number                   String?   @db.VarChar(128)
+  card_label                    String?   @db.VarChar(128)
+  card_type_id                  Int?
+  card_type_name                String?   @db.VarChar(100)
+  vehicle_type_id               Int?
+  vehicle_type_name             String?   @db.VarChar(100)
+  vehicle_type_category         Int?
+  vehicle_number                String?   @db.VarChar(20)
+  check_in_alpr_vehicle_number  String?   @db.VarChar(20)
+  check_in_operator_id          Int?
+  check_in_time                 DateTime  @db.Timestamp(6)
+  check_in_lane_id              Int?
+  check_in_images               Json?
+  check_out_alpr_vehicle_number String?   @db.VarChar(20)
+  check_out_operator_id         Int?
+  check_out_time                DateTime? @db.Timestamp(6)
+  check_out_lane_id             Int?
+  check_out_images              Json?
+  duration                      Int?
+  total_fee                     Float?    @db.Real
+  cash_amount                   Int?
+  bank_transfer_amount          Int?
+  bank_transaction_code         String?   @db.VarChar(255)
+  bank_payment_method           String?   @db.VarChar(255)
+  online_payment_status         String?   @db.VarChar(45)
+  online_payment_type           String?   @db.VarChar(45)
+  promotion_raw_amount          Int?
+  promotion_amount              Int?
+  promotion_used                Boolean?
+  voucher_bill_id               BigInt?
+  voucher_bill_number           String?   @db.VarChar(250)
+  voucher_bill_amount           Int?
+  voucher_bill_company          String?   @db.VarChar(512)
+  voucher_coupon_id             BigInt?
+  voucher_coupon_code           String?   @db.VarChar(250)
+  voucher_coupon_amount         Int?
+  voucher_coupon_company        String?   @db.VarChar(512)
+  voucher_id                    BigInt?
+  voucher_type                  String?   @db.VarChar(512)
+  invoice_transaction_type      String?   @db.VarChar(45)
+  invoice_status                String?   @db.VarChar(45)
+  invoice_transaction_id        String?   @db.VarChar(45)
+  invoice_no                    String?   @db.VarChar(45)
+  reservation_code              String?   @db.VarChar(45)
+  code_of_tax                   String?   @db.VarChar(45)
+  inserted_at                   DateTime  @default(now()) @db.Timestamp(6)
+  tenants                       tenants   @relation(fields: [tenant_id], references: [tenant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([fee_session_id, tenant_id, check_in_time])
+  @@index([parking_session_id], map: "idx_pts_parking_session_id")
+  @@index([tenant_id], map: "idx_pts_tenant_id")
+}
+
+model tenants {
+  tenant_id                   Int                           @id @default(autoincrement())
+  tenant_code                 String                        @unique
+  name                        String
+  description                 String?
+  parking_transaction         parking_transaction[]
+  parking_transaction_session parking_transaction_session[]
+  vehicle_type_mappings       vehicle_type_mappings[]
+}
+
+model vehicle_type_mappings {
+  id                      Int           @id @default(autoincrement())
+  tenant_id               Int?
+  local_vehicle_type_id   Int           @db.SmallInt
+  foreign_vehicle_type_id String        @db.VarChar(50)
+  vehicle_types           vehicle_types @relation(fields: [local_vehicle_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants                 tenants?      @relation(fields: [tenant_id], references: [tenant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, foreign_vehicle_type_id], map: "uq_vtm_tenant_foreign")
+  @@index([local_vehicle_type_id], map: "idx_vtm_local_vehicle_type_id")
+  @@index([tenant_id], map: "idx_vtm_tenant_id")
+}
+
+model vehicle_types {
+  id                    Int                     @id @default(autoincrement()) @db.SmallInt
+  name                  String                  @db.VarChar(255)
+  is_active             Boolean
+  vehicle_type_mappings vehicle_type_mappings[]
+}

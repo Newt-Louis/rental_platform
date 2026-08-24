@@ -17,7 +17,7 @@ RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
-RUN npx prisma generate --schema=prisma/mssql/schema.prisma
+RUN npx prisma generate --schema=prisma/parking/schema.prisma
 RUN npm run build
 RUN npm prune --production
 
