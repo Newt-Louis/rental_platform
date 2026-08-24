@@ -9,7 +9,7 @@ Status: ACTIVE
 | Payment remaining formula mismatch | Backend balance authoritative | Track; do not alter formula in UI |
 | Proposal calculation/rent-free/scenario semantics | Business-rule evidence required | Preserve existing behavior |
 | Contract termination/amendment/direct-create atomicity | Cross-domain/Tier 0 review | No opportunistic change |
-| Slot allocation concurrency | Transaction/concurrency review | No UI workaround |
+| Slot allocation concurrency | RESOLVED in Wave 19 | Create/update conflict reads and writes use Serializable transactions with bounded retry; overlap semantics and pricing remain unchanged |
 | Duplicated financial formulas | Platform-level refactor | Audit before consolidation |
 | Remaining cross-Mall scope gaps in adjacent modules | Security verification | Fix only with endpoint evidence and reviewed impact map |
 | Fitout change-order creation currency | Persisted currency/display is authoritative and fixed; creation still defaults VND | Confirm whether new change orders must inherit Contract currency |

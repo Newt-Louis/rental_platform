@@ -40,6 +40,48 @@ The following pre-existing paths are excluded from program staging unless their 
 | 16 | CRM unified-deals authorization | COMPLETE — authoritative Lead scope enforced before pagination |
 | 17 | Analytics compliance-export authorization | COMPLETE — Mall scope, payload isolation and global-write control enforced |
 | 18 | Work Order state/event atomicity | COMPLETE — state mutation and audit event share one transaction |
+| 19 | Short-term Slot allocation concurrency | COMPLETE — serialized conflict-check and write with bounded retry |
+
+## Wave 19 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W19-SLOT-BOOKING-CONCURRENCY`
+
+Business reason: Slot Booking create/update checks occupied-window conflicts and
+then writes in separate database operations. Concurrent requests can both pass
+the check and create overlapping PENDING/CONFIRMED allocations. The existing
+timeline and active-status predicates already define authoritative conflict
+semantics; only the transaction boundary is missing.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Short-term Slots / Booking allocation |
+| Runtime behavior | Run conflict read plus create/update in a Serializable Prisma transaction and retry recognized serialization/booking-reference collisions up to three attempts |
+| Data/workflow | Existing PENDING/CONFIRMED conflict set, occupied interval and status rules unchanged |
+| Financial/currency | Existing pricing formula, discounts and persisted values unchanged; no currency inference |
+| Mall/Tenant | Existing controller Mall ownership checks unchanged |
+| Authorization | Unchanged |
+| API | Routes, DTOs and response shapes unchanged; a concurrent loser receives the existing conflict error after retry |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Removes check-then-write race for create and timeline update; bounded retry handles Prisma `P2034` and booking-reference `P2002` conflicts |
+| Protected work | Dashboard and concurrent Proposal/Approval/frontend currency files excluded |
+| Tests | Focused transaction/retry/conflict tests, backend full suite/build, reconciliation and `git diff --check` |
+| Golden scenarios | Short-term Slot availability and non-overlapping allocation |
+| Rollback | Restore non-transactional conflict checks/writes |
+| Unknowns | Slot price currency provenance remains `BC-SLOT-001` and is not touched |
+
+## Wave 19 technical gate — 2026-08-24
+
+- Slot Booking create and timeline update now execute active-window conflict
+  reads and writes in a Serializable Prisma transaction.
+- Recognized serialization and booking-reference collisions retry at most three
+  times; the concurrent loser then observes the committed booking through the
+  existing conflict rule.
+- Focused Slot service/controller: PASS, 3 suites / 9 tests.
+- Backend full: PASS, 96/96 suites and 628/628 tests.
+- Backend TypeScript/production build: PASS.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Timeline, PENDING/CONFIRMED conflict semantics, pricing/discount formulas,
+  authorization, API, schema and database structure: UNCHANGED.
 
 ## Wave 18 Change Request and Impact Map
 
