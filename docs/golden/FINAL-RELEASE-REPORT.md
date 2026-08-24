@@ -98,9 +98,10 @@ Excluded from every Golden checkpoint in this execution cycle:
 6. `390911f fix(contracts): make direct writes atomic`
 7. `d02e0cc fix(patrol): make abnormal work order atomic`
 8. `47f3c78 fix(contracts): make lifecycle side effects atomic`
+9. `d4f0743 fix(reports): disclose export limits and currency`
 
-Wave 23 receives its own protected checkpoint after its exact staged set and
-cached diff pass are verified.
+Wave 23 was committed from an exact 16-file staged set after the cached diff
+and whitespace checks passed. Protected concurrent paths were excluded.
 
 ## Release decision
 
