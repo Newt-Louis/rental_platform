@@ -153,6 +153,7 @@ The following paths were not staged or committed by the final program gate:
 9. `a08b706 feat(erp-ui): standardize supporting workspaces`
 10. `ad576bb fix(i18n): localize remaining ERP workflow codes`
 11. `a310df4 test(frontend): close Golden ERP baseline failures`
+12. `7c6b4fa fix(i18n): neutralize unknown ERP presentation values`
 
 ## Production Readiness
 

@@ -62,6 +62,8 @@ meaning to unknown values.
 
 ## Wave 11 technical gate — 2026-08-24
 
+Checkpoint: `7c6b4fa fix(i18n): neutralize unknown ERP presentation values`
+
 - Added one shared localized enum-label fallback and applied it to the audited
   Auth/Profile, Reporting, Booking, Billing reference, Contract/Service
   Contract, CRM, Ticket/Tenant, Fitout/Operations/Parking, Sales, SAP and
