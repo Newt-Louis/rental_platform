@@ -41,36 +41,49 @@ export class ContractTerminationService {
       throw new BadRequestException('Termination already exists for this contract');
     }
 
-    const termination = await this.prisma.contractTermination.upsert({
-      where: { contractId },
-      create: {
-        contractId,
-        initiatedBy: dto.initiatedBy,
-        reason: dto.reason,
-        effectiveDate: new Date(dto.effectiveDate),
-        noticePeriodDays: dto.noticePeriodDays ?? 60,
-        depositRefund: dto.depositRefund,
-        penaltyAmount: dto.penaltyAmount,
-        notes: dto.notes,
-        createdById,
-        status: 'INITIATED',
-      },
-      update: {
-        initiatedBy: dto.initiatedBy,
-        reason: dto.reason,
-        effectiveDate: new Date(dto.effectiveDate),
-        noticePeriodDays: dto.noticePeriodDays ?? 60,
-        depositRefund: dto.depositRefund,
-        penaltyAmount: dto.penaltyAmount,
-        notes: dto.notes,
-        status: 'INITIATED',
-      },
-      include: { contract: { select: { id: true, contractNumber: true } } },
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.contract.findUnique({ where: { id: contractId } });
+      if (!current) throw new NotFoundException('Contract not found');
+      if (!['ACTIVE', 'EXPIRING'].includes(current.status)) {
+        throw new BadRequestException('Contract must be ACTIVE or EXPIRING to initiate termination');
+      }
+      const currentTermination = await tx.contractTermination.findUnique({ where: { contractId } });
+      if (currentTermination && currentTermination.status !== 'CANCELLED') {
+        throw new BadRequestException('Termination already exists for this contract');
+      }
+
+      const termination = await tx.contractTermination.upsert({
+        where: { contractId },
+        create: {
+          contractId,
+          initiatedBy: dto.initiatedBy,
+          reason: dto.reason,
+          effectiveDate: new Date(dto.effectiveDate),
+          noticePeriodDays: dto.noticePeriodDays ?? 60,
+          depositRefund: dto.depositRefund,
+          penaltyAmount: dto.penaltyAmount,
+          notes: dto.notes,
+          createdById,
+          status: 'INITIATED',
+        },
+        update: {
+          initiatedBy: dto.initiatedBy,
+          reason: dto.reason,
+          effectiveDate: new Date(dto.effectiveDate),
+          noticePeriodDays: dto.noticePeriodDays ?? 60,
+          depositRefund: dto.depositRefund,
+          penaltyAmount: dto.penaltyAmount,
+          notes: dto.notes,
+          status: 'INITIATED',
+        },
+        include: { contract: { select: { id: true, contractNumber: true } } },
+      });
+      await tx.contract.update({
+        where: { id: contractId },
+        data: { status: ContractStatus.TERMINATING },
+      });
+      return termination;
     });
-
-    await this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.TERMINATING } });
-
-    return termination;
   }
 
   async update(contractId: string, dto: {
@@ -111,35 +124,34 @@ export class ContractTerminationService {
   }
 
   async complete(contractId: string) {
-    const term = await this.prisma.contractTermination.findUnique({ where: { contractId } });
-    if (!term) throw new NotFoundException('Termination not found');
-    if (term.status === 'COMPLETED') throw new BadRequestException('Already completed');
+    return this.prisma.$transaction(async (tx) => {
+      const term = await tx.contractTermination.findUnique({ where: { contractId } });
+      if (!term) throw new NotFoundException('Termination not found');
+      if (term.status === 'COMPLETED') throw new BadRequestException('Already completed');
 
-    const checklist = [term.accessCardReturn, term.signageRemoved, term.keysReturned];
-    if (checklist.some((c) => !c)) {
-      throw new BadRequestException('All handover checklist items must be completed before finalizing');
-    }
+      const checklist = [term.accessCardReturn, term.signageRemoved, term.keysReturned];
+      if (checklist.some((c) => !c)) {
+        throw new BadRequestException('All handover checklist items must be completed before finalizing');
+      }
+      const contract = await tx.contract.findUnique({
+        where: { id: contractId },
+        select: { unitId: true },
+      });
+      if (!contract) throw new NotFoundException('Contract not found');
 
-    const contract = await this.prisma.contract.findUnique({
-      where: { id: contractId },
-      select: { unitId: true },
-    });
-
-    const [termination] = await this.prisma.$transaction([
-      this.prisma.contractTermination.update({
+      const termination = await tx.contractTermination.update({
         where: { contractId },
         data: { status: 'COMPLETED', completedAt: new Date() },
-      }),
-      this.prisma.contract.update({ where: { id: contractId }, data: { status: ContractStatus.TERMINATED } }),
-    ]);
-
-    if (contract) {
+      });
+      await tx.contract.update({
+        where: { id: contractId },
+        data: { status: ContractStatus.TERMINATED },
+      });
       await this.unitStatus.transition(contract.unitId, UnitStatus.VACANT, {
         reason: `Contract ${contractId} terminated`,
-      });
-    }
-
-    return termination;
+      }, tx);
+      return termination;
+    });
   }
 
   async cancel(contractId: string) {

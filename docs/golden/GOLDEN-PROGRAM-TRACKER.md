@@ -15,6 +15,7 @@ The following pre-existing paths are excluded from program staging unless their 
 - `apps/frontend/src/pages/proposals/*` current modified/untracked presentation files
 - `docs/changes/CR-PROPOSAL-APPROVAL-CORRECTNESS-BACKLOG.md`
 - `docs/ux/CR-GOLDEN-PROPOSAL-APPROVAL-*.md`
+- Concurrent Periodic Charge / Billing Add-in work: `apps/backend/prisma/schema.prisma`, its new migration, `apps/backend/src/modules/billing-addin/`, `apps/backend/src/modules/billing/billing.service.ts`, `apps/backend/src/app.module.ts` and `apps/backend/src/common/constants/role-permissions.ts`
 
 ## Wave status
 
@@ -43,6 +44,52 @@ The following pre-existing paths are excluded from program staging unless their 
 | 19 | Short-term Slot allocation concurrency | COMPLETE — serialized conflict-check and write with bounded retry |
 | 20 | Contract direct-create/update atomicity | COMPLETE — Contract, Unit and audit writes share transaction boundaries |
 | 21 | Patrol abnormal-check automation atomicity | COMPLETE — Patrol result and auto-created Work Order share one transaction |
+| 22 | Contract termination/amendment atomicity | COMPLETE — lifecycle, Unit, Billing and audit writes share transactions |
+
+## Wave 22 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W22-CONTRACT-LIFECYCLE-ATOMICITY`
+
+Business reason: Termination initiate/complete and Amendment approval currently
+commit related Contract, termination/amendment, Unit, Billing Schedule and audit
+writes in multiple steps. A later failure can leave lifecycle state applied only
+partially. Each downstream service already accepts a transaction client, so the
+existing authoritative behavior can be made atomic without new semantics.
+
+| Dimension | Impact |
+|---|---|
+| Primary domain | Contract termination and amendment approval; Unit/Billing/audit consistency |
+| Runtime behavior | Use interactive transactions for termination initiate/complete and amendment approve; re-read authoritative records inside the transaction |
+| Data/workflow | Existing termination checklist/status rules, amendable-field whitelist, renewal marker and billing-relevance rules unchanged |
+| Financial/currency | Existing deposit/penalty values and schedule formulas unchanged; no penalty/dunning currency decision |
+| Mall/Tenant | Existing controller ownership checks unchanged |
+| Authorization | Unchanged |
+| API | Routes, DTOs, responses and expected validation errors unchanged |
+| Schema/database/migration | No change |
+| Events/jobs/concurrency | Lifecycle side effects roll back together; Unit transition, schedule rebuild and audit event receive the same transaction client |
+| Protected work | Concurrent schema, Dashboard and Proposal/Approval/frontend currency work excluded |
+| Tests | Focused transaction/rollback/client-propagation tests, backend full suite/build, reconciliation and `git diff --check` |
+| Golden scenarios | Amendment-to-Billing continuity and Contract termination-to-Unit vacancy continuity |
+| Rollback | Restore sequential lifecycle writes |
+| Unknowns | Penalty/deposit business formulas and currency remain untouched; this wave changes only transaction boundaries |
+
+## Wave 22 technical gate — 2026-08-24
+
+- Termination initiate writes the termination record and Contract status in one
+  transaction. Completion revalidates the checklist and commits termination,
+  Contract and Unit vacancy through one transaction client.
+- Amendment approval re-reads the submitted amendment and commits approved
+  Contract fields, any existing Billing Schedule rebuild, amendment status and
+  audit event through one transaction client.
+- Focused Contract lifecycle atomicity: PASS, 1 suite / 3 tests.
+- Cross-module backbone reconciliation: PASS, 17/17 checks clean.
+- Full backend run: 96 suites / 625 tests PASS; 3 suites fail compilation only
+  because concurrent uncommitted Billing Add-in code references newly added
+  Prisma enums/models before its Prisma client is regenerated. Production build
+  has the same unrelated baseline failure. The last clean pre-concurrent gate
+  remains 98/98 suites, 635/635 tests and backend build PASS at Wave 21.
+- Termination/amendment rules, amounts, currencies, API, schema and database
+  structure: UNCHANGED by Wave 22.
 
 ## Wave 21 Change Request and Impact Map
 

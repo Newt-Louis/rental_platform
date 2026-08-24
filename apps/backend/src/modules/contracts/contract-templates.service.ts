@@ -172,58 +172,58 @@ export class ContractAmendmentsService {
   }
 
   async approve(amendmentId: string, userId?: string) {
-    const amendment = await this.prisma.contractAmendment.findUnique({
-      where: { id: amendmentId },
-      include: { contract: true },
-    });
-    if (!amendment) throw new NotFoundException('Amendment not found');
-    if (amendment.status !== AmendmentStatus.SUBMITTED) {
-      throw new BadRequestException('Amendment must be SUBMITTED');
-    }
-
-    const changes = amendment.changes as Record<string, unknown>;
-    const updateData: Record<string, unknown> = {};
-    const before: Record<string, unknown> = {};
-
-    // Whitelist tường minh — tránh amendment ghi đè field không dự tính (status, tenantId,
-    // unitId...) chỉ vì tên field đó trùng với 1 property trên Contract.
-    for (const [key, value] of Object.entries(changes)) {
-      if (AMENDABLE_CONTRACT_FIELDS.has(key)) {
-        before[key] = (amendment.contract as any)[key];
-        updateData[key] = AMENDMENT_DATE_FIELDS.has(key) ? new Date(value as string) : value;
+    return this.prisma.$transaction(async (tx) => {
+      const amendment = await tx.contractAmendment.findUnique({
+        where: { id: amendmentId },
+        include: { contract: true },
+      });
+      if (!amendment) throw new NotFoundException('Amendment not found');
+      if (amendment.status !== AmendmentStatus.SUBMITTED) {
+        throw new BadRequestException('Amendment must be SUBMITTED');
       }
-    }
 
-    if (amendment.type === AmendmentType.RENEWAL) {
-      updateData.type = 'RENEWAL';
-    }
+      const changes = amendment.changes as Record<string, unknown>;
+      const updateData: Record<string, unknown> = {};
+      const before: Record<string, unknown> = {};
 
-    await this.prisma.contract.update({
-      where: { id: amendment.contractId },
-      data: updateData as any,
+      // Whitelist tường minh — tránh amendment ghi đè field không dự tính (status, tenantId,
+      // unitId...) chỉ vì tên field đó trùng với 1 property trên Contract.
+      for (const [key, value] of Object.entries(changes)) {
+        if (AMENDABLE_CONTRACT_FIELDS.has(key)) {
+          before[key] = (amendment.contract as any)[key];
+          updateData[key] = AMENDMENT_DATE_FIELDS.has(key) ? new Date(value as string) : value;
+        }
+      }
+
+      if (amendment.type === AmendmentType.RENEWAL) {
+        updateData.type = 'RENEWAL';
+      }
+
+      await tx.contract.update({
+        where: { id: amendment.contractId },
+        data: updateData as any,
+      });
+
+      if (Object.keys(updateData).some((key) => BILLING_RELEVANT_FIELDS.has(key))) {
+        await this.billingScheduleService.buildScheduleForContract(amendment.contractId, tx);
+      }
+
+      const updated = await tx.contractAmendment.update({
+        where: { id: amendmentId },
+        data: { status: AmendmentStatus.APPLIED, approvedAt: new Date() },
+      });
+
+      await this.events.logEvent({
+        contractId: amendment.contractId,
+        eventType: 'AMENDMENT_APPLIED',
+        title: `Amendment ${amendment.amendmentNumber} applied`,
+        description: amendment.reason ?? undefined,
+        beforeValue: JSON.stringify(before),
+        afterValue: JSON.stringify(changes),
+        userId,
+      }, tx);
+
+      return updated;
     });
-
-    // Rebuild lịch thu tiền nếu amendment đổi field ảnh hưởng billing (rent/cam/kỳ hạn...) —
-    // trước đây approve() chỉ cập nhật bảng Contract, các kỳ đã sinh vẫn dùng giá cũ.
-    if (Object.keys(updateData).some((key) => BILLING_RELEVANT_FIELDS.has(key))) {
-      await this.billingScheduleService.buildScheduleForContract(amendment.contractId);
-    }
-
-    const updated = await this.prisma.contractAmendment.update({
-      where: { id: amendmentId },
-      data: { status: AmendmentStatus.APPLIED, approvedAt: new Date() },
-    });
-
-    await this.events.logEvent({
-      contractId: amendment.contractId,
-      eventType: 'AMENDMENT_APPLIED',
-      title: `Amendment ${amendment.amendmentNumber} applied`,
-      description: amendment.reason ?? undefined,
-      beforeValue: JSON.stringify(before),
-      afterValue: JSON.stringify(changes),
-      userId,
-    });
-
-    return updated;
   }
 }
