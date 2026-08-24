@@ -13,7 +13,7 @@ the newest source where older readiness documents conflict, especially
 
 | Gate | Status | Current evidence and blocking condition |
 |---|---|---|
-| Engineering | PASS | Backend is 598/598; frontend is 264/264 across 44 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
+| Engineering | PASS | Backend is 598/598; frontend is 265/265 across 45 files; TypeScript and both production builds pass. The prior ten Booking/navigation baseline failures were remediated as obsolete test assertions without production-code changes. |
 | Security | FAIL | Previously exposed live credentials remain unrotated and reachable git history still requires remediation. Current code-level controls and secret scanning do not close the operational incident. |
 | Authorization | FAIL | Core audited paths are scoped, but CRM unified deals, Ticket secondary paths, and Analytics Compliance exports retain confirmed ownership/scope gaps. |
 | Tenant isolation | FAIL | Live Contract/Invoice cross-tenant IDOR checks passed, but confirmed Ticket secondary-path ownership gaps remain. Files have focused tests but no live cross-tenant UAT. |
@@ -35,7 +35,7 @@ the newest source where older readiness documents conflict, especially
 | Recovery procedures | BLOCKED | Backup/restore runbooks exist, but off-site recovery, production-scale RTO and a release rollback rehearsal are unverified. |
 | UAT | FAIL | Only UAT-08 and UAT-09 are live-evidenced. A read-only fixture verifier now evidences 5/8 supporting journey segments, but UAT-01 through -07, -10 through -12 and the new-user study are not complete; fixture gaps include rejected approval, one linked Lead-to-Collection chain and a second Mall. |
 | Cross-module journeys | FAIL | Focused service tests and reconciliation cover handoff invariants, but the full Lead-to-Collection and exception journey matrix has not been executed end-to-end. |
-| Visual verification | BLOCKED | Automated browser runtime was unavailable. Fitout, CRM, Inventory, Operations, Reporting, Admin and the protected Dashboard audit still require rendered human review at the required viewports. |
+| Visual verification | BLOCKED | Automated Chromium verification now passes 4/4 viewport cases and 28 authenticated route/viewport renders at 1920×1080, 1440×900, 1366×768 and 1024×768, with no page-level overflow, visible raw i18n-key pattern or fatal render error. Screenshots were inspected and two presentation defects were corrected. Human business-usability sign-off is still required. |
 | Release procedure | BLOCKED | The runbook exists, but a release candidate containing this commit chain has not been cut, deployed or signed off. |
 | Rollback procedure | BLOCKED | The procedure is documented but has not been rehearsed for this release candidate. |
 
@@ -45,8 +45,8 @@ the newest source where older readiness documents conflict, especially
 - No usable off-site database/upload backup exists.
 - Full UAT and cross-Mall isolation evidence do not exist.
 - Confirmed authorization gaps remain in reachable adjacent surfaces.
-- Automated rendered verification was unavailable and the new Golden
-  candidates have no human visual sign-off.
+- Automated rendered verification passes, but the new Golden candidates still
+  have no human business-usability sign-off.
 
 ## Required human evidence
 

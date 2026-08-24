@@ -70,7 +70,7 @@ function OccupancyReport() {
     loading={<Skeleton className="h-64" />}
     emptyTitle={t('occupancy.empty')}
     emptyDescription={t('occupancy.emptyDesc')}
-  >(
+  >
     <div className="space-y-4">
       <LeaseTermSelector value={leaseTermType} onChange={setLeaseTermType} />
       <div className="grid md:grid-cols-2 gap-6">
@@ -103,7 +103,7 @@ function OccupancyReport() {
       </Card>
       </div>
     </div>
-  )</AsyncState>;
+  </AsyncState>;
 }
 
 function RevenueReport() {

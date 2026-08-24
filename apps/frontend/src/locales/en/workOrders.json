@@ -29,5 +29,22 @@
     "assignedDepartment": "Assigned team", "priority": "Priority", "assignee": "Assignee", "due": "Due date",
     "status": "Status", "evidence": "Checklist/Photos", "empty": "No operational work orders",
     "showing": "Showing {{shown}} / {{total}} work orders", "unassigned": "Unassigned"
+  },
+  "templates": {
+    "title": "Work order templates and recurring schedules", "collapse": "Collapse", "expand": "Manage schedules",
+    "create": "Create template", "loading": "Loading...", "empty": "No recurring templates yet.",
+    "active": "Active", "paused": "Paused", "nextRun": "Next run", "hours": "{{count}} hours",
+    "generated": "Generated {{count}} work orders", "runNow": "Run now", "pause": "Pause", "activate": "Activate",
+    "dialogTitle": "Create recurring work order template", "mall": "Mall", "name": "Template name",
+    "category": "Category", "frequencyLabel": "Frequency", "workOrderTitle": "Work order title",
+    "nextRunAt": "Next run", "slaHours": "SLA (hours)", "department": "Assigned department",
+    "selectDepartment": "Select assigned department", "assignee": "Assignee", "location": "Location",
+    "checklist": "Checklist (one item per line)", "saving": "Saving...", "save": "Save template",
+    "frequency": { "DAILY": "Daily", "WEEKLY": "Weekly", "MONTHLY": "Monthly", "QUARTERLY": "Quarterly", "ANNUALLY": "Annually" },
+    "toast": {
+      "alreadyCreated": "A work order already exists for this period", "updated": "Work order template updated",
+      "updateFailed": "Unable to update template", "required": "Complete all required fields",
+      "selectMall": "Select a Mall from the shared selector"
+    }
   }
 }

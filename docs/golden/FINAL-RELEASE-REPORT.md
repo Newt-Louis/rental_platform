@@ -112,7 +112,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Authorization | **FAIL** — confirmed reachable scope gaps remain |
 | Cross-Mall Isolation | **FAIL** — no two-Mall UAT and confirmed adjacent gaps |
 | Cross-Module Journeys | **FAIL** — 2/12 live UAT scenarios evidenced; read-only fixture verifier covers 5/8 supporting segments, with rejected approval, one linked Lead-to-Collection fixture and a second Mall missing |
-| Frontend Tests | **264/264 PASS** — 44/44 files; obsolete baseline assertions remediated without production-code changes and enum fallback coverage added |
+| Frontend Tests | **265/265 PASS** — 45/45 files; obsolete baseline assertions remediated without production-code changes, enum fallback coverage and Work Order template locale coverage added |
 | Backend Tests | **598/598 PASS** — 91/91 suites |
 | Integration Tests | **2/12 live UAT scenarios PASS**; automated fixture evidence **5/8 segments** — remaining scenarios unexecuted or blocked |
 | TypeScript | **PASS** — executed as part of frontend production build |
@@ -121,7 +121,7 @@ boundaries. They remain P2/P3 work behind the P0/P1 release blockers above.
 | Docker | **PASS** — four services healthy; frontend/backend HTTP 200 |
 | Database Invariants | **PASS** — 17/17 clean on current development data |
 | Backup/restore guards | **4/4 PASS** |
-| Visual Verification | **UNAVAILABLE** — no browser runtime; human rendered review required |
+| Visual Verification | **PARTIAL** — automated Chromium rendered verification passes 4/4 viewport cases and 28 authenticated route/viewport combinations; screenshots were inspected and render-discovered defects were corrected, but human business-usability sign-off remains open |
 
 ## Protected User Changes
 

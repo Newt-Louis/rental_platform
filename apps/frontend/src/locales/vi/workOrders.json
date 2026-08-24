@@ -29,5 +29,22 @@
     "assignedDepartment": "Bộ phận xử lý", "priority": "Ưu tiên", "assignee": "Người xử lý", "due": "Hạn hoàn thành",
     "status": "Trạng thái", "evidence": "Checklist/Ảnh", "empty": "Chưa có công việc vận hành",
     "showing": "Hiển thị {{shown}} / {{total}} công việc", "unassigned": "Chưa giao"
+  },
+  "templates": {
+    "title": "Mẫu công việc và lịch định kỳ", "collapse": "Thu gọn", "expand": "Mở quản lý",
+    "create": "Tạo mẫu", "loading": "Đang tải...", "empty": "Chưa có mẫu định kỳ.",
+    "active": "Đang chạy", "paused": "Tạm dừng", "nextRun": "Kỳ tới", "hours": "{{count}} giờ",
+    "generated": "Đã sinh {{count}} Work Order", "runNow": "Chạy ngay", "pause": "Tạm dừng", "activate": "Kích hoạt",
+    "dialogTitle": "Tạo mẫu công việc định kỳ", "mall": "Trung tâm thương mại", "name": "Tên mẫu",
+    "category": "Nhóm", "frequencyLabel": "Tần suất", "workOrderTitle": "Tiêu đề Work Order",
+    "nextRunAt": "Lần chạy tiếp theo", "slaHours": "SLA (giờ)", "department": "Bộ phận",
+    "selectDepartment": "Chọn bộ phận xử lý", "assignee": "Người phụ trách", "location": "Vị trí",
+    "checklist": "Checklist (mỗi dòng một mục)", "saving": "Đang lưu...", "save": "Lưu mẫu",
+    "frequency": { "DAILY": "Hàng ngày", "WEEKLY": "Hàng tuần", "MONTHLY": "Hàng tháng", "QUARTERLY": "Hàng quý", "ANNUALLY": "Hàng năm" },
+    "toast": {
+      "alreadyCreated": "Kỳ này đã có Work Order", "updated": "Đã cập nhật mẫu công việc",
+      "updateFailed": "Không thể cập nhật mẫu", "required": "Vui lòng nhập đủ trường bắt buộc",
+      "selectMall": "Vui lòng chọn Mall tại bộ chọn chung"
+    }
   }
 }

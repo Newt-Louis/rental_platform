@@ -34,6 +34,90 @@ The following pre-existing paths are excluded from program staging unless their 
 | 10 | Frontend baseline test remediation | COMPLETE — test assertions only; frontend 262/262 PASS |
 | 11 | Unknown-enum presentation safety | COMPLETE — neutral fallback/localization only; HUMAN VISUAL REVIEW PENDING |
 | 12 | Cross-module journey evidence | COMPLETE — 5/8 fixture segments evidenced; 3 gaps explicit; UAT remains 2/12 |
+| 13 | Automated rendered viewport verification | COMPLETE — 28 route/viewport renders pass automated checks; HUMAN SIGN-OFF PENDING |
+| 14 | Render-discovered presentation defects | COMPLETE — report artifacts removed and Work Order templates localized |
+
+## Wave 14 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W14-RENDER-DISCOVERED-PRESENTATION`
+
+Business reason: rendered English-locale review exposed literal wrapper
+parentheses around the Occupancy report and Vietnamese-only copy in the Work
+Order template panel. Both defects reduce trust in the Golden candidate and are
+provable presentation defects rather than business-policy questions.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | Reporting presentation and Operations/Work Order template localization |
+| Runtime/business behavior | Remove two literal text artifacts and route existing template labels through the existing `workOrders` locale namespace |
+| Data/state/workflow | Existing template frequency/category codes, mutations, query keys and readiness behavior remain unchanged |
+| Financial/currency | No money, currency, formula, export or aggregation change |
+| Mall/Tenant/authorization | Existing Mall selector, ADMIN/operations permissions and backend enforcement remain unchanged |
+| API/backend/frontend/schema/database | Frontend presentation and locale resources only; no API, backend, schema or database change |
+| Department values | Preserve the existing Vietnamese department values sent to the backend; only category/frequency/user-facing copy is localized |
+| Protected work | Dashboard and Proposal/Approval source remains excluded |
+| Tests | Focused Work Order/Reporting tests, frontend TypeScript/build, rendered viewport smoke and `git diff --check` |
+| Golden scenarios | GS-08 Operations presentation only; no workflow or UAT evidence is upgraded |
+| Reconciliation | Not applicable; no persisted or computed value changes |
+| Rollback | Revert the reporting JSX artifact removal and Work Order locale mapping |
+| Open questions | None; English locale must not render hard-coded Vietnamese UI copy |
+
+## Wave 14 technical gate — 2026-08-24
+
+- Render-discovered fixes: PASS. Occupancy report wrapper artifacts are absent,
+  and the Work Order template workspace follows the active English locale.
+- Existing persisted department values remain unchanged when locale changes;
+  category/frequency codes and all API calls are preserved.
+- Focused Operations: PASS, 3 files / 7 tests. Focused Reporting presentation:
+  PASS, 1 file / 2 tests.
+- Frontend full: PASS, 45/45 files and 265/265 tests.
+- TypeScript and production build: PASS in the rebuilt production frontend
+  image. Docker: all four services healthy; frontend and backend health return
+  HTTP 200.
+- Rendered regression: PASS in the Wave 13 4/4 Playwright viewport run; the
+  corrected 1024×768 Reports and Work Orders screenshots were inspected.
+- Business logic/API/backend/schema/database changes: NO.
+
+## Wave 13 Change Request and Impact Map
+
+Change ID: `CR-GOLDEN-W13-RENDERED-VIEWPORT-EVIDENCE`
+
+Business reason: the earlier in-app browser runtime was unavailable, but the
+repository's installed Playwright runner can launch local Chromium. A dedicated
+read-only smoke can inspect the production Docker frontend at the four required
+desktop viewports and replace indirect responsive claims with rendered evidence.
+
+| Dimension | Impact |
+|---|---|
+| Primary domains | E2E verification tooling and Golden readiness documentation only |
+| Runtime/business behavior | Authenticated GET/navigation and screenshots; no create/update/delete action |
+| Data/state/workflow | No business mutation; login token/session is browser-local |
+| Financial/currency | Render inspection only; no amount or currency calculation |
+| Mall/Tenant/authorization | Uses one existing local ADMIN seed account; does not claim two-Mall or Tenant-isolation coverage |
+| API/backend/frontend/schema/database | No application or contract change |
+| Protected work | Dashboard and Proposal/Approval are rendered read-only; their source files remain excluded |
+| Tests | Check page-level overflow, fatal page errors, raw i18n-key patterns and capture screenshots at 1920×1080, 1440×900, 1366×768 and 1024×768 |
+| Golden scenarios | Navigation/readability support only; no UAT scenario is upgraded from this evidence |
+| Reconciliation | Not applicable; no persisted values change |
+| Rollback | Revert the E2E verifier and documentation checkpoint |
+| Open questions | Human business-usability sign-off remains separate even if automated rendering passes |
+
+## Wave 13 technical gate — 2026-08-24
+
+- Playwright Chromium: PASS, 4/4 viewport cases and 28 authenticated
+  route/viewport renders against the rebuilt production Docker frontend.
+- Viewports: 1920×1080, 1440×900, 1366×768 and 1024×768.
+- Routes: protected Dashboard, Fitout, CRM, Spaces, Work Orders, Reports and
+  Admin. Navigation is read-only; no create/update/delete control is used.
+- Automated assertions: PASS for page-level horizontal overflow, visible raw
+  i18n-key patterns and fatal page errors.
+- Manual screenshot inspection: completed for Dashboard at all four required
+  viewports, every candidate workspace at 1024×768, and the corrected Reports
+  and Work Orders surfaces. Dense tables/Kanban remain contained at 1024×768.
+- Classification: `AUTOMATED RENDERED VERIFICATION: PASS`; overall Visual
+  Verification remains `PARTIAL` until human business-usability sign-off.
+- This evidence does not upgrade UAT, two-Mall isolation, authorization or
+  production readiness.
 
 ## Wave 12 Change Request and Impact Map
 

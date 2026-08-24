@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { CalendarClock, Pause, Play, Plus } from "lucide-react";
 import { workOrdersApi } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -13,21 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 
-const FREQ: Record<string, string> = {
-  DAILY: "Hàng ngày",
-  WEEKLY: "Hàng tuần",
-  MONTHLY: "Hàng tháng",
-  QUARTERLY: "Hàng quý",
-  ANNUALLY: "Hàng năm",
-};
-const CAT: Record<string, string> = {
-  TECHNICAL: "Kỹ thuật",
-  CLEANING: "Vệ sinh",
-  SECURITY: "An ninh",
-  LANDSCAPE: "Cảnh quan",
-  FACILITY: "Cơ sở vật chất",
-  OTHER: "Khác",
-};
+const FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "ANNUALLY"] as const;
+const CATEGORIES = ["TECHNICAL", "CLEANING", "SECURITY", "LANDSCAPE", "FACILITY", "OTHER"] as const;
+// These are persisted department values, not presentation labels. Keep them
+// stable when the UI locale changes.
+const DEFAULT_DEPARTMENTS = ["Kỹ thuật", "Vệ sinh", "An ninh", "Cảnh quan", "Cơ sở vật chất"];
 const blank = {
   mallId: "",
   name: "",
@@ -44,13 +35,14 @@ const blank = {
 };
 
 export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
+  const { t, i18n } = useTranslation("workOrders");
   const qc = useQueryClient(),
     { toast } = useToast();
   const [expanded, setExpanded] = useState(false),
     [open, setOpen] = useState(false),
     [form, setForm] = useState<any>(blank);
   const departments = Array.from(new Set([
-    ...Object.values(CAT).filter(value => value !== "Khác"),
+    ...DEFAULT_DEPARTMENTS,
     ...users.map((user: any) => user.department).filter(Boolean),
   ])).sort((a, b) => a.localeCompare(b, "vi"));
   const query = useQuery({
@@ -76,13 +68,13 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
       toast({
         title:
           variables.kind === "run" && result?.created === false
-            ? "Kỳ này đã có Work Order"
-            : "Đã cập nhật mẫu công việc",
+            ? t("templates.toast.alreadyCreated")
+            : t("templates.toast.updated"),
       });
     },
     onError: (e: any) =>
       toast({
-        title: "Không thể cập nhật mẫu",
+        title: t("templates.toast.updateFailed"),
         description: e?.response?.data?.message || e?.message,
         variant: "destructive",
       }),
@@ -95,7 +87,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
       !form.nextRunAt
     )
       return toast({
-        title: "Vui lòng nhập đủ trường bắt buộc",
+        title: t("templates.toast.required"),
         variant: "destructive",
       });
     action.mutate({
@@ -121,16 +113,16 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
           onClick={() => setExpanded(!expanded)}
         >
           <CalendarClock className="h-5 w-5" />
-          Mẫu công việc và lịch định kỳ{" "}
+          {t("templates.title")}{" "}
           <span className="text-xs font-normal text-muted-foreground">
-            {expanded ? "Thu gọn" : "Mở quản lý"}
+            {expanded ? t("templates.collapse") : t("templates.expand")}
           </span>
         </button>
         <Button
           size="sm"
           onClick={() => {
             if (!mallId) {
-              toast({ title: "Vui lòng chọn Mall tại bộ chọn chung", variant: "destructive" });
+              toast({ title: t("templates.toast.selectMall"), variant: "destructive" });
               return;
             }
             setForm({ ...blank, mallId });
@@ -139,16 +131,16 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
           }}
         >
           <Plus className="mr-2 h-4 w-4" />
-          Tạo mẫu
+          {t("templates.create")}
         </Button>
       </div>
       {expanded && (
         <div className="border-t p-4">
           {query.isLoading ? (
-            <p>Đang tải...</p>
+            <p>{t("templates.loading")}</p>
           ) : !rows.length ? (
             <p className="text-sm text-muted-foreground">
-              Chưa có mẫu định kỳ.
+              {t("templates.empty")}
             </p>
           ) : (
             <div className="grid gap-3 lg:grid-cols-2">
@@ -158,22 +150,22 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                     <div>
                       <div className="font-semibold">{row.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {row.mall?.name} · {CAT[row.category] || row.category}
+                        {row.mall?.name} · {t(`category.${row.category}`, { defaultValue: row.category })}
                       </div>
                     </div>
                     <Badge variant={row.isActive ? "default" : "secondary"}>
-                      {row.isActive ? "Đang chạy" : "Tạm dừng"}
+                      {row.isActive ? t("templates.active") : t("templates.paused")}
                     </Badge>
                   </div>
                   <div className="mt-3 text-sm">
                     <div>{row.title}</div>
                     <div className="text-muted-foreground">
-                      {FREQ[row.frequency]} · Kỳ tới:{" "}
-                      {new Date(row.nextRunAt).toLocaleString("vi-VN")} · SLA{" "}
-                      {row.dueHours} giờ
+                      {t(`templates.frequency.${row.frequency}`, { defaultValue: row.frequency })} · {t("templates.nextRun")}: {" "}
+                      {new Date(row.nextRunAt).toLocaleString(i18n.language)} · SLA{" "}
+                      {t("templates.hours", { count: row.dueHours })}
                     </div>
                     <div className="text-muted-foreground">
-                      Đã sinh {row._count?.workOrders || 0} Work Order
+                      {t("templates.generated", { count: row._count?.workOrders || 0 })}
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2">
@@ -184,7 +176,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                       onClick={() => action.mutate({ kind: "run", row })}
                     >
                       <Play className="mr-1 h-3 w-3" />
-                      Chạy ngay
+                      {t("templates.runNow")}
                     </Button>
                     <Button
                       size="sm"
@@ -197,7 +189,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                       ) : (
                         <Play className="mr-1 h-3 w-3" />
                       )}
-                      {row.isActive ? "Tạm dừng" : "Kích hoạt"}
+                      {row.isActive ? t("templates.pause") : t("templates.activate")}
                     </Button>
                   </div>
                 </div>
@@ -209,17 +201,17 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Tạo mẫu công việc định kỳ</DialogTitle>
+            <DialogTitle>{t("templates.dialogTitle")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
-              Trung tâm thương mại *
+              {t("templates.mall")} *
               <span className="mt-1 flex h-10 w-full items-center rounded-md border bg-muted/40 px-3">
                 {mallName}
               </span>
             </label>
             <label className="text-sm">
-              Tên mẫu *
+              {t("templates.name")} *
               <Input
                 className="mt-1"
                 value={form.name}
@@ -227,21 +219,21 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               />
             </label>
             <label className="text-sm">
-              Nhóm
+              {t("templates.category")}
               <select
                 className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
               >
-                {Object.entries(CAT).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
+                {CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {t(`category.${category}`)}
                   </option>
                 ))}
               </select>
             </label>
             <label className="text-sm">
-              Tần suất
+              {t("templates.frequencyLabel")}
               <select
                 className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.frequency}
@@ -249,15 +241,15 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                   setForm({ ...form, frequency: e.target.value })
                 }
               >
-                {Object.entries(FREQ).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
+                {FREQUENCIES.map((frequency) => (
+                  <option key={frequency} value={frequency}>
+                    {t(`templates.frequency.${frequency}`)}
                   </option>
                 ))}
               </select>
             </label>
             <label className="text-sm sm:col-span-2">
-              Tiêu đề Work Order *
+              {t("templates.workOrderTitle")} *
               <Input
                 className="mt-1"
                 value={form.title}
@@ -265,7 +257,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               />
             </label>
             <label className="text-sm">
-              Lần chạy tiếp theo *
+              {t("templates.nextRunAt")} *
               <Input
                 className="mt-1"
                 type="datetime-local"
@@ -276,7 +268,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               />
             </label>
             <label className="text-sm">
-              SLA (giờ)
+              {t("templates.slaHours")}
               <Input
                 className="mt-1"
                 type="number"
@@ -288,7 +280,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               />
             </label>
             <label className="text-sm">
-              Bộ phận
+              {t("templates.department")}
               <select
                 className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.assignedDepartment}
@@ -296,12 +288,12 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                   setForm({ ...form, assignedDepartment: e.target.value })
                 }
               >
-                <option value="">Chọn bộ phận xử lý</option>
+                <option value="">{t("templates.selectDepartment")}</option>
                 {departments.map(value => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
             <label className="text-sm">
-              Người phụ trách
+              {t("templates.assignee")}
               <select
                 className="mt-1 h-10 w-full rounded-md border px-3"
                 value={form.assigneeId}
@@ -314,7 +306,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
                   });
                 }}
               >
-                <option value="">Chưa phân công</option>
+                <option value="">{t("table.unassigned")}</option>
                 {users.map((x: any) => (
                   <option key={x.id} value={x.id}>
                     {x.fullName}{x.department ? ` — ${x.department}` : ""}
@@ -323,7 +315,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               </select>
             </label>
             <label className="text-sm sm:col-span-2">
-              Vị trí
+              {t("templates.location")}
               <Input
                 className="mt-1"
                 value={form.location}
@@ -331,7 +323,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
               />
             </label>
             <label className="text-sm sm:col-span-2">
-              Checklist (mỗi dòng một mục)
+              {t("templates.checklist")}
               <textarea
                 className="mt-1 min-h-28 w-full rounded-md border p-3"
                 value={form.checklistText}
@@ -342,7 +334,7 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
             </label>
           </div>
           <Button onClick={create} disabled={action.isPending}>
-            {action.isPending ? "Đang lưu..." : "Lưu mẫu"}
+            {action.isPending ? t("templates.saving") : t("templates.save")}
           </Button>
         </DialogContent>
       </Dialog>
