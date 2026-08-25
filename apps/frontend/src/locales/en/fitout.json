@@ -105,6 +105,7 @@
   },
   "detail": {
     "loadError": "Cannot load the selected Fitout project.",
+    "tenantOverview": "Review the project identity, current stage and authoritative schedule above. Use Documents to file or revise your own submissions.",
     "nextActions": "Recommended next actions",
     "noBacklog": "No backlog. Files are ready to advance to {{nextStep}}.",
     "noBacklogFallback": "completion stage",
@@ -171,6 +172,8 @@
     "approve": "Approve",
     "reject": "Reject",
     "resubmit": "Resubmit",
+    "upload": "Upload file",
+    "uploadFor": "Upload a file for {{title}}",
     "publish": "Publish",
     "status": {
       "SUBMITTED": "Submitted",
@@ -190,11 +193,13 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "resubmitted": "Resubmitted",
+      "uploaded": "File uploaded",
       "published": "Published",
       "errorSubmit": "Error filing submittal",
       "errorApprove": "Error approving",
       "errorReject": "Error rejecting",
       "errorResubmit": "Error resubmitting",
+      "errorUpload": "Error uploading file",
       "errorPublish": "Error publishing"
     }
   },
@@ -464,6 +469,7 @@
     "empty": "No change requests yet.",
     "unknownRequester": "Requester unavailable",
     "currencyMissing": "Currency unavailable",
+    "inheritedCurrency": "Currency inherited from Contract: {{currency}}",
     "approvedAmountMissing": "Approved amount not recorded",
     "proposedValue": "Proposed: {{value}}",
     "requesterHint": "The requester is recorded from the signed-in account.",
@@ -474,7 +480,7 @@
     "selectDecision": "Select decision",
     "approve": "Approve",
     "reject": "Reject",
-    "fields": { "title": "Change description *", "reason": "Reason / scope", "estimatedCost": "Estimated cost (VND) *", "scheduleImpact": "Schedule impact (days)" },
+    "fields": { "title": "Change description *", "reason": "Reason / scope", "estimatedCost": "Estimated cost *", "scheduleImpact": "Schedule impact (days)" },
     "status": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "UNDER_REVIEW": "Under review", "APPROVED": "Approved", "REJECTED": "Rejected", "CANCELLED": "Cancelled" },
     "toast": { "created": "Change order created" }
   },

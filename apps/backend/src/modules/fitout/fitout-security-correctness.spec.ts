@@ -8,8 +8,27 @@ import { FitoutGanttService } from './fitout-gantt.service';
 import { FitoutIssueService } from './fitout-issue.service';
 import { FitoutSlaService } from './fitout-sla.service';
 import { CreateFitoutChangeOrderDto, DecideFitoutChangeOrderDto } from './dto/fitout-controls.dto';
+import { Role } from '@prisma/client';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { FitoutSubmittalController } from './fitout-submittal.controller';
 
 describe('Golden Fitout security and parent-reference integrity', () => {
+  describe('approved role matrix metadata', () => {
+    it('keeps configuration reads Tenant-visible while every config mutation is ADMIN-only', () => {
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutController.prototype.listStageConfigs)).toContain(Role.TENANT);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutController.prototype.listFormTypes)).toContain(Role.TENANT);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutController.prototype.upsertStageConfig)).toEqual([Role.ADMIN]);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutController.prototype.upsertFormType)).toEqual([Role.ADMIN]);
+    });
+
+    it('allows Tenant-owned submittal create/upload/resubmit but not publish', () => {
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutSubmittalController.prototype.create)).toContain(Role.TENANT);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutSubmittalController.prototype.resubmit)).toContain(Role.TENANT);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutSubmittalController.prototype.uploadAttachment)).toContain(Role.TENANT);
+      expect(Reflect.getMetadata(ROLES_KEY, FitoutSubmittalController.prototype.publish)).toBeUndefined();
+    });
+  });
+
   describe('lossless money DTO transport', () => {
     it('preserves an exact Decimal string and accepts legacy numeric payloads without Number coercion', async () => {
       const exact = plainToInstance(CreateFitoutChangeOrderDto, {
@@ -42,6 +61,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
       const controller = new FitoutController(
         {} as any, {} as any, sla as any, {} as any, {} as any, {} as any,
         {} as any, dashboard as any, {} as any, mallAccess as any,
+        {} as any,
       );
       const user = { id: 'director-a', role: 'MALL_DIRECTOR' };
 
@@ -58,7 +78,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
         fitoutProject: { findMany: jest.fn().mockResolvedValue([]) },
       };
       const service = new FitoutSlaService(
-        prisma as any, {} as any, {} as any, {} as any, {} as any,
+        prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       );
 
       await service.getFitoutProgress([]);
@@ -120,7 +140,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
       };
       const controller = new FitoutController(
         {} as any, {} as any, {} as any, contractor as any, {} as any, {} as any,
-        {} as any, {} as any, {} as any, mallAccess as any,
+        {} as any, {} as any, {} as any, mallAccess as any, {} as any,
       );
       const user = { id: 'operation-a', role: 'OPERATION' };
 
@@ -141,7 +161,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
       fitoutIssue: { create: jest.fn() },
     };
     const service = new FitoutIssueService(
-      prisma as any, {} as any, { create: jest.fn() } as any, {} as any, {} as any,
+      prisma as any, {} as any, { create: jest.fn() } as any, {} as any, {} as any, {} as any,
     );
 
     await expect(service.create('project-a', {

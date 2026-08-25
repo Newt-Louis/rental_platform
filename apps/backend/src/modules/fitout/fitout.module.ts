@@ -17,6 +17,7 @@ import { FitoutGanttService } from './fitout-gantt.service';
 import { FitoutDashboardService } from './fitout-dashboard.service';
 import { FitoutControlsController } from './fitout-controls.controller';
 import { FitoutControlsService } from './fitout-controls.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StorageModule } from '../../storage/storage.module';
 
@@ -43,6 +44,7 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutGanttService,
     FitoutDashboardService,
     FitoutControlsService,
+    FitoutAccessPolicyService,
   ],
   exports: [
     FitoutService,
@@ -57,6 +59,7 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutGanttService,
     FitoutDashboardService,
     FitoutControlsService,
+    FitoutAccessPolicyService,
   ],
 })
 export class FitoutModule {}

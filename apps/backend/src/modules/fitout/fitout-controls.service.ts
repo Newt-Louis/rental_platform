@@ -7,12 +7,16 @@ import {
   DecideFitoutChangeOrderDto,
   UpdateFitoutRiskDto,
 } from './dto/fitout-controls.dto';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 @Injectable()
 export class FitoutControlsService {
   private static readonly MAX_SERIALIZABLE_ATTEMPTS = 3;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accessPolicy: FitoutAccessPolicyService,
+  ) {}
 
   private async runSerializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     for (let attempt = 1; attempt <= FitoutControlsService.MAX_SERIALIZABLE_ATTEMPTS; attempt += 1) {
@@ -29,8 +33,7 @@ export class FitoutControlsService {
   }
 
   private async requireProject(projectId: string) {
-    const project = await this.prisma.fitoutProject.findUnique({ where: { id: projectId }, select: { id: true } });
-    if (!project) throw new NotFoundException('Fitout project not found');
+    return this.accessPolicy.getProjectContext(projectId);
   }
 
   private toLegacyExactNumber(value: string) {
@@ -50,6 +53,7 @@ export class FitoutControlsService {
 
   async createRisk(projectId: string, dto: CreateFitoutRiskDto, userId: string) {
     await this.requireProject(projectId);
+    if (dto.ownerId) await this.accessPolicy.assertActiveProjectMallUser(projectId, dto.ownerId);
     return this.runSerializable(async (tx) => {
       const count = await tx.fitoutRisk.count({ where: { projectId } });
       return tx.fitoutRisk.create({
@@ -68,6 +72,7 @@ export class FitoutControlsService {
   async updateRisk(projectId: string, riskId: string, dto: UpdateFitoutRiskDto) {
     const current = await this.prisma.fitoutRisk.findFirst({ where: { id: riskId, projectId } });
     if (!current) throw new NotFoundException('Fitout risk not found');
+    if (dto.ownerId) await this.accessPolicy.assertActiveProjectMallUser(projectId, dto.ownerId);
     const probability = dto.probability ?? current.probability;
     const impact = dto.impact ?? current.impact;
     return this.prisma.fitoutRisk.update({
@@ -94,7 +99,15 @@ export class FitoutControlsService {
   }
 
   async createChangeOrder(projectId: string, dto: CreateFitoutChangeOrderDto, userId: string) {
-    await this.requireProject(projectId);
+    const project = await this.requireProject(projectId);
+    if (!project.contractCurrencyCode) {
+      throw new BadRequestException('Fitout project Contract currency is unavailable');
+    }
+    if (dto.currency !== undefined && dto.currency !== project.contractCurrencyCode) {
+      throw new BadRequestException(
+        `Change Order currency must match the authoritative Contract currency ${project.contractCurrencyCode}`,
+      );
+    }
     return this.runSerializable(async (tx) => {
       const count = await tx.fitoutChangeOrder.count({ where: { projectId } });
       return tx.fitoutChangeOrder.create({
@@ -106,7 +119,7 @@ export class FitoutControlsService {
           reason: dto.reason,
           costType: dto.costType ?? 'ADDITION',
           proposedAmount: new Prisma.Decimal(dto.proposedAmount),
-          currency: dto.currency ?? 'VND',
+          currency: project.contractCurrencyCode,
           scheduleImpactDays: dto.scheduleImpactDays ?? 0,
           requestedById: userId,
           status: 'SUBMITTED',

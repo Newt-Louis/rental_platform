@@ -13,6 +13,7 @@ describe('FilesController — authenticated, authorized document downloads', () 
     invoice: { findUnique: jest.fn() },
     ticket: { findUnique: jest.fn() },
     fitoutDocument: { findUnique: jest.fn() },
+    fitoutSubmittal: { findUnique: jest.fn() },
     parkingContractDocument: { findUnique: jest.fn() },
     serviceContractDocument: { findUnique: jest.fn() },
     workOrderEvidence: { findUnique: jest.fn() },
@@ -108,11 +109,21 @@ describe('FilesController — authenticated, authorized document downloads', () 
       ).rejects.toThrow('Bạn không có quyền truy cập tài liệu này');
     });
 
-    it('rejects TENANT on fitout submittal/issue/daily-report documents (staff-only surfaces)', async () => {
+    it('allows TENANT to download an own-project fitout submittal document only', async () => {
       prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true, fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf' });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({ project: { tenantId: 'tenant-A' } });
       await expect(
         controller.downloadUnifiedDocument('d3', { id: 'u1', role: 'TENANT', tenantId: 'tenant-A' }, fakeRes()),
-      ).rejects.toThrow('Bạn không có quyền truy cập tài liệu này');
+      ).resolves.toBeInstanceOf(StreamableFile);
+      expect(mallAccess.extractAndValidateMallAccess).not.toHaveBeenCalled();
+    });
+
+    it('rejects TENANT on a foreign-project fitout submittal document', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true, fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf' });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({ project: { tenantId: 'tenant-B' } });
+      await expect(
+        controller.downloadUnifiedDocument('d3', { id: 'u1', role: 'TENANT', tenantId: 'tenant-A' }, fakeRes()),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('allows OPERATION on fitout issue documents', async () => {

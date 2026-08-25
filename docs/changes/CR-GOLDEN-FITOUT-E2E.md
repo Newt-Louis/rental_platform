@@ -40,16 +40,41 @@ produce an authoritative-looking mixed-currency cost total.
   authorized Fitout Project.
 - Return exact change-order money grouped by persisted currency; never expose a
   mixed-currency sum or invent FX.
-- Preserve global configuration and override roles pending BC-FIT-005.
+- New Change Orders inherit the Fitout Project Contract's authoritative,
+  immutable `currencyCode`; client currency is not authoritative and an
+  unavailable Contract currency blocks creation instead of defaulting to VND.
+  A legacy matching currency field remains compatible, while a supplied value
+  that differs from the Contract currency is rejected to prevent silent monetary
+  reinterpretation.
+- Limit SLA escalation, submittal approvers and staff selections to active
+  users with active access to the project's Mall. Active ADMIN is the only
+  global Fitout exception. CEO requires ordinary active Mall access and TENANT
+  is never a staff recipient.
+- Require adjacent-only stage advancement. Only ADMIN/MALL_DIRECTOR may bypass
+  unmet document gates, always with a non-empty reason. OPERATION,
+  MALL_DIRECTOR and ADMIN may perform ordinary adjacent advancement.
+- Restrict global stage, gate, SLA and form-type configuration mutations to
+  ADMIN. Manager/owner/assignee/distribution selections must validate the
+  approved target role and active project-Mall access before persistence.
+- Give TENANT read access only to its own Fitout project Overview/Documents and
+  allow create/upload/resubmit only for its own submittals. TENANT cannot
+  configure, assign, advance, override, approve, publish or access staff-only
+  workspaces. Attachment mutation is limited to the current SUBMITTED/IN_PROGRESS
+  revision; REJECTED must be resubmitted first and terminal revisions remain
+  immutable under the existing approval lifecycle. Upload finalization must
+  atomically re-check both the submittal revision and owning workflow after
+  external storage I/O, and must remove the saved blob when that finalization
+  loses a concurrent approval/rejection race.
 - Make Risk/Change Order numbering and terminal Change Order decisions safe
   under concurrent writers without changing visible numbering or decisions.
+- Make submittal attachment finalization reject concurrent terminal workflow
+  decisions without leaving an orphaned stored file.
 - Enforce same-project ownership for Contractor/Worker, Issue Unit, Daily
   Report contractor and Gantt parent/dependency/contractor references.
 - Complete dense Golden Fitout presentation/localization, responsive rendering,
   accessibility, error/loading/empty states and action hierarchy using existing
   ERP components and routes.
-- Quarantine unresolved creation-currency and stage-skip semantics rather than
-  silently changing them.
+- Preserve all other state, financial, approval and document semantics.
 
 ## PRIMARY DOMAIN
 
@@ -69,8 +94,8 @@ Fitout (Tier 2), with Tier 0 authorization and money/currency overlays.
 ## UPSTREAM IMPACT
 
 Contract `ACTIVE` and its durable `contract.activated` event remain the only
-auto-create source. Contract currency is readable upstream but is not adopted
-as Fitout change-order currency without BC-FIT-001 approval.
+auto-create source. The approved 2026-08-25 policy makes the source Contract's
+immutable `currencyCode` authoritative for every new Fitout Change Order.
 
 ## DOWNSTREAM IMPACT
 
@@ -87,9 +112,11 @@ continue through the existing Notifications/Email Delivery services.
 
 ## STATE MACHINE IMPACT
 
-None. Stage definitions, ordering, forward-only validation, override behavior,
-document gates, Unit triggers, checklist semantics and issue semantics are
-unchanged. Stage skipping remains quarantined pending BC-FIT-004.
+Stage definitions, Unit triggers, document gates, checklist semantics and issue
+semantics are unchanged. Forward-only validation is tightened to the next
+adjacent active stage. Non-adjacent skipping is rejected. Only
+ADMIN/MALL_DIRECTOR may override an unmet document gate, with a mandatory reason;
+ordinary adjacent advance is limited to OPERATION/MALL_DIRECTOR/ADMIN.
 
 ## FINANCIAL IMPACT
 
@@ -99,30 +126,42 @@ per-currency groups. No FX, rounding or implicit consolidation is introduced.
 
 ## CURRENCY IMPACT
 
-READ/DISPLAY/CALCULATION surfaces are affected. Persisted
-`FitoutChangeOrder.currency` remains authoritative for existing records.
-CREATE remains UNKNOWN under BC-FIT-001. The CR must prove no mixed-currency sum
-and preserve Decimal precision in API and UI formatting.
+READ/DISPLAY/CALCULATION/CREATE surfaces are affected. Persisted
+`FitoutChangeOrder.currency` remains authoritative for existing records. New
+records inherit the project Contract's immutable `currencyCode`; the client
+cannot choose or default currency. Tests must prove inheritance, no
+mixed-currency sum and lossless Decimal transport/formatting. Unsupported
+legacy currency codes must retain their exact raw code and decimal amount in
+presentation rather than being rounded through a supported-currency formatter.
 
 ## MALL/COMPANY IMPACT
 
 Aggregate reads must be constrained to accessible Mall IDs through
 `FitoutProject.unit.mallId` (with existing authoritative resolver conventions).
-ADMIN keeps the existing documented bypass. Recipient selection remains
-unchanged pending BC-FIT-003. No Company model or new cross-Mall role policy is
-introduced.
+ADMIN keeps the existing documented bypass. Fitout staff recipients and target
+users require active project-Mall access, except active ADMIN. CEO remains
+ordinary Mall-scoped in Fitout because CR-101 grants CEO cross-Mall read only to
+other explicitly opted-in oversight domains. TENANT isolation remains
+service-level by authenticated `tenantId`. No Company model is introduced.
 
 ## TENANT IMPACT
 
 Tenant Fitout project/detail visibility remains server-forced through the
-authenticated Tenant relation. No new Tenant write capability is introduced.
+authenticated Tenant relation. TENANT receives own-project Overview/Documents
+reads and own-submittal create/upload/resubmit only. Every Tenant route must
+prove project/submittal tenant ownership at the service layer; MallAccess's
+TENANT bypass is not sufficient. All staff/config/stage/approval/publish actions
+remain denied.
 
 ## AUTHORIZATION IMPACT
 
 Existing aggregate and nested-resource routes receive stricter
-data-query/parent-child enforcement and negative tests. Configuration and gate
-override roles remain unchanged pending BC-FIT-005. UI hiding is not treated as
-authorization.
+data-query/parent-child enforcement and negative tests. Configuration writes
+are ADMIN-only; ordinary stage advance is OPERATION/MALL_DIRECTOR/ADMIN; gate
+override is ADMIN/MALL_DIRECTOR with a reason. Assignment targets must be active
+OPERATION users with active project-Mall access. Risk owners, issue assignees
+and submittal distribution/approver targets likewise require an authoritative
+staff role plus active project-Mall access. UI hiding is never authorization.
 
 ## REPORTING IMPACT
 
@@ -137,8 +176,9 @@ stage-transition transactions are unchanged.
 
 ## EVENT/JOB IMPACT
 
-N/A — SLA recipient selection, distributed locking, job ledger, event names,
-payloads and idempotent email keys remain unchanged pending BC-FIT-003.
+SLA and submittal recipient queries become project-Mall scoped, with active
+ADMIN as the only global Fitout recipient exception. Distributed locking, job
+ledger, event names, payloads and idempotent email keys remain unchanged.
 
 ## DOCUMENT IMPACT
 
@@ -148,8 +188,10 @@ changes.
 
 ## API IMPACT
 
-Routes and request DTOs remain compatible. Fitout cost summary receives an
-additive per-currency representation; unsafe bare totals are retained only when
+Routes remain stable. Change-order create stops accepting client currency as
+authoritative, rejects a supplied mismatch, accepts a matching legacy value and
+returns the Contract-inherited persisted currency. Fitout
+cost summary receives an additive per-currency representation; unsafe bare totals are retained only when
 the record set has one authoritative currency, otherwise explicitly null.
 Frontend consumers are updated together. No external integration consumer was
 found.
@@ -161,8 +203,12 @@ N/A — no schema, migration or data rewrite.
 ## BACKWARD COMPATIBILITY
 
 Existing persisted projects, stages, documents and change orders remain valid.
-Legitimately scoped callers are unaffected. Cross-project ID substitution and
-cross-Mall aggregate access begins returning filtered results.
+Legitimately scoped callers are unaffected except that non-adjacent stage skips,
+unauthorized role targets, non-ADMIN configuration writes, client-selected
+Change Order currency mismatches, terminal/rejected attachment mutations and
+Tenant staff actions are now rejected. Cross-project
+ID substitution and cross-Mall aggregate/recipient access returns filtered or
+denied results.
 
 ## GOLDEN E2E SCENARIOS
 
@@ -185,27 +231,24 @@ Revert the Fitout-only checkpoint. No migration rollback or data transformation
 is required. Authorization rollback is not recommended because it would reopen
 confirmed isolation defects.
 
-## OPEN BUSINESS QUESTIONS
+## BUSINESS DECISIONS
 
-- **BC-FIT-001 — UNKNOWN — BUSINESS CONFIRMATION REQUIRED:** must new Fitout
-  change orders inherit immutable Contract currency, require explicit currency,
-  or remain deliberately VND-defaulted?
-- **BC-FIT-003 — UNKNOWN — BUSINESS CONFIRMATION REQUIRED:** should SLA
-  escalation and submittal-role recipients remain global-role recipients or be
-  limited to users with explicit access to the project's Mall?
-- **BC-FIT-004 — UNKNOWN — BUSINESS CONFIRMATION REQUIRED:** may an authorized
-  operator deliberately skip from the current Fitout stage to any later stage,
-  or must advancement be strictly adjacent?
-- **BC-FIT-005 — UNKNOWN — BUSINESS CONFIRMATION REQUIRED:** are global stage,
-  gate, SLA and form-type configuration mutations ADMIN-only or also available
-  to MALL_DIRECTOR, which roles may advance/override stages, and what role/Mall
-  constraints apply to manager/owner/assignee/distribution selections?
-- **BC-FIT-006 — UNKNOWN — BUSINESS CONFIRMATION REQUIRED:** should the Tenant
-  portal remain read-only at project/detail level, or expose stage progress,
-  timeline and document submission? The current backend intentionally excludes
-  TENANT from stage-configuration reads and staff-only document mutations, while
-  the redesign target describes broader Tenant capability; repository evidence
-  therefore does not authorize expanding Tenant routes or permissions.
+Approved by the business owner on 2026-08-25 (`APPROVE RECOMMENDED FITOUT
+POLICY`):
+
+- **BC-FIT-001 RESOLVED:** inherit immutable Contract `currencyCode`; no implicit
+  VND and no client-selected currency.
+- **BC-FIT-003 RESOLVED:** recipients require active project-Mall access; active
+  ADMIN is the only global exception under existing CR-101 scope policy.
+- **BC-FIT-004 RESOLVED:** adjacent-only advancement.
+- **BC-FIT-005 RESOLVED:** config ADMIN-only; advance
+  OPERATION/MALL_DIRECTOR/ADMIN; override ADMIN/MALL_DIRECTOR with mandatory
+  reason; selection targets enforce the authoritative role and active
+  project-Mall access. Operation-manager assignment specifically targets active
+  OPERATION users. Other target fields retain their existing authoritative role
+  semantics and add active project-Mall enforcement; no new role is invented.
+- **BC-FIT-006 RESOLVED:** TENANT own-project Overview/Documents and own-submittal
+  create/upload/resubmit only; no staff/config/stage/approval/publish capability.
 - Checklist/issues remain non-gating because backend System Truth proves that
   behavior; changing it would require a separate business CR.
 
@@ -218,20 +261,21 @@ Tier 0 authorization overlay / Tier 2 Fitout implementation.
 
 ## Gate results
 
-- System Truth / impact / architecture / security review: PASS for the provable
-  scope; BC-FIT-001/003/004/005/006 remain explicitly quarantined.
-- Backend focused Fitout: 6 suites / 69 tests PASS.
-- Backend full suite: 104 suites / 705 tests PASS.
-- Frontend focused Fitout presentation: 1 file / 9 tests PASS.
-- Frontend full suite: 44 files / 268 tests passed; two unrelated tests timed
-  out under the parallel full run, then both files passed independently (2
-  files / 6 tests). No Fitout regression.
+- Approved-policy implementation gate completed on 2026-08-25.
+- Backend focused Fitout + unified-file authorization: 9 suites / 139 tests
+  PASS, including Mall/Tenant negative cases, currency inheritance/mismatch,
+  adjacent stages, role matrix and approval-versus-upload race cleanup.
+- Backend full suite: 106 suites / 739 tests PASS.
+- Frontend focused Fitout: 4 files / 24 tests PASS, including role capabilities,
+  Tenant actions, Contract currency payload/presentation and unsupported legacy
+  currency precision.
+- Frontend full suite: 48 files / 280 tests PASS.
 - Backend build: PASS. Frontend TypeScript + production build: PASS.
 - Docker production images rebuilt; database, Redis, backend and frontend are
   healthy on localhost. HTTP frontend and API health smoke checks: PASS.
 - `git diff --check`: PASS (line-ending notices only).
-- Independent adversarial reviewer: PASS — no remaining P0/P1/P2 in the
-  Fitout-only diff.
+- Independent BA/Architecture/Security adversarial reviewer: PASS — no
+  remaining P0/P1/P2 in the Fitout-only diff.
 - Rendered viewport gate: NOT EXECUTED because the in-app browser runtime had
   no browser backend available. This is recorded as verification debt, not an
   engineering blocker; human visual review remains required before UI closure.
@@ -240,8 +284,8 @@ Tier 0 authorization overlay / Tier 2 Fitout implementation.
 
 | Role | Name/Agent | Date | Decision |
 |---|---|---|---|
-| BA / Fitout Functional | `fitout_ba_architect` | 2026-08-24 | APPROVED — PROVABLE SCOPE ONLY |
-| Solution / Multi-Mall Architect | `fitout_ba_architect` | 2026-08-24 | APPROVED — NO STATE/SCHEMA/RECIPIENT/CONFIG POLICY CHANGE |
-| Security Architect | `fitout_backend_security` | 2026-08-24 | APPROVED — ENUMERATED SCOPE; BC-FIT-001/003/004/005 EXCLUDED |
-| Implementation | Codex `/root` | 2026-08-24 | IMPLEMENTED — PROVABLE SCOPE ONLY; FINAL GATES PENDING |
-| Adversarial / QA | `fitout_frontend_qa` + `fitout_ba_architect` | 2026-08-24 | PASS — NO REMAINING P0/P1/P2 IN PROVABLE SCOPE |
+| BA / Fitout Functional | Business owner + `fitout_ba_architect` | 2026-08-25 | APPROVED / PASS |
+| Solution / Multi-Mall Architect | Codex `/root` | 2026-08-25 | APPROVED — EXISTING CR-101 ADMIN/CEO/TENANT SCOPE SEMANTICS PRESERVED |
+| Security Architect | `fitout_backend_security` | 2026-08-25 | PASS — MALL/TENANT/ROLE/CONCURRENCY POLICY VERIFIED |
+| Implementation | Codex ERP Team | 2026-08-25 | COMPLETE — TECHNICAL GATE PASS |
+| Adversarial / QA | `fitout_frontend_qa` + `fitout_ba_architect` | 2026-08-25 | PASS — NO REMAINING P0/P1/P2; HUMAN VISUAL GATE PENDING |

@@ -227,7 +227,7 @@ export default function FitoutSettingsPage() {
   const [stageDialog, setStageDialog] = useState<{ open: boolean; initial: StageConfig | null }>({ open: false, initial: null });
   const [formTypeDialog, setFormTypeDialog] = useState<{ open: boolean; initial: FormType | null }>({ open: false, initial: null });
 
-  const canManage = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
+  const canManage = user?.role === 'ADMIN';
 
   const { data: stages = [], isLoading: stagesLoading, isError: stagesError, refetch: refetchStages } = useQuery({
     queryKey: ['fitout-stage-configs'],

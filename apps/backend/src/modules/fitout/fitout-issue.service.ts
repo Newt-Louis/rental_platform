@@ -5,6 +5,7 @@ import { StorageService } from '../../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 const ENTITY_TYPE = 'FITOUT_ISSUE';
 
@@ -27,6 +28,7 @@ export class FitoutIssueService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private schedulerLock: SchedulerLockService,
+    private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   async list(projectId: string, query: { status?: string; category?: string; assigneeId?: string } = {}) {
@@ -75,6 +77,7 @@ export class FitoutIssueService {
     if (dto.unitId !== project.unitId) {
       throw new BadRequestException('Unit does not belong to this fitout project');
     }
+    if (dto.assigneeId) await this.accessPolicy.assertActiveProjectMallUser(projectId, dto.assigneeId);
 
     const unit = await this.prisma.unit.findUnique({ where: { id: project.unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
@@ -114,7 +117,8 @@ export class FitoutIssueService {
     title: string; description: string; category: string; severity: string;
     assigneeId: string; dueDate: string;
   }>) {
-    await this.getOne(id);
+    const issue = await this.getOne(id);
+    if (dto.assigneeId) await this.accessPolicy.assertActiveProjectMallUser(issue.project.id, dto.assigneeId);
     return this.prisma.fitoutIssue.update({
       where: { id },
       data: {

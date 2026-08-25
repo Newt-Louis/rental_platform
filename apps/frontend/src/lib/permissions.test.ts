@@ -42,11 +42,14 @@ describe('route permissions', () => {
   });
 
   it('protects nested routes using their top-level module', () => {
-    // TENANT does not get the standalone /fitout route: Tenant Portal has its own
-    // Fitout tab, and the /fitout sub-resource tabs (submittal/issue/gantt/...) 403
-    // for TENANT at the backend, so granting the route would produce a broken
-    // partial-access experience. See docs/implementation/UX_DECISIONS.md DECISION-001.
+    // Approved Fitout policy exposes only the capability-limited root workspace
+    // to TENANT; staff-only report/settings routes remain denied.
+    expect(canAccessPath('TENANT', '/fitout')).toBe(true);
+    expect(canAccessPath('TENANT', '/fitout?projectId=project-1')).toBe(true);
     expect(canAccessPath('TENANT', '/fitout/project-1/gantt')).toBe(false);
+    expect(canAccessPath('TENANT', '/fitout/settings')).toBe(false);
+    expect(canAccessPath('MALL_DIRECTOR', '/fitout/settings')).toBe(false);
+    expect(canAccessPath('ADMIN', '/fitout/settings')).toBe(true);
     expect(canAccessPath('MALL_DIRECTOR', '/fitout/project-1/gantt')).toBe(true);
     expect(canAccessPath('FINANCE', '/fitout/project-1/gantt')).toBe(false);
     expect(canAccessPath('ADMIN', '/admin/categories')).toBe(true);

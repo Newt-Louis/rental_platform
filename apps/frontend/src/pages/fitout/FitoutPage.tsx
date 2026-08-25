@@ -20,7 +20,7 @@ import { ChangeOrderControl, RiskRegister } from '@/components/fitout/RiskChange
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
-import { filterFitoutProjects, getFitoutPresentationLabel, type FitoutAttentionFilter } from './fitoutPresentation';
+import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, getFitoutPresentationLabel, getFitoutRoleCapabilities, type FitoutAttentionFilter } from './fitoutPresentation';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar, Search,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
@@ -33,8 +33,6 @@ interface StageConfig {
   order: number;
   colorHex: string;
 }
-
-const ROLES_ALLOWED_TO_OVERRIDE_GATE = ['ADMIN', 'MALL_DIRECTOR'];
 
 function useStageConfigs() {
   const { data = [] } = useQuery({
@@ -72,6 +70,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
+  const capabilities = getFitoutRoleCapabilities(user?.role);
   const navigate = useNavigate();
   const stages = useStageConfigs();
   const [newCkTitle, setNewCkTitle] = useState('');
@@ -79,68 +78,69 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const [pendingAdvanceStatus, setPendingAdvanceStatus] = useState<string | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [rejectStepId, setRejectStepId] = useState<string | null>(null);
-  const canOverrideGate = !!user?.role && ROLES_ALLOWED_TO_OVERRIDE_GATE.includes(user.role);
+  const canOverrideGate = capabilities.canOverrideGate;
 
   const { data: project, isLoading, isError: projectError, refetch: refetchProject } = useQuery({
     queryKey: ['fitout-detail', projectId],
     queryFn: () => fitoutApi.getFitout(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.workspaces.length > 0,
   });
 
   const { data: checklists = [], isLoading: ckLoading } = useQuery({
     queryKey: ['fitout-checklists', projectId],
     queryFn: () => fitoutApi.getChecklists(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canUseStaffWorkspaces,
   });
 
   const { data: submittals = [] } = useQuery({
     queryKey: ['fitout-submittals', projectId],
     queryFn: () => fitoutSubmittalApi.list(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.workspaces.includes('documents'),
   });
 
   const { data: formTypes = [] } = useQuery({
     queryKey: ['fitout-form-types'],
     queryFn: () => fitoutApi.listFormTypes(),
+    enabled: !!projectId && capabilities.workspaces.includes('documents'),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: issues = [] } = useQuery({
     queryKey: ['fitout-issues', projectId],
     queryFn: () => fitoutIssueApi.list(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canUseStaffWorkspaces,
   });
 
   const { data: dmap } = useQuery({
     queryKey: ['fitout-dmap', projectId],
     queryFn: () => fitoutIssueApi.getDMap(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canUseStaffWorkspaces,
   });
 
   const { data: milestones = [] } = useQuery({
     queryKey: ['fitout-milestones', projectId],
     queryFn: () => fitoutApi.getMilestones(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canUseStaffWorkspaces,
   });
 
   const { data: usersData } = useQuery({
     queryKey: ['users-op'],
     queryFn: () => usersApi.listUsers({ role: 'OPERATION', limit: 100 }),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canAssign,
   });
   const opUsers: any[] = usersData?.data ?? [];
 
   const { data: contractorsData = [] } = useQuery({
     queryKey: ['fitout-contractors', projectId],
     queryFn: () => fitoutApi.listContractors(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canAdministerContractors,
   });
   const contractors: any[] = (contractorsData as any)?.data ?? contractorsData ?? [];
 
   const { data: workerLogsData = [] } = useQuery({
     queryKey: ['fitout-workers', projectId],
     queryFn: () => fitoutApi.listWorkerLogs(projectId!),
-    enabled: !!projectId,
+    enabled: !!projectId && capabilities.canAdministerContractors,
   });
   const workerLogs: any[] = (workerLogsData as any)?.data ?? workerLogsData ?? [];
 
@@ -272,6 +272,12 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorResubmit'), variant: 'destructive' }),
   });
 
+  const uploadSubmittalAttachmentMutation = useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => fitoutSubmittalApi.uploadAttachment(id, file),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.uploaded') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorUpload'), variant: 'destructive' }),
+  });
+
   const publishSubmittalMutation = useMutation({
     mutationFn: (id: string) => fitoutSubmittalApi.publish(id),
     onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.published') }); },
@@ -307,10 +313,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   const pendingSubmittals = (submittals as any[]).filter((item) => !['APPROVED', 'OBSOLETED'].includes(item.status)).length;
   const openIssues = (issues as any[]).filter((item) => !['RESOLVED', 'CLOSED'].includes(item.status)).length;
   const nextActions = [
-    !p?.operationManager && t('detail.nextActions.assignManager'),
-    totalCount > doneCount && t('detail.nextActions.completeChecklist', { count: totalCount - doneCount }),
+    capabilities.canAssign && !p?.operationManager && t('detail.nextActions.assignManager'),
+    capabilities.canUseStaffWorkspaces && totalCount > doneCount && t('detail.nextActions.completeChecklist', { count: totalCount - doneCount }),
     pendingSubmittals > 0 && t('detail.nextActions.processDocs', { count: pendingSubmittals }),
-    openIssues > 0 && t('detail.nextActions.closeIssues', { count: openIssues }),
+    capabilities.canUseStaffWorkspaces && openIssues > 0 && t('detail.nextActions.closeIssues', { count: openIssues }),
   ].filter(Boolean) as string[];
 
   return (
@@ -333,7 +339,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
       ) : p && (
         <div className="px-6 pb-8 space-y-5 pt-4">
 
-          <section className="border-l-2 border-amber-500 bg-amber-50/50 px-3 py-2.5">
+          {!capabilities.isTenant && <section className="border-l-2 border-amber-500 bg-amber-50/50 px-3 py-2.5">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-amber-800">{t('detail.nextActions')}</p>
@@ -348,7 +354,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 )}
               </div>
             </div>
-          </section>
+          </section>}
 
           {/* Progress bar */}
           <div>
@@ -393,7 +399,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           </SheetSection>
 
           {/* Assign OP */}
-          <div>
+          {capabilities.canAssign ? <div>
             <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2">{t('detail.opManager')}</div>
             <Select
               value={p.operationManager?.id ?? ''}
@@ -417,10 +423,14 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 )}
               </SelectContent>
             </Select>
-          </div>
+          </div> : p.operationManager ? (
+            <SheetSection label={t('detail.opManager')}>
+              <SheetRow label={t('detail.opManager')} value={p.operationManager.fullName} icon={User} />
+            </SheetSection>
+          ) : null}
 
           {/* Gate Warning Dialog */}
-          {gateWarning && (
+          {capabilities.canAdvance && gateWarning && (
             <Dialog open={!!gateWarning} onOpenChange={() => { setGateWarning(null); setPendingAdvanceStatus(null); setOverrideReason(''); }}>
               <DialogContent>
                 <DialogHeader>
@@ -470,7 +480,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
           )}
 
           {/* Advance status */}
-          {nextStep ? (
+          {capabilities.canAdvance && (nextStep ? (
             <Button
               className="w-full gap-2"
               onClick={() => handleAdvance(nextStep.code)}
@@ -484,10 +494,10 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               <CheckCircle2 size={18} />
               {t('detail.completed')}
             </div>
-          )}
+          ))}
 
           {/* Links to dedicated Daily Report / Gantt pages */}
-          <div className="flex gap-2">
+          {capabilities.canUseStaffWorkspaces && <div className="flex gap-2">
             <Button variant="outline" size="sm" className="flex-1 text-xs gap-1"
               onClick={() => navigate(`/fitout/${projectId}/daily-report`)}>
               <ClipboardList size={13} /> {t('detail.navDailyReport')}
@@ -496,22 +506,26 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
               onClick={() => navigate(`/fitout/${projectId}/gantt`)}>
               <Clock size={13} /> {t('detail.navGantt')}
             </Button>
-          </div>
+          </div>}
 
           {/* Task-oriented Fitout workspaces. Existing capabilities stay intact within each group. */}
           <Tabs defaultValue="overview" className="mt-4">
             <div className="overflow-x-auto pb-1" aria-label={t('detail.tabs.ariaLabel')}>
               <TabsList className="inline-flex h-10 w-max min-w-full justify-start">
-                <TabsTrigger value="overview" className="text-xs">{t('detail.tabs.overview')}</TabsTrigger>
-                <TabsTrigger value="documents" className="text-xs">{t('detail.tabs.documents')}</TabsTrigger>
-                <TabsTrigger value="field" className="text-xs">{t('detail.tabs.field')}</TabsTrigger>
-                <TabsTrigger value="schedule" className="text-xs">{t('detail.tabs.schedule')}</TabsTrigger>
-                <TabsTrigger value="riskCost" className="text-xs">{t('detail.tabs.riskCost')}</TabsTrigger>
-                {['ADMIN', 'MALL_DIRECTOR', 'OPERATION'].includes(user?.role ?? '') && <TabsTrigger value="administration" className="text-xs">{t('detail.tabs.administration')}</TabsTrigger>}
+                {capabilities.workspaces.includes('overview') && <TabsTrigger value="overview" className="text-xs">{t('detail.tabs.overview')}</TabsTrigger>}
+                {capabilities.workspaces.includes('documents') && <TabsTrigger value="documents" className="text-xs">{t('detail.tabs.documents')}</TabsTrigger>}
+                {capabilities.workspaces.includes('field') && <TabsTrigger value="field" className="text-xs">{t('detail.tabs.field')}</TabsTrigger>}
+                {capabilities.workspaces.includes('schedule') && <TabsTrigger value="schedule" className="text-xs">{t('detail.tabs.schedule')}</TabsTrigger>}
+                {capabilities.workspaces.includes('riskCost') && <TabsTrigger value="riskCost" className="text-xs">{t('detail.tabs.riskCost')}</TabsTrigger>}
               </TabsList>
             </div>
 
             <TabsContent value="overview" className="mt-3">
+              {capabilities.isTenant ? (
+                <div className="border-l-2 border-slate-300 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                  {t('detail.tenantOverview')}
+                </div>
+              ) : <>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold tracking-wider text-gray-400">
                   {t('checklist.title')} {totalCount > 0 && `(${doneCount}/${totalCount})`}
@@ -595,11 +609,12 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   ))}
                 </div>
               )}
+              </>}
             </TabsContent>
 
             <TabsContent value="documents" className="mt-3 space-y-4">
               {/* New submittal form */}
-              <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
+              {capabilities.canCreateSubmittal && <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
                 <p className="text-xs font-semibold text-gray-500">{t('submittal.newTitle')}</p>
                 <select
                   aria-label={t('submittal.selectFormType')}
@@ -626,7 +641,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 >
                   <Send size={12} /> {t('submittal.submit')}
                 </Button>
-              </div>
+              </div>}
 
               {/* Submittal list */}
               <div className="space-y-2">
@@ -637,7 +652,8 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 ) : (
                   (submittals as any[]).map((sub: any) => {
                     const pendingStep = sub.workflow?.steps?.find((s: any) => s.status === 'PENDING');
-                    const canAct = pendingStep && user?.role === pendingStep.approverRole;
+                    const canAct = capabilities.canApproveSubmittal && pendingStep && user?.role === pendingStep.approverRole;
+                    const canModifyOwnSubmittal = canModifyFitoutSubmittal(user?.role, user?.id, sub.submittedBy?.id);
                     const statusStyle: Record<string, string> = {
                       SUBMITTED: 'bg-blue-100 text-gray-700',
                       IN_PROGRESS: 'bg-yellow-100 text-yellow-700',
@@ -677,7 +693,23 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                           </div>
                         )}
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {capabilities.canUploadSubmittal && canModifyOwnSubmittal && canUploadToFitoutSubmittal(sub.status) && (
+                            <label className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-accent">
+                              <Upload size={12} /> {t('submittal.upload')}
+                              <input
+                                className="sr-only"
+                                type="file"
+                                aria-label={t('submittal.uploadFor', { title: sub.title })}
+                                disabled={uploadSubmittalAttachmentMutation.isPending}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file) uploadSubmittalAttachmentMutation.mutate({ id: sub.id, file });
+                                  event.currentTarget.value = '';
+                                }}
+                              />
+                            </label>
+                          )}
                           {canAct && (
                             <>
                               <Button size="sm" variant="outline" className="h-7 text-xs"
@@ -690,13 +722,13 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                               </Button>
                             </>
                           )}
-                          {sub.status === 'REJECTED' && (
+                          {capabilities.canResubmitSubmittal && canModifyOwnSubmittal && sub.status === 'REJECTED' && (
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
                               onClick={() => resubmitMutation.mutate(sub.id)}>
                               <RotateCcw size={12} /> {t('submittal.resubmit')}
                             </Button>
                           )}
-                          {sub.status === 'APPROVED' && (
+                          {capabilities.canPublishSubmittal && sub.status === 'APPROVED' && (
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
                               onClick={() => publishSubmittalMutation.mutate(sub.id)}>
                               <Rocket size={12} /> {t('submittal.publish')}
@@ -809,56 +841,9 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   })
                 )}
               </div>
-            </TabsContent>
 
-            <TabsContent value="riskCost" className="mt-3 space-y-3">
-              {projectId && <RiskRegister projectId={projectId} />}
-              <div className="border-t border-border pt-3">
-                {projectId && <ChangeOrderControl projectId={projectId} />}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="schedule" className="mt-3">
-              <div className="space-y-2">
-                {(milestones as any[]).length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
-                    {t('milestone.empty')}
-                  </p>
-                ) : (
-                  (milestones as any[]).map((m: any) => (
-                    <div key={m.id} className={`flex items-center justify-between p-3 rounded-lg border ${
-                      m.isOverdue ? 'bg-red-50 border-red-200' : m.completedAt ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        {m.isOverdue ? <AlertTriangle size={16} className="text-red-500" /> :
-                         m.completedAt ? <CheckCircle2 size={16} className="text-green-500" /> :
-                         <Clock size={16} className="text-gray-400" />}
-                        <div>
-                          <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? t('common:unknownValue')}</p>
-                          <p className="text-xs text-gray-400">{t('milestone.slaDays', { count: m.slaDays ?? '—' })}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {m.targetDate && (
-                          <p className={`text-xs ${m.isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                            {t('milestone.deadline', { date: fmtDate(m.targetDate) })}
-                          </p>
-                        )}
-                        {m.completedAt && (
-                          <p className="text-xs text-green-500">{t('milestone.done', { date: fmtDate(m.completedAt) })}</p>
-                        )}
-                        {m.isOverdue && !m.completedAt && (
-                          <Badge className="bg-red-100 text-red-700 text-xs">{t('milestone.overdue')}</Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="administration" className="mt-3 space-y-4">
-              {/* Add contractor form */}
+              {capabilities.canAdministerContractors && <>
+              {/* Contractor and worker administration remains inside Field for authorized operational roles. */}
               <div className="border rounded-xl p-3 bg-gray-50 space-y-2">
                 <p className="text-xs font-semibold text-gray-500">{t('contractor.addTitle')}</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -948,6 +933,53 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                   </div>
                 </>
               )}
+              </>}
+            </TabsContent>
+
+            <TabsContent value="schedule" className="mt-3">
+              <div className="space-y-2">
+                {(milestones as any[]).length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6 bg-gray-50 rounded-lg">
+                    {t('milestone.empty')}
+                  </p>
+                ) : (
+                  (milestones as any[]).map((m: any) => (
+                    <div key={m.id} className={`flex items-center justify-between p-3 rounded-lg border ${
+                      m.isOverdue ? 'bg-red-50 border-red-200' : m.completedAt ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        {m.isOverdue ? <AlertTriangle size={16} className="text-red-500" /> :
+                         m.completedAt ? <CheckCircle2 size={16} className="text-green-500" /> :
+                         <Clock size={16} className="text-gray-400" />}
+                        <div>
+                          <p className="text-sm font-medium">{stages.find(s => s.code === m.stage)?.name ?? t('common:unknownValue')}</p>
+                          <p className="text-xs text-gray-400">{t('milestone.slaDays', { count: m.slaDays ?? '—' })}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {m.targetDate && (
+                          <p className={`text-xs ${m.isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                            {t('milestone.deadline', { date: fmtDate(m.targetDate) })}
+                          </p>
+                        )}
+                        {m.completedAt && (
+                          <p className="text-xs text-green-500">{t('milestone.done', { date: fmtDate(m.completedAt) })}</p>
+                        )}
+                        {m.isOverdue && !m.completedAt && (
+                          <Badge className="bg-red-100 text-red-700 text-xs">{t('milestone.overdue')}</Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="riskCost" className="mt-3 space-y-3">
+              {projectId && <RiskRegister projectId={projectId} />}
+              <div className="border-t border-border pt-3">
+                {projectId && <ChangeOrderControl projectId={projectId} contractCurrency={p.contract?.currencyCode} />}
+              </div>
             </TabsContent>
           </Tabs>
 
@@ -984,8 +1016,9 @@ export default function FitoutPage() {
   const pageSize = 100;
   const stages = useStageConfigs();
   const { user } = useAuthStore();
+  const capabilities = getFitoutRoleCapabilities(user?.role);
   const navigate = useNavigate();
-  const canManageConfig = user?.role === 'ADMIN' || user?.role === 'MALL_DIRECTOR';
+  const canManageConfig = capabilities.canConfigure;
 
   // Cross-module handoff (docs/audit/11-INFORMATION-FLOW.md): a Contract's
   // detail view links here with ?projectId=... so the target project opens
@@ -1031,9 +1064,9 @@ export default function FitoutPage() {
         description={t('page.subtitle')}
         actions={(
           <>
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
+          {capabilities.canUseStaffWorkspaces && <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/dashboard')}>
             <BarChart3 size={14} /> {t('page.dashboardAction')}
-          </Button>
+          </Button>}
           {canManageConfig && (
             <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout/settings')}>
               <Settings size={14} /> {t('page.config')}
@@ -1046,7 +1079,7 @@ export default function FitoutPage() {
         )}
       />
 
-      <section aria-label={t('page.attentionLabel')} className="mb-3 grid grid-cols-2 border-y border-border bg-card lg:grid-cols-4">
+      {capabilities.canUseStaffWorkspaces && <section aria-label={t('page.attentionLabel')} className="mb-3 grid grid-cols-2 border-y border-border bg-card lg:grid-cols-4">
         {[
           { label: t('page.stats.activeProjects'), value: allProjects.length - completed, hint: t('page.stats.activeHint'), tone: 'text-slate-900', filter: 'ACTIVE' as const },
           { label: t('page.stats.noManager'), value: withoutManager, hint: t('page.stats.noManagerHint'), tone: withoutManager ? 'text-red-700' : 'text-slate-900', filter: 'UNASSIGNED' as const },
@@ -1058,7 +1091,7 @@ export default function FitoutPage() {
             <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</div>
           </button>
         ))}
-      </section>
+      </section>}
 
       <ERPToolbar className="mb-3 gap-2 rounded-md px-2.5 py-2">
         <div className="relative min-w-56 flex-[2_1_320px]">

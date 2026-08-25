@@ -149,11 +149,20 @@ export class FilesController {
       }
       case 'FITOUT_SUBMITTAL':
         // TENANT has no access to submittal/issue/daily-report controllers at all
-        // (backend MODULE_ROLES.fitout excludes TENANT there) — role check below
-        // is the full authorization surface for these three branches, plus the
-        // Mall check now added for each.
-        requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
-        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
+        // Staff remain Mall-scoped. Tenant access is deliberately narrower:
+        // only attachments linked to a submittal in their own Fitout project.
+        if (user.role === Role.TENANT) {
+          const submittal = await this.prisma.fitoutSubmittal.findUnique({
+            where: { id: doc.entityId },
+            select: { project: { select: { tenantId: true } } },
+          });
+          if (!submittal || !user.tenantId || submittal.project.tenantId !== user.tenantId) {
+            throw new ForbiddenException('Tenant cannot access this fitout document');
+          }
+        } else {
+          requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
+          await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
+        }
         break;
       case 'FITOUT_ISSUE':
         requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);

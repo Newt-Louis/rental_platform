@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterFitoutProjects, formatDecimalAmountWithoutCurrency, formatDecimalMoneyWithCode, getFitoutPresentationLabel, groupChangeOrderAmountsByCurrency, humanizeFitoutCode } from './fitoutPresentation';
+import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, formatDecimalAmountWithoutCurrency, formatDecimalMoneyPreservingCode, formatDecimalMoneyWithCode, getFitoutPresentationLabel, getFitoutRoleCapabilities, groupChangeOrderAmountsByCurrency, humanizeFitoutCode } from './fitoutPresentation';
 import en from '@/locales/en/fitout.json';
 import vi from '@/locales/vi/fitout.json';
 
@@ -83,5 +83,60 @@ describe('Fitout presentation helpers', () => {
     expect(formatDecimalMoneyWithCode('9007199254740991.25', 'USD', 'en-US')).toBe('9,007,199,254,740,991.25 USD');
     expect(formatDecimalMoneyWithCode('3165855000.00', 'VND', 'vi-VN')).toBe('3.165.855.000 VND');
     expect(formatDecimalAmountWithoutCurrency('9007199254740991.25', 'en-US')).toBe('9,007,199,254,740,991.25');
+  });
+
+  it('preserves exact legacy amounts and raw unsupported currency codes', () => {
+    expect(formatDecimalMoneyPreservingCode('1.25', 'EUR', 'en-US')).toBe('1.25 EUR');
+    expect(formatDecimalMoneyPreservingCode('9007199254740991.25', 'EUR', 'en-US')).toBe('9,007,199,254,740,991.25 EUR');
+  });
+
+  it('uses Contract-inherited currency copy without an implicit VND label', () => {
+    expect(en.changeOrder.fields.estimatedCost).toBe('Estimated cost *');
+    expect(vi.changeOrder.fields.estimatedCost).toBe('Chi phí dự kiến *');
+    expect(en.changeOrder.inheritedCurrency).toContain('{{currency}}');
+    expect(vi.changeOrder.inheritedCurrency).toContain('{{currency}}');
+  });
+
+  it('limits Tenant presentation to own-project Overview and Documents actions', () => {
+    expect(getFitoutRoleCapabilities('TENANT')).toMatchObject({
+      workspaces: ['overview', 'documents'],
+      canUseStaffWorkspaces: false,
+      canAssign: false,
+      canAdvance: false,
+      canOverrideGate: false,
+      canConfigure: false,
+      canCreateSubmittal: true,
+      canUploadSubmittal: true,
+      canResubmitSubmittal: true,
+      canApproveSubmittal: false,
+      canPublishSubmittal: false,
+    });
+  });
+
+  it('matches approved staff stage and configuration capabilities', () => {
+    expect(getFitoutRoleCapabilities('ADMIN')).toMatchObject({ canConfigure: true, canAdvance: true, canOverrideGate: true });
+    expect(getFitoutRoleCapabilities('MALL_DIRECTOR')).toMatchObject({ canConfigure: false, canAdvance: true, canOverrideGate: true });
+    expect(getFitoutRoleCapabilities('OPERATION')).toMatchObject({ canConfigure: false, canAdvance: true, canOverrideGate: false });
+    expect(getFitoutRoleCapabilities('LEASING_MANAGER')).toMatchObject({ canConfigure: false, canAdvance: false, canOverrideGate: false });
+    expect(getFitoutRoleCapabilities('ADMIN').canAdministerContractors).toBe(true);
+    expect(getFitoutRoleCapabilities('MALL_DIRECTOR').canAdministerContractors).toBe(true);
+    expect(getFitoutRoleCapabilities('OPERATION').canAdministerContractors).toBe(true);
+    expect(getFitoutRoleCapabilities('LEASING_MANAGER').canAdministerContractors).toBe(false);
+    expect(getFitoutRoleCapabilities('TENANT').canAdministerContractors).toBe(false);
+  });
+
+  it('shows Tenant upload/resubmit actions only for the signed-in submitter', () => {
+    expect(canModifyFitoutSubmittal('TENANT', 'tenant-user-1', 'tenant-user-1')).toBe(true);
+    expect(canModifyFitoutSubmittal('TENANT', 'tenant-user-1', 'staff-user-1')).toBe(false);
+    expect(canModifyFitoutSubmittal('OPERATION', 'operation-1', 'tenant-user-1')).toBe(true);
+  });
+
+  it('allows attachment upload only while a submittal is active', () => {
+    expect(canUploadToFitoutSubmittal('SUBMITTED')).toBe(true);
+    expect(canUploadToFitoutSubmittal('IN_PROGRESS')).toBe(true);
+    expect(canUploadToFitoutSubmittal('REJECTED')).toBe(false);
+    expect(canUploadToFitoutSubmittal('APPROVED')).toBe(false);
+    expect(canUploadToFitoutSubmittal('PUBLISHED')).toBe(false);
+    expect(canUploadToFitoutSubmittal('OBSOLETED')).toBe(false);
   });
 });

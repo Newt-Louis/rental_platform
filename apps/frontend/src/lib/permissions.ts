@@ -138,12 +138,9 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "FINANCE",
     "LEGAL",
   ],
-  // TENANT không có ở đây: Tenant Portal đã có tab Fitout riêng (đọc dữ liệu qua
-  // endpoint tenant-accessible trong fitout.controller.ts); các tab con của trang
-  // /fitout (submittal/issue/gantt/daily-report/controls) chỉ cho phép
-  // MODULE_ROLES.fitout ở backend (không có TENANT) nên không cấp route này cho
-  // TENANT để tránh 403 giữa chừng khi chuyển tab.
-  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
+  // TENANT may enter only the capability-limited `/fitout` workspace. The exact
+  // path guard below continues to deny staff-only dashboard/settings/report routes.
+  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
@@ -229,6 +226,13 @@ export function canAccessPath(role: string | undefined, path: string): boolean {
   // a query string was silently filtered out of the Dashboard for every role,
   // including ADMIN.
   const pathWithoutQuery = path.split("?")[0];
+  const normalizedPath = pathWithoutQuery.replace(/\/+$/, "") || "/";
+  if (normalizedPath === "/fitout/settings" && role !== "ADMIN") {
+    return false;
+  }
+  if (role === "TENANT" && normalizedPath.startsWith("/fitout/") && normalizedPath !== "/fitout") {
+    return false;
+  }
   const segment = pathWithoutQuery.replace(/^\//, "").split("/")[0] as RouteModule;
   const module = PATH_TO_MODULE[segment];
   if (!module) return false;
@@ -449,6 +453,7 @@ export const TENANT_NAV = [
     path: "/tickets",
     module: "tickets" as RouteModule,
   },
+  { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
   { label: "Doanh thu", path: "/sales", module: "sales" as RouteModule },
   {
     label: "Thông báo",

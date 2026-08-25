@@ -5,6 +5,8 @@ import { StorageService } from '../../storage/storage.service';
 import type { ApprovalWorkflowCompletedEvent, ApprovalWorkflowRejectedEvent, ApprovalWorkflowStepAdvancedEvent } from '../approvals/approvals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
+import { Prisma, Role } from '@prisma/client';
 
 const ENTITY_TYPE = 'FITOUT_SUBMITTAL';
 const DEFAULT_APPROVER_ROLE = 'OPERATION';
@@ -16,6 +18,7 @@ export class FitoutSubmittalService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailDelivery: EmailDeliveryService,
+    private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   async list(projectId: string, query: { formTypeId?: string; status?: string } = {}) {
@@ -197,7 +200,8 @@ export class FitoutSubmittalService {
   }
 
   async addDistribution(id: string, userId: string) {
-    await this.getOne(id);
+    const submittal = await this.getOne(id);
+    await this.accessPolicy.assertActiveProjectMallUser(submittal.projectId, userId);
     return this.prisma.entityDistribution.upsert({
       where: { entityType_entityId_userId: { entityType: ENTITY_TYPE, entityId: id, userId } },
       create: { entityType: ENTITY_TYPE, entityId: id, userId, notifiedAt: new Date() },
@@ -215,31 +219,71 @@ export class FitoutSubmittalService {
 
   async uploadAttachment(id: string, file: Express.Multer.File, uploadedById: string) {
     const submittal = await this.getOne(id);
-    const saved = await this.storageService.saveFile(file, `fitout-submittal/${id}`);
-
-    const latestVersion = await this.prisma.unifiedDocument.findFirst({
-      where: { entityType: ENTITY_TYPE, entityId: id },
-      orderBy: { version: 'desc' },
-    });
-
-    if (latestVersion) {
-      await this.prisma.unifiedDocument.update({ where: { id: latestVersion.id }, data: { isLatest: false } });
+    const mutableStatuses = ['SUBMITTED', 'IN_PROGRESS'];
+    if (!mutableStatuses.includes(submittal.status)) {
+      throw new BadRequestException(
+        submittal.status === 'REJECTED'
+          ? 'Rejected submittals must be resubmitted before attachments can be uploaded'
+          : `Attachments cannot be uploaded to a ${submittal.status} submittal revision`,
+      );
     }
+    if (!submittal.workflowId || submittal.workflow?.status !== 'IN_PROGRESS') {
+      throw new BadRequestException('Attachments can only be uploaded while the approval workflow is in progress');
+    }
+    const saved = await this.storageService.saveFile(file, `fitout-submittal/${id}`);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Fitout's operational database is PostgreSQL. Lock the revision and its
+        // workflow in one statement so a concurrent terminal approval/rejection
+        // either completes before this recheck or waits until this upload commits.
+        const locked = await tx.$queryRaw<Array<{
+          id: string;
+          status: string;
+          workflowId: string | null;
+          workflowStatus: string | null;
+        }>>(Prisma.sql`
+          SELECT s.id, s.status, s."workflowId", w.status::text AS "workflowStatus"
+          FROM "FitoutSubmittal" s
+          JOIN "ApprovalWorkflow" w ON w.id = s."workflowId"
+          WHERE s.id = ${id}
+          FOR UPDATE OF s, w
+        `);
+        const current = locked[0];
+        if (!current) throw new NotFoundException('Submittal not found');
+        if (!mutableStatuses.includes(current.status) || current.workflowStatus !== 'IN_PROGRESS') {
+          throw new BadRequestException(
+            'Submittal revision is no longer mutable; refresh and resubmit if it was rejected',
+          );
+        }
 
-    return this.prisma.unifiedDocument.create({
-      data: {
-        entityType: ENTITY_TYPE,
-        entityId: id,
-        category: 'ORIGINAL',
-        documentType: submittal.formType.code,
-        fileName: saved.fileName,
-        filePath: saved.filePath,
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        version: (latestVersion?.version ?? 0) + 1,
-        uploadedById,
-      },
-    });
+        const latestVersion = await tx.unifiedDocument.findFirst({
+          where: { entityType: ENTITY_TYPE, entityId: id },
+          orderBy: { version: 'desc' },
+        });
+
+        if (latestVersion) {
+          await tx.unifiedDocument.update({ where: { id: latestVersion.id }, data: { isLatest: false } });
+        }
+
+        return tx.unifiedDocument.create({
+          data: {
+            entityType: ENTITY_TYPE,
+            entityId: id,
+            category: 'ORIGINAL',
+            documentType: submittal.formType.code,
+            fileName: saved.fileName,
+            filePath: saved.filePath,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            version: (latestVersion?.version ?? 0) + 1,
+            uploadedById,
+          },
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      await this.storageService.deleteFile(saved.filePath);
+      throw error;
+    }
   }
 
   // ── Approval workflow event handlers ────────────────────────────────────
@@ -314,11 +358,10 @@ export class FitoutSubmittalService {
     });
     if (!submittal) return;
 
-    const approvers = await this.prisma.user.findMany({
-      where: { role: step.approverRole, isActive: true },
-      select: { id: true, email: true, fullName: true },
-      take: 10,
-    });
+    const approvers = await this.accessPolicy.findProjectMallRecipients(
+      submittal.project.id,
+      step.approverRole as Role,
+    );
 
     for (const approver of approvers) {
       await this.notifications.create({

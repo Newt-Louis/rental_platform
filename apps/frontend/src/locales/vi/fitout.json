@@ -105,6 +105,7 @@
   },
   "detail": {
     "loadError": "Không thể tải dự án Fitout đã chọn.",
+    "tenantOverview": "Xem thông tin dự án, giai đoạn hiện tại và tiến độ chính thức ở trên. Mở Tài liệu để gửi hoặc cập nhật hồ sơ do bạn tạo.",
     "nextActions": "Việc nên làm tiếp theo",
     "noBacklog": "Không còn tồn đọng. Hồ sơ đã sẵn sàng để chuyển sang {{nextStep}}.",
     "noBacklogFallback": "giai đoạn hoàn tất",
@@ -171,6 +172,8 @@
     "approve": "Duyệt",
     "reject": "Từ chối",
     "resubmit": "Nộp lại",
+    "upload": "Tải tệp lên",
+    "uploadFor": "Tải tệp lên cho {{title}}",
     "publish": "Phát hành",
     "status": {
       "SUBMITTED": "Đã nộp",
@@ -190,11 +193,13 @@
       "approved": "Đã duyệt",
       "rejected": "Đã từ chối",
       "resubmitted": "Đã nộp lại",
+      "uploaded": "Đã tải tệp lên",
       "published": "Đã phát hành",
       "errorSubmit": "Lỗi nộp đệ trình",
       "errorApprove": "Lỗi duyệt",
       "errorReject": "Lỗi từ chối",
       "errorResubmit": "Lỗi nộp lại",
+      "errorUpload": "Lỗi tải tệp lên",
       "errorPublish": "Lỗi phát hành"
     }
   },
@@ -464,6 +469,7 @@
     "empty": "Chưa có yêu cầu thay đổi.",
     "unknownRequester": "Chưa rõ người đề xuất",
     "currencyMissing": "Không có thông tin tiền tệ",
+    "inheritedCurrency": "Tiền tệ kế thừa từ Hợp đồng: {{currency}}",
     "approvedAmountMissing": "Chưa ghi nhận giá trị được duyệt",
     "proposedValue": "Đề xuất: {{value}}",
     "requesterHint": "Người đề xuất được ghi nhận theo tài khoản đang đăng nhập.",
@@ -474,7 +480,7 @@
     "selectDecision": "Chọn quyết định",
     "approve": "Phê duyệt",
     "reject": "Từ chối",
-    "fields": { "title": "Nội dung thay đổi *", "reason": "Lý do / phạm vi", "estimatedCost": "Chi phí dự kiến (VND) *", "scheduleImpact": "Tác động tiến độ (ngày)" },
+    "fields": { "title": "Nội dung thay đổi *", "reason": "Lý do / phạm vi", "estimatedCost": "Chi phí dự kiến *", "scheduleImpact": "Tác động tiến độ (ngày)" },
     "status": { "DRAFT": "Bản nháp", "SUBMITTED": "Đã gửi", "UNDER_REVIEW": "Đang xem xét", "APPROVED": "Đã duyệt", "REJECTED": "Từ chối", "CANCELLED": "Đã hủy" },
     "toast": { "created": "Đã tạo yêu cầu thay đổi" }
   },

@@ -22,13 +22,19 @@ describe('FitoutControlsService', () => {
       findMany: jest.fn(),
     },
   };
+  const accessPolicy = {
+    getProjectContext: jest.fn(),
+    assertActiveProjectMallUser: jest.fn(),
+  };
   let service: FitoutControlsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
-    prisma.fitoutProject.findUnique.mockResolvedValue({ id: 'project-1' });
-    service = new FitoutControlsService(prisma as unknown as PrismaService);
+    accessPolicy.getProjectContext.mockResolvedValue({
+      id: 'project-1', tenantId: 'tenant-1', mallId: 'mall-1', contractCurrencyCode: 'USD',
+    });
+    service = new FitoutControlsService(prisma as unknown as PrismaService, accessPolicy as any);
   });
 
   it('creates a numbered risk and calculates its risk matrix score', async () => {
@@ -85,6 +91,7 @@ describe('FitoutControlsService', () => {
 
     expect(result.changeNumber).toBe('CO-001');
     expect(result.status).toBe('SUBMITTED');
+    expect(result.currency).toBe('USD');
     expect(result.proposedAmount).toEqual(new Prisma.Decimal(12000000));
   });
 
@@ -99,6 +106,35 @@ describe('FitoutControlsService', () => {
     );
 
     expect(result.proposedAmount.toFixed(2)).toBe('9007199254740991.25');
+    expect(result.currency).toBe('USD');
+  });
+
+  it('accepts a matching legacy currency and persists the authoritative Contract currency', async () => {
+    prisma.fitoutChangeOrder.count.mockResolvedValue(0);
+    prisma.fitoutChangeOrder.create.mockImplementation(({ data }) => Promise.resolve(data));
+
+    await expect(service.createChangeOrder(
+      'project-1', { title: 'Matching currency', proposedAmount: '10', currency: 'USD' }, 'user-1',
+    )).resolves.toEqual(expect.objectContaining({ currency: 'USD' }));
+  });
+
+  it('rejects a legacy currency that differs from the authoritative Contract currency', async () => {
+    await expect(service.createChangeOrder(
+      'project-1', { title: 'Wrong currency', proposedAmount: '10', currency: 'VND' }, 'user-1',
+    )).rejects.toThrow('Change Order currency must match the authoritative Contract currency USD');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.fitoutChangeOrder.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks Change Order creation when the authoritative Contract currency is unavailable', async () => {
+    accessPolicy.getProjectContext.mockResolvedValue({
+      id: 'project-1', tenantId: 'tenant-1', mallId: 'mall-1', contractCurrencyCode: '',
+    });
+
+    await expect(service.createChangeOrder(
+      'project-1', { title: 'No currency', proposedAmount: '10', currency: 'VND' }, 'user-1',
+    )).rejects.toThrow('Fitout project Contract currency is unavailable');
+    expect(prisma.fitoutChangeOrder.create).not.toHaveBeenCalled();
   });
 
   it('prevents unauthorized roles from deciding cost changes', async () => {

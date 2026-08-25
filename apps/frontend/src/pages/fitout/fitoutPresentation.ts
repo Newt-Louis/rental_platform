@@ -10,6 +10,38 @@ export type FitoutProjectPresentation = {
 
 export type FitoutAttentionFilter = 'ACTIVE' | 'UNASSIGNED' | 'OPENING_SOON' | 'COMPLETED' | '';
 
+export type FitoutWorkspace = 'overview' | 'documents' | 'field' | 'schedule' | 'riskCost';
+
+const STAFF_FITOUT_WORKSPACES: FitoutWorkspace[] = ['overview', 'documents', 'field', 'schedule', 'riskCost'];
+
+export function getFitoutRoleCapabilities(role?: string | null) {
+  const isTenant = role === 'TENANT';
+  const isStaff = ['ADMIN', 'MALL_DIRECTOR', 'OPERATION', 'LEASING_MANAGER'].includes(role ?? '');
+  return {
+    isTenant,
+    workspaces: (isTenant ? ['overview', 'documents'] : isStaff ? STAFF_FITOUT_WORKSPACES : []) as FitoutWorkspace[],
+    canUseStaffWorkspaces: isStaff,
+    canAdministerContractors: ['ADMIN', 'MALL_DIRECTOR', 'OPERATION'].includes(role ?? ''),
+    canAssign: isStaff,
+    canAdvance: ['ADMIN', 'MALL_DIRECTOR', 'OPERATION'].includes(role ?? ''),
+    canOverrideGate: ['ADMIN', 'MALL_DIRECTOR'].includes(role ?? ''),
+    canConfigure: role === 'ADMIN',
+    canCreateSubmittal: isTenant || isStaff,
+    canUploadSubmittal: isTenant || isStaff,
+    canResubmitSubmittal: isTenant || isStaff,
+    canApproveSubmittal: isStaff,
+    canPublishSubmittal: isStaff,
+  };
+}
+
+export function canModifyFitoutSubmittal(role?: string | null, currentUserId?: string | null, submittedById?: string | null) {
+  return role !== 'TENANT' || (!!currentUserId && currentUserId === submittedById);
+}
+
+export function canUploadToFitoutSubmittal(status?: string | null) {
+  return status === 'SUBMITTED' || status === 'IN_PROGRESS';
+}
+
 export function humanizeFitoutCode(value?: string | null) {
   if (!value) return '—';
   return value
@@ -84,7 +116,7 @@ function scaledIntegerToDecimal(value: bigint, scale = 2) {
 
 export function formatDecimalMoneyWithCode(
   amount: DecimalInput,
-  currencyCode: CurrencyCode = 'VND',
+  currencyCode: CurrencyCode,
   locale = 'vi-VN',
 ) {
   const decimalPlaces = CURRENCIES[currencyCode]?.decimalPlaces ?? 0;
@@ -114,6 +146,21 @@ export function formatDecimalAmountWithoutCurrency(amount: DecimalInput, locale 
   const grouped = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole);
   const decimalSeparator = new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === 'decimal')?.value ?? '.';
   return `${negative ? '-' : ''}${grouped}${decimalSeparator}${fraction}`;
+}
+
+export function isSupportedCurrencyCode(value?: string | null): value is CurrencyCode {
+  return !!value && Object.prototype.hasOwnProperty.call(CURRENCIES, value);
+}
+
+export function formatDecimalMoneyPreservingCode(
+  amount: DecimalInput,
+  currencyCode: string,
+  locale = 'vi-VN',
+) {
+  const code = currencyCode.trim();
+  return isSupportedCurrencyCode(code)
+    ? formatDecimalMoneyWithCode(amount, code, locale)
+    : `${formatDecimalAmountWithoutCurrency(amount, locale)} ${code}`.trim();
 }
 
 export function groupChangeOrderAmountsByCurrency(orders: Array<{
