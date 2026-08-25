@@ -204,6 +204,7 @@
     "title": "Approvals",
     "new": "New",
     "subtitle": "Decision queue by file and authoritative current approval step",
+    "searchPlaceholder": "Proposal, tenant, or unit...",
     "command": {
       "eyebrow": "DECISION CENTER",
       "records": "files"
@@ -223,8 +224,55 @@
     "rejectPriceSuccess": "Price rejected",
     "views": {
       "proposals": "Proposal",
+      "fitout": "Fitout",
       "prices": "Booking Price",
       "history": "History"
+    },
+    "filters": {
+      "floor": "Floor",
+      "allFloors": "All floors",
+      "unit": "Unit",
+      "allUnits": "All units"
+    },
+    "fitout": {
+      "title": "Fitout documents",
+      "searchPlaceholder": "Submittal, form, tenant, or unit...",
+      "empty": "No Fitout documents awaiting your decision",
+      "emptyDesc": "Actionable Fitout submittals will appear here.",
+      "error": "Unable to load pending Fitout approvals.",
+      "revision": "Revision {{revision}}",
+      "stage": "Fitout stage",
+      "unknownStage": "Stage not configured",
+      "formType": "Document / form type",
+      "submitter": "Submitted by",
+      "submittedAt": "Submitted",
+      "dueDate": "Due date",
+      "version": "Version {{version}}",
+      "latest": "Latest",
+      "unknownFileType": "Unknown file type",
+      "noAttachments": "No attachments in this submittal.",
+      "attachmentError": "Unable to download this attachment.",
+      "pendingCount": "{{count}} Fitout documents awaiting decision",
+      "section": {
+        "context": "FITOUT SUBMITTAL CONTEXT",
+        "attachments": "ATTACHMENTS"
+      },
+      "table": {
+        "document": "Submittal",
+        "context": "Tenant / unit",
+        "stage": "Fitout stage",
+        "approvalStep": "Approval step",
+        "timeline": "Submitted / due"
+      },
+      "status": {
+        "SUBMITTED": "Submitted",
+        "IN_PROGRESS": "In review",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "PUBLISHED": "Published",
+        "OBSOLETED": "Obsolete",
+        "unknown": "Unknown status"
+      }
     },
     "roles": {
       "ADMIN": "System Administrator",

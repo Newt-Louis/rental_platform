@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ApprovalsService } from './approvals.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -38,12 +38,36 @@ export class ApprovalsController {
     return (await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true })) ?? undefined;
   }
 
+  private validateEntityType(entityType?: string) {
+    if (entityType !== undefined && entityType !== 'PROPOSAL' && entityType !== 'FITOUT_SUBMITTAL') {
+      throw new BadRequestException('entityType must be PROPOSAL or FITOUT_SUBMITTAL');
+    }
+  }
+
+  private async fitoutMallIds(user: any, requestedMallId?: string, requireRequestedAccess = false): Promise<string[] | undefined> {
+    if (user.role === Role.ADMIN) return requestedMallId ? [requestedMallId] : undefined;
+    if (requestedMallId && requireRequestedAccess) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, requestedMallId);
+      return [requestedMallId];
+    }
+    const accessible = (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? [];
+    return requestedMallId ? accessible.filter((mallId) => mallId === requestedMallId) : accessible;
+  }
+
   @Get('pending')
   @ApiOperation({ summary: 'Get pending approval steps for current user' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'entityType', required: false, enum: ['PROPOSAL', 'FITOUT_SUBMITTAL'] })
   async getPending(@CurrentUser() user: any, @Query() query: any) {
-    return this.approvalsService.getPending(user.id, user.role, query, await this.mallIds(user, query.mallId));
+    this.validateEntityType(query.entityType);
+    const proposalMallIds = await this.mallIds(user, query.mallId);
+    const fitoutMallIds = await this.fitoutMallIds(
+      user,
+      query.mallId,
+      query.entityType === 'FITOUT_SUBMITTAL',
+    );
+    return this.approvalsService.getPending(user.id, user.role, query, proposalMallIds, fitoutMallIds);
   }
 
   @Get('history')
@@ -111,6 +135,6 @@ export class ApprovalsController {
   @ApiOperation({ summary: 'Get workflow details' })
   async getWorkflow(@Param('id') id: string, @CurrentUser() user: any) {
     await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalWorkflowId: id }, { crossMallRead: true });
-    return this.approvalsService.getWorkflow(id);
+    return this.approvalsService.getWorkflow(id, user, await this.fitoutMallIds(user));
   }
 }

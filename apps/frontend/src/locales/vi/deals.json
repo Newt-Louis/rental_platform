@@ -204,6 +204,7 @@
     "title": "Phê duyệt",
     "new": "Mới",
     "subtitle": "Hàng đợi quyết định theo từng hồ sơ và đúng bước phê duyệt hiện tại",
+    "searchPlaceholder": "Tờ trình, khách thuê hoặc mặt bằng...",
     "command": {
       "eyebrow": "TRUNG TÂM QUYẾT ĐỊNH",
       "records": "hồ sơ"
@@ -223,8 +224,55 @@
     "rejectPriceSuccess": "Đã từ chối giá",
     "views": {
       "proposals": "Đề xuất",
+      "fitout": "Fitout",
       "prices": "Giá Booking",
       "history": "Lịch sử"
+    },
+    "filters": {
+      "floor": "Tầng",
+      "allFloors": "Tất cả tầng",
+      "unit": "Mặt bằng",
+      "allUnits": "Tất cả mặt bằng"
+    },
+    "fitout": {
+      "title": "Hồ sơ Fitout",
+      "searchPlaceholder": "Hồ sơ, biểu mẫu, khách thuê hoặc mặt bằng...",
+      "empty": "Không có hồ sơ Fitout chờ quyết định",
+      "emptyDesc": "Hồ sơ Fitout cần xử lý sẽ hiển thị tại đây.",
+      "error": "Không thể tải danh sách phê duyệt Fitout.",
+      "revision": "Lần sửa {{revision}}",
+      "stage": "Giai đoạn Fitout",
+      "unknownStage": "Chưa cấu hình giai đoạn",
+      "formType": "Loại hồ sơ / biểu mẫu",
+      "submitter": "Người nộp",
+      "submittedAt": "Ngày nộp",
+      "dueDate": "Hạn xử lý",
+      "version": "Phiên bản {{version}}",
+      "latest": "Mới nhất",
+      "unknownFileType": "Không rõ định dạng",
+      "noAttachments": "Hồ sơ này không có tệp đính kèm.",
+      "attachmentError": "Không thể tải tệp đính kèm này.",
+      "pendingCount": "{{count}} hồ sơ Fitout chờ quyết định",
+      "section": {
+        "context": "THÔNG TIN HỒ SƠ FITOUT",
+        "attachments": "TỆP ĐÍNH KÈM"
+      },
+      "table": {
+        "document": "Hồ sơ",
+        "context": "Khách thuê / mặt bằng",
+        "stage": "Giai đoạn Fitout",
+        "approvalStep": "Bước phê duyệt",
+        "timeline": "Ngày nộp / hạn xử lý"
+      },
+      "status": {
+        "SUBMITTED": "Đã nộp",
+        "IN_PROGRESS": "Đang duyệt",
+        "APPROVED": "Đã duyệt",
+        "REJECTED": "Từ chối",
+        "PUBLISHED": "Đã phát hành",
+        "OBSOLETED": "Hết hiệu lực",
+        "unknown": "Chưa rõ trạng thái"
+      }
     },
     "roles": {
       "ADMIN": "Quản trị hệ thống",

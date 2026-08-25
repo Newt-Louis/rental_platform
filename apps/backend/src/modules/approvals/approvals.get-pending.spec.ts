@@ -13,6 +13,7 @@ describe('ApprovalsService.getPending — policy reason (FR-04)', () => {
     status: StepStatus.PENDING,
     createdAt: new Date(),
     workflow: {
+      entityType: 'PROPOSAL',
       status: WorkflowStatus.IN_PROGRESS,
       proposal: { id: 'p1', discount: 12, rentFree: 30 },
       steps: [{ id: 'step-1', stepOrder: 1, status: StepStatus.PENDING }],
