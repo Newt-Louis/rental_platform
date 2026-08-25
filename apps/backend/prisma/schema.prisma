@@ -3165,8 +3165,14 @@ model UnitBooking {
   priority      Int           @default(1) // 1 = u tin cao nht
   requestedArea Float? // Din tch yu cu
   requestedTerm Int? // Thi hn thu mong mun (thng)
+  budgetRentMin Float? // Gi ngn sch khch  xut (thp nht, /m2/thng)
+  budgetRentMax Float? // Gi ngn sch khch  xut (cao nht, /m2/thng)
   expectedRent  Float? // Mc gi k vng (khch)
-  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm
+  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm / budgetRentMin/Max / serviceFeeSqm / businessSupportFeeSqm
+  // Ty gi tham kho ti thi im m phn -- ch hin th quy i /m tham kho cho
+  // P.CT TTTM, KHNG dng  tnh ton/lu gi tr  cho Hp ng/Billing (xem
+  // docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- h thng khng c FX engine).
+  exchangeRate  Float?
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE
@@ -3176,8 +3182,14 @@ model UnitBooking {
   notes         String?
 
   // Proposed price by sales
-  proposedRentPerSqm    Float? // Gi sale  xut (VND/m2/thng)
-  proposedCamPerSqm     Float? // CAM  xut
+  proposedRentPerSqm    Float? // Gi sale  xut (chi thu, VND/m2/thng)
+  // CAM  xut -- ch p dng HT Vn phng (Mall.leaseCategory = OFFICE); n  UI cho TTTM.
+  proposedCamPerSqm     Float?
+  // Ph Dch v & Ph h tr Kinh doanh -- ch p dng HT TTTM (Mall.leaseCategory = MALL);
+  // n  UI cho Vn phng. Mang cng ng vi Proposal.serviceFeeSqm/businessSupportFeeSqm
+  // khi convert sang Proposal (xem ConvertToProposalDto).
+  serviceFeeSqm         Float?
+  businessSupportFeeSqm Float?
   priceApprovalStatus   PriceApprovalStatus? // PENDING, APPROVED, REJECTED
   priceApprovalNote     String? // Ghi ch ph duyt
   priceApprovedById     String?

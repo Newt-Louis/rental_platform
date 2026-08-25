@@ -32,10 +32,13 @@ export interface AuthState {
   token: string | null;
 }
 
+export type MallLeaseCategory = 'OFFICE' | 'MALL';
+
 export interface Mall {
   id: string;
   name: string;
   code: string;
+  leaseCategory?: MallLeaseCategory;
   address?: string;
   totalArea?: number;
   isActive: boolean;
@@ -238,10 +241,15 @@ export interface UnitBooking {
   priority: number;
   requestedArea?: number;
   requestedTerm?: number;
+  budgetRentMin?: number;
+  budgetRentMax?: number;
   expectedRent?: number;
   currencyCode?: CurrencyCode;
+  exchangeRate?: number;
   proposedRentPerSqm?: number;
   proposedCamPerSqm?: number;
+  serviceFeeSqm?: number;
+  businessSupportFeeSqm?: number;
   pricingSnapshot?: Record<string, unknown>;
   priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   holdDays: number;
