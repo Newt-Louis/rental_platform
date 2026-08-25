@@ -15,6 +15,8 @@ import {
   UpdateServiceContractPaymentDto,
 } from './dto/service-contract.dto';
 
+// Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
+const EDITABLE_STATUSES: ServiceContractStatus[] = ['DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE'];
 const ALLOWED_TRANSITIONS: Record<ServiceContractStatus, ServiceContractStatus[]> = {
   DRAFT: ['PROPOSAL', 'UNDER_REVIEW', 'CANCELLED'], PROPOSAL: ['DRAFT', 'UNDER_REVIEW', 'PENDING_SIGNATURE', 'CANCELLED'], UNDER_REVIEW: ['DRAFT', 'PROPOSAL', 'PENDING_SIGNATURE', 'CANCELLED'],
   PENDING_SIGNATURE: ['UNDER_REVIEW', 'ACTIVE', 'CANCELLED'], ACTIVE: ['EXPIRING', 'EXPIRED', 'TERMINATED'],
@@ -194,6 +196,7 @@ export class ServiceContractsService {
 
   async update(id: string, dto: UpdateServiceContractDto, userId: string) {
     const before = await this.findOne(id);
+    if (!EDITABLE_STATUSES.includes(before.status)) throw new BadRequestException('Hợp đồng đã hiệu lực hoặc đã kết thúc, không thể chỉnh sửa trực tiếp');
     const { signedDate, startDate, endDate, totalValue, counterpartyAddress, ...data } = dto;
     if (data.contractNumber && data.contractNumber !== before.contractNumber) {
       const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber: data.contractNumber }, select: { id: true } });

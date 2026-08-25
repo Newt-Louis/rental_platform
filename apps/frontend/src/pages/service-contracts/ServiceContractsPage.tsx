@@ -26,6 +26,8 @@ const STATUSES = [
   "RENEWED",
   "CANCELLED",
 ];
+// Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
+const EDITABLE_STATUSES = ["DRAFT", "PROPOSAL", "UNDER_REVIEW", "PENDING_SIGNATURE"];
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   DRAFT: ["PROPOSAL", "UNDER_REVIEW", "CANCELLED"],
   PROPOSAL: ["DRAFT", "UNDER_REVIEW", "PENDING_SIGNATURE", "CANCELLED"],
@@ -544,7 +546,7 @@ export default function ServiceContractsPage() {
                 <h2 className="text-xl font-semibold">{item.title}</h2>
               </div>
               <div className="flex gap-2">
-                {canEdit && <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}><Pencil size={14} className="mr-2" />Chỉnh sửa</Button>}
+                {canEdit && EDITABLE_STATUSES.includes(item.status) && <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}><Pencil size={14} className="mr-2" />Chỉnh sửa</Button>}
                 {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>}
                 <button onClick={() => setSelectedId(null)}><X /></button>
               </div>
