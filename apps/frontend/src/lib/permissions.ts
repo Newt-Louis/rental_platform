@@ -29,6 +29,7 @@ export type RouteModule =
   | "parking"
   | "tenants"
   | "fitout"
+  | "fitout-approvals"
   | "tickets"
   | "sales"
   | "billing"
@@ -141,6 +142,8 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   // TENANT may enter only the capability-limited `/fitout` workspace. The exact
   // path guard below continues to deny staff-only dashboard/settings/report routes.
   fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
+  // Chỉ vai trò có thể là duyệt viên (approverRole) mới thấy hàng chờ duyệt Fitout — không cấp TENANT.
+  "fitout-approvals": ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
@@ -191,6 +194,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   parking: "parking",
   tenants: "tenants",
   fitout: "fitout",
+  "fitout-approvals": "fitout-approvals",
   tickets: "tickets",
   sales: "sales",
   billing: "billing",
@@ -312,6 +316,13 @@ export const NAV_GROUPS = [
     label: "Thi công & Bàn giao",
     items: [
       { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
+      {
+        // Mục riêng cho duyệt viên Fitout — vào thẳng hàng chờ duyệt của TẤT CẢ dự án được
+        // phân quyền, không phải mở từng dự án trong workspace Fitout để tìm việc cần duyệt.
+        label: "Duyệt hồ sơ Fitout",
+        path: "/fitout-approvals",
+        module: "fitout-approvals" as RouteModule,
+      },
     ],
   },
   {

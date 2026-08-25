@@ -22,7 +22,7 @@ export class FitoutSubmittalService {
   ) {}
 
   async list(projectId: string, query: { formTypeId?: string; status?: string } = {}) {
-    return this.prisma.fitoutSubmittal.findMany({
+    const submittals = await this.prisma.fitoutSubmittal.findMany({
       where: { projectId, formTypeId: query.formTypeId, status: query.status },
       include: {
         formType: true,
@@ -32,6 +32,24 @@ export class FitoutSubmittalService {
       },
       orderBy: [{ formTypeId: 'asc' }, { revisionNo: 'desc' }],
     });
+    // FitoutSubmittal <-> UnifiedDocument has no FK/relation (polymorphic entityType/entityId,
+    // same as approvals.service.ts's attachFitoutAttachments) — batch-fetch and merge manually
+    // so the workspace can show/download attachments and gate "Gửi duyệt" without an N+1 query
+    // per submittal card.
+    const attachments = submittals.length
+      ? await this.prisma.unifiedDocument.findMany({
+          where: { entityType: ENTITY_TYPE, entityId: { in: submittals.map((s) => s.id) }, isActive: true },
+          select: { id: true, entityId: true, fileName: true, mimeType: true, fileSize: true, version: true, isLatest: true, uploadedAt: true },
+          orderBy: [{ entityId: 'asc' }, { version: 'desc' }],
+        })
+      : [];
+    const byEntity = new Map<string, typeof attachments>();
+    for (const attachment of attachments) {
+      const list = byEntity.get(attachment.entityId) ?? [];
+      list.push(attachment);
+      byEntity.set(attachment.entityId, list);
+    }
+    return submittals.map((s) => ({ ...s, attachments: byEntity.get(s.id) ?? [] }));
   }
 
   /**
@@ -77,6 +95,13 @@ export class FitoutSubmittalService {
     }));
   }
 
+  /**
+   * Tạo submittal ở trạng thái nháp (SUBMITTED, chưa có ApprovalWorkflow) — người phụ trách
+   * còn phải đính kèm ít nhất 1 tệp rồi gọi submitForReview() thì hồ sơ mới thực sự vào hàng
+   * chờ duyệt và người duyệt mới được thông báo. Tách 2 bước này để không thể "gửi duyệt" một
+   * hồ sơ không có tệp đính kèm — trước đây workflow được tạo + duyệt viên được thông báo ngay
+   * trong create(), nên người duyệt có thể nhận việc cần xem xét một hồ sơ trống tệp.
+   */
   async create(projectId: string, dto: { formTypeId: string; title: string; dueDate?: string }, submittedById: string) {
     const project = await this.prisma.fitoutProject.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Fitout project not found');
@@ -84,56 +109,71 @@ export class FitoutSubmittalService {
     const formType = await this.prisma.fitoutFormType.findUnique({ where: { id: dto.formTypeId } });
     if (!formType || !formType.isActive) throw new BadRequestException('Invalid or inactive form type');
 
+    return this.prisma.fitoutSubmittal.create({
+      data: {
+        projectId,
+        formTypeId: dto.formTypeId,
+        stageCode: project.status,
+        title: dto.title,
+        submittedById,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        status: 'SUBMITTED',
+      },
+    });
+  }
+
+  /** Chuyển 1 submittal nháp (SUBMITTED, chưa có workflow) sang hàng chờ duyệt — bắt buộc đã có ít nhất 1 tệp đính kèm. */
+  async submitForReview(id: string) {
+    const submittal = await this.getOne(id);
+    if (submittal.workflowId) {
+      throw new BadRequestException('Hồ sơ này đã được gửi duyệt trước đó');
+    }
+    if (submittal.status !== 'SUBMITTED') {
+      throw new BadRequestException(`Không thể gửi duyệt hồ sơ đang ở trạng thái ${submittal.status}`);
+    }
+    const attachmentCount = await this.prisma.unifiedDocument.count({
+      where: { entityType: ENTITY_TYPE, entityId: id, isActive: true },
+    });
+    if (attachmentCount === 0) {
+      throw new BadRequestException('Cần đính kèm ít nhất 1 tệp trước khi gửi duyệt để người duyệt có thể xem hồ sơ');
+    }
+
+    const formType = await this.prisma.fitoutFormType.findUnique({ where: { id: submittal.formTypeId } });
+    if (!formType) throw new NotFoundException('Form type not found');
     const steps = this.buildApprovalSteps(formType);
 
-    const submittal = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.fitoutSubmittal.create({
-        data: {
-          projectId,
-          formTypeId: dto.formTypeId,
-          stageCode: project.status,
-          title: dto.title,
-          submittedById,
-          dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-          status: 'SUBMITTED',
-        },
-      });
-
+    const updated = await this.prisma.$transaction(async (tx) => {
       const workflow = await tx.approvalWorkflow.create({
         data: {
           entityType: ENTITY_TYPE,
-          entityId: created.id,
+          entityId: id,
           status: 'IN_PROGRESS',
           steps: { create: steps as any },
         },
       });
-
       return tx.fitoutSubmittal.update({
-        where: { id: created.id },
+        where: { id },
         data: { workflowId: workflow.id, status: 'IN_PROGRESS' },
       });
     });
 
-    await this.notifyPendingApprovers(submittal.workflowId!, 1);
-    return submittal;
+    await this.notifyPendingApprovers(updated.workflowId!, 1);
+    return updated;
   }
 
+  /** Tạo revision mới (nháp, chưa có workflow) từ 1 submittal bị từ chối — cũng phải qua submitForReview() với tệp đính kèm mới trước khi vào hàng chờ duyệt (tệp của revision cũ không tự động mang sang). */
   async resubmit(id: string, dto: { title?: string; dueDate?: string }, submittedById: string) {
     const parent = await this.getOne(id);
     if (parent.status !== 'REJECTED') {
       throw new BadRequestException('Only a rejected submittal can be resubmitted');
     }
 
-    const formType = await this.prisma.fitoutFormType.findUnique({ where: { id: parent.formTypeId } });
-    if (!formType) throw new NotFoundException('Form type not found');
-    const steps = this.buildApprovalSteps(formType);
-
     const project = await this.prisma.fitoutProject.findUnique({ where: { id: parent.projectId } });
 
-    const created = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await tx.fitoutSubmittal.update({ where: { id }, data: { status: 'OBSOLETED' } });
 
-      const child = await tx.fitoutSubmittal.create({
+      return tx.fitoutSubmittal.create({
         data: {
           projectId: parent.projectId,
           formTypeId: parent.formTypeId,
@@ -146,24 +186,7 @@ export class FitoutSubmittalService {
           status: 'SUBMITTED',
         },
       });
-
-      const workflow = await tx.approvalWorkflow.create({
-        data: {
-          entityType: ENTITY_TYPE,
-          entityId: child.id,
-          status: 'IN_PROGRESS',
-          steps: { create: steps as any },
-        },
-      });
-
-      return tx.fitoutSubmittal.update({
-        where: { id: child.id },
-        data: { workflowId: workflow.id, status: 'IN_PROGRESS' },
-      });
     });
-
-    await this.notifyPendingApprovers(created.workflowId!, 1);
-    return created;
   }
 
   async publish(id: string) {
@@ -227,7 +250,10 @@ export class FitoutSubmittalService {
           : `Attachments cannot be uploaded to a ${submittal.status} submittal revision`,
       );
     }
-    if (!submittal.workflowId || submittal.workflow?.status !== 'IN_PROGRESS') {
+    // Trạng thái SUBMITTED giờ có 2 pha: nháp chưa gửi duyệt (workflowId null — vẫn cho phép
+    // đính kèm, đây chính là bước bắt buộc trước submitForReview()) và trường hợp cũ IN_PROGRESS
+    // (đã vào hàng chờ, chỉ cho đính kèm thêm khi workflow còn IN_PROGRESS).
+    if (submittal.workflowId && submittal.workflow?.status !== 'IN_PROGRESS') {
       throw new BadRequestException('Attachments can only be uploaded while the approval workflow is in progress');
     }
     const saved = await this.storageService.saveFile(file, `fitout-submittal/${id}`);
@@ -244,13 +270,15 @@ export class FitoutSubmittalService {
         }>>(Prisma.sql`
           SELECT s.id, s.status, s."workflowId", w.status::text AS "workflowStatus"
           FROM "FitoutSubmittal" s
-          JOIN "ApprovalWorkflow" w ON w.id = s."workflowId"
+          LEFT JOIN "ApprovalWorkflow" w ON w.id = s."workflowId"
           WHERE s.id = ${id}
-          FOR UPDATE OF s, w
+          FOR UPDATE OF s
         `);
         const current = locked[0];
         if (!current) throw new NotFoundException('Submittal not found');
-        if (!mutableStatuses.includes(current.status) || current.workflowStatus !== 'IN_PROGRESS') {
+        // workflowId null (nháp, chưa gửi duyệt) is mutable; once a workflow exists it must
+        // still be IN_PROGRESS (mirrors the pre-transaction check above, revalidated under lock).
+        if (!mutableStatuses.includes(current.status) || (current.workflowId && current.workflowStatus !== 'IN_PROGRESS')) {
           throw new BadRequestException(
             'Submittal revision is no longer mutable; refresh and resubmit if it was rejected',
           );

@@ -60,6 +60,7 @@ export const fitoutSubmittalApi = {
     api.post('/fitout-submittals', data).then((r) => r.data),
   resubmit: (id: string, data: { title?: string; dueDate?: string }) =>
     api.post(`/fitout-submittals/${id}/resubmit`, data).then((r) => r.data),
+  submitForReview: (id: string) => api.post(`/fitout-submittals/${id}/submit-for-review`).then((r) => r.data),
   publish: (id: string) => api.post(`/fitout-submittals/${id}/publish`).then((r) => r.data),
   listComments: (id: string) => api.get(`/fitout-submittals/${id}/comments`).then((r) => r.data),
   addComment: (id: string, body: string) => api.post(`/fitout-submittals/${id}/comments`, { body }).then((r) => r.data),

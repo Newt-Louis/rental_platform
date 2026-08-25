@@ -86,6 +86,14 @@ export class FitoutSubmittalController {
     return this.submittalService.resubmit(id, body, user.id);
   }
 
+  @Post(':id/submit-for-review')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ApiOperation({ summary: 'Gửi duyệt (bắt buộc đã đính kèm ít nhất 1 tệp) — chuyển hồ sơ nháp sang hàng chờ duyệt' })
+  async submitForReview(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
+    return this.submittalService.submitForReview(id);
+  }
+
   @Post(':id/publish')
   @ApiOperation({ summary: 'Publish an approved submittal for reference' })
   async publish(@Param('id') id: string, @CurrentUser() user: any) {

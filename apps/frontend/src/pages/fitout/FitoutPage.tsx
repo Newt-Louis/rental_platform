@@ -20,11 +20,14 @@ import { ChangeOrderControl, RiskRegister } from '@/components/fitout/RiskChange
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
+import { openAuthenticatedFile } from '@/lib/downloadFile';
+import { FitoutCommentThread } from './FitoutCommentThread';
 import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, getFitoutPresentationLabel, getFitoutRoleCapabilities, type FitoutAttentionFilter } from './fitoutPresentation';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar, Search,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
   Plus, Trash2, ShieldAlert, Settings, RotateCcw, Send, Rocket, BarChart3,
+  Paperclip,
 } from 'lucide-react';
 
 interface StageConfig {
@@ -270,6 +273,12 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     mutationFn: (id: string) => fitoutSubmittalApi.resubmit(id, {}),
     onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.resubmitted') }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorResubmit'), variant: 'destructive' }),
+  });
+
+  const submitForReviewMutation = useMutation({
+    mutationFn: (id: string) => fitoutSubmittalApi.submitForReview(id),
+    onSuccess: () => { invalidateSubmittals(); toast({ title: t('submittal.toast.submittedForReview') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('submittal.toast.errorSubmitForReview'), variant: 'destructive' }),
   });
 
   const uploadSubmittalAttachmentMutation = useMutation({
@@ -693,6 +702,20 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                           </div>
                         )}
 
+                        {(sub.attachments ?? []).length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {(sub.attachments as any[]).map((a) => (
+                              <button
+                                key={a.id}
+                                className="inline-flex items-center gap-1 text-xs border border-gray-200 rounded-md px-1.5 py-0.5 hover:bg-gray-100 bg-white"
+                                onClick={() => openAuthenticatedFile(`/files/fitout-documents/${a.id}`, { download: a.fileName })}
+                              >
+                                <Paperclip size={10} className="text-gray-400" /> {a.fileName}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-2">
                           {capabilities.canUploadSubmittal && canModifyOwnSubmittal && canUploadToFitoutSubmittal(sub.status) && (
                             <label className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-accent">
@@ -709,6 +732,20 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                                 }}
                               />
                             </label>
+                          )}
+                          {canModifyOwnSubmittal && sub.status === 'SUBMITTED' && !sub.workflowId && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gap-1"
+                              disabled={(sub.attachments ?? []).length === 0 || submitForReviewMutation.isPending}
+                              title={(sub.attachments ?? []).length === 0 ? t('submittal.needsAttachmentHint') : undefined}
+                              onClick={() => submitForReviewMutation.mutate(sub.id)}
+                            >
+                              <Send size={12} /> {t('submittal.submitForReview')}
+                            </Button>
+                          )}
+                          {canModifyOwnSubmittal && sub.status === 'SUBMITTED' && !sub.workflowId && (sub.attachments ?? []).length === 0 && (
+                            <span className="text-xs text-amber-600">{t('submittal.needsAttachmentHint')}</span>
                           )}
                           {canAct && (
                             <>
@@ -735,6 +772,8 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                             </Button>
                           )}
                         </div>
+
+                        <FitoutCommentThread submittalId={sub.id} />
                       </div>
                     );
                   })

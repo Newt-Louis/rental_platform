@@ -175,8 +175,10 @@
     "upload": "Upload file",
     "uploadFor": "Upload a file for {{title}}",
     "publish": "Publish",
+    "submitForReview": "Submit for review",
+    "needsAttachmentHint": "At least 1 attachment is required before submitting for review",
     "status": {
-      "SUBMITTED": "Submitted",
+      "SUBMITTED": "Draft — needs attachment & submission",
       "IN_PROGRESS": "In review",
       "APPROVED": "Approved",
       "REJECTED": "Rejected",
@@ -200,7 +202,9 @@
       "errorReject": "Error rejecting",
       "errorResubmit": "Error resubmitting",
       "errorUpload": "Error uploading file",
-      "errorPublish": "Error publishing"
+      "errorPublish": "Error publishing",
+      "submittedForReview": "Submitted for review — approvers have been notified",
+      "errorSubmitForReview": "Error submitting for review"
     }
   },
   "issue": {

@@ -175,8 +175,10 @@
     "upload": "Tải tệp lên",
     "uploadFor": "Tải tệp lên cho {{title}}",
     "publish": "Phát hành",
+    "submitForReview": "Gửi duyệt",
+    "needsAttachmentHint": "Cần đính kèm ít nhất 1 tệp trước khi gửi duyệt",
     "status": {
-      "SUBMITTED": "Đã nộp",
+      "SUBMITTED": "Nháp — chờ đính kèm & gửi duyệt",
       "IN_PROGRESS": "Đang duyệt",
       "APPROVED": "Đã duyệt",
       "REJECTED": "Từ chối",
@@ -200,7 +202,9 @@
       "errorReject": "Lỗi từ chối",
       "errorResubmit": "Lỗi nộp lại",
       "errorUpload": "Lỗi tải tệp lên",
-      "errorPublish": "Lỗi phát hành"
+      "errorPublish": "Lỗi phát hành",
+      "submittedForReview": "Đã gửi duyệt — người duyệt sẽ nhận được thông báo",
+      "errorSubmitForReview": "Lỗi gửi duyệt"
     }
   },
   "issue": {

@@ -25,6 +25,9 @@ const WorkOrdersPage = lazy(() => import("@/pages/work-orders/WorkOrdersPage"));
 const PatrolPage = lazy(() => import("@/pages/patrol/PatrolPage"));
 const ParkingPage = lazy(() => import("@/pages/parking/ParkingPage"));
 const FitoutPage = lazy(() => import("@/pages/fitout/FitoutPage"));
+const FitoutApprovalsPage = lazy(
+  () => import("@/pages/fitout/FitoutApprovalsPage"),
+);
 const FitoutSettingsPage = lazy(
   () => import("@/pages/fitout/FitoutSettingsPage"),
 );
@@ -252,6 +255,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <FitoutPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="fitout-approvals"
+                    element={
+                      <RoleRoute>
+                        <FitoutApprovalsPage />
                       </RoleRoute>
                     }
                   />
