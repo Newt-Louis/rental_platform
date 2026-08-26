@@ -14,50 +14,59 @@
 
 -- Revenue / KPI sums (SUM(total_fee), promotion_amount, voucher_bill_amount)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_checkout_fee
-  ON parking_transaction (tenant_id, check_out_time)
+  ON parking_transactions (tenant_id, check_out_time)
   INCLUDE (total_fee, promotion_amount, voucher_bill_amount);
 
 -- Primary time-range filter field for the dashboard (check_in_time) + inflow chart
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_checkin
-  ON parking_transaction (tenant_id, check_in_time);
+  ON parking_transactions (tenant_id, check_in_time);
 
 -- Active Occupancy KPI: COUNT(*) WHERE check_out_time IS NULL
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_checkout_null
-  ON parking_transaction (tenant_id, check_out_time)
+  ON parking_transactions (tenant_id, check_out_time)
   WHERE check_out_time IS NULL;
 
 -- Promotion utilization chart
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_promo
-  ON parking_transaction (tenant_id, check_out_time)
-  WHERE promotion_used = true;
+  ON parking_transactions (tenant_id, check_out_time)
+  WHERE promotion_used = 1;
 
 -- Lane filter + inflow/outflow-by-lane charts
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_lane_checkin
-  ON parking_transaction (tenant_id, check_in_lane_id, check_in_time);
+  ON parking_transactions (tenant_id, check_in_lane_id, check_in_time);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_tenant_lane_checkout
-  ON parking_transaction (tenant_id, check_out_lane_id, check_out_time);
+  ON parking_transactions (tenant_id, check_out_lane_id, check_out_time);
 
 -- Transaction page quick search
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_vehicle_number
-  ON parking_transaction (tenant_id, vehicle_number text_pattern_ops);
+  ON parking_transactions (tenant_id, vehicle_number text_pattern_ops);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_card_number
-  ON parking_transaction (tenant_id, card_number text_pattern_ops);
+  ON parking_transactions (tenant_id, card_number text_pattern_ops);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_invoice_no
-  ON parking_transaction (tenant_id, invoice_no);
+  ON parking_transactions (tenant_id, invoice_no);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_reservation_code
-  ON parking_transaction (tenant_id, reservation_code);
+  ON parking_transactions (tenant_id, reservation_code);
 
 -- Filter-drawer categorical filters
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_invoice_status
-  ON parking_transaction (tenant_id, invoice_status);
+  ON parking_transactions (tenant_id, invoice_status);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_payment_status
-  ON parking_transaction (tenant_id, online_payment_status);
+  ON parking_transactions (tenant_id, online_payment_status);
+
+-- Promotion type filter (bill vs voucher); NONE falls back to idx_pt_tenant_checkin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_voucher_bill
+  ON parking_transactions (tenant_id, check_in_time)
+  WHERE voucher_bill_amount > 0;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_voucher_coupon
+  ON parking_transactions (tenant_id, check_in_time)
+  WHERE voucher_coupon_amount > 0;
 
 -- Keyset pagination sort key: WHERE (check_in_time, parking_session_id) < (:cursor)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_keyset
-  ON parking_transaction (tenant_id, check_in_time DESC, parking_session_id DESC);
+  ON parking_transactions (tenant_id, check_in_time DESC, parking_session_id DESC);

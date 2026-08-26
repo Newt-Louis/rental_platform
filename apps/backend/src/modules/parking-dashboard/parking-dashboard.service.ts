@@ -377,18 +377,25 @@ export class ParkingDashboardService {
       and.push({
         OR: [
           { vehicle_number: { contains: search, mode: 'insensitive' } },
-          { card_number: { contains: search, mode: 'insensitive' } },
-          { invoice_no: { contains: search, mode: 'insensitive' } },
-          { reservation_code: { contains: search, mode: 'insensitive' } },
+          { check_in_alpr_vehicle_number: { contains: search, mode: 'insensitive' } },
+          { check_out_alpr_vehicle_number: { contains: search, mode: 'insensitive' } },
+          { voucher_bill_number: { contains: search, mode: 'insensitive' } },
+          { voucher_coupon_code: { contains: search, mode: 'insensitive' } },
         ],
       });
     }
+    if (filter.promotionType === 'NONE') {
+      and.push(
+        { OR: [{ voucher_bill_amount: null }, { voucher_bill_amount: { lte: 0 } }] },
+        { OR: [{ voucher_coupon_amount: null }, { voucher_coupon_amount: { lte: 0 } }] },
+      );
+    } else if (filter.promotionType === 'BILL') {
+      where.voucher_bill_amount = { gt: 0 };
+    } else if (filter.promotionType === 'VOUCHER') {
+      where.voucher_coupon_amount = { gt: 0 };
+    }
     if (and.length) {
       where.AND = and;
-    }
-
-    if (filter.promotionUsed != null) {
-      where.promotion_used = filter.promotionUsed ? 1 : 0;
     }
     if (filter.paymentStatus?.length) {
       where.online_payment_status = { in: filter.paymentStatus };

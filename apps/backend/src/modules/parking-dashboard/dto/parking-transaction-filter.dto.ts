@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
-  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -15,6 +14,9 @@ import {
 
 const TRANSACTION_SORT_FIELDS = ['check_in_time', 'check_out_time', 'total_fee', 'duration'] as const;
 export type ParkingTransactionSortField = (typeof TRANSACTION_SORT_FIELDS)[number];
+
+const PROMOTION_TYPES = ['NONE', 'BILL', 'VOUCHER'] as const;
+export type ParkingPromotionType = (typeof PROMOTION_TYPES)[number];
 
 export class ParkingTransactionFilterV2Dto {
   @IsString() @MinLength(1) @MaxLength(50)
@@ -32,8 +34,8 @@ export class ParkingTransactionFilterV2Dto {
   @IsOptional() @IsString() @MaxLength(50)
   search?: string;
 
-  @IsOptional() @Type(() => Boolean) @IsBoolean()
-  promotionUsed?: boolean;
+  @IsOptional() @IsIn(PROMOTION_TYPES)
+  promotionType?: ParkingPromotionType;
 
   @IsOptional() @IsArray() @IsString({ each: true })
   paymentStatus?: string[];

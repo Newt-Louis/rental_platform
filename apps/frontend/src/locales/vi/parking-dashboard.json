@@ -49,11 +49,15 @@
     "voucherCoupon": "Voucher coupon",
     "filterDrawer": {
       "title": "Bộ lọc nâng cao",
-      "search": "Tìm nhanh (biển số / thẻ / hóa đơn / mã đặt chỗ)",
+      "search": "Tìm nhanh (biển số / mã voucher)",
       "laneId": "Làn (Lane ID)",
       "paymentStatus": "Trạng thái thanh toán (phân tách bằng dấu phẩy)",
       "invoiceStatus": "Trạng thái hóa đơn (phân tách bằng dấu phẩy)",
-      "promotionUsed": "Chỉ hiển thị giao dịch có khuyến mãi",
+      "promotionType": "Loại khuyến mãi",
+      "promotionTypeAll": "Tất cả",
+      "promotionTypeNone": "Không khuyến mãi",
+      "promotionTypeBill": "Khuyến mãi hóa đơn",
+      "promotionTypeVoucher": "Khuyến mãi voucher",
       "cancel": "Hủy",
       "apply": "Áp dụng"
     },

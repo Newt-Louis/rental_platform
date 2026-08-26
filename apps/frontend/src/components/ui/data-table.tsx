@@ -52,7 +52,7 @@ export function DataTable<TData>({
   }, [colWidths, data.length]);
 
   return (
-    <div className="overflow-x-auto">
+    <>
       <table className={cn('w-full text-sm', colWidths && 'table-fixed')}>
         {colWidths && (
           <colgroup>
@@ -116,7 +116,7 @@ export function DataTable<TData>({
           ))}
         </tbody>
       </table>
-    </div>
+    </>
   );
 }
 

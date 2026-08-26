@@ -2,16 +2,18 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { X } from 'lucide-react';
+
+export type PromotionTypeFilter = '' | 'NONE' | 'BILL' | 'VOUCHER';
 
 export interface TransactionFilterState {
   startDate: string;
   endDate: string;
   search: string;
   laneId: string;
-  promotionUsed: boolean;
+  promotionType: PromotionTypeFilter;
   paymentStatus: string;
   invoiceStatus: string;
 }
@@ -58,7 +60,7 @@ export function TransactionFilterDrawer({ open, onClose, value, onChange, onAppl
 
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-500">
-              {t('transaction.filterDrawer.search', 'Tìm nhanh (biển số / thẻ / hóa đơn / mã đặt chỗ)')}
+              {t('transaction.filterDrawer.search', 'Tìm nhanh (biển số / mã voucher)')}
             </Label>
             <Input value={value.search} onChange={(e) => set({ search: e.target.value })} />
           </div>
@@ -86,13 +88,25 @@ export function TransactionFilterDrawer({ open, onClose, value, onChange, onAppl
             <Input value={value.invoiceStatus} onChange={(e) => set({ invoiceStatus: e.target.value })} />
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={value.promotionUsed}
-              onCheckedChange={(checked) => set({ promotionUsed: checked === true })}
-            />
-            {t('transaction.filterDrawer.promotionUsed', 'Chỉ hiển thị giao dịch có khuyến mãi')}
-          </label>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-500">
+              {t('transaction.filterDrawer.promotionType', 'Loại khuyến mãi')}
+            </Label>
+            <Select
+              value={value.promotionType || 'ALL'}
+              onValueChange={(v) => set({ promotionType: v === 'ALL' ? '' : (v as PromotionTypeFilter) })}
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('transaction.filterDrawer.promotionTypeAll', 'Tất cả')}</SelectItem>
+                <SelectItem value="NONE">{t('transaction.filterDrawer.promotionTypeNone', 'Không khuyến mãi')}</SelectItem>
+                <SelectItem value="BILL">{t('transaction.filterDrawer.promotionTypeBill', 'Khuyến mãi hóa đơn')}</SelectItem>
+                <SelectItem value="VOUCHER">{t('transaction.filterDrawer.promotionTypeVoucher', 'Khuyến mãi voucher')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">

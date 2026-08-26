@@ -37,6 +37,31 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function VoucherDetailContent({ rowData, t }: { rowData: ParkingTransactionRow; t: (key: string, fallback: string) => string }) {
+  return (
+    <>
+      <p className="mb-2 font-semibold text-gray-700">{t('transaction.promotionDetail', 'Chi tiết khuyến mãi')}</p>
+      {rowData.promotionDetail?.voucherBillAmount ? (
+        <div className="mb-1.5">
+          <p className="text-gray-500">{t('transaction.voucherBill', 'Voucher hóa đơn')}</p>
+          <p>{rowData.promotionDetail.voucherBillNumber} · {rowData.promotionDetail.voucherBillCompany}</p>
+          <p className="font-medium">{fmtVnd(rowData.promotionDetail.voucherBillAmount)}</p>
+        </div>
+      ) : null}
+      {rowData.promotionDetail?.voucherCouponAmount ? (
+        <div>
+          <p className="text-gray-500">{t('transaction.voucherCoupon', 'Voucher coupon')}</p>
+          <p>{rowData.promotionDetail.voucherCouponCode} · {rowData.promotionDetail.voucherCouponCompany}</p>
+          <p className="font-medium">{fmtVnd(rowData.promotionDetail.voucherCouponAmount)}</p>
+        </div>
+      ) : null}
+      {!rowData.promotionDetail?.voucherBillAmount && !rowData.promotionDetail?.voucherCouponAmount ? (
+        <p className="text-gray-500">{rowData.voucherCode}</p>
+      ) : null}
+    </>
+  );
+}
+
 function splitCsv(v: string): string[] | undefined {
   const parts = v.split(',').map((s) => s.trim()).filter(Boolean);
   return parts.length ? parts : undefined;
@@ -87,7 +112,7 @@ const emptyDrawerFilter: TransactionFilterState = {
   endDate: todayIso(),
   search: '',
   laneId: '',
-  promotionUsed: false,
+  promotionType: '',
   paymentStatus: '',
   invoiceStatus: '',
 };
@@ -121,6 +146,8 @@ export default function ParkingTransactionPage() {
   const [appliedDrawer, setAppliedDrawer] = useState<TransactionFilterState>(emptyDrawerFilter);
   const [sort, setSort] = useState<DataTableSort>({ field: 'check_in_time', dir: 'desc' });
   const [previewRow, setPreviewRow] = useState<ParkingTransactionRow | null>(null);
+  const [hoveredPromotionRowId, setHoveredPromotionRowId] = useState<string | null>(null);
+  const [hoveredVoucherRowId, setHoveredVoucherRowId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const now = new Date();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -145,7 +172,7 @@ export default function ParkingTransactionPage() {
       endDate: appliedDrawer.endDate,
       search: appliedDrawer.search || undefined,
       laneId: appliedDrawer.laneId ? Number(appliedDrawer.laneId) : undefined,
-      promotionUsed: appliedDrawer.promotionUsed || undefined,
+      promotionType: appliedDrawer.promotionType || undefined,
       paymentStatus: splitCsv(appliedDrawer.paymentStatus),
       invoiceStatus: splitCsv(appliedDrawer.invoiceStatus),
       sortBy: sort.field as any,
@@ -302,7 +329,35 @@ export default function ParkingTransactionPage() {
       ),
     },
     { accessorKey: 'durationDisplay', header: t('transaction.col.duration', 'Thời gian đỗ'), meta: { sortField: 'duration' } },
-    { accessorKey: 'voucherCode', header: t('transaction.col.voucherCode', 'Mã voucher') },
+    {
+      id: 'voucherCode',
+      header: t('transaction.col.voucherCode', 'Mã voucher'),
+      cell: ({ row }) => {
+        const rowData = row.original;
+        if (!rowData.voucherCode) return <span className="flex justify-center">—</span>;
+        return (
+          <Popover open={hoveredVoucherRowId === row.id} onOpenChange={(open) => setHoveredVoucherRowId(open ? row.id : null)}>
+            <PopoverTrigger asChild>
+              <span
+                className="flex justify-center"
+                onMouseEnter={() => setHoveredVoucherRowId(row.id)}
+                onMouseLeave={() => setHoveredVoucherRowId(null)}
+              >
+                <Tag size={16} className="text-blue-600" />
+              </span>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-64 p-3 text-xs"
+              onMouseEnter={() => setHoveredVoucherRowId(row.id)}
+              onMouseLeave={() => setHoveredVoucherRowId(null)}
+            >
+              <VoucherDetailContent rowData={rowData} t={t} />
+            </PopoverContent>
+          </Popover>
+        );
+      },
+      meta: { align: 'center' },
+    },
     { accessorKey: 'cash', header: t('transaction.col.cash', 'Tiền mặt'), cell: ({ getValue }) => fmtVnd(getValue()), meta: { align: 'right' } },
     {
       id: 'bankTransfer',
@@ -332,39 +387,27 @@ export default function ParkingTransactionPage() {
         const rowData = row.original;
         if (!rowData.promotion) return '—';
         return (
-          <Popover>
+          <Popover open={hoveredPromotionRowId === row.id} onOpenChange={(open) => setHoveredPromotionRowId(open ? row.id : null)}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1 text-orange-700 hover:underline">
+              <button
+                className="inline-flex items-center gap-1 text-orange-700"
+                onMouseEnter={() => setHoveredPromotionRowId(row.id)}
+                onMouseLeave={() => setHoveredPromotionRowId(null)}
+              >
                 {fmtVnd(rowData.promotion)} <Tag size={12} />
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 p-3 text-xs">
-              <p className="mb-2 font-semibold text-gray-700">{t('transaction.promotionDetail', 'Chi tiết khuyến mãi')}</p>
-              {rowData.promotionDetail?.voucherBillAmount ? (
-                <div className="mb-1.5">
-                  <p className="text-gray-500">{t('transaction.voucherBill', 'Voucher hóa đơn')}</p>
-                  <p>{rowData.promotionDetail.voucherBillNumber} · {rowData.promotionDetail.voucherBillCompany}</p>
-                  <p className="font-medium">{fmtVnd(rowData.promotionDetail.voucherBillAmount)}</p>
-                </div>
-              ) : null}
-              {rowData.promotionDetail?.voucherCouponAmount ? (
-                <div>
-                  <p className="text-gray-500">{t('transaction.voucherCoupon', 'Voucher coupon')}</p>
-                  <p>{rowData.promotionDetail.voucherCouponCode} · {rowData.promotionDetail.voucherCouponCompany}</p>
-                  <p className="font-medium">{fmtVnd(rowData.promotionDetail.voucherCouponAmount)}</p>
-                </div>
-              ) : null}
+            <PopoverContent
+              className="w-64 p-3 text-xs"
+              onMouseEnter={() => setHoveredPromotionRowId(row.id)}
+              onMouseLeave={() => setHoveredPromotionRowId(null)}
+            >
+              <VoucherDetailContent rowData={rowData} t={t} />
             </PopoverContent>
           </Popover>
         );
       },
       meta: { align: 'right' },
-    },
-    {
-      id: 'invoiceStatus',
-      header: t('transaction.col.invoiceStatus', 'Hóa đơn'),
-      cell: ({ row }) =>
-        row.original.invoiceStatus ? <Badge variant="outline">{row.original.invoiceStatus}</Badge> : '—',
     },
     {
       id: 'image',
@@ -415,7 +458,7 @@ export default function ParkingTransactionPage() {
             </div>
             <div className="space-y-1.5 md:col-span-2">
               <Label className="text-xs text-gray-500">
-                {t('transaction.filterDrawer.search', 'Tìm nhanh (biển số / thẻ / hóa đơn / mã đặt chỗ)')}
+                {t('transaction.filterDrawer.search', 'Tìm nhanh (biển số / mã voucher)')}
               </Label>
               <div className="relative">
                 <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

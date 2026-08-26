@@ -49,11 +49,15 @@
     "voucherCoupon": "Coupon Voucher",
     "filterDrawer": {
       "title": "Advanced filters",
-      "search": "Quick search (plate / card / invoice / reservation code)",
+      "search": "Quick search (plate / voucher code)",
       "laneId": "Lane (Lane ID)",
       "paymentStatus": "Payment status (comma-separated)",
       "invoiceStatus": "Invoice status (comma-separated)",
-      "promotionUsed": "Only show transactions with promotions applied",
+      "promotionType": "Promotion type",
+      "promotionTypeAll": "All",
+      "promotionTypeNone": "No promotion",
+      "promotionTypeBill": "Bill promotion",
+      "promotionTypeVoucher": "Voucher promotion",
       "cancel": "Cancel",
       "apply": "Apply"
     },
