@@ -13,6 +13,7 @@ describe('FilesController — authenticated, authorized document downloads', () 
     invoice: { findUnique: jest.fn() },
     ticket: { findUnique: jest.fn() },
     fitoutDocument: { findUnique: jest.fn() },
+    fitoutSubmittal: { findUnique: jest.fn() },
     parkingContractDocument: { findUnique: jest.fn() },
     serviceContractDocument: { findUnique: jest.fn() },
     workOrderEvidence: { findUnique: jest.fn() },
@@ -27,13 +28,14 @@ describe('FilesController — authenticated, authorized document downloads', () 
   // test's asserted outcome unchanged (Section 14: only unauthorized-Mall-access
   // behavior should change). The new "Mall access (CR-101 Phase 3C C2)" describe
   // blocks below override this per-test to prove the DENY path.
-  const mallAccess: any = { extractAndValidateMallAccess: jest.fn() };
+  const mallAccess: any = { extractAndValidateMallAccess: jest.fn(), assertMallAccess: jest.fn() };
   let controller: FilesController;
 
   beforeEach(() => {
     jest.clearAllMocks();
     storage.getFileStream.mockReturnValue(Readable.from(['file-bytes']));
     mallAccess.extractAndValidateMallAccess.mockResolvedValue(undefined);
+    mallAccess.assertMallAccess.mockResolvedValue(undefined);
     controller = new FilesController(prisma, storage, mallAccess);
   });
 
@@ -108,17 +110,91 @@ describe('FilesController — authenticated, authorized document downloads', () 
       ).rejects.toThrow('Bạn không có quyền truy cập tài liệu này');
     });
 
-    it('rejects TENANT on fitout submittal/issue/daily-report documents (staff-only surfaces)', async () => {
+    it('allows TENANT to download an own-project fitout submittal document only', async () => {
       prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true, fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf' });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({ project: { tenantId: 'tenant-A' } });
       await expect(
         controller.downloadUnifiedDocument('d3', { id: 'u1', role: 'TENANT', tenantId: 'tenant-A' }, fakeRes()),
-      ).rejects.toThrow('Bạn không có quyền truy cập tài liệu này');
+      ).resolves.toBeInstanceOf(StreamableFile);
+      expect(mallAccess.extractAndValidateMallAccess).not.toHaveBeenCalled();
+    });
+
+    it('rejects TENANT on a foreign-project fitout submittal document', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true, fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf' });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({ project: { tenantId: 'tenant-B' } });
+      await expect(
+        controller.downloadUnifiedDocument('d3', { id: 'u1', role: 'TENANT', tenantId: 'tenant-A' }, fakeRes()),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('allows OPERATION on fitout issue documents', async () => {
       prisma.unifiedDocument.findUnique.mockResolvedValue({ id: 'd4', entityType: 'FITOUT_ISSUE', entityId: 'i-1', isActive: true, fileName: 'defect.jpg', filePath: 'fitout-issue/i-1/defect.jpg' });
       const result = await controller.downloadUnifiedDocument('d4', { id: 'u1', role: 'OPERATION' }, fakeRes());
       expect(result).toBeInstanceOf(StreamableFile);
+    });
+
+    it('allows a configured current Fitout approver after exact workflow and project-Mall checks', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({
+        id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true,
+        fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf',
+      });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({
+        id: 's-1', workflowId: 'workflow-1',
+        project: { unit: { mallId: null, floor: { mallId: 'mall-1' } } },
+        workflow: {
+          id: 'workflow-1', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', status: 'IN_PROGRESS',
+          steps: [{ stepOrder: 1, status: 'PENDING', approverRole: 'FINANCE', approverId: 'finance-1' }],
+        },
+      });
+
+      await expect(controller.downloadUnifiedDocument(
+        'd3', { id: 'finance-1', role: 'FINANCE' }, fakeRes(),
+      )).resolves.toBeInstanceOf(StreamableFile);
+      expect(mallAccess.assertMallAccess).toHaveBeenCalledWith('finance-1', 'FINANCE', 'mall-1');
+    });
+
+    it('denies an unrelated or later-step Approval role from Fitout attachment capability', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({
+        id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true,
+        fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf',
+      });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({
+        id: 's-1', workflowId: 'workflow-1',
+        project: { unit: { mallId: 'mall-1', floor: null } },
+        workflow: {
+          id: 'workflow-1', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', status: 'IN_PROGRESS',
+          steps: [
+            { stepOrder: 1, status: 'PENDING', approverRole: 'OPERATION', approverId: null },
+            { stepOrder: 2, status: 'PENDING', approverRole: 'FINANCE', approverId: 'finance-1' },
+          ],
+        },
+      });
+
+      await expect(controller.downloadUnifiedDocument(
+        'd3', { id: 'finance-1', role: 'FINANCE' }, fakeRes(),
+      )).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mallAccess.assertMallAccess).not.toHaveBeenCalled();
+    });
+
+    it('denies a current non-Fitout-role approver without project-Mall access', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({
+        id: 'd3', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', isActive: true,
+        fileName: 'drawing.pdf', filePath: 'fitout-submittal/s-1/drawing.pdf',
+      });
+      prisma.fitoutSubmittal.findUnique.mockResolvedValue({
+        id: 's-1', workflowId: 'workflow-1',
+        project: { unit: { mallId: 'mall-1', floor: null } },
+        workflow: {
+          id: 'workflow-1', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1', status: 'IN_PROGRESS',
+          steps: [{ stepOrder: 1, status: 'PENDING', approverRole: 'FINANCE', approverId: null }],
+        },
+      });
+      mallAccess.assertMallAccess.mockRejectedValue(new ForbiddenException());
+
+      await expect(controller.downloadUnifiedDocument(
+        'd3', { id: 'finance-1', role: 'FINANCE' }, fakeRes(),
+      )).rejects.toBeInstanceOf(ForbiddenException);
+      expect(storage.getFileStream).not.toHaveBeenCalled();
     });
 
     it('404s on an inactive or unknown document', async () => {

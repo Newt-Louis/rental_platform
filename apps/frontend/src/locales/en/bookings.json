@@ -3,6 +3,43 @@
   "create": "Create booking",
   "edit": "Edit booking",
   "detail": "Booking details",
+  "workspace": {
+    "title": "Create Booking / Hold Unit",
+    "longTerm": "Long-term unit hold",
+    "description": "Select a customer and unit. The system confirms the final status on creation.",
+    "mall": "Mall",
+    "sameMall": "The customer and unit must belong to the same mall",
+    "unitFinder": "Find a unit",
+    "unitCatalog": "Unit inventory",
+    "bookingContext": "Booking information",
+    "selectedUnit": "Selected unit",
+    "selectedCustomer": "Selected customer",
+    "ready": "Ready",
+    "incomplete": "Incomplete",
+    "change": "Change",
+    "eligibility": {
+      "immediate": "Can hold",
+      "queue": "Waitlist",
+      "blocked": "Unavailable"
+    },
+    "unitStatus": {
+      "VACANT": "Vacant",
+      "BOOKING": "On hold",
+      "NEGOTIATING": "Negotiating",
+      "CONTRACTED": "Contracted",
+      "UNDER_FITOUT": "Under fitout",
+      "OCCUPIED": "Occupied",
+      "MERGED": "Merged"
+    },
+    "readiness": {
+      "needBoth": "Select a customer and unit",
+      "needCustomer": "Select a customer",
+      "needUnit": "Select a unit",
+      "unitUnavailable": "The unit is unavailable",
+      "ready": "Ready to create Booking",
+      "readyQueue": "Ready to create Booking · Waitlist"
+    }
+  },
   "status": {
     "PENDING": "Pending activation",
     "ACTIVE": "Active",
@@ -313,5 +350,15 @@
     "fitoutFee": "Fitout fee (₫)",
     "creating": "Creating...",
     "createBtn": "Create Proposal"
+  },
+  "activityTypes": {
+    "CREATED": "Created",
+    "ACTIVATED": "Activated",
+    "PRIORITY_CHANGED": "Priority changed",
+    "EXTENDED": "Extended",
+    "NOTE_ADDED": "Note added",
+    "CONVERTED": "Converted to proposal",
+    "CANCELLED": "Cancelled",
+    "EXPIRED": "Expired"
   }
 }

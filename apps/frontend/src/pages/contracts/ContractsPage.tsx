@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { contractsApi, terminationApi, spacesApi, billingApi } from '@/api';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,28 +16,47 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
 import { useMallStore } from '@/store/mall.store';
+import { useAuthStore } from '@/store/auth.store';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
 import {
-  Search, File, AlertTriangle, Building2, Calendar, DollarSign, User, FileText, History, GitBranch,
+  Search, File, AlertTriangle, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
-  CheckCircle2, Clock, ExternalLink, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles,
+  CheckCircle2, Clock, X, Loader2, AlertCircle, LogOut, SlidersHorizontal, Sparkles, ArrowLeft,
 } from 'lucide-react';
-import type { Contract } from '@/types';
-import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
+import type { Contract, Role } from '@/types';
+import { formatMoney, formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
+import type { ERPTone } from '@/lib/erp-tones';
 
 // ── Status maps ───────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<string, { color: string }> = {
-  DRAFT:             { color: 'bg-gray-100 text-gray-700' },
-  PENDING_LEGAL:     { color: 'bg-blue-100 text-blue-700' },
-  PENDING_SIGNATURE: { color: 'bg-yellow-100 text-yellow-700' },
-  ACTIVE:            { color: 'bg-green-100 text-green-700' },
-  EXPIRING:          { color: 'bg-orange-100 text-orange-700' },
-  EXPIRED:           { color: 'bg-red-100 text-red-700' },
-  TERMINATING:       { color: 'bg-orange-100 text-orange-700' },
-  TERMINATED:        { color: 'bg-gray-200 text-gray-600' },
+export const CONTRACT_STATUS_PRESENTATION: Record<string, { tone: ERPTone }> = {
+  DRAFT:             { tone: 'neutral' },
+  PENDING_LEGAL:     { tone: 'info' },
+  PENDING_SIGNATURE: { tone: 'warning' },
+  ACTIVE:            { tone: 'success' },
+  EXPIRING:          { tone: 'warning' },
+  EXPIRED:           { tone: 'danger' },
+  TERMINATING:       { tone: 'danger' },
+  TERMINATED:        { tone: 'neutral' },
 };
+const STATUS_MAP = CONTRACT_STATUS_PRESENTATION;
+
+const CONTRACT_EDIT_ROLES: Role[] = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'LEGAL'];
+const CONTRACT_STATUS_ROLES: Role[] = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'];
+const STAFF_CONTRACT_ROLES: Role[] = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL'];
+const BILLING_STAFF_ROLES: Role[] = ['ADMIN', 'MALL_DIRECTOR', 'FINANCE'];
+
+export function getContractRoleCapabilities(role?: Role) {
+  return {
+    canEdit: !!role && CONTRACT_EDIT_ROLES.includes(role),
+    canChangeStatus: !!role && CONTRACT_STATUS_ROLES.includes(role),
+    canReadStaffDetail: !!role && STAFF_CONTRACT_ROLES.includes(role),
+    canBuildSchedule: !!role && BILLING_STAFF_ROLES.includes(role),
+  };
+}
 
 const TYPE_KEYS = ['LOI', 'LEASE_AGREEMENT', 'APPENDIX', 'RENEWAL', 'TERMINATION'] as const;
 
@@ -93,6 +111,22 @@ function fmtBytes(b?: number | null) {
   if (!b) return '';
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
   return `${(b / 1024).toFixed(0)} KB`;
+}
+
+function KeyFact({ label, value, className = '' }: { label: string; value: React.ReactNode; className?: string }) {
+  return (
+    <div className={`min-w-0 border-b border-border/70 py-2.5 last:border-b-0 ${className}`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-0.5 min-w-0 text-sm font-medium text-foreground">{value ?? '—'}</div>
+    </div>
+  );
+}
+
+export function amendmentValue(value: unknown, currencyCode: CurrencyCode) {
+  if (value == null || value === '') return '—';
+  if (typeof value === 'number') return formatMoney(value, currencyCode);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return fmtDate(value);
+  return String(value);
 }
 
 // ── Sign File Dialog ──────────────────────────────────────────────────────────
@@ -243,7 +277,7 @@ function VerifyDialog({ verifyCode, open, onClose }: {
 
 // ── Documents Tab ─────────────────────────────────────────────────────────────
 
-function DocumentsTab({ contractId }: { contractId: string }) {
+function DocumentsTab({ contractId, canEdit }: { contractId: string; canEdit: boolean }) {
   const { t } = useTranslation('contracts');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -303,7 +337,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
   return (
     <div className="space-y-4">
       {/* Upload zone */}
-      <div
+      {canEdit && <div
         className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
           dragging ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
         } ${uploading ? 'pointer-events-none opacity-60' : ''}`}
@@ -327,7 +361,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
             <p className="text-xs text-gray-400 mt-1">{t('documents.uploadTypes')}</p>
           </>
         )}
-      </div>
+      </div>}
 
       {/* File list */}
       {isLoading ? (
@@ -383,7 +417,7 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   </button>
 
                   {/* Sign */}
-                  {!f.signedAt && (
+                  {canEdit && !f.signedAt && (
                     <button onClick={() => setSignFile(f)}
                       className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600"
                       title={t('documents.sign')}>
@@ -401,11 +435,11 @@ function DocumentsTab({ contractId }: { contractId: string }) {
                   )}
 
                   {/* Delete */}
-                  <button onClick={() => setDeleteFile(f)}
+                  {canEdit && <button onClick={() => setDeleteFile(f)}
                     className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500"
                     title={t('documents.delete')}>
                     <Trash2 size={14} />
-                  </button>
+                  </button>}
                 </div>
               </div>
 
@@ -456,6 +490,12 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const { toast } = useToast();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const role = useAuthStore((state) => state.user?.role);
+  const { canEdit, canChangeStatus, canReadStaffDetail, canBuildSchedule } = getContractRoleCapabilities(role);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [terminationWorkspaceOpen, setTerminationWorkspaceOpen] = useState(false);
+  const [terminationConfirm, setTerminationConfirm] = useState<'initiate' | 'complete' | 'cancel' | null>(null);
+  const [confirmAmendment, setConfirmAmendment] = useState<any>(null);
   const [templateId, setTemplateId] = useState('');
   const [amendmentDialogOpen, setAmendmentDialogOpen] = useState(false);
   const [amendmentForm, setAmendmentForm] = useState({
@@ -473,7 +513,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const { data: readinessData } = useQuery({
     queryKey: ['contract-activation-readiness', contractId],
     queryFn: () => contractsApi.getActivationReadiness(contractId!),
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
   const readiness: any = readinessData?.data ?? readinessData;
 
@@ -496,7 +536,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
     queryKey: ['contract-billing-schedule', contractId],
     queryFn: () => billingApi.getSchedule(contractId!),
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
   const scheduleEntries: any[] = scheduleData?.data ?? scheduleData ?? [];
 
@@ -512,25 +552,25 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
   const { data: events } = useQuery({
     queryKey: ['contract-events', contractId],
     queryFn: () => contractsApi.getEvents(contractId!),
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
 
   const { data: amendments } = useQuery({
     queryKey: ['contract-amendments', contractId],
     queryFn: () => contractsApi.listAmendments(contractId!),
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
 
   const { data: templates } = useQuery({
     queryKey: ['contract-templates'],
     queryFn: contractsApi.listTemplates,
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
 
   const { data: termination } = useQuery({
     queryKey: ['contract-termination', contractId],
     queryFn: () => terminationApi.get(contractId!),
-    enabled: !!contractId,
+    enabled: !!contractId && canReadStaffDetail,
   });
 
   const [termForm, setTermForm] = useState({ reason: '', effectiveDate: '', noticePeriodDays: '60', depositRefund: '', penaltyAmount: '' });
@@ -630,85 +670,110 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
   const st = detail ? STATUS_MAP[detail.status] ?? STATUS_MAP.DRAFT : null;
   const days = detail?.endDate ? daysUntil(detail.endDate) : null;
-  const monthlyRent = detail ? detail.rent + (detail.cam ?? 0) + (detail.serviceCharge ?? 0) : 0;
+  const monthlyRent = detail ? detail.rent + (detail.cam ?? 0) : 0;
+  const availableTransitions = detail ? CONTRACT_UI_TRANSITIONS[detail.status] ?? [] : [];
+  const primaryNextStatus = detail ? ({
+    DRAFT: 'ACTIVE',
+    PENDING_LEGAL: 'PENDING_SIGNATURE',
+    PENDING_SIGNATURE: 'ACTIVE',
+  } as Record<string, string>)[detail.status] : undefined;
+  const primaryBlocked = primaryNextStatus === 'ACTIVE' && readiness && !readiness.ready;
+  const canOpenTermination = canChangeStatus && !!detail && ['ACTIVE', 'EXPIRING', 'TERMINATING'].includes(detail.status);
+
+  useEffect(() => {
+    setActiveTab('overview');
+    setTerminationWorkspaceOpen(false);
+  }, [contractId]);
 
   return (
     <Sheet open={!!contractId} onClose={onClose}
-      title={detail?.contractNumber ?? t('sheet.defaultTitle')}
-      subtitle={detail?.tenant?.brandName}>
+      className="w-full max-w-[720px] sm:w-[min(92vw,720px)]"
+      title={detail ? (
+        <span className="block min-w-0 max-w-full">
+          <span className="block truncate font-mono text-base font-semibold">{detail.contractNumber}</span>
+          <span className="mt-0.5 block truncate text-base font-semibold text-foreground">{detail.tenant?.brandName}</span>
+          <span className="mt-1 block truncate text-xs font-normal text-muted-foreground">
+            {detail.unit?.code}{detail.unit?.floor?.name ? ` · ${detail.unit.floor.name}` : ''} · {t('status.' + detail.status)} · {t(`type.${detail.type}`, { defaultValue: t('common:unknownValue') })}
+          </span>
+          <span className="mt-2 block text-lg font-semibold tabular-nums text-foreground">
+            {formatMoneyWithCode(detail.rent, detail.currencyCode ?? 'VND')}{t('sheet.fields.perMonthSuffix')}
+          </span>
+          <span className="mt-0.5 block text-xs font-normal tabular-nums text-muted-foreground">
+            {fmtDate(detail.startDate)} → {fmtDate(detail.endDate)}{days !== null && days <= 90 ? ` · ${t('sheet.daysLeft', { count: days })}` : ''}
+          </span>
+        </span>
+      ) : t('sheet.defaultTitle')}>
       {isLoading && (
         <div className="px-6 pt-6 space-y-3">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
         </div>
       )}
       {detail && (
-        <div className="px-6 pb-8 pt-4">
-          {['ACTIVE', 'EXPIRING'].includes(detail.status) && (
-            <div className="mb-4 grid gap-2 sm:grid-cols-2">
-              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.fitoutProject ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-                {detail.fitoutProject ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
-                <span className="flex-1">
-                  {detail.fitoutProject ? t('handoff.fitoutStarted') : t('handoff.fitoutNotStarted')}
-                </span>
-                {detail.fitoutProject && (
-                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate(`/fitout?projectId=${detail.fitoutProject.id}`)}>
-                    {t('handoff.viewFitout')}
+        <div className="min-w-0 max-w-full pb-8">
+          <section className="min-w-0 border-b border-border px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                {canChangeStatus && primaryNextStatus && (
+                  <Button size="sm" disabled={updateStatusMutation.isPending || primaryBlocked}
+                    onClick={() => updateStatusMutation.mutate(primaryNextStatus)}>
+                    {t(`workflow.moveTo.${primaryNextStatus}`)}
                   </Button>
                 )}
+                {canOpenTermination && (
+                  <Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50"
+                    onClick={() => { setTerminationWorkspaceOpen(true); setActiveTab('termination'); }}>
+                    <LogOut size={14} className="mr-1.5" /> {t('termination.workspaceAction')}
+                  </Button>
+                )}
+            </div>
+            {primaryBlocked && <div className="mt-2 text-xs text-amber-700">{t('workflow.notReadyForActive')}</div>}
+            <div className="mt-3 grid min-w-0 divide-y divide-border border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              <div className="flex min-w-0 items-center gap-2 py-2.5 sm:pr-4">
+                {detail.fitoutProject ? <CheckCircle2 size={14} className="shrink-0 text-emerald-600" /> : <Clock size={14} className="shrink-0 text-muted-foreground" />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold">{t('handoff.fitout')}</div>
+                  <div className="truncate text-xs text-muted-foreground">{detail.fitoutProject ? t('handoff.fitoutStarted') : t('handoff.fitoutNotStarted')}</div>
+                </div>
+                {detail.fitoutProject && <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => navigate(`/fitout?projectId=${detail.fitoutProject.id}`)}>
+                  {t('handoff.viewFitout')}
+                </Button>}
               </div>
-              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${detail.billingSchedule?.length > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-                {detail.billingSchedule?.length > 0 ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
-                <span className="flex-1">
-                  {detail.billingSchedule?.length > 0 ? t('handoff.billingScheduled') : t('handoff.billingNotScheduled')}
-                </span>
-                {detail.billingSchedule?.length > 0 && (
-                  <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => navigate('/billing')}>
-                    {t('handoff.viewBilling')}
-                  </Button>
-                )}
+              <div className="flex min-w-0 items-center gap-2 py-2.5 sm:pl-4">
+                {detail.billingSchedule?.length > 0 ? <CheckCircle2 size={14} className="shrink-0 text-emerald-600" /> : <Clock size={14} className="shrink-0 text-muted-foreground" />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold">{t('handoff.billing')}</div>
+                  <div className="truncate text-xs text-muted-foreground">{detail.billingSchedule?.length > 0 ? t('handoff.billingScheduled') : t('handoff.billingNotScheduled')}</div>
+                </div>
+                {canReadStaffDetail && <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={() => setActiveTab('financial')}>
+                  {t('handoff.viewBilling')}
+                </Button>}
               </div>
             </div>
-          )}
-          <Tabs defaultValue="detail">
-            <TabsList className="mb-4">
-              <TabsTrigger value="detail">{t('sheet.tabs.detail')}</TabsTrigger>
-              <TabsTrigger value="documents" className="gap-1.5">
+          </section>
+          <div className="min-w-0 max-w-full px-4 pt-3 sm:px-6">
+          <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); if (value !== 'termination') setTerminationWorkspaceOpen(false); }}>
+            {!terminationWorkspaceOpen && <div className="mb-4 min-w-0">
+            <TabsList className="flex h-auto w-full min-w-0 flex-wrap justify-start gap-1">
+              <TabsTrigger value="overview">{t('sheet.tabs.overview')}</TabsTrigger>
+              <TabsTrigger value="financial" className="gap-1.5">
+                <DollarSign size={13} /> {t('sheet.tabs.financial')}
+              </TabsTrigger>
+              {canReadStaffDetail && <TabsTrigger value="documents" className="gap-1.5">
                 <FileText size={13} /> {t('sheet.tabs.documents')}
                 {detail.files?.length > 0 && (
                   <span className="bg-blue-100 text-blue-700 text-xs px-1.5 rounded-full">{detail.files.length}</span>
                 )}
-              </TabsTrigger>
-              <TabsTrigger value="events">{t('sheet.tabs.events')}</TabsTrigger>
-              <TabsTrigger value="amendments">{t('sheet.tabs.amendments')}</TabsTrigger>
-              <TabsTrigger value="template">{t('sheet.tabs.template')}</TabsTrigger>
-              <TabsTrigger value="billing" className="gap-1.5">
-                <DollarSign size={13} /> {t('sheet.tabs.billing')}
-              </TabsTrigger>
-              <TabsTrigger value="termination" className="gap-1.5">
-                <LogOut size={13} /> {t('sheet.tabs.termination')}
-                {term && term.status !== 'CANCELLED' && (
-                  <span className="bg-orange-100 text-orange-700 text-xs px-1.5 rounded-full">•</span>
-                )}
-              </TabsTrigger>
+              </TabsTrigger>}
+              {canReadStaffDetail && <TabsTrigger value="amendments">{t('sheet.tabs.amendments')}</TabsTrigger>}
+              {canReadStaffDetail && <TabsTrigger value="activity">{t('sheet.tabs.activity')}</TabsTrigger>}
             </TabsList>
+            </div>}
 
             {/* ── Tab: Chi tiết ── */}
-            <TabsContent value="detail" className="space-y-4">
-              {/* Status */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {st && <Badge className={`${st.color} border-0 px-3 py-1 text-sm font-medium`}>{t('status.' + detail.status)}</Badge>}
-                {detail.type && <Badge variant="outline">{detail.type}</Badge>}
-                {days !== null && days <= 90 && (
-                  <Badge className={`${days <= 30 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'} border-0`}>
-                    {t('sheet.daysLeft', { count: days })}
-                  </Badge>
-                )}
-              </div>
-
+            <TabsContent value="overview" className="space-y-4">
               {/* Quy trình xử lý — chuyển trạng thái thủ công, hiện điều kiện còn thiếu để kích hoạt */}
-              {CONTRACT_UI_TRANSITIONS[detail.status]?.length > 0 && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2.5">
-                  <div className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+              {canChangeStatus && (availableTransitions.length > 1 || primaryBlocked) && (
+                <div className="space-y-2 border-y border-border py-2.5">
+                  <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                     <CheckCircle2 size={13} /> {t('workflow.label')}
                   </div>
                   {readiness && !readiness.ready && CONTRACT_UI_TRANSITIONS[detail.status].includes('ACTIVE') && (
@@ -720,13 +785,13 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2">
-                    {CONTRACT_UI_TRANSITIONS[detail.status].map((nextStatus) => {
+                    {availableTransitions.filter((nextStatus) => nextStatus !== primaryNextStatus).map((nextStatus) => {
                       const blockedByReadiness = nextStatus === 'ACTIVE' && readiness && !readiness.ready;
                       return (
                         <Button
                           key={nextStatus}
                           size="sm"
-                          variant={nextStatus === 'ACTIVE' ? 'default' : 'outline'}
+                          variant="outline"
                           disabled={updateStatusMutation.isPending || blockedByReadiness}
                           onClick={() => updateStatusMutation.mutate(nextStatus)}
                         >
@@ -738,34 +803,56 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 </div>
               )}
 
+              <section aria-labelledby="contract-key-facts">
+                <div id="contract-key-facts" className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('sheet.sections.keyFacts')}
+                </div>
+                <div className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
+                  <div className="sm:pr-4">
+                    <KeyFact label={t('sheet.fields.tenant')} value={detail.tenant?.brandName} />
+                    <KeyFact label={t('sheet.fields.company')} value={detail.tenant?.companyName} />
+                    <KeyFact label={t('sheet.fields.unit')} value={
+                      <span>{detail.unit?.code}{detail.unit?.floor?.name ? ` · ${detail.unit.floor.name}` : ''}{detail.unit?.zone?.name ? ` · ${detail.unit.zone.name}` : ''}</span>
+                    } />
+                  </div>
+                  <div className="sm:pl-4">
+                    <KeyFact label={t('sheet.fields.startDate')} value={fmtDate(detail.startDate)} />
+                    <KeyFact label={t('sheet.fields.endDate')} value={
+                      <span className={days !== null && days <= 30 ? 'text-red-700' : ''}>{fmtDate(detail.endDate)}{days !== null && days <= 90 ? ` · ${t('sheet.daysLeft', { count: days })}` : ''}</span>
+                    } />
+                    <KeyFact label={t('sheet.fields.duration')} value={detail.term ? t('sheet.fields.durationMonths', { count: detail.term }) : '—'} />
+                  </div>
+                </div>
+              </section>
+
               {/* Source */}
               {detail.proposal && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+                <section className="space-y-2 border-y border-border py-3">
                   <div className="text-xs font-semibold text-gray-700 flex items-center gap-1">
                     <Link2 size={11} /> {t('sheet.source.label')}
                   </div>
                   {detail.proposal.booking && (
-                    <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                    <button className="group flex min-w-0 w-full items-center justify-between gap-3 text-sm hover:text-gray-700"
                       onClick={() => { onClose(); navigate(`/bookings?id=${detail.proposal.booking.id}`); }}>
-                      <div>
+                      <div className="min-w-0 text-left">
                         <span className="text-xs text-gray-500 font-medium">{t('sheet.source.booking')}</span>
                         <span className="font-medium text-gray-900">{detail.proposal.booking.bookingNumber}</span>
                       </div>
                       <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
                     </button>
                   )}
-                  <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                  <button className="group flex min-w-0 w-full items-center justify-between gap-3 text-sm hover:text-gray-700"
                     onClick={() => { onClose(); navigate(`/proposals?id=${detail.proposal.id}`); }}>
-                    <div>
+                    <div className="min-w-0 text-left">
                       <span className="text-xs text-gray-500 font-medium">{t('sheet.source.proposal')}</span>
                       <span className="font-medium text-gray-900">{detail.proposal.proposalNumber}</span>
                     </div>
                     <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                   {detail.proposal.lead && (
-                    <button className="flex items-center justify-between w-full text-sm hover:text-gray-700 group"
+                    <button className="group flex min-w-0 w-full items-center justify-between gap-3 text-sm hover:text-gray-700"
                       onClick={() => { onClose(); navigate(`/crm?leadId=${detail.proposal.lead.id}`); }}>
-                      <div>
+                      <div className="min-w-0 text-left">
                         <span className="text-xs text-gray-500 font-medium">{t('sheet.source.lead')}</span>
                         <span className="font-medium text-gray-900">{detail.proposal.lead.brandName}</span>
                         <span className="text-xs text-gray-500 ml-1">({detail.proposal.lead.contactName})</span>
@@ -773,99 +860,91 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                       <ArrowRight size={12} className="text-blue-400 group-hover:translate-x-0.5 transition-transform" />
                     </button>
                   )}
-                </div>
+                </section>
               )}
 
-              <SheetSection label={t('sheet.sections.parties')} className="bg-gray-50">
-                <SheetRow label={t('sheet.fields.tenant')}
-                  value={
-                    <button className="text-gray-700 hover:underline flex items-center gap-1"
-                      onClick={() => { onClose(); navigate('/tenants'); }}>
-                      {detail.tenant?.brandName} <ArrowRight size={11} />
-                    </button>
-                  } icon={User} />
-                <SheetRow label={t('sheet.fields.company')} value={detail.tenant?.companyName} icon={Building2} />
-                <SheetRow label={t('sheet.fields.unit')} value={detail.unit?.code} icon={Building2} />
-              </SheetSection>
-
-              <SheetSection
-                label={t('sheet.sections.financial')}
-                className="bg-green-50"
-                action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{detail.currencyCode ?? 'VND'}</span>}
-              >
-                <SheetRow label={t('sheet.fields.rent')}
-                  value={`${fmtCurrency(detail.rent, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
-                {detail.cam > 0 && (
-                  <SheetRow label={t('sheet.fields.cam')}
-                    value={`${fmtCurrency(detail.cam, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
-                )}
-                {detail.serviceCharge > 0 && (
-                  <SheetRow label={t('sheet.fields.serviceCharge')}
-                    value={`${fmtCurrency(detail.serviceCharge, detail.currencyCode)}${t('sheet.fields.perMonthSuffix')}`} icon={DollarSign} />
-                )}
-                <SheetRow label={t('sheet.fields.totalMonthly')}
-                  value={<span className="text-green-700 font-bold">{fmtCurrency(monthlyRent, detail.currencyCode)}</span>}
-                  icon={DollarSign} />
-                {detail.deposit > 0 && (
-                  <SheetRow label={t('sheet.fields.deposit')}
-                    value={fmtCurrency(detail.deposit, detail.currencyCode)} icon={DollarSign} />
-                )}
-              </SheetSection>
-
-              <SheetSection label={t('sheet.sections.period')} className="bg-gray-50">
-                <SheetRow label={t('sheet.fields.startDate')} value={fmtDate(detail.startDate)} icon={Calendar} />
-                <SheetRow label={t('sheet.fields.endDate')} value={fmtDate(detail.endDate)} icon={Calendar} />
-                <SheetRow label={t('sheet.fields.signedDate')} value={fmtDate(detail.signedDate)} icon={Calendar} />
-                <SheetRow label={t('sheet.fields.duration')}
-                  value={detail.durationMonths ? t('sheet.fields.durationMonths', { count: detail.durationMonths }) : null} icon={Calendar} />
-              </SheetSection>
             </TabsContent>
 
             {/* ── Tab: Tài liệu ── */}
-            <TabsContent value="documents">
-              <DocumentsTab contractId={contractId!} />
+            <TabsContent value="documents" className="space-y-5">
+              <DocumentsTab contractId={contractId!} canEdit={canEdit} />
+              {canEdit && <section className="border-t border-border pt-4">
+                <div className="mb-1 text-sm font-semibold">{t('template.utilityTitle')}</div>
+                <p className="mb-3 text-xs text-muted-foreground">{t('template.utilityDescription')}</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <select className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                    value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                    <option value="">{t('template.select')}</option>
+                    {(templates?.data ?? templates ?? []).map((tmpl: any) => (
+                      <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
+                    ))}
+                  </select>
+                  <Button size="sm" variant="outline" disabled={!templateId || renderMutation.isPending} onClick={() => renderMutation.mutate()}>
+                    {t('template.preview')}
+                  </Button>
+                </div>
+              </section>}
             </TabsContent>
 
             {/* ── Tab: Timeline ── */}
-            <TabsContent value="events">
-              <div className="space-y-2">
+            <TabsContent value="activity">
+              <div className="mb-3">
+                <div className="text-sm font-semibold">{t('activity.title')}</div>
+                <div className="text-xs text-muted-foreground">{t('activity.description')}</div>
+              </div>
+              <div className="divide-y divide-border border-y border-border">
                 {(events?.data ?? events ?? []).map((e: any) => (
-                  <div key={e.id} className="p-3 bg-gray-50 rounded-lg text-sm">
-                    <div className="flex items-center gap-2 font-medium"><History size={14} />{e.title}</div>
-                    <div className="text-xs text-gray-500 mt-1">{new Date(e.createdAt).toLocaleString('vi-VN')}</div>
+                  <div key={e.id} className="py-3 text-sm">
+                    <div className="flex items-center gap-2 font-medium"><History size={14} className="text-muted-foreground" />{e.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{new Date(e.createdAt).toLocaleString('vi-VN')}{e.user?.fullName ? ` · ${e.user.fullName}` : ''}</div>
                     {e.beforeValue && e.afterValue && (
-                      <div className="text-xs mt-2 font-mono bg-white p-2 rounded border">
+                      <div className="mt-2 break-all border-l-2 border-border pl-2 font-mono text-xs text-muted-foreground">
                         {e.beforeValue} → {e.afterValue}
                       </div>
                     )}
                   </div>
                 ))}
+                {(events?.data ?? events ?? []).length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">{t('activity.empty')}</p>}
               </div>
             </TabsContent>
 
             {/* ── Tab: Phụ lục ── */}
             <TabsContent value="amendments">
-              <Button size="sm" className="mb-3" onClick={() => setAmendmentDialogOpen(true)}>
+              {canEdit && <Button size="sm" className="mb-3" onClick={() => setAmendmentDialogOpen(true)}>
                 <GitBranch size={14} className="mr-1" /> {t('amendments.createBtn')}
-              </Button>
+              </Button>}
               {(amendments?.data ?? amendments ?? []).length === 0 && (
                 <p className="text-sm text-gray-400">{t('amendments.noAmendments')}</p>
               )}
               {(amendments?.data ?? amendments ?? []).map((a: any) => (
-                <div key={a.id} className="p-3 border rounded-lg mb-2 text-sm flex items-center justify-between gap-3">
+                <div key={a.id} className="mb-2 flex items-start justify-between gap-3 border-y border-border py-3 text-sm">
                   <div>
                     <div className="font-medium">{a.amendmentNumber} — {t(`amendments.type.${a.type}`, a.type)}</div>
-                    <Badge variant="outline" className="mt-1">{a.status}</Badge>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <ERPStatusBadge tone={a.status === 'APPLIED' ? 'success' : a.status === 'SUBMITTED' ? 'warning' : 'neutral'}>
+                        {t(`amendments.status.${a.status}`, { defaultValue: t('common:unknownValue') })}
+                      </ERPStatusBadge>
+                      <span className="text-xs text-muted-foreground">{t('amendments.effectiveDate')}: {fmtDate(a.effectiveDate)}</span>
+                    </div>
+                    {a.reason && <div className="mt-1 text-xs text-muted-foreground">{a.reason}</div>}
+                    {a.changes && <div className="mt-2 border-l-2 border-blue-200 pl-2">
+                      {Object.entries(a.changes as Record<string, unknown>).map(([key, value]) => (
+                        <div key={key} className="flex items-baseline justify-between gap-3 py-0.5 text-xs">
+                          <span className="text-muted-foreground">{t(`amendments.fields.${key}`, key)}</span>
+                          <span className="text-right font-medium tabular-nums">{amendmentValue(value, detail.currencyCode ?? 'VND')}</span>
+                        </div>
+                      ))}
+                    </div>}
                   </div>
-                  {a.status === 'DRAFT' && (
+                  {canEdit && a.status === 'DRAFT' && (
                     <Button size="sm" variant="outline" disabled={submitAmendmentMutation.isPending}
                       onClick={() => submitAmendmentMutation.mutate(a.id)}>
                       {t('amendments.submitBtn')}
                     </Button>
                   )}
-                  {a.status === 'SUBMITTED' && (
+                  {canChangeStatus && a.status === 'SUBMITTED' && (
                     <Button size="sm" disabled={approveAmendmentMutation.isPending}
-                      onClick={() => approveAmendmentMutation.mutate(a.id)}>
+                      onClick={() => setConfirmAmendment(a)}>
                       {t('amendments.approveBtn')}
                     </Button>
                   )}
@@ -874,27 +953,31 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             </TabsContent>
 
             {/* ── Tab: Template ── */}
-            <TabsContent value="template">
-              <select className="border rounded px-2 py-1 text-sm w-full mb-2"
-                value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-                <option value="">{t('template.select')}</option>
-                {(templates?.data ?? templates ?? []).map((tmpl: any) => (
-                  <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
-                ))}
-              </select>
-              <Button size="sm" disabled={!templateId} onClick={() => renderMutation.mutate()}>
-                {t('template.render')}
-              </Button>
-            </TabsContent>
-
             {/* ── Tab: Thu tiền theo kỳ ── */}
-            <TabsContent value="billing" className="space-y-4">
+            <TabsContent value="financial" className="space-y-4">
+              <section aria-labelledby="contract-financial-terms">
+                <div id="contract-financial-terms" className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('financialTerms.title')}
+                </div>
+                <div className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
+                  <div className="sm:pr-4">
+                    <KeyFact label={t('financialTerms.rent')} value={<span><ERPAmount amount={detail.rent ?? 0} currencyCode={detail.currencyCode ?? 'VND'} /> <span className="font-mono text-xs text-muted-foreground">{detail.currencyCode ?? 'VND'}</span></span>} />
+                    <KeyFact label={t('financialTerms.cam')} value={<span><ERPAmount amount={detail.cam ?? 0} currencyCode={detail.currencyCode ?? 'VND'} /> <span className="font-mono text-xs text-muted-foreground">{detail.currencyCode ?? 'VND'}</span></span>} />
+                    <KeyFact label={t('financialTerms.deposit')} value={<span><ERPAmount amount={detail.deposit ?? 0} currencyCode={detail.currencyCode ?? 'VND'} /> <span className="font-mono text-xs text-muted-foreground">{detail.currencyCode ?? 'VND'}</span></span>} />
+                  </div>
+                  <div className="sm:pl-4">
+                    <KeyFact label={t('financialTerms.fitoutDeposit')} value={<span><ERPAmount amount={detail.depositFitout ?? 0} currencyCode={detail.currencyCode ?? 'VND'} /> <span className="font-mono text-xs text-muted-foreground">{detail.currencyCode ?? 'VND'}</span></span>} />
+                    <KeyFact label={t('financialTerms.fitoutFee')} value={<span><ERPAmount amount={detail.fitoutFee ?? 0} currencyCode={detail.currencyCode ?? 'VND'} /> <span className="font-mono text-xs text-muted-foreground">{detail.currencyCode ?? 'VND'}</span></span>} />
+                    <KeyFact label={t('financialTerms.currency')} value={<span className="font-mono">{detail.currencyCode ?? 'VND'}</span>} />
+                  </div>
+                </div>
+              </section>
               <div className="flex items-start justify-between gap-3">
                 <p className="text-xs text-gray-500 max-w-md">{t('billingTab.notActiveHint')}</p>
-                <Button size="sm" variant="outline" disabled={buildScheduleMutation.isPending}
+                {canBuildSchedule && <Button size="sm" variant="outline" disabled={buildScheduleMutation.isPending}
                   onClick={() => buildScheduleMutation.mutate()}>
                   <Calendar size={14} className="mr-1" /> {t('billingTab.rebuild')}
-                </Button>
+                </Button>}
               </div>
 
               {scheduleLoading ? (
@@ -907,28 +990,28 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 const collectionRate = totalScheduled > 0 ? (totalCollected / totalScheduled) * 100 : 0;
                 return (
                   <>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <div className="grid grid-cols-2 border-y border-border sm:grid-cols-4 sm:divide-x sm:divide-border">
+                      <div className="px-3 py-2.5 first:pl-0">
                         <div className="text-[11px] text-gray-500">{t('billingTab.summary.totalScheduled')}</div>
                         <div className="text-base font-semibold text-gray-900">{fmtCurrency(totalScheduled, detail.currencyCode)}</div>
                         <div className="text-[11px] text-gray-400 mt-0.5">{t('billingTab.summary.periodCount', { count: scheduleEntries.length })}</div>
                       </div>
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                        <div className="text-[11px] text-emerald-700">{t('billingTab.summary.collected')}</div>
+                      <div className="px-3 py-2.5">
+                        <div className="text-[11px] text-muted-foreground">{t('billingTab.summary.collected')}</div>
                         <div className="text-base font-semibold text-emerald-700">{fmtCurrency(totalCollected, detail.currencyCode)}</div>
                       </div>
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                        <div className="text-[11px] text-amber-700">{t('billingTab.summary.remaining')}</div>
+                      <div className="px-3 py-2.5">
+                        <div className="text-[11px] text-muted-foreground">{t('billingTab.summary.remaining')}</div>
                         <div className="text-base font-semibold text-amber-700">{fmtCurrency(Math.max(0, totalScheduled - totalCollected), detail.currencyCode)}</div>
                       </div>
-                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                        <div className="text-[11px] text-blue-700">{t('billingTab.summary.collectionRate')}</div>
-                        <div className="text-base font-semibold text-blue-700">{collectionRate.toFixed(1)}%</div>
+                      <div className="px-3 py-2.5 last:pr-0">
+                        <div className="text-[11px] text-muted-foreground">{t('billingTab.summary.collectionRate')}</div>
+                        <div className="text-base font-semibold text-foreground">{collectionRate.toFixed(1)}%</div>
                       </div>
                     </div>
 
-                    <div className="border rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
+                    <div className="overflow-x-auto rounded-lg border">
+                      <table className="min-w-[680px] w-full text-sm">
                         <thead className="bg-gray-50 border-b">
                           <tr>
                             <th className="text-left px-3 py-2">{t('billingTab.table.period')}</th>
@@ -983,6 +1066,18 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
 
             {/* ── Tab: Chấm dứt hợp đồng ── */}
             <TabsContent value="termination" className="space-y-4">
+              <div className="border-b border-red-200 bg-red-50/70 pb-3">
+                <Button variant="ghost" size="sm" className="mb-2 h-7 px-1 text-muted-foreground" onClick={() => { setTerminationWorkspaceOpen(false); setActiveTab('overview'); }}>
+                  <ArrowLeft size={14} className="mr-1" /> {t('termination.backToContract')}
+                </Button>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-red-800">{t('termination.workspaceTitle')}</div>
+                    <div className="text-xs text-red-700">{detail.contractNumber} · {detail.currencyCode ?? 'VND'}</div>
+                  </div>
+                  <ERPStatusBadge tone={st?.tone ?? 'neutral'}>{t('status.' + detail.status)}</ERPStatusBadge>
+                </div>
+              </div>
               {!term || term.status === 'CANCELLED' ? (
                 <div className="space-y-3">
                   <p className="text-sm text-gray-500">{t('termination.noRequest')}</p>
@@ -1011,7 +1106,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                   <Button
                     className="w-full gap-2 bg-red-600 hover:bg-red-700 text-white"
                     disabled={!termForm.reason || !termForm.effectiveDate || initiateTerminationMutation.isPending}
-                    onClick={() => initiateTerminationMutation.mutate()}
+                    onClick={() => setTerminationConfirm('initiate')}
                   >
                     <LogOut size={14} /> {t('termination.initiateBtn')}
                   </Button>
@@ -1020,7 +1115,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge className={`border-0 ${term.status === 'COMPLETED' ? 'bg-gray-200 text-gray-600' : 'bg-orange-100 text-orange-700'}`}>
-                      {t('termination.statuses.' + term.status, { defaultValue: term.status })}
+                      {t('termination.statuses.' + term.status, { defaultValue: t('common:unknownValue') })}
                     </Badge>
                     <span className="text-xs text-gray-500">{t('termination.effectiveFrom', { date: fmtDate(term.effectiveDate) })}</span>
                   </div>
@@ -1055,7 +1150,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                         <Button
                           className="flex-1 gap-2 bg-red-600 hover:bg-red-700 text-white"
                           disabled={!term.accessCardReturn || !term.signageRemoved || !term.keysReturned || completeTerminationMutation.isPending}
-                          onClick={() => completeTerminationMutation.mutate()}
+                          onClick={() => setTerminationConfirm('complete')}
                         >
                           <CheckCircle2 size={14} /> {t('termination.completeBtn')}
                         </Button>
@@ -1063,7 +1158,7 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
                           variant="outline"
                           className="text-gray-500"
                           disabled={cancelTerminationMutation.isPending}
-                          onClick={() => cancelTerminationMutation.mutate()}
+                          onClick={() => setTerminationConfirm('cancel')}
                         >
                           {t('termination.cancelBtn')}
                         </Button>
@@ -1080,7 +1175,37 @@ function ContractDetailSheet({ contractId, onClose }: { contractId: string | nul
             </TabsContent>
           </Tabs>
         </div>
+        </div>
       )}
+
+      <ConfirmActionDialog
+        open={terminationConfirm !== null}
+        onOpenChange={(open) => !open && setTerminationConfirm(null)}
+        title={t(`termination.confirm.${terminationConfirm}.title`)}
+        description={t(`termination.confirm.${terminationConfirm}.description`)}
+        confirmLabel={t(`termination.confirm.${terminationConfirm}.action`)}
+        destructive
+        loading={initiateTerminationMutation.isPending || completeTerminationMutation.isPending || cancelTerminationMutation.isPending}
+        onConfirm={() => {
+          if (terminationConfirm === 'initiate') initiateTerminationMutation.mutate();
+          if (terminationConfirm === 'complete') completeTerminationMutation.mutate();
+          if (terminationConfirm === 'cancel') cancelTerminationMutation.mutate();
+          setTerminationConfirm(null);
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(confirmAmendment)}
+        onOpenChange={(open) => !open && setConfirmAmendment(null)}
+        title={t('amendments.confirm.title')}
+        description={t('amendments.confirm.description', { number: confirmAmendment?.amendmentNumber })}
+        confirmLabel={t('amendments.approveBtn')}
+        loading={approveAmendmentMutation.isPending}
+        onConfirm={() => {
+          if (confirmAmendment) approveAmendmentMutation.mutate(confirmAmendment.id);
+          setConfirmAmendment(null);
+        }}
+      />
 
       <Dialog open={amendmentDialogOpen} onOpenChange={setAmendmentDialogOpen}>
         <DialogContent className="max-w-md">
@@ -1224,20 +1349,21 @@ export default function ContractsPage() {
   const contractSummary = data?.summary ?? { total: 0, byStatus: {} };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('subtitle')}</p>
-        </div>
-        <Button variant={showExpiring ? 'default' : 'outline'} className="gap-2"
-          onClick={() => setShowExpiring(!showExpiring)}>
-          <AlertTriangle size={16} />
-          {showExpiring ? t('actions.showAll') : t('actions.showExpiring')}
-        </Button>
-      </div>
+    <div className="min-w-0">
+      <PageHeader
+        className="mb-5"
+        title={t('title')}
+        description={t('subtitle')}
+        actions={(
+          <Button variant={showExpiring ? 'default' : 'outline'} className="gap-2"
+            onClick={() => setShowExpiring(!showExpiring)}>
+            <AlertTriangle size={16} />
+            {showExpiring ? t('actions.showAll') : t('actions.showExpiring')}
+          </Button>
+        )}
+      />
 
-      <div className="mb-4 flex w-fit gap-1 rounded-xl border bg-slate-50 p-1">
+      <div className="mb-3 flex w-fit gap-1 rounded-lg border bg-muted/40 p-1">
         {[['', 'Tất cả loại thuê'], ['LONG', 'Cho thuê dài hạn'], ['SHORT', 'Cho thuê ngắn hạn']].map(([key, label]) => (
           <button key={key || 'ALL'} onClick={() => { setLeaseTermType(key); setPage(1); }}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition ${leaseTermType === key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
@@ -1246,29 +1372,29 @@ export default function ContractsPage() {
         ))}
       </div>
 
-      {!showExpiring && <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+      {!showExpiring && <div className="mb-3 flex flex-wrap divide-x divide-border border-y border-border">
         {[
-          ['', 'Tất cả hợp đồng', contractSummary.total || 0, 'border-slate-200 bg-white text-slate-800'],
-          ['PRE_ACTIVE', 'Đang chuẩn bị', (contractSummary.byStatus?.DRAFT || 0) + (contractSummary.byStatus?.PENDING_LEGAL || 0) + (contractSummary.byStatus?.PENDING_SIGNATURE || 0), 'border-amber-200 bg-amber-50 text-amber-800'],
-          ['ACTIVE', 'Đang hiệu lực', contractSummary.byStatus?.ACTIVE || 0, 'border-emerald-200 bg-emerald-50 text-emerald-800'],
-          ['EXPIRING', 'Sắp hết hạn', contractSummary.byStatus?.EXPIRING || 0, 'border-orange-200 bg-orange-50 text-orange-800'],
-          ['ENDED', 'Đã kết thúc', (contractSummary.byStatus?.EXPIRED || 0) + (contractSummary.byStatus?.TERMINATING || 0) + (contractSummary.byStatus?.TERMINATED || 0), 'border-red-200 bg-red-50 text-red-800'],
+          ['', 'Tất cả hợp đồng', contractSummary.total || 0, 'text-slate-700'],
+          ['PRE_ACTIVE', 'Đang chuẩn bị', (contractSummary.byStatus?.DRAFT || 0) + (contractSummary.byStatus?.PENDING_LEGAL || 0) + (contractSummary.byStatus?.PENDING_SIGNATURE || 0), 'text-amber-700'],
+          ['ACTIVE', 'Đang hiệu lực', contractSummary.byStatus?.ACTIVE || 0, 'text-emerald-700'],
+          ['EXPIRING', 'Sắp hết hạn', contractSummary.byStatus?.EXPIRING || 0, 'text-amber-700'],
+          ['ENDED', 'Đã kết thúc', (contractSummary.byStatus?.EXPIRED || 0) + (contractSummary.byStatus?.TERMINATING || 0) + (contractSummary.byStatus?.TERMINATED || 0), 'text-red-700'],
         ].map(([key, label, count, color]) => <button key={String(key)} onClick={() => { setStatus(String(key)); setPage(1); }}
-          className={`rounded-xl border p-3 text-left transition hover:shadow-sm ${color} ${status === key ? 'ring-2 ring-slate-700' : ''}`}>
-          <div className="text-xs font-medium">{label}</div><div className="mt-1 text-2xl font-bold">{count}</div>
+          className={`min-w-[140px] flex-1 bg-card px-3 py-1.5 text-left transition hover:bg-muted/50 ${color} ${status === key ? 'shadow-[inset_0_-2px_0_0_currentColor]' : ''}`}>
+          <div className="text-[10px] font-medium text-muted-foreground">{label}</div><div className="text-base font-semibold tabular-nums">{count}</div>
         </button>)}
       </div>}
 
       {!showExpiring && (
-        <Card className="mb-4 border-gray-200 shadow-sm"><CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <ERPToolbar className="mb-4">
+        <div className="flex min-w-full items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
             <SlidersHorizontal size={16} className="text-blue-600" /> Tìm kiếm và bộ lọc
             {filterCount > 0 && <Badge className="border-0 bg-blue-100 text-blue-700">{filterCount} bộ lọc</Badge>}
           </div>
           <span className="text-xs text-gray-500">{total} hợp đồng</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-full flex-wrap gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
@@ -1327,7 +1453,7 @@ export default function ContractsPage() {
             </Button>
           )}
         </div>
-        </CardContent></Card>
+        </ERPToolbar>
       )}
 
       {(showExpiring ? expiringError : isError) ? (
@@ -1341,8 +1467,8 @@ export default function ContractsPage() {
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded" />)}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border overflow-x-auto">
-          <table className="min-w-[1200px] w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <table className="min-w-[1080px] w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">{t('table.contractNo')}</th>
@@ -1368,7 +1494,7 @@ export default function ContractsPage() {
                 const isNew = isRecentlyCreated(c.createdAt);
                 return (
                   <tr key={c.id}
-                    className={`hover:bg-gray-50 cursor-pointer transition-colors ${showExpiring && days <= 30 ? 'bg-red-50' : isNew ? 'bg-sky-50/40' : ''}`}
+                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${selectedContractId === c.id ? 'bg-blue-50/70' : showExpiring && days <= 30 ? 'bg-red-50' : isNew ? 'bg-sky-50/40' : ''}`}
                     onClick={() => setSelectedContractId(c.id)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2"><span className="font-mono text-xs font-semibold">{c.contractNumber}</span>
@@ -1381,10 +1507,10 @@ export default function ContractsPage() {
                     <td className="px-4 py-3 font-medium">{c.tenant?.brandName}</td>
                     <td className="px-4 py-3"><div className="font-medium text-gray-800">{c.unit?.code}</div><div className="text-xs text-gray-400">{c.unit?.floor?.name ?? 'Chưa xác định tầng'}</div></td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{c.type}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
+                      <div className="flex flex-col items-start gap-1"><Badge variant="outline" className="text-xs">{t(`type.${c.type}`, { defaultValue: t('common:unknownValue') })}</Badge><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.unit?.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{c.unit?.leaseTermType === 'SHORT' ? 'Ngắn hạn' : 'Dài hạn'}</span></div>
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      {formatMoneyAmount(c.rent, c.currencyCode ?? 'VND')}
+                      <ERPAmount amount={c.rent} currencyCode={c.currencyCode ?? 'VND'} strong />
                     </td>
                     <td className="px-4 py-3 text-xs font-mono text-gray-500">{c.currencyCode ?? 'VND'}</td>
                     <td className="px-4 py-3 text-gray-500">{new Date(c.startDate).toLocaleDateString('vi-VN')}</td>
@@ -1395,7 +1521,7 @@ export default function ContractsPage() {
                       </td>
                     )}
                     <td className="px-4 py-3">
-                      <Badge className={`${st.color} border-0 text-xs`}>{t('status.' + c.status)}</Badge>
+                      <ERPStatusBadge tone={st.tone}>{t('status.' + c.status)}</ERPStatusBadge>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {fileCount > 0 ? (

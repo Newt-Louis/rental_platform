@@ -39,9 +39,9 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
           className,
         )}
       >
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200 shrink-0">
-          <div>
-            {title && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
+        <div className="flex min-w-0 shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-6 py-5">
+          <div className="min-w-0 flex-1">
+            {title && <h2 className="min-w-0 text-lg font-semibold text-gray-900">{title}</h2>}
             {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
           </div>
           <button
@@ -51,7 +51,7 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </>
   );

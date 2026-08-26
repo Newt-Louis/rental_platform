@@ -4,6 +4,7 @@ import { spacesApi, categoriesApi, slotsApi } from '@/api';
 import { useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { FloorPlan } from '@/components/FloorPlan';
 import { MallMapViewer } from '@/components/MallMapViewer';
 import { MallMapEditor } from '@/components/MallMapEditor';
@@ -166,14 +167,14 @@ export default function SpacesPage() {
   });
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t('common:nav.spaces')}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="min-w-0">
+      <PageHeader
+        className="mb-4"
+        eyebrow={t('eyebrow')}
+        title={t('title')}
+        description={t('description')}
+        actions={(
+          <>
           {/* View toggle */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white">
             <button
@@ -218,15 +219,16 @@ export default function SpacesPage() {
               <Plus size={15} /> <span className="hidden sm:inline">{t('unit.create')}</span>
             </Button>
           )}
-        </div>
-      </div>
+          </>
+        )}
+      />
 
       {view !== 'analytics' && (
-        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-1.5 shadow-sm">
-          <div className="grid grid-cols-2 gap-1.5" role="tablist" aria-label="Khu mặt bằng theo hình thức thuê">
+        <div className="mb-3 border-y border-border bg-card px-1 py-1">
+          <div className="grid grid-cols-2 gap-1" role="tablist" aria-label={t('rentalZone.label')}>
             {([
-              ['LONG', 'Khu cho thuê dài hạn', 'Hợp đồng thuê dài hạn'],
-              ['SHORT', 'Khu cho thuê ngắn hạn', 'Booking và tờ trình ngắn hạn'],
+              ['LONG', t('rentalZone.LONG'), t('rentalZone.LONG_DESC')],
+              ['SHORT', t('rentalZone.SHORT'), t('rentalZone.SHORT_DESC')],
             ] as const).map(([value, label, description]) => {
               const active = rentalZone === value;
               return (
@@ -236,7 +238,7 @@ export default function SpacesPage() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setLeaseTermFilter(value)}
-                  className={`rounded-lg px-3 py-2 text-left transition-colors ${active
+                  className={`rounded-md px-3 py-1.5 text-left transition-colors ${active
                     ? value === 'LONG' ? 'bg-blue-600 text-white' : 'bg-violet-600 text-white'
                     : 'text-gray-600 hover:bg-gray-50'}`}
                 >

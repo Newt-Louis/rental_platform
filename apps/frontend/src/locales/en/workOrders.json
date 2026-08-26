@@ -1,0 +1,50 @@
+{
+  "page": {
+    "eyebrow": "Operations",
+    "title": "Work order dispatch",
+    "subtitle": "Cross-team work orders · checklists · evidence · SLA · review"
+  },
+  "actions": { "export": "Export report", "create": "Create work order", "reset": "Reset filters" },
+  "summary": {
+    "total": "Total work orders", "active": "In progress", "review": "Waiting review", "overdue": "Overdue",
+    "dueSoon": "Due within 24 hours", "unassigned": "Unassigned", "critical": "Critical priority"
+  },
+  "status": {
+    "NEW": "New", "ASSIGNED": "Assigned", "IN_PROGRESS": "In progress", "ON_HOLD": "On hold",
+    "WAITING_REVIEW": "Waiting review", "COMPLETED": "Completed", "CANCELLED": "Cancelled"
+  },
+  "category": {
+    "TECHNICAL": "Technical", "CLEANING": "Cleaning", "SECURITY": "Security", "LANDSCAPE": "Landscape",
+    "FACILITY": "Facilities", "OTHER": "Other"
+  },
+  "priority": { "LOW": "Low", "MEDIUM": "Medium", "HIGH": "High", "CRITICAL": "Critical" },
+  "evidence": { "BEFORE": "Before work", "PROGRESS": "In progress", "AFTER": "After work", "DOCUMENT": "Document" },
+  "event": { "CREATED": "Created", "SCHEDULED_CREATED": "Created from schedule", "UPDATED": "Updated", "STATUS_CHANGED": "Status changed", "APPROVED": "Approved", "REJECTED": "Rework requested" },
+  "filters": {
+    "allStatuses": "All statuses", "allCategories": "All categories", "allPriorities": "All priorities",
+    "allDepartments": "All assigned departments", "search": "Search number, title or location...", "activeDefault": "Default: active work orders"
+  },
+  "table": {
+    "number": "Work order", "work": "Task", "category": "Category", "requesterDepartment": "Requesting team",
+    "assignedDepartment": "Assigned team", "priority": "Priority", "assignee": "Assignee", "due": "Due date",
+    "status": "Status", "evidence": "Checklist/Photos", "empty": "No operational work orders",
+    "showing": "Showing {{shown}} / {{total}} work orders", "unassigned": "Unassigned"
+  },
+  "templates": {
+    "title": "Work order templates and recurring schedules", "collapse": "Collapse", "expand": "Manage schedules",
+    "create": "Create template", "loading": "Loading...", "empty": "No recurring templates yet.",
+    "active": "Active", "paused": "Paused", "nextRun": "Next run", "hours": "{{count}} hours",
+    "generated": "Generated {{count}} work orders", "runNow": "Run now", "pause": "Pause", "activate": "Activate",
+    "dialogTitle": "Create recurring work order template", "mall": "Mall", "name": "Template name",
+    "category": "Category", "frequencyLabel": "Frequency", "workOrderTitle": "Work order title",
+    "nextRunAt": "Next run", "slaHours": "SLA (hours)", "department": "Assigned department",
+    "selectDepartment": "Select assigned department", "assignee": "Assignee", "location": "Location",
+    "checklist": "Checklist (one item per line)", "saving": "Saving...", "save": "Save template",
+    "frequency": { "DAILY": "Daily", "WEEKLY": "Weekly", "MONTHLY": "Monthly", "QUARTERLY": "Quarterly", "ANNUALLY": "Annually" },
+    "toast": {
+      "alreadyCreated": "A work order already exists for this period", "updated": "Work order template updated",
+      "updateFailed": "Unable to update template", "required": "Complete all required fields",
+      "selectMall": "Select a Mall from the shared selector"
+    }
+  }
+}

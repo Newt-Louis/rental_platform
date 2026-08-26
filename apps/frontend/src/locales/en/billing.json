@@ -132,7 +132,7 @@
     "invoicePaidFull": "Invoice fully paid",
     "cancelledReason": "Cancelled — reason: {{reason}}",
     "qtyLabel": "Quantity",
-    "unitPriceLabel": "Unit price (₫)",
+    "unitPriceLabel": "Unit price ({{currency}})",
     "subtotalPreview": "Amount: {{amount}}",
     "paymentAmount": "Payment amount *",
     "paymentMethod": "Method",
@@ -191,14 +191,15 @@
     "clearFilters": "Clear filters"
   },
   "header": {
+    "eyebrow": "Financial operations",
     "title": "Invoices & collections",
-    "subtitle": "Control the full revenue lifecycle: schedule → issue → collect → dunning → reconcile.",
+    "subtitle": "Monitor invoices, receivables, and collections by authoritative business status.",
     "collectionRate": "Collection rate",
     "dso": "DSO",
     "dsoUnit": "days",
     "arOutstanding": "AR outstanding",
     "operationsCenter": "Billing operations center",
-    "selectStep": "Select a step to continue"
+    "selectStep": "Prioritize actionable invoices, review receivables, and open contextual details"
   },
   "voidDialog": {
     "title": "Cancel invoice",
@@ -213,5 +214,88 @@
   "noInvoices": "No invoices found",
   "createSuccess": "Invoice created successfully",
   "issueSuccess": "Invoice issued to tenant",
-  "paymentSuccess": "Payment recorded successfully"
+  "paymentSuccess": "Payment recorded successfully",
+  "addIn": {
+    "title": "Billing period add-in",
+    "eyebrow": "Billing · Operations",
+    "description": "Contracts where Operations must enter variable charges before Finance issues invoices: management fee surcharge, electricity/water, after-hours cooling.",
+    "chargeType": {
+      "MANAGEMENT_FEE_SURCHARGE": "Management fee surcharge",
+      "UTILITY": "Electricity, water",
+      "AFTER_HOURS_COOLING": "After-hours cooling"
+    },
+    "status": {
+      "PENDING": "Not entered",
+      "DRAFT": "Entered, pending confirm",
+      "CONFIRMED": "Confirmed",
+      "NO_CHARGE": "No charge this period",
+      "INVOICED": "Invoiced"
+    },
+    "leaseCategory": {
+      "OFFICE": "Office",
+      "MALL": "Mall"
+    },
+    "filters": {
+      "allChargeTypes": "All charge types",
+      "allStatuses": "All statuses",
+      "search": "Search by contract number, tenant..."
+    },
+    "columns": {
+      "contract": "Contract",
+      "tenant": "Tenant",
+      "leaseCategory": "Lease type",
+      "chargeType": "Charge type",
+      "period": "Period",
+      "status": "Status",
+      "assignee": "Assigned to",
+      "dueDate": "Due"
+    },
+    "actions": {
+      "enterNow": "Enter now",
+      "enterData": "Enter data",
+      "viewAndConfirm": "View & confirm",
+      "viewDetail": "View detail",
+      "viewInvoice": "View invoice"
+    },
+    "form": {
+      "title": "Enter period add-in data",
+      "area": "Leased area",
+      "norm": "Access control norm",
+      "maxHeadcount": "Max headcount under norm",
+      "headcount": "Actual registered headcount",
+      "headcountHint": "Per access control cards issued this period",
+      "excess": "Headcount over norm",
+      "surchargeUnitPrice": "Surcharge unit price / person",
+      "surchargeAmount": "Management fee surcharge amount",
+      "elecStart": "Electricity meter start (kWh)",
+      "elecEnd": "Electricity meter end (kWh)",
+      "elecEndHint": "Confirmed monthly by building technical staff",
+      "waterStart": "Water meter start (m³)",
+      "waterEnd": "Water meter end (m³)",
+      "consumption": "Consumption",
+      "utilityAmount": "Total electricity + water",
+      "hours": "After-hours cooling hours",
+      "hoursHint": "Confirmed by building technical staff on request",
+      "hoursUnitPrice": "Unit price / hour",
+      "hoursAmount": "After-hours cooling amount",
+      "notes": "Notes",
+      "notesPlaceholder": "Additional notes for Finance (optional)...",
+      "noCharge": "Confirm no charge this period",
+      "saveDraft": "Save draft",
+      "continueConfirm": "Continue · Confirm data"
+    },
+    "confirmPopup": {
+      "title": "Confirm period {{period}} data",
+      "total": "Total this period",
+      "warning": "Once confirmed, this data is handed to Finance to issue the invoice and can no longer be edited directly — later changes require a Contract Amendment.",
+      "back": "Back to edit",
+      "confirm": "Confirm"
+    },
+    "toast": {
+      "draftSaved": "Draft saved",
+      "noChargeConfirmed": "Confirmed no charge this period",
+      "confirmed": "Confirmed — ready for Finance",
+      "reopened": "Reopened for editing"
+    }
+  }
 }

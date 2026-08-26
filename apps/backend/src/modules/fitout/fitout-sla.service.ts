@@ -8,6 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 @Injectable()
 export class FitoutSlaService {
@@ -19,6 +20,7 @@ export class FitoutSlaService {
     private emailService: EmailService,
     private emailDelivery: EmailDeliveryService,
     private schedulerLock: SchedulerLockService,
+    private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   async listPolicies() {
@@ -123,7 +125,20 @@ export class FitoutSlaService {
       const stageName = stageConfig?.name ?? milestone.stage;
       const targetDateStr = milestone.targetDate?.toLocaleDateString('vi-VN') ?? '—';
 
-      if (milestone.project.operationManagerId && milestone.project.operationManager) {
+      const operationRecipients = await this.accessPolicy.findProjectMallRecipients(
+        milestone.projectId,
+        Role.OPERATION,
+      );
+      const operationRecipientIds = new Set(
+        operationRecipients
+          .filter((recipient) => recipient.role === Role.OPERATION)
+          .map((recipient) => recipient.id),
+      );
+      if (
+        milestone.project.operationManagerId
+        && milestone.project.operationManager
+        && operationRecipientIds.has(milestone.project.operationManagerId)
+      ) {
         await this.notifications.create({
           userId: milestone.project.operationManagerId,
           title: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
@@ -151,9 +166,10 @@ export class FitoutSlaService {
       }
 
       if (policy?.escalateToRole) {
-        const managers = await this.prisma.user.findMany({
-          where: { role: policy.escalateToRole, isActive: true },
-        });
+        const managers = await this.accessPolicy.findProjectMallRecipients(
+          milestone.projectId,
+          policy.escalateToRole,
+        );
         for (const mgr of managers) {
           await this.notifications.create({
             userId: mgr.id,
@@ -193,7 +209,7 @@ export class FitoutSlaService {
     });
   }
 
-  async getFitoutProgress() {
+  async getFitoutProgress(mallIds?: string[] | null) {
     const stages = await this.prisma.fitoutStageConfig.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' },
@@ -202,7 +218,12 @@ export class FitoutSlaService {
     const lastStageCode = stageCodes[stageCodes.length - 1];
 
     const projects = await this.prisma.fitoutProject.findMany({
-      where: { status: { not: lastStageCode } },
+      where: {
+        status: { not: lastStageCode },
+        ...(mallIds
+          ? { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } }
+          : {}),
+      },
       include: {
         tenant: { select: { brandName: true } },
         unit: { select: { code: true } },

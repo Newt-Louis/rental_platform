@@ -1,11 +1,12 @@
 {
   "title": "Quản trị hệ thống",
-  "systemConfig": "Cấu hình Hệ thống",
+  "systemConfig": "Cấu hình hệ thống",
   "systemConfigDesc": "Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.",
   "erpControlCenter": "ERP Control Center",
   "superAdmin": "Super Admin · Toàn quyền",
   "readOnlyNote": "Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code và triển khai lại.",
   "selectConfigArea": "Chọn khu vực cấu hình",
+  "commonError": "Không thể hoàn tất thao tác",
   "tabs": {
     "users": "Tài khoản",
     "malls": "Mall",
@@ -13,7 +14,7 @@
     "structure": "Cấu trúc không gian",
     "categories": "Ngành hàng & Giá",
     "permissions": "Phân quyền",
-    "approval": "Approval Policy",
+    "approval": "Chính sách phê duyệt",
     "system": "Hệ thống",
     "approvalPolicy": "Chính sách phê duyệt",
     "branding": "Thương hiệu"
@@ -72,6 +73,7 @@
       "email": "Email",
       "department": "Phòng ban",
       "role": "Vai trò",
+      "mallAccess": "Phạm vi Mall",
       "status": "Trạng thái"
     },
     "pagination": "{{total}} tài khoản · Trang {{page}}/{{totalPages}}",
@@ -81,7 +83,9 @@
     "loadError": "Không thể tải danh sách tài khoản.",
     "retry": "Thử lại",
     "saving": "Đang lưu...",
+    "creating": "Đang tạo...",
     "saveChanges": "Lưu thay đổi",
+    "accountLabel": "Tài khoản",
     "newPasswordPlaceholder": "Mật khẩu mới (tối thiểu 8 ký tự)",
     "linkedTenant": "Khách thuê liên kết",
     "noLinked": "— Chưa liên kết —",
@@ -118,6 +122,26 @@
       "LEGAL": "Pháp lý",
       "OPERATION": "Vận hành",
       "TENANT": "Khách thuê"
+    },
+    "roleDescriptions": {
+      "ADMIN": "Toàn quyền truy cập và cấu hình hệ thống",
+      "CEO": "Xem báo cáo tổng hợp và phê duyệt cấp cao",
+      "MALL_DIRECTOR": "Quản lý hoạt động trong phạm vi Mall được phân công",
+      "LEASING_MANAGER": "Quản lý đội ngũ Leasing và phê duyệt nghiệp vụ",
+      "LEASING_EXECUTIVE": "Quản lý khách hàng và hồ sơ Leasing",
+      "FINANCE": "Quản lý hóa đơn, công nợ và báo cáo tài chính",
+      "LEGAL": "Soạn thảo và kiểm tra hồ sơ pháp lý",
+      "OPERATION": "Quản lý vận hành Mall và công việc kỹ thuật",
+      "TENANT": "Truy cập cổng thông tin dành cho khách thuê"
+    },
+    "mallScope": {
+      "global": "Toàn hệ thống",
+      "unassigned": "Chưa gán Mall",
+      "assignmentSummary": "Sẽ gán vai trò {{role}} cho {{count}} Mall",
+      "label": "Phạm vi truy cập Mall",
+      "noMalls": "Chưa có Mall nào",
+      "addMall": "Thêm Mall...",
+      "add": "Thêm"
     }
   },
   "malls": {
@@ -253,7 +277,24 @@
   "mallAccess": {
     "title": "Phân quyền truy cập Mall",
     "assignUser": "Phân quyền người dùng",
-    "revokeAccess": "Thu hồi quyền"
+    "revokeAccess": "Thu hồi quyền",
+    "workspaceTitle": "Phạm vi truy cập theo Mall",
+    "scopeNote": "Tài khoản vận hành chỉ được thao tác dữ liệu trong các Mall đã được phân công.",
+    "selectMall": "Chọn Mall...",
+    "selectUser": "Chọn người dùng...",
+    "grant": "Cấp quyền",
+    "empty": "Chưa có người dùng nào được phân quyền tại Mall này",
+    "selectPrompt": "Chọn một Mall để xem và quản lý phạm vi truy cập.",
+    "revokeFor": "Thu hồi quyền của {{name}}",
+    "revokeTitle": "Thu hồi quyền truy cập Mall?",
+    "revokeDescription": "{{name}} sẽ không còn được thao tác dữ liệu tại Mall đang chọn.",
+    "userFallback": "Người dùng",
+    "toast": {
+      "granted": "Đã cấp quyền truy cập Mall",
+      "revoked": "Đã thu hồi quyền truy cập Mall",
+      "grantError": "Không thể cấp quyền truy cập Mall",
+      "revokeError": "Không thể thu hồi quyền truy cập Mall"
+    }
   },
   "approvalPolicy": {
     "title": "Chính sách phê duyệt",

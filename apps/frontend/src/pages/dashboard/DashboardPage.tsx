@@ -118,9 +118,9 @@ function Worklist({ items, emptyLabel }: { items: WorkItem[]; emptyLabel: string
                 </ERPStatusBadge>
                 <span className={cn('truncate text-sm font-medium', critical ? ERP_TONE_TEXT_CLASSES.danger : 'text-foreground')}>{item.label}</span>
               </div>
-              <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs tabular-nums">
+              <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-xs tabular-nums">
                 <span className="text-muted-foreground">{item.context}</span>
-                {item.detail && <span className="font-semibold text-foreground">{item.detail}</span>}
+                {item.detail && <span className="ml-auto text-right font-semibold text-foreground">{item.detail}</span>}
               </div>
             </div>
             <Button
@@ -197,7 +197,7 @@ function ChartFrame({ title, unit, children, compact = false }: {
     <ERPSection
       className="min-w-0"
       title={<span className={compact ? 'text-xs' : 'text-sm'}>{title}</span>}
-      actions={<span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{unit}</span>}
+      actions={<span className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">{unit}</span>}
       noPadding
     >
       {children}
@@ -389,7 +389,7 @@ export default function DashboardPage() {
             <h2 id="financial-intelligence-title" className="text-[10px] font-semibold uppercase tracking-[0.1em] text-foreground">{t('strip.title')}</h2>
             <span className="text-[10px] text-muted-foreground">{t('strip.exactValues')}</span>
           </div>
-          <div className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-1 px-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid min-w-0 grid-cols-1 gap-x-5 gap-y-1 px-4 sm:grid-cols-2 lg:grid-cols-5 lg:[&>*+*]:border-l lg:[&>*+*]:border-border/50 lg:[&>*+*]:pl-5">
             <FinancialMetric label={t('strip.revenue')} value={formatMoneyWithCode(d?.monthlyRevenue ?? 0, 'VND')} sub={t('strip.currentPeriod')} tone="brand" to={linkTo('/billing')} primary />
             <FinancialMetric label={t('strip.collected')} value={formatMoneyWithCode(d?.collectedRevenue ?? 0, 'VND')} sub={t('strip.collectedPeriod')} tone="success" to={linkTo('/billing')} />
             <FinancialMetric label={t('strip.uncollected')} value={formatMoneyWithCode(uncollected, 'VND')} sub={t('strip.outstandingPeriod')} tone="warning" to={linkTo('/billing')} />
@@ -430,7 +430,7 @@ export default function DashboardPage() {
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t('strip.occupancy')}</p>
                 <p className="mt-1 text-3xl font-semibold leading-none tabular-nums text-foreground">{d?.occupancyRate ?? 0}%</p>
               </div>
-              <p className="text-right text-xs font-medium tabular-nums text-foreground">{formatArea(d?.leasedArea ?? 0)} / {formatArea(d?.totalArea ?? 0)}</p>
+              <p className="text-right text-sm font-semibold leading-tight tabular-nums text-foreground">{formatArea(d?.leasedArea ?? 0)} / {formatArea(d?.totalArea ?? 0)}</p>
             </div>
             <div className="mt-3"><OccupancyBar leasedArea={d?.leasedArea ?? 0} vacantArea={d?.vacantArea ?? 0} otherArea={otherArea} /></div>
             <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] tabular-nums text-muted-foreground">

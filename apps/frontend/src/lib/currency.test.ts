@@ -9,4 +9,8 @@ describe('formatMoneyWithCode', () => {
   it('does not append a currency code to an unavailable amount', () => {
     expect(formatMoneyWithCode(undefined, 'VND')).toBe('—');
   });
+
+  it('preserves USD decimal precision and uses the ISO code', () => {
+    expect(formatMoneyWithCode(500_000, 'USD')).toBe('500.000,00 USD');
+  });
 });

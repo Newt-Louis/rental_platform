@@ -387,11 +387,11 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 pt-5 pb-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+      <div className="border-b border-gray-100 bg-slate-50 px-6 pb-4 pt-5">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
             {/* Avatar */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shrink-0">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-lg font-bold text-white">
               {td?.brandName?.[0] ?? '?'}
             </div>
             <div>
@@ -643,7 +643,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                     <div className="font-mono text-xs text-gray-500">{tk.ticketNumber}</div>
                     <div className="text-sm text-gray-700 mt-0.5">{tk.subject ?? tk.title}</div>
                   </div>
-                  <Badge variant="outline" className="text-xs shrink-0">{tk.status}</Badge>
+                  <Badge variant="outline" className="text-xs shrink-0">{t(`ticketStatus.${tk.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 </div>
               ))}
               <Button variant="outline" size="sm" className="w-full gap-1.5 mt-2 text-xs h-8"
@@ -736,7 +736,7 @@ function TenantCard({ tenant, selected, onSelect, onEdit, canEdit }: {
       <div className="flex items-start gap-3">
         {/* Avatar */}
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0 ${
-          selected ? 'bg-blue-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'
+          selected ? 'bg-blue-600' : 'bg-slate-600'
         }`}>
           {tenant.brandName?.[0] ?? '?'}
         </div>
@@ -755,7 +755,7 @@ function TenantCard({ tenant, selected, onSelect, onEdit, canEdit }: {
           {tenant.companyName && (
             <div className="text-xs text-gray-400 mt-0.5 truncate">{tenant.companyName}</div>
           )}
-          {activeContract?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${activeContract.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{activeContract.unit.leaseTermType === 'SHORT' ? 'Thuê ngắn hạn' : 'Thuê dài hạn'}</span>}
+          {activeContract?.unit?.leaseTermType && <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${activeContract.unit.leaseTermType === 'SHORT' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{t(`leaseTerm.${activeContract.unit.leaseTermType}`, { defaultValue: activeContract.unit.leaseTermType })}</span>}
 
           <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
             <span className="flex items-center gap-0.5">
@@ -873,16 +873,16 @@ export default function TenantsPage() {
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
             {[
-              ['', 'Tất cả', tenantSummary.total],
-              ['ACTIVE_CONTRACT', 'Đang thuê', tenantSummary.activeContract],
-              ['NO_ACTIVE_CONTRACT', 'Chưa hiệu lực', tenantSummary.noActiveContract],
+              ['', t('list.statusAll'), tenantSummary.total],
+              ['ACTIVE_CONTRACT', t('list.statusActive'), tenantSummary.activeContract],
+              ['NO_ACTIVE_CONTRACT', t('list.statusInactive'), tenantSummary.noActiveContract],
             ].map(([key, label, count]) => <button key={String(key)} onClick={() => setTenancyStatus(String(key))}
               className={`rounded-lg border px-2 py-2 text-left transition ${tenancyStatus === key ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
               <div className="text-[10px] font-medium text-slate-500">{label}</div><div className="text-lg font-bold text-slate-800">{count}</div>
             </button>)}
           </div>
           <div className="mt-2 flex gap-1 rounded-lg bg-slate-100 p-1">
-            {[['', 'Tất cả'], ['LONG', 'Dài hạn'], ['SHORT', 'Ngắn hạn']].map(([key, label]) => <button key={key || 'ALL'} onClick={() => setLeaseTermType(key)}
+            {[['', t('list.termAll')], ['LONG', t('leaseTerm.LONG')], ['SHORT', t('leaseTerm.SHORT')]].map(([key, label]) => <button key={key || 'ALL'} onClick={() => setLeaseTermType(key)}
               className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${leaseTermType === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{label}</button>)}
           </div>
         </div>

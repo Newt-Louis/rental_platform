@@ -14,6 +14,7 @@ export * from './fitout';
 export * from './tickets';
 export * from './sales';
 export * from './billing';
+export * from './billing-addin';
 export * from './reports';
 export * from './sap';
 export * from './ai';

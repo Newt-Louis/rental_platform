@@ -13,6 +13,7 @@ import { Building2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { getDefaultHomePath } from '@/lib/permissions';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 interface LoginForm {
   email: string;
@@ -164,7 +165,7 @@ export default function LoginPage() {
                       disabled={loading}
                       className="px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded border border-gray-300 transition-colors"
                     >
-                      <div className="font-semibold">{account.role.replace('_', ' ')}</div>
+                      <div className="font-semibold">{t(roleTranslationKey(account.role))}</div>
                       <div className="text-gray-600 text-[10px] truncate">{account.email}</div>
                     </button>
                   ))}

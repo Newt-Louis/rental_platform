@@ -22,6 +22,7 @@ import { FitoutModule } from './modules/fitout/fitout.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { BillingAddInModule } from './modules/billing-addin/billing-addin.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SapModule } from './modules/sap/sap.module';
 import { AiModule } from './modules/ai/ai.module';
@@ -75,6 +76,7 @@ import { TelemetryModule } from './modules/telemetry/telemetry.module';
     TicketsModule,
     SalesModule,
     BillingModule,
+    BillingAddInModule,
     ReportsModule,
     SapModule,
     AiModule,

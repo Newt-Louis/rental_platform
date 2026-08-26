@@ -6,6 +6,7 @@
   "superAdmin": "Super Admin · Full Access",
   "readOnlyNote": "This table is read-only — it accurately reflects the live permission configuration (not a separate hardcoded copy). To change a role's permissions, update the configuration in code and redeploy.",
   "selectConfigArea": "Select configuration area",
+  "commonError": "Unable to complete the action",
   "tabs": {
     "users": "Accounts",
     "malls": "Mall",
@@ -72,6 +73,7 @@
       "email": "Email",
       "department": "Department",
       "role": "Role",
+      "mallAccess": "Mall scope",
       "status": "Status"
     },
     "pagination": "{{total}} accounts · Page {{page}}/{{totalPages}}",
@@ -81,7 +83,9 @@
     "loadError": "Unable to load account list.",
     "retry": "Retry",
     "saving": "Saving...",
+    "creating": "Creating...",
     "saveChanges": "Save changes",
+    "accountLabel": "Account",
     "newPasswordPlaceholder": "New password (min 8 characters)",
     "linkedTenant": "Linked tenant",
     "noLinked": "— Not linked —",
@@ -118,6 +122,26 @@
       "LEGAL": "Legal",
       "OPERATION": "Operations",
       "TENANT": "Tenant"
+    },
+    "roleDescriptions": {
+      "ADMIN": "Full system access and configuration",
+      "CEO": "Portfolio reporting and executive approvals",
+      "MALL_DIRECTOR": "Operations management within assigned Malls",
+      "LEASING_MANAGER": "Leasing team management and business approvals",
+      "LEASING_EXECUTIVE": "Customer and leasing record management",
+      "FINANCE": "Invoices, receivables and financial reporting",
+      "LEGAL": "Legal document preparation and review",
+      "OPERATION": "Mall operations and technical work management",
+      "TENANT": "Access to the tenant self-service portal"
+    },
+    "mallScope": {
+      "global": "All Malls",
+      "unassigned": "No Mall assigned",
+      "assignmentSummary": "Assign the {{role}} role to {{count}} Mall(s)",
+      "label": "Mall access scope",
+      "noMalls": "No Malls available",
+      "addMall": "Add Mall...",
+      "add": "Add"
     }
   },
   "malls": {
@@ -249,7 +273,24 @@
   "mallAccess": {
     "title": "Mall access control",
     "assignUser": "Assign user",
-    "revokeAccess": "Revoke access"
+    "revokeAccess": "Revoke access",
+    "workspaceTitle": "Mall access scope",
+    "scopeNote": "Operational accounts can only work with data in their assigned Malls.",
+    "selectMall": "Select Mall...",
+    "selectUser": "Select user...",
+    "grant": "Grant access",
+    "empty": "No users are assigned to this Mall",
+    "selectPrompt": "Select a Mall to review and manage access scope.",
+    "revokeFor": "Revoke access for {{name}}",
+    "revokeTitle": "Revoke Mall access?",
+    "revokeDescription": "{{name}} will no longer be able to work with data in the selected Mall.",
+    "userFallback": "User",
+    "toast": {
+      "granted": "Mall access granted",
+      "revoked": "Mall access revoked",
+      "grantError": "Unable to grant Mall access",
+      "revokeError": "Unable to revoke Mall access"
+    }
   },
   "approvalPolicy": {
     "title": "Approval policy",

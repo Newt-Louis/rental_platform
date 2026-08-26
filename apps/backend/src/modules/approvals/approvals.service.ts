@@ -10,6 +10,19 @@ import {
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
 import { OutboxService } from '../../common/services/outbox.service';
 
+const APPROVAL_ENTITY_TYPES = ['PROPOSAL', 'FITOUT_SUBMITTAL'] as const;
+type ApprovalEntityType = (typeof APPROVAL_ENTITY_TYPES)[number];
+
+interface ApprovalListQuery {
+  page?: number;
+  limit?: number;
+  floorId?: string;
+  unitId?: string;
+  search?: string;
+  leaseTermType?: string;
+  entityType?: string;
+}
+
 /**
  * Sinh khi 1 ApprovalWorkflow hoàn tất (tất cả step đã APPROVED).
  * Consumer theo entityType (vd ProposalsService, FitoutSubmittalService) tự lắng nghe
@@ -45,16 +58,65 @@ export class ApprovalsService {
     private outbox: OutboxService,
   ) {}
 
-  private workflowMallScope(mallIds?: string[]) {
-    if (!mallIds) return {};
-    return { OR: [
-      { proposal: { unit: { mallId: { in: mallIds } } } },
-      { fitoutSubmittal: { project: { unit: { mallId: { in: mallIds } } } } },
-    ] };
+  private parseEntityType(entityType?: string): ApprovalEntityType | undefined {
+    if (entityType === undefined) return undefined;
+    if (!APPROVAL_ENTITY_TYPES.includes(entityType as ApprovalEntityType)) {
+      throw new BadRequestException('entityType must be PROPOSAL or FITOUT_SUBMITTAL');
+    }
+    return entityType as ApprovalEntityType;
   }
 
-  private workflowListScope(query: { floorId?: string; unitId?: string; search?: string; leaseTermType?: string }) {
+  private proposalMallBranch(mallIds?: string[]) {
+    return {
+      entityType: 'PROPOSAL',
+      ...(mallIds ? { proposal: { unit: { mallId: { in: mallIds } } } } : {}),
+    };
+  }
+
+  private fitoutMallBranch(mallIds?: string[]) {
+    return {
+      entityType: 'FITOUT_SUBMITTAL',
+      fitoutSubmittal: {
+        ...(mallIds ? {
+          project: {
+            unit: {
+              OR: [
+                { mallId: { in: mallIds } },
+                { floor: { mallId: { in: mallIds } } },
+              ],
+            },
+          },
+        } : {}),
+      },
+    };
+  }
+
+  private workflowMallScope(entityType: ApprovalEntityType | undefined, proposalMallIds?: string[], fitoutMallIds?: string[]) {
+    if (entityType === 'PROPOSAL') return this.proposalMallBranch(proposalMallIds);
+    if (entityType === 'FITOUT_SUBMITTAL') return this.fitoutMallBranch(fitoutMallIds);
+    if (!proposalMallIds && !fitoutMallIds) return {};
+    return { OR: [this.proposalMallBranch(proposalMallIds), this.fitoutMallBranch(fitoutMallIds)] };
+  }
+
+  private workflowListScope(query: ApprovalListQuery, entityType?: ApprovalEntityType) {
     const AND: any[] = [];
+    if (entityType === 'FITOUT_SUBMITTAL') {
+      if (query.floorId) AND.push({ fitoutSubmittal: { project: { unit: { floorId: query.floorId } } } });
+      if (query.unitId) AND.push({ fitoutSubmittal: { project: { unitId: query.unitId } } });
+      if (query.search?.trim()) {
+        const search = query.search.trim();
+        AND.push({ OR: [
+          { fitoutSubmittal: { title: { contains: search, mode: 'insensitive' } } },
+          { fitoutSubmittal: { formType: { name: { contains: search, mode: 'insensitive' } } } },
+          { fitoutSubmittal: { formType: { code: { contains: search, mode: 'insensitive' } } } },
+          { fitoutSubmittal: { project: { tenant: { brandName: { contains: search, mode: 'insensitive' } } } } },
+          { fitoutSubmittal: { project: { tenant: { companyName: { contains: search, mode: 'insensitive' } } } } },
+          { fitoutSubmittal: { project: { unit: { code: { contains: search, mode: 'insensitive' } } } } },
+          { fitoutSubmittal: { project: { unit: { name: { contains: search, mode: 'insensitive' } } } } },
+        ] });
+      }
+      return AND.length ? { AND } : {};
+    }
     if (query.floorId) AND.push({ proposal: { unit: { floorId: query.floorId } } });
     if (query.unitId) AND.push({ proposal: { unitId: query.unitId } });
     if (query.leaseTermType) AND.push({ proposal: { unit: { leaseTermType: query.leaseTermType } } });
@@ -70,12 +132,23 @@ export class ApprovalsService {
     return AND.length ? { AND } : {};
   }
 
-  async getPending(userId: string, userRole: string, query: { page?: number; limit?: number; floorId?: string; unitId?: string; search?: string; leaseTermType?: string } = {}, mallIds?: string[]) {
+  async getPending(
+    userId: string,
+    userRole: string,
+    query: ApprovalListQuery = {},
+    proposalMallIds?: string[],
+    fitoutMallIds: string[] | undefined = proposalMallIds,
+  ) {
     const { page = 1, limit = 15 } = query;
+    const entityType = this.parseEntityType(query.entityType);
 
     const where: any = {
       status: StepStatus.PENDING,
-      workflow: { status: WorkflowStatus.IN_PROGRESS, ...this.workflowMallScope(mallIds), ...this.workflowListScope(query) },
+      workflow: {
+        status: WorkflowStatus.IN_PROGRESS,
+        ...this.workflowMallScope(entityType, proposalMallIds, fitoutMallIds),
+        ...this.workflowListScope(query, entityType),
+      },
     };
     if (userRole !== 'ADMIN') {
       where.OR = [
@@ -95,6 +168,26 @@ export class ApprovalsService {
                 tenant: { select: { id: true, brandName: true } },
               },
             },
+            fitoutSubmittal: {
+              select: {
+                id: true, title: true, revisionNo: true, status: true, stageCode: true,
+                submittedAt: true, dueDate: true, workflowId: true,
+                formType: { select: { id: true, code: true, name: true } },
+                submittedBy: { select: { id: true, fullName: true } },
+                project: {
+                  select: {
+                    id: true, status: true,
+                    tenant: { select: { id: true, brandName: true, companyName: true } },
+                    unit: {
+                      select: {
+                        id: true, code: true, name: true, mallId: true,
+                        floor: { select: { id: true, name: true, mallId: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
             steps: { orderBy: { stepOrder: 'asc' } },
           },
         },
@@ -105,12 +198,20 @@ export class ApprovalsService {
     // Only return steps where all earlier steps in the same workflow are APPROVED.
     const filtered = steps.filter((step) => {
       const earlierSteps = step.workflow.steps.filter((s) => s.stepOrder < step.stepOrder);
-      return earlierSteps.every((s) => s.status === StepStatus.APPROVED);
+      if (!earlierSteps.every((s) => s.status === StepStatus.APPROVED)) return false;
+      if (step.workflow.entityType === 'FITOUT_SUBMITTAL') {
+        return step.workflow.fitoutSubmittal?.id === step.workflow.entityId
+          && step.workflow.fitoutSubmittal.workflowId === step.workflow.id;
+      }
+      return true;
     });
 
     const total = filtered.length;
     const skip = (Number(page) - 1) * Number(limit);
-    const data = await this.attachPolicyReason(filtered.slice(skip, skip + Number(limit)));
+    const pageSteps = filtered.slice(skip, skip + Number(limit));
+    const withAttachments = await this.attachFitoutAttachments(pageSteps);
+    const withStageContext = await this.attachFitoutStageContext(withAttachments);
+    const data = await this.attachPolicyReason(withStageContext);
 
     return { data, total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) };
   }
@@ -127,15 +228,91 @@ export class ApprovalsService {
    */
   private async attachPolicyReason<T extends { stepName: string; approverRole: string }>(steps: T[]) {
     if (!steps.length) return steps;
+    const proposalSteps = steps.filter((step: any) => step.workflow?.entityType === 'PROPOSAL');
+    if (!proposalSteps.length) return steps.map((step) => ({ ...step, policyReason: null }));
     const rules = await this.prisma.approvalPolicyRule.findMany({ where: { isActive: true } });
     const byKey = new Map(rules.map((r) => [`${r.stepName}::${r.approverRole}`, r]));
     return steps.map((step) => ({
       ...step,
-      policyReason: byKey.get(`${step.stepName}::${step.approverRole}`)?.name ?? null,
+      policyReason: (step as any).workflow?.entityType === 'PROPOSAL'
+        ? byKey.get(`${step.stepName}::${step.approverRole}`)?.name ?? null
+        : null,
     }));
   }
 
-  async getWorkflow(workflowId: string) {
+  private async attachFitoutAttachments<T extends { workflow: any }>(steps: T[]): Promise<T[]> {
+    const entityIds = steps
+      .filter((step) => step.workflow.entityType === 'FITOUT_SUBMITTAL')
+      .map((step) => step.workflow.entityId);
+    if (!entityIds.length) return steps;
+    const attachments = await this.prisma.unifiedDocument.findMany({
+      where: { entityType: 'FITOUT_SUBMITTAL', entityId: { in: entityIds }, isActive: true },
+      select: {
+        id: true, entityId: true, fileName: true, mimeType: true, fileSize: true,
+        version: true, isLatest: true, uploadedAt: true,
+      },
+      orderBy: [{ entityId: 'asc' }, { version: 'desc' }],
+    });
+    const byEntity = new Map<string, any[]>();
+    for (const attachment of attachments as any[]) {
+      const { entityId, ...safeAttachment } = attachment;
+      if (!entityIds.includes(entityId)) continue;
+      const current = byEntity.get(entityId) ?? [];
+      current.push(safeAttachment);
+      byEntity.set(entityId, current);
+    }
+    return steps.map((step) => step.workflow.entityType === 'FITOUT_SUBMITTAL'
+      ? {
+          ...step,
+          workflow: {
+            ...step.workflow,
+            fitoutSubmittal: {
+              ...step.workflow.fitoutSubmittal,
+              attachments: byEntity.get(step.workflow.entityId) ?? [],
+            },
+          },
+        }
+      : step);
+  }
+
+  private async attachFitoutStageContext<T extends { workflow: any }>(steps: T[]): Promise<T[]> {
+    const stageCodes = [...new Set(steps
+      .filter((step) => step.workflow.entityType === 'FITOUT_SUBMITTAL')
+      .map((step) => step.workflow.fitoutSubmittal?.stageCode)
+      .filter((code): code is string => !!code))];
+    if (!stageCodes.length) return steps;
+    const stages = await this.prisma.fitoutStageConfig.findMany({
+      where: { code: { in: stageCodes } },
+      select: { code: true, name: true },
+    });
+    const byCode = new Map(stages.map((stage) => [stage.code, stage]));
+    return steps.map((step) => step.workflow.entityType === 'FITOUT_SUBMITTAL'
+      ? {
+          ...step,
+          workflow: {
+            ...step.workflow,
+            fitoutSubmittal: {
+              ...step.workflow.fitoutSubmittal,
+              stage: byCode.get(step.workflow.fitoutSubmittal.stageCode) ?? null,
+            },
+          },
+        }
+      : step);
+  }
+
+  private getCurrentActionableStep(steps: Array<{
+    stepOrder: number;
+    status: StepStatus;
+    approverRole: unknown;
+    approverId: string | null;
+  }>) {
+    return [...steps]
+      .sort((left, right) => left.stepOrder - right.stepOrder)
+      .find((step, index, ordered) => step.status === StepStatus.PENDING
+        && ordered.slice(0, index).every((earlier) => earlier.status === StepStatus.APPROVED));
+  }
+
+  async getWorkflow(workflowId: string, user?: { id: string; role: string }, fitoutMallIds?: string[]) {
     const workflow = await this.prisma.approvalWorkflow.findUnique({
       where: { id: workflowId },
       include: {
@@ -152,18 +329,74 @@ export class ApprovalsService {
             lead: true,
           },
         },
+        fitoutSubmittal: {
+          select: {
+            id: true, title: true, revisionNo: true, status: true, stageCode: true,
+            submittedAt: true, dueDate: true, workflowId: true,
+            formType: { select: { id: true, code: true, name: true } },
+            submittedBy: { select: { id: true, fullName: true } },
+            project: {
+              select: {
+                id: true, status: true,
+                tenant: { select: { id: true, brandName: true, companyName: true } },
+                unit: {
+                  select: {
+                    id: true, code: true, name: true, mallId: true,
+                    floor: { select: { id: true, name: true, mallId: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
     if (!workflow) throw new NotFoundException('Workflow not found');
-    return workflow;
+    if (workflow.entityType !== 'FITOUT_SUBMITTAL') return workflow;
+
+    const submittal = workflow.fitoutSubmittal;
+    if (!submittal || submittal.id !== workflow.entityId || submittal.workflowId !== workflow.id) {
+      throw new ForbiddenException('Fitout approval context is unresolved or mismatched');
+    }
+    if (!user) throw new ForbiddenException('Fitout dossier access requires an authenticated approver');
+    const mallId = submittal.project.unit.mallId ?? submittal.project.unit.floor?.mallId;
+    if (!mallId) throw new ForbiddenException('Fitout approval Mall is unresolved');
+    if (user.role !== 'ADMIN' && (!fitoutMallIds || !fitoutMallIds.includes(mallId))) {
+      throw new ForbiddenException('You do not have access to this Fitout project Mall');
+    }
+    if (user.role !== 'ADMIN') {
+      if (workflow.status !== WorkflowStatus.IN_PROGRESS) {
+        throw new ForbiddenException('Fitout dossier is not currently actionable');
+      }
+      const currentStep = this.getCurrentActionableStep(workflow.steps);
+      if (!currentStep
+        || currentStep.approverRole !== (user.role as any)
+        || (currentStep.approverId && currentStep.approverId !== user.id)) {
+        throw new ForbiddenException('You are not the current actionable Fitout approver');
+      }
+    }
+
+    const attachments = await this.prisma.unifiedDocument.findMany({
+      where: { entityType: 'FITOUT_SUBMITTAL', entityId: submittal.id, isActive: true },
+      select: {
+        id: true, fileName: true, mimeType: true, fileSize: true,
+        version: true, isLatest: true, uploadedAt: true,
+      },
+      orderBy: { version: 'desc' },
+    });
+    const stage = await this.prisma.fitoutStageConfig.findUnique({
+      where: { code: submittal.stageCode },
+      select: { code: true, name: true },
+    });
+    return { ...workflow, fitoutSubmittal: { ...submittal, stage, attachments } };
   }
 
   async getAllWorkflows(query: { status?: WorkflowStatus; page?: number; limit?: number }, mallIds?: string[]) {
     const { page = 1, limit = 20, status } = query;
     const skip = (page - 1) * +limit;
 
-    const where: any = { ...this.workflowMallScope(mallIds) };
+    const where: any = { ...this.workflowMallScope(undefined, mallIds, mallIds) };
     if (status) where.status = status;
 
     const [data, total] = await Promise.all([
@@ -203,6 +436,24 @@ export class ApprovalsService {
     });
   }
 
+  private async assertFitoutDecisionMallAccess(
+    tx: Prisma.TransactionClient,
+    workflow: any,
+    userId: string,
+    userRole: string,
+  ) {
+    if (workflow.entityType !== 'FITOUT_SUBMITTAL') return;
+    const submittal = workflow.fitoutSubmittal;
+    if (!submittal || submittal.id !== workflow.entityId || submittal.workflowId !== workflow.id) {
+      throw new ForbiddenException('Fitout approval context is unresolved or mismatched');
+    }
+    const mallId = submittal.project.unit.mallId ?? submittal.project.unit.floor?.mallId;
+    if (!mallId) throw new ForbiddenException('Fitout approval Mall is unresolved');
+    if (userRole === 'ADMIN') return;
+    const access = await tx.userMallAccess.findFirst({ where: { userId, mallId, isActive: true }, select: { id: true } });
+    if (!access) throw new ForbiddenException('You do not have access to this Fitout project Mall');
+  }
+
   async approve(stepId: string, userId: string, userRole: string, comment?: string) {
     const result = await this.prisma.$transaction(async (tx) => {
       const step = await tx.approvalStep.findUnique({
@@ -211,6 +462,14 @@ export class ApprovalsService {
           workflow: {
             include: {
               steps: { orderBy: { stepOrder: 'asc' } },
+              fitoutSubmittal: {
+                select: {
+                  id: true, workflowId: true,
+                  project: {
+                    select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+                  },
+                },
+              },
             },
           },
         },
@@ -227,6 +486,7 @@ export class ApprovalsService {
       if (userRole !== 'ADMIN' && step.approverId && step.approverId !== userId) {
         throw new ForbiddenException('This approval step is assigned to another user');
       }
+      await this.assertFitoutDecisionMallAccess(tx, step.workflow, userId, userRole);
 
       const unapprovedEarlierStep = step.workflow.steps.find(
         (s) => s.stepOrder < step.stepOrder && s.status !== StepStatus.APPROVED,
@@ -286,7 +546,21 @@ export class ApprovalsService {
     await this.prisma.$transaction(async (tx) => {
       const current = await tx.approvalStep.findUnique({
         where: { id: stepId },
-        include: { workflow: true },
+        include: {
+          workflow: {
+            include: {
+              steps: { orderBy: { stepOrder: 'asc' } },
+              fitoutSubmittal: {
+                select: {
+                  id: true, workflowId: true,
+                  project: {
+                    select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!current) throw new NotFoundException('Approval step not found');
@@ -299,6 +573,13 @@ export class ApprovalsService {
       }
       if (userRole !== 'ADMIN' && current.approverId && current.approverId !== userId) {
         throw new ForbiddenException('This approval step is assigned to another user');
+      }
+      await this.assertFitoutDecisionMallAccess(tx, current.workflow, userId, userRole);
+      const unapprovedEarlierStep = (current.workflow.steps ?? []).find(
+        (step) => step.stepOrder < current.stepOrder && step.status !== StepStatus.APPROVED,
+      );
+      if (unapprovedEarlierStep) {
+        throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
       }
 
       await tx.approvalStep.update({
@@ -336,7 +617,7 @@ export class ApprovalsService {
 
     const where: any = {
       status: status ? { in: [status] } : { in: [StepStatus.APPROVED, StepStatus.REJECTED] },
-      workflow: { entityType: 'PROPOSAL', ...this.workflowMallScope(mallIds), ...this.workflowListScope(query) },
+      workflow: { entityType: 'PROPOSAL', ...this.workflowMallScope('PROPOSAL', mallIds, mallIds), ...this.workflowListScope(query, 'PROPOSAL') },
     };
     if (userRole !== 'ADMIN') {
       where.approverId = userId;

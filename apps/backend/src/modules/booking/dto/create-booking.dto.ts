@@ -33,6 +33,16 @@ export class CreateBookingDto {
   @Min(1)
   requestedTerm?: number;
 
+  @ApiPropertyOptional({ description: 'Giá ngân sách khách đề xuất — thấp nhất (VND/m²/tháng)' })
+  @IsOptional()
+  @IsNumber()
+  budgetRentMin?: number;
+
+  @ApiPropertyOptional({ description: 'Giá ngân sách khách đề xuất — cao nhất (VND/m²/tháng)' })
+  @IsOptional()
+  @IsNumber()
+  budgetRentMax?: number;
+
   @ApiPropertyOptional({ description: 'Mức giá kỳ vọng (VND/m²)' })
   @IsOptional()
   @IsNumber()
@@ -43,15 +53,30 @@ export class CreateBookingDto {
   @IsEnum(CurrencyCode)
   currencyCode?: CurrencyCode;
 
+  @ApiPropertyOptional({ description: 'Tỷ giá tham khảo VND/USD tại thời điểm đàm phán — chỉ hiển thị tham khảo, không dùng để tính toán Hợp đồng/Billing' })
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
+
   @ApiPropertyOptional({ description: 'Giá sale đề xuất (VND/m²/tháng)' })
   @IsOptional()
   @IsNumber()
   proposedRentPerSqm?: number;
 
-  @ApiPropertyOptional({ description: 'CAM sale đề xuất (VND/m²/tháng)' })
+  @ApiPropertyOptional({ description: 'CAM sale đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT Văn phòng' })
   @IsOptional()
   @IsNumber()
   proposedCamPerSqm?: number;
+
+  @ApiPropertyOptional({ description: 'Phí Dịch vụ đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT TTTM' })
+  @IsOptional()
+  @IsNumber()
+  serviceFeeSqm?: number;
+
+  @ApiPropertyOptional({ description: 'Phí hỗ trợ Kinh doanh đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT TTTM' })
+  @IsOptional()
+  @IsNumber()
+  businessSupportFeeSqm?: number;
 
   @ApiPropertyOptional({ description: 'Số ngày giữ slot (mặc định 30 ngày)', default: 30 })
   @IsOptional()
@@ -97,15 +122,40 @@ export class UpdateBookingDto {
   @IsNumber()
   expectedRent?: number;
 
+  @ApiPropertyOptional({ description: 'Giá ngân sách khách đề xuất — thấp nhất (VND/m²/tháng)' })
+  @IsOptional()
+  @IsNumber()
+  budgetRentMin?: number;
+
+  @ApiPropertyOptional({ description: 'Giá ngân sách khách đề xuất — cao nhất (VND/m²/tháng)' })
+  @IsOptional()
+  @IsNumber()
+  budgetRentMax?: number;
+
+  @ApiPropertyOptional({ description: 'Tỷ giá tham khảo VND/USD tại thời điểm đàm phán — chỉ hiển thị tham khảo' })
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
+
   @ApiPropertyOptional({ description: 'Giá sale đề xuất (VND/m²/tháng)' })
   @IsOptional()
   @IsNumber()
   proposedRentPerSqm?: number;
 
-  @ApiPropertyOptional({ description: 'CAM sale đề xuất (VND/m²/tháng)' })
+  @ApiPropertyOptional({ description: 'CAM sale đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT Văn phòng' })
   @IsOptional()
   @IsNumber()
   proposedCamPerSqm?: number;
+
+  @ApiPropertyOptional({ description: 'Phí Dịch vụ đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT TTTM' })
+  @IsOptional()
+  @IsNumber()
+  serviceFeeSqm?: number;
+
+  @ApiPropertyOptional({ description: 'Phí hỗ trợ Kinh doanh đề xuất (VND/m²/tháng) — chỉ áp dụng HĐT TTTM' })
+  @IsOptional()
+  @IsNumber()
+  businessSupportFeeSqm?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -202,6 +252,11 @@ export class ConvertToProposalDto {
   @IsOptional()
   @IsEnum(CurrencyCode)
   rentCurrency?: CurrencyCode;
+
+  @ApiPropertyOptional({ description: 'Tỷ giá tham khảo VND/USD — mặc định kế thừa từ Booking.exchangeRate nếu không truyền' })
+  @IsOptional()
+  @IsNumber()
+  exchangeRate?: number;
 
   @ApiPropertyOptional({ description: 'Số ngày hoàn thiện nội thất' })
   @IsOptional()

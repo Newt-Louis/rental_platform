@@ -17,6 +17,7 @@ describe('ContractsService currency propagation', () => {
     unit: { findUnique: jest.fn() },
     contract: { findFirst: jest.fn(), create: jest.fn() },
     proposal: { findUnique: jest.fn() },
+    $transaction: jest.fn(),
   };
   const events = { logEvent: jest.fn() };
   const unitStatus = { canTransition: jest.fn(), transition: jest.fn() };
@@ -45,6 +46,7 @@ describe('ContractsService currency propagation', () => {
     prisma.contract.create.mockImplementation(({ data }: any) =>
       Promise.resolve({ id: 'contract-1', status: ContractStatus.DRAFT, ...data }),
     );
+    prisma.$transaction.mockImplementation((callback: any) => callback(prisma));
     service = new ContractsService(
       prisma as unknown as PrismaService,
       events as unknown as ContractEventsService,

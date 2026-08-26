@@ -11,8 +11,8 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
-import { AlertTriangle, ArrowRight, Bell, Clock, Compass, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
-import { formatMoney, formatMoneyCompact } from '@/lib/currency';
+import { AlertTriangle, ArrowRight, Bell, Clock, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
+import { formatMoney } from '@/lib/currency';
 
 const PRIORITY_CONFIG: Record<string, { className: string }> = {
   HOT: { className: 'bg-red-100 text-red-700' },
@@ -24,9 +24,6 @@ const PRIORITY_CONFIG: Record<string, { className: string }> = {
 // which has no currency field on the schema at all (currency-less by design, not
 // a mixing bug) -- VND is the platform's implicit unit for this field, made
 // explicit here per the KPI-tile disclosure rule.
-function formatCompactVnd(value: number) {
-  return formatMoneyCompact(value, 'VND');
-}
 function formatFullVnd(value: number) {
   return formatMoney(value, 'VND');
 }
@@ -65,7 +62,7 @@ export default function CrmOverviewPage() {
   const kpis = [
     { label: t('overview.kpi.activeLeads'), value: summary.totalActive ?? 0, icon: Target, tone: 'text-blue-700 bg-blue-50' },
     { label: t('overview.kpi.newThisMonth'), value: summary.newThisMonth ?? 0, icon: TrendingUp, tone: 'text-violet-700 bg-violet-50' },
-    { label: t('overview.kpi.pipelineValue'), value: formatCompactVnd(summary.totalPipelineValue ?? 0), valueTitle: formatFullVnd(summary.totalPipelineValue ?? 0), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
+    { label: t('overview.kpi.pipelineValue'), value: formatFullVnd(summary.totalPipelineValue ?? 0), valueTitle: formatFullVnd(summary.totalPipelineValue ?? 0), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
     { label: t('overview.kpi.winRate'), value: `${(stats.conversionRates?.overallWinRate ?? 0).toFixed(1)}%`, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
     { label: t('overview.kpi.todayTasks'), value: overdue.length + dueToday.length, icon: Bell, tone: 'text-red-700 bg-red-50' },
   ];
@@ -90,18 +87,15 @@ export default function CrmOverviewPage() {
         actions={<Button onClick={() => navigate('/crm')} className="gap-2">{t('overview.openCrm')} <ArrowRight size={15} /></Button>}
       />
 
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-900 px-5 py-5 text-white shadow-sm sm:px-7">
-        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-blue-400/20 blur-3xl" />
-        <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-200"><Compass size={14} /> {t('overview.startDay')}</div>
-            <h2 className="text-xl font-semibold sm:text-2xl">{overdue.length ? t('overview.overdueItems', { count: overdue.length }) : t('overview.pipelineHealthy')}</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-blue-100/80">{t('overview.workflowDesc')}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" className="gap-2 bg-white text-slate-900 hover:bg-blue-50" onClick={() => navigate('/crm?section=followups')}><Bell size={15} /> {t('overview.processToday', { count: overdue.length + dueToday.length })}</Button>
-            <Button className="gap-2 border border-white/20 bg-white/10 hover:bg-white/20" onClick={() => navigate('/crm?quickFilter=my-leads')}><Users size={15} /> {t('overview.myLeads')}</Button>
-          </div>
+      <section className="flex flex-col justify-between gap-3 border-y border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{t('overview.startDay')}</div>
+          <h2 className="mt-0.5 text-base font-semibold text-slate-900">{overdue.length ? t('overview.overdueItems', { count: overdue.length }) : t('overview.pipelineHealthy')}</h2>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{t('overview.workflowDesc')}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button size="sm" variant={overdue.length ? 'default' : 'outline'} className="gap-2" onClick={() => navigate('/crm?section=followups')}><Bell size={14} /> {t('overview.processToday', { count: overdue.length + dueToday.length })}</Button>
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => navigate('/crm?quickFilter=my-leads')}><Users size={14} /> {t('overview.myLeads')}</Button>
         </div>
       </section>
 
@@ -109,16 +103,14 @@ export default function CrmOverviewPage() {
         isLoading={isLoading}
         isError={isError}
         onRetry={() => { statsQuery.refetch(); staleQuery.refetch(); followUpsQuery.refetch(); }}
-        loading={<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-xl" />)}</div>}
+        loading={<Skeleton className="h-20 rounded-lg" />}
       >
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {kpis.map(({ label, value, valueTitle, icon: Icon, tone }) => (
-            <Card key={label} className="shadow-none">
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${tone}`}><Icon size={18} /></div>
-                <div><div className="text-xl font-bold text-gray-900" title={valueTitle}>{value}</div><div className="text-xs text-gray-500">{label}</div></div>
-              </CardContent>
-            </Card>
+        <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-5">
+          {kpis.map(({ label, value, valueTitle, icon: Icon, tone }, index) => (
+            <div key={label} className={`flex items-center gap-3 px-3 py-3 ${index > 0 ? 'border-t border-slate-100 sm:border-l sm:border-t-0' : ''} ${index === 2 || index === 4 ? 'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0' : ''}`}>
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${tone}`}><Icon size={15} /></div>
+              <div className="min-w-0"><div className="truncate text-xl font-bold tabular-nums text-gray-900" title={valueTitle}>{value}</div><div className="truncate text-[11px] text-gray-500">{label}</div></div>
+            </div>
           ))}
         </div>
 
@@ -152,7 +144,7 @@ export default function CrmOverviewPage() {
                     const priority = PRIORITY_CONFIG[lead.priority] ?? PRIORITY_CONFIG.WARM;
                     return (
                       <button key={lead.id} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:border-blue-200 hover:bg-blue-50" onClick={() => navigate(`/crm?leadId=${lead.id}`)}>
-                        <Badge className={priority.className}>{t(`priority.${lead.priority}`, lead.priority as string)}</Badge>
+                        <Badge className={priority.className}>{t(`priority.${lead.priority}`, { defaultValue: t('common:unknownValue') })}</Badge>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">{lead.brandName ?? lead.contactName}</span>
                         <span className="flex items-center gap-1 text-xs text-amber-700"><Clock size={12} /> {daysSince(lead.lastActivityAt ?? lead.createdAt)} {t('common:date.days')}</span>
                       </button>
@@ -175,7 +167,7 @@ export default function CrmOverviewPage() {
                     const isOverdue = new Date(item.dueDate) < today;
                     return (
                       <button key={item.id} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left hover:bg-gray-50" onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}>
-                        <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{item.lead?.brandName ?? item.customer?.companyName ?? 'Follow-up'}</div><div className="truncate text-xs text-gray-500">{item.note ?? t('overview.noNote')}</div></div>
+                        <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{item.lead?.brandName ?? item.customer?.companyName ?? t('overview.followUpFallback')}</div><div className="truncate text-xs text-gray-500">{item.note ?? t('overview.noNote')}</div></div>
                         <Badge className={isOverdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}>{isOverdue ? t('overview.overdue') : new Date(item.dueDate).toLocaleDateString('vi-VN')}</Badge>
                       </button>
                     );

@@ -3,7 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usersApi, workOrdersApi } from '@/api';
+import i18n from '@/lib/i18n';
 import WorkOrdersPage from './WorkOrdersPage';
+
+void i18n.changeLanguage('vi');
 
 vi.mock('@/api', () => ({
   usersApi: { listUsers: vi.fn() },

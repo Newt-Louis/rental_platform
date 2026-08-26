@@ -23,8 +23,11 @@ import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
 import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
+import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
+import { ERPToolbar } from '@/components/erp';
+import { PageHeader } from '@/components/ui/page-header';
 import type { User } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -145,19 +148,19 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
       toast({ title: isEdit ? t('users.toast.updated') : t('users.toast.created') });
       reset(); setSelectedMallIds([]); onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
   });
 
   const grantMutation = useMutation({
     mutationFn: ({ mallId, role }: { mallId: string; role: string }) => mallAccessApi.grant({ userId: user!.id, mallId, role }),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); setAddMallId(''); toast({ title: 'Đã cấp quyền Mall' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
   });
 
   const revokeMutation = useMutation({
     mutationFn: (mallId: string) => mallAccessApi.revoke(user!.id, mallId),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); toast({ title: 'Đã thu hồi quyền' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); toast({ title: t('mallAccess.toast.revoked') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
   });
 
   const roleInfo = user ? ROLE_MAP[user.role] : null;
@@ -171,7 +174,7 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               {isEdit ? (
                 <>
                   {user!.fullName}
-                  {roleInfo && <Badge className={`${roleInfo.color} border-0 text-xs font-normal`}>{roleInfo.label}</Badge>}
+                  {roleInfo && <Badge className={`${roleInfo.color} border-0 text-xs font-normal`}>{t(adminRoleTranslationKey(user!.role))}</Badge>}
                   <Badge className={`border-0 text-xs font-normal ${user!.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {user!.isActive ? t('users.active') : t('users.locked')}
                   </Badge>
@@ -201,7 +204,7 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               <div>
                 <Label>{t('users.fields.role')}</Label>
                 <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                  {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+                  {ROLE_KEYS.map((k) => <option key={k} value={k}>{t(adminRoleTranslationKey(k))}</option>)}
                 </select>
               </div>
               <div>
@@ -228,11 +231,11 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold text-blue-700 flex items-center gap-1">
-                    <Building2 size={12} /> Quyền truy cập Mall
+                    <Building2 size={12} /> {t('users.mallScope.label')}
                   </Label>
                   {!isEdit && (
                     <select value={mallRole} onChange={(e) => setMallRole(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white">
-                      {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                      {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{t(adminRoleTranslationKey(r))}</option>)}
                     </select>
                   )}
                 </div>
@@ -250,10 +253,10 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                           </button>
                         );
                       })}
-                      {malls.length === 0 && <span className="text-xs text-gray-400">Chưa có Mall nào</span>}
+                      {malls.length === 0 && <span className="text-xs text-gray-400">{t('users.mallScope.noMalls')}</span>}
                     </div>
                     {selectedMallIds.length > 0 && (
-                      <p className="text-xs text-blue-600">Sẽ gán <strong>{mallRole}</strong> cho {selectedMallIds.length} mall</p>
+                      <p className="text-xs text-blue-600">{t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })}</p>
                     )}
                   </>
                 ) : (
@@ -264,27 +267,27 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                         return (
                           <div key={mallId} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-100 text-blue-700 text-xs font-medium">
                             <Building2 size={11} />{m.mall?.name ?? m.name}
-                            <span className="text-blue-400 text-[10px]">· {m.role}</span>
+                            <span className="text-blue-500 text-[10px]">· {t(adminRoleTranslationKey(m.role))}</span>
                             <button type="button" onClick={() => revokeMutation.mutate(mallId)} disabled={revokeMutation.isPending} className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors">
                               <X size={11} />
                             </button>
                           </div>
                         );
                       })}
-                      {userMalls.length === 0 && <span className="text-xs text-gray-400 py-1">Chưa được gán mall nào</span>}
+                      {userMalls.length === 0 && <span className="text-xs text-gray-400 py-1">{t('users.mallScope.unassigned')}</span>}
                     </div>
                     <div className="flex gap-2 items-center">
                       <select value={addMallId} onChange={(e) => setAddMallId(e.target.value)} className="flex-1 border rounded px-2 py-1.5 text-xs bg-white">
-                        <option value="">Thêm mall...</option>
+                        <option value="">{t('users.mallScope.addMall')}</option>
                         {malls.filter((m) => !userMalls.some((um: any) => (um.mallId ?? um.mall?.id) === m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
                       <select value={addMallRole} onChange={(e) => setAddMallRole(e.target.value)} className="w-36 border rounded px-2 py-1.5 text-xs bg-white">
-                        {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                        {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{t(adminRoleTranslationKey(r))}</option>)}
                       </select>
                       <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0"
                         disabled={!addMallId || grantMutation.isPending}
                         onClick={() => grantMutation.mutate({ mallId: addMallId, role: addMallRole })}>
-                        <Plus size={11} /> Thêm
+                        <Plus size={11} /> {t('users.mallScope.add')}
                       </Button>
                     </div>
                   </div>
@@ -296,7 +299,7 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               <Button type="button" variant="outline" onClick={onClose}>{t('confirm.cancel')}</Button>
               <Button type="submit" disabled={saveMutation.isPending}>
                 {saveMutation.isPending
-                  ? (isEdit ? t('users.saving') : 'Đang tạo...')
+                  ? (isEdit ? t('users.saving') : t('users.creating'))
                   : (isEdit ? t('users.saveChanges') : t('users.create'))}
               </Button>
             </div>
@@ -316,7 +319,7 @@ function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: ()
   const mutation = useMutation({
     mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
     onSuccess: () => { toast({ title: t('users.toast.passwordReset') }); reset(); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
   });
 
   return (
@@ -324,10 +327,10 @@ function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: ()
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound size={16} /> Đặt lại mật khẩu
+            <KeyRound size={16} /> {t('users.resetPasswordBtn')}
           </DialogTitle>
         </DialogHeader>
-        {user && <p className="text-sm text-gray-500 -mt-1">Tài khoản: <strong>{user.fullName}</strong></p>}
+        {user && <p className="text-sm text-gray-500 -mt-1">{t('users.accountLabel')}: <strong>{user.fullName}</strong></p>}
         <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-3 mt-1">
           <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder={t('users.newPasswordPlaceholder')} />
           <div className="flex gap-2 justify-end">
@@ -341,16 +344,17 @@ function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: ()
 }
 
 export function MallAccessCell({ user }: { user: User }) {
+  const { t } = useTranslation('admin');
   const display = getMallAccessDisplay(user);
 
   if (display.kind === 'global') {
-    return <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">Toàn hệ thống</Badge>;
+    return <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{t('users.mallScope.global')}</Badge>;
   }
   if (display.kind === 'not-applicable') {
     return <span className="text-gray-300 text-xs">—</span>;
   }
   if (display.kind === 'unassigned') {
-    return <span className="text-gray-400 text-xs">Chưa gán</span>;
+    return <span className="text-amber-700 text-xs font-medium">{t('users.mallScope.unassigned')}</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
@@ -412,38 +416,38 @@ function UsersTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex flex-wrap gap-3 flex-1">
-          <div className="relative flex-1">
+      <ERPToolbar className="mb-3">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+          <div className="relative min-w-56 flex-1">
             <Users size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <Input placeholder="Tìm theo tên hoặc email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder={t('users.searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 pl-9" />
           </div>
-          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">Tất cả vai trò</option>
-            {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-9 rounded-md border bg-white px-3 text-sm">
+            <option value="">{t('users.allRoles')}</option>
+            {ROLE_KEYS.map((k) => <option key={k} value={k}>{t(adminRoleTranslationKey(k))}</option>)}
           </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">Tất cả trạng thái</option>
-            <option value="active">Đang hoạt động</option>
-            <option value="locked">Đã khóa</option>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-md border bg-white px-3 text-sm">
+            <option value="">{t('users.allStatuses')}</option>
+            <option value="active">{t('users.statusActive')}</option>
+            <option value="locked">{t('users.statusLocked')}</option>
           </select>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus size={15} /> Thêm tài khoản
+        <Button size="sm" onClick={() => setShowCreate(true)} className="gap-2">
+          <Plus size={15} /> {t('users.create')}
         </Button>
-      </div>
+      </ERPToolbar>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 mb-5 lg:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 border-y border-slate-200 bg-white lg:grid-cols-4">
         {[
-          { label: 'Tổng tài khoản', value: stats?.total ?? '—', color: 'bg-gray-50 text-gray-700' },
-          { label: 'Đang hoạt động', value: stats?.active ?? '—', color: 'bg-green-50 text-green-700' },
-          { label: 'Đã khóa', value: stats?.locked ?? '—', color: 'bg-red-50 text-red-700' },
-          { label: 'Vai trò', value: Object.keys(ROLE_MAP).length, color: 'bg-purple-50 text-purple-700' },
+          { label: t('users.stats.total'), value: stats?.total ?? '—', valueClass: 'text-slate-900' },
+          { label: t('users.stats.active'), value: stats?.active ?? '—', valueClass: 'text-emerald-700' },
+          { label: t('users.stats.locked'), value: stats?.locked ?? '—', valueClass: 'text-red-700' },
+          { label: t('users.stats.roles'), value: Object.keys(ROLE_MAP).length, valueClass: 'text-indigo-700' },
         ].map((s, i) => (
-          <div key={i} className={`${s.color} rounded-xl p-3 text-center`}>
-            <div className="text-2xl font-bold">{s.value}</div>
-            <div className="text-xs opacity-70 mt-0.5">{s.label}</div>
+          <div key={i} className="border-b border-slate-100 px-4 py-2.5 last:border-r-0 odd:border-r lg:border-b-0 lg:border-r">
+            <div className={`text-xl font-semibold tabular-nums ${s.valueClass}`}>{s.value}</div>
+            <div className="mt-0.5 text-xs text-slate-500">{s.label}</div>
           </div>
         ))}
       </div>
@@ -452,20 +456,20 @@ function UsersTab() {
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
       ) : isError ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
-          <p className="mb-3 text-sm text-red-700">Không thể tải danh sách tài khoản.</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>Thử lại</Button>
+          <p className="mb-3 text-sm text-red-700">{t('users.loadError')}</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>{t('users.retry')}</Button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border bg-white">
+          <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Họ tên</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Phòng ban</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Vai trò</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Quyền truy cập Mall</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.fullName')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.email')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.department')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.role')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.mallAccess')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.status')}</th>
                 <th className="px-4 py-3 w-36" />
               </tr>
             </thead>
@@ -477,11 +481,11 @@ function UsersTab() {
                     <td className="px-4 py-3 font-medium">{u.fullName}</td>
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{(u as any).department ?? '—'}</td>
-                    <td className="px-4 py-3"><Badge className={`${roleInfo.color} border-0 text-xs`}>{roleInfo.label}</Badge></td>
+                    <td className="px-4 py-2.5"><Badge className={`${roleInfo.color} border-0 text-xs`}>{t(adminRoleTranslationKey(u.role))}</Badge></td>
                     <td className="px-4 py-3"><MallAccessCell user={u} /></td>
                     <td className="px-4 py-3">
                       <Badge className={u.isActive ? 'bg-green-100 text-green-700 border-0 text-xs' : 'bg-gray-100 text-gray-500 border-0 text-xs'}>
-                        {u.isActive ? 'Hoạt động' : 'Đã khóa'}
+                        {t(accountStatusTranslationKey(u.isActive))}
                       </Badge>
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -514,7 +518,7 @@ function UsersTab() {
           {users.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Users size={36} className="mx-auto mb-2 opacity-20" />
-              <p className="text-sm">Không tìm thấy tài khoản nào</p>
+              <p className="text-sm">{t('users.noResults')}</p>
             </div>
           )}
         </div>
@@ -522,10 +526,10 @@ function UsersTab() {
 
       {!isLoading && !isError && totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
-          <span>{data?.total ?? 0} tài khoản · Trang {page}/{totalPages}</span>
+          <span>{t('users.pagination', { total: data?.total ?? 0, page, totalPages })}</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Trước</Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Sau</Button>
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>{t('users.prev')}</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>{t('users.next')}</Button>
           </div>
         </div>
       )}
@@ -1184,23 +1188,24 @@ function SpaceStructureTab() {
 // ─── Tab 4: Permissions Matrix ────────────────────────────────────────────────
 
 function PermissionsTab() {
+  const { t } = useTranslation('admin');
   const roles = ROLE_KEYS;
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl text-sm text-gray-700">
+      <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <Info size={14} className="shrink-0" />
-        Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code (<code className="text-xs bg-white px-1 rounded border">role-permissions.ts</code> và <code className="text-xs bg-white px-1 rounded border">lib/permissions.ts</code>) và triển khai lại.
+        {t('readOnlyNote')}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="text-left px-3 py-2.5 bg-gray-50 border-b border-r font-medium text-gray-600 sticky left-0 z-10 min-w-36">Chức năng</th>
+              <th className="text-left px-3 py-2.5 bg-gray-50 border-b border-r font-medium text-gray-600 sticky left-0 z-10 min-w-36">{t('permissions.feature')}</th>
               {roles.map((role) => {
                 const r = ROLE_MAP[role];
                 return (
                   <th key={role} className="px-2 py-2.5 bg-gray-50 border-b border-r font-medium text-center min-w-20">
-                    <div className={`text-xs px-1.5 py-0.5 rounded-full ${r.color} whitespace-nowrap`}>{r.label}</div>
+                    <div className={`text-xs px-1.5 py-0.5 rounded-full ${r.color} whitespace-nowrap`}>{t(adminRoleTranslationKey(role))}</div>
                   </th>
                 );
               })}
@@ -1233,8 +1238,8 @@ function PermissionsTab() {
           const r = ROLE_MAP[k];
           return (
             <div key={k} className="flex items-start gap-2.5 p-3 bg-white border border-gray-100 rounded-xl">
-              <Badge className={`${r.color} border-0 shrink-0 mt-0.5`}>{r.label}</Badge>
-              <p className="text-xs text-gray-500">{r.desc}</p>
+              <Badge className={`${r.color} border-0 shrink-0 mt-0.5`}>{t(adminRoleTranslationKey(k))}</Badge>
+              <p className="text-xs text-gray-500">{t(`users.roleDescriptions.${k}`, { defaultValue: r.desc })}</p>
             </div>
           );
         })}
@@ -1361,36 +1366,26 @@ function BrandingCard() {
 // ─── Main AdminPage ────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'users',       label: 'Tài khoản',         icon: Users },
-  { id: 'malls',       label: 'Mall',               icon: Building2 },
-  { id: 'mall-access', label: 'Quyền Mall',         icon: Shield },
-  { id: 'structure',   label: 'Cấu trúc không gian', icon: Layers },
-  { id: 'categories',  label: 'Ngành hàng & Giá',  icon: SquareStack },
-  { id: 'permissions', label: 'Phân quyền',         icon: Shield },
-  { id: 'approval',    label: 'Approval Policy',    icon: GitBranch },
-  { id: 'system',      label: 'Hệ thống',           icon: Settings },
+  { id: 'users',       labelKey: 'tabs.users',       icon: Users },
+  { id: 'malls',       labelKey: 'tabs.malls',       icon: Building2 },
+  { id: 'mall-access', labelKey: 'tabs.mallAccess',  icon: Shield },
+  { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
+  { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
+  { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
+  { id: 'approval',    labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'system',      labelKey: 'tabs.system',      icon: Settings },
 ];
 
-const TAB_DESCRIPTIONS: Record<string, string> = {
-  users: 'Quản lý vòng đời tài khoản và trạng thái truy cập hệ thống.',
-  malls: 'Thiết lập danh mục Mall và thông tin vận hành nền tảng.',
-  'mall-access': 'Kiểm soát phạm vi dữ liệu Mall theo từng người dùng.',
-  structure: 'Chuẩn hóa Block, tầng và cấu trúc mặt bằng cho toàn hệ thống.',
-  categories: 'Quản trị ngành hàng, đơn giá và danh mục kinh doanh dùng chung.',
-  permissions: 'Thiết kế quyền theo vai trò và nguyên tắc kiểm soát tối thiểu.',
-  approval: 'Cấu hình luồng phê duyệt, cấp duyệt và ngưỡng nghiệp vụ.',
-  system: 'Quản lý nhận diện thương hiệu và cấu hình vận hành nền tảng.',
-};
-
 const TAB_GROUPS = [
-  { label: 'Người dùng & truy cập', ids: ['users', 'mall-access', 'permissions'] },
-  { label: 'Tổ chức & Mall', ids: ['malls', 'structure'] },
-  { label: 'Danh mục kinh doanh', ids: ['categories'] },
-  { label: 'Quy trình', ids: ['approval'] },
-  { label: 'Nền tảng', ids: ['system'] },
+  { labelKey: 'tabGroups.userAccess', ids: ['users', 'mall-access', 'permissions'] },
+  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'structure'] },
+  { labelKey: 'tabGroups.categories', ids: ['categories'] },
+  { labelKey: 'tabGroups.process', ids: ['approval'] },
+  { labelKey: 'tabGroups.platform', ids: ['system'] },
 ];
 
 export default function AdminPage() {
+  const { t } = useTranslation('admin');
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get('section');
   const activeTab = TABS.some((tab) => tab.id === requestedSection) ? requestedSection! : 'users';
@@ -1401,20 +1396,14 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 p-6 text-white shadow-xl">
-        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className="relative flex items-center gap-3">
-          <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/15"><Settings size={22} /></div>
-          <div>
-            <div className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200">ERP Control Center</div>
-            <h1 className="text-2xl font-bold">Cấu hình Hệ thống</h1>
-            <p className="mt-1 text-sm text-slate-300">Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.</p>
-          </div>
-          <div className="ml-auto hidden sm:block"><Badge className="border border-rose-300/20 bg-rose-400/15 px-3 py-1 text-rose-100"><Shield size={12} className="mr-1.5" /> Super Admin · Toàn quyền</Badge></div>
-        </div>
-      </div>
+    <div className="flex h-full flex-col">
+      <PageHeader
+        className="mb-4 border-b border-slate-200 pb-4"
+        eyebrow={t('erpControlCenter')}
+        title={t('systemConfig')}
+        description={t('systemConfigDesc')}
+        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t('superAdmin')}</Badge>}
+      />
 
       {/* Mobile select */}
       <label htmlFor="admin-section" className="sr-only">Chọn khu vực cấu hình</label>
@@ -1424,16 +1413,16 @@ export default function AdminPage() {
         onChange={(event) => selectTab(event.target.value)}
         className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
       >
-        {TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+        {TABS.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
       </select>
 
       {/* Sidebar + content */}
-      <div className="flex flex-1 gap-6 overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-5 overflow-hidden">
         {/* Sidebar */}
-        <nav className="hidden sm:flex flex-col w-52 shrink-0 overflow-y-auto">
+        <nav className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200 pr-3 sm:flex">
           {TAB_GROUPS.map((group) => (
-            <div key={group.label} className="mb-4">
-              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</div>
+            <div key={group.labelKey} className="mb-4">
+              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t(group.labelKey)}</div>
               <div className="flex flex-col gap-0.5">
                 {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
                   const Icon = tab.icon;
@@ -1449,7 +1438,7 @@ export default function AdminPage() {
                       }`}
                     >
                       <Icon size={15} />
-                      <span>{tab.label}</span>
+                      <span>{t(tab.labelKey)}</span>
                     </button>
                   );
                 })}
@@ -1460,9 +1449,9 @@ export default function AdminPage() {
 
         {/* Content */}
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">{TABS.find((tab) => tab.id === activeTab)?.label}</p>
-            <p className="mt-0.5 text-xs text-slate-600">{TAB_DESCRIPTIONS[activeTab]}</p>
+          <div className="mb-3 border-b border-slate-200 pb-3">
+            <p className="text-sm font-semibold text-slate-900">{t(TABS.find((tab) => tab.id === activeTab)?.labelKey ?? '')}</p>
+            <p className="mt-0.5 text-xs text-slate-600">{t(`tabDescriptions.${activeTab}`)}</p>
           </div>
 
           <div className="flex-1 overflow-auto">

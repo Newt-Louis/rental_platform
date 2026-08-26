@@ -13,6 +13,8 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope, GlobalScope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 
+const TICKET_STAFF_ROLES = MODULE_ROLES.tickets.filter((role) => role !== Role.TENANT);
+
 // CR-101 Phase 1: descriptive only. Core CRUD is correctly Mall+Tenant scoped
 // (class default). escalations/rate/rating and the SLA-policy admin routes are
 // the confirmed CONTRA-003 gap -- none of those service methods receive
@@ -144,15 +146,17 @@ export class TicketsController {
   }
 
   @Get('sla/policies')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List SLA policies' })
-  @GlobalScope('Should be ADMIN-only platform config; currently reachable by TENANT role -- CONTRA-003, role-policy issue not a Mall issue')
+  @GlobalScope('Global SLA configuration; ADMIN only')
   listSlaPolicies() {
     return this.slaService.listPolicies();
   }
 
   @Post('sla/policies')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Upsert SLA policy' })
-  @GlobalScope('Should be ADMIN-only platform config; currently any TENANT-role account can upsert it -- CONTRA-003, confirmed exploitable')
+  @GlobalScope('Global SLA configuration; ADMIN only')
   upsertSlaPolicy(@Body() body: {
     ticketType: TicketType;
     priority: TicketPriority;
@@ -164,37 +168,44 @@ export class TicketsController {
   }
 
   @Get('sla/stats')
+  @Roles(...TICKET_STAFF_ROLES)
   @ApiOperation({ summary: 'Get SLA compliance stats' })
-  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.GAP, trackedAs: 'not individually re-verified this session' })
-  getSlaStats() {
-    return this.slaService.getStats();
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-GOLDEN-W15' })
+  async getSlaStats(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.slaService.getStats(mallIds ?? undefined);
   }
 
   @Get(':id/escalations')
   @ApiOperation({ summary: 'Get ticket escalation history' })
   @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
-  getEscalations(@Param('id') id: string) {
-    return this.ticketsService.getEscalations(id);
+  async getEscalations(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
+    return this.ticketsService.getEscalations(id, user);
   }
 
   @Post(':id/rate')
   @ApiOperation({ summary: 'Submit CSAT rating for closed ticket' })
   @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
-  rateTicket(@Param('id') id: string, @Body() body: { rating: number; comment?: string }) {
-    return this.ticketsService.rateTicket(id, body.rating, body.comment);
+  async rateTicket(@Param('id') id: string, @Body() body: { rating: number; comment?: string }, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
+    return this.ticketsService.rateTicket(id, body.rating, body.comment, user);
   }
 
   @Get(':id/rating')
   @ApiOperation({ summary: 'Get ticket rating' })
   @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
-  getTicketRating(@Param('id') id: string) {
-    return this.ticketsService.getTicketRating(id);
+  async getTicketRating(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateTicket(user, id);
+    return this.ticketsService.getTicketRating(id, user);
   }
 
   @Get('ratings/summary')
+  @Roles(...TICKET_STAFF_ROLES)
   @ApiOperation({ summary: 'CSAT summary stats' })
-  getCsatSummary() {
-    return this.ticketsService.getCsatSummary();
+  async getCsatSummary(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.ticketsService.getCsatSummary(mallIds ?? undefined);
   }
 
   // ── Maintenance ──────────────────────────────────────────────────────────────

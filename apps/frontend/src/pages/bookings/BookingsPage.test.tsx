@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -299,7 +299,9 @@ describe('BookingsPage — render', () => {
   it('shows "Đang giữ" badge for ACTIVE booking', async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText('Đang giữ')).toBeInTheDocument();
+      const row = screen.getByText('BK-001').closest('tr');
+      expect(row).not.toBeNull();
+      expect(within(row!).getByText('Đang giữ')).toBeInTheDocument();
     });
   });
 
@@ -350,7 +352,7 @@ describe('BookingsPage — cancel booking', () => {
     await user.click(screen.getByTitle('Hủy booking'));
 
     expect(screen.getByText('Xác nhận hủy booking')).toBeInTheDocument();
-    expect(screen.getByText(/1 booking/)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByText(/1 booking/)).toBeInTheDocument();
   });
 
   it('confirming cancel calls bookingApi.cancel with booking id', async () => {
@@ -360,10 +362,11 @@ describe('BookingsPage — cancel booking', () => {
     await waitFor(() => expect(screen.getByTitle('Hủy booking')).toBeInTheDocument());
 
     await user.click(screen.getByTitle('Hủy booking'));
+    await user.type(screen.getByPlaceholderText('Nhập lý do để lưu vào lịch sử booking...'), 'Khách đổi kế hoạch');
     await user.click(screen.getByRole('button', { name: 'Xác nhận hủy' }));
 
     await waitFor(() => {
-      expect(mockCancelBooking).toHaveBeenCalledWith('b1');
+      expect(mockCancelBooking).toHaveBeenCalledWith('b1', 'Khách đổi kế hoạch');
     });
   });
 
@@ -374,6 +377,7 @@ describe('BookingsPage — cancel booking', () => {
     await waitFor(() => expect(screen.getByTitle('Hủy booking')).toBeInTheDocument());
 
     await user.click(screen.getByTitle('Hủy booking'));
+    await user.type(screen.getByPlaceholderText('Nhập lý do để lưu vào lịch sử booking...'), 'Khách đổi kế hoạch');
     await user.click(screen.getByRole('button', { name: 'Xác nhận hủy' }));
 
     await waitFor(() => {
@@ -492,7 +496,7 @@ describe('BookingsPage — delete booking', () => {
   it('CANCELLED booking shows delete button for non-admin user', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('BK-002')).toBeInTheDocument());
-    expect(screen.getByTitle('Xóa booking')).toBeInTheDocument();
+    expect(screen.getByTitle('Xóa')).toBeInTheDocument();
   });
 
   it('ACTIVE booking does NOT show delete button for non-admin', async () => {
@@ -500,16 +504,16 @@ describe('BookingsPage — delete booking', () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('BK-001')).toBeInTheDocument());
 
-    const deleteButtons = screen.queryAllByTitle('Xóa booking');
+    const deleteButtons = screen.queryAllByTitle('Xóa');
     expect(deleteButtons).toHaveLength(1); // only for b2 (CANCELLED)
   });
 
   it('clicking delete button opens confirm dialog', async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(screen.getByTitle('Xóa booking')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle('Xóa')).toBeInTheDocument());
 
-    await user.click(screen.getByTitle('Xóa booking'));
+    await user.click(screen.getByTitle('Xóa'));
 
     expect(screen.getByText('Xác nhận xóa booking')).toBeInTheDocument();
   });
@@ -518,9 +522,9 @@ describe('BookingsPage — delete booking', () => {
     mockSoftDelete.mockResolvedValue({});
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(screen.getByTitle('Xóa booking')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle('Xóa')).toBeInTheDocument());
 
-    await user.click(screen.getByTitle('Xóa booking'));
+    await user.click(screen.getByTitle('Xóa'));
     await user.click(screen.getByRole('button', { name: 'Xóa' }));
 
     await waitFor(() => {
@@ -537,9 +541,9 @@ describe('BookingsPage — delete booking', () => {
     });
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(screen.getByTitle('Xóa booking')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle('Xóa')).toBeInTheDocument());
 
-    await user.click(screen.getByTitle('Xóa booking'));
+    await user.click(screen.getByTitle('Xóa'));
     await user.click(screen.getByRole('button', { name: 'Xóa' }));
 
     await waitFor(() => {

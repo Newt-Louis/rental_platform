@@ -51,9 +51,12 @@ describe('ReportsController — CR-101 Phase 3G (BC-013)', () => {
 
   it('exportCsv resolves and forwards scope identically to the on-screen reports (export mirrors read)', async () => {
     mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
-    reportsService.exportCsv.mockResolvedValue('csv-data');
+    reportsService.exportCsv.mockResolvedValue({ csv: 'csv-data', rowCount: 1, truncated: false, limit: 5000 });
     const res: any = { setHeader: jest.fn(), send: jest.fn() };
     await controller.exportCsv('revenue', {}, { id: 'u1', role: 'LEASING_MANAGER' }, res);
     expect(reportsService.exportCsv).toHaveBeenCalledWith('revenue', undefined, undefined, ['mall-1']);
+    expect(res.setHeader).toHaveBeenCalledWith('X-Export-Row-Count', '1');
+    expect(res.setHeader).toHaveBeenCalledWith('X-Export-Limit', '5000');
+    expect(res.setHeader).toHaveBeenCalledWith('X-Export-Truncated', 'false');
   });
 });

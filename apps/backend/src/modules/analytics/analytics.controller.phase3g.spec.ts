@@ -69,4 +69,70 @@ describe('AnalyticsController — CR-101 Phase 3G (BC-013 / BC-CEO-SCOPE)', () =
       expect(compliance.upsertMallPolicy).not.toHaveBeenCalled();
     });
   });
+
+  describe('compliance export scope', () => {
+    const compliance: any = {
+      listExports: jest.fn(),
+      requestExport: jest.fn(),
+      getExport: jest.fn(),
+      generateExport: jest.fn(),
+    };
+    const mallAccess: any = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
+    let controller: AnalyticsController;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      controller = new AnalyticsController({} as any, {} as any, compliance, {} as any, mallAccess);
+    });
+
+    it('scopes the export worklist to the caller accessible malls', async () => {
+      mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
+
+      await controller.listExports(undefined, 'PENDING', { id: 'u1', role: 'MALL_DIRECTOR' });
+
+      expect(compliance.listExports).toHaveBeenCalledWith({
+        mallId: undefined,
+        status: 'PENDING',
+        mallIds: ['mall-1'],
+      });
+    });
+
+    it('validates Mall write access before creating a scoped export', async () => {
+      mallAccess.assertMallAccess.mockRejectedValue(new ForbiddenException());
+
+      await expect(controller.requestExport({
+        exportType: 'CONTRACTS',
+        mallId: 'mall-2',
+        periodStart: '2026-01-01',
+        periodEnd: '2026-01-31',
+      }, { id: 'u1', role: 'MALL_DIRECTOR' })).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(compliance.requestExport).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-ADMIN global export requests', async () => {
+      await expect(controller.requestExport({
+        exportType: 'CONTRACTS',
+        periodStart: '2026-01-01',
+        periodEnd: '2026-01-31',
+      }, { id: 'ceo-1', role: 'CEO' })).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('validates the persisted export Mall before generation', async () => {
+      compliance.getExport.mockResolvedValue({ id: 'exp-1', mallId: 'mall-2' });
+      mallAccess.assertMallAccess.mockRejectedValue(new ForbiddenException());
+
+      await expect(controller.generateExport('exp-1', {
+        id: 'u1',
+        role: 'MALL_DIRECTOR',
+      })).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(compliance.generateExport).not.toHaveBeenCalled();
+    });
+
+    it('limits the all-Mall manual scheduler trigger to ADMIN', () => {
+      const roles = Reflect.getMetadata(ROLES_KEY, AnalyticsController.prototype.triggerMonthlyReports);
+      expect(roles).toEqual(['ADMIN']);
+    });
+  });
 });

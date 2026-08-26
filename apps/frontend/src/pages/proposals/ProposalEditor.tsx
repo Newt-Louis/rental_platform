@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { proposalsApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import {
   X, Printer, Save, Upload, Image, Type,
   Plus, Trash2, Eye, EyeOff, Maximize2, Minimize2, GripVertical,
@@ -58,14 +59,10 @@ function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function fmtMoney(v: number, currency = 'VND') {
-  if (currency === 'USD') return `$${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD`;
-  if (currency === 'MMK') return `${v?.toLocaleString('en-US', { maximumFractionDigits: 2 })} MMK`;
-  return `${v?.toLocaleString('vi-VN')} VND`;
-}
-
 function initEditorContent(p: any): EditorContent {
-  const fmtR = (v: number) => fmtMoney(v, p.rentCurrency ?? 'VND');
+  const fmtR = (v: number) => p.rentCurrency
+    ? formatMoneyWithCode(v, p.rentCurrency as CurrencyCode)
+    : '—';
   const fmtS = fmtR;
 
   const brandName = p.tenant?.brandName ?? p.lead?.brandName ?? '[…]';
@@ -773,12 +770,12 @@ export function ProposalEditorDialog({ proposal, onClose }: {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí tiện ích/tháng (₫)</label>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí tiện ích/tháng ({proposal.rentCurrency ?? '—'})</label>
                         <input type="number" value={extraFields.utilityFee} onChange={setEF('utilityFee')}
                           className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
                       </div>
                       <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí ngoài giờ/giờ (₫)</label>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí ngoài giờ/giờ ({proposal.rentCurrency ?? '—'})</label>
                         <input type="number" value={extraFields.afterHoursFee} onChange={setEF('afterHoursFee')}
                           className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
                       </div>
@@ -791,18 +788,18 @@ export function ProposalEditorDialog({ proposal, onClose }: {
                     <div className="text-[11px] text-gray-400 font-medium mt-1">Cọc & Phí thi công (mục 17, 19)</div>
                     <div className="grid grid-cols-1 gap-2">
                       <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thuê (VND) — 0 = tính tự động</label>
+                        <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thuê ({proposal.rentCurrency ?? '—'}) — 0 = tính tự động</label>
                         <input type="number" min={0} value={extraFields.depositLease} onChange={setEF('depositLease')}
                           placeholder="0 = tự tính từ deposit × monthlyRent" className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thi công (VND)</label>
+                          <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thi công ({proposal.rentCurrency ?? '—'})</label>
                           <input type="number" value={extraFields.depositFitout} onChange={setEF('depositFitout')}
                             className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
                         </div>
                         <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Phí thi công (VND)</label>
+                          <label className="text-[11px] text-gray-500 block mb-0.5">Phí thi công ({proposal.rentCurrency ?? '—'})</label>
                           <input type="number" value={extraFields.fitoutFee} onChange={setEF('fitoutFee')}
                             className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
                         </div>

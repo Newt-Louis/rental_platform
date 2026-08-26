@@ -7,6 +7,9 @@
     "projectList": "Project list",
     "noData": "No data yet",
     "loading": "Loading...",
+    "loadError": "Cannot load the Fitout overview.",
+    "detailLoadError": "Cannot load this project's Fitout overview.",
+    "dayValue": "{{count}} days",
     "stats": {
       "activeProjects": "Active projects",
       "atRisk": "Risk alerts",
@@ -25,8 +28,10 @@
     "submittalByStatus": "Submittals by status"
   },
   "page": {
+    "eyebrow": "Space operations",
     "title": "Fitout Operations",
     "subtitle": "From space handover to grand opening through a clear process",
+    "dashboardAction": "Overview",
     "config": "Settings",
     "projectCount": "{{count}} projects",
     "operationMap": "Fitout Operations Map",
@@ -48,6 +53,26 @@
       "completedHint": "Handed over projects"
     },
     "filterAll": "All ({{count}})",
+    "attentionLabel": "Fitout attention summary for the current page",
+    "searchPlaceholder": "Search this page by tenant, space, floor or manager...",
+    "searchLabel": "Search fitout projects on the current page",
+    "stageFilterLabel": "Filter by stage",
+    "clearFilters": "Clear filters",
+    "resultCount": "{{count}} results",
+    "pageDisclosure": "Showing {{shown}} of {{total}} records on page {{page}}/{{totalPages}}. Attention counts and text search apply to the loaded page.",
+    "paginationLabel": "Fitout project pages",
+    "previousPage": "Previous",
+    "nextPage": "Next",
+    "pagePosition": "Page {{page}}/{{totalPages}}",
+    "noNextStage": "Final stage",
+    "table": {
+      "tenantUnit": "Tenant / Space",
+      "stage": "Current stage",
+      "progress": "Progress",
+      "expectedOpen": "Expected opening",
+      "manager": "Operations owner",
+      "nextStage": "Next stage"
+    },
     "errorTitle": "Cannot load fitout project list",
     "errorSubtitle": "Progress data is not ready. Please try again.",
     "retry": "Retry",
@@ -79,6 +104,8 @@
     }
   },
   "detail": {
+    "loadError": "Cannot load the selected Fitout project.",
+    "tenantOverview": "Review the project identity, current stage and authoritative schedule above. Use Documents to file or revise your own submissions.",
     "nextActions": "Recommended next actions",
     "noBacklog": "No backlog. Files are ready to advance to {{nextStep}}.",
     "noBacklogFallback": "completion stage",
@@ -105,6 +132,11 @@
     "navDailyReport": "Site log",
     "navGantt": "Gantt schedule",
     "tabs": {
+      "overview": "Overview",
+      "field": "Field control",
+      "schedule": "Schedule",
+      "riskCost": "Risk / cost",
+      "administration": "Administration",
       "checklist": "To-do",
       "documents": "Documents",
       "issues": "Issues",
@@ -126,7 +158,9 @@
     "title": "CHECKLIST",
     "addPlaceholder": "Add checklist item...",
     "empty": "No checklist items yet — add one above",
-    "completedAt": "Completed: {{date}}"
+    "completedAt": "Completed: {{date}}",
+    "addAction": "Add checklist item",
+    "deleteAction": "Delete checklist item {{title}}"
   },
   "submittal": {
     "newTitle": "New submittal",
@@ -138,7 +172,19 @@
     "approve": "Approve",
     "reject": "Reject",
     "resubmit": "Resubmit",
+    "upload": "Upload file",
+    "uploadFor": "Upload a file for {{title}}",
     "publish": "Publish",
+    "submitForReview": "Submit for review",
+    "needsAttachmentHint": "At least 1 attachment is required before submitting for review",
+    "status": {
+      "SUBMITTED": "Draft — needs attachment & submission",
+      "IN_PROGRESS": "In review",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "PUBLISHED": "Published",
+      "OBSOLETED": "Obsolete"
+    },
     "rejectDialog": {
       "title": "Reject document",
       "description": "The reason will be sent to the submitter and saved in the approval history.",
@@ -149,12 +195,16 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "resubmitted": "Resubmitted",
+      "uploaded": "File uploaded",
       "published": "Published",
       "errorSubmit": "Error filing submittal",
       "errorApprove": "Error approving",
       "errorReject": "Error rejecting",
       "errorResubmit": "Error resubmitting",
-      "errorPublish": "Error publishing"
+      "errorUpload": "Error uploading file",
+      "errorPublish": "Error publishing",
+      "submittedForReview": "Submitted for review — approvers have been notified",
+      "errorSubmitForReview": "Error submitting for review"
     }
   },
   "issue": {
@@ -162,6 +212,8 @@
     "dmapEmpty": "No digital floor plan for this floor — go to Floor Plan → Digital Map to set up.",
     "newTitle": "Create new issue",
     "descriptionPlaceholder": "Describe the issue...",
+    "categoryLabel": "Issue category",
+    "severityLabel": "Issue severity",
     "category": {
       "DEFECT": "Defect",
       "NCR": "NCR",
@@ -174,6 +226,14 @@
       "HIGH": "High",
       "CRITICAL": "Critical"
     },
+    "status": {
+      "OPENED": "Open",
+      "IN_PROGRESS": "In progress",
+      "DONE": "Resolved",
+      "CLOSED": "Closed",
+      "REOPENED": "Reopened",
+      "CANCELLED": "Cancelled"
+    },
     "create": "Create issue",
     "empty": "No issues yet",
     "assignee": "Assigned: {{name}}",
@@ -184,6 +244,22 @@
       "errorCreate": "Error creating issue",
       "errorUpdate": "Error updating"
     }
+  },
+  "workflow": {
+    "status": {
+      "PENDING": "Pending",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "CANCELLED": "Cancelled"
+    }
+  },
+  "roles": {
+    "ADMIN": "Administrator",
+    "MALL_DIRECTOR": "Mall director",
+    "OPERATION": "Operations",
+    "LEASING_MANAGER": "Leasing manager",
+    "FINANCE": "Finance",
+    "TENANT": "Tenant"
   },
   "milestone": {
     "empty": "No SLA milestones yet",
@@ -238,6 +314,9 @@
     "add": "Add",
     "loading": "Loading...",
     "empty": "No tasks yet",
+    "loadError": "Cannot load the construction schedule.",
+    "saveProgress": "Save progress for {{title}}",
+    "deleteTask": "Delete task {{title}}",
     "toast": {
       "added": "Task added",
       "updated": "Updated",
@@ -248,6 +327,9 @@
     "title": "Site log",
     "loading": "Loading...",
     "loading_project": "Loading...",
+    "loadError": "Cannot load the site log for this date.",
+    "dateLabel": "Report date",
+    "contractorLabel": "Contractor",
     "workforce": "{{count}} workers",
     "entries": "{{count}} report entries",
     "addReport": "Add report",
@@ -277,6 +359,12 @@
     "noAccess": "You do not have access to fitout configuration.",
     "back": "Back",
     "loading": "Loading...",
+    "loadError": "Cannot load Fitout configuration.",
+    "retry": "Retry",
+    "editStage": "Edit stage {{name}}",
+    "deactivateStage": "Deactivate stage {{name}}",
+    "editFormType": "Edit document type {{name}}",
+    "deactivateFormType": "Deactivate document type {{name}}",
     "stageList": "Stage list",
     "addStage": "Add stage",
     "formTypeList": "Document type list",
@@ -348,6 +436,57 @@
       "MEDIUM": "Medium",
       "HIGH": "High"
     }
+  },
+  "riskControl": {
+    "title": "Risk register",
+    "description": "Assess probability × impact and track mitigation measures.",
+    "open": "Open",
+    "critical": "Critical",
+    "add": "Add",
+    "save": "Save risk",
+    "loading": "Loading risk register...",
+    "loadError": "Cannot load risk register.",
+    "errorUpdate": "Cannot update risk data. Please try again.",
+    "empty": "No risks recorded for this project.",
+    "other": "Other",
+    "unassigned": "Unassigned",
+    "due": "Due {{date}}",
+    "noDueDate": "No due date",
+    "statusLabel": "Status for {{title}}",
+    "fields": { "title": "Risk name *", "category": "Category", "probability": "Probability (1–5)", "impact": "Impact (1–5)", "dueDate": "Due date", "mitigation": "Mitigation measure" },
+    "category": { "SAFETY": "Safety", "COST": "Cost", "SCHEDULE": "Schedule", "QUALITY": "Quality", "COMPLIANCE": "Compliance" },
+    "level": { "LOW": "Low", "MEDIUM": "Medium", "HIGH": "High", "CRITICAL": "Critical" },
+    "status": { "OPEN": "Open", "MITIGATING": "Mitigating", "CLOSED": "Closed" },
+    "toast": { "created": "Risk added to the register" }
+  },
+  "changeOrder": {
+    "title": "Change order & cost control",
+    "description": "Control scope, cost and schedule impact.",
+    "pending": "Pending",
+    "proposed": "Proposed",
+    "approved": "Approved",
+    "add": "Add",
+    "save": "Save change order",
+    "loading": "Loading change orders...",
+    "loadError": "Cannot load change orders.",
+    "errorUpdate": "Cannot update change-order data. Please try again.",
+    "empty": "No change requests yet.",
+    "unknownRequester": "Requester unavailable",
+    "currencyMissing": "Currency unavailable",
+    "inheritedCurrency": "Currency inherited from Contract: {{currency}}",
+    "approvedAmountMissing": "Approved amount not recorded",
+    "proposedValue": "Proposed: {{value}}",
+    "requesterHint": "The requester is recorded from the signed-in account.",
+    "cost": "Cost",
+    "schedule": "Schedule",
+    "days": "{{count}} days",
+    "decisionLabel": "Decision for {{title}}",
+    "selectDecision": "Select decision",
+    "approve": "Approve",
+    "reject": "Reject",
+    "fields": { "title": "Change description *", "reason": "Reason / scope", "estimatedCost": "Estimated cost *", "scheduleImpact": "Schedule impact (days)" },
+    "status": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "UNDER_REVIEW": "Under review", "APPROVED": "Approved", "REJECTED": "Rejected", "CANCELLED": "Cancelled" },
+    "toast": { "created": "Change order created" }
   },
   "common": {
     "back": "Back",

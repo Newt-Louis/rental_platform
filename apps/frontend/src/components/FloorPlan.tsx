@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { Pencil, Trash2, Plus } from 'lucide-react';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 interface FloorMeta {
   id?: string;
@@ -11,13 +13,13 @@ interface FloorMeta {
   sortOrder: number;
 }
 
-const STATUS_CFG: Record<string, { label: string; bg: string; border: string; text: string }> = {
-  VACANT:       { label: 'Trống',          bg: 'bg-red-50',     border: 'border-red-300',    text: 'text-red-800' },
-  BOOKING:      { label: 'Booking',        bg: 'bg-amber-50',   border: 'border-amber-300',  text: 'text-amber-800' },
-  NEGOTIATING:  { label: 'Thương thảo',   bg: 'bg-orange-50',  border: 'border-orange-300', text: 'text-orange-800' },
-  CONTRACTED:   { label: 'Hợp đồng',      bg: 'bg-blue-50',    border: 'border-blue-300',   text: 'text-blue-800' },
-  UNDER_FITOUT: { label: 'Đang thi công', bg: 'bg-purple-50',  border: 'border-purple-300', text: 'text-purple-800' },
-  OCCUPIED:     { label: 'Đang thuê',     bg: 'bg-green-50',   border: 'border-green-300',  text: 'text-green-800' },
+const STATUS_CFG: Record<string, { bg: string; border: string; text: string }> = {
+  VACANT:       { bg: 'bg-red-50',     border: 'border-red-300',    text: 'text-red-800' },
+  BOOKING:      { bg: 'bg-amber-50',   border: 'border-amber-300',  text: 'text-amber-800' },
+  NEGOTIATING:  { bg: 'bg-orange-50',  border: 'border-orange-300', text: 'text-orange-800' },
+  CONTRACTED:   { bg: 'bg-blue-50',    border: 'border-blue-300',   text: 'text-blue-800' },
+  UNDER_FITOUT: { bg: 'bg-purple-50',  border: 'border-purple-300', text: 'text-purple-800' },
+  OCCUPIED:     { bg: 'bg-green-50',   border: 'border-green-300',  text: 'text-green-800' },
 };
 
 const FLOOR_SORT: Record<string, number> = { B2: -2, B1: -1, GF: 0, L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, RF: 9 };
@@ -38,6 +40,7 @@ export function FloorPlan({
   units, onUnitClick, selectedUnitId, slotSummaries = {},
   allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor,
 }: FloorPlanProps) {
+  const { t } = useTranslation('spaces');
   const floors = useMemo<FloorMeta[]>(() => {
     if (allFloors && allFloors.length > 0) {
       return [...allFloors].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -116,7 +119,7 @@ export function FloorPlan({
                     <button
                       onClick={(e) => { e.stopPropagation(); onEditFloor(f); }}
                       className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title="Sửa tầng"
+                      title={t('floor.edit')}
                     >
                       <Pencil size={11} />
                     </button>
@@ -125,7 +128,7 @@ export function FloorPlan({
                     <button
                       onClick={(e) => { e.stopPropagation(); onDeleteFloor(f); }}
                       className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title="Xóa tầng"
+                      title={t('floor.delete')}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -140,7 +143,7 @@ export function FloorPlan({
             onClick={onCreateFloor}
             className="px-3 py-1.5 text-xs font-medium rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-white hover:border-gray-400 flex items-center gap-1"
           >
-            <Plus size={12} /> Thêm tầng
+            <Plus size={12} /> {t('floor.create')}
           </button>
         )}
       </div>
@@ -149,12 +152,12 @@ export function FloorPlan({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="font-semibold text-gray-700">{floorName}</span>
         <span className="text-gray-300">|</span>
-        <span className="text-green-600 font-medium">{stats.occupied} đang thuê</span>
-        <span className="text-red-500">{stats.vacant} trống</span>
-        {stats.booking > 0 && <span className="text-amber-500">{stats.booking} booking</span>}
-        {stats.negotiating > 0 && <span className="text-orange-500">{stats.negotiating} thương thảo</span>}
-        {stats.contracted > 0 && <span className="text-blue-500">{stats.contracted} hợp đồng</span>}
-        {stats.fitout > 0 && <span className="text-purple-500">{stats.fitout} thi công</span>}
+        <span className="text-green-600 font-medium">{stats.occupied} {getUnitStatusLabel(t, 'OCCUPIED').toLowerCase()}</span>
+        <span className="text-red-500">{stats.vacant} {getUnitStatusLabel(t, 'VACANT').toLowerCase()}</span>
+        {stats.booking > 0 && <span className="text-amber-500">{stats.booking} {getUnitStatusLabel(t, 'BOOKING').toLowerCase()}</span>}
+        {stats.negotiating > 0 && <span className="text-orange-500">{stats.negotiating} {getUnitStatusLabel(t, 'NEGOTIATING').toLowerCase()}</span>}
+        {stats.contracted > 0 && <span className="text-blue-500">{stats.contracted} {getUnitStatusLabel(t, 'CONTRACTED').toLowerCase()}</span>}
+        {stats.fitout > 0 && <span className="text-purple-500">{stats.fitout} {getUnitStatusLabel(t, 'UNDER_FITOUT').toLowerCase()}</span>}
         <span className="ml-auto text-xs text-gray-400">
           {stats.leasedArea.toLocaleString()} / {stats.totalArea.toLocaleString()} m² NLA
         </span>
@@ -185,7 +188,7 @@ export function FloorPlan({
             <div className="flex items-center gap-3 py-1">
               <div className="flex-1 border-t-2 border-dashed border-slate-400" />
               <span className="text-xs font-bold text-slate-400 tracking-widest whitespace-nowrap">
-                ◄ HÀNH LANG CHÍNH ►
+                {t('floorPlan.corridor')}
               </span>
               <div className="flex-1 border-t-2 border-dashed border-slate-400" />
             </div>
@@ -205,24 +208,24 @@ export function FloorPlan({
 
           {floorUnits.length === 0 && (
             <div className="py-12 text-center text-slate-400 text-sm">
-              Không có mặt bằng nào trên tầng này
+              {t('floorPlan.noUnits')}
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="bg-slate-800 text-slate-400 text-center py-1.5 text-xs tracking-widest">
-          ▼ LỐI VÀO CHÍNH ▼
+          {t('floorPlan.entrance')}
         </div>
       </div>
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-600">
-        <span className="font-semibold text-gray-400 uppercase tracking-wide">Chú thích:</span>
+        <span className="font-semibold text-gray-400 uppercase tracking-wide">{t('floorPlan.legend')}</span>
         {Object.entries(STATUS_CFG).map(([key, cfg]) => (
           <div key={key} className="flex items-center gap-1.5">
             <div className={cn('w-3.5 h-3.5 rounded border-2', cfg.bg, cfg.border)} />
-            <span>{cfg.label}</span>
+            <span>{getUnitStatusLabel(t, key)}</span>
           </div>
         ))}
       </div>
@@ -239,6 +242,7 @@ interface ZoneRowProps {
 }
 
 function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries = {} }: ZoneRowProps) {
+  const { t } = useTranslation('spaces');
   const sorted = [...units].sort((a, b) => a.code.localeCompare(b.code));
   const maxArea = Math.max(...sorted.map(u => u.areaNLA), 1);
 
@@ -272,7 +276,7 @@ function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries =
             <button
               key={unit.id}
               onClick={() => onUnitClick(unit)}
-              title={`${unit.code} — ${unit.tenant?.brandName ?? 'Trống'} — ${unit.areaNLA.toLocaleString()} m²${slotHint ? ` — ${slotSummary!.totalSlots} ô: ${slotHint}` : ''}`}
+              title={`${unit.code} — ${unit.tenant?.brandName ?? getUnitStatusLabel(t, 'VACANT')} — ${unit.areaNLA.toLocaleString()} m²${slotHint ? ` — ${slotSummary!.totalSlots} ô: ${slotHint}` : ''}`}
               style={{ minWidth: `${width}px` }}
               className={cn(
                 'flex flex-col justify-between p-2.5 rounded-lg border-2 text-left transition-all cursor-pointer',

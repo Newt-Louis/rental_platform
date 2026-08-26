@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSpacesFilters } from '@/hooks/useSpacesFilters';
+import { ERPToolbar } from '@/components/erp/ERPToolbar';
 import { STATUS_CONFIG, SPACE_TYPE_OPTIONS, TIER_OPTIONS } from './spaces.constants';
+import { getUnitStatusLabel } from './spacesPresentation';
 
 export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
+  const { t } = useTranslation('spaces');
   const [showFilters, setShowFilters] = useState(false);
 
   const {
@@ -25,12 +29,13 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
   } = useSpacesFilters();
 
   return (
-    <div className="space-y-3 mb-4">
-      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+    <div className="space-y-2 mb-3">
+      <ERPToolbar className="gap-2 rounded-md px-2.5 py-2">
         <div className="relative w-full sm:flex-1 sm:max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <Input
-            placeholder="Tìm mã, tên mặt bằng..."
+            placeholder={t('filters.searchPlaceholder')}
+            aria-label={t('filters.search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -38,12 +43,12 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
         </div>
         <Select value={statusFilter || 'ALL'} onValueChange={(value) => setStatusFilter(value === 'ALL' ? '' : value)}>
           <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="Tất cả trạng thái" />
+            <SelectValue placeholder={t('filters.allStatus')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">Tất cả</SelectItem>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+            <SelectItem value="ALL">{t('filters.all')}</SelectItem>
+            {Object.entries(STATUS_CONFIG).map(([key]) => (
+              <SelectItem key={key} value={key}>{getUnitStatusLabel(t, key)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -54,22 +59,22 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
           className="gap-1.5"
         >
           <SlidersHorizontal size={14} />
-          Bộ lọc nâng cao
+          {t('filters.advanced')}
           {hasAdvancedFilters && <span className="w-2 h-2 bg-gray-500 rounded-full" />}
         </Button>
         {(statusFilter || floorFilter || search || hasAdvancedFilters) && (
           <Button variant="outline" size="sm" onClick={clearFilters}>
-            <X size={14} className="mr-1" /> Xóa bộ lọc
+            <X size={14} className="mr-1" /> {t('filters.clearAll')}
           </Button>
         )}
-      </div>
+      </ERPToolbar>
 
       {/* Advanced Filters Panel */}
       {showFilters && (
         <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích min (m²)</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.minAreaLabel')}</label>
               <Input
                 type="number"
                 placeholder="0"
@@ -78,7 +83,7 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Diện tích max (m²)</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.maxAreaLabel')}</label>
               <Input
                 type="number"
                 placeholder="1000"
@@ -87,7 +92,7 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê min (₫/m²)</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.minRentLabel')}</label>
               <Input
                 type="number"
                 placeholder="0"
@@ -96,7 +101,7 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Giá thuê max (₫/m²)</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.maxRentLabel')}</label>
               <Input
                 type="number"
                 placeholder="1000000"
@@ -107,13 +112,13 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Ngành hàng</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.categoryLabel')}</label>
               <Select value={categoryFilter || 'ALL'} onValueChange={(value) => setCategoryFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả ngành hàng" />
+                  <SelectValue placeholder={t('filters.allCategories')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">Tất cả</SelectItem>
+                  <SelectItem value="ALL">{t('filters.all')}</SelectItem>
                   {categoryNames.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
@@ -122,13 +127,13 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             </div>
             {/* GAP #4 */}
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Loại sảnh</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.spaceTypeLabel')}</label>
               <Select value={spaceTypeFilter || 'ALL'} onValueChange={(value) => setSpaceTypeFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả loại" />
+                  <SelectValue placeholder={t('filters.allTypes')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">Tất cả</SelectItem>
+                  <SelectItem value="ALL">{t('filters.all')}</SelectItem>
                   {SPACE_TYPE_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}
@@ -137,13 +142,13 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             </div>
             {/* GAP #6 */}
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Tier</label>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">{t('filters.tierLabel')}</label>
               <Select value={tierFilter || 'ALL'} onValueChange={(value) => setTierFilter(value === 'ALL' ? '' : value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Tất cả tier" />
+                  <SelectValue placeholder={t('filters.allTiers')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">Tất cả</SelectItem>
+                  <SelectItem value="ALL">{t('filters.all')}</SelectItem>
                   {TIER_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                   ))}

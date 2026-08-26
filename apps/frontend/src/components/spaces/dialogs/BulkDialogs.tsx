@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { categoriesApi } from '@/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { STATUS_CONFIG, CATEGORIES } from '@/pages/spaces/spaces.constants';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 export function BulkStatusDialog({ open, count, onClose, onConfirm, loading }: {
   open: boolean;
@@ -14,6 +16,7 @@ export function BulkStatusDialog({ open, count, onClose, onConfirm, loading }: {
   onConfirm: (status: string) => void;
   loading: boolean;
 }) {
+  const { t } = useTranslation('spaces');
   const [status, setStatus] = useState('');
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -27,8 +30,8 @@ export function BulkStatusDialog({ open, count, onClose, onConfirm, loading }: {
               <SelectValue placeholder="Chọn trạng thái mới" />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+              {Object.entries(STATUS_CONFIG).map(([key]) => (
+                <SelectItem key={key} value={key}>{getUnitStatusLabel(t, key)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -103,7 +106,7 @@ export function BulkRentDialog({ open, count, onClose, onConfirm, loading }: {
         </DialogHeader>
         <div className="py-4 space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (₫/m²)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (VND/m²)</label>
             <Input
               type="number"
               placeholder="450000"
@@ -112,7 +115,7 @@ export function BulkRentDialog({ open, count, onClose, onConfirm, loading }: {
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (VND/m²)</label>
             <Input
               type="number"
               placeholder="80000"

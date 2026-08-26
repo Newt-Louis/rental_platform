@@ -3,17 +3,18 @@ import {
   AlertCircle, BookmarkPlus, Users, FileText, Building2,
   CheckCircle, GitMerge,
 } from 'lucide-react';
+import { formatVndRate } from './spacesPresentation';
 
 export const STATUS_CONFIG: Record<string, {
-  label: string; color: string; iconBg: string; leftBorder: string; textColor: string;
+  color: string; iconBg: string; leftBorder: string; textColor: string;
 }> = {
-  VACANT:       { label: 'Trống',          color: 'bg-red-100 text-red-700 border-red-200',          iconBg: 'bg-red-50',    leftBorder: 'border-l-red-400',    textColor: 'text-red-500' },
-  BOOKING:      { label: 'Booking',        color: 'bg-amber-100 text-amber-700 border-amber-200',    iconBg: 'bg-amber-50',  leftBorder: 'border-l-amber-400',  textColor: 'text-amber-500' },
-  NEGOTIATING:  { label: 'Thương thảo',   color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50', leftBorder: 'border-l-orange-400', textColor: 'text-orange-500' },
-  CONTRACTED:   { label: 'Hợp đồng',      color: 'bg-blue-100 text-gray-700 border-gray-200',       iconBg: 'bg-blue-50',   leftBorder: 'border-l-blue-400',   textColor: 'text-blue-500' },
-  UNDER_FITOUT: { label: 'Đang thi công', color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50', leftBorder: 'border-l-purple-400', textColor: 'text-purple-500' },
-  OCCUPIED:     { label: 'Đang thuê',     color: 'bg-green-100 text-green-700 border-green-200',    iconBg: 'bg-green-50',  leftBorder: 'border-l-green-400',  textColor: 'text-green-500' },
-  MERGED:       { label: 'Đã gộp',        color: 'bg-gray-100 text-gray-500 border-gray-200',       iconBg: 'bg-gray-50',   leftBorder: 'border-l-gray-300',   textColor: 'text-gray-400' },
+  VACANT:       { color: 'bg-red-100 text-red-700 border-red-200',          iconBg: 'bg-red-50',    leftBorder: 'border-l-red-400',    textColor: 'text-red-500' },
+  BOOKING:      { color: 'bg-amber-100 text-amber-700 border-amber-200',    iconBg: 'bg-amber-50',  leftBorder: 'border-l-amber-400',  textColor: 'text-amber-500' },
+  NEGOTIATING:  { color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50', leftBorder: 'border-l-orange-400', textColor: 'text-orange-500' },
+  CONTRACTED:   { color: 'bg-blue-100 text-gray-700 border-gray-200',       iconBg: 'bg-blue-50',   leftBorder: 'border-l-blue-400',   textColor: 'text-blue-500' },
+  UNDER_FITOUT: { color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50', leftBorder: 'border-l-purple-400', textColor: 'text-purple-500' },
+  OCCUPIED:     { color: 'bg-green-100 text-green-700 border-green-200',    iconBg: 'bg-green-50',  leftBorder: 'border-l-green-400',  textColor: 'text-green-500' },
+  MERGED:       { color: 'bg-gray-100 text-gray-500 border-gray-200',       iconBg: 'bg-gray-50',   leftBorder: 'border-l-gray-300',   textColor: 'text-gray-400' },
 };
 
 export const STATUS_ICONS: Record<string, React.ReactNode> = {
@@ -82,5 +83,5 @@ export function fmtDate(d?: string | null): string | null {
 }
 
 export function fmtMoney(n: number): string {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫/m²';
+  return formatVndRate(n);
 }

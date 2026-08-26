@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookmarkPlus, Building2, User, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { BookmarkPlus, X } from "lucide-react";
 import { bookingApi, spacesApi, usersApi } from "@/api";
 import type { BookingUnitFinderRow } from "@/api/bookings";
-import { Badge } from "@/components/ui/badge";
+import { ERPStatusBadge } from "@/components/erp";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +25,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { CURRENCIES, CURRENCY_CODES, type CurrencyCode } from "@/lib/currency";
+import { localizedEnumLabel } from "@/lib/erpEnumPresentation";
 import { PartyFinder, type BookingLead } from "./PartyFinder";
 import { UnitFinder } from "./UnitFinder";
 
@@ -56,6 +58,7 @@ export function BookingWorkspaceDialog({
   initialUnitId,
   initialUnitMallId,
 }: BookingWorkspaceDialogProps) {
+  const { t } = useTranslation("bookings");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [workspaceMallId, setWorkspaceMallId] = useState<string | undefined>(
@@ -106,8 +109,7 @@ export function BookingWorkspaceDialog({
     setSelectedLead(lead);
     setDetails((current) => ({
       ...current,
-      requestedArea:
-        lead.expectedArea != null ? String(lead.expectedArea) : "",
+      requestedArea: lead.expectedArea != null ? String(lead.expectedArea) : "",
       notes: lead.notes ?? "",
       assignedToId: lead.assignedToId ?? lead.assignedTo?.id ?? "",
     }));
@@ -149,7 +151,7 @@ export function BookingWorkspaceDialog({
       toast({
         title: "Đã tạo Booking",
         description: booking?.status
-          ? `${booking.bookingNumber ?? ""} · ${booking.status}${booking.priority ? ` · Ưu tiên ${booking.priority}` : ""}`
+          ? `${booking.bookingNumber ?? ""} · ${localizedEnumLabel(t, "bookings:status", booking.status)}${booking.priority ? ` · Ưu tiên ${booking.priority}` : ""}`
           : undefined,
       });
       onClose();
@@ -193,43 +195,35 @@ export function BookingWorkspaceDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="!flex h-[calc(100dvh-1rem)] max-w-[min(96vw,1180px)] !max-h-none flex-col gap-0 overflow-hidden p-0 sm:h-[90dvh]">
-        <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6 sm:py-5">
-          <DialogTitle className="flex items-center gap-2">
-            <BookmarkPlus
-              className="h-5 w-5 text-amber-600"
-              aria-hidden="true"
-            />
-            Tạo Booking / Giữ Lô
-          </DialogTitle>
-          <DialogDescription>
-            Chọn Lead và Unit dài hạn. Unit đang BOOKING vẫn có thể nhận Booking
-            xếp hàng khi máy chủ xác nhận đủ điều kiện.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-          <div className="mb-4 rounded-lg border bg-gray-50 p-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Mall context
-                </p>
-                <p className="text-sm text-gray-700">
-                  Lead và Unit phải thuộc cùng Mall.
-                </p>
-              </div>
+      <DialogContent className="!flex h-[calc(100dvh-0.75rem)] max-w-[min(98vw,1280px)] !max-h-none flex-col gap-0 overflow-hidden rounded-lg border-border bg-background p-0 shadow-xl sm:h-[92dvh]">
+        <DialogHeader className="shrink-0 border-b border-border bg-card px-4 py-3 pr-12 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                {t("workspace.longTerm")}
+              </p>
+              <DialogTitle className="text-lg font-semibold leading-tight text-foreground">
+                {t("workspace.title")}
+              </DialogTitle>
+              <DialogDescription className="mt-1 max-w-2xl text-xs leading-relaxed">
+                {t("workspace.description")}
+              </DialogDescription>
+            </div>
+            <div className="flex shrink-0 flex-col gap-1.5 sm:items-end">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("workspace.mall")}
+              </span>
               {mallId || initialUnitMallId ? (
-                <Badge variant="blue">
+                <ERPStatusBadge tone="brand" className="justify-center">
                   {selectedUnit?.mall.name ??
                     mallName ??
                     malls.find((mall) => mall.id === workspaceMallId)?.name ??
                     "Mall đã chọn"}
-                </Badge>
+                </ERPStatusBadge>
               ) : (
                 <Select value={workspaceMallId} onValueChange={changeMall}>
                   <SelectTrigger
-                    className="w-full sm:w-72"
+                    className="h-8 w-full sm:w-64"
                     aria-label="Chọn Mall cho Booking"
                   >
                     <SelectValue placeholder="Chọn Mall..." />
@@ -243,66 +237,78 @@ export function BookingWorkspaceDialog({
                   </SelectContent>
                 </Select>
               )}
+              <span className="text-[11px] text-muted-foreground">
+                {t("workspace.sameMall")}
+              </span>
             </div>
           </div>
+        </DialogHeader>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-            <div className="min-w-0 rounded-xl border bg-white p-4">
-              <UnitFinder
+        <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(400px,2fr)]">
+          <main className="min-w-0 p-3 sm:p-4">
+            <UnitFinder
+              mallId={workspaceMallId}
+              initialUnitId={initialUnitId}
+              selectedUnit={selectedUnit}
+              onSelect={selectUnit}
+            />
+          </main>
+
+          <aside className="min-w-0 border-t border-border bg-card lg:border-l lg:border-t-0">
+            <section className="border-b border-border p-3 sm:p-4">
+              <PartyFinder
                 mallId={workspaceMallId}
-                initialUnitId={initialUnitId}
-                selectedUnit={selectedUnit}
-                onSelect={selectUnit}
+                selectedLead={selectedLead}
+                onSelect={selectLead}
+                onClear={() => setSelectedLead(null)}
               />
-            </div>
+            </section>
 
-            <div className="min-w-0 space-y-5">
-              <div className="rounded-xl border bg-white p-4">
-                <PartyFinder
-                  mallId={workspaceMallId}
-                  selectedLead={selectedLead}
-                  onSelect={selectLead}
-                />
-              </div>
-
-              <div
-                className="space-y-3 rounded-xl border bg-white p-4"
-                aria-live="polite"
-              >
-                <h3 className="font-semibold text-gray-900">
-                  Thông tin đã chọn
+            <section
+              className="border-b border-border p-3 sm:p-4"
+              aria-live="polite"
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t("workspace.bookingContext")}
                 </h3>
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {selectedLead && selectedUnit
+                    ? t("workspace.ready")
+                    : t("workspace.incomplete")}
+                </span>
+              </div>
+              <div className="divide-y divide-border border-y border-border">
                 {selectedUnit ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                    <div className="flex items-start gap-2">
-                      <Building2
-                        className="mt-0.5 h-4 w-4 text-amber-600"
-                        aria-hidden="true"
-                      />
+                  <div className="py-3">
+                    <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("workspace.selectedUnit")}
+                        </p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold">
+                          <span className="text-sm font-semibold text-foreground">
                             {selectedUnit.code}
                             {selectedUnit.name ? ` — ${selectedUnit.name}` : ""}
                           </span>
-                          <Badge
-                            variant={
+                          <ERPStatusBadge
+                            tone={
                               selectedUnit.currentEligibility.mode === "QUEUE"
                                 ? "warning"
                                 : selectedUnit.currentEligibility.selectable
                                   ? "success"
-                                  : "destructive"
+                                  : "danger"
                             }
                           >
                             {selectedUnit.currentEligibility.mode}
-                          </Badge>
+                          </ERPStatusBadge>
                         </div>
-                        <p className="text-xs text-gray-600">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {selectedUnit.mall.name} ·{" "}
                           {selectedUnit.floor?.name ?? "Chưa có tầng"} ·{" "}
                           {selectedUnit.zone?.name ?? "Chưa có khu"}
                         </p>
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs font-medium tabular-nums text-foreground">
                           NLA:{" "}
                           {selectedUnit.areaNLA?.toLocaleString("vi-VN") ?? "—"}{" "}
                           m² · GFA:{" "}
@@ -310,9 +316,9 @@ export function BookingWorkspaceDialog({
                           m² · {selectedUnit.status}
                         </p>
                         {selectedUnit.currentEligibility.mode === "QUEUE" && (
-                          <p className="mt-1 text-xs font-medium text-amber-800">
-                            Booking mới sẽ vào hàng chờ. Kết quả cuối cùng được
-                            xác nhận khi tạo.
+                          <p className="mt-2 border-l-2 border-amber-500 pl-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                            Booking mới sẽ vào hàng chờ. Unit hiện đang được
+                            giữ; kết quả cuối cùng do máy chủ xác nhận.
                           </p>
                         )}
                       </div>
@@ -328,28 +334,32 @@ export function BookingWorkspaceDialog({
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">Chưa chọn Unit.</p>
+                  <div className="py-3 text-xs text-muted-foreground">
+                    <span className="font-semibold uppercase tracking-wide">
+                      {t("workspace.selectedUnit")}
+                    </span>
+                    <p className="mt-1">Chưa chọn Unit.</p>
+                  </div>
                 )}
 
                 {selectedLead ? (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                    <div className="flex items-start gap-2">
-                      <User
-                        className="mt-0.5 h-4 w-4 text-blue-600"
-                        aria-hidden="true"
-                      />
+                  <div className="py-3">
+                    <div className="flex items-start gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {t("workspace.selectedCustomer")}
+                        </p>
+                        <p className="text-sm font-semibold text-foreground">
                           {selectedLead.brandName ||
                             selectedLead.company ||
                             "Lead chưa đặt tên"}
                         </p>
-                        <p className="text-xs text-gray-600">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {selectedLead.contactName || "Chưa có người liên hệ"}
                           {selectedLead.phone ? ` · ${selectedLead.phone}` : ""}
                         </p>
                         {selectedLead.customer && (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-muted-foreground">
                             Customer:{" "}
                             {selectedLead.customer.customerCode ||
                               selectedLead.customer.companyName}
@@ -368,151 +378,176 @@ export function BookingWorkspaceDialog({
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">Chưa chọn Lead.</p>
+                  <div className="py-3 text-xs text-muted-foreground">
+                    <span className="font-semibold uppercase tracking-wide">
+                      {t("workspace.selectedCustomer")}
+                    </span>
+                    <p className="mt-1">Chưa chọn Lead.</p>
+                  </div>
                 )}
               </div>
+            </section>
 
-              <div className="space-y-3 rounded-xl border bg-white p-4">
-                <h3 className="font-semibold text-gray-900">
-                  Chi tiết Booking
-                </h3>
-                <p className="text-xs text-gray-500">
-                  Dữ liệu có sẵn từ Lead đã được điền tự động. Chỉ điều chỉnh
-                  khi thông tin của Booking này khác với nhu cầu đã ghi nhận.
-                </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field label="Diện tích yêu cầu (m²)">
-                    <Input
-                      aria-label="Diện tích yêu cầu"
-                      type="number"
-                      min={0}
-                      value={details.requestedArea}
-                      onChange={setDetail("requestedArea")}
-                    />
-                  </Field>
-                  <Field label="Thời hạn (tháng)">
-                    <Input
-                      aria-label="Thời hạn thuê"
-                      type="number"
-                      min={1}
-                      value={details.requestedTerm}
-                      onChange={setDetail("requestedTerm")}
-                    />
-                  </Field>
-                  <Field label="Giữ (ngày)">
-                    <Input
-                      aria-label="Số ngày giữ"
-                      type="number"
-                      min={1}
-                      value={details.holdDays}
-                      onChange={setDetail("holdDays")}
-                    />
-                  </Field>
-                </div>
-                <Field label="Đơn vị tiền tệ">
-                  <Select
-                    value={details.currencyCode}
-                    onValueChange={(value) =>
-                      setDetails((current) => ({
-                        ...current,
-                        currencyCode: value as CurrencyCode,
-                      }))
-                    }
-                  >
-                    <SelectTrigger aria-label="Đơn vị tiền tệ">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CURRENCY_CODES.map((code) => (
-                        <SelectItem key={code} value={code}>
-                          {code}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            <section className="space-y-3 p-3 sm:p-4">
+              <h3 className="text-sm font-semibold text-foreground">
+                Chi tiết Booking
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Dữ liệu có sẵn từ Lead đã được điền tự động. Chỉ điều chỉnh khi
+                thông tin của Booking này khác với nhu cầu đã ghi nhận.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="Diện tích yêu cầu (m²)">
+                  <Input
+                    aria-label="Diện tích yêu cầu"
+                    type="number"
+                    min={0}
+                    value={details.requestedArea}
+                    onChange={setDetail("requestedArea")}
+                  />
                 </Field>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <Field label={`Giá kỳ vọng (${currencySymbol}/m²)`}>
-                    <Input
-                      aria-label="Giá kỳ vọng"
-                      type="number"
-                      min={0}
-                      value={details.expectedRent}
-                      onChange={setDetail("expectedRent")}
-                    />
-                  </Field>
-                  <Field label={`Giá đề xuất (${currencySymbol}/m²)`}>
-                    <Input
-                      aria-label="Giá đề xuất"
-                      type="number"
-                      min={0}
-                      value={details.proposedRentPerSqm}
-                      onChange={setDetail("proposedRentPerSqm")}
-                    />
-                  </Field>
-                  <Field label={`CAM đề xuất (${currencySymbol}/m²)`}>
-                    <Input
-                      aria-label="CAM đề xuất"
-                      type="number"
-                      min={0}
-                      value={details.proposedCamPerSqm}
-                      onChange={setDetail("proposedCamPerSqm")}
-                    />
-                  </Field>
-                </div>
-                <Field label="Phụ trách (Sale)">
-                  <select
-                    className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
-                    value={details.assignedToId}
-                    onChange={setDetail("assignedToId")}
-                  >
-                    <option value="">-- Chưa phân công --</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.fullName}
-                      </option>
-                    ))}
-                  </select>
+                <Field label="Thời hạn (tháng)">
+                  <Input
+                    aria-label="Thời hạn thuê"
+                    type="number"
+                    min={1}
+                    value={details.requestedTerm}
+                    onChange={setDetail("requestedTerm")}
+                  />
                 </Field>
-                <Field label="Ghi chú">
-                  <Textarea
-                    aria-label="Ghi chú Booking"
-                    rows={2}
-                    value={details.notes}
-                    onChange={setDetail("notes")}
+                <Field label="Giữ (ngày)">
+                  <Input
+                    aria-label="Số ngày giữ"
+                    type="number"
+                    min={1}
+                    value={details.holdDays}
+                    onChange={setDetail("holdDays")}
                   />
                 </Field>
               </div>
-
-              {submitError && (
-                <div
-                  role="alert"
-                  className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              <Field label="Đơn vị tiền tệ">
+                <Select
+                  value={details.currencyCode}
+                  onValueChange={(value) =>
+                    setDetails((current) => ({
+                      ...current,
+                      currencyCode: value as CurrencyCode,
+                    }))
+                  }
                 >
-                  {submitError} Dữ liệu đã nhập vẫn được giữ để bạn kiểm tra và
-                  thử lại.
-                </div>
-              )}
-            </div>
-          </div>
+                  <SelectTrigger aria-label="Đơn vị tiền tệ">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CURRENCY_CODES.map((code) => (
+                      <SelectItem key={code} value={code}>
+                        {code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label={`Giá kỳ vọng (${currencySymbol}/m²)`}>
+                  <Input
+                    aria-label="Giá kỳ vọng"
+                    type="number"
+                    min={0}
+                    value={details.expectedRent}
+                    onChange={setDetail("expectedRent")}
+                  />
+                </Field>
+                <Field label={`Giá đề xuất (${currencySymbol}/m²)`}>
+                  <Input
+                    aria-label="Giá đề xuất"
+                    type="number"
+                    min={0}
+                    value={details.proposedRentPerSqm}
+                    onChange={setDetail("proposedRentPerSqm")}
+                  />
+                </Field>
+                <Field label={`CAM đề xuất (${currencySymbol}/m²)`}>
+                  <Input
+                    aria-label="CAM đề xuất"
+                    type="number"
+                    min={0}
+                    value={details.proposedCamPerSqm}
+                    onChange={setDetail("proposedCamPerSqm")}
+                  />
+                </Field>
+              </div>
+              <Field label="Phụ trách (Sale)">
+                <select
+                  className="h-8 w-full rounded-md border border-input bg-background px-3 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={details.assignedToId}
+                  onChange={setDetail("assignedToId")}
+                >
+                  <option value="">-- Chưa phân công --</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Ghi chú">
+                <Textarea
+                  aria-label="Ghi chú Booking"
+                  rows={2}
+                  value={details.notes}
+                  onChange={setDetail("notes")}
+                />
+              </Field>
+            </section>
+
+            {submitError && (
+              <div
+                role="alert"
+                className="mx-3 mb-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300 sm:mx-4"
+              >
+                {submitError} Dữ liệu đã nhập vẫn được giữ để bạn kiểm tra và
+                thử lại.
+              </div>
+            )}
+          </aside>
         </div>
 
-        <DialogFooter className="shrink-0 border-t bg-white px-4 py-3 sm:px-6 sm:py-4">
+        <DialogFooter className="shrink-0 border-t border-border bg-card px-4 py-3 sm:px-5">
+          <div className="mr-auto hidden min-w-0 text-left sm:block">
+            <p className="text-xs font-medium text-foreground">
+              {!selectedLead && !selectedUnit
+                ? t("workspace.readiness.needBoth")
+                : !selectedLead
+                  ? t("workspace.readiness.needCustomer")
+                  : !selectedUnit
+                    ? t("workspace.readiness.needUnit")
+                    : !selectableUnit
+                      ? t("workspace.readiness.unitUnavailable")
+                      : selectedUnit.currentEligibility.mode === "QUEUE"
+                        ? t("workspace.readiness.readyQueue")
+                        : t("workspace.readiness.ready")}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              POST /bookings xác nhận kết quả cuối cùng
+            </p>
+          </div>
           <Button type="button" variant="outline" onClick={onClose}>
             Hủy
           </Button>
           <Button
             type="button"
+            variant={canSubmit ? "default" : "secondary"}
             disabled={!canSubmit}
             onClick={() => mutation.mutate()}
-            className="max-w-full gap-2 whitespace-normal bg-amber-600 text-center text-white hover:bg-amber-700"
+            className="max-w-full gap-2 whitespace-normal text-center"
+            aria-label={
+              selectedUnit?.currentEligibility.mode === "QUEUE"
+                ? "Tạo Booking vào hàng chờ"
+                : "Tạo Booking"
+            }
           >
             <BookmarkPlus className="h-4 w-4" aria-hidden="true" />
-            {mutation.isPending
-              ? "Đang tạo..."
-              : selectedUnit?.currentEligibility.mode === "QUEUE"
-                ? "Tạo Booking vào hàng chờ"
-                : "Tạo Booking"}
+            {mutation.isPending ? "Đang tạo..." : "Tạo Booking"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -528,8 +563,8 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-sm font-medium text-gray-700">{label}</span>
+    <label className="block space-y-1 [&_button]:h-8 [&_input]:h-8 [&_input]:text-xs [&_textarea]:text-xs">
+      <span className="text-xs font-medium text-foreground">{label}</span>
       {children}
     </label>
   );

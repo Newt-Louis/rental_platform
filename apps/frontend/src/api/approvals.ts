@@ -1,7 +1,7 @@
 import api from '@/lib/axios';
 
 export const approvalsApi = {
-  pending: (params?: { page?: number; limit?: number; mallId?: string; floorId?: string; unitId?: string; search?: string; leaseTermType?: string }) =>
+  pending: (params?: { page?: number; limit?: number; mallId?: string; floorId?: string; unitId?: string; search?: string; leaseTermType?: string; entityType?: 'PROPOSAL' | 'FITOUT_SUBMITTAL' }) =>
     // Response interceptor đã đưa `data`, `total`, `page` lên cùng một object.
     // Giữ nguyên envelope phân trang để trang danh sách và badge dùng chung nguồn.
     api.get('/approvals/pending', { params }).then((r) => r.data),

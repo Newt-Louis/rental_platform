@@ -1,4 +1,11 @@
 {
+  "unknownValue": "Unknown",
+  "workflowActions": {
+    "SUBMITTED": "Submitted",
+    "REVISED": "Revised",
+    "APPROVED": "Approved",
+    "DISPUTED": "Disputed"
+  },
   "actions": {
     "save": "Save",
     "cancel": "Cancel",

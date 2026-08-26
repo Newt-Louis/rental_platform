@@ -45,8 +45,11 @@ export function buildProposalPrefill(booking: UnitBooking | null) {
     notes: booking?.notes ?? '',
     businessModel: businessModelFromSpaceType(unit?.spaceType),
     rentCurrency,
-    serviceFeeSqm: '',
-    businessSupportFeeSqm: '',
+    exchangeRate: String(booking?.exchangeRate ?? ''),
+    // Phí Dịch vụ/Phí HTKD đã đàm phán ở bước Booking (HĐT TTTM) — mang sang làm giá trị mặc định,
+    // người dùng vẫn có thể sửa lại trước khi convert.
+    serviceFeeSqm: String(booking?.serviceFeeSqm ?? ''),
+    businessSupportFeeSqm: String(booking?.businessSupportFeeSqm ?? ''),
     fitoutDays: '90',
     handoverDate: '',
     openingDate: '',

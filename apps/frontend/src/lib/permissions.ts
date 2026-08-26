@@ -29,9 +29,11 @@ export type RouteModule =
   | "parking"
   | "tenants"
   | "fitout"
+  | "fitout-approvals"
   | "tickets"
   | "sales"
   | "billing"
+  | "billing-addin"
   | "sap"
   | "reports"
   | "analytics"
@@ -137,15 +139,16 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "FINANCE",
     "LEGAL",
   ],
-  // TENANT không có ở đây: Tenant Portal đã có tab Fitout riêng (đọc dữ liệu qua
-  // endpoint tenant-accessible trong fitout.controller.ts); các tab con của trang
-  // /fitout (submittal/issue/gantt/daily-report/controls) chỉ cho phép
-  // MODULE_ROLES.fitout ở backend (không có TENANT) nên không cấp route này cho
-  // TENANT để tránh 403 giữa chừng khi chuyển tab.
-  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
+  // TENANT may enter only the capability-limited `/fitout` workspace. The exact
+  // path guard below continues to deny staff-only dashboard/settings/report routes.
+  fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
+  // Chỉ vai trò có thể là duyệt viên (approverRole) mới thấy hàng chờ duyệt Fitout — không cấp TENANT.
+  "fitout-approvals": ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
+  // Billing Add-in vận hành: OPERATION nhập/chốt số liệu mỗi kỳ; Finance/Mall Director theo dõi tiến độ.
+  "billing-addin": ["ADMIN", "OPERATION", "MALL_DIRECTOR", "FINANCE"],
   sap: ["ADMIN", "FINANCE"],
   reports: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
   analytics: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
@@ -191,9 +194,11 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   parking: "parking",
   tenants: "tenants",
   fitout: "fitout",
+  "fitout-approvals": "fitout-approvals",
   tickets: "tickets",
   sales: "sales",
   billing: "billing",
+  "billing-addin": "billing-addin",
   sap: "sap",
   reports: "reports",
   analytics: "analytics",
@@ -225,6 +230,13 @@ export function canAccessPath(role: string | undefined, path: string): boolean {
   // a query string was silently filtered out of the Dashboard for every role,
   // including ADMIN.
   const pathWithoutQuery = path.split("?")[0];
+  const normalizedPath = pathWithoutQuery.replace(/\/+$/, "") || "/";
+  if (normalizedPath === "/fitout/settings" && role !== "ADMIN") {
+    return false;
+  }
+  if (role === "TENANT" && normalizedPath.startsWith("/fitout/") && normalizedPath !== "/fitout") {
+    return false;
+  }
   const segment = pathWithoutQuery.replace(/^\//, "").split("/")[0] as RouteModule;
   const module = PATH_TO_MODULE[segment];
   if (!module) return false;
@@ -304,6 +316,13 @@ export const NAV_GROUPS = [
     label: "Thi công & Bàn giao",
     items: [
       { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
+      {
+        // Mục riêng cho duyệt viên Fitout — vào thẳng hàng chờ duyệt của TẤT CẢ dự án được
+        // phân quyền, không phải mở từng dự án trong workspace Fitout để tìm việc cần duyệt.
+        label: "Duyệt hồ sơ Fitout",
+        path: "/fitout-approvals",
+        module: "fitout-approvals" as RouteModule,
+      },
     ],
   },
   {
@@ -364,6 +383,13 @@ export const NAV_GROUPS = [
         module: "service-contracts" as RouteModule,
       },
       { label: "Doanh thu", path: "/sales", module: "sales" as RouteModule },
+      {
+        // Đặt trước "Billing & AR": vận hành nhập/chốt số liệu add-in trước, Kế toán mới lập
+        // hoá đơn từ dữ liệu đã chốt — thứ tự nav phản ánh đúng thứ tự quy trình nghiệp vụ.
+        label: "Billing Add-in vận hành",
+        path: "/billing-addin",
+        module: "billing-addin" as RouteModule,
+      },
       {
         label: "Billing & AR",
         path: "/billing",
@@ -438,6 +464,7 @@ export const TENANT_NAV = [
     path: "/tickets",
     module: "tickets" as RouteModule,
   },
+  { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
   { label: "Doanh thu", path: "/sales", module: "sales" as RouteModule },
   {
     label: "Thông báo",

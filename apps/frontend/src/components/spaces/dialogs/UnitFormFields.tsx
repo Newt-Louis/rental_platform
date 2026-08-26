@@ -119,7 +119,7 @@ export function UnitFormFields({
       {/* Rents */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (₫/m²)</label>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (VND/m²)</label>
           <Input
             {...register('baseRentPerSqm', { min: { value: 0, message: 'Giá thuê không được âm.' } })}
             value={watch('baseRentPerSqm')}
@@ -129,7 +129,7 @@ export function UnitFormFields({
           {errors.baseRentPerSqm?.message && <p className="mt-1 text-xs text-red-600">{String(errors.baseRentPerSqm.message)}</p>}
         </div>
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (VND/m²)</label>
           <Input
             {...register('camPerSqm', { min: { value: 0, message: 'Phí CAM không được âm.' } })}
             value={watch('camPerSqm')}

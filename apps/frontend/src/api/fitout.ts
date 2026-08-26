@@ -60,6 +60,7 @@ export const fitoutSubmittalApi = {
     api.post('/fitout-submittals', data).then((r) => r.data),
   resubmit: (id: string, data: { title?: string; dueDate?: string }) =>
     api.post(`/fitout-submittals/${id}/resubmit`, data).then((r) => r.data),
+  submitForReview: (id: string) => api.post(`/fitout-submittals/${id}/submit-for-review`).then((r) => r.data),
   publish: (id: string) => api.post(`/fitout-submittals/${id}/publish`).then((r) => r.data),
   listComments: (id: string) => api.get(`/fitout-submittals/${id}/comments`).then((r) => r.data),
   addComment: (id: string, body: string) => api.post(`/fitout-submittals/${id}/comments`, { body }).then((r) => r.data),
@@ -162,8 +163,10 @@ export interface FitoutChangeOrder {
   code?: string;
   title: string;
   reason?: string;
-  estimatedCost: number;
-  approvedCost?: number;
+  estimatedCost: string | number;
+  approvedCost?: string | number;
+  currency: string;
+  costType?: 'ADDITION' | 'DEDUCTION';
   scheduleImpactDays?: number;
   status: ChangeOrderStatus;
   requestedBy?: string | { id: string; fullName: string };
@@ -177,18 +180,20 @@ export const fitoutChangeOrderApi = {
       return rows.map((order: any) => ({
         ...order,
         code: order.changeNumber,
-        estimatedCost: Number(order.proposedAmount),
-        approvedCost: order.approvedAmount == null ? undefined : Number(order.approvedAmount),
+        // Prisma Decimal serializes as a decimal string. Keep that string intact:
+        // coercing through Number would lose exact transaction precision.
+        estimatedCost: order.proposedAmount,
+        approvedCost: order.approvedAmount == null ? undefined : order.approvedAmount,
       }));
     }),
   summary: (projectId: string) =>
     api.get(`/fitouts/${projectId}/controls/summary`).then((r) => r.data?.changes),
-  create: (data: Omit<FitoutChangeOrder, 'id' | 'status' | 'code'>) =>
+  create: (data: Pick<FitoutChangeOrder, 'projectId' | 'title' | 'reason' | 'costType' | 'scheduleImpactDays'> & { estimatedCost: string }) =>
     api.post(`/fitouts/${data.projectId}/controls/change-orders`, {
       title: data.title, reason: data.reason, proposedAmount: data.estimatedCost,
       scheduleImpactDays: data.scheduleImpactDays,
     }).then((r) => r.data),
-  transition: (projectId: string, id: string, status: 'APPROVED' | 'REJECTED', data?: { approvedCost?: number }) =>
+  transition: (projectId: string, id: string, status: 'APPROVED' | 'REJECTED', data?: { approvedCost?: string | number }) =>
     api.patch(`/fitouts/${projectId}/controls/change-orders/${id}/decision`, {
       decision: status, approvedAmount: data?.approvedCost,
     }).then((r) => r.data),

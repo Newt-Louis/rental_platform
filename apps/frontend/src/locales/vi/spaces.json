@@ -1,5 +1,14 @@
 {
   "title": "Quản lý mặt bằng",
+  "eyebrow": "Danh mục mặt bằng",
+  "description": "Theo dõi nguồn cung, trạng thái khai thác và thông tin thương mại của từng mặt bằng.",
+  "rentalZone": {
+    "label": "Khu mặt bằng theo hình thức thuê",
+    "LONG": "Khu cho thuê dài hạn",
+    "LONG_DESC": "Hợp đồng thuê dài hạn",
+    "SHORT": "Khu cho thuê ngắn hạn",
+    "SHORT_DESC": "Booking và tờ trình ngắn hạn"
+  },
   "views": {
     "grid": "Danh sách",
     "floor": "Sơ đồ tầng",
@@ -38,8 +47,8 @@
     "namePlaceholder": "Unit A01...",
     "areaGFA": "Diện tích GFA (m²) *",
     "areaNLA": "Diện tích NLA (m²) *",
-    "baseRent": "Giá thuê cơ bản (₫/m²)",
-    "cam": "Phí CAM (₫/m²)",
+    "baseRent": "Giá thuê cơ bản (VND/m²)",
+    "cam": "Phí CAM (VND/m²)",
     "spaceType": "Loại sảnh",
     "flexibleArea": "Sảnh linh động (cho thuê theo m² không cố định)",
     "minFlexArea": "Diện tích tối thiểu (m²)",
@@ -76,10 +85,35 @@
   },
   "status": {
     "VACANT": "Trống",
+    "BOOKING": "Đang giữ chỗ",
+    "NEGOTIATING": "Đang thương thảo",
+    "CONTRACTED": "Đã ký hợp đồng",
+    "UNDER_FITOUT": "Đang thi công",
     "OCCUPIED": "Đang thuê",
+    "MERGED": "Đã gộp",
     "MAINTENANCE": "Bảo trì",
     "RESERVED": "Đặt cọc",
     "BOOKED": "Đã booking"
+  },
+  "bookingStatus": {
+    "ACTIVE": "Đang giữ",
+    "PENDING": "Chờ xử lý",
+    "EXPIRED": "Hết hạn",
+    "CANCELLED": "Đã hủy",
+    "CONVERTED": "Đã chuyển đổi"
+  },
+  "proposalStatus": {
+    "DRAFT": "Bản nháp",
+    "SUBMITTED": "Chờ duyệt",
+    "UNDER_REVIEW": "Đang xem xét",
+    "APPROVED": "Đã duyệt",
+    "REJECTED": "Từ chối",
+    "CONVERTED": "Đã tạo hợp đồng"
+  },
+  "approvalStatus": {
+    "APPROVED": "Duyệt",
+    "REJECTED": "Từ chối",
+    "PENDING": "Chờ"
   },
   "filters": {
     "search": "Tìm theo tên, mã...",
@@ -104,8 +138,8 @@
     "advanced": "Bộ lọc nâng cao",
     "minAreaLabel": "Diện tích min (m²)",
     "maxAreaLabel": "Diện tích max (m²)",
-    "minRentLabel": "Giá thuê min (₫/m²)",
-    "maxRentLabel": "Giá thuê max (₫/m²)",
+    "minRentLabel": "Giá thuê min (VND/m²)",
+    "maxRentLabel": "Giá thuê max (VND/m²)",
     "categoryLabel": "Ngành hàng",
     "spaceTypeLabel": "Loại sảnh",
     "tierLabel": "Tier",
@@ -120,8 +154,8 @@
     "loading": "Đang tải analytics...",
     "totalUnits": "Tổng units",
     "occupiedUnits": "Đang thuê",
-    "avgRent": "Giá thuê TB (₫/m²)",
-    "monthlyRevenue": "Doanh thu/tháng (₫)",
+    "avgRent": "Giá thuê TB (VND/m²)",
+    "monthlyRevenue": "Doanh thu/tháng (VND)",
     "occupancyBar": "Lấp đầy",
     "allStatus": "Tất cả",
     "rentByFloor": "Giá thuê theo tầng",
@@ -150,6 +184,11 @@
     "exitFullscreen": "Thoát toàn màn hình",
     "floorHint": "Chưa có sơ đồ",
     "legend": "Chú thích:",
+    "placedCount": "{{placed}}/{{total}} mặt bằng có vị trí",
+    "occupancy": "Lấp đầy",
+    "areaNLA": "Diện tích NLA:",
+    "zone": "Khu vực:",
+    "rent": "Giá thuê:",
     "clickHint": "Click unit để xem thông tin · F = toàn màn hình · ← → chuyển tầng",
     "noMallSelected": "Vui lòng chọn một mall cụ thể ở header trước (không phải \"Tất cả Mall\")"
   },
@@ -169,6 +208,8 @@
     "selectNewStatus": "Chọn trạng thái mới",
     "selectNewCategory": "Chọn ngành hàng mới",
     "updateSuccess": "Đã cập nhật {{count}} mặt bằng",
+    "updateError": "Lỗi cập nhật mặt bằng",
+    "vacantOnly": "Chỉ điều chỉnh được mặt bằng đang trống",
     "updating": "Đang cập nhật..."
   },
   "booking": {
@@ -186,10 +227,10 @@
     "leadsHint": "Hiển thị Lead mới, đang liên hệ và đã đủ điều kiện.",
     "requestedArea": "Diện tích (m²)",
     "requestedTerm": "Thời hạn (tháng)",
-    "expectedRent": "Giá kỳ vọng (₫/m²)",
+    "expectedRent": "Giá kỳ vọng (VND/m²)",
     "holdDays": "Giữ slot (ngày) *",
-    "proposedRent": "Giá sale đề xuất (₫/m²)",
-    "proposedCam": "CAM đề xuất (₫/m²)",
+    "proposedRent": "Giá sale đề xuất (VND/m²)",
+    "proposedCam": "CAM đề xuất (VND/m²)",
     "notes": "Ghi chú",
     "notesPlaceholder": "Khách đã site visit, có tiềm năng cao...",
     "priceNeedsApproval": "Giá cần phê duyệt",
@@ -200,7 +241,7 @@
     "priceCeiling": "Trần:",
     "priceSuggested": "Đề xuất:",
     "areaHint": "Gợi ý: trọn diện tích NLA ({{area}} m²) — có thể sửa nếu thuê một phần",
-    "rentHint": "Gợi ý theo ngành hàng: {{price}} ₫",
+    "rentHint": "Gợi ý theo ngành hàng: {{price}} VND",
     "existingTenant": "Khách hiện hữu",
     "existingTenantDesc": "— đang có hợp đồng hiện hành",
     "creating": "Đang tạo...",
@@ -311,7 +352,9 @@
     "submitProposalSuccess": "Đã gửi phê duyệt",
     "convertProposalSuccess": "Đã chuyển thành hợp đồng",
     "cancelBookingSuccess": "Đã hủy booking",
-    "updateStatusSuccess": "Đã cập nhật trạng thái"
+    "updateStatusSuccess": "Đã cập nhật trạng thái",
+    "lockedInfo": "Thông tin đang được khóa vì mặt bằng ở trạng thái {{status}}. Chỉ được điều chỉnh khi mặt bằng đang trống ({{vacant}}).",
+    "combined": "Gộp"
   },
   "media": {
     "all": "Tất cả",

@@ -10,9 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { User, KeyRound } from 'lucide-react';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 export default function ProfilePage() {
-  const { t } = useTranslation('profile');
+  const { t } = useTranslation(['profile', 'admin', 'common']);
   const { user, setUser } = useAuthStore();
   const { toast } = useToast();
 
@@ -86,7 +87,9 @@ export default function ProfilePage() {
             <div>
               <div className="font-medium text-gray-900">{user?.fullName}</div>
               <div className="text-sm text-gray-500">{user?.email}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{user?.role}</div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {t(roleTranslationKey(user?.role))}
+              </div>
             </div>
           </div>
         </CardHeader>

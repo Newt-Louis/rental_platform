@@ -72,4 +72,30 @@ describe('CrmService lead list filters', () => {
     expect(where.mallId).toBe('mall-1');
     expect(where.AND).toHaveLength(1);
   });
+
+  it('applies caller and explicit Mall scope before querying unified deals', async () => {
+    await service.getUnifiedDeals({
+      mallId: 'mall-1',
+      scope: { userId: 'manager-1', role: Role.LEASING_MANAGER, mallIds: ['mall-1'] },
+    });
+
+    const where = prisma.lead.findMany.mock.calls[0][0].where;
+    expect(where.mallId).toBe('mall-1');
+    expect(where.AND).toHaveLength(1);
+    expect(where.AND[0].OR).toEqual(expect.arrayContaining([
+      { mallId: { in: ['mall-1'] } },
+    ]));
+  });
+
+  it('limits unified deals to the assigned Leads of a leasing executive', async () => {
+    await service.getUnifiedDeals({
+      scope: { userId: 'executive-1', role: Role.LEASING_EXECUTIVE, mallIds: ['mall-1'] },
+    });
+
+    expect(prisma.lead.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        AND: [{ OR: [{ assignedToId: 'executive-1' }] }],
+      }),
+    }));
+  });
 });

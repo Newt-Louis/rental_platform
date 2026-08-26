@@ -1,27 +1,28 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   ArrowRight, BookmarkPlus, Users, FileText, Clock, X, Plus, CheckCircle, Lock,
 } from 'lucide-react';
-import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
-import { CURRENCIES, type CurrencyCode } from '@/lib/currency';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
+import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
-const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  ACTIVE:    { label: 'Đang giữ',  color: 'bg-amber-100 text-amber-700' },
-  PENDING:   { label: 'Chờ',       color: 'bg-blue-100 text-gray-700' },
-  EXPIRED:   { label: 'Hết hạn',   color: 'bg-gray-100 text-gray-500' },
-  CANCELLED: { label: 'Đã hủy',    color: 'bg-red-100 text-red-600' },
-  CONVERTED: { label: 'Đã convert',color: 'bg-green-100 text-green-700' },
+const BOOKING_STATUS_CONFIG: Record<string, { color: string }> = {
+  ACTIVE:    { color: 'bg-amber-100 text-amber-700' },
+  PENDING:   { color: 'bg-blue-100 text-gray-700' },
+  EXPIRED:   { color: 'bg-gray-100 text-gray-500' },
+  CANCELLED: { color: 'bg-red-100 text-red-600' },
+  CONVERTED: { color: 'bg-green-100 text-green-700' },
 };
 
-const PROP_STATUS_CFG: Record<string, { label: string; color: string }> = {
-  DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
-  SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
-  UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-blue-700' },
-  APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
-  REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã tạo HĐ', color: 'bg-purple-100 text-purple-700' },
+const PROP_STATUS_CFG: Record<string, { color: string }> = {
+  DRAFT:        { color: 'bg-gray-100 text-gray-600' },
+  SUBMITTED:    { color: 'bg-yellow-100 text-yellow-700' },
+  UNDER_REVIEW: { color: 'bg-blue-100 text-blue-700' },
+  APPROVED:     { color: 'bg-green-100 text-green-700' },
+  REJECTED:     { color: 'bg-red-100 text-red-700' },
+  CONVERTED:    { color: 'bg-purple-100 text-purple-700' },
 };
 
 export function SalesPipelineTab({
@@ -41,6 +42,7 @@ export function SalesPipelineTab({
   convertLoading: boolean;
   canManageSales: boolean;
 }) {
+  const { t } = useTranslation(['spaces', 'contracts']);
   const bookings: any[] = unit.bookings ?? [];
   const proposals: any[] = unit.proposals ?? [];
 
@@ -50,8 +52,7 @@ export function SalesPipelineTab({
   // Mặt bằng đã có khách thuê chính thức — không cho tạo booking mới chồng lên (khớp chặn ở backend)
   const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
 
-  const fmtVND = (n: number) => new Intl.NumberFormat('vi-VN').format(n);
-  const curSymbol = (c?: CurrencyCode) => CURRENCIES[c ?? 'VND']?.symbol ?? '₫';
+  const fmtMoney = (n: number, currency?: CurrencyCode) => formatMoneyWithCode(n, currency ?? 'VND');
   const fmtDate = (d?: string | null) =>
     d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
@@ -62,7 +63,7 @@ export function SalesPipelineTab({
       {isCommitted && (
         <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 flex items-start gap-2 text-xs text-gray-500">
           <Lock size={13} className="mt-0.5 shrink-0" />
-          <span>Mặt bằng đang ở trạng thái "{STATUS_CONFIG[unit.status]?.label ?? unit.status}" — đã có khách thuê chính thức nên không thể tạo booking mới cho khách khác.</span>
+          <span>{t('spaces:pipeline.committedWarning', { status: getUnitStatusLabel(t, unit.status) })}</span>
         </div>
       )}
 
@@ -117,7 +118,9 @@ export function SalesPipelineTab({
                           <Clock size={10} /> {dl}d
                         </span>
                       )}
-                      <Badge className={`text-xs border-0 ${bcfg.color}`}>{bcfg.label}</Badge>
+                      <Badge className={`text-xs border-0 ${bcfg.color}`}>
+                        {t(`spaces:bookingStatus.${b.status}`, { defaultValue: t('common:unknownValue') })}
+                      </Badge>
                     </div>
                   </div>
 
@@ -125,8 +128,8 @@ export function SalesPipelineTab({
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-500">
                     {b.requestedArea && <span>DT: {b.requestedArea.toLocaleString()} m²</span>}
                     {b.requestedTerm && <span>Hạn: {b.requestedTerm} th</span>}
-                    {b.expectedRent && <span>Kỳ vọng: {fmtVND(b.expectedRent)} {curSymbol(b.currencyCode)}/m²</span>}
-                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtVND(b.proposedRentPerSqm)} {curSymbol(b.currencyCode)}/m²</span>}
+                    {b.expectedRent && <span>Kỳ vọng: {fmtMoney(b.expectedRent, b.currencyCode)}/m²</span>}
+                    {b.proposedRentPerSqm && <span>Đề xuất: {fmtMoney(b.proposedRentPerSqm, b.currencyCode)}/m²</span>}
                     {b.assignedTo && <span className="col-span-2">Sale: {b.assignedTo.fullName}</span>}
                   </div>
 
@@ -136,7 +139,7 @@ export function SalesPipelineTab({
                       <FileText size={11} className="text-gray-400" />
                       <span className="font-mono">{b.proposal.proposalNumber}</span>
                       <Badge className={`text-xs border-0 ${PROP_STATUS_CFG[b.proposal.status]?.color}`}>
-                        {PROP_STATUS_CFG[b.proposal.status]?.label}
+                        {t(`spaces:proposalStatus.${b.proposal.status}`, { defaultValue: t('common:unknownValue') })}
                       </Badge>
                       {canManageSales && (
                         <button className="text-gray-400 hover:text-gray-700 ml-auto" onClick={onNavigateProposals}>
@@ -201,7 +204,9 @@ export function SalesPipelineTab({
                       <span className="text-sm font-mono font-semibold">{pr.proposalNumber}</span>
                       <span className="text-xs text-gray-500 ml-2">{clientName}</span>
                     </div>
-                    <Badge className={`text-xs border-0 flex-shrink-0 ${ps.color}`}>{ps.label}</Badge>
+                    <Badge className={`text-xs border-0 flex-shrink-0 ${ps.color}`}>
+                      {t(`spaces:proposalStatus.${pr.status}`, { defaultValue: t('common:unknownValue') })}
+                    </Badge>
                   </div>
 
                   {/* Financial summary */}
@@ -223,28 +228,28 @@ export function SalesPipelineTab({
                           </div>
                           <div>
                             <span className="text-gray-400">Giá thuê/m²: </span>
-                            <span className="font-medium">{fmtVND(pr.rentPerSqm)} {curSymbol(pr.rentCurrency)}</span>
+                            <span className="font-medium">{fmtMoney(pr.rentPerSqm, pr.rentCurrency)}</span>
                           </div>
                           <div>
                             <span className="text-gray-400">Tiền thuê/tháng: </span>
-                            <span className="font-medium">{fmtVND(pr.monthlyRent)} {curSymbol(pr.rentCurrency)}</span>
+                            <span className="font-medium">{fmtMoney(pr.monthlyRent, pr.rentCurrency)}</span>
                           </div>
                           {(pr.monthlyCAM ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí DVPT/tháng: </span>
-                              <span className="font-medium">{fmtVND(pr.monthlyCAM)} {curSymbol(pr.rentCurrency)}</span>
+                              <span className="font-medium">{fmtMoney(pr.monthlyCAM, pr.rentCurrency)}</span>
                             </div>
                           )}
                           {(pr.serviceFeeSqm ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí DV/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.serviceFeeSqm)} {curSymbol(pr.rentCurrency)}</span>
+                              <span className="font-medium">{fmtMoney((pr.area ?? 0) * pr.serviceFeeSqm, pr.rentCurrency)}</span>
                             </div>
                           )}
                           {(pr.businessSupportFeeSqm ?? 0) > 0 && (
                             <div>
                               <span className="text-gray-400">Phí HT KD/tháng: </span>
-                              <span className="font-medium">{fmtVND((pr.area ?? 0) * pr.businessSupportFeeSqm)} {curSymbol(pr.rentCurrency)}</span>
+                              <span className="font-medium">{fmtMoney((pr.area ?? 0) * pr.businessSupportFeeSqm, pr.rentCurrency)}</span>
                             </div>
                           )}
                           {pr.discount > 0 && (
@@ -263,11 +268,11 @@ export function SalesPipelineTab({
                         {/* Total monthly highlight */}
                         <div className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 mt-1">
                           <span className="text-gray-500">Tổng phải trả/tháng:</span>
-                          <span className="font-bold text-gray-900">{fmtVND(totalMonthly)} {curSymbol(pr.rentCurrency)}</span>
+                          <span className="font-bold text-gray-900">{fmtMoney(totalMonthly, pr.rentCurrency)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">Tổng giá trị HĐ:</span>
-                          <span className="font-bold text-green-700">{fmtVND(pr.totalContractValue)} {curSymbol(pr.rentCurrency)}</span>
+                          <span className="font-bold text-green-700">{fmtMoney(pr.totalContractValue, pr.rentCurrency)}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 text-gray-400">
                           <span>Bắt đầu: {fmtDate(pr.startDate)}</span>
@@ -299,7 +304,7 @@ export function SalesPipelineTab({
                               s.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-500'
                             }`}>
-                              {s.status === 'APPROVED' ? 'Duyệt' : s.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
+                              {t(`spaces:approvalStatus.${s.status}`, { defaultValue: t('common:unknownValue') })}
                             </span>
                           </div>
                         ))}
@@ -312,7 +317,9 @@ export function SalesPipelineTab({
                     <div className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2">
                       <FileText size={12} className="text-purple-500" />
                       <span className="font-mono font-medium">{pr.contract.contractNumber}</span>
-                      <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">{pr.contract.status}</Badge>
+                      <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
+                        {t(`contracts:status.${pr.contract.status}`, { defaultValue: t('common:unknownValue') })}
+                      </Badge>
                     </div>
                   )}
 
@@ -353,7 +360,9 @@ export function SalesPipelineTab({
               return (
                 <div key={b.id} className="flex items-center justify-between py-1.5 px-2 text-xs text-gray-500 border border-gray-100 rounded-lg bg-gray-50">
                   <span className="font-medium text-gray-700">{name}</span>
-                  <Badge className={`text-xs border-0 ${bcfg.color}`}>{bcfg.label}</Badge>
+                  <Badge className={`text-xs border-0 ${bcfg.color}`}>
+                    {t(`spaces:bookingStatus.${b.status}`, { defaultValue: t('common:unknownValue') })}
+                  </Badge>
                 </div>
               );
             })}

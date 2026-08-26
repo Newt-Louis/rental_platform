@@ -5,6 +5,9 @@ import { fitoutApi } from '@/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { PageHeader } from '@/components/ui/page-header';
+import { getFitoutPresentationLabel } from './fitoutPresentation';
 
 // ─── Palette (categorical, fixed order — see dataviz skill palette.md) ────────
 const CAT = {
@@ -38,12 +41,14 @@ function StatTile({ label, value, sub }: { label: string; value: string | number
 }
 
 /** Part-to-whole horizontal stacked bar — categorical color, 2px surface gaps, legend + counts below (table-view twin). */
-function StackedBreakdown({ title, order, colorMap, counts }: {
+function StackedBreakdown({ title, order, colorMap, counts, labelFor }: {
   title: string;
   order: string[];
   colorMap: Record<string, string>;
   counts: Record<string, number>;
+  labelFor?: (value: string) => string;
 }) {
+  const { t } = useTranslation('fitout');
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
   const present = order.filter((k) => (counts[k] ?? 0) > 0);
 
@@ -52,14 +57,14 @@ function StackedBreakdown({ title, order, colorMap, counts }: {
       <CardHeader className="pb-2"><CardTitle className="text-base">{title}</CardTitle></CardHeader>
       <CardContent>
         {total === 0 ? (
-          <p className="text-sm text-center py-6" style={{ color: INK_MUTED }}>Chưa có dữ liệu</p>
+          <p className="text-sm text-center py-6" style={{ color: INK_MUTED }}>{t('dashboard.noData')}</p>
         ) : (
           <>
-            <div className="flex w-full h-6 rounded overflow-hidden" style={{ gap: 2, background: SURFACE_GAP }}>
+            <div className="flex w-full h-6 rounded overflow-hidden" role="img" aria-label={`${title}: ${present.map((key) => `${labelFor?.(key) ?? key} ${counts[key]}`).join(', ')}`} style={{ gap: 2, background: SURFACE_GAP }}>
               {present.map((key) => {
                 const pct = ((counts[key] ?? 0) / total) * 100;
                 return (
-                  <div key={key} style={{ width: `${pct}%`, background: colorMap[key] }} title={`${key}: ${counts[key]}`} />
+                  <div key={key} style={{ width: `${pct}%`, background: colorMap[key] }} title={`${labelFor?.(key) ?? key}: ${counts[key]}`} />
                 );
               })}
             </div>
@@ -67,7 +72,7 @@ function StackedBreakdown({ title, order, colorMap, counts }: {
               {present.map((key) => (
                 <span key={key} className="flex items-center gap-1.5 text-xs" style={{ color: INK_SECONDARY }}>
                   <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: colorMap[key] }} />
-                  {key} <span style={{ color: INK_MUTED }}>({counts[key]})</span>
+                  {labelFor?.(key) ?? key} <span style={{ color: INK_MUTED }}>({counts[key]})</span>
                 </span>
               ))}
             </div>
@@ -87,15 +92,16 @@ function ProjectMeter({ progress }: { progress: number }) {
 }
 
 export default function FitoutDashboardPage() {
+  const { t } = useTranslation('fitout');
   const navigate = useNavigate();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
-  const { data: overview, isLoading: overviewLoading } = useQuery({
+  const { data: overview, isLoading: overviewLoading, isError: overviewError, refetch: refetchOverview } = useQuery({
     queryKey: ['fitout-dashboard-overview'],
     queryFn: () => fitoutApi.getDashboardOverview(),
   });
 
-  const { data: detail } = useQuery({
+  const { data: detail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useQuery({
     queryKey: ['fitout-dashboard-detail', selectedProjectId],
     queryFn: () => fitoutApi.getProjectDashboard(selectedProjectId!),
     enabled: !!selectedProjectId,
@@ -109,51 +115,53 @@ export default function FitoutDashboardPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/fitout')}>
-          <ArrowLeft size={16} /> Quay lại
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard Fitout</h1>
-          <p className="text-sm text-gray-500 mt-1">Tổng quan tiến độ toàn bộ dự án fitout</p>
-        </div>
-      </div>
+      <PageHeader className="mb-5" title={t('dashboard.title')} description={t('dashboard.overview')} actions={<Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout')}><ArrowLeft size={16} /> {t('common.back')}</Button>} />
 
-      {selectedProjectId && detail ? (
+      {overviewError ? (
+        <div role="alert" className="border-l-2 border-red-500 bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-medium">{t('dashboard.loadError')}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchOverview()}>{t('page.retry')}</Button>
+        </div>
+      ) : selectedProjectId && (detail || detailLoading || detailError) ? (
         <div>
           <Button variant="outline" size="sm" className="mb-4 gap-1" onClick={() => setSelectedProjectId(null)}>
-            <ArrowLeft size={13} /> Quay lại tổng quan
+            <ArrowLeft size={13} /> {t('dashboard.backToOverview')}
           </Button>
+          {detailLoading ? <p role="status" className="py-8 text-center text-sm text-muted-foreground">{t('dashboard.loading')}</p> : detailError ? (
+            <div role="alert" className="border-l-2 border-red-500 bg-red-50 p-4 text-sm text-red-700"><p className="font-medium">{t('dashboard.detailLoadError')}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => refetchDetail()}>{t('page.retry')}</Button></div>
+          ) : detail && <>
           <div className="mb-4">
             <h2 className="text-lg font-semibold">{detail.project.tenant} — {detail.project.unit}</h2>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatTile label="Đếm ngược khai trương" value={detail.countdownDays != null ? `${detail.countdownDays}d` : '—'} />
-            <StatTile label="Số ngày trễ (task chậm nhất)" value={`${detail.delayDays}d`} sub={detail.lateTaskCount > 0 ? `${detail.lateTaskCount} công việc chậm` : undefined} />
-            <StatTile label="Hoàn thành (Gantt)" value={detail.completedPct != null ? `${detail.completedPct}%` : '—'} sub={`${detail.taskCount} công việc`} />
-            <StatTile label="Rủi ro" value={detail.overdueMilestoneCount + detail.overdueIssueCount} sub="Milestone + vấn đề quá hạn" />
+            <StatTile label={t('dashboard.stats.countdown')} value={detail.countdownDays != null ? t('dashboard.dayValue', { count: detail.countdownDays }) : '—'} />
+            <StatTile label={t('dashboard.stats.delayDays')} value={t('dashboard.dayValue', { count: detail.delayDays })} sub={detail.lateTaskCount > 0 ? t('dashboard.stats.lateTaskCount', { count: detail.lateTaskCount }) : undefined} />
+            <StatTile label={t('dashboard.stats.completedPct')} value={detail.completedPct != null ? `${detail.completedPct}%` : '—'} sub={t('dashboard.stats.taskCount', { count: detail.taskCount })} />
+            <StatTile label={t('dashboard.stats.riskCount')} value={detail.overdueMilestoneCount + detail.overdueIssueCount} sub={t('dashboard.stats.riskSub')} />
           </div>
+          </>}
           <div className="grid md:grid-cols-2 gap-4">
-            <StackedBreakdown title="Vấn đề theo trạng thái" order={ISSUE_STATUS_ORDER} colorMap={ISSUE_STATUS_COLOR} counts={detail.issueByStatus} />
-            <StackedBreakdown title="Đệ trình theo trạng thái" order={SUBMITTAL_STATUS_ORDER} colorMap={SUBMITTAL_STATUS_COLOR} counts={detail.submittalByStatus} />
+            <StackedBreakdown title={t('dashboard.issueByStatus')} order={ISSUE_STATUS_ORDER} colorMap={ISSUE_STATUS_COLOR} counts={detail.issueByStatus} labelFor={(status) => getFitoutPresentationLabel(t, 'issue.status', status)} />
+            <StackedBreakdown title={t('dashboard.submittalByStatus')} order={SUBMITTAL_STATUS_ORDER} colorMap={SUBMITTAL_STATUS_COLOR} counts={detail.submittalByStatus} labelFor={(status) => getFitoutPresentationLabel(t, 'submittal.status', status)} />
           </div>
         </div>
       ) : (
         <div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <StatTile label="Dự án đang hoạt động" value={overview?.totalActive ?? (overviewLoading ? '—' : 0)} />
-            <StatTile label="Cảnh báo rủi ro" value={overview?.atRiskCount ?? 0} sub={overview?.atRiskCount ? 'có milestone quá hạn' : undefined} />
-            <StatTile label="Tiến độ trung bình" value={`${overview?.avgProgress ?? 0}%`} />
-            <StatTile label="Gần khai trương nhất" value={nearestCountdown != null ? `${nearestCountdown}d` : '—'} />
+            <StatTile label={t('dashboard.stats.activeProjects')} value={overview?.totalActive ?? (overviewLoading ? '—' : 0)} />
+            <StatTile label={t('dashboard.stats.atRisk')} value={overview?.atRiskCount ?? 0} sub={overview?.atRiskCount ? t('dashboard.stats.atRiskSub') : undefined} />
+            <StatTile label={t('dashboard.stats.avgProgress')} value={`${overview?.avgProgress ?? 0}%`} />
+            <StatTile label={t('dashboard.stats.nearestOpening')} value={nearestCountdown != null ? t('dashboard.dayValue', { count: nearestCountdown }) : '—'} />
           </div>
 
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">Danh sách dự án</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">{t('dashboard.projectList')}</CardTitle></CardHeader>
             <CardContent>
               {overviewLoading ? (
-                <p className="text-sm text-center py-6" style={{ color: INK_MUTED }}>Đang tải...</p>
+                <p className="text-sm text-center py-6" style={{ color: INK_MUTED }}>{t('dashboard.loading')}</p>
               ) : (
-                <div className="space-y-3">
+                <div className="overflow-x-auto">
+                <div className="min-w-[560px] space-y-1">
                   {projects.map((p) => (
                     <button
                       key={p.id}
@@ -173,6 +181,7 @@ export default function FitoutDashboardPage() {
                       </div>
                     </button>
                   ))}
+                </div>
                 </div>
               )}
             </CardContent>

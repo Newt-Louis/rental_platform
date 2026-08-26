@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FitoutService } from './fitout.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
@@ -31,12 +32,13 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
   const stageConfig = { getOrderedActive: jest.fn() };
   const documentsService = { checkGateRequirements: jest.fn() };
   const slaService = { recordMilestone: jest.fn(), completeMilestone: jest.fn() };
+  const accessPolicy = {};
   let service: FitoutService;
 
   const STAGES = [
     { code: 'CONTRACT_SIGNED', order: 1, triggersUnitStatus: null, setsField: null },
     { code: 'SUBMIT_DESIGN', order: 2, triggersUnitStatus: null, setsField: null },
-    { code: 'FITOUT_IN_PROGRESS', order: 6, triggersUnitStatus: 'UNDER_FITOUT', setsField: 'startDate' },
+    { code: 'FITOUT_IN_PROGRESS', order: 3, triggersUnitStatus: 'UNDER_FITOUT', setsField: 'startDate' },
   ];
 
   beforeEach(() => {
@@ -50,6 +52,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
       stageConfig as unknown as FitoutStageConfigService,
       documentsService as unknown as FitoutDocumentsService,
       slaService as unknown as FitoutSlaService,
+      accessPolicy as any,
     );
   });
 
@@ -116,7 +119,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
 
   describe('advanceStatus', () => {
     const project = {
-      id: 'fp1', status: 'CONTRACT_SIGNED', unitId: 'u1', tenantId: 't1', startDate: null,
+      id: 'fp1', status: 'SUBMIT_DESIGN', unitId: 'u1', tenantId: 't1', startDate: null,
       contract: { id: 'c1', contractNumber: 'CTR-2026-0001', status: 'ACTIVE' },
     };
 
@@ -133,7 +136,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
         tx.fitoutProject.findUniqueOrThrow.mockResolvedValue(project);
         tx.fitoutProject.update.mockResolvedValue({ ...project, status: 'FITOUT_IN_PROGRESS' });
 
-        const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS');
+        const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION });
         expect(result.status).toBe('FITOUT_IN_PROGRESS');
       });
 
@@ -145,7 +148,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
             contract: { ...project.contract, status: contractStatus },
           } as any);
 
-          await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS')).rejects.toBeInstanceOf(BadRequestException);
+          await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION })).rejects.toBeInstanceOf(BadRequestException);
           expect(prisma.$transaction).not.toHaveBeenCalled();
         },
       );
@@ -155,7 +158,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
       tx.fitoutProject.findUniqueOrThrow.mockResolvedValue(project);
       tx.fitoutProject.update.mockResolvedValue({ ...project, status: 'FITOUT_IN_PROGRESS' });
 
-      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS');
+      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION });
 
       expect(unitStatus.transition).toHaveBeenCalledWith(
         'u1',
@@ -166,7 +169,7 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
       expect(tx.fitoutProject.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'fp1' } }),
       );
-      expect(slaService.completeMilestone).toHaveBeenCalledWith('fp1', 'CONTRACT_SIGNED', tx);
+      expect(slaService.completeMilestone).toHaveBeenCalledWith('fp1', 'SUBMIT_DESIGN', tx);
       expect(slaService.recordMilestone).toHaveBeenCalledWith('fp1', 'FITOUT_IN_PROGRESS', tx);
       expect(result.status).toBe('FITOUT_IN_PROGRESS');
     });
@@ -174,7 +177,8 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
     it('treats a same-target retry (double-click) as an idempotent replay, not an error', async () => {
       tx.fitoutProject.findUniqueOrThrow.mockResolvedValue({ ...project, status: 'FITOUT_IN_PROGRESS' });
 
-      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS');
+      jest.spyOn(service, 'findOne').mockResolvedValue({ ...project, status: 'FITOUT_IN_PROGRESS' } as any);
+      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION });
 
       expect(tx.fitoutProject.update).not.toHaveBeenCalled();
       expect(unitStatus.transition).not.toHaveBeenCalled();
@@ -182,9 +186,9 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
     });
 
     it('rejects a stale-read transition when the project moved to a different status concurrently', async () => {
-      tx.fitoutProject.findUniqueOrThrow.mockResolvedValue({ ...project, status: 'SUBMIT_DESIGN' });
+      tx.fitoutProject.findUniqueOrThrow.mockResolvedValue({ ...project, status: 'CONTRACT_SIGNED' });
 
-      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION })).rejects.toBeInstanceOf(BadRequestException);
       expect(tx.fitoutProject.update).not.toHaveBeenCalled();
     });
 
@@ -193,14 +197,39 @@ describe('FitoutService — auto-create & stage-advance reliability', () => {
       prisma.$transaction.mockRejectedValueOnce({ code: 'P2034' });
       prisma.fitoutProject.findUnique.mockResolvedValue({ ...project, status: 'FITOUT_IN_PROGRESS' });
 
-      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS');
+      const result = await service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION });
 
       expect(result.status).toBe('FITOUT_IN_PROGRESS');
     });
 
     it('rejects skipping stages backward or sideways before ever opening a transaction', async () => {
-      await expect(service.advanceStatus('fp1', 'CONTRACT_SIGNED')).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.advanceStatus('fp1', 'CONTRACT_SIGNED', { userRole: Role.OPERATION })).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects skipping over a configured stage', async () => {
+      jest.spyOn(service, 'findOne').mockResolvedValue({ ...project, status: 'CONTRACT_SIGNED' } as any);
+
+      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.OPERATION }))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-authorized stage advancer', async () => {
+      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', { userRole: Role.LEASING_MANAGER }))
+        .rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('requires a reason and director/admin authority for a gate override', async () => {
+      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', {
+        userRole: Role.OPERATION,
+        override: true,
+        overrideReason: 'Emergency',
+      })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.advanceStatus('fp1', 'FITOUT_IN_PROGRESS', {
+        userRole: Role.MALL_DIRECTOR,
+        override: true,
+      })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

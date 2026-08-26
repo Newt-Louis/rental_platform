@@ -3,6 +3,43 @@
   "create": "Tạo booking",
   "edit": "Chỉnh sửa booking",
   "detail": "Chi tiết booking",
+  "workspace": {
+    "title": "Tạo Booking / Giữ Lô",
+    "longTerm": "Giữ mặt bằng dài hạn",
+    "description": "Chọn khách hàng và mặt bằng. Trạng thái cuối cùng do hệ thống xác nhận khi tạo.",
+    "mall": "Trung tâm thương mại",
+    "sameMall": "Khách hàng và mặt bằng phải thuộc cùng trung tâm thương mại",
+    "unitFinder": "Tìm mặt bằng",
+    "unitCatalog": "Danh mục mặt bằng",
+    "bookingContext": "Thông tin Booking",
+    "selectedUnit": "Mặt bằng đã chọn",
+    "selectedCustomer": "Khách hàng đã chọn",
+    "ready": "Sẵn sàng",
+    "incomplete": "Chưa hoàn tất",
+    "change": "Thay đổi",
+    "eligibility": {
+      "immediate": "Có thể giữ",
+      "queue": "Hàng chờ",
+      "blocked": "Không khả dụng"
+    },
+    "unitStatus": {
+      "VACANT": "Còn trống",
+      "BOOKING": "Đang giữ",
+      "NEGOTIATING": "Đang thương lượng",
+      "CONTRACTED": "Đã ký hợp đồng",
+      "UNDER_FITOUT": "Đang thi công",
+      "OCCUPIED": "Đang khai thác",
+      "MERGED": "Đã gộp"
+    },
+    "readiness": {
+      "needBoth": "Cần chọn khách hàng và mặt bằng",
+      "needCustomer": "Cần chọn khách hàng",
+      "needUnit": "Cần chọn mặt bằng",
+      "unitUnavailable": "Mặt bằng không khả dụng",
+      "ready": "Sẵn sàng tạo Booking",
+      "readyQueue": "Sẵn sàng tạo Booking · Hàng chờ"
+    }
+  },
   "status": {
     "PENDING": "Chờ kích hoạt",
     "ACTIVE": "Đang giữ",
@@ -313,5 +350,15 @@
     "fitoutFee": "Phí thi công (₫)",
     "creating": "Đang tạo...",
     "createBtn": "Tạo Proposal"
+  },
+  "activityTypes": {
+    "CREATED": "Đã tạo",
+    "ACTIVATED": "Đã kích hoạt",
+    "PRIORITY_CHANGED": "Đã đổi ưu tiên",
+    "EXTENDED": "Đã gia hạn",
+    "NOTE_ADDED": "Đã thêm ghi chú",
+    "CONVERTED": "Đã chuyển thành tờ trình",
+    "CANCELLED": "Đã hủy",
+    "EXPIRED": "Đã hết hạn"
   }
 }

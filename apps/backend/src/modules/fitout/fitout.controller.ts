@@ -18,6 +18,7 @@ import { Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 // CR-101 Phase 1: descriptive only.
 
@@ -39,9 +40,14 @@ export class FitoutController {
     private readonly dashboardService: FitoutDashboardService,
     private readonly storageService: StorageService,
     private readonly mallAccess: MallAccessService,
+    private readonly accessPolicy: FitoutAccessPolicyService,
   ) {}
 
-  private validateProject(user: any, fitoutProjectId: string) {
+  private async validateProject(user: any, fitoutProjectId: string) {
+    if (user.role === Role.TENANT) {
+      await this.accessPolicy.assertTenantProject(fitoutProjectId, user);
+      return;
+    }
     return this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId });
   }
 
@@ -71,6 +77,7 @@ export class FitoutController {
 
   @Post('gates')
   @ApiOperation({ summary: 'Upsert document gate' })
+  @Roles(Role.ADMIN)
   upsertGate(@Body() body: {
     stage: string;
     documentType: string;
@@ -89,6 +96,7 @@ export class FitoutController {
 
   @Post('sla/policies')
   @ApiOperation({ summary: 'Upsert fitout SLA policy' })
+  @Roles(Role.ADMIN)
   upsertSlaPolicy(@Body() body: {
     stage: string;
     targetDays: number;
@@ -100,11 +108,13 @@ export class FitoutController {
 
   @Get('progress')
   @ApiOperation({ summary: 'Get fitout progress report' })
-  getProgress() {
-    return this.slaService.getFitoutProgress();
+  async getProgress(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.slaService.getFitoutProgress(mallIds);
   }
 
   @Get('stage-configs')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'List fitout stage pipeline configuration' })
   listStageConfigs() {
     return this.stageConfigService.list();
@@ -112,17 +122,20 @@ export class FitoutController {
 
   @Post('stage-configs')
   @ApiOperation({ summary: 'Upsert a fitout stage config' })
+  @Roles(Role.ADMIN)
   upsertStageConfig(@Body() body: any) {
     return this.stageConfigService.upsert(body);
   }
 
   @Delete('stage-configs/:code')
   @ApiOperation({ summary: 'Deactivate a fitout stage config' })
+  @Roles(Role.ADMIN)
   deactivateStageConfig(@Param('code') code: string) {
     return this.stageConfigService.deactivate(code);
   }
 
   @Get('form-types')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'List fitout form/document type configuration' })
   listFormTypes() {
     return this.formTypeService.list();
@@ -130,20 +143,23 @@ export class FitoutController {
 
   @Post('form-types')
   @ApiOperation({ summary: 'Upsert a fitout form type' })
+  @Roles(Role.ADMIN)
   upsertFormType(@Body() body: any) {
     return this.formTypeService.upsert(body);
   }
 
   @Delete('form-types/:code')
   @ApiOperation({ summary: 'Deactivate a fitout form type' })
+  @Roles(Role.ADMIN)
   deactivateFormType(@Param('code') code: string) {
     return this.formTypeService.deactivate(code);
   }
 
   @Get('dashboard/overview')
   @ApiOperation({ summary: 'Get fitout dashboard overview across all active projects' })
-  getDashboardOverview() {
-    return this.dashboardService.getOverview();
+  async getDashboardOverview(@CurrentUser() user: any) {
+    const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.dashboardService.getOverview(mallIds);
   }
 
   // ── ':id/*' routes ───────────────────────────────────────────────────────────
@@ -158,6 +174,7 @@ export class FitoutController {
 
   @Put(':id/status')
   @ApiOperation({ summary: 'Advance fitout status' })
+  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION)
   async advanceStatus(
     @Param('id') id: string,
     @Body() body: { status: string; override?: boolean; overrideReason?: string },
@@ -166,6 +183,7 @@ export class FitoutController {
     await this.validateProject(user, id);
     return this.fitoutService.advanceStatus(id, body.status, {
       userId: user?.id,
+      userRole: user?.role,
       override: body.override,
       overrideReason: body.overrideReason,
     });
@@ -213,6 +231,7 @@ export class FitoutController {
 
   @Get(':id/documents')
   @ApiOperation({ summary: 'List fitout documents' })
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   async listDocuments(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.documentsService.listDocuments(id);
@@ -288,6 +307,7 @@ export class FitoutController {
 
   @Get(':id/dashboard')
   @ApiOperation({ summary: 'Get aggregated dashboard for a single fitout project' })
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   async getProjectDashboard(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.dashboardService.getProjectDashboard(id);
@@ -312,14 +332,14 @@ export class FitoutController {
   @ApiOperation({ summary: 'Update contractor' })
   async updateContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @Body() dto: any, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.updateContractor(contractorId, dto);
+    return this.contractorService.updateContractor(id, contractorId, dto);
   }
 
   @Delete(':id/contractors/:contractorId')
   @ApiOperation({ summary: 'Deactivate contractor' })
   async deleteContractor(@Param('id') id: string, @Param('contractorId') contractorId: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.deleteContractor(contractorId);
+    return this.contractorService.deleteContractor(id, contractorId);
   }
 
   // ── Worker Access Logs ───────────────────────────────────────────────────────
@@ -341,6 +361,6 @@ export class FitoutController {
   @ApiOperation({ summary: 'Log worker exit' })
   async logWorkerExit(@Param('id') id: string, @Param('logId') logId: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
-    return this.contractorService.logWorkerExit(logId);
+    return this.contractorService.logWorkerExit(id, logId);
   }
 }

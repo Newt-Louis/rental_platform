@@ -2,6 +2,8 @@
 
 **Correction pointer (2026-08-21)**: `docs/architecture-review/05-CANONICAL-FINANCIAL-SEMANTICS.md` corrects this document's downstream currency-filtering characterization of `reports.service.ts` and `analytics/{compliance,occupancy-analytics}.service.ts` (they are already VND-filtered, contrary to what was implied here) — see that document for detail. The duplicate-formula-*semantics* finding below (what "collected revenue" means) is unaffected.
 
+**Current-state authorization correction (2026-08-24)**: CR-101 Phase 3G subsequently added `MallAccessService` scope resolution to core Reports and Analytics reads, including scoped CSV export and accessible-set filtering for multi-Mall comparison. The broad unscoped characterization below is therefore historical. The remaining confirmed gap is narrower: Analytics Compliance export list/request/generate/manual-monthly endpoints do not yet resolve or validate Mall ownership. See `docs/golden/AUTHORIZATION-AUDIT.md` Wave 5.
+
 ## Duplicate-formula matrix (headline finding of this System Truth reconstruction)
 
 | # | Consumer | Metric | Delegates to owner or reimplements? | Evidence |

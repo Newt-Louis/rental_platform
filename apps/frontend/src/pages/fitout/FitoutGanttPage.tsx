@@ -8,10 +8,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import { ArrowLeft, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { PageHeader } from '@/components/ui/page-header';
 
-function fmtDate(d?: string | null) {
+function fmtDate(d?: string | null, locale = 'vi-VN') {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  return new Date(d).toLocaleDateString(locale, { day: '2-digit', month: '2-digit' });
 }
 
 function depthOf(task: any, byId: Map<string, any>): number {
@@ -26,6 +28,8 @@ function depthOf(task: any, byId: Map<string, any>): number {
 }
 
 export default function FitoutGanttPage() {
+  const { t, i18n } = useTranslation('fitout');
+  const locale = i18n.resolvedLanguage ?? 'vi-VN';
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -39,7 +43,7 @@ export default function FitoutGanttPage() {
     enabled: !!projectId,
   });
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['fitout-tasks', projectId],
     queryFn: () => fitoutGanttApi.list(projectId!),
     enabled: !!projectId,
@@ -58,20 +62,20 @@ export default function FitoutGanttPage() {
     onSuccess: () => {
       invalidate();
       setForm({ name: '', plannedStart: '', plannedEnd: '', parentTaskId: '' });
-      toast({ title: 'Đã thêm công việc' });
+      toast({ title: t('gantt.toast.added') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common.error'), variant: 'destructive' }),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => fitoutGanttApi.update(id, data),
-    onSuccess: () => { invalidate(); toast({ title: 'Đã cập nhật' }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onSuccess: () => { invalidate(); toast({ title: t('gantt.toast.updated') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common.error'), variant: 'destructive' }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => fitoutGanttApi.remove(id),
-    onSuccess: () => { invalidate(); toast({ title: 'Đã xoá công việc' }); },
+    onSuccess: () => { invalidate(); toast({ title: t('gantt.toast.deleted') }); },
   });
 
   const p: any = project;
@@ -88,23 +92,13 @@ export default function FitoutGanttPage() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/fitout')}>
-          <ArrowLeft size={16} /> Quay lại
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tiến độ thi công (Gantt)</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {p ? `${p.tenant?.brandName} — ${p.unit?.code}` : 'Đang tải...'}
-          </p>
-        </div>
-      </div>
+      <PageHeader className="mb-5" title={t('gantt.title')} description={p ? `${p.tenant?.brandName} — ${p.unit?.code}` : t('gantt.loading')} actions={<Button variant="outline" size="sm" className="gap-1" onClick={() => navigate('/fitout')}><ArrowLeft size={16} /> {t('common.back')}</Button>} />
 
       <Card className="mb-4">
-        <CardHeader className="pb-2"><CardTitle className="text-base">Thêm công việc</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">{t('gantt.addTask')}</CardTitle></CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-5 gap-2">
-            <Input className="h-9 text-sm md:col-span-2" placeholder="Tên công việc"
+            <Input className="h-9 text-sm md:col-span-2" placeholder={t('gantt.taskName')}
               value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
             <Input type="date" className="h-9 text-sm" value={form.plannedStart}
               onChange={(e) => setForm((f) => ({ ...f, plannedStart: e.target.value }))} />
@@ -112,14 +106,14 @@ export default function FitoutGanttPage() {
               onChange={(e) => setForm((f) => ({ ...f, plannedEnd: e.target.value }))} />
             <select className="h-9 text-sm border border-input rounded-md px-2 bg-white"
               value={form.parentTaskId} onChange={(e) => setForm((f) => ({ ...f, parentTaskId: e.target.value }))}>
-              <option value="">Không có cha (WBS gốc)</option>
+              <option value="">{t('gantt.noParent')}</option>
               {taskList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <Button size="sm" className="mt-2 gap-1"
             disabled={!form.name.trim() || !form.plannedStart || !form.plannedEnd || createMutation.isPending}
             onClick={() => createMutation.mutate()}>
-            <Plus size={14} /> Thêm
+            <Plus size={14} /> {t('gantt.add')}
           </Button>
         </CardContent>
       </Card>
@@ -127,11 +121,14 @@ export default function FitoutGanttPage() {
       <Card>
         <CardContent className="pt-4">
           {isLoading ? (
-            <p className="text-sm text-gray-400 text-center py-6">Đang tải...</p>
+            <p className="text-sm text-gray-400 text-center py-6">{t('gantt.loading')}</p>
+          ) : isError ? (
+            <div role="alert" className="border-l-2 border-red-500 bg-red-50 p-4 text-sm text-red-700"><p>{t('gantt.loadError')}</p><Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>{t('page.retry')}</Button></div>
           ) : taskList.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-10 bg-gray-50 rounded-lg">Chưa có công việc nào</p>
+            <p className="text-sm text-gray-400 text-center py-10 bg-gray-50 rounded-lg">{t('gantt.empty')}</p>
           ) : (
-            <div className="space-y-3">
+            <div className="overflow-x-auto pb-1">
+            <div className="min-w-[760px] space-y-3">
               {taskList.map((t) => {
                 const depth = depthOf(t, byId);
                 const left = pctOf(t.plannedStart);
@@ -144,7 +141,7 @@ export default function FitoutGanttPage() {
                         {t.name}
                         {t.isLate && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
                       </p>
-                      <p className="text-xs text-gray-400">{fmtDate(t.plannedStart)} → {fmtDate(t.plannedEnd)}</p>
+                      <p className="text-xs text-gray-400">{fmtDate(t.plannedStart, locale)} → {fmtDate(t.plannedEnd, locale)}</p>
                     </div>
                     <div className="flex-1 relative h-6 bg-gray-100 rounded">
                       <div
@@ -164,10 +161,12 @@ export default function FitoutGanttPage() {
                         onChange={(e) => setPercentDraft((d) => ({ ...d, [t.id]: e.target.value }))}
                       />
                       <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                        aria-label={t('gantt.saveProgress', { title: t.name })}
                         onClick={() => updateMutation.mutate({ id: t.id, data: { percentComplete: +draft } })}>
                         %
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400"
+                        aria-label={t('gantt.deleteTask', { title: t.name })}
                         onClick={() => deleteMutation.mutate(t.id)}>
                         <Trash2 size={13} />
                       </Button>
@@ -175,6 +174,7 @@ export default function FitoutGanttPage() {
                   </div>
                 );
               })}
+            </div>
             </div>
           )}
         </CardContent>

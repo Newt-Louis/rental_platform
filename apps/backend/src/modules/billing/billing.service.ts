@@ -7,7 +7,7 @@ import { EmailService } from '../notifications/email.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { formatMoney } from '../../common/utils/format-money';
-import { SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
+import { CURRENCIES, SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
 
 // ServiceContract/ServiceContractPayment.currency are still free-text String columns
 // (docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- tightening them to the CurrencyCode enum
@@ -86,12 +86,14 @@ export class BillingService {
     sourceType?: string;
     search?: string;
   }, mallIds?: string[]) {
+    const sourceLimit = 200;
     const now = new Date();
     const search = query.search?.trim();
     const includeLease = !query.sourceType || query.sourceType === 'LEASE_CONTRACT';
     const includeService = !query.sourceType || query.sourceType === 'SERVICE_CONTRACT';
     const includeShortTerm = !query.sourceType || query.sourceType === 'SHORT_TERM_BOOKING';
     const includeParking = !query.sourceType || query.sourceType === 'PARKING';
+    const includePeriodicCharge = !query.sourceType || query.sourceType === 'PERIODIC_CHARGE';
 
     const leaseWhere: Prisma.BillingScheduleEntryWhereInput = {
       status: 'PENDING',
@@ -123,10 +125,10 @@ export class BillingService {
       },
     };
 
-    const [leaseRows, serviceRows, shortTermCandidates, parkingCandidates] = await Promise.all([
+    const [leaseCandidates, serviceCandidates, shortTermSourceCandidates, parkingSourceCandidates, periodicChargeCandidates] = await Promise.all([
       includeLease ? this.prisma.billingScheduleEntry.findMany({
         where: leaseWhere,
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { dueDate: 'asc' },
         include: { contract: { select: {
           id: true, contractNumber: true,
@@ -136,7 +138,7 @@ export class BillingService {
       }) : [],
       includeService ? this.prisma.serviceContractPayment.findMany({
         where: serviceWhere,
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { dueDate: 'asc' },
         include: { contract: { select: {
           id: true, contractNumber: true, title: true, mallId: true,
@@ -154,7 +156,7 @@ export class BillingService {
             { lead: { brandName: { contains: search, mode: 'insensitive' } } },
           ] } : {}),
         },
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { startDatetime: 'asc' },
         include: {
           customer: { select: { companyName: true, brandName: true, taxCode: true, tenantId: true } },
@@ -180,7 +182,7 @@ export class BillingService {
             ] } : {}),
           },
         },
-        take: 200,
+        take: sourceLimit + 1,
         orderBy: { issueDate: 'asc' },
         include: {
           contract: { include: { tenant: true } },
@@ -188,7 +190,42 @@ export class BillingService {
           payments: { orderBy: { paidAt: 'desc' } },
         },
       }) : [],
+      includePeriodicCharge ? this.prisma.periodicChargeEntry.findMany({
+        where: {
+          status: 'CONFIRMED',
+          invoiceId: null,
+          contract: {
+            isActive: true,
+            status: { in: ['ACTIVE', 'EXPIRING'] },
+            ...(mallIds ? { unit: { mallId: { in: mallIds } } } : {}),
+            ...(search ? { OR: [
+              { contractNumber: { contains: search, mode: 'insensitive' } },
+              { tenant: { brandName: { contains: search, mode: 'insensitive' } } },
+            ] } : {}),
+          },
+        },
+        take: sourceLimit + 1,
+        orderBy: { dueDate: 'asc' },
+        include: { contract: { select: {
+          id: true, contractNumber: true, currencyCode: true,
+          tenant: { select: { id: true, brandName: true, taxCode: true } },
+          unit: { select: { mallId: true, code: true } },
+        } } },
+      }) : [],
     ]);
+
+    const truncatedSources = [
+      includeLease && leaseCandidates.length > sourceLimit ? 'LEASE_CONTRACT' : null,
+      includeService && serviceCandidates.length > sourceLimit ? 'SERVICE_CONTRACT' : null,
+      includeShortTerm && shortTermSourceCandidates.length > sourceLimit ? 'SHORT_TERM_BOOKING' : null,
+      includeParking && parkingSourceCandidates.length > sourceLimit ? 'PARKING' : null,
+      includePeriodicCharge && periodicChargeCandidates.length > sourceLimit ? 'PERIODIC_CHARGE' : null,
+    ].filter((source): source is string => Boolean(source));
+    const leaseRows = leaseCandidates.slice(0, sourceLimit);
+    const serviceRows = serviceCandidates.slice(0, sourceLimit);
+    const shortTermCandidates = shortTermSourceCandidates.slice(0, sourceLimit);
+    const parkingCandidates = parkingSourceCandidates.slice(0, sourceLimit);
+    const periodicChargeRows = periodicChargeCandidates.slice(0, sourceLimit);
 
     const [billedShortTermIds, billedParkingIds] = await Promise.all([
       shortTermCandidates.length
@@ -304,7 +341,31 @@ export class BillingService {
         dueDate: row.dueDate,
         ...timing(row.dueDate, row.issueDate),
       }));
-    const data = [...lease, ...service, ...shortTerm, ...parking].sort((a, b) =>
+    const periodicChargeLabels: Record<string, string> = {
+      MANAGEMENT_FEE_SURCHARGE: 'Phụ thu Phí Quản Lý',
+      UTILITY: 'Điện, Nước',
+      AFTER_HOURS_COOLING: 'Điện lạnh ngoài giờ',
+    };
+    const periodicCharge = periodicChargeRows.map((row) => ({
+      id: row.id,
+      sourceType: 'PERIODIC_CHARGE',
+      contractId: row.contractId,
+      contractNumber: row.contract.contractNumber,
+      counterpartyName: row.contract.tenant.brandName,
+      taxCode: null,
+      mallId: row.contract.unit.mallId,
+      unitCode: row.contract.unit.code,
+      period: row.period,
+      milestone: `${periodicChargeLabels[row.chargeType] ?? row.chargeType} ${row.period}`,
+      subtotal: row.subtotal,
+      vatRate: 10,
+      totalAmount: row.subtotal * 1.1,
+      currencyCode: row.contract.currencyCode,
+      invoicePlannedDate: row.dueDate,
+      dueDate: row.dueDate,
+      ...timing(row.dueDate),
+    }));
+    const data = [...lease, ...service, ...shortTerm, ...parking, ...periodicCharge].sort((a, b) =>
       new Date(a.invoicePlannedDate).getTime() - new Date(b.invoicePlannedDate).getTime());
     const dueRows = data.filter((row) => row.isDueForInvoice);
     const collectible = (row: { totalAmount: number; amountToCollect?: number }) =>
@@ -319,6 +380,8 @@ export class BillingService {
     return {
       data,
       total: data.length,
+      sourceLimit,
+      truncatedSources,
       summary: {
         count: data.length,
         amount: vndOnly(data).reduce((sum, row) => sum + collectible(row), 0),
@@ -329,6 +392,7 @@ export class BillingService {
           SERVICE_CONTRACT: { count: service.length, amount: vndOnly(service).reduce((sum, row) => sum + row.totalAmount, 0) },
           SHORT_TERM_BOOKING: { count: shortTerm.length, amount: shortTerm.reduce((sum, row) => sum + row.totalAmount, 0) },
           PARKING: { count: parking.length, amount: parking.reduce((sum, row) => sum + collectible(row), 0) },
+          PERIODIC_CHARGE: { count: periodicCharge.length, amount: vndOnly(periodicCharge).reduce((sum, row) => sum + row.totalAmount, 0) },
         },
       },
     };
@@ -484,6 +548,66 @@ export class BillingService {
         });
         return invoice;
       });
+    }
+    if (sourceType === 'PERIODIC_CHARGE') {
+      const entry = await this.prisma.periodicChargeEntry.findFirst({
+        where: { id, ...(mallIds ? { contract: { unit: { mallId: { in: mallIds } } } } : {}) },
+        include: { contract: { include: { unit: true, tenant: true } } },
+      });
+      if (!entry) throw new NotFoundException('Không tìm thấy kỳ add-in');
+      if (entry.invoiceId) {
+        const existingInvoice = await this.prisma.invoice.findUnique({ where: { id: entry.invoiceId } });
+        if (existingInvoice) return existingInvoice;
+      }
+      if (entry.status !== 'CONFIRMED') throw new BadRequestException('Kỳ add-in chưa được vận hành chốt số liệu');
+      const periodicChargeLabels: Record<string, string> = {
+        MANAGEMENT_FEE_SURCHARGE: 'Phụ thu Phí Quản Lý',
+        UTILITY: 'Điện, Nước',
+        AFTER_HOURS_COOLING: 'Điện lạnh ngoài giờ',
+      };
+      const lines = Array.isArray(entry.lines) ? (entry.lines as unknown as { type: string; description: string; qty: number; unitPrice: number; amount: number }[]) : [];
+      const vatRate = 10;
+      const vatAmount = entry.subtotal * vatRate / 100;
+      const invoiceNumber = `PERIODIC-${entry.id}`;
+      try {
+        return await this.runSerializableTransaction(async (tx) => {
+          const invoice = await tx.invoice.create({ data: {
+            invoiceNumber,
+            contractId: entry.contractId,
+            tenantId: entry.contract.tenantId,
+            mallId: entry.contract.unit.mallId,
+            counterpartyName: entry.contract.tenant.companyName,
+            counterpartyTaxCode: entry.contract.tenant.taxCode,
+            sourceType: 'PERIODIC_CHARGE',
+            sourceId: entry.id,
+            period: entry.period,
+            type: 'PERIODIC_CHARGE',
+            subtotal: entry.subtotal,
+            vatRate,
+            vatAmount,
+            totalAmount: entry.subtotal + vatAmount,
+            currencyCode: entry.contract.currencyCode,
+            dueDate: entry.dueDate,
+            notes: `${entry.contract.contractNumber} - ${periodicChargeLabels[entry.chargeType] ?? entry.chargeType} ${entry.period}`,
+            lines: { create: lines.map((line, order) => ({
+              type: line.type, description: line.description, qty: line.qty, unitPrice: line.unitPrice, amount: line.amount, order,
+            })) },
+          } });
+          await tx.periodicChargeEntry.update({ where: { id: entry.id }, data: { status: 'INVOICED', invoiceId: invoice.id } });
+          return invoice;
+        });
+      } catch (error) {
+        // A concurrent double-invoke (e.g. a double-clicked "create invoice" action) can have
+        // both requests pass the CONFIRMED check above before either commits; the loser hits this
+        // deterministic invoiceNumber's uniqueness constraint. Recover idempotently instead of a
+        // raw 500 — same pattern as billing-schedule.service.ts's generateDueInvoices.
+        const duplicate = error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+        if (!duplicate) throw error;
+        const existingInvoice = await this.prisma.invoice.findUnique({ where: { invoiceNumber } });
+        if (!existingInvoice) throw error;
+        await this.prisma.periodicChargeEntry.update({ where: { id: entry.id }, data: { status: 'INVOICED', invoiceId: existingInvoice.id } });
+        return existingInvoice;
+      }
     }
     if (sourceType === 'SHORT_TERM_BOOKING') {
       const booking = await this.prisma.slotBooking.findFirst({
@@ -1444,12 +1568,22 @@ export class BillingService {
     return { created: created.length, invoices: created.map((i) => i.invoiceNumber) };
   }
 
-  async exportInvoicesExcel(query: { status?: InvoiceStatus; tenantId?: string; period?: string; search?: string; mallId?: string }, mallIds?: string[]) {
+  async exportInvoicesExcel(query: {
+    status?: InvoiceStatus;
+    tenantId?: string;
+    period?: string;
+    search?: string;
+    mallId?: string;
+    sourceType?: string;
+    bucket?: string;
+  }, mallIds?: string[]) {
+    const exportLimit = 5000;
     const filters: any[] = [];
     const where: any = { isActive: true, AND: filters };
     if (query.status) where.status = query.status;
     if (query.tenantId) where.tenantId = query.tenantId;
     if (query.period) where.period = query.period;
+    if (query.sourceType) where.sourceType = query.sourceType;
     if (mallIds) filters.push({ OR: [
       { mallId: { in: mallIds } },
       { contract: { unit: { mallId: { in: mallIds } } } },
@@ -1463,7 +1597,13 @@ export class BillingService {
       ] });
     }
 
-    const invoices = await this.prisma.invoice.findMany({
+    const now = new Date();
+    if (query.bucket === 'DRAFT') filters.push({ status: InvoiceStatus.DRAFT });
+    if (query.bucket === 'CURRENT') filters.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] }, dueDate: { gte: now } });
+    if (query.bucket === 'PARTIAL') filters.push({ status: InvoiceStatus.PARTIALLY_PAID, dueDate: { gte: now } });
+    if (query.bucket === 'OVERDUE') filters.push({ status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE] }, dueDate: { lt: now } });
+
+    const exportRows = await this.prisma.invoice.findMany({
       where,
       include: {
         tenant: { select: { brandName: true, companyName: true } },
@@ -1472,8 +1612,10 @@ export class BillingService {
         payments: { select: { amount: true, reversedAt: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: exportLimit + 1,
     });
+    const truncated = exportRows.length > exportLimit;
+    const invoices = exportRows.slice(0, exportLimit);
 
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -1490,6 +1632,7 @@ export class BillingService {
       { header: 'Nguồn', key: 'sourceType', width: 22 },
       { header: 'Kỳ', key: 'period', width: 12 },
       { header: 'Loại', key: 'type', width: 22 },
+      { header: 'Tiền tệ', key: 'currencyCode', width: 12 },
       { header: 'Tạm tính', key: 'subtotal', width: 18 },
       { header: 'VAT', key: 'vatAmount', width: 18 },
       { header: 'Điều chỉnh', key: 'adjustmentAmount', width: 18 },
@@ -1502,7 +1645,7 @@ export class BillingService {
     ];
     invoices.forEach((inv, index) => {
       const { adjustedTotal, totalPaid, balance } = this.financials(inv);
-      sheet.addRow({
+      const row = sheet.addRow({
         index: index + 1,
         mall: inv.mall ? `${inv.mall.code} — ${inv.mall.name}` : '',
         invoiceNumber: inv.invoiceNumber,
@@ -1512,6 +1655,7 @@ export class BillingService {
         sourceType: inv.sourceType || '',
         period: inv.period,
         type: inv.type,
+        currencyCode: inv.currencyCode,
         subtotal: inv.subtotal,
         vatAmount: inv.vatAmount,
         adjustmentAmount: inv.adjustmentAmount,
@@ -1522,6 +1666,11 @@ export class BillingService {
         status: inv.status,
         createdAt: inv.createdAt,
       });
+      const decimalPlaces = CURRENCIES[inv.currencyCode].decimalPlaces;
+      const numberFormat = decimalPlaces === 0 ? '#,##0' : `#,##0.${'0'.repeat(decimalPlaces)}`;
+      for (const key of ['subtotal', 'vatAmount', 'adjustmentAmount', 'adjustedTotal', 'totalPaid', 'balance']) {
+        row.getCell(key).numFmt = numberFormat;
+      }
     });
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columnCount } };
     sheet.getRow(1).height = 26;
@@ -1530,12 +1679,10 @@ export class BillingService {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
-    for (const key of ['subtotal', 'vatAmount', 'adjustmentAmount', 'adjustedTotal', 'totalPaid', 'balance']) {
-      sheet.getColumn(key).numFmt = '#,##0';
-    }
     sheet.getColumn('dueDate').numFmt = 'dd/mm/yyyy';
     sheet.getColumn('createdAt').numFmt = 'dd/mm/yyyy';
-    return workbook.xlsx.writeBuffer();
+    const buffer = await workbook.xlsx.writeBuffer();
+    return { buffer, rowCount: invoices.length, truncated, limit: exportLimit };
   }
 
   async getArAging(mallIds?: string[]) {

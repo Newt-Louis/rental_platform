@@ -38,7 +38,7 @@ const CONTRACT_PRE_ACTIVATION_STATUSES: ContractStatus[] = [
 ];
 
 // Field luôn sửa được trực tiếp, không ảnh hưởng tài chính/pháp lý của hợp đồng.
-const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours'];
+const CONTRACT_ALWAYS_EDITABLE_FIELDS = ['notes', 'managedById', 'operatingHours', 'periodicChargeTypes'];
 
 // Field tài chính/thời hạn/đối tượng hợp đồng — chỉ sửa trực tiếp được khi hợp đồng chưa ACTIVE
 // (còn đang soạn thảo). Sau khi ACTIVE, mọi thay đổi phải đi qua workflow Amendment để có
@@ -61,6 +61,19 @@ export class ContractsService {
     private outbox: OutboxService,
     private metrics: OperationalMetricsService,
   ) {}
+
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error: any) {
+        if (error?.code !== 'P2034' || attempt === 3) throw error;
+      }
+    }
+    throw new Error('Serializable transaction retry exhausted');
+  }
 
   async getActivationReadiness(id: string) {
     const contract = await this.prisma.contract.findUnique({
@@ -268,42 +281,65 @@ export class ContractsService {
     const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
     const contractNumber = `CTR-${year}-${rand}`;
 
-    const contract = await this.prisma.contract.create({
-      data: {
-        contractNumber,
-        ...dto,
-        startDate: new Date(dto.startDate),
-        endDate: new Date(dto.endDate),
-        cam: dto.cam ?? 0,
-        currencyCode: resolvedCurrencyCode,
-        billingCycle: dto.billingCycle ?? 'MONTHLY',
-        paymentTerm: dto.paymentTerm ?? 30,
-        rentFree: dto.rentFree ?? 0,
-        escalationPercent: dto.escalationPercent ?? 0,
-      },
-      include: {
-        tenant: { select: { id: true, brandName: true } },
-        unit: { select: { id: true, code: true, name: true } },
-      },
-    });
+    return this.serializable(async (tx) => {
+      const currentUnit = await tx.unit.findUnique({ where: { id: dto.unitId } });
+      if (!currentUnit) throw new NotFoundException('Unit không tồn tại');
+      if (!this.unitStatus.canTransition(currentUnit.status, UnitStatus.CONTRACTED)) {
+        throw new BadRequestException(
+          `Không thể tạo hợp đồng: mặt bằng đang ở trạng thái ${currentUnit.status}, không thể chuyển sang CONTRACTED.`,
+        );
+      }
+      const concurrentContract = await tx.contract.findFirst({
+        where: {
+          unitId: dto.unitId,
+          isActive: true,
+          deletedAt: null,
+          status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+        },
+      });
+      if (concurrentContract) {
+        throw new BadRequestException(
+          `Mặt bằng này đã có hợp đồng đang hiệu lực (${concurrentContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
+        );
+      }
 
-    await this.unitStatus.transition(dto.unitId, UnitStatus.CONTRACTED, {
-      userId,
-      reason: `Contract ${contractNumber} created`,
-      tenantId: dto.tenantId,
-      leaseStartDate: new Date(dto.startDate),
-      leaseEndDate: new Date(dto.endDate),
-    });
+      const contract = await tx.contract.create({
+        data: {
+          contractNumber,
+          ...dto,
+          startDate: new Date(dto.startDate),
+          endDate: new Date(dto.endDate),
+          cam: dto.cam ?? 0,
+          currencyCode: resolvedCurrencyCode,
+          billingCycle: dto.billingCycle ?? 'MONTHLY',
+          paymentTerm: dto.paymentTerm ?? 30,
+          rentFree: dto.rentFree ?? 0,
+          escalationPercent: dto.escalationPercent ?? 0,
+        },
+        include: {
+          tenant: { select: { id: true, brandName: true } },
+          unit: { select: { id: true, code: true, name: true } },
+        },
+      });
 
-    await this.events.logEvent({
-      contractId: contract.id,
-      eventType: 'CONTRACT_CREATED',
-      title: 'Contract created',
-      afterValue: JSON.stringify({ contractNumber: contract.contractNumber, status: contract.status }),
-      userId,
-    });
+      await this.unitStatus.transition(dto.unitId, UnitStatus.CONTRACTED, {
+        userId,
+        reason: `Contract ${contractNumber} created`,
+        tenantId: dto.tenantId,
+        leaseStartDate: new Date(dto.startDate),
+        leaseEndDate: new Date(dto.endDate),
+      }, tx);
 
-    return contract;
+      await this.events.logEvent({
+        contractId: contract.id,
+        eventType: 'CONTRACT_CREATED',
+        title: 'Contract created',
+        afterValue: JSON.stringify({ contractNumber: contract.contractNumber, status: contract.status }),
+        userId,
+      }, tx);
+
+      return contract;
+    });
   }
 
   async update(id: string, dto: Partial<CreateContractDto>, userId?: string) {
@@ -340,22 +376,34 @@ export class ContractsService {
       }
     }
 
+    // Billing Add-in: Phụ thu Phí Quản Lý chỉ áp dụng HĐT Văn phòng (Mall.leaseCategory = OFFICE) —
+    // chặn sớm ở đây thay vì để BillingAddInService âm thầm tính phụ thu cho hợp đồng TTTM.
+    if (dto.periodicChargeTypes?.includes('MANAGEMENT_FEE_SURCHARGE')) {
+      const targetUnitId = dto.unitId ?? before.unitId;
+      const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId }, select: { mall: { select: { leaseCategory: true } } } });
+      if (unit?.mall.leaseCategory !== 'OFFICE') {
+        throw new BadRequestException('Phụ thu Phí Quản Lý (MANAGEMENT_FEE_SURCHARGE) chỉ áp dụng cho hợp đồng thuộc Mall có leaseCategory = OFFICE.');
+      }
+    }
+
     const data: Record<string, unknown> = { ...dto };
     if (dto.startDate) data.startDate = new Date(dto.startDate);
     if (dto.endDate) data.endDate = new Date(dto.endDate);
 
-    const updated = await this.prisma.contract.update({ where: { id }, data: data as any });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.contract.update({ where: { id }, data: data as any });
 
-    await this.events.logEvent({
-      contractId: id,
-      eventType: 'CONTRACT_UPDATED',
-      title: 'Contract updated',
-      beforeValue: JSON.stringify(before),
-      afterValue: JSON.stringify(updated),
-      userId,
+      await this.events.logEvent({
+        contractId: id,
+        eventType: 'CONTRACT_UPDATED',
+        title: 'Contract updated',
+        beforeValue: JSON.stringify(before),
+        afterValue: JSON.stringify(updated),
+        userId,
+      }, tx);
+
+      return updated;
     });
-
-    return updated;
   }
 
   /**

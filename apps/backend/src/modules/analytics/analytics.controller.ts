@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, UseGuards, Param, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -135,16 +135,19 @@ export class AnalyticsController {
   @ApiOperation({ summary: 'List compliance exports' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'status', required: false })
-  listExports(
+  @Scope({ type: ScopeType.MALL_SCOPED, crossMallRead: true, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-GOLDEN-W17' })
+  async listExports(
     @Query('mallId') mallId?: string,
     @Query('status') status?: string,
+    @CurrentUser() user?: any,
   ) {
-    return this.compliance.listExports({ mallId, status });
+    return this.compliance.listExports({ mallId, status, mallIds: await this.scope(user, mallId) });
   }
 
   @Post('compliance/exports')
   @ApiOperation({ summary: 'Request compliance export' })
-  requestExport(
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-GOLDEN-W17' })
+  async requestExport(
     @Body() body: {
       exportType: string;
       mallId?: string;
@@ -153,6 +156,12 @@ export class AnalyticsController {
     },
     @CurrentUser() user: any,
   ) {
+    if (body.mallId) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, body.mallId);
+    } else if (user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Global compliance exports require ADMIN role');
+    }
+
     return this.compliance.requestExport({
       exportType: body.exportType,
       mallId: body.mallId,
@@ -164,11 +173,19 @@ export class AnalyticsController {
 
   @Post('compliance/exports/:id/generate')
   @ApiOperation({ summary: 'Generate compliance export' })
-  generateExport(@Param('id') id: string) {
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-GOLDEN-W17' })
+  async generateExport(@Param('id') id: string, @CurrentUser() user: any) {
+    const exp = await this.compliance.getExport(id);
+    if (exp?.mallId) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, exp.mallId);
+    } else if (exp && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Global compliance exports require ADMIN role');
+    }
     return this.compliance.generateExport(id);
   }
 
   @Post('compliance/exports/generate-monthly')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Manually trigger monthly compliance report generation' })
   triggerMonthlyReports() {
     return this.complianceScheduler.generateMonthlyReports();

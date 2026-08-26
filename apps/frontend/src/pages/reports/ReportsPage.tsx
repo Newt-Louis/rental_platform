@@ -13,18 +13,24 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { AsyncState } from '@/components/ui/async-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { PieChart as PieIcon, Download, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { formatMoney, formatMoneyAmount, formatMoneyCompact, type CurrencyCode } from '@/lib/currency';
+import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
+import { formatExactReportingMoney, formatVndBillionsAxis } from './reportingPresentation';
+import { invoiceTypeTranslationKey, localizedEnumLabel } from '@/lib/erpEnumPresentation';
+import { getReportsExportCap } from './reportsExportPresentation';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 function LeaseTermSelector({ value, onChange }: { value: 'LONG' | 'SHORT'; onChange: (value: 'LONG' | 'SHORT') => void }) {
+  const { t } = useTranslation('reports');
   return (
     <div className="inline-flex rounded-lg border bg-white p-1">
       {(['LONG', 'SHORT'] as const).map((term) => (
         <button key={term} type="button" onClick={() => onChange(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${value === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
-          {term === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn'}
+          {t(`leaseTerm.${term}`)}
         </button>
       ))}
     </div>
@@ -42,7 +48,10 @@ function OccupancyReport() {
   const raw = data?.data ?? data;
   const d = raw?.byLeaseTerm?.[leaseTermType] ?? raw;
   const statusData = d?.byStatus
-    ? Object.entries(d.byStatus).map(([k, v]: any) => ({ name: k, value: v }))
+    ? Object.entries(d.byStatus).map(([k, v]: any) => ({
+        name: localizedEnumLabel(t, 'spaces:status', k),
+        value: v,
+      }))
     : [];
 
   const floorData = d?.byFloor
@@ -62,7 +71,7 @@ function OccupancyReport() {
     loading={<Skeleton className="h-64" />}
     emptyTitle={t('occupancy.empty')}
     emptyDescription={t('occupancy.emptyDesc')}
-  >(
+  >
     <div className="space-y-4">
       <LeaseTermSelector value={leaseTermType} onChange={setLeaseTermType} />
       <div className="grid md:grid-cols-2 gap-6">
@@ -95,7 +104,7 @@ function OccupancyReport() {
       </Card>
       </div>
     </div>
-  )</AsyncState>;
+  </AsyncState>;
 }
 
 function RevenueReport() {
@@ -112,13 +121,13 @@ function RevenueReport() {
   return <AsyncState isLoading={isLoading} isError={isError} isEmpty={byPeriod.length === 0} onRetry={refetch}
     loading={<Skeleton className="h-64" />} emptyTitle={t('revenue.empty')}>
     <Card>
-      <CardHeader><CardTitle className="text-sm">{t('revenue.byMonth', { year })}</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-sm">{t('revenue.byMonth', { year })}<span className="ml-2 font-normal text-muted-foreground">{t('financialUnit')}</span></CardTitle></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={byPeriod}>
             <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatMoneyCompact(v, 'VND')} />
-            <Tooltip formatter={(v: any) => [formatMoney(v, 'VND')]} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={formatVndBillionsAxis} />
+            <Tooltip formatter={(v: any) => [formatExactReportingMoney(v, 'VND')]} />
             <Bar dataKey="total" name={t('revenue.issued')} fill="#93c5fd" />
             <Bar dataKey="paid" name={t('revenue.collected')} fill="#3b82f6" />
           </BarChart>
@@ -153,7 +162,7 @@ function PipelineReport() {
           <div className="space-y-2">
             {leads.map((l: any, i: number) => (
               <div key={i} className="flex justify-between items-center">
-                <span className="text-sm">{l.status}</span>
+                <span className="text-sm">{localizedEnumLabel(t, 'reports:pipeline.leadStatus', l.status)}</span>
                 <Badge variant="secondary">{l._count}</Badge>
               </div>
             ))}
@@ -170,12 +179,12 @@ function PipelineReport() {
               const currencies = Object.entries(p.valueByCurrency ?? {}).filter(([, v]) => (v as number) > 0);
               return (
                 <div key={i} className="flex justify-between items-center">
-                  <span className="text-sm">{p.status}</span>
+                  <span className="text-sm">{localizedEnumLabel(t, 'reports:pipeline.proposalStatus', p.status)}</span>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     <Badge variant="secondary">{p._count}</Badge>
                     {currencies.map(([code, value]) => (
-                      <span key={code} className="text-xs text-gray-500 whitespace-nowrap" title={formatMoney(value as number, code as CurrencyCode)}>
-                        {formatMoneyCompact(value as number, code as CurrencyCode)}
+                      <span key={code} className="text-xs text-gray-500 whitespace-nowrap">
+                        {formatExactReportingMoney(value as number, code as CurrencyCode)}
                       </span>
                     ))}
                   </div>
@@ -238,10 +247,10 @@ function ContractExpiryReport() {
 // every card/label using this also discloses "(VND)" since the figure
 // silently excludes any USD/MMK records.
 function fmtMoney(n: number) {
-  return formatMoneyCompact(n, 'VND');
+  return formatMoneyAmount(n, 'VND');
 }
 function fmtMoneyFullVnd(n: number) {
-  return formatMoney(n, 'VND');
+  return formatExactReportingMoney(n, 'VND');
 }
 
 function RevenueReceivablesReport() {
@@ -261,21 +270,18 @@ function RevenueReceivablesReport() {
     emptyTitle={t('revenueReceivables.empty')}>
     <div className="space-y-6">
       <p className="text-xs text-gray-400 -mt-2">{t('revenueReceivables.subtitle')}</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalBilled')}</p><p className="text-xl font-bold" title={fmtMoneyFullVnd(d?.totalBilled ?? 0)}>{fmtMoney(d?.totalBilled ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalCollected')}</p><p className="text-xl font-bold text-green-600" title={fmtMoneyFullVnd(d?.totalCollected ?? 0)}>{fmtMoney(d?.totalCollected ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.totalOutstanding')}</p><p className="text-xl font-bold text-red-600" title={fmtMoneyFullVnd(d?.totalOutstanding ?? 0)}>{fmtMoney(d?.totalOutstanding ?? 0)}</p></CardContent></Card>
-        <Card><CardContent className="pt-4"><p className="text-xs text-gray-500">{t('revenueReceivables.collectionRate')}</p><p className="text-xl font-bold">{d?.collectionRate ?? 0}%</p></CardContent></Card>
+      <div className="grid grid-cols-2 border-y bg-card md:grid-cols-4">
+        {[[t('revenueReceivables.totalBilled'), fmtMoney(d?.totalBilled ?? 0), ''], [t('revenueReceivables.totalCollected'), fmtMoney(d?.totalCollected ?? 0), 'text-green-700'], [t('revenueReceivables.totalOutstanding'), fmtMoney(d?.totalOutstanding ?? 0), 'text-red-700'], [t('revenueReceivables.collectionRate'), `${d?.collectionRate ?? 0}%`, '']].map(([label, value, tone]) => <div key={label} className="min-w-0 border-b px-4 py-3 even:border-l md:border-b-0 md:border-l md:first:border-l-0"><p className="text-xs text-muted-foreground">{label}</p><p className={`mt-1 break-words text-lg font-semibold tabular-nums ${tone}`}>{value}</p></div>)}
       </div>
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-sm">{t('revenueReceivables.byMonth')}</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('revenueReceivables.byMonth')}<span className="ml-2 font-normal text-muted-foreground">{t('financialUnit')}</span></CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={byPeriod}>
                 <XAxis dataKey="period" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatMoneyCompact(v, 'VND')} />
-                <Tooltip formatter={(v: any) => [formatMoney(v, 'VND')]} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={formatVndBillionsAxis} />
+                <Tooltip formatter={(v: any) => [formatExactReportingMoney(v, 'VND')]} />
                 <Bar dataKey="billed" name={t('revenueReceivables.issued')} fill="#93c5fd" />
                 <Bar dataKey="collected" name={t('revenueReceivables.collected')} fill="#3b82f6" />
               </BarChart>
@@ -288,7 +294,7 @@ function RevenueReceivablesReport() {
             <div className="space-y-2">
               {byType.map((inv: any) => (
                 <div key={inv.type} className="flex justify-between items-center text-sm">
-                  <span>{inv.type}</span>
+                  <span>{t(invoiceTypeTranslationKey(inv.type))}</span>
                   <span className="text-gray-500" title={`${fmtMoneyFullVnd(inv.collected)} / ${fmtMoneyFullVnd(inv.billed)}`}>{fmtMoney(inv.collected)} / {fmtMoney(inv.billed)}</span>
                 </div>
               ))}
@@ -412,6 +418,14 @@ export default function ReportsPage() {
       a.download = `report_${type}_${dateFrom}_${dateTo}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      const exportCap = getReportsExportCap(res.headers);
+      if (exportCap.truncated) {
+        toast({
+          title: t('exportTruncatedTitle', { count: exportCap.rowCount }),
+          description: t('exportTruncatedDescription', { limit: exportCap.limit }),
+          variant: 'destructive',
+        });
+      }
     } catch {
       toast({ title: t('exportError'), variant: 'destructive' });
     } finally {
@@ -420,15 +434,9 @@ export default function ReportsPage() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <PieIcon size={24} className="text-gray-700" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-            <p className="text-sm text-gray-500">{t('subtitle')}</p>
-          </div>
-        </div>
+    <div className="space-y-4 p-4 sm:p-6">
+      <PageHeader eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
+      <ERPToolbar>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Label className="text-xs text-gray-500">{t('dateFrom')}</Label>
@@ -442,10 +450,10 @@ export default function ReportsPage() {
             <Download size={14} /> {exporting ? t('exporting') : t('exportCsv')}
           </Button>
         </div>
-      </div>
+      </ERPToolbar>
 
       <Tabs defaultValue="occupancy">
-        <TabsList className="mb-6">
+        <TabsList className="mb-4 max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="occupancy">{t('tabs.occupancy')}</TabsTrigger>
           <TabsTrigger value="revenue">{t('tabs.revenue')}</TabsTrigger>
           <TabsTrigger value="pipeline">{t('tabs.pipeline')}</TabsTrigger>

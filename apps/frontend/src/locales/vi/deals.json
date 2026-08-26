@@ -4,7 +4,18 @@
     "create": "Tạo đề xuất",
     "edit": "Chỉnh sửa đề xuất",
     "detail": "Chi tiết đề xuất",
-    "manage": "Quản lý đề xuất cho thuê",
+    "manage": "Không gian làm việc thương mại và phê duyệt đề xuất",
+    "command": {
+      "eyebrow": "Đối tượng thương mại",
+      "records": "đề xuất",
+      "filters": "bộ lọc"
+    },
+    "partyTypes": {
+      "TENANT": "Khách thuê",
+      "LEAD": "Khách hàng tiềm năng",
+      "CUSTOMER": "Khách hàng",
+      "UNKNOWN": "Chưa xác định"
+    },
     "status": {
       "DRAFT": "Bản nháp",
       "SUBMITTED": "Đã gửi duyệt",
@@ -17,23 +28,29 @@
     },
     "fields": {
       "unit": "Mặt bằng",
+      "party": "Khách thuê / thương hiệu",
+      "floorUnknown": "Chưa xác định tầng",
       "tenant": "Khách hàng tiềm năng",
       "proposedRent": "Giá thuê đề xuất",
       "proposedArea": "Diện tích đề xuất",
       "startDate": "Ngày bắt đầu",
       "endDate": "Ngày kết thúc",
       "depositMonths": "Số tháng đặt cọc",
-      "freeRentMonths": "Miễn tiền thuê (tháng)",
+      "freeRentMonths": "Miễn tiền thuê (ngày)",
       "incentives": "Ưu đãi",
       "notes": "Ghi chú",
       "marketingFee": "Phí marketing"
     },
     "filters": {
-      "search": "Tìm proposal, khách thuê, mặt bằng...",
+      "search": "Tìm số đề xuất, khách thuê, mặt bằng...",
       "status": "Trạng thái",
       "dateRange": "Khoảng ngày tạo",
       "all": "Tất cả",
-      "clear": "Xóa bộ lọc"
+      "clear": "Xóa bộ lọc",
+      "leaseType": "Loại thời hạn thuê",
+      "allLeaseTypes": "Tất cả thời hạn",
+      "longTerm": "Dài hạn",
+      "shortTerm": "Ngắn hạn"
     },
     "createEntry": {
       "title": "Tạo đề xuất từ Booking",
@@ -54,17 +71,18 @@
       "converted": "Đã chuyển HĐ"
     },
     "table": {
-      "proposalNo": "Số PO",
+      "proposalNo": "Số đề xuất",
       "tenant": "Khách thuê",
       "unit": "Mặt bằng",
       "area": "Diện tích",
       "monthlyRent": "Thuê/tháng",
       "contractValue": "Giá trị HĐ",
-      "status": "Trạng thái"
+      "status": "Trạng thái",
+      "approval": "Phê duyệt"
     },
     "actions": {
       "submit": "Gửi phê duyệt",
-      "submitSuccess": "Proposal đã được gửi phê duyệt",
+      "submitSuccess": "Đề xuất đã được gửi phê duyệt",
       "convert": "Chuyển thành Hợp đồng",
       "convertSuccess": "Đã chuyển thành hợp đồng",
       "signContract": "Ký HĐ",
@@ -74,17 +92,19 @@
       "rejectConfirm": "Xác nhận từ chối",
       "rejectSuccess": "Đã từ chối đề xuất",
       "score": "Tính deal score",
-      "editDoc": "Chỉnh sửa Tờ Trình",
-      "send": "Gửi",
+      "editDoc": "Chỉnh sửa tờ trình",
+      "openDetails": "Mở chi tiết đề xuất {{number}}",
+      "select": "Chọn đề xuất {{number}}",
+      "send": "Gửi phê duyệt",
       "delete": "Xóa"
     },
     "sections": {
-      "proposedFor": "ĐỀ XUẤT CHO",
-      "financials": "TÀI CHÍNH",
+      "proposedFor": "KHÁCH HÀNG VÀ MẶT BẰNG",
+      "financials": "ĐIỀU KHOẢN TÀI CHÍNH",
       "term": "THỜI HẠN",
-      "approvalWorkflow": "QUY TRÌNH PHÊ DUYỆT",
+      "approvalWorkflow": "CÁC BƯỚC PHÊ DUYỆT",
       "viewApprovalWorkflow": "Xem chi tiết duyệt",
-      "leadSource": "LEAD NGUỒN",
+      "leadSource": "KHÁCH HÀNG TIỀM NĂNG NGUỒN",
       "contractResult": "HỢP ĐỒNG LIÊN QUAN"
     },
     "tabs": {
@@ -99,20 +119,22 @@
       "name": "Tên kịch bản *",
       "namePlaceholder": "VD: Kịch bản A",
       "empty": "Chưa có kịch bản nào",
-      "select": "Chọn",
+      "select": "Đánh dấu",
+      "days": "ngày",
+      "simulationNotice": "Kịch bản chỉ dùng để mô phỏng và so sánh; không thay đổi số liệu chính thức của Đề xuất và không được dùng làm căn cứ phê duyệt.",
       "deleteTitle": "Xóa kịch bản tài chính?",
       "deleteDesc": "Kịch bản \"{{name}}\" sẽ bị xóa khỏi đề xuất. Các số liệu so sánh của kịch bản này sẽ không còn hiển thị.",
       "deleteConfirm": "Xóa kịch bản",
       "addSuccess": "Đã thêm kịch bản",
-      "selectSuccess": "Đã chọn kịch bản",
+      "selectSuccess": "Đã đánh dấu kịch bản so sánh",
       "deleteSuccess": "Đã xóa kịch bản",
       "fields": {
         "area": "Diện tích (m²)",
-        "rentPerSqm": "Thuê / m² (₫)",
-        "camPerSqm": "CAM / m² (₫)",
+        "rentPerSqm": "Thuê / m²",
+        "camPerSqm": "CAM / m²",
         "term": "Thời hạn (tháng)",
         "deposit": "Đặt cọc (tháng)",
-        "rentFree": "Miễn thuê (tháng)",
+        "rentFree": "Miễn thuê (ngày)",
         "discount": "Chiết khấu (%)",
         "escalation": "Tăng giá hàng năm (%)"
       },
@@ -155,18 +177,38 @@
     "prev": "Trước",
     "next": "Sau",
     "noProposals": "Không có đề xuất nào",
-    "noneYet": "Chưa có proposal nào",
+    "new": "Mới",
+    "noneYet": "Chưa có đề xuất nào",
     "exportPdfError": "Không thể xuất PDF",
     "approval": {
       "level": "Cấp {{level}}",
+      "step": "Bước {{order}}: {{name}}",
+      "stepRole": "Bước {{order}} · {{role}}",
       "statusApproved": "Duyệt",
       "statusRejected": "Từ chối",
       "statusPending": "Chờ"
+    },
+    "objectHeader": {
+      "monthlyRent": "Tiền thuê mỗi tháng",
+      "monthlyValue": "{{amount}}/tháng",
+      "approvalPosition": "Bước {{current}}/{{total}} · {{role}}"
+    },
+    "handoff": {
+      "created": "Hợp đồng đã được tạo tự động",
+      "automatic": "Đã phê duyệt; hệ thống đang xử lý tạo Hợp đồng tự động.",
+      "tenantRequired": "Cần hoàn thiện thông tin Khách thuê trước khi tạo Hợp đồng.",
+      "openContract": "Mở Hợp đồng"
     }
   },
   "approvals": {
     "title": "Phê duyệt",
-    "subtitle": "Các yêu cầu phê duyệt đang chờ xử lý",
+    "new": "Mới",
+    "subtitle": "Hàng đợi quyết định theo từng hồ sơ và đúng bước phê duyệt hiện tại",
+    "searchPlaceholder": "Tờ trình, khách thuê hoặc mặt bằng...",
+    "command": {
+      "eyebrow": "TRUNG TÂM QUYẾT ĐỊNH",
+      "records": "hồ sơ"
+    },
     "pending": "Chờ phê duyệt",
     "approved": "Đã phê duyệt",
     "rejected": "Đã từ chối",
@@ -181,38 +223,116 @@
     "approvePriceSuccess": "Đã phê duyệt giá",
     "rejectPriceSuccess": "Đã từ chối giá",
     "views": {
-      "proposals": "Proposal",
+      "proposals": "Đề xuất",
+      "fitout": "Fitout",
       "prices": "Giá Booking",
       "history": "Lịch sử"
     },
+    "filters": {
+      "floor": "Tầng",
+      "allFloors": "Tất cả tầng",
+      "unit": "Mặt bằng",
+      "allUnits": "Tất cả mặt bằng"
+    },
+    "fitout": {
+      "title": "Hồ sơ Fitout",
+      "searchPlaceholder": "Hồ sơ, biểu mẫu, khách thuê hoặc mặt bằng...",
+      "empty": "Không có hồ sơ Fitout chờ quyết định",
+      "emptyDesc": "Hồ sơ Fitout cần xử lý sẽ hiển thị tại đây.",
+      "error": "Không thể tải danh sách phê duyệt Fitout.",
+      "revision": "Lần sửa {{revision}}",
+      "stage": "Giai đoạn Fitout",
+      "unknownStage": "Chưa cấu hình giai đoạn",
+      "formType": "Loại hồ sơ / biểu mẫu",
+      "submitter": "Người nộp",
+      "submittedAt": "Ngày nộp",
+      "dueDate": "Hạn xử lý",
+      "version": "Phiên bản {{version}}",
+      "latest": "Mới nhất",
+      "unknownFileType": "Không rõ định dạng",
+      "noAttachments": "Hồ sơ này không có tệp đính kèm.",
+      "attachmentError": "Không thể tải tệp đính kèm này.",
+      "pendingCount": "{{count}} hồ sơ Fitout chờ quyết định",
+      "section": {
+        "context": "THÔNG TIN HỒ SƠ FITOUT",
+        "attachments": "TỆP ĐÍNH KÈM"
+      },
+      "table": {
+        "document": "Hồ sơ",
+        "context": "Khách thuê / mặt bằng",
+        "stage": "Giai đoạn Fitout",
+        "approvalStep": "Bước phê duyệt",
+        "timeline": "Ngày nộp / hạn xử lý"
+      },
+      "status": {
+        "SUBMITTED": "Đã nộp",
+        "IN_PROGRESS": "Đang duyệt",
+        "APPROVED": "Đã duyệt",
+        "REJECTED": "Từ chối",
+        "PUBLISHED": "Đã phát hành",
+        "OBSOLETED": "Hết hiệu lực",
+        "unknown": "Chưa rõ trạng thái"
+      }
+    },
+    "roles": {
+      "ADMIN": "Quản trị hệ thống",
+      "LEASING_MANAGER": "Quản lý Leasing",
+      "LEASING_EXECUTIVE": "Chuyên viên Leasing",
+      "MALL_DIRECTOR": "Giám đốc TTTM",
+      "CEO": "CEO",
+      "FINANCE": "Tài chính",
+      "LEGAL": "Pháp chế",
+      "OPERATION": "Vận hành",
+      "TENANT": "Khách thuê"
+    },
     "table": {
-      "proposal": "Proposal",
+      "proposal": "Đề xuất",
       "approvalStep": "Bước duyệt",
       "role": "Vai trò",
       "tenant": "Khách thuê",
       "monthlyRent": "Thuê/tháng",
-      "discount": "Discount",
+      "discount": "Chiết khấu",
       "contractValue": "Giá trị HĐ",
       "step": "Bước {{order}}",
+      "stepOfTotal": "Bước {{order}}/{{total}}",
       "bookingNo": "Booking #",
-      "unit": "Unit",
+      "unit": "Mặt bằng",
+      "party": "Khách hàng",
+      "floorUnknown": "Chưa xác định tầng",
       "customer": "Khách hàng",
       "category": "Ngành hàng",
-      "floorPrice": "Giá sàn (₫/m²)",
-      "proposed": "Đề xuất (₫/m²)",
-      "ceiling": "Giá trần (₫/m²)",
+      "floorPrice": "Giá sàn (VND/m²)",
+      "proposed": "Đề xuất (VND/m²)",
+      "ceiling": "Giá trần (VND/m²)",
       "deviation": "Lệch %",
       "rentFreeDays": "{{count}} ngày miễn phí",
       "policyReasonTitle": "Lý do bước duyệt này áp dụng"
     },
     "actions": {
       "detail": "Chi tiết",
+      "review": "Xem xét",
+      "reviewFile": "Xem xét hồ sơ {{number}}",
       "approve": "Duyệt",
       "reject": "Từ chối",
       "approveAll": "Phê duyệt tất cả",
       "rejectAll": "Từ chối tất cả",
       "approvePrice": "Phê duyệt giá",
       "rejectPrice": "Từ chối giá"
+    },
+    "decision": {
+      "currentStep": "Bước {{current}}/{{total}} · Chờ quyết định",
+      "current": "Chờ quyết định",
+      "approveTitle": "Xác nhận phê duyệt hồ sơ",
+      "rejectTitle": "Xác nhận từ chối hồ sơ",
+      "optionalComment": "Ghi chú quyết định (không bắt buộc)",
+      "requiredReason": "Lý do từ chối (tối thiểu 5 ký tự)",
+      "confirmApprove": "Xác nhận phê duyệt",
+      "confirmReject": "Xác nhận từ chối"
+    },
+    "priceDecision": {
+      "approveTitle": "Xác nhận phê duyệt giá",
+      "approvePrompt": "Kiểm tra đúng Booking, mặt bằng và giá đề xuất trước khi quyết định.",
+      "confirmApprove": "Xác nhận phê duyệt"
     },
     "bulk": {
       "approveSuccess": "Đã phê duyệt {{ok}} bước",
@@ -242,7 +362,7 @@
       "records": "{{count}} bản ghi",
       "all": "Tất cả",
       "table": {
-        "proposal": "Proposal",
+        "proposal": "Đề xuất",
         "tenant": "Khách thuê",
         "step": "Bước duyệt",
         "approver": "Người duyệt",
@@ -252,12 +372,12 @@
       }
     },
     "empty": "Không có gì cần duyệt",
-    "emptyDesc": "Các deal chờ duyệt sẽ hiện ở đây",
+    "emptyDesc": "Các đề xuất chờ duyệt sẽ hiện ở đây",
     "emptyPrices": "Không có giá cần duyệt",
     "emptyPricesDesc": "Các booking với giá đề xuất thấp hơn sàn sẽ hiện ở đây",
-    "pendingCount": "{{count}} deal",
+    "pendingCount": "{{count}} hồ sơ",
     "pendingPriceCount": "{{count}} giá",
-    "dealsPending": "{{count}} deal chờ duyệt",
+    "dealsPending": "{{count}} đề xuất chờ duyệt",
     "pricesPending": "{{count}} booking chờ duyệt giá",
     "errorLoadPrices": "Không thể tải danh sách giá chờ duyệt",
     "errorLoadHistory": "Không thể tải lịch sử phê duyệt",
@@ -268,6 +388,13 @@
       "rejected": "Hồ sơ đã bị từ chối",
       "inProgress": "Đang trong quy trình phê duyệt",
       "steps": "{{done}}/{{total}} bước",
+      "completedSteps": "Đã hoàn tất {{done}}/{{total}} bước",
+      "statusValues": {
+        "PENDING": "Chờ bắt đầu",
+        "IN_PROGRESS": "Đang phê duyệt",
+        "APPROVED": "Đã duyệt",
+        "REJECTED": "Đã từ chối"
+      },
       "viewProposal": "Xem đề xuất gốc",
       "section": {
         "proposalInfo": "THÔNG TIN ĐỀ XUẤT",
@@ -292,6 +419,8 @@
       "step": {
         "stepLabel": "Bước {{order}}: {{name}}",
         "role": "Vai trò: {{role}}",
+        "stepRole": "Bước {{order}} · {{role}}",
+        "position": "Vị trí {{order}}/{{total}} trong quy trình",
         "approved": "Đã duyệt",
         "rejected": "Từ chối",
         "pending": "Chờ duyệt"

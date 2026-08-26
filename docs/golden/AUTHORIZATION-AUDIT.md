@@ -1,0 +1,94 @@
+# Authorization Audit
+
+Status: ACTIVE CONTINUOUS AUDIT
+
+Authorization is accepted only when Mall/Tenant scope is applied to the data query or mutation. A frontend role check, hidden button, controller decorator, or sibling endpoint is not sufficient evidence.
+
+## Audit dimensions
+
+| Dimension | Required evidence |
+|---|---|
+| List/read | scoped query plus cross-Mall denial test |
+| Mutation | scoped lookup before mutation plus denial test |
+| Files/export | record ownership scope before stream/generation |
+| Jobs/events | explicit tenant/Mall context and idempotent handling |
+| UI | action visibility consistent with backend authority; never treated as security |
+
+Known historical gaps were remediated in CR101 phases, but adjacent domains must be verified against current code before being marked closed. Wave 1 Fitout is presentation-only and does not modify authorization.
+
+## Wave 2 evidence — CRM / Customer / Tenant
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| CRM Lead list/detail/mutations | Controller resolves accessible Mall IDs and service applies `leadScope`; entity mutations call `assertLeadAccess` | VERIFIED for current paths; unchanged |
+| CRM unified deals (`GET /crm/deals`) | Wave 16 validates explicit Mall access, propagates caller scope and applies authoritative Lead scope/`mallId` before pagination | VERIFIED by focused controller/service tests; `CONTRA-008` / `AUTH-01` closed for this route |
+| CRM Customer | `Customer` has no `mallId`; controller and service are global within CRM roles | `UNKNOWN — BUSINESS CONFIRMATION REQUIRED` (`BC-016`); no UI fiction or schema guess |
+| Tenant master | List derives accessible Mall IDs; detail and every mutation validate Tenant ownership through `MallAccessService` | VERIFIED for current controller paths; unchanged |
+| Tenant Portal core data | Billing/Contract/Ticket/Fitout APIs remain responsible for server-forced Tenant scope; frontend filtering is not treated as authorization | Checked-but-not-changed; GS-10 remains a platform gate |
+
+Wave 2 made no backend authorization changes. Wave 16 subsequently closed the
+unified-deals route using the already-authoritative Lead scope. Customer
+ownership remains `BC-016` because its schema and business meaning differ from
+Lead ownership.
+
+## Wave 3 evidence — Unit / Space Inventory
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Unit list/detail/create/update/delete | Controller resolves explicit Mall access and service mutations use the scoped Unit lookup introduced by CR-101 | VERIFIED by focused authorization/controller suites; unchanged |
+| Floor/Zone and map data | Mall ownership is checked before current map/floor mutations and reads | VERIFIED for current Space controller paths; unchanged |
+| Merge/split | Current authorization and hierarchy/integrity suites pass; merge still writes `MERGED` outside the shared transition matrix | Authorization verified; lifecycle semantics remain BC-010 and were not changed |
+| UI roles | Action visibility remains aligned with existing roles | Presentation aid only; backend remains authoritative |
+
+Wave 3 makes no backend, authorization or data-scope changes. Focused Space authorization/integrity verification passed 8 suites / 77 tests.
+
+## Wave 4 evidence — Ticket / Maintenance / Work Order / Patrol
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Ticket core list/detail/mutations | Current staff paths apply Mall access and Tenant paths derive Tenant identity server-side | VERIFIED for core paths; unchanged |
+| Ticket escalation, rating and SLA-policy secondary paths | Wave 15 applies core Ticket Mall/Tenant ownership checks to per-ticket routes, makes global SLA configuration ADMIN-only and Mall-scopes staff aggregate statistics | VERIFIED for current HTTP paths; scheduled escalation-recipient Mall policy remains `BC-020-R` |
+| Work Order | Controller role-scope suite verifies current allowed roles; service scopes operational records by Mall | VERIFIED for current focused paths; unchanged |
+| Patrol | Current Shift/Route/Schedule paths validate Mall access; abnormal Check automation remains backend-owned | CHECKED-BUT-NOT-CHANGED; no UI role check is treated as security |
+
+Wave 4 made no backend authorization changes. Wave 15 subsequently closed the
+provable HTTP gaps with 2 focused suites / 12 tests; the full backend gate now
+passes 92 suites / 606 tests. Scheduler recipient policy remains a separate
+business confirmation and no workflow semantics were changed.
+
+## Wave 5 evidence — Reports / Analytics
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Reports core and CSV export | CR-101 Phase 3G controller resolves explicit or accessible Mall sets through `MallAccessService`; service tests prove scopes reach Prisma/Billing queries | VERIFIED for focused paths; earlier System Truth characterization is stale |
+| Analytics occupancy/vacancy/renewal/multi-Mall | Controller resolves accessible Mall scope; multi-Mall comparison receives that scope rather than returning global data to ordinary Mall roles | VERIFIED by focused controller/service suites; unchanged |
+| Analytics Compliance exports | Wave 17 scopes the worklist, validates persisted/requested Mall ownership before writes, restricts global writes/manual all-Mall generation to ADMIN, and Mall-scopes source payloads | VERIFIED by focused controller/service tests; SAP logs without Mall provenance are omitted from Mall-scoped exports |
+| Analytics retention policy | Per-Mall reads/writes validate Mall access; config writes exclude CEO | VERIFIED for current controller path; unchanged |
+
+Wave 5 changed presentation only. Wave 17 subsequently closed the Compliance
+sub-surface with authoritative Unit/Invoice relationship predicates and
+negative authorization coverage. No export format, schema, financial logic or
+internal scheduler semantics changed.
+
+## Wave 6 evidence — Admin / Users / Mall Access / Permissions
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Users list/stats/detail/create/update/reset/delete | `UsersController` applies class-level `@Roles(Role.ADMIN)`; the frontend Admin route is also ADMIN-only | VERIFIED role boundary for current paths; backend remains authoritative |
+| UserMallAccess list/grant/revoke | User-specific, Mall-specific and mutation routes are ADMIN-only; service validates both User and Mall and restricts grantable staff roles | VERIFIED by focused controller read and service tests; unchanged |
+| Current-user Mall list | `GET /mall-access/my-malls` is available to authenticated module roles and resolves only the current user's active grants | VERIFIED self-scope; unchanged |
+| Permission matrix | Read-only presentation is derived from `ROUTE_PERMISSIONS`; it does not mutate or claim to replace backend `@Roles`/Mall checks | PRESENTATION ONLY; backend metadata and data-query scope remain authoritative |
+| CEO capability model | Current operational write capabilities contradict the aggregate/read-oriented persona documented elsewhere | `UNKNOWN — BUSINESS CONFIRMATION REQUIRED`; not normalized in Wave 6 |
+
+Wave 6 makes no backend, role, permission or Mall-scope changes. Frontend action visibility is treated as usability only and never as an authorization control.
+
+## Wave 7 evidence — Dashboard
+
+| Surface | Current evidence | Decision |
+|---|---|---|
+| Main Dashboard with explicit Mall | `DashboardService` calls `assertMallAccess(..., { crossMallRead: true })` before querying | VERIFIED; unchanged |
+| Main Dashboard without Mall | Service resolves `getAccessibleMallIds` and applies the set to Unit, Contract, Invoice, Ticket, Booking and Fitout readers | VERIFIED by focused service test; unchanged |
+| Cross-Mall Dashboard | Controller overrides the role gate with `MODULE_ROLES.crossMall` (`ADMIN`, `CEO`) | VERIFIED role boundary; unchanged |
+| Dashboard UI actions | Existing routes and role-shaped response fields only | PRESENTATION ONLY; not treated as authorization |
+
+Wave 7 is a protected read-only audit and makes no Dashboard or authorization change.

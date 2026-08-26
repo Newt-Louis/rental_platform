@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, ContractStatus, UnitStatus } from '@prisma/client';
+import { Prisma, ContractStatus, Role, UnitStatus } from '@prisma/client';
 
 // Phase 6 early cleanup (docs/program/RELIABILITY_BACKLOG.md item 16, found by the Backbone
 // Consolidation Gate): mirrors BillingScheduleService's own contract-status guard exactly.
@@ -16,6 +16,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { FitoutStageConfigService } from './fitout-stage-config.service';
 import { FitoutDocumentsService } from './fitout-documents.service';
 import { FitoutSlaService } from './fitout-sla.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 interface ContractActivatedEvent {
   contractId: string;
@@ -41,6 +42,7 @@ export class FitoutService {
     private stageConfig: FitoutStageConfigService,
     private documentsService: FitoutDocumentsService,
     private slaService: FitoutSlaService,
+    private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   async findAll(query: { status?: string; tenantId?: string; mallIds?: string[]; page?: number; limit?: number }, currentUser?: CurrentUser) {
@@ -86,7 +88,7 @@ export class FitoutService {
         unit: { include: { floor: true, zone: true } },
         operationManager: { select: { id: true, fullName: true, email: true } },
         checklists: { orderBy: { order: 'asc' } },
-        contract: { select: { id: true, contractNumber: true, status: true } },
+        contract: { select: { id: true, contractNumber: true, status: true, currencyCode: true } },
       },
     });
 
@@ -195,8 +197,21 @@ export class FitoutService {
   async advanceStatus(
     id: string,
     newStatus: string,
-    opts: { userId?: string; override?: boolean; overrideReason?: string } = {},
+    opts: { userId?: string; userRole?: Role; override?: boolean; overrideReason?: string } = {},
   ) {
+    const advanceRoles: Role[] = [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION];
+    if (!opts.userRole || !advanceRoles.includes(opts.userRole)) {
+      throw new ForbiddenException('Only Operation, Mall Director or Admin can advance fitout stages');
+    }
+    if (opts.override) {
+      const overrideRoles: Role[] = [Role.ADMIN, Role.MALL_DIRECTOR];
+      if (!overrideRoles.includes(opts.userRole)) {
+        throw new ForbiddenException('Only Mall Director or Admin can override fitout gates');
+      }
+      if (!opts.overrideReason?.trim()) {
+        throw new BadRequestException('overrideReason is required to bypass gate requirements');
+      }
+    }
     const project = await this.findOne(id);
 
     if (project.contract && !FITOUT_ADVANCEABLE_CONTRACT_STATUSES.includes(project.contract.status)) {
@@ -210,8 +225,12 @@ export class FitoutService {
     const newIdx = stages.findIndex((s) => s.code === newStatus);
 
     if (newIdx === -1) throw new BadRequestException(`Unknown fitout stage "${newStatus}"`);
-    if (currentIdx !== -1 && newIdx <= currentIdx) {
-      throw new BadRequestException('Can only advance to a later status');
+    if (currentIdx === -1) {
+      throw new BadRequestException(`Current fitout stage "${project.status}" is not active`);
+    }
+    if (newStatus === project.status) return project;
+    if (newIdx !== currentIdx + 1) {
+      throw new BadRequestException('Can only advance to the next configured stage');
     }
 
     const gateResult = await this.documentsService.checkGateRequirements(id, newStatus);
@@ -221,9 +240,6 @@ export class FitoutService {
           message: 'Gate requirements not met for target stage',
           missing: gateResult.missing,
         });
-      }
-      if (!opts.overrideReason?.trim()) {
-        throw new BadRequestException('overrideReason is required to bypass gate requirements');
       }
     }
 
@@ -327,6 +343,7 @@ export class FitoutService {
 
   async assign(id: string, operationManagerId: string) {
     await this.findOne(id);
+    await this.accessPolicy.assertActiveProjectMallUser(id, operationManagerId, Role.OPERATION);
     return this.prisma.fitoutProject.update({
       where: { id },
       data: { operationManagerId },

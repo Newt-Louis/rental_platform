@@ -7,7 +7,7 @@ export type LeadPriority = 'HOT' | 'WARM' | 'COLD';
 export type CustomerStatus = 'PROSPECT' | 'NEGOTIATING' | 'ACTIVE' | 'INACTIVE' | 'BLACKLISTED';
 export type ActivityType = 'CALL' | 'EMAIL' | 'MEETING' | 'SITE_VISIT' | 'PROPOSAL_SENT' | 'NOTE' | 'OTHER';
 export type LeadSource = 'BROKER' | 'WEBSITE' | 'REFERRAL' | 'WALK_IN' | 'EXISTING_TENANT';
-export type ContractStatus = 'DRAFT' | 'PENDING_LEGAL' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TERMINATED';
+export type ContractStatus = 'DRAFT' | 'PENDING_LEGAL' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TERMINATING' | 'TERMINATED';
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type TicketStatus = 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_TENANT' | 'RESOLVED' | 'CLOSED';
 // Stage code — FK to FitoutStageConfig.code, configurable via admin UI (not a fixed union).
@@ -32,10 +32,13 @@ export interface AuthState {
   token: string | null;
 }
 
+export type MallLeaseCategory = 'OFFICE' | 'MALL';
+
 export interface Mall {
   id: string;
   name: string;
   code: string;
+  leaseCategory?: MallLeaseCategory;
   address?: string;
   totalArea?: number;
   isActive: boolean;
@@ -238,10 +241,15 @@ export interface UnitBooking {
   priority: number;
   requestedArea?: number;
   requestedTerm?: number;
+  budgetRentMin?: number;
+  budgetRentMax?: number;
   expectedRent?: number;
   currencyCode?: CurrencyCode;
+  exchangeRate?: number;
   proposedRentPerSqm?: number;
   proposedCamPerSqm?: number;
+  serviceFeeSqm?: number;
+  businessSupportFeeSqm?: number;
   pricingSnapshot?: Record<string, unknown>;
   priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   holdDays: number;

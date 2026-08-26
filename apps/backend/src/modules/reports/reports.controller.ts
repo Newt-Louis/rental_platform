@@ -113,10 +113,13 @@ export class ReportsController {
   @ApiQuery({ name: 'to', required: false })
   @ApiQuery({ name: 'mallId', required: false })
   async exportCsv(@Param('type') type: string, @Query() query: any, @CurrentUser() user: any, @Res() res: Response) {
-    const csv = await this.reportsService.exportCsv(type, query.from, query.to, await this.scope(user, query.mallId));
+    const exported = await this.reportsService.exportCsv(type, query.from, query.to, await this.scope(user, query.mallId));
     const filename = `report_${type}_${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send('﻿' + csv);
+    res.setHeader('X-Export-Row-Count', exported.rowCount.toString());
+    res.setHeader('X-Export-Limit', exported.limit.toString());
+    res.setHeader('X-Export-Truncated', exported.truncated.toString());
+    res.send('﻿' + exported.csv);
   }
 }

@@ -60,9 +60,9 @@ export class CrmController {
   @ApiQuery({ name: 'stage', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-008 / AUTH-01' })
-  getUnifiedDeals(@Query() query: any) {
-    return this.crmService.getUnifiedDeals(query);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-GOLDEN-W16' })
+  async getUnifiedDeals(@Query() query: any, @CurrentUser() user: any) {
+    return this.crmService.getUnifiedDeals({ ...query, scope: await this.scope(user, query.mallId) });
   }
 
   @Put('leads/:id/move')

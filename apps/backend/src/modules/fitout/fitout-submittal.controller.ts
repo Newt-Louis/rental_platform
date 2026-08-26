@@ -9,6 +9,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { Role } from '@prisma/client';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 // CR-101 Phase 1: descriptive only.
 
@@ -22,6 +24,7 @@ export class FitoutSubmittalController {
   constructor(
     private readonly submittalService: FitoutSubmittalService,
     private readonly mallAccess: MallAccessService,
+    private readonly accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   // Phase 5 (docs/program/RELIABILITY_BACKLOG.md): this controller had no mall-access
@@ -29,16 +32,25 @@ export class FitoutSubmittalController {
   // with only the class-level role guard. Every route below now resolves its target
   // project (directly, from the query, or via the submittal id) and validates mall access
   // the same way FitoutController already does.
-  private validateProjectAccess(user: any, fitoutProjectId: string) {
+  private async validateProjectAccess(user: any, fitoutProjectId: string) {
+    if (user.role === Role.TENANT) {
+      await this.accessPolicy.assertTenantProject(fitoutProjectId, user);
+      return;
+    }
     return this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutProjectId });
   }
 
-  private async validateSubmittalAccess(user: any, submittalId: string) {
+  private async validateSubmittalAccess(user: any, submittalId: string, requireSubmittedBy = false) {
+    if (user.role === Role.TENANT) {
+      await this.accessPolicy.assertTenantSubmittal(submittalId, user, requireSubmittedBy);
+      return;
+    }
     const projectId = await this.submittalService.getProjectId(submittalId);
     await this.validateProjectAccess(user, projectId);
   }
 
   @Get()
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'List submittals for a fitout project' })
   async list(
     @Query('projectId') projectId: string,
@@ -51,6 +63,7 @@ export class FitoutSubmittalController {
   }
 
   @Post()
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'Create (nộp) a new submittal' })
   async create(@Body() body: { projectId: string; formTypeId: string; title: string; dueDate?: string }, @CurrentUser() user: any) {
     await this.validateProjectAccess(user, body.projectId);
@@ -58,6 +71,7 @@ export class FitoutSubmittalController {
   }
 
   @Get(':id')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'Get submittal detail' })
   async getOne(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id);
@@ -65,10 +79,19 @@ export class FitoutSubmittalController {
   }
 
   @Post(':id/resubmit')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'Resubmit (nộp lại) a rejected submittal' })
   async resubmit(@Param('id') id: string, @Body() body: { title?: string; dueDate?: string }, @CurrentUser() user: any) {
-    await this.validateSubmittalAccess(user, id);
+    await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
     return this.submittalService.resubmit(id, body, user.id);
+  }
+
+  @Post(':id/submit-for-review')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ApiOperation({ summary: 'Gửi duyệt (bắt buộc đã đính kèm ít nhất 1 tệp) — chuyển hồ sơ nháp sang hàng chờ duyệt' })
+  async submitForReview(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
+    return this.submittalService.submitForReview(id);
   }
 
   @Post(':id/publish')
@@ -107,6 +130,7 @@ export class FitoutSubmittalController {
   }
 
   @Get(':id/attachments')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'List file attachments of a submittal' })
   async listAttachments(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id);
@@ -114,12 +138,13 @@ export class FitoutSubmittalController {
   }
 
   @Post(':id/attachments')
+  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
   @ApiOperation({ summary: 'Upload a file attachment to a submittal' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file'))
   async uploadAttachment(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @CurrentUser() user: any) {
-    await this.validateSubmittalAccess(user, id);
+    await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
     return this.submittalService.uploadAttachment(id, file, user.id);
   }
 }

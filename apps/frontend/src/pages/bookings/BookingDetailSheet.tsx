@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingApi, spacesApi, crmApi, usersApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
@@ -16,15 +17,25 @@ import {
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
 import { formatMoney, CURRENCIES } from '@/lib/currency';
-import { UNIT_STATUS_CONFIG, ACTIVITY_LABELS, daysLeft, fmtDate } from './bookings-constants';
+import { UNIT_STATUS_CONFIG, daysLeft, fmtDate } from './bookings-constants';
 import { ConvertToProposalDialog } from './ConvertToProposalDialog';
 import { ExtendDialog } from './ExtendDialog';
+
+/** Quy đổi tham khảo sang VND theo tỷ giá đang nhập — chỉ hiển thị, không lưu giá trị VND (xem docs/program/MULTI_CURRENCY_ARCHITECTURE.md: hệ thống không có FX engine). */
+function fxHint(value: string, currencyCode: string | undefined, exchangeRate: string): string | null {
+  const v = Number(value);
+  const rate = Number(exchangeRate);
+  if (!v || !currencyCode || currencyCode === 'VND' || !rate) return null;
+  return `≈ ${(v * rate).toLocaleString('vi-VN')} ₫`;
+}
 
 const EMPTY_EF = {
   unitId: '', unitLabel: '', unitSearch: '',
   leadId: '', leadLabel: '',
   requestedArea: '', requestedTerm: '', expectedRent: '',
+  budgetRentMin: '', budgetRentMax: '', exchangeRate: '',
   proposedRentPerSqm: '', proposedCamPerSqm: '',
+  serviceFeeSqm: '', businessSupportFeeSqm: '',
   notes: '', assignedToId: '',
 };
 
@@ -34,6 +45,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t } = useTranslation(['bookings', 'crm', 'common']);
   const { selectedMallId } = useMallStore();
   const [convertOpen, setConvertOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
@@ -69,8 +81,13 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       requestedArea: String(src.requestedArea ?? ''),
       requestedTerm: String(src.requestedTerm ?? ''),
       expectedRent: String(src.expectedRent ?? ''),
+      budgetRentMin: String((src as any).budgetRentMin ?? ''),
+      budgetRentMax: String((src as any).budgetRentMax ?? ''),
+      exchangeRate: String((src as any).exchangeRate ?? ''),
       proposedRentPerSqm: String((src as any).proposedRentPerSqm ?? ''),
       proposedCamPerSqm: String((src as any).proposedCamPerSqm ?? ''),
+      serviceFeeSqm: String((src as any).serviceFeeSqm ?? ''),
+      businessSupportFeeSqm: String((src as any).businessSupportFeeSqm ?? ''),
       notes: src.notes ?? '',
       assignedToId: (src as any).assignedToId ?? '',
     });
@@ -138,8 +155,13 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       if (ef.requestedArea) payload.requestedArea = Number(ef.requestedArea);
       if (ef.requestedTerm) payload.requestedTerm = Number(ef.requestedTerm);
       if (ef.expectedRent) payload.expectedRent = Number(ef.expectedRent);
+      if (ef.budgetRentMin) payload.budgetRentMin = Number(ef.budgetRentMin);
+      if (ef.budgetRentMax) payload.budgetRentMax = Number(ef.budgetRentMax);
+      if (ef.exchangeRate) payload.exchangeRate = Number(ef.exchangeRate);
       if (ef.proposedRentPerSqm) payload.proposedRentPerSqm = Number(ef.proposedRentPerSqm);
       if (ef.proposedCamPerSqm) payload.proposedCamPerSqm = Number(ef.proposedCamPerSqm);
+      if (ef.serviceFeeSqm) payload.serviceFeeSqm = Number(ef.serviceFeeSqm);
+      if (ef.businessSupportFeeSqm) payload.businessSupportFeeSqm = Number(ef.businessSupportFeeSqm);
       payload.notes = ef.notes || undefined;
       return bookingApi.update(activeId!, payload);
     },
@@ -167,8 +189,13 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       requestedArea: String(d.requestedArea ?? ''),
       requestedTerm: String(d.requestedTerm ?? ''),
       expectedRent: String(d.expectedRent ?? ''),
+      budgetRentMin: String((d as any).budgetRentMin ?? ''),
+      budgetRentMax: String((d as any).budgetRentMax ?? ''),
+      exchangeRate: String((d as any).exchangeRate ?? ''),
       proposedRentPerSqm: String((d as any).proposedRentPerSqm ?? ''),
       proposedCamPerSqm: String((d as any).proposedCamPerSqm ?? ''),
+      serviceFeeSqm: String((d as any).serviceFeeSqm ?? ''),
+      businessSupportFeeSqm: String((d as any).businessSupportFeeSqm ?? ''),
       notes: d.notes ?? '',
       assignedToId: (d as any).assignedToId ?? '',
     });
@@ -265,7 +292,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                             <User size={12} className="text-blue-400 shrink-0" />
                             <span className="font-medium truncate">{l.brandName}</span>
                             <span className="text-gray-400 text-xs shrink-0">{l.contactName}</span>
-                            <span className="ml-auto text-xs text-gray-400 shrink-0">{l.status}</span>
+                            <span className="ml-auto text-xs text-gray-400 shrink-0">
+                              {t(`crm:lead.stages.${l.status}`, { defaultValue: t('common:unknownValue') })}
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -290,23 +319,79 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <label className="text-xs text-gray-500 mb-1 block">Thời hạn (tháng)</label>
                   <Input type="number" value={ef.requestedTerm} onChange={setEfField('requestedTerm')} placeholder="36" className="bg-white" />
                 </div>
+                {d.currencyCode && d.currencyCode !== 'VND' && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Tỷ giá áp dụng (VND/{d.currencyCode})</label>
+                    <Input type="number" value={ef.exchangeRate} onChange={setEfField('exchangeRate')} placeholder="24500" className="bg-white" />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá ngân sách — thấp nhất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
+                  <Input type="number" value={ef.budgetRentMin} onChange={setEfField('budgetRentMin')} placeholder="600000" className="bg-white" />
+                  {fxHint(ef.budgetRentMin, d.currencyCode, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.budgetRentMin, d.currencyCode, ef.exchangeRate)}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá ngân sách — cao nhất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
+                  <Input type="number" value={ef.budgetRentMax} onChange={setEfField('budgetRentMax')} placeholder="700000" className="bg-white" />
+                  {fxHint(ef.budgetRentMax, d.currencyCode, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.budgetRentMax, d.currencyCode, ef.exchangeRate)}</p>
+                  )}
+                </div>
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Giá kỳ vọng ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
                   <Input type="number" value={ef.expectedRent} onChange={setEfField('expectedRent')} placeholder="680000" className="bg-white" />
+                  {fxHint(ef.expectedRent, d.currencyCode, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.expectedRent, d.currencyCode, ef.exchangeRate)}</p>
+                  )}
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Giá thuê đề xuất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">Giá thuê đề xuất (chào thuê) ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
                   <Input type="number" value={ef.proposedRentPerSqm} onChange={setEfField('proposedRentPerSqm')} placeholder="650000" className="bg-white" />
+                  {fxHint(ef.proposedRentPerSqm, d.currencyCode, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.proposedRentPerSqm, d.currencyCode, ef.exchangeRate)}</p>
+                  )}
                 </div>
-                <div>
-                  <label className="text-xs text-gray-500 mb-1 block">CAM đề xuất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
-                  <Input type="number" value={ef.proposedCamPerSqm} onChange={setEfField('proposedCamPerSqm')} placeholder="50000" className="bg-white" />
-                </div>
+                {/* CAM đề xuất chỉ áp dụng HĐT Văn phòng — ẩn khi mall thuộc loại TTTM (leaseCategory = MALL), thay bằng Phí Dịch vụ/Phí HTKD bên dưới. Mặc định hiện CAM nếu chưa xác định leaseCategory (dữ liệu cũ). */}
+                {d.unit?.mall?.leaseCategory !== 'MALL' && (
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">CAM đề xuất ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)</label>
+                    <Input type="number" value={ef.proposedCamPerSqm} onChange={setEfField('proposedCamPerSqm')} placeholder="50000" className="bg-white" />
+                    {fxHint(ef.proposedCamPerSqm, d.currencyCode, ef.exchangeRate) && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.proposedCamPerSqm, d.currencyCode, ef.exchangeRate)}</p>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {d.unit?.mall?.leaseCategory === 'MALL' && (
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Phí Dịch vụ ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²/tháng)</label>
+                    <Input type="number" value={ef.serviceFeeSqm} onChange={setEfField('serviceFeeSqm')} placeholder="0.5" className="bg-white" />
+                    {fxHint(ef.serviceFeeSqm, d.currencyCode, ef.exchangeRate) && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.serviceFeeSqm, d.currencyCode, ef.exchangeRate)}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Phí hỗ trợ Kinh doanh ({CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²/tháng)</label>
+                    <Input type="number" value={ef.businessSupportFeeSqm} onChange={setEfField('businessSupportFeeSqm')} placeholder="0.3" className="bg-white" />
+                    {fxHint(ef.businessSupportFeeSqm, d.currencyCode, ef.exchangeRate) && (
+                      <p className="text-[11px] text-gray-400 mt-0.5">{fxHint(ef.businessSupportFeeSqm, d.currencyCode, ef.exchangeRate)}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {d.currencyCode && d.currencyCode !== 'VND' && (
-                <p className="text-xs text-gray-400 mt-1">Đơn vị tiền tệ ({d.currencyCode}) được đặt khi tạo booking và không thể sửa ở đây.</p>
+                <p className="text-xs text-gray-400 mt-2">Đơn vị tiền tệ ({d.currencyCode}) được đặt khi tạo booking và không thể sửa ở đây. Tỷ giá chỉ để tham khảo, không dùng để tính Hợp đồng/Billing.</p>
               )}
             </div>
 
@@ -370,10 +455,28 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
             <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50" id="bs-request">
               <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
               <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
+              {(d.budgetRentMin || d.budgetRentMax) ? (
+                <SheetRow label="Giá ngân sách" value={`${d.budgetRentMin ? formatMoney(d.budgetRentMin, d.currencyCode ?? 'VND') : '?'} ~ ${d.budgetRentMax ? formatMoney(d.budgetRentMax, d.currencyCode ?? 'VND') : '?'}/m²`} icon={DollarSign} />
+              ) : null}
               <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${formatMoney(d.expectedRent, d.currencyCode ?? 'VND')}/m²` : '—'} icon={DollarSign} />
+              {d.proposedRentPerSqm ? (
+                <SheetRow label="Giá đề xuất (chào thuê)" value={`${formatMoney(d.proposedRentPerSqm, d.currencyCode ?? 'VND')}/m²`} icon={DollarSign} />
+              ) : null}
+              {d.unit?.mall?.leaseCategory !== 'MALL' && d.proposedCamPerSqm ? (
+                <SheetRow label="CAM đề xuất" value={`${formatMoney(d.proposedCamPerSqm, d.currencyCode ?? 'VND')}/m²`} icon={DollarSign} />
+              ) : null}
+              {d.unit?.mall?.leaseCategory === 'MALL' && d.serviceFeeSqm ? (
+                <SheetRow label="Phí Dịch vụ" value={`${formatMoney(d.serviceFeeSqm, d.currencyCode ?? 'VND')}/m²/tháng`} icon={DollarSign} />
+              ) : null}
+              {d.unit?.mall?.leaseCategory === 'MALL' && d.businessSupportFeeSqm ? (
+                <SheetRow label="Phí hỗ trợ Kinh doanh" value={`${formatMoney(d.businessSupportFeeSqm, d.currencyCode ?? 'VND')}/m²/tháng`} icon={DollarSign} />
+              ) : null}
               {d.currencyCode && d.currencyCode !== 'VND' && (
                 <SheetRow label="Đơn vị tiền tệ" value={`${d.currencyCode} (${CURRENCIES[d.currencyCode].name})`} icon={DollarSign} />
               )}
+              {d.currencyCode && d.currencyCode !== 'VND' && d.exchangeRate ? (
+                <SheetRow label="Tỷ giá tham khảo" value={`${d.exchangeRate.toLocaleString('vi-VN')} VND/${d.currencyCode}`} icon={DollarSign} />
+              ) : null}
             </SheetSection>
 
             <SheetSection label="THỜI GIAN" className="bg-gray-50" id="bs-timeline">
@@ -402,7 +505,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <span className="font-medium">{d.proposal.proposalNumber}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                    {t(`crm:proposalStatus.${d.proposal.status}`, { defaultValue: t('common:unknownValue') })}
+                  </Badge>
                   <ArrowRight size={12} className="text-green-500" />
                 </div>
               </button>
@@ -450,7 +555,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                     <div key={a.id} className="flex gap-2 text-xs">
                       <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
                       <div>
-                        <span className="font-medium">{ACTIVITY_LABELS[a.type] ?? a.type}</span>
+                        <span className="font-medium">
+                          {t(`bookings:activityTypes.${a.type}`, { defaultValue: t('common:unknownValue') })}
+                        </span>
                         {' — '}<span className="text-gray-500">{a.note}</span>
                         <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
                       </div>

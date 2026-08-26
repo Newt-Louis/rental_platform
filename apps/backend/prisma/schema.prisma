@@ -374,6 +374,7 @@ enum InvoiceType {
   PENALTY
   REVENUE_SHARE
   SERVICE_CONTRACT
+  PERIODIC_CHARGE
 }
 
 enum InvoiceStatus {
@@ -499,22 +500,29 @@ model User {
   parkingAdjustmentsCreated  ParkingVehicleAdjustment[] @relation("ParkingAdjustmentCreator")
   parkingPaymentsCreated     ParkingDebtPayment[]       @relation("ParkingPaymentCreator")
   parkingDocumentsUploaded   ParkingContractDocument[]  @relation("ParkingDocumentUploader")
+  periodicChargeAssignments  PeriodicChargeEntry[]      @relation("PeriodicChargeAssignee")
 
   @@index([tenantId])
   @@index([inviteTokenHash])
 }
 
+enum MallLeaseCategory {
+  OFFICE // HT Vn phng (vd THISOFIC) -- driver Ph Qun L + Ph thu PQL
+  MALL // HT Trung tm Thng mi (vd THISO MALL SALA) -- driver Ph Dch v + Ph HTKD
+}
+
 model Mall {
-  id          String   @id @default(cuid())
-  name        String
-  code        String   @unique
-  address     String?
-  city        String?
-  totalArea   Float?
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String            @id @default(cuid())
+  name          String
+  code          String            @unique
+  leaseCategory MallLeaseCategory @default(MALL) // Loi hnh thu ca mall ny -- quyt nh nhn ph v loi ph nh k p dng (Phi thu PQL ch p dng OFFICE)
+  address       String?
+  city          String?
+  totalArea     Float?
+  description   String?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   buildings             Building[]
   floors                Floor[]
@@ -529,7 +537,8 @@ model Mall {
   unifiedDocuments      UnifiedDocument[]
   categoryPricings      CategoryMallPricing[]
   servicePriceCatalog   ServicePriceCatalog[]
-  activeUsers           User[]                    @relation("UserActiveMall")
+  periodicChargeRates   PeriodicChargeRateConfig[]
+  activeUsers           User[]                     @relation("UserActiveMall")
   leads                 Lead[]
   inventoryCategories   InventoryCategory[]
   inventoryItems        InventoryItem[]
@@ -1575,10 +1584,13 @@ model Contract {
   depositFitout Float  @default(0) // Cc thi cng (VND)
   fitoutFee     Float  @default(0) // Ph thi cng (VND)
 
-  // GAP #91, #93 -- Ph tin ch & ph ngoi gi
+  // GAP #91, #93 -- Ph tin ch & ph ngoi gi (mc c nh, cha wire vo billing)
   utilityFee     Float   @default(0) // Ph tin ch (VND/thng)
   afterHoursFee  Float   @default(0) // Ph ngoi gi (VND/gi)
   operatingHours String? // Gi hot ng
+
+  // Billing Add-in vn hnh -- loi ph bin ng theo k m HT ny  bt (vn hnh nhp ch s/s liu mi k trc khi lp ho n)
+  periodicChargeTypes PeriodicChargeType[] @default([])
 
   isActive  Boolean   @default(true)
   deletedAt DateTime?
@@ -1589,6 +1601,7 @@ model Contract {
   fitoutProject    FitoutProject?
   invoices         Invoice[]
   billingSchedule  BillingScheduleEntry[]
+  periodicCharges  PeriodicChargeEntry[]
   amendments       ContractAmendment[]
   events           ContractEvent[]
   templateId       String?
@@ -2194,6 +2207,7 @@ model Invoice {
   billingSchedule        BillingScheduleEntry?
   arDunningLogs          ArDunningLog[]
   serviceContractPayment ServiceContractPayment?
+  periodicChargeEntry    PeriodicChargeEntry?
   adjustments            InvoiceAdjustment[]
 
   @@index([sourceType, sourceId])
@@ -2430,6 +2444,79 @@ model BillingConfig {
   autoIssueInvoices   Boolean  @default(false)
   notifyTenantOnIssue Boolean  @default(true)
   updatedAt           DateTime @updatedAt
+}
+
+/// Billing Add-in van hanh: cac loai phi bien dong theo ky ma van hanh (P.CSKT) phai
+/// nhap so lieu moi ky truoc khi ke toan lap hoa don. Xem docs/changes cho boi canh nghiep vu.
+enum PeriodicChargeType {
+  MANAGEMENT_FEE_SURCHARGE // Phu thu Phi Quan Ly (chi ap dung HDT Van phong -- Mall.leaseCategory = OFFICE)
+  UTILITY // Tien Dien, Nuoc (theo chi so dau/cuoi ky)
+  AFTER_HOURS_COOLING // Dien lanh ngoai gio (theo so gio chay)
+}
+
+enum PeriodicChargeStatus {
+  PENDING // Chua nhap
+  DRAFT // Da nhap, cho chot
+  CONFIRMED // Da chot -- san sang cho Ke toan lap hoa don
+  NO_CHARGE // Van hanh xac nhan ky nay khong phat sinh
+  INVOICED // Da lap hoa don
+}
+
+/// Don gia theo Mall + loai phi, co hieu luc theo thoi gian (vi du doi don gia PQL, dien, nuoc...).
+/// ratesJson shape theo chargeType: MANAGEMENT_FEE_SURCHARGE -> {normAreaPerPerson, surchargePerPerson};
+/// UTILITY -> {electricityUnitPrice, waterUnitPrice}; AFTER_HOURS_COOLING -> {hourlyRate}.
+model PeriodicChargeRateConfig {
+  id            String             @id @default(cuid())
+  mallId        String
+  mall          Mall               @relation(fields: [mallId], references: [id])
+  chargeType    PeriodicChargeType
+  ratesJson     Json
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([mallId, chargeType, isActive])
+}
+
+/// Mot ban ghi "hop dong + loai phi + ky" trong luong Billing Add-in van hanh.
+/// State machine: PENDING -> DRAFT (vanh hanh nhap) -> CONFIRMED (chot, khoa sua) -> INVOICED
+/// (Ke toan lap hoa don), hoac PENDING/DRAFT -> NO_CHARGE khi ky khong phat sinh.
+model PeriodicChargeEntry {
+  id          String               @id @default(cuid())
+  contractId  String
+  contract    Contract             @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  chargeType  PeriodicChargeType
+  period      String // "YYYY-MM"
+  periodStart DateTime
+  periodEnd   DateTime
+  dueDate     DateTime
+  status      PeriodicChargeStatus @default(PENDING)
+
+  inputData Json? // gia tri tho van hanh nhap (headcount / elecStart,elecEnd,waterStart,waterEnd / hours)
+  lines     Json? // cac dong da tinh, dung de tao InvoiceLine: [{type, description, qty, unitPrice, amount}]
+  subtotal  Float   @default(0)
+  notes     String?
+
+  assignedToId String?
+  assignedTo   User?   @relation("PeriodicChargeAssignee", fields: [assignedToId], references: [id])
+
+  draftedAt     DateTime?
+  draftedById   String?
+  confirmedAt   DateTime?
+  confirmedById String?
+  noChargeAt    DateTime?
+  noChargeById  String?
+
+  invoiceId String?  @unique
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([contractId, chargeType, period])
+  @@index([status, dueDate])
 }
 
 model SapReconciliationRecord {
@@ -3078,8 +3165,14 @@ model UnitBooking {
   priority      Int           @default(1) // 1 = u tin cao nht
   requestedArea Float? // Din tch yu cu
   requestedTerm Int? // Thi hn thu mong mun (thng)
+  budgetRentMin Float? // Gi ngn sch khch  xut (thp nht, /m2/thng)
+  budgetRentMax Float? // Gi ngn sch khch  xut (cao nht, /m2/thng)
   expectedRent  Float? // Mc gi k vng (khch)
-  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm
+  currencyCode  CurrencyCode  @default(VND) // Currency for expectedRent / proposedRentPerSqm / budgetRentMin/Max / serviceFeeSqm / businessSupportFeeSqm
+  // Ty gi tham kho ti thi im m phn -- ch hin th quy i /m tham kho cho
+  // P.CT TTTM, KHNG dng  tnh ton/lu gi tr  cho Hp ng/Billing (xem
+  // docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- h thng khng c FX engine).
+  exchangeRate  Float?
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE
@@ -3089,8 +3182,14 @@ model UnitBooking {
   notes         String?
 
   // Proposed price by sales
-  proposedRentPerSqm    Float? // Gi sale  xut (VND/m2/thng)
-  proposedCamPerSqm     Float? // CAM  xut
+  proposedRentPerSqm    Float? // Gi sale  xut (chi thu, VND/m2/thng)
+  // CAM  xut -- ch p dng HT Vn phng (Mall.leaseCategory = OFFICE); n  UI cho TTTM.
+  proposedCamPerSqm     Float?
+  // Ph Dch v & Ph h tr Kinh doanh -- ch p dng HT TTTM (Mall.leaseCategory = MALL);
+  // n  UI cho Vn phng. Mang cng ng vi Proposal.serviceFeeSqm/businessSupportFeeSqm
+  // khi convert sang Proposal (xem ConvertToProposalDto).
+  serviceFeeSqm         Float?
+  businessSupportFeeSqm Float?
   priceApprovalStatus   PriceApprovalStatus? // PENDING, APPROVED, REJECTED
   priceApprovalNote     String? // Ghi ch ph duyt
   priceApprovedById     String?

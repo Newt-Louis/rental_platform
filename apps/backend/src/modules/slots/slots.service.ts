@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, SlotBookingType } from './dto/slots.dto';
@@ -205,6 +206,21 @@ export class SlotsService {
     return count;
   }
 
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error: any) {
+        const retryable = error?.code === 'P2034' || error?.code === 'P2002';
+        if (!retryable || attempt === maxAttempts) throw error;
+      }
+    }
+    throw new Error('Serializable transaction retry exhausted');
+  }
+
   // ── Slot Bookings ─────────────────────────────────────────────────────────
 
   private validateBookingTimeline(timeline: {
@@ -236,8 +252,14 @@ export class SlotsService {
     }
   }
 
-  private async findBookingConflict(slotId: string, occupiedFrom: Date, occupiedTo: Date, excludeId?: string) {
-    const activeBookings = await this.prisma.slotBooking.findMany({
+  private async findBookingConflict(
+    slotId: string,
+    occupiedFrom: Date,
+    occupiedTo: Date,
+    excludeId?: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const activeBookings = await db.slotBooking.findMany({
       where: {
         slotId,
         status: { in: ['PENDING', 'CONFIRMED'] },
@@ -299,14 +321,6 @@ export class SlotsService {
       dismantlingEnd,
     });
 
-    // The slot is occupied from installation start until dismantling finishes.
-    const conflict = await this.findBookingConflict(slotId, installationStart, dismantlingEnd);
-    if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
-
-    // Generate ref
-    const count = await this.prisma.slotBooking.count();
-    const bookingRef = `SB-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
-
     // Calculate price
     const { baseAmount, discountPct, totalAmount } = await this.calculatePrice(
       slotId,
@@ -318,33 +332,47 @@ export class SlotsService {
     const finalDiscount = dto.discountPct ?? discountPct;
     const finalTotal = baseAmount * (1 - finalDiscount / 100);
 
-    return this.prisma.slotBooking.create({
-      data: {
-        bookingRef,
+    return this.serializable(async (tx) => {
+      const conflict = await this.findBookingConflict(
         slotId,
-        leadId: dto.leadId,
-        customerId: dto.customerId,
-        type: dto.type,
-        installationStartDatetime: installationStart,
-        installationEndDatetime: installationEnd,
-        startDatetime: start,
-        endDatetime: end,
-        dismantlingStartDatetime: dismantlingStart,
-        dismantlingEndDatetime: dismantlingEnd,
-        totalArea: slot.area,
-        baseAmount,
-        discountPct: finalDiscount,
-        totalAmount: finalTotal,
-        notes: dto.notes,
-        createdById: userId,
-        status: 'PENDING',
-      },
-      include: {
-        slot: { select: { id: true, code: true, name: true, area: true } },
-        lead: { select: { id: true, brandName: true, contactName: true } },
-        customer: { select: { id: true, companyName: true, brandName: true } },
-        createdBy: { select: { id: true, fullName: true } },
-      },
+        installationStart,
+        dismantlingEnd,
+        undefined,
+        tx,
+      );
+      if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
+
+      const count = await tx.slotBooking.count();
+      const bookingRef = `SB-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+
+      return tx.slotBooking.create({
+        data: {
+          bookingRef,
+          slotId,
+          leadId: dto.leadId,
+          customerId: dto.customerId,
+          type: dto.type,
+          installationStartDatetime: installationStart,
+          installationEndDatetime: installationEnd,
+          startDatetime: start,
+          endDatetime: end,
+          dismantlingStartDatetime: dismantlingStart,
+          dismantlingEndDatetime: dismantlingEnd,
+          totalArea: slot.area,
+          baseAmount,
+          discountPct: finalDiscount,
+          totalAmount: finalTotal,
+          notes: dto.notes,
+          createdById: userId,
+          status: 'PENDING',
+        },
+        include: {
+          slot: { select: { id: true, code: true, name: true, area: true } },
+          lead: { select: { id: true, brandName: true, contactName: true } },
+          customer: { select: { id: true, companyName: true, brandName: true } },
+          createdBy: { select: { id: true, fullName: true } },
+        },
+      });
     });
   }
 
@@ -549,7 +577,8 @@ export class SlotsService {
     discountPct?: number;
     notes?: string;
   }) {
-    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    return this.serializable(async (tx) => {
+      const booking = await tx.slotBooking.findUnique({ where: { id } });
     if (!booking) throw new NotFoundException('Slot booking không tồn tại');
     if (['CANCELLED', 'COMPLETED'].includes(booking.status)) {
       throw new BadRequestException('Không thể sửa booking đã hủy hoặc hoàn thành');
@@ -583,7 +612,7 @@ export class SlotsService {
         dismantlingStart,
         dismantlingEnd,
       });
-      const conflict = await this.findBookingConflict(booking.slotId, installationStart, dismantlingEnd, id);
+      const conflict = await this.findBookingConflict(booking.slotId, installationStart, dismantlingEnd, id, tx);
       if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
     }
 
@@ -607,7 +636,7 @@ export class SlotsService {
       data.totalAmount = (booking.baseAmount ?? 0) * (1 - dto.discountPct / 100);
     }
 
-    return this.prisma.slotBooking.update({
+      return tx.slotBooking.update({
       where: { id },
       data,
       include: {
@@ -616,6 +645,7 @@ export class SlotsService {
         customer: { select: { id: true, companyName: true, brandName: true } },
         createdBy: { select: { id: true, fullName: true } },
       },
+      });
     });
   }
 

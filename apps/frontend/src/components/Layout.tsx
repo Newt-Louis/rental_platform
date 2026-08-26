@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,13 @@ import { useAuthStore } from "@/store/auth.store";
 import { notificationsApi, approvalsApi } from "@/api";
 import { cn } from "@/lib/utils";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ContentLoading } from "@/components/ui/content-loading";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   LayoutDashboard,
   Building2,
@@ -97,12 +104,71 @@ const ICON_MAP: Record<string, React.ElementType> = {
   "/parking-transaction": ScanLine,
 };
 
+const SIDEBAR_COLLAPSED_KEY = "thiso-sidebar-collapsed";
+
+function SidebarNavLink({
+  to,
+  icon: Icon,
+  label,
+  collapsed,
+  iconSize = 17,
+  badge,
+}: {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+  collapsed: boolean;
+  iconSize?: number;
+  badge?: React.ReactNode;
+}) {
+  const link = (
+    <NavLink
+      to={to}
+      aria-label={label}
+      style={{ display: "block" }}
+      className={({ isActive }) =>
+        cn(
+          "block px-4 py-3 text-sm transition-colors",
+          isActive
+            ? collapsed
+              ? "bg-white/10 text-white"
+              : "bg-white/10 text-white border-l-2"
+            : collapsed
+              ? "text-gray-400 hover:text-white"
+              : "text-gray-400 hover:text-white",
+        )
+      }
+    >
+      <span className="flex items-center gap-4">
+        <Icon size={iconSize} className="shrink-0" />
+        {!collapsed && <span className="truncate flex-1">{label}</span>}
+        {!collapsed && badge}
+      </span>
+    </NavLink>
+  );
+
+  if (!collapsed) return link;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { t } = useTranslation("nav");
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [notifOpen, setNotifOpen] = useState(false);
   const location = useLocation();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -111,6 +177,14 @@ export default function Layout() {
   useEffect(() => {
     setMobileSidebarOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      // ignore (private mode / storage disabled)
+    }
+  }, [collapsed]);
   const isTenant = user?.role === "TENANT";
   const role = user?.role;
 
@@ -179,17 +253,9 @@ export default function Layout() {
 
         <div className="w-px h-5 bg-border shrink-0" />
 
-        {/* Brand + mall selector */}
+        {/* Mall selector */}
         <div className="flex items-center gap-4">
-          <span className="hidden sm:inline text-sm text-muted-foreground">
-            THISO {isTenant ? t("ui.subMall") : t("ui.subLeasing")}
-          </span>
-          {!isTenant && (
-            <>
-              <div className="hidden sm:block w-px h-4 bg-border" />
-              <MallSelector />
-            </>
-          )}
+          {!isTenant && <MallSelector />}
         </div>
 
         <div className="flex-1" />
@@ -245,24 +311,26 @@ export default function Layout() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="flex items-center gap-2 ml-1 pl-2 border-l border-border cursor-pointer select-none rounded-md px-2 py-1 hover:bg-muted transition-colors">
-                <Avatar className="h-7 w-7">
-                  <AvatarFallback className="bg-gray-600 text-white text-xs">
-                    {user?.fullName?.charAt(0) ?? "U"}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="bg-gray-600 text-white text-xs">
+                      {user?.fullName?.charAt(0) ?? "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  {user?.role === "ADMIN" && (
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-background border border-border">
+                      <ShieldCheck size={9} className="text-blue-600" />
+                    </span>
+                  )}
+                  {isTenant && (
+                    <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-background border border-border">
+                      <Store size={9} className="text-emerald-600" />
+                    </span>
+                  )}
+                </div>
                 <div className="hidden lg:block text-sm font-medium text-foreground">
                   {user?.fullName}
                 </div>
-                {user?.role === "ADMIN" && (
-                  <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium">
-                    Admin
-                  </span>
-                )}
-                {isTenant && (
-                  <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
-                    Tenant
-                  </span>
-                )}
                 <ChevronDown size={13} className="text-muted-foreground" />
               </div>
             </DropdownMenuTrigger>
@@ -335,34 +403,19 @@ export default function Layout() {
           </div>
 
           <nav className="flex-1 overflow-y-auto py-4 scrollbar-hide">
+           <TooltipProvider delayDuration={0} skipDelayDuration={0}>
             {isTenant
               ? filteredTenantNav.map((item) => {
                   const Icon = ICON_MAP[item.path] ?? Home;
                   return (
-                    <NavLink
+                    <SidebarNavLink
                       key={item.path}
                       to={item.path}
-                      className={({ isActive }) =>
-                        cn(
-                          "flex items-center gap-4 px-4 py-3 text-sm transition-colors",
-                          isActive
-                            ? "bg-white/10 text-white border-l-2 border-white"
-                            : "text-gray-400 hover:bg-gray-800 hover:text-white",
-                        )
-                      }
-                      title={
-                        collapsed
-                          ? t(`items.${item.module}`, item.label)
-                          : undefined
-                      }
-                    >
-                      <Icon size={18} className="shrink-0" />
-                      {!collapsed && (
-                        <span className="truncate">
-                          {t(`items.${item.module}`, item.label)}
-                        </span>
-                      )}
-                    </NavLink>
+                      icon={Icon}
+                      iconSize={18}
+                      collapsed={collapsed}
+                      label={t(`items.${item.module}`, item.label)}
+                    />
                   );
                 })
               : filteredNavGroups.map((group) => (
@@ -378,39 +431,25 @@ export default function Layout() {
                         item.module === "approvals" &&
                         (pendingApprovalCount ?? 0) > 0;
                       return (
-                        <NavLink
+                        <SidebarNavLink
                           key={item.path}
                           to={item.path}
-                          className={({ isActive }) =>
-                            cn(
-                              "flex items-center gap-4 px-4 py-3 text-sm transition-colors",
-                              isActive
-                                ? "bg-white/10 text-white border-l-2 border-white"
-                                : "text-gray-400 hover:bg-gray-800 hover:text-white",
-                            )
+                          icon={Icon}
+                          collapsed={collapsed}
+                          label={t(`items.${item.module}`, item.label)}
+                          badge={
+                            showApprovalBadge ? (
+                              <Badge className="h-4 min-w-4 px-1 py-0 text-[10px] bg-amber-500 text-white border-0">
+                                {pendingApprovalCount}
+                              </Badge>
+                            ) : undefined
                           }
-                          title={
-                            collapsed
-                              ? t(`items.${item.module}`, item.label)
-                              : undefined
-                          }
-                        >
-                          <Icon size={17} className="shrink-0" />
-                          {!collapsed && (
-                            <span className="truncate flex-1">
-                              {t(`items.${item.module}`, item.label)}
-                            </span>
-                          )}
-                          {!collapsed && showApprovalBadge && (
-                            <Badge className="h-4 min-w-4 px-1 py-0 text-[10px] bg-amber-500 text-white border-0">
-                              {pendingApprovalCount}
-                            </Badge>
-                          )}
-                        </NavLink>
+                        />
                       );
                     })}
                   </div>
                 ))}
+          </TooltipProvider>
           </nav>
 
           <div className="border-t border-gray-700 p-4">
@@ -453,7 +492,7 @@ export default function Layout() {
         {/* Main content */}
         <main
           className={cn(
-            "flex-1 overflow-auto rounded-xl bg-card",
+            "relative flex-1 overflow-auto rounded-xl bg-card",
             isTenant && "pb-20 md:pb-6",
           )}
         >
@@ -462,7 +501,9 @@ export default function Layout() {
               <ErpProcessGuide />
             </div>
           )}
-          <Outlet />
+          <Suspense fallback={<ContentLoading />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 

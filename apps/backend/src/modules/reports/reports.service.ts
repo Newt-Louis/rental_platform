@@ -4,6 +4,7 @@ import { ContractStatus } from '@prisma/client';
 import { BillingService } from '../billing/billing.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { summarizeOccupancyByLeaseTerm, summarizeShortBookingPipeline } from '../../common/utils/lease-term-analytics';
+import { buildRevenueCsv, encodeCsv, type CsvExportResult } from './reports-export.util';
 
 @Injectable()
 export class ReportsService {
@@ -302,7 +303,7 @@ export class ReportsService {
     };
   }
 
-  async exportCsv(type: string, from: string | undefined, to: string | undefined, mallIds: string[] | null): Promise<string> {
+  async exportCsv(type: string, from: string | undefined, to: string | undefined, mallIds: string[] | null): Promise<CsvExportResult> {
     const fromDate = from ? new Date(from) : new Date(Date.now() - 90 * 86400000);
     const toDate = to ? new Date(to) : new Date();
 
@@ -312,26 +313,17 @@ export class ReportsService {
         createdAt: { gte: fromDate, lte: toDate },
       };
       if (mallIds) where.mallId = { in: mallIds };
-      const invoices = await this.prisma.invoice.findMany({
+      const exportLimit = 5000;
+      const exportRows = await this.prisma.invoice.findMany({
         where,
         include: {
           tenant: { select: { brandName: true } },
           contract: { select: { contractNumber: true } },
         },
         orderBy: { createdAt: 'desc' },
-        take: 5000,
+        take: exportLimit + 1,
       });
-      const header = ['Số HĐ', 'Khách thuê', 'Kỳ', 'Loại', 'Tổng tiền', 'Trạng thái', 'Ngày tạo'];
-      const rows = invoices.map((i) => [
-        i.contract?.contractNumber ?? '',
-        i.tenant?.brandName ?? '',
-        i.period,
-        i.type,
-        i.totalAmount.toFixed(0),
-        i.status,
-        new Date(i.createdAt).toLocaleDateString('vi-VN'),
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
-      return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      return buildRevenueCsv(exportRows, exportLimit);
     }
 
     if (type === 'occupancy') {
@@ -353,8 +345,8 @@ export class ReportsService {
         u.name,
         u.areaNLA.toFixed(0),
         u.status,
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
-      return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      ]);
+      return encodeCsv(header, rows);
     }
 
     if (type === 'expiry') {
@@ -381,8 +373,8 @@ export class ReportsService {
         new Date(c.startDate).toLocaleDateString('vi-VN'),
         new Date(c.endDate).toLocaleDateString('vi-VN'),
         Math.floor((new Date(c.endDate).getTime() - Date.now()) / 86400000).toString(),
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
-      return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      ]);
+      return encodeCsv(header, rows);
     }
 
     throw new BadRequestException(`Loại báo cáo '${type}' không được hỗ trợ (chỉ hỗ trợ: revenue, occupancy, expiry)`);

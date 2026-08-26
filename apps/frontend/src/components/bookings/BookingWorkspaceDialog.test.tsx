@@ -19,6 +19,10 @@ vi.mock("@/api", () => ({
 
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast }) }));
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
 vi.mock("./UnitFinder", () => ({
   UnitFinder: ({ onSelect }: any) => (
     <button

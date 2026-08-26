@@ -23,6 +23,7 @@ describe('FitoutController.reviewDocument — CR-101 Phase 3C C4-01', () => {
     {} as any, // dashboardService
     {} as any, // storageService
     mallAccess,
+    {} as any, // accessPolicy
   );
 
   beforeEach(() => jest.clearAllMocks());

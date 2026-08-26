@@ -826,6 +826,7 @@ export class CrmService {
     stage?: string;
     page?: number;
     limit?: number;
+    scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
     const { page = 1, limit = 50, search, mallId, stage } = query;
     const skip = (page - 1) * +limit;
@@ -834,7 +835,10 @@ export class CrmService {
       isActive: true,
       deletedAt: null,
       status: { not: LeadStatus.LOST },
+      ...this.leadScope(query.scope),
     };
+
+    if (mallId) where.mallId = mallId;
 
     if (search) {
       where.OR = [

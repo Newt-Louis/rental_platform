@@ -1,6 +1,7 @@
 {
   "title": "Quản lý CRM",
   "overview": {
+    "followUpFallback": "Lịch theo dõi",
     "title": "Điều hành CRM",
     "subtitle": "Tổng quan khách hàng tiềm năng",
     "description": "Ưu tiên công việc cần xử lý, sức khỏe pipeline và hiệu quả nguồn Lead. Các thao tác chi tiết được thực hiện tại CRM.",
@@ -290,7 +291,8 @@
     "list": "Danh sách",
     "analytics": "Analytics",
     "customerProfiles": "Hồ sơ KH",
-    "pipelineValue": "Pipeline value:",
+    "pipelineValue": "Giá trị pipeline:",
+    "pipelineValueDisclosure": "Dữ liệu dự kiến của Lead hiện được lưu theo VND",
     "filterPanel": "Bộ lọc",
     "clearFilter": "Xóa lọc",
     "assignee": "Người phụ trách",
@@ -298,6 +300,10 @@
     "source": "Nguồn",
     "priority": "Ưu tiên",
     "allValues": "Tất cả"
+  },
+  "leaseTerm": {
+    "LONG": "Dài hạn",
+    "SHORT": "Ngắn hạn"
   },
   "bulk": {
     "selected": "{{count}} lead đã chọn",
@@ -444,7 +450,8 @@
     "completeError": "Không thể hoàn thành follow-up",
     "loadError": "Không thể tải lịch follow-up",
     "loadErrorHint": "Vui lòng kiểm tra kết nối rồi tải lại.",
-    "retry": "Thử lại"
+    "retry": "Thử lại",
+    "fallbackName": "Lịch theo dõi"
   },
   "leadSheet": {
     "contact": "LIÊN HỆ",

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildProposalPrefill } from '@/pages/bookings/proposal-prefill';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 
 export function ConvertBookingDialog({
   booking, onClose,
@@ -159,7 +160,7 @@ export function ConvertBookingDialog({
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex justify-between items-center">
                 <span className="text-xs text-blue-600">Ước tính tổng tiền/tháng</span>
                 <span className="font-bold text-blue-700">
-                  {currency === 'USD' ? `$${total.toLocaleString('en-US', { maximumFractionDigits: 0 })} USD` : `${new Intl.NumberFormat('vi-VN').format(total)} ₫`}
+                  {formatMoneyWithCode(total, currency as CurrencyCode)}
                 </span>
               </div>
             );

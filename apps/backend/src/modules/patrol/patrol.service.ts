@@ -39,6 +39,19 @@ export class PatrolService {
     private notifications: NotificationsService,
     private schedulerLock: SchedulerLockService,
   ) {}
+
+  private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error: any) {
+        if (error?.code !== "P2034" || attempt === 3) throw error;
+      }
+    }
+    throw new Error("Serializable transaction retry exhausted");
+  }
   async routeMallId(id: string) {
     const x = await this.prisma.patrolRoute.findUnique({
       where: { id },
@@ -429,70 +442,84 @@ export class PatrolService {
     if (body.result === "ABNORMAL")
       severity = SEVERITIES.includes(body.severity) ? body.severity : "MEDIUM";
 
-    let workOrderId = current.workOrderId;
-    if (body.result === "ABNORMAL" && !workOrderId) {
-      const wo = await this.prisma.workOrder.create({
-        data: {
-          workOrderNumber: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`,
-          mallId: current.shift.mallId,
-          category: "SECURITY",
-          title: `Bất thường tuần tra: ${current.point.name}`,
-          description: body.note || current.point.instructions,
-          priority: severity || "HIGH",
-          location: current.point.location,
-          assignedDepartment: "An ninh",
-          requesterId: userId,
-          sourceEntityType: "PATROL_CHECK",
-          sourceEntityId: current.id,
-          dueDate: new Date(Date.now() + 4 * 3600000),
-          events: {
-            create: {
-              eventType: "CREATED",
-              description: "Tự động tạo từ bất thường tuần tra",
-              userId,
+    const result = await this.serializable(async (tx) => {
+      const latest = await tx.patrolCheck.findUnique({
+        where: { id },
+        select: { workOrderId: true },
+      });
+      if (!latest) throw new NotFoundException("Không tìm thấy điểm kiểm tra");
+
+      let workOrderId = latest.workOrderId;
+      let workOrderCreated = false;
+      if (body.result === "ABNORMAL" && !workOrderId) {
+        const wo = await tx.workOrder.create({
+          data: {
+            workOrderNumber: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`,
+            mallId: current.shift.mallId,
+            category: "SECURITY",
+            title: `Bất thường tuần tra: ${current.point.name}`,
+            description: body.note || current.point.instructions,
+            priority: severity || "HIGH",
+            location: current.point.location,
+            assignedDepartment: "An ninh",
+            requesterId: userId,
+            sourceEntityType: "PATROL_CHECK",
+            sourceEntityId: current.id,
+            dueDate: new Date(Date.now() + 4 * 3600000),
+            events: {
+              create: {
+                eventType: "CREATED",
+                description: "Tự động tạo từ bất thường tuần tra",
+                userId,
+              },
             },
           },
+        });
+        workOrderId = wo.id;
+        workOrderCreated = true;
+      }
+
+      const updated = await tx.patrolCheck.update({
+        where: { id },
+        data: {
+          result: body.result,
+          note: body.note,
+          severity,
+          checkedAt: now,
+          performedById: userId,
+          workOrderId,
+          qrVerified,
+          latitude: body.latitude ?? undefined,
+          longitude: body.longitude ?? undefined,
+          distanceMeters: distanceMeters ?? undefined,
+          locationVerified: locationVerified ?? undefined,
+          tooFast,
         },
       });
-      workOrderId = wo.id;
-      if (severity === "HIGH" || severity === "URGENT") {
-        const directors = await this.prisma.userMallAccess.findMany({
-          where: {
-            mallId: current.shift.mallId,
-            isActive: true,
-            user: { role: Role.MALL_DIRECTOR },
-          },
-          select: { userId: true },
+      return { updated, workOrderCreated };
+    });
+
+    if (result.workOrderCreated && (severity === "HIGH" || severity === "URGENT")) {
+      const directors = await this.prisma.userMallAccess.findMany({
+        where: {
+          mallId: current.shift.mallId,
+          isActive: true,
+          user: { role: Role.MALL_DIRECTOR },
+        },
+        select: { userId: true },
+      });
+      for (const d of directors)
+        await this.notifications.create({
+          userId: d.userId,
+          title: `Bất thường tuần tra mức độ ${severity}`,
+          body: `${current.point.name} · ${current.shift.shiftNumber}`,
+          type: "WORK_ORDER",
+          entityType: "PATROL_CHECK_ESCALATION",
+          entityId: current.id,
         });
-        for (const d of directors)
-          await this.notifications.create({
-            userId: d.userId,
-            title: `Bất thường tuần tra mức độ ${severity}`,
-            body: `${current.point.name} · ${current.shift.shiftNumber}`,
-            type: "WORK_ORDER",
-            entityType: "PATROL_CHECK_ESCALATION",
-            entityId: current.id,
-          });
-      }
     }
 
-    return this.prisma.patrolCheck.update({
-      where: { id },
-      data: {
-        result: body.result,
-        note: body.note,
-        severity,
-        checkedAt: now,
-        performedById: userId,
-        workOrderId,
-        qrVerified,
-        latitude: body.latitude ?? undefined,
-        longitude: body.longitude ?? undefined,
-        distanceMeters: distanceMeters ?? undefined,
-        locationVerified: locationVerified ?? undefined,
-        tooFast,
-      },
-    });
+    return result.updated;
   }
   async upload(id: string, file: Express.Multer.File) {
     if (!file) throw new BadRequestException("Vui lòng chọn file minh chứng");

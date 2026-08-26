@@ -19,6 +19,16 @@ describe('approvalsApi pagination contract', () => {
     await expect(approvalsApi.pending({ page: 1, limit: 15 })).resolves.toEqual(response.data);
   });
 
+  it('sends the explicit Fitout entity filter without changing the pending envelope', async () => {
+    const response = { data: { data: [{ id: 'fitout-step-1' }], total: 1, page: 1, limit: 15, totalPages: 1 } };
+    vi.mocked(api.get).mockResolvedValue(response);
+
+    await expect(approvalsApi.pending({ entityType: 'FITOUT_SUBMITTAL', page: 1, limit: 15 })).resolves.toEqual(response.data);
+    expect(api.get).toHaveBeenCalledWith('/approvals/pending', {
+      params: { entityType: 'FITOUT_SUBMITTAL', page: 1, limit: 15 },
+    });
+  });
+
   it('preserves history items and pagination metadata', async () => {
     const response = { data: { data: [{ id: 'step-2' }], total: 1, page: 1, limit: 25, totalPages: 1 } };
     vi.mocked(api.get).mockResolvedValue(response);

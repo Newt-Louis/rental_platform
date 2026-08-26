@@ -1,0 +1,11 @@
+{
+  "page": { "eyebrow": "Operations", "title": "Security patrol", "subtitle": "Routes · checkpoints · shifts · recurring schedules · evidence · exception handling" },
+  "summary": { "total": "Total shifts", "active": "Scheduled / active", "completed": "Completed", "abnormal": "Exceptions", "suspicious": "Suspicious checks" },
+  "tabs": { "shifts": "Patrol shifts", "routes": "Routes & points", "schedules": "Recurring schedules", "reports": "Reports" },
+  "status": { "SCHEDULED": "Scheduled", "OVERDUE": "Overdue", "IN_PROGRESS": "In progress", "COMPLETED": "Completed", "CANCELLED": "Cancelled" },
+  "result": { "PENDING": "Pending", "NORMAL": "Normal", "ABNORMAL": "Exception", "SKIPPED": "Skipped" },
+  "severity": { "LOW": "Low", "MEDIUM": "Medium", "HIGH": "High", "URGENT": "Urgent" },
+  "filters": { "allStatuses": "All statuses", "allRoutes": "All routes", "allAssignees": "All assignees" },
+  "actions": { "createShift": "Schedule patrol", "createRoute": "Create route", "createSchedule": "Create recurring schedule" },
+  "empty": { "shifts": "No patrol shifts match the filters" }
+}

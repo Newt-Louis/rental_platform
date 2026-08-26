@@ -10,13 +10,10 @@ import { useToast } from '@/components/ui/use-toast';
 import { RefreshCw, Calendar, Bell, TrendingUp } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useMallStore } from '@/store/mall.store';
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
-}
+import { formatMoneyAmount, formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 
 export function ScheduleTab() {
-  const { t } = useTranslation(['billing', 'common']);
+  const { t } = useTranslation(['billing', 'contracts', 'common']);
   const [contractId, setContractId] = useState('');
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -78,13 +75,14 @@ export function ScheduleTab() {
       ) : isLoading ? (
         <Skeleton className="h-48" />
       ) : (
-        <div className="bg-white border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border bg-white">
+          <table className="min-w-[760px] w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="text-left px-3 py-2">{t('billing:list.period')}</th>
                 <th className="text-right px-3 py-2">{t('billing:invoice.lineType.RENT')}</th>
                 <th className="text-right px-3 py-2">{t('billing:invoice.lineType.CAM')}</th>
+                <th className="text-left px-3 py-2">{t('common:labels.currency')}</th>
                 <th className="text-left px-3 py-2">{t('billing:list.dueDate')}</th>
                 <th className="text-left px-3 py-2">{t('billing:list.status')}</th>
               </tr>
@@ -93,10 +91,11 @@ export function ScheduleTab() {
               {entries.map((e) => (
                 <tr key={e.id}>
                   <td className="px-3 py-2">{e.period}</td>
-                  <td className="px-3 py-2 text-right">{fmt(e.rentAmount)}</td>
-                  <td className="px-3 py-2 text-right">{fmt(e.camAmount)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoneyAmount(e.rentAmount, (e.currencyCode ?? 'VND') as CurrencyCode)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoneyAmount(e.camAmount, (e.currencyCode ?? 'VND') as CurrencyCode)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{e.currencyCode ?? 'VND'}</td>
                   <td className="px-3 py-2">{new Date(e.dueDate).toLocaleDateString('vi-VN')}</td>
-                  <td className="px-3 py-2"><Badge variant="outline">{e.status}</Badge></td>
+                  <td className="px-3 py-2"><Badge variant="outline">{t(`contracts:billingTab.entryStatus.${e.status}`, { defaultValue: t('common:unknownValue') })}</Badge></td>
                 </tr>
               ))}
             </tbody>
@@ -164,6 +163,11 @@ export function CollectionKpiTab() {
   });
 
   const kpi = data?.data ?? data ?? {};
+  const chartData = (kpi.agingTrend ?? []).map((row: any) => ({
+    ...row,
+    currentBillions: Number(row.current || 0) / 1_000_000_000,
+    overdueBillions: Number(row.overdue || 0) / 1_000_000_000,
+  }));
 
   return (
     <div>
@@ -180,24 +184,24 @@ export function CollectionKpiTab() {
             </CardContent></Card>
             <Card><CardContent className="pt-4 text-center">
               <p className="text-xs text-gray-500">Đã thu</p>
-              <p className="text-2xl font-bold">{fmt(kpi.totalCollected ?? 0)}</p>
+              <p className="text-lg font-bold tabular-nums">{formatMoneyWithCode(kpi.totalCollected ?? 0, 'VND')}</p>
             </CardContent></Card>
             <Card><CardContent className="pt-4 text-center">
               <p className="text-xs text-gray-500">AR outstanding</p>
-              <p className="text-2xl font-bold text-red-600">{fmt(kpi.outstandingAr ?? 0)}</p>
+              <p className="text-lg font-bold text-red-600 tabular-nums">{formatMoneyWithCode(kpi.outstandingAr ?? 0, 'VND')}</p>
             </CardContent></Card>
           </div>
           <Card>
-            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><TrendingUp size={16} /> AR Aging trend</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><TrendingUp size={16} /> AR Aging trend</CardTitle><p className="text-xs text-muted-foreground">Đơn vị: Tỷ VND</p></CardHeader>
             <CardContent className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={kpi.agingTrend ?? []}>
+                <LineChart data={chartData}>
                   <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={fmt} />
-                  <Tooltip formatter={(v: number) => fmt(v)} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(value)} />
+                  <Tooltip formatter={(value: number) => formatMoneyWithCode(Number(value) * 1_000_000_000, 'VND')} />
                   <Legend />
-                  <Line type="monotone" dataKey="current" name="Trong hạn" stroke="#22c55e" strokeWidth={2} />
-                  <Line type="monotone" dataKey="overdue" name="Quá hạn" stroke="#ef4444" strokeWidth={2} />
+                  <Line type="monotone" dataKey="currentBillions" name="Trong hạn" stroke="#22c55e" strokeWidth={2} />
+                  <Line type="monotone" dataKey="overdueBillions" name="Quá hạn" stroke="#ef4444" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>

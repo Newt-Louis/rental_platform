@@ -10,6 +10,16 @@ vi.mock("@/api", () => ({
   crmApi: { listLeads: (...args: any[]) => listLeads(...args) },
 }));
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      ({
+        "workspace.selectedCustomer": "Khách hàng đã chọn",
+        "workspace.change": "Thay đổi",
+      })[key] ?? key,
+  }),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   listLeads.mockResolvedValue({
@@ -105,15 +115,44 @@ describe("PartyFinder", () => {
       ),
     );
   });
+
+  it("collapses into a selected-party summary and allows changing the Lead", async () => {
+    const onClear = vi.fn();
+    renderFinder(
+      vi.fn(),
+      {
+        id: "lead-1",
+        mallId: "mall-1",
+        brandName: "NIKE",
+        contactName: "An",
+        status: "QUALIFIED",
+      },
+      onClear,
+    );
+
+    expect(screen.queryByLabelText("Tìm Lead")).not.toBeInTheDocument();
+    expect(screen.getByText("Khách hàng đã chọn")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Thay đổi" }));
+    expect(onClear).toHaveBeenCalledOnce();
+  });
 });
 
-function renderFinder(onSelect: (lead: any) => void) {
+function renderFinder(
+  onSelect: (lead: any) => void,
+  selectedLead: any = null,
+  onClear?: () => void,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <PartyFinder mallId="mall-1" selectedLead={null} onSelect={onSelect} />
+      <PartyFinder
+        mallId="mall-1"
+        selectedLead={selectedLead}
+        onSelect={onSelect}
+        onClear={onClear}
+      />
     </QueryClientProvider>,
   );
 }

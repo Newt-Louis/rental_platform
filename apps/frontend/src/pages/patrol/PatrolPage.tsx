@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -45,6 +46,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { ERPToolbar } from "@/components/erp";
 
 const STATUS: Record<string, string> = {
   SCHEDULED: "Đã lên lịch",
@@ -123,6 +126,7 @@ function getGeo(): Promise<{ latitude: number; longitude: number } | null> {
 }
 
 export default function PatrolPage() {
+  const { t } = useTranslation("patrol");
   const qc = useQueryClient(),
     { toast } = useToast(),
     selectedMallId = useMallStore((s) => s.selectedMallId),
@@ -391,48 +395,35 @@ export default function PatrolPage() {
   );
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <ShieldCheck />
-            Tuần tra an ninh
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Tuyến · điểm kiểm tra · ca trực · lịch định kỳ · minh chứng · xử lý bất thường
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4 p-4 sm:p-6">
+      <PageHeader eyebrow={t("page.eyebrow")} title={t("page.title")} description={t("page.subtitle")} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 border-y bg-card lg:grid-cols-5">
         {[
-          ["Tổng ca", summary.total || 0, MapPinned],
-          ["Đang chờ/xử lý", summary.active || 0, Play],
-          ["Hoàn thành", summary.completed || 0, CheckCircle2],
-          ["Bất thường", summary.abnormal || 0, AlertTriangle],
-          ["Nghi vấn gian lận", summary.suspicious || 0, ShieldCheck],
+          [t("summary.total"), summary.total || 0, MapPinned],
+          [t("summary.active"), summary.active || 0, Play],
+          [t("summary.completed"), summary.completed || 0, CheckCircle2],
+          [t("summary.abnormal"), summary.abnormal || 0, AlertTriangle],
+          [t("summary.suspicious"), summary.suspicious || 0, ShieldCheck],
         ].map(([l, v, I]: any) => (
-          <div key={l} className="rounded-lg border bg-card p-4">
-            <div className="flex justify-between text-sm text-muted-foreground">
-              {l}
-              <I className="h-4 w-4" />
-            </div>
-            <div className="mt-2 text-2xl font-bold">{v}</div>
+          <div key={l} className="border-b px-4 py-3 even:border-l lg:border-b-0 lg:border-l lg:first:border-l-0">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><I className="h-3.5 w-3.5" />{l}</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums">{v}</div>
           </div>
         ))}
       </div>
 
       <Tabs defaultValue="shifts">
         <TabsList>
-          <TabsTrigger value="shifts">Ca tuần tra</TabsTrigger>
-          <TabsTrigger value="routes">Tuyến &amp; điểm</TabsTrigger>
-          <TabsTrigger value="schedules">Lịch định kỳ</TabsTrigger>
-          <TabsTrigger value="reports">Báo cáo</TabsTrigger>
+          <TabsTrigger value="shifts">{t("tabs.shifts")}</TabsTrigger>
+          <TabsTrigger value="routes">{t("tabs.routes")}</TabsTrigger>
+          <TabsTrigger value="schedules">{t("tabs.schedules")}</TabsTrigger>
+          <TabsTrigger value="reports">{t("tabs.reports")}</TabsTrigger>
         </TabsList>
 
         {/* ---- SHIFTS TAB ---- */}
         <TabsContent value="shifts" className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
+          <ERPToolbar>
             <select
               className="h-9 rounded-md border px-2 text-sm"
               value={shiftFilters.status}
@@ -440,10 +431,10 @@ export default function PatrolPage() {
                 setShiftFilters({ ...shiftFilters, status: e.target.value, page: 1 })
               }
             >
-              <option value="">Mọi trạng thái</option>
-              {Object.entries(STATUS).map(([k, v]) => (
+              <option value="">{t("filters.allStatuses")}</option>
+              {Object.keys(STATUS).map((k) => (
                 <option key={k} value={k}>
-                  {v}
+                  {t(`status.${k}`)}
                 </option>
               ))}
             </select>
@@ -454,7 +445,7 @@ export default function PatrolPage() {
                 setShiftFilters({ ...shiftFilters, routeId: e.target.value, page: 1 })
               }
             >
-              <option value="">Mọi tuyến</option>
+              <option value="">{t("filters.allRoutes")}</option>
               {routes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -468,7 +459,7 @@ export default function PatrolPage() {
                 setShiftFilters({ ...shiftFilters, assigneeId: e.target.value, page: 1 })
               }
             >
-              <option value="">Mọi người phụ trách</option>
+              <option value="">{t("filters.allAssignees")}</option>
               {patrolUsers.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.fullName}
@@ -493,9 +484,9 @@ export default function PatrolPage() {
               }}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Lên ca tuần tra
+              {t("actions.createShift")}
             </Button>
-          </div>
+          </ERPToolbar>
           <div className="rounded-lg border bg-card">
             <div className="divide-y">
               {shifts.map((x) => (
@@ -513,7 +504,7 @@ export default function PatrolPage() {
                       {x._count?.checks || 0} điểm
                     </div>
                   </button>
-                  <Badge>{STATUS[x.status] || x.status}</Badge>
+                  <Badge>{t(`status.${x.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                   {["SCHEDULED", "OVERDUE"].includes(x.status) && (
                     <Button
                       size="sm"
@@ -528,7 +519,7 @@ export default function PatrolPage() {
               ))}
               {!shifts.length && (
                 <div className="p-6 text-center text-sm text-muted-foreground">
-                  Không có ca tuần tra phù hợp bộ lọc
+                  {t("empty.shifts")}
                 </div>
               )}
             </div>
@@ -576,7 +567,7 @@ export default function PatrolPage() {
               }}
             >
               <Route className="mr-2 h-4 w-4" />
-              Tạo tuyến
+              {t("actions.createRoute")}
             </Button>
           </div>
           <div className="space-y-4">
@@ -702,7 +693,7 @@ export default function PatrolPage() {
               }}
             >
               <CalendarClock className="mr-2 h-4 w-4" />
-              Tạo lịch định kỳ
+              {t("actions.createSchedule")}
             </Button>
           </div>
           <div className="rounded-lg border bg-card divide-y">
@@ -1177,7 +1168,7 @@ export default function PatrolPage() {
           {detail && (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge>{STATUS[detail.status]}</Badge>
+                <Badge>{t(`status.${detail.status}`, { defaultValue: t('common:unknownValue') })}</Badge>
                 {["SCHEDULED", "OVERDUE"].includes(detail.status) && (
                   <>
                     <Button size="sm" onClick={() => shiftMutation.mutate({ kind: "start", data: detail })}>
@@ -1244,8 +1235,8 @@ export default function PatrolPage() {
                                 : "secondary"
                           }
                         >
-                          {c.result}
-                          {c.severity ? ` · ${SEVERITY_LABEL[c.severity]}` : ""}
+                          {t(`result.${c.result}`, { defaultValue: t('common:unknownValue') })}
+                          {c.severity ? ` · ${t(`severity.${c.severity}`, { defaultValue: SEVERITY_LABEL[c.severity] || c.severity })}` : ""}
                         </Badge>
                       </div>
                     </div>

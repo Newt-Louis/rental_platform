@@ -4,7 +4,18 @@
     "create": "Create proposal",
     "edit": "Edit proposal",
     "detail": "Proposal details",
-    "manage": "Manage lease proposals",
+    "manage": "Commercial proposal and approval workspace",
+    "command": {
+      "eyebrow": "Commercial object",
+      "records": "proposals",
+      "filters": "filters"
+    },
+    "partyTypes": {
+      "TENANT": "Tenant",
+      "LEAD": "Lead",
+      "CUSTOMER": "Customer",
+      "UNKNOWN": "Unspecified"
+    },
     "status": {
       "DRAFT": "Draft",
       "SUBMITTED": "Submitted",
@@ -17,13 +28,15 @@
     },
     "fields": {
       "unit": "Space",
+      "party": "Customer",
+      "floorUnknown": "Floor not specified",
       "tenant": "Prospect",
       "proposedRent": "Proposed rent",
       "proposedArea": "Proposed area",
       "startDate": "Start date",
       "endDate": "End date",
       "depositMonths": "Deposit months",
-      "freeRentMonths": "Free rent months",
+      "freeRentMonths": "Rent-free days",
       "incentives": "Incentives",
       "notes": "Notes",
       "marketingFee": "Marketing fee"
@@ -33,7 +46,11 @@
       "status": "Status",
       "dateRange": "Creation date range",
       "all": "All",
-      "clear": "Clear filters"
+      "clear": "Clear filters",
+      "leaseType": "Lease term type",
+      "allLeaseTypes": "All lease terms",
+      "longTerm": "Long term",
+      "shortTerm": "Short term"
     },
     "createEntry": {
       "title": "Create Proposal from Booking",
@@ -60,7 +77,8 @@
       "area": "Area",
       "monthlyRent": "Rent/month",
       "contractValue": "Contract value",
-      "status": "Status"
+      "status": "Status",
+      "approval": "Approval"
     },
     "actions": {
       "submit": "Submit for approval",
@@ -75,6 +93,8 @@
       "rejectSuccess": "Proposal rejected",
       "score": "Calculate deal score",
       "editDoc": "Edit Proposal Document",
+      "openDetails": "Open proposal {{number}} details",
+      "select": "Select proposal {{number}}",
       "send": "Send",
       "delete": "Delete"
     },
@@ -99,20 +119,22 @@
       "name": "Scenario name *",
       "namePlaceholder": "e.g. Scenario A",
       "empty": "No scenarios yet",
-      "select": "Select",
+      "select": "Mark",
+      "days": "days",
+      "simulationNotice": "Scenarios are simulations for factual comparison only; they do not change authoritative Proposal values and are not approval evidence.",
       "deleteTitle": "Delete financial scenario?",
       "deleteDesc": "Scenario \"{{name}}\" will be removed from the proposal.",
       "deleteConfirm": "Delete scenario",
       "addSuccess": "Scenario added",
-      "selectSuccess": "Scenario selected",
+      "selectSuccess": "Scenario marked for comparison",
       "deleteSuccess": "Scenario deleted",
       "fields": {
         "area": "Area (m²)",
-        "rentPerSqm": "Rent / m² (₫)",
-        "camPerSqm": "CAM / m² (₫)",
+        "rentPerSqm": "Rent / m²",
+        "camPerSqm": "CAM / m²",
         "term": "Term (months)",
         "deposit": "Deposit (months)",
-        "rentFree": "Rent free (months)",
+        "rentFree": "Rent free (days)",
         "discount": "Discount (%)",
         "escalation": "Annual escalation (%)"
       },
@@ -155,18 +177,38 @@
     "prev": "Previous",
     "next": "Next",
     "noProposals": "No proposals found",
+    "new": "New",
     "noneYet": "No proposals yet",
     "exportPdfError": "Cannot export PDF",
     "approval": {
       "level": "Level {{level}}",
+      "step": "Step {{order}}: {{name}}",
+      "stepRole": "Step {{order}} · {{role}}",
       "statusApproved": "Approved",
       "statusRejected": "Rejected",
       "statusPending": "Pending"
+    },
+    "objectHeader": {
+      "monthlyRent": "Monthly rent",
+      "monthlyValue": "{{amount}}/month",
+      "approvalPosition": "Step {{current}}/{{total}} · {{role}}"
+    },
+    "handoff": {
+      "created": "Contract created automatically",
+      "automatic": "Approved; automatic Contract creation is being processed.",
+      "tenantRequired": "Tenant information is required before Contract creation.",
+      "openContract": "Open Contract"
     }
   },
   "approvals": {
     "title": "Approvals",
-    "subtitle": "Pending approval requests",
+    "new": "New",
+    "subtitle": "Decision queue by file and authoritative current approval step",
+    "searchPlaceholder": "Proposal, tenant, or unit...",
+    "command": {
+      "eyebrow": "DECISION CENTER",
+      "records": "files"
+    },
     "pending": "Pending approval",
     "approved": "Approved",
     "rejected": "Rejected",
@@ -182,8 +224,66 @@
     "rejectPriceSuccess": "Price rejected",
     "views": {
       "proposals": "Proposal",
+      "fitout": "Fitout",
       "prices": "Booking Price",
       "history": "History"
+    },
+    "filters": {
+      "floor": "Floor",
+      "allFloors": "All floors",
+      "unit": "Unit",
+      "allUnits": "All units"
+    },
+    "fitout": {
+      "title": "Fitout documents",
+      "searchPlaceholder": "Submittal, form, tenant, or unit...",
+      "empty": "No Fitout documents awaiting your decision",
+      "emptyDesc": "Actionable Fitout submittals will appear here.",
+      "error": "Unable to load pending Fitout approvals.",
+      "revision": "Revision {{revision}}",
+      "stage": "Fitout stage",
+      "unknownStage": "Stage not configured",
+      "formType": "Document / form type",
+      "submitter": "Submitted by",
+      "submittedAt": "Submitted",
+      "dueDate": "Due date",
+      "version": "Version {{version}}",
+      "latest": "Latest",
+      "unknownFileType": "Unknown file type",
+      "noAttachments": "No attachments in this submittal.",
+      "attachmentError": "Unable to download this attachment.",
+      "pendingCount": "{{count}} Fitout documents awaiting decision",
+      "section": {
+        "context": "FITOUT SUBMITTAL CONTEXT",
+        "attachments": "ATTACHMENTS"
+      },
+      "table": {
+        "document": "Submittal",
+        "context": "Tenant / unit",
+        "stage": "Fitout stage",
+        "approvalStep": "Approval step",
+        "timeline": "Submitted / due"
+      },
+      "status": {
+        "SUBMITTED": "Submitted",
+        "IN_PROGRESS": "In review",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected",
+        "PUBLISHED": "Published",
+        "OBSOLETED": "Obsolete",
+        "unknown": "Unknown status"
+      }
+    },
+    "roles": {
+      "ADMIN": "System Administrator",
+      "LEASING_MANAGER": "Leasing Manager",
+      "LEASING_EXECUTIVE": "Leasing Executive",
+      "MALL_DIRECTOR": "Mall Director",
+      "CEO": "CEO",
+      "FINANCE": "Finance",
+      "LEGAL": "Legal",
+      "OPERATION": "Operations",
+      "TENANT": "Tenant"
     },
     "table": {
       "proposal": "Proposal",
@@ -194,25 +294,43 @@
       "discount": "Discount",
       "contractValue": "Contract value",
       "step": "Step {{order}}",
+      "stepOfTotal": "Step {{order}}/{{total}}",
       "bookingNo": "Booking #",
       "unit": "Unit",
       "customer": "Customer",
       "category": "Category",
-      "floorPrice": "Floor price (₫/m²)",
-      "proposed": "Proposed (₫/m²)",
-      "ceiling": "Ceiling (₫/m²)",
+      "floorPrice": "Floor price (VND/m²)",
+      "proposed": "Proposed (VND/m²)",
+      "ceiling": "Ceiling (VND/m²)",
       "deviation": "Deviation %",
       "rentFreeDays": "{{count}} rent-free days",
       "policyReasonTitle": "Why this approval step applies"
     },
     "actions": {
       "detail": "Details",
+      "review": "Review",
+      "reviewFile": "Review file {{number}}",
       "approve": "Approve",
       "reject": "Reject",
       "approveAll": "Approve all",
       "rejectAll": "Reject all",
       "approvePrice": "Approve price",
       "rejectPrice": "Reject price"
+    },
+    "decision": {
+      "currentStep": "Step {{current}}/{{total}} · Awaiting decision",
+      "current": "Awaiting decision",
+      "approveTitle": "Confirm file approval",
+      "rejectTitle": "Confirm file rejection",
+      "optionalComment": "Decision note (optional)",
+      "requiredReason": "Rejection reason (minimum 5 characters)",
+      "confirmApprove": "Confirm approval",
+      "confirmReject": "Confirm rejection"
+    },
+    "priceDecision": {
+      "approveTitle": "Confirm price approval",
+      "approvePrompt": "Verify the Booking, unit, and proposed price before deciding.",
+      "confirmApprove": "Confirm approval"
     },
     "bulk": {
       "approveSuccess": "Approved {{ok}} steps",
@@ -255,7 +373,7 @@
     "emptyDesc": "Deals pending approval will appear here",
     "emptyPrices": "No prices to approve",
     "emptyPricesDesc": "Bookings with proposed prices below floor will appear here",
-    "pendingCount": "{{count}} deals",
+    "pendingCount": "{{count}} files",
     "pendingPriceCount": "{{count}} prices",
     "dealsPending": "{{count}} deals pending approval",
     "pricesPending": "{{count}} bookings pending price approval",
@@ -268,6 +386,13 @@
       "rejected": "File has been rejected",
       "inProgress": "In approval process",
       "steps": "{{done}}/{{total}} steps",
+      "completedSteps": "{{done}}/{{total}} steps completed",
+      "statusValues": {
+        "PENDING": "Pending start",
+        "IN_PROGRESS": "In approval",
+        "APPROVED": "Approved",
+        "REJECTED": "Rejected"
+      },
       "viewProposal": "View source proposal",
       "section": {
         "proposalInfo": "PROPOSAL INFORMATION",
@@ -292,6 +417,8 @@
       "step": {
         "stepLabel": "Step {{order}}: {{name}}",
         "role": "Role: {{role}}",
+        "stepRole": "Step {{order}} · {{role}}",
+        "position": "Position {{order}}/{{total}} in workflow",
         "approved": "Approved",
         "rejected": "Rejected",
         "pending": "Pending"

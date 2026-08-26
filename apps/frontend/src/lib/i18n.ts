@@ -20,6 +20,9 @@ import viProfile from '@/locales/vi/profile.json';
 import viContracts from '@/locales/vi/contracts.json';
 import viServiceContracts from '@/locales/vi/serviceContracts.json';
 import viParking from '@/locales/vi/parking-dashboard.json';
+import viWorkOrders from '@/locales/vi/workOrders.json';
+import viPatrol from '@/locales/vi/patrol.json';
+import viSap from '@/locales/vi/sap.json';
 
 import enCommon from '@/locales/en/common.json';
 import enNav from '@/locales/en/nav.json';
@@ -39,6 +42,9 @@ import enProfile from '@/locales/en/profile.json';
 import enContracts from '@/locales/en/contracts.json';
 import enServiceContracts from '@/locales/en/serviceContracts.json';
 import enParking from '@/locales/en/parking-dashboard.json';
+import enWorkOrders from '@/locales/en/workOrders.json';
+import enPatrol from '@/locales/en/patrol.json';
+import enSap from '@/locales/en/sap.json';
 
 i18n
   .use(LanguageDetector)
@@ -64,6 +70,9 @@ i18n
         contracts: viContracts,
         serviceContracts: viServiceContracts,
         parking: viParking,
+        workOrders: viWorkOrders,
+        patrol: viPatrol,
+        sap: viSap,
       },
       en: {
         common: enCommon,
@@ -84,6 +93,9 @@ i18n
         contracts: enContracts,
         serviceContracts: enServiceContracts,
         parking: enParking,
+        workOrders: enWorkOrders,
+        patrol: enPatrol,
+        sap: enSap,
       },
     },
     defaultNS: 'common',

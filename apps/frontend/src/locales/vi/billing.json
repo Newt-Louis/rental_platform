@@ -132,7 +132,7 @@
     "invoicePaidFull": "Hóa đơn đã thanh toán đầy đủ",
     "cancelledReason": "Đã hủy — lý do: {{reason}}",
     "qtyLabel": "Số lượng",
-    "unitPriceLabel": "Đơn giá (₫)",
+    "unitPriceLabel": "Đơn giá ({{currency}})",
     "subtotalPreview": "Thành tiền: {{amount}}",
     "paymentAmount": "Số tiền thanh toán *",
     "paymentMethod": "Phương thức",
@@ -191,14 +191,15 @@
     "clearFilters": "Xóa bộ lọc"
   },
   "header": {
+    "eyebrow": "Vận hành tài chính",
     "title": "Hóa đơn và thu tiền",
-    "subtitle": "Kiểm soát trọn vòng đời doanh thu: lập lịch → phát hành → thu tiền → nhắc nợ → đối soát hiệu quả.",
+    "subtitle": "Theo dõi hóa đơn, công nợ và thu tiền theo đúng trạng thái nghiệp vụ.",
     "collectionRate": "Tỷ lệ thu",
     "dso": "DSO",
     "dsoUnit": "ngày",
     "arOutstanding": "AR còn lại",
     "operationsCenter": "Trung tâm điều hành Billing",
-    "selectStep": "Chọn một bước để tiếp tục xử lý"
+    "selectStep": "Ưu tiên hóa đơn cần xử lý, kiểm tra công nợ và mở chi tiết theo ngữ cảnh"
   },
   "voidDialog": {
     "title": "Hủy hóa đơn",
@@ -213,5 +214,88 @@
   "noInvoices": "Không có hóa đơn nào",
   "createSuccess": "Tạo hóa đơn thành công",
   "issueSuccess": "Đã gửi hóa đơn cho khách",
-  "paymentSuccess": "Ghi nhận thanh toán thành công"
+  "paymentSuccess": "Ghi nhận thanh toán thành công",
+  "addIn": {
+    "title": "Add-in kỳ thu phí",
+    "eyebrow": "Billing · Vận hành",
+    "description": "Danh sách hợp đồng cần Vận hành (P.CSKT) nhập số liệu biến động trước khi Kế toán lập hoá đơn: Phụ thu Phí Quản Lý, Tiền Điện/Nước, Điện lạnh ngoài giờ.",
+    "chargeType": {
+      "MANAGEMENT_FEE_SURCHARGE": "Phụ thu Phí Quản Lý",
+      "UTILITY": "Điện, Nước",
+      "AFTER_HOURS_COOLING": "Điện lạnh ngoài giờ"
+    },
+    "status": {
+      "PENDING": "Chưa nhập",
+      "DRAFT": "Đã nhập chờ chốt",
+      "CONFIRMED": "Đã chốt",
+      "NO_CHARGE": "Không phát sinh",
+      "INVOICED": "Đã lập hoá đơn"
+    },
+    "leaseCategory": {
+      "OFFICE": "Văn phòng",
+      "MALL": "TTTM"
+    },
+    "filters": {
+      "allChargeTypes": "Tất cả loại phí",
+      "allStatuses": "Tất cả trạng thái",
+      "search": "Tìm theo mã HĐT, khách thuê..."
+    },
+    "columns": {
+      "contract": "Mã HĐT",
+      "tenant": "Khách thuê",
+      "leaseCategory": "Loại HĐT",
+      "chargeType": "Loại phí",
+      "period": "Kỳ",
+      "status": "Trạng thái",
+      "assignee": "Người phụ trách",
+      "dueDate": "Hạn xử lý"
+    },
+    "actions": {
+      "enterNow": "Nhập ngay",
+      "enterData": "Nhập liệu",
+      "viewAndConfirm": "Xem & Chốt",
+      "viewDetail": "Xem chi tiết",
+      "viewInvoice": "Xem hoá đơn"
+    },
+    "form": {
+      "title": "Nhập số liệu add-in",
+      "area": "Diện tích thuê",
+      "norm": "Định mức Access Control",
+      "maxHeadcount": "Số người tối đa theo định mức",
+      "headcount": "Số nhân sự đăng ký thực tế",
+      "headcountHint": "Theo số thẻ Access Control đã cấp trong kỳ",
+      "excess": "Số nhân sự vượt định mức",
+      "surchargeUnitPrice": "Đơn giá phụ thu / người",
+      "surchargeAmount": "Thành tiền Phụ thu Phí Quản Lý",
+      "elecStart": "Chỉ số điện đầu kỳ (kWh)",
+      "elecEnd": "Chỉ số điện cuối kỳ (kWh)",
+      "elecEndHint": "Do Kỹ thuật toà nhà chốt hàng tháng",
+      "waterStart": "Chỉ số nước đầu kỳ (m³)",
+      "waterEnd": "Chỉ số nước cuối kỳ (m³)",
+      "consumption": "Tiêu thụ",
+      "utilityAmount": "Tổng tiền Điện + Nước",
+      "hours": "Số giờ chạy ngoài giờ",
+      "hoursHint": "Kỹ thuật toà nhà xác nhận theo yêu cầu phát sinh",
+      "hoursUnitPrice": "Đơn giá / giờ",
+      "hoursAmount": "Thành tiền Điện lạnh ngoài giờ",
+      "notes": "Ghi chú",
+      "notesPlaceholder": "Ghi chú thêm cho kế toán (nếu có)...",
+      "noCharge": "Xác nhận không phát sinh kỳ này",
+      "saveDraft": "Lưu nháp",
+      "continueConfirm": "Tiếp tục · Chốt số liệu"
+    },
+    "confirmPopup": {
+      "title": "Xác nhận chốt số liệu kỳ {{period}}",
+      "total": "Tổng cộng kỳ này",
+      "warning": "Sau khi chốt, số liệu sẽ chuyển cho Kế toán để lập hoá đơn và không thể tự sửa trực tiếp — mọi thay đổi sau đó cần tạo Phụ lục điều chỉnh (Amendment).",
+      "back": "Quay lại chỉnh sửa",
+      "confirm": "Xác nhận Chốt"
+    },
+    "toast": {
+      "draftSaved": "Đã lưu số liệu nháp",
+      "noChargeConfirmed": "Đã xác nhận kỳ này không phát sinh",
+      "confirmed": "Đã chốt số liệu — sẵn sàng cho Kế toán",
+      "reopened": "Đã mở lại kỳ để chỉnh sửa"
+    }
+  }
 }

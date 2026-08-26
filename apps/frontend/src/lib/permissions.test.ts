@@ -42,11 +42,14 @@ describe('route permissions', () => {
   });
 
   it('protects nested routes using their top-level module', () => {
-    // TENANT does not get the standalone /fitout route: Tenant Portal has its own
-    // Fitout tab, and the /fitout sub-resource tabs (submittal/issue/gantt/...) 403
-    // for TENANT at the backend, so granting the route would produce a broken
-    // partial-access experience. See docs/implementation/UX_DECISIONS.md DECISION-001.
+    // Approved Fitout policy exposes only the capability-limited root workspace
+    // to TENANT; staff-only report/settings routes remain denied.
+    expect(canAccessPath('TENANT', '/fitout')).toBe(true);
+    expect(canAccessPath('TENANT', '/fitout?projectId=project-1')).toBe(true);
     expect(canAccessPath('TENANT', '/fitout/project-1/gantt')).toBe(false);
+    expect(canAccessPath('TENANT', '/fitout/settings')).toBe(false);
+    expect(canAccessPath('MALL_DIRECTOR', '/fitout/settings')).toBe(false);
+    expect(canAccessPath('ADMIN', '/fitout/settings')).toBe(true);
     expect(canAccessPath('MALL_DIRECTOR', '/fitout/project-1/gantt')).toBe(true);
     expect(canAccessPath('FINANCE', '/fitout/project-1/gantt')).toBe(false);
     expect(canAccessPath('ADMIN', '/admin/categories')).toBe(true);
@@ -59,20 +62,19 @@ describe('route permissions', () => {
     expect(getDefaultHomePath(undefined)).toBe('/dashboard');
   });
 
-  it('covers every RouteModule exactly once in NAV_GROUPS (regression guard for the ' +
-    'Wave 2 sidebar regroup — see docs/implementation/UX_DECISIONS.md DECISION-003: ' +
-    'a module must never be silently duplicated across groups or dropped entirely)', () => {
+  it('covers every RouteModule and keeps every navigation path unique (regression guard for the ' +
+    'Wave 2 sidebar regroup — see docs/implementation/UX_DECISIONS.md DECISION-003)', () => {
     const modules = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.module));
+    const paths = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.path));
     const allModules = Object.keys(ROUTE_PERMISSIONS) as (keyof typeof ROUTE_PERMISSIONS)[];
     const counts = new Map<string, number>();
     for (const m of modules) counts.set(m, (counts.get(m) ?? 0) + 1);
 
     for (const module of allModules) {
-      // tenant-portal and billing/sales/tickets/announcements are staff-nav items
-      // too (they also appear in TENANT_NAV for the separate tenant experience,
-      // which is intentional and out of scope for this NAV_GROUPS-only check).
-      expect(counts.get(module) ?? 0).toBe(1);
+      expect(counts.get(module) ?? 0).toBeGreaterThanOrEqual(1);
     }
-    expect(modules.length).toBe(allModules.length);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths).toContain('/ai');
+    expect(paths).toContain('/ai/codebase');
   });
 });

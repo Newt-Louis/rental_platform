@@ -1,4 +1,11 @@
 {
+  "unknownValue": "Không xác định",
+  "workflowActions": {
+    "SUBMITTED": "Đã gửi",
+    "REVISED": "Đã điều chỉnh",
+    "APPROVED": "Đã duyệt",
+    "DISPUTED": "Đang tranh chấp"
+  },
   "actions": {
     "save": "Lưu",
     "cancel": "Hủy",

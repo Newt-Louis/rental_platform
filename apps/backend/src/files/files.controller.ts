@@ -8,6 +8,7 @@ import { Role } from '@prisma/client';
 import { Scope } from '../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../common/constants/scope.types';
 import { MallAccessService } from '../common/services/mall-access.service';
+import { MODULE_ROLES } from '../common/constants/role-permissions';
 
 // CR-101 Phase 1: descriptive only. Confirmed SAFE for unauthenticated/
 // cross-tenant access (see docs/architecture-review/02-FILE-SECURITY-ARCHITECTURE.md)
@@ -53,6 +54,7 @@ const WORK_ORDER_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.OPERATI
 const SERVICE_CONTRACT_ROLES = [Role.ADMIN, Role.CEO, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.OPERATION];
 const PARKING_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION];
 const MAINTENANCE_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.OPERATION];
+const FITOUT_STAFF_ROLES = [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
 
 function requireRole(user: { role: Role }, allowed: Role[]) {
   if (user.role !== Role.ADMIN && !allowed.includes(user.role)) {
@@ -79,6 +81,47 @@ export class FilesController {
       'Content-Disposition': `inline; filename="${encodeURIComponent(fileName)}"`,
     });
     return new StreamableFile(fileStream);
+  }
+
+  private async assertCurrentFitoutApproverFileAccess(
+    submittalId: string,
+    user: { id: string; role: Role },
+  ) {
+    requireRole(user, MODULE_ROLES.approvals);
+    const submittal = await this.prisma.fitoutSubmittal.findUnique({
+      where: { id: submittalId },
+      select: {
+        id: true,
+        workflowId: true,
+        project: {
+          select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+        },
+        workflow: {
+          select: {
+            id: true, entityType: true, entityId: true, status: true,
+            steps: {
+              select: { stepOrder: true, status: true, approverRole: true, approverId: true },
+              orderBy: { stepOrder: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    const workflow = submittal?.workflow;
+    if (!submittal || !workflow || submittal.workflowId !== workflow.id
+      || workflow.entityType !== 'FITOUT_SUBMITTAL' || workflow.entityId !== submittal.id
+      || workflow.status !== 'IN_PROGRESS') {
+      throw new ForbiddenException('Fitout approval document capability is unresolved');
+    }
+    const currentStep = workflow.steps.find((step, index, ordered) => step.status === 'PENDING'
+      && ordered.slice(0, index).every((earlier) => earlier.status === 'APPROVED'));
+    if (!currentStep || currentStep.approverRole !== user.role
+      || (currentStep.approverId && currentStep.approverId !== user.id)) {
+      throw new ForbiddenException('You are not the current actionable Fitout approver');
+    }
+    const mallId = submittal.project.unit.mallId ?? submittal.project.unit.floor?.mallId;
+    if (!mallId) throw new ForbiddenException('Fitout approval Mall is unresolved');
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
   }
 
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'fileId', resolver: 'contract' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C2)' })
@@ -149,11 +192,23 @@ export class FilesController {
       }
       case 'FITOUT_SUBMITTAL':
         // TENANT has no access to submittal/issue/daily-report controllers at all
-        // (backend MODULE_ROLES.fitout excludes TENANT there) — role check below
-        // is the full authorization surface for these three branches, plus the
-        // Mall check now added for each.
-        requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
-        await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
+        // Staff remain Mall-scoped. Tenant access is deliberately narrower:
+        // only attachments linked to a submittal in their own Fitout project.
+        if (user.role === Role.TENANT) {
+          const submittal = await this.prisma.fitoutSubmittal.findUnique({
+            where: { id: doc.entityId },
+            select: { project: { select: { tenantId: true } } },
+          });
+          if (!submittal || !user.tenantId || submittal.project.tenantId !== user.tenantId) {
+            throw new ForbiddenException('Tenant cannot access this fitout document');
+          }
+        } else {
+          if (FITOUT_STAFF_ROLES.includes(user.role)) {
+            await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
+          } else {
+            await this.assertCurrentFitoutApproverFileAccess(doc.entityId, user);
+          }
+        }
         break;
       case 'FITOUT_ISSUE':
         requireRole(user, [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR]);
