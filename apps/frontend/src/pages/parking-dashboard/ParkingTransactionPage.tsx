@@ -189,6 +189,7 @@ export default function ParkingTransactionPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isPlaceholderData,
   } = useInfiniteQuery({
     queryKey: ['parking-transactions-v2', appliedFilter],
     queryFn: ({ pageParam }) =>
@@ -233,7 +234,7 @@ export default function ParkingTransactionPage() {
   useEffect(() => {
     const el = sentinelRef.current;
     const root = scrollContainerRef.current;
-    if (!el || !root || !hasNextPage || isFetchingNextPage) return;
+    if (!el || !root || !hasNextPage || isFetchingNextPage || isPlaceholderData) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -246,7 +247,7 @@ export default function ParkingTransactionPage() {
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, items.length, sentinelAfterRowIndex]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, items.length, sentinelAfterRowIndex]);
 
   function applyFilters() {
     setAppliedDrawer(drawerForm);
