@@ -178,5 +178,10 @@
   },
   "selected": "{{count}} đã chọn",
   "of": "trong số",
-  "items": "mục"
+  "items": "mục",
+  "dateRangePicker": {
+    "placeholder": "Chọn khoảng ngày",
+    "clear": "Xóa ngày",
+    "invalidRange": "Thời gian bắt đầu phải trước thời gian kết thúc"
+  }
 }

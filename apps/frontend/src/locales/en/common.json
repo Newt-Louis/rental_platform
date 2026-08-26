@@ -178,5 +178,10 @@
   },
   "selected": "{{count}} selected",
   "of": "of",
-  "items": "items"
+  "items": "items",
+  "dateRangePicker": {
+    "placeholder": "Select date range",
+    "clear": "Clear date",
+    "invalidRange": "Start time must be before end time"
+  }
 }

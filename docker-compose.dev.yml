@@ -2,17 +2,6 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 services:
-  postgres:
-    ports:
-      - "5432:5432"
-    volumes:
-      - ./docker/postgres-data:/var/lib/postgresql/data
-      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
-
-  redis:
-    ports:
-      - "6379:6379"
-
   backend:
     build:
       context: ./apps/backend
@@ -41,7 +30,7 @@ services:
       - ./apps/frontend/index.html:/app/index.html:ro
       - ./apps/frontend/tailwind.config.js:/app/tailwind.config.js:ro
     environment:
-      VITE_API_URL: http://localhost:3000/api
+      VITE_API_URL: http://localhost:${BACKEND_PORT:-3000}/api
     command: npm run dev -- --host 0.0.0.0
     ports:
       - "5173:5173"
