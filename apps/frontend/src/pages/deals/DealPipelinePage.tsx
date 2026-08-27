@@ -1,48 +1,49 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { crmApi, spacesApi } from '@/api';
+import { useTranslation } from 'react-i18next';
+import { crmApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DealTimelineSheet } from '@/components/DealTimeline';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
   GitBranch, Search, Clock, Building2, User, ChevronRight, Zap,
 } from 'lucide-react';
 
-const STAGE_CONFIG: Record<string, { label: string; color: string }> = {
-  LEAD: { label: 'Lead', color: 'bg-gray-100 text-gray-700' },
-  BOOKING: { label: 'Booking', color: 'bg-blue-100 text-blue-700' },
-  PROPOSAL: { label: 'Đề xuất', color: 'bg-indigo-100 text-indigo-700' },
-  APPROVAL: { label: 'Phê duyệt', color: 'bg-amber-100 text-amber-700' },
-  CONTRACT: { label: 'Hợp đồng', color: 'bg-purple-100 text-purple-700' },
-  WON: { label: 'Thắng', color: 'bg-green-100 text-green-700' },
+const STAGE_CONFIG: Record<string, { color: string }> = {
+  LEAD: { color: 'bg-gray-100 text-gray-700' },
+  BOOKING: { color: 'bg-blue-100 text-blue-700' },
+  PROPOSAL: { color: 'bg-indigo-100 text-indigo-700' },
+  APPROVAL: { color: 'bg-amber-100 text-amber-700' },
+  CONTRACT: { color: 'bg-purple-100 text-purple-700' },
+  WON: { color: 'bg-green-100 text-green-700' },
 };
 
-function fmtValue(v?: number | null) {
+// Money Domain Consolidation: per-deal figures are individual record values,
+// not KPI aggregates -- must show the full amount, never abbreviated.
+function fmtValue(v?: number | null, currencyCode: CurrencyCode = 'VND') {
   if (!v) return '—';
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(v) + ' ₫';
+  return formatMoney(v, currencyCode);
 }
 
 export default function DealPipelinePage() {
+  const { t } = useTranslation('deals');
   const navigate = useNavigate();
   const { selectedMallId } = useMallStore();
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('ALL');
   const [timelineLead, setTimelineLead] = useState<{ id: string; brandName: string } | null>(null);
 
-  const { data: mallsData } = useQuery({
-    queryKey: ['malls'],
-    queryFn: spacesApi.listMalls,
-  });
-  const malls: any[] = mallsData?.data ?? mallsData ?? [];
-  const mallId = selectedMallId || malls[0]?.id;
+  const mallId = selectedMallId || undefined;
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['deal-pipeline', mallId, search, stageFilter],
     queryFn: () =>
       crmApi.getDeals({
@@ -86,7 +87,7 @@ export default function DealPipelinePage() {
             }`}
           >
             <p className="text-lg font-bold text-gray-900">{summary[key] ?? 0}</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">{cfg.label}</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{t(`pipeline.stages.${key}`)}</p>
           </button>
         ))}
       </div>
@@ -108,15 +109,17 @@ export default function DealPipelinePage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Tất cả giai đoạn</SelectItem>
-            {Object.entries(STAGE_CONFIG).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v.label}</SelectItem>
+            {Object.entries(STAGE_CONFIG).map(([k]) => (
+              <SelectItem key={k} value={k}>{t(`pipeline.stages.${k}`)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
       {/* Deal list */}
-      {isLoading ? (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải danh sách cơ hội"><div /></AsyncState>
+      ) : isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
@@ -132,7 +135,8 @@ export default function DealPipelinePage() {
       ) : (
         <div className="space-y-3">
           {deals.map((deal: any) => {
-            const stageCfg = STAGE_CONFIG[deal.stage] ?? STAGE_CONFIG.LEAD;
+            const stageKey = STAGE_CONFIG[deal.stage] ? deal.stage : 'LEAD';
+            const stageCfg = STAGE_CONFIG[stageKey];
             return (
               <Card
                 key={deal.leadId}
@@ -144,7 +148,7 @@ export default function DealPipelinePage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <span className="font-semibold text-gray-900">{deal.brandName}</span>
-                        <Badge className={`border-0 text-xs ${stageCfg.color}`}>{stageCfg.label}</Badge>
+                        <Badge className={`border-0 text-xs ${stageCfg.color}`}>{t(`pipeline.stages.${stageKey}`)}</Badge>
                         {deal.priority === 'HOT' && (
                           <Badge className="bg-red-100 text-red-700 border-0 text-xs">HOT</Badge>
                         )}
@@ -173,7 +177,7 @@ export default function DealPipelinePage() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">{fmtValue(deal.estimatedValue)}</p>
+                      <p className="text-sm font-semibold text-gray-900">{fmtValue(deal.estimatedValue, deal.currencyCode)}</p>
                       <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1 justify-end">
                         <Clock size={10} />
                         {new Date(deal.updatedAt).toLocaleDateString('vi-VN')}

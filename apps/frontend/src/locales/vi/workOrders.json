@@ -1,0 +1,54 @@
+{
+  "page": {
+    "eyebrow": "Vận hành",
+    "title": "Điều phối công việc",
+    "subtitle": "Work Order liên phòng ban · checklist · minh chứng · SLA · nghiệm thu"
+  },
+  "actions": { "export": "Xuất báo cáo", "create": "Tạo công việc", "reset": "Đặt lại bộ lọc" },
+  "summary": {
+    "total": "Tổng công việc", "active": "Đang xử lý", "review": "Chờ nghiệm thu", "overdue": "Quá hạn",
+    "dueSoon": "Sắp đến hạn trong 24h", "unassigned": "Chưa phân công", "critical": "Ưu tiên khẩn cấp"
+  },
+  "status": {
+    "NEW": "Mới", "ASSIGNED": "Đã giao", "IN_PROGRESS": "Đang xử lý", "ON_HOLD": "Tạm dừng",
+    "WAITING_REVIEW": "Chờ nghiệm thu", "COMPLETED": "Hoàn thành", "CANCELLED": "Đã hủy"
+  },
+  "category": {
+    "TECHNICAL": "Kỹ thuật", "CLEANING": "Vệ sinh", "SECURITY": "An ninh", "LANDSCAPE": "Cảnh quan",
+    "FACILITY": "Cơ sở vật chất", "OTHER": "Khác"
+  },
+  "priority": { "LOW": "Thấp", "MEDIUM": "Trung bình", "HIGH": "Cao", "CRITICAL": "Khẩn cấp" },
+  "evidence": { "BEFORE": "Trước khi xử lý", "PROGRESS": "Đang xử lý", "AFTER": "Sau khi xử lý", "DOCUMENT": "Tài liệu" },
+  "event": { "CREATED": "Đã tạo", "SCHEDULED_CREATED": "Đã tạo từ lịch", "UPDATED": "Đã cập nhật", "STATUS_CHANGED": "Đã đổi trạng thái", "APPROVED": "Đã nghiệm thu", "REJECTED": "Yêu cầu làm lại" },
+  "filters": {
+    "allStatuses": "Tất cả trạng thái", "allCategories": "Tất cả nhóm", "allPriorities": "Tất cả ưu tiên",
+    "allDepartments": "Tất cả bộ phận xử lý", "search": "Tìm số phiếu, tiêu đề, vị trí...", "activeDefault": "Mặc định: công việc đang hoạt động"
+  },
+  "table": {
+    "number": "Số phiếu", "work": "Công việc", "category": "Nhóm", "requesterDepartment": "Bộ phận gửi",
+    "assignedDepartment": "Bộ phận xử lý", "priority": "Ưu tiên", "assignee": "Người xử lý", "due": "Hạn hoàn thành",
+    "status": "Trạng thái", "evidence": "Checklist/Ảnh", "empty": "Chưa có công việc vận hành",
+    "showing": "Hiển thị {{shown}} / {{total}} công việc", "unassigned": "Chưa giao"
+  },
+  "templates": {
+    "title": "Mẫu công việc và lịch định kỳ", "collapse": "Thu gọn", "expand": "Mở quản lý",
+    "create": "Tạo mẫu", "loading": "Đang tải...", "empty": "Chưa có mẫu định kỳ.",
+    "active": "Đang chạy", "paused": "Tạm dừng", "nextRun": "Kỳ tới", "hours": "{{count}} giờ",
+    "generated": "Đã sinh {{count}} Work Order", "runNow": "Chạy ngay", "pause": "Tạm dừng", "activate": "Kích hoạt",
+    "dialogTitle": "Tạo mẫu công việc định kỳ", "mall": "Trung tâm thương mại", "name": "Tên mẫu",
+    "category": "Nhóm", "frequencyLabel": "Tần suất", "workOrderTitle": "Tiêu đề Work Order",
+    "nextRunAt": "Lần chạy tiếp theo", "slaHours": "SLA (giờ)", "department": "Bộ phận",
+    "selectDepartment": "Chọn bộ phận xử lý",
+    "searchDepartment": "Tìm bộ phận...",
+    "searchAssignee": "Tìm người xử lý...",
+    "noDepartment": "Không có bộ phận nào trong Mall này",
+    "noAssignee": "Không có nhân sự nào phù hợp", "assignee": "Người phụ trách", "location": "Vị trí",
+    "checklist": "Checklist (mỗi dòng một mục)", "saving": "Đang lưu...", "save": "Lưu mẫu",
+    "frequency": { "DAILY": "Hàng ngày", "WEEKLY": "Hàng tuần", "MONTHLY": "Hàng tháng", "QUARTERLY": "Hàng quý", "ANNUALLY": "Hàng năm" },
+    "toast": {
+      "alreadyCreated": "Kỳ này đã có Work Order", "updated": "Đã cập nhật mẫu công việc",
+      "updateFailed": "Không thể cập nhật mẫu", "required": "Vui lòng nhập đủ trường bắt buộc",
+      "selectMall": "Vui lòng chọn Mall tại bộ chọn chung"
+    }
+  }
+}

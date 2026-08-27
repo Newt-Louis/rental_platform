@@ -1,0 +1,10 @@
+{
+  "title": "Quản lý hợp đồng dịch vụ", "subtitle": "Theo dõi vòng đời, đối tác và hồ sơ hợp đồng vận hành",
+  "create": "Tạo hợp đồng", "selectMall": "Vui lòng chọn Mall để xem và tạo hợp đồng.", "search": "Tìm số hợp đồng, tiêu đề, đối tác...",
+  "allStatuses": "Tất cả trạng thái", "empty": "Chưa có hợp đồng dịch vụ", "number": "Số hợp đồng", "contractPartner": "Hợp đồng / đối tác", "type": "Loại", "term": "Thời hạn", "value": "Giá trị", "statusLabel": "Trạng thái", "files": "File",
+  "createTitle": "Tạo hợp đồng dịch vụ", "contractNumber": "Số hợp đồng *", "contractTitle": "Tên hợp đồng *", "counterparty": "Tên đối tác *", "taxCode": "Mã số thuế", "payable": "Hợp đồng phải trả", "receivable": "Hợp đồng phải thu", "product": "Sản phẩm / dịch vụ", "contractValue": "Giá trị hợp đồng", "startDate": "Ngày bắt đầu", "endDate": "Ngày kết thúc", "notes": "Ghi chú", "cancel": "Hủy", "save": "Lưu hợp đồng",
+  "lifecycle": "Vòng đời hợp đồng", "documents": "Tài liệu hợp đồng", "upload": "Upload", "noDocuments": "Chưa có tài liệu", "history": "Lịch sử",
+  "payments": "Thanh toán", "checklist": "Checklist", "milestones": "Mốc thực hiện", "add": "Thêm", "singlePayment": "Thêm một đợt", "recurring": "Tạo thanh toán theo kỳ", "monthly": "Hàng tháng", "quarterly": "Hàng quý", "annually": "Hàng năm", "reminderDays": "Nhắc trước (ngày)", "createPeriods": "Tạo các kỳ", "invoice": "Lưu hóa đơn", "proof": "Chứng từ thanh toán", "markCollected": "Ghi nhận đã thu", "markPaid": "Ghi nhận đã trả", "completed": "Đã hoàn tất",
+  "statuses": { "DRAFT": "Nháp", "PROPOSAL": "Đề xuất", "UNDER_REVIEW": "Đang duyệt", "PENDING_SIGNATURE": "Chờ ký", "ACTIVE": "Hiệu lực", "EXPIRING": "Sắp hết hạn", "EXPIRED": "Hết hạn", "TERMINATED": "Đã chấm dứt", "RENEWED": "Đã gia hạn", "CANCELLED": "Đã hủy" },
+  "types": { "SERVICE": "Dịch vụ", "SUPPLY": "Cung ứng", "LABOR": "Nhân công", "MAINTENANCE": "Bảo trì", "CONSTRUCTION": "Xây dựng", "CONSULTING": "Tư vấn", "PARTNERSHIP": "Hợp tác", "CONFIDENTIALITY": "Bảo mật", "SOFTWARE": "Phần mềm", "INSURANCE": "Bảo hiểm", "SECURITY": "An ninh", "CLEANING": "Vệ sinh", "OTHER": "Khác" }
+}

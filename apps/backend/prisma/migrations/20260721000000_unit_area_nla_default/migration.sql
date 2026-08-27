@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Unit" ALTER COLUMN "areaNLA" SET DEFAULT 0;

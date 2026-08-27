@@ -1,12 +1,31 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
 export class FitoutGanttService {
   private readonly logger = new Logger(FitoutGanttService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
+
+  private async validateProjectReferences(projectId: string, refs: {
+    parentTaskId?: string;
+    dependsOnTaskId?: string;
+    assignedContractorId?: string;
+  }) {
+    for (const taskId of [refs.parentTaskId, refs.dependsOnTaskId].filter(Boolean) as string[]) {
+      const task = await this.prisma.fitoutTask.findFirst({ where: { id: taskId, projectId }, select: { id: true } });
+      if (!task) throw new BadRequestException('Referenced task does not belong to this fitout project');
+    }
+    if (refs.assignedContractorId) {
+      const contractor = await this.prisma.fitoutContractor.findFirst({
+        where: { id: refs.assignedContractorId, projectId, isActive: true },
+        select: { id: true },
+      });
+      if (!contractor) throw new BadRequestException('Contractor does not belong to this fitout project');
+    }
+  }
 
   async listTasks(projectId: string) {
     return this.prisma.fitoutTask.findMany({
@@ -29,6 +48,7 @@ export class FitoutGanttService {
   }) {
     const project = await this.prisma.fitoutProject.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Fitout project not found');
+    await this.validateProjectReferences(projectId, dto);
 
     const last = await this.prisma.fitoutTask.findFirst({
       where: { projectId },
@@ -63,6 +83,9 @@ export class FitoutGanttService {
   }>) {
     const existing = await this.prisma.fitoutTask.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Task not found');
+    await this.validateProjectReferences(existing.projectId, {
+      assignedContractorId: dto.assignedContractorId,
+    });
 
     const data: any = { ...dto };
     for (const field of ['plannedStart', 'plannedEnd', 'revisedStart', 'revisedEnd', 'actualStart', 'actualEnd']) {
@@ -86,6 +109,10 @@ export class FitoutGanttService {
 
   @Cron('0 1 * * *', { name: 'fitout-gantt-late-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkLateTasks() {
+    return this.schedulerLock.runExclusive('fitout-gantt-late-check', 14_400_000, () => this.checkLateTasksUnlocked());
+  }
+
+  private async checkLateTasksUnlocked() {
     this.logger.log('Checking late fitout Gantt tasks...');
     const now = new Date();
 

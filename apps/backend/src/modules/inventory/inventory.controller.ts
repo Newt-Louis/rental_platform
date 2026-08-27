@@ -1,0 +1,40 @@
+import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Response } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { MallAccessService } from '../../common/services/mall-access.service';
+import { CreateInventoryCategoryDto, CreateInventoryItemDto, CreateInventoryTransactionDto } from './dto/inventory.dto';
+import { InventoryService } from './inventory.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+const VIEW = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION];
+const EDIT = [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION];
+
+// CR-101 Phase 1: descriptive only.
+@ApiTags('Inventory') @ApiBearerAuth('JWT-auth') @Roles(...VIEW)
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
+@Controller('inventory')
+export class InventoryController {
+  constructor(private service: InventoryService, private mallAccess: MallAccessService) {}
+  private async mallIds(user: any, mallId?: string) { if (mallId) { await this.mallAccess.assertMallAccess(user.id, user.role, mallId); return [mallId]; } return (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? undefined; }
+
+  @Get('categories') async categories(@Query() query: any, @CurrentUser() user: any) { return this.service.listCategories(await this.mallIds(user, query.mallId), query); }
+  @Post('categories') @Roles(...EDIT) async createCategory(@Body() dto: CreateInventoryCategoryDto, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, dto.mallId); return this.service.createCategory(dto); }
+  @Patch('categories/:id') @Roles(...EDIT) async updateCategory(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, await this.service.mallIdForCategory(id)); return this.service.updateCategory(id, body); }
+  @Get('items') async items(@Query() query: any, @CurrentUser() user: any) { return this.service.listItems(await this.mallIds(user, query.mallId), query); }
+  @Get('export') async export(@Query() query: any, @CurrentUser() user: any, @Res() res: Response) {
+    const buffer = await this.service.exportExcel(await this.mallIds(user, query.mallId), query);
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Inventory_${date}.xlsx"`);
+    res.send(buffer);
+  }
+  @Post('items') @Roles(...EDIT) async createItem(@Body() dto: CreateInventoryItemDto, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, dto.mallId); return this.service.createItem(dto); }
+  @Patch('items/:id') @Roles(...EDIT) async updateItem(@Param('id') id: string, @Body() body: any, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, await this.service.mallIdForItem(id)); return this.service.updateItem(id, body); }
+  @Get('transactions') async transactions(@Query() query: any, @CurrentUser() user: any) { return this.service.listTransactions(await this.mallIds(user, query.mallId), query); }
+  @Post('transactions') @Roles(...EDIT) async createTransaction(@Body() dto: CreateInventoryTransactionDto, @CurrentUser() user: any) { await this.mallAccess.assertMallAccess(user.id, user.role, await this.service.mallIdForItem(dto.itemId)); return this.service.createTransaction(dto, user.id); }
+  @Get('summary') async summary(@Query('mallId') mallId: string, @CurrentUser() user: any) { return this.service.summary(await this.mallIds(user, mallId), mallId); }
+}

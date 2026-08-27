@@ -6,6 +6,8 @@ import { EmailService } from '../notifications/email.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
+import { Cron } from '@nestjs/schedule';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 const ENTITY_TYPE = 'TICKET';
 
@@ -37,7 +39,19 @@ export class TicketsService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private schedulerLock: SchedulerLockService,
   ) {}
+
+  async listMyUnits(currentUser: CurrentUser) {
+    if (!currentUser.tenantId) {
+      throw new BadRequestException('Tài khoản chưa được liên kết với khách thuê');
+    }
+    return this.prisma.unit.findMany({
+      where: { tenantId: currentUser.tenantId, isActive: true },
+      select: { id: true, code: true, name: true, floor: { select: { name: true } }, mall: { select: { name: true } } },
+      orderBy: { code: 'asc' },
+    });
+  }
 
   async findAll(query: {
     status?: TicketStatus;
@@ -47,14 +61,29 @@ export class TicketsService {
     search?: string;
     page?: number;
     limit?: number;
+    mallIds?: string[];
+    queue?: 'open' | 'unassigned' | 'overdue' | 'mine';
   }, currentUser?: CurrentUser) {
-    const { page = 1, limit = 20, search, ...filters } = query;
+    const { page = 1, limit = 20, search, queue, ...filters } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = { isActive: true };
+    if (query.mallIds && currentUser?.role !== 'TENANT') {
+      where.AND = [{ unit: { OR: [{ mallId: { in: query.mallIds } }, { floor: { mallId: { in: query.mallIds } } }] } }];
+    }
     if (filters.status) where.status = filters.status;
     if (filters.priority) where.priority = filters.priority;
     if (filters.assignedToId) where.assignedToId = filters.assignedToId;
+    if (queue === 'open') where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    if (queue === 'unassigned') {
+      where.assignedToId = null;
+      where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    }
+    if (queue === 'overdue') {
+      where.slaDueAt = { lt: new Date() };
+      where.status = { notIn: [TicketStatus.RESOLVED, TicketStatus.CLOSED] };
+    }
+    if (queue === 'mine') where.assignedToId = currentUser?.id ?? '__none__';
 
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
@@ -141,6 +170,12 @@ export class TicketsService {
 
     if (isTenantCaller && !currentUser.tenantId) {
       throw new BadRequestException('Tài khoản của bạn chưa được liên kết với khách thuê nào — liên hệ quản trị viên.');
+    }
+    if (isTenantCaller) {
+      const ownedUnit = await this.prisma.unit.count({
+        where: { id: dto.unitId, tenantId: currentUser.tenantId!, isActive: true },
+      });
+      if (!ownedUnit) throw new ForbiddenException('Mặt bằng không thuộc phạm vi khách thuê của bạn');
     }
 
     const ticket = await this.prisma.ticket.create({
@@ -289,18 +324,23 @@ export class TicketsService {
     });
   }
 
-  async getStats() {
-    const [total, byStatus, byPriority] = await Promise.all([
-      this.prisma.ticket.count({ where: { isActive: true } }),
-      this.prisma.ticket.groupBy({ by: ['status'], where: { isActive: true }, _count: true }),
-      this.prisma.ticket.groupBy({ by: ['priority'], where: { isActive: true }, _count: true }),
+  async getStats(mallIds?: string[], currentUser?: CurrentUser) {
+    const where: any = { isActive: true };
+    if (currentUser?.role === 'TENANT') where.tenantId = currentUser.tenantId ?? '__none__';
+    else if (mallIds) where.unit = { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] };
+    const [total, byStatus, byPriority, unassigned, overdue] = await Promise.all([
+      this.prisma.ticket.count({ where }),
+      this.prisma.ticket.groupBy({ by: ['status'], where, _count: true }),
+      this.prisma.ticket.groupBy({ by: ['priority'], where, _count: true }),
+      this.prisma.ticket.count({ where: { AND: [where, { assignedToId: null, status: { notIn: ['RESOLVED', 'CLOSED'] } }] } }),
+      this.prisma.ticket.count({ where: { AND: [where, { slaDueAt: { lt: new Date() }, status: { notIn: ['RESOLVED', 'CLOSED'] } }] } }),
     ]);
 
-    return { total, byStatus, byPriority };
+    return { total, byStatus, byPriority, unassigned, overdue };
   }
 
-  async getEscalations(ticketId: string) {
-    await this.findOne(ticketId);
+  async getEscalations(ticketId: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketEscalation.findMany({
       where: { ticketId },
       orderBy: { level: 'asc' },
@@ -314,9 +354,9 @@ export class TicketsService {
     });
   }
 
-  async rateTicket(ticketId: string, rating: number, comment?: string) {
+  async rateTicket(ticketId: string, rating: number, comment?: string, currentUser?: CurrentUser) {
     if (rating < 1 || rating > 5) throw new BadRequestException('Rating must be 1-5');
-    await this.findOne(ticketId);
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketRating.upsert({
       where: { ticketId },
       create: { ticketId, rating, comment, ratedAt: new Date() },
@@ -324,13 +364,18 @@ export class TicketsService {
     });
   }
 
-  async getTicketRating(ticketId: string) {
+  async getTicketRating(ticketId: string, currentUser?: CurrentUser) {
+    await this.findOne(ticketId, currentUser);
     return this.prisma.ticketRating.findUnique({ where: { ticketId } });
   }
 
-  async getCsatSummary() {
+  async getCsatSummary(mallIds?: string[]) {
+    const where = mallIds
+      ? { ticket: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } }
+      : {};
     const ratings = await this.prisma.ticketRating.groupBy({
       by: ['rating'],
+      where,
       _count: { rating: true },
     });
     const totalRated = ratings.reduce((s, r) => s + r._count.rating, 0);
@@ -341,18 +386,28 @@ export class TicketsService {
     return { totalRated, avgRating: +avgRating.toFixed(2), csatScore, byRating: ratings };
   }
 
-  async listMaintenance(query: { mallId?: string; page?: number; limit?: number }) {
+  async listMaintenance(query: { mallId?: string; mallIds?: string[]; page?: number; limit?: number }) {
     const { page = 1, limit = 20, mallId } = query;
     const skip = (page - 1) * +limit;
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (query.mallIds) where.mallId = { in: query.mallIds };
 
     const [data, total] = await Promise.all([
       this.prisma.maintenanceSchedule.findMany({
         where,
         skip,
         take: +limit,
-        include: { mall: { select: { id: true, name: true } } },
+        include: {
+          mall: { select: { id: true, name: true } },
+          unit: { select: { id: true, code: true, name: true } },
+          assignedTo: { select: { id: true, fullName: true, email: true, role: true } },
+          executions: {
+            orderBy: { dueDate: 'desc' },
+            take: 5,
+            include: { performedBy: { select: { id: true, fullName: true } } },
+          },
+        },
         orderBy: { nextDueDate: 'asc' },
       }),
       this.prisma.maintenanceSchedule.count({ where }),
@@ -367,44 +422,118 @@ export class TicketsService {
     frequency: string;
     nextDueDate: string;
     assignedRole?: string;
+    assignedToId?: string;
+    reminderDays?: number;
+    checklist?: string[];
+    unitId?: string;
     estimatedHours?: number;
   }, createdById: string) {
-    return this.prisma.maintenanceSchedule.create({
+    const dueDate = new Date(dto.nextDueDate);
+    if (!dto.mallId || !dto.title?.trim() || !dto.assignedToId) {
+      throw new BadRequestException('Vui lòng nhập đủ trung tâm, tên kế hoạch và người chịu trách nhiệm');
+    }
+    if (Number.isNaN(dueDate.getTime())) throw new BadRequestException('Ngày đến hạn không hợp lệ');
+    if (!['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY'].includes(dto.frequency)) {
+      throw new BadRequestException('Tần suất bảo trì không hợp lệ');
+    }
+    if ((dto.reminderDays ?? 3) < 0 || (dto.reminderDays ?? 3) > 30) {
+      throw new BadRequestException('Số ngày nhắc trước phải từ 0 đến 30');
+    }
+    const schedule = await this.prisma.maintenanceSchedule.create({
       data: {
         mallId: dto.mallId,
-        title: dto.title,
+        unitId: dto.unitId,
+        title: dto.title.trim(),
         description: dto.description,
         frequency: dto.frequency,
         nextDueDate: new Date(dto.nextDueDate),
         assignedRole: (dto.assignedRole as any) ?? 'OPERATION',
+        assignedToId: dto.assignedToId,
+        reminderDays: dto.reminderDays ?? 3,
+        checklist: dto.checklist ?? undefined,
         estimatedHours: dto.estimatedHours,
         createdById,
+        executions: { create: { dueDate } },
       },
+      include: { assignedTo: { select: { id: true, fullName: true } }, executions: true },
     });
+    if (schedule.assignedToId) {
+      await this.notifications.create({
+        userId: schedule.assignedToId,
+        title: 'Kế hoạch bảo trì mới được giao',
+        body: `${schedule.title} · hạn ${dueDate.toLocaleDateString('vi-VN')}`,
+        type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: schedule.id,
+      });
+    }
+    return schedule;
   }
 
-  async updateMaintenance(id: string, dto: Partial<{ title: string; description: string; frequency: string; nextDueDate: string; estimatedHours: number; isActive: boolean }>) {
+  async updateMaintenance(id: string, dto: Partial<{ title: string; description: string; frequency: string; nextDueDate: string; estimatedHours: number; isActive: boolean; assignedToId: string; reminderDays: number; checklist: string[]; unitId: string }>) {
+    const previous = await this.prisma.maintenanceSchedule.findUnique({ where: { id } });
+    if (!previous) throw new NotFoundException('Maintenance schedule not found');
     const data: any = { ...dto };
     if (dto.nextDueDate) data.nextDueDate = new Date(dto.nextDueDate);
-    return this.prisma.maintenanceSchedule.update({ where: { id }, data });
+    const schedule = await this.prisma.maintenanceSchedule.update({ where: { id }, data });
+    if (dto.assignedToId && dto.assignedToId !== previous.assignedToId) {
+      await this.notifications.create({ userId: dto.assignedToId, title: 'Bạn được giao kế hoạch bảo trì', body: `${schedule.title} · hạn ${schedule.nextDueDate.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: id });
+    }
+    return schedule;
   }
 
-  async executeMaintenance(id: string) {
-    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id } });
-    if (!sched) throw new NotFoundException('Maintenance schedule not found');
-
-    const next = new Date(sched.nextDueDate);
-    switch (sched.frequency) {
+  private nextMaintenanceDate(dueDate: Date, frequency: string) {
+    const next = new Date(dueDate);
+    switch (frequency) {
       case 'DAILY': next.setDate(next.getDate() + 1); break;
       case 'WEEKLY': next.setDate(next.getDate() + 7); break;
       case 'MONTHLY': next.setMonth(next.getMonth() + 1); break;
       case 'QUARTERLY': next.setMonth(next.getMonth() + 3); break;
       case 'ANNUALLY': next.setFullYear(next.getFullYear() + 1); break;
     }
+    return next;
+  }
 
-    return this.prisma.maintenanceSchedule.update({
-      where: { id },
-      data: { lastExecutedAt: new Date(), nextDueDate: next },
+  async startMaintenance(id: string, userId: string) {
+    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id }, include: { executions: { where: { status: { in: ['PLANNED', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 1 } } });
+    if (!sched) throw new NotFoundException('Maintenance schedule not found');
+    const execution = sched.executions[0] ?? await this.prisma.maintenanceExecution.create({ data: { scheduleId: id, dueDate: sched.nextDueDate } });
+    return this.prisma.maintenanceExecution.update({ where: { id: execution.id }, data: { status: 'IN_PROGRESS', startedAt: execution.startedAt ?? new Date(), performedById: userId } });
+  }
+
+  async completeMaintenance(id: string, userId: string, body: { notes?: string; checklistResult?: any }, files: Express.Multer.File[]) {
+    const sched = await this.prisma.maintenanceSchedule.findUnique({ where: { id }, include: { executions: { where: { status: { in: ['PLANNED', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 1 } } });
+    if (!sched) throw new NotFoundException('Maintenance schedule not found');
+    if (!files?.length) throw new BadRequestException('Cần ít nhất một ảnh hoặc tài liệu bằng chứng để hoàn tất');
+    const execution = sched.executions[0] ?? await this.prisma.maintenanceExecution.create({ data: { scheduleId: id, dueDate: sched.nextDueDate } });
+    const saved = await Promise.all(files.map((file) => this.storageService.saveFile(file, `maintenance/${id}`)));
+    const next = this.nextMaintenanceDate(sched.nextDueDate, sched.frequency);
+
+    return this.prisma.$transaction(async (tx) => {
+      const completedAt = new Date();
+      const result = await tx.maintenanceExecution.update({ where: { id: execution.id }, data: { status: 'COMPLETED', startedAt: execution.startedAt ?? completedAt, completedAt, performedById: userId, notes: body.notes, checklistResult: body.checklistResult ?? undefined, evidenceUrls: saved.map((item) => item.fileUrl) } });
+      await tx.maintenanceSchedule.update({ where: { id }, data: { lastExecutedAt: completedAt, nextDueDate: next }, });
+      await tx.maintenanceExecution.upsert({ where: { scheduleId_dueDate: { scheduleId: id, dueDate: next } }, create: { scheduleId: id, dueDate: next }, update: {} });
+      if (sched.assignedToId) await this.notifications.create({ userId: sched.assignedToId, title: 'Đã hoàn tất công việc bảo trì', body: `${sched.title} · kỳ tiếp theo ${next.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_SCHEDULE', entityId: id });
+      return result;
     });
+  }
+
+  /** Tạo nhắc việc cho các kế hoạch sắp đến hạn; idempotent theo ngày qua kiểm tra thông báo đã tồn tại. */
+  @Cron('0 7 * * *', { name: 'maintenance-due-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
+  async sendMaintenanceReminders() {
+    return this.schedulerLock.runExclusive('maintenance-due-reminders', 14_400_000, () => this.sendMaintenanceRemindersUnlocked());
+  }
+
+  private async sendMaintenanceRemindersUnlocked() {
+    const now = new Date();
+    const schedules = await this.prisma.maintenanceSchedule.findMany({ where: { isActive: true, assignedToId: { not: null } } });
+    let sent = 0;
+    for (const schedule of schedules) {
+      const remindAt = new Date(schedule.nextDueDate); remindAt.setDate(remindAt.getDate() - schedule.reminderDays);
+      if (remindAt > now) continue;
+      const since = new Date(now); since.setHours(0, 0, 0, 0);
+      const exists = await this.prisma.notification.findFirst({ where: { userId: schedule.assignedToId!, entityType: 'MAINTENANCE_REMINDER', entityId: schedule.id, createdAt: { gte: since } } });
+      if (!exists) { await this.notifications.create({ userId: schedule.assignedToId!, title: schedule.nextDueDate < now ? 'Bảo trì đã quá hạn' : 'Bảo trì sắp đến hạn', body: `${schedule.title} · hạn ${schedule.nextDueDate.toLocaleDateString('vi-VN')}`, type: 'MAINTENANCE', entityType: 'MAINTENANCE_REMINDER', entityId: schedule.id }); sent++; }
+    }
+    return { sent };
   }
 }

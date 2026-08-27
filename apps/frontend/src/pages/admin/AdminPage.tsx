@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useDeferredValue, useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi, departmentsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
+import { useAuthStore } from '@/store/auth.store';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,14 +16,21 @@ import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
 import {
   Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
-  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, Globe,
+  KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, X,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
   SquareStack, Info, GitBranch, ExternalLink,
 } from 'lucide-react';
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { DepartmentsTab } from './DepartmentsTab';
+import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
+import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
+import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
+import { ERPToolbar } from '@/components/erp';
+import { PageHeader } from '@/components/ui/page-header';
+import { getApiErrorMessage } from '@/lib/api-error';
 import type { User } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -55,15 +64,16 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
   open: boolean; title: string; message: string;
   onConfirm: () => void; onCancel: () => void; loading?: boolean;
 }) {
+  const { t } = useTranslation('admin');
   return (
     <Dialog open={open} onOpenChange={onCancel}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={18} className="text-red-500" />{title}</DialogTitle></DialogHeader>
         <p className="text-sm text-gray-600">{message}</p>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={onCancel}>Hủy</Button>
+          <Button variant="outline" onClick={onCancel}>{t('confirm.cancel')}</Button>
           <Button variant="destructive" onClick={onConfirm} disabled={loading}>
-            {loading ? <RefreshCw size={14} className="animate-spin mr-1" /> : null} Xác nhận xóa
+            {loading ? <RefreshCw size={14} className="animate-spin mr-1" /> : null} {t('confirm.confirm')}
           </Button>
         </div>
       </DialogContent>
@@ -73,13 +83,62 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 
 // ─── Tab 1: Users ─────────────────────────────────────────────────────────────
 
-function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => void }) {
+/**
+ * Roles that carry no UserMallAccess grant. Their data scope differs per role,
+ * so each gets its own wording instead of one blanket "sees every Mall" note:
+ * only ADMIN truly bypasses the Mall check (`MallAccessService.BYPASS_ROLES`),
+ * CEO is portfolio-wide only on the approved oversight reads, and TENANT is
+ * scoped by its linked tenant record.
+ */
+const SCOPE_HINT_KEY: Record<string, string> = {
+  ADMIN: 'notApplicableHint',
+  CEO: 'ceoHint',
+  TENANT: 'tenantHint',
+};
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-red-600">{message}</p>;
+}
+
+function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null; onClose: () => void }) {
+  const isEdit = !!user;
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset, watch } = useForm();
-  const [showResetPwd, setShowResetPwd] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const selectedRole = watch('role', user?.role);
+  const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
+  const selectedRole = watch('role', user?.role ?? ROLE_KEYS[4]); // default LEASING_EXECUTIVE
+  const [selectedMallIds, setSelectedMallIds] = useState<string[]>([]);
+  const [mallRole, setMallRole] = useState('LEASING_EXECUTIVE');
+  const [addMallId, setAddMallId] = useState('');
+  const [addMallRole, setAddMallRole] = useState('LEASING_EXECUTIVE');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const needsMallAccess = MALL_ACCESS_ROLES.includes(selectedRole);
+
+  useEffect(() => {
+    if (open) {
+      reset(user ? {
+        fullName: user.fullName,
+        phone: (user as any).phone ?? '',
+        department: (user as any).department ?? '',
+        role: user.role,
+        tenantId: (user as any).tenantId ?? '',
+      } : { role: ROLE_KEYS[4] });
+      setSelectedMallIds([]);
+      setMallRole(user && MALL_ACCESS_ROLES.includes(user.role) ? user.role : 'LEASING_EXECUTIVE');
+      setAddMallId('');
+      setSubmitError(null);
+    }
+  }, [open, user?.id]);
+
+  // A role without Mall scope (ADMIN/CEO/TENANT) must not carry a stale Mall
+  // selection made before the role was switched -- the backend rejects it.
+  useEffect(() => {
+    if (!needsMallAccess) setSelectedMallIds([]);
+    else if (MALL_ACCESS_ROLES.includes(selectedRole)) setMallRole(selectedRole);
+  }, [selectedRole, needsMallAccess]);
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants-lite'],
@@ -88,184 +147,326 @@ function UserDetailSheet({ user, onClose }: { user: User | null; onClose: () => 
   });
   const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
 
-  const updateMutation = useMutation({
-    mutationFn: (data: any) => usersApi.updateUser(user!.id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Đã cập nhật tài khoản' }); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  const { data: mallsData } = useQuery({
+    queryKey: ['malls'],
+    queryFn: spacesApi.listMalls,
+    enabled: open,
+  });
+  const malls: any[] = mallsData?.data ?? mallsData ?? [];
+
+  const { data: departmentOptions = [] } = useQuery({
+    queryKey: ['departments', 'user-options', malls.map((mall) => mall.id)],
+    queryFn: async () => {
+      const results = await Promise.all(
+        malls.map((mall) => departmentsApi.options(mall.id)),
+      );
+      return results.flatMap((result, index) =>
+        (result ?? []).map((department: any) => ({
+          ...department,
+          mall: department.mall ?? malls[index],
+        })),
+      );
+    },
+    enabled: open && malls.length > 0,
+  });
+  const legacyDepartment = user?.department && !departmentOptions.some((item: any) => item.id === user.department)
+    ? user.department
+    : null;
+
+  const { data: userMallsData, refetch: refetchUserMalls } = useQuery({
+    queryKey: ['user-mall-access', user?.id],
+    queryFn: () => mallAccessApi.listForUser(user!.id),
+    enabled: isEdit && !!user?.id && needsMallAccess,
+  });
+  const userMalls: any[] = Array.isArray(userMallsData) ? userMallsData : userMallsData?.data ?? [];
+
+  /**
+   * Only send what this role actually uses. React Hook Form keeps values of
+   * fields that were unmounted (e.g. the tenant picker after switching away
+   * from the TENANT role), and an empty `tenantId` used to reach Prisma as a
+   * foreign key of '' -- a 500 with a raw query dump in the toast.
+   */
+  const buildPayload = (data: any) => {
+    const role = data.role || (isEdit ? user!.role : ROLE_KEYS[4]);
+    const payload: Record<string, unknown> = {
+      fullName: (data.fullName ?? '').trim(),
+      role,
+      phone: (data.phone ?? '').trim() || null,
+      department: (data.department ?? '').trim() || null,
+      tenantId: role === 'TENANT' ? ((data.tenantId ?? '').trim() || null) : null,
+    };
+
+    if (!isEdit) {
+      payload.email = (data.email ?? '').trim();
+      payload.password = data.password;
+      // Mall grants travel with the account so both succeed or neither does.
+      if (needsMallAccess && selectedMallIds.length > 0) {
+        payload.mallIds = selectedMallIds;
+        payload.mallRole = mallRole;
+      }
+    }
+
+    return payload;
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const payload = buildPayload(data);
+      return isEdit ? usersApi.updateUser(user!.id, payload) : usersApi.createUser(payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['mall-access'] });
+      qc.invalidateQueries({ queryKey: ['user-mall-access'] });
+      toast({ title: isEdit ? t('users.toast.updated') : t('users.toast.created') });
+      setSubmitError(null); reset(); setSelectedMallIds([]); onClose();
+    },
+    onError: (e: any) => {
+      const message = getApiErrorMessage(e, t('commonError'));
+      setSubmitError(message);
+      toast({ title: message, variant: 'destructive' });
+    },
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: () => usersApi.updateUser(user!.id, { isActive: !user!.isActive }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: user?.isActive ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản' }); onClose(); },
+  const grantMutation = useMutation({
+    mutationFn: ({ mallId, role }: { mallId: string; role: string }) => mallAccessApi.grant({ userId: user!.id, mallId, role }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.grantError')), variant: 'destructive' }),
   });
 
-  const resetPwdMutation = useMutation({
-    mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
-    onSuccess: () => { toast({ title: 'Đã đổi mật khẩu thành công' }); setShowResetPwd(false); reset(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  const revokeMutation = useMutation({
+    mutationFn: (mallId: string) => mallAccessApi.revoke(user!.id, mallId),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('mallAccess.toast.revoked') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.revokeError')), variant: 'destructive' }),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: () => usersApi.deleteUser(user!.id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Đã xóa tài khoản' }); setConfirmDelete(false); onClose(); },
-  });
-
-  const role = user ? ROLE_MAP[user.role] : null;
+  const roleInfo = user ? ROLE_MAP[user.role] : null;
 
   return (
     <>
-      <Sheet open={!!user} onClose={onClose} title={user?.fullName ?? ''} subtitle={role?.label}>
-        {user && (
-          <div className="px-6 pb-8 space-y-4 pt-4">
-            <div className="flex items-center gap-2">
-              {role && <Badge className={`${role.color} border-0`}>{role.label}</Badge>}
-              <Badge className={user.isActive ? 'bg-green-100 text-green-700 border-0' : 'bg-gray-100 text-gray-500 border-0'}>
-                {user.isActive ? 'Hoạt động' : 'Đã khóa'}
-              </Badge>
-            </div>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              {isEdit ? (
+                <>
+                  {user!.fullName}
+                  {roleInfo && <Badge className={`${roleInfo.color} border-0 text-xs font-normal`}>{t(adminRoleTranslationKey(user!.role))}</Badge>}
+                  <Badge className={`border-0 text-xs font-normal ${user!.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {user!.isActive ? t('users.active') : t('users.locked')}
+                  </Badge>
+                </>
+              ) : t('users.createNew')}
+            </DialogTitle>
+          </DialogHeader>
 
-            <SheetSection label="THÔNG TIN" className="bg-gray-50">
-              <SheetRow label="Email" value={user.email} icon={Mail} />
-              <SheetRow label="Điện thoại" value={user.phone} icon={Phone} />
-              <SheetRow label="Phòng ban" value={user.department} icon={Briefcase} />
-            </SheetSection>
-
-            {/* Edit form */}
-            <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-3 bg-gray-50 rounded-xl p-4">
-              <div className="text-xs font-semibold tracking-wider text-gray-500 mb-2">CHỈNH SỬA</div>
-              <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit((d) => saveMutation.mutate(d))} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>{t('users.fields.fullNameRequired')}</Label>
+                <Input
+                  {...register('fullName', { required: t('users.validation.fullNameRequired') as string })}
+                  placeholder="Nguyễn Văn A" className="mt-1"
+                  aria-invalid={!!errors.fullName}
+                />
+                <FieldError message={errors.fullName?.message as string | undefined} />
+              </div>
+              <div>
+                <Label>Email{!isEdit && ' *'}</Label>
+                {isEdit
+                  ? <Input value={user!.email} disabled className="mt-1 bg-gray-50 text-gray-500" />
+                  : (
+                    <>
+                      <Input
+                        {...register('email', {
+                          required: t('users.validation.emailRequired') as string,
+                          pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: t('users.validation.emailInvalid') as string },
+                        })}
+                        type="email" placeholder="user@thiso.com" className="mt-1"
+                        aria-invalid={!!errors.email}
+                      />
+                      <FieldError message={errors.email?.message as string | undefined} />
+                    </>
+                  )}
+              </div>
+              {!isEdit && (
                 <div>
-                  <Label className="text-xs">Họ tên</Label>
-                  <Input defaultValue={user.fullName} {...register('fullName')} className="mt-1" />
+                  <Label>{t('users.fields.password')}</Label>
+                  <Input
+                    {...register('password', {
+                      required: t('users.validation.passwordRequired') as string,
+                      minLength: { value: 8, message: t('users.validation.passwordTooShort') as string },
+                    })}
+                    type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1"
+                    aria-invalid={!!errors.password}
+                  />
+                  <FieldError message={errors.password?.message as string | undefined} />
                 </div>
-                <div>
-                  <Label className="text-xs">Điện thoại</Label>
-                  <Input defaultValue={user.phone ?? ''} {...register('phone')} className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">Phòng ban</Label>
-                  <Input defaultValue={user.department ?? ''} {...register('department')} className="mt-1" />
-                </div>
-                <div>
-                  <Label className="text-xs">Vai trò</Label>
-                  <select defaultValue={user.role} {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                    {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+              )}
+              <div>
+                <Label>{t('users.fields.role')}</Label>
+                <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                  {ROLE_KEYS.map((k) => <option key={k} value={k}>{t(adminRoleTranslationKey(k))}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label>{t('users.fields.phone')}</Label>
+                <Input {...register('phone')} placeholder="0901234567" className="mt-1" />
+              </div>
+              <div>
+                <Label>{t('users.fields.department')}</Label>
+                <select {...register('department')} className="mt-1 w-full rounded-md border px-3 py-2 text-sm">
+                  <option value="">{tDepartments('missingInformation')}</option>
+                  {legacyDepartment && (
+                    <option value={legacyDepartment}>{tDepartments('missingInformation')}</option>
+                  )}
+                  {malls.map((mall) => (
+                    <optgroup key={mall.id} label={mall.name}>
+                      {departmentOptions
+                        .filter((department: any) => department.mallId === mall.id)
+                        .map((department: any) => (
+                          <option key={department.id} value={department.id}>{department.name}</option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              {selectedRole === 'TENANT' && (
+                <div className="col-span-2">
+                  <Label>{t('users.linkedTenant')}</Label>
+                  <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+                    <option value="">{t('users.noLinked')}</option>
+                    {tenants.map((ten) => <option key={ten.id} value={ten.id}>{ten.brandName ?? ten.companyName}</option>)}
                   </select>
                 </div>
-                {selectedRole === 'TENANT' && (
-                  <div className="col-span-2">
-                    <Label className="text-xs">Khách thuê liên kết</Label>
-                    <select defaultValue={user.tenantId ?? ''} {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                      <option value="">— Chưa liên kết —</option>
-                      {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
+              )}
+            </div>
+
+            {/* Mall access */}
+            {needsMallAccess && (
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    <Building2 size={12} /> {t('users.mallScope.label')}
+                  </Label>
+                  {!isEdit && (
+                    <select value={mallRole} onChange={(e) => setMallRole(e.target.value)} className="border rounded px-2 py-1 text-xs bg-white">
+                      {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{t(adminRoleTranslationKey(r))}</option>)}
                     </select>
+                  )}
+                </div>
+
+                {!isEdit ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {malls.map((m) => {
+                        const selected = selectedMallIds.includes(m.id);
+                        return (
+                          <button key={m.id} type="button"
+                            onClick={() => setSelectedMallIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${selected ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'}`}>
+                            <Building2 size={11} />{m.name}
+                          </button>
+                        );
+                      })}
+                      {malls.length === 0 && <span className="text-xs text-gray-400">{t('users.mallScope.noMalls')}</span>}
+                    </div>
+                    <p className="text-xs text-blue-600">
+                      {selectedMallIds.length > 0
+                        ? t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })
+                        : t('users.mallScope.emptyMeansAll')}
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2 min-h-[28px]">
+                      {userMalls.map((m: any) => {
+                        const mallId = m.mallId ?? m.mall?.id ?? m.id;
+                        return (
+                          <div key={mallId} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-100 text-blue-700 text-xs font-medium">
+                            <Building2 size={11} />{m.mall?.name ?? m.name}
+                            <span className="text-blue-500 text-[10px]">· {t(adminRoleTranslationKey(m.role))}</span>
+                            <button type="button" onClick={() => revokeMutation.mutate(mallId)} disabled={revokeMutation.isPending} className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors">
+                              <X size={11} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {userMalls.length === 0 && <span className="text-xs text-gray-400 py-1">{t('users.mallScope.unassigned')}</span>}
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <select value={addMallId} onChange={(e) => setAddMallId(e.target.value)} className="flex-1 border rounded px-2 py-1.5 text-xs bg-white">
+                        <option value="">{t('users.mallScope.addMall')}</option>
+                        {malls.filter((m) => !userMalls.some((um: any) => (um.mallId ?? um.mall?.id) === m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <select value={addMallRole} onChange={(e) => setAddMallRole(e.target.value)} className="w-36 border rounded px-2 py-1.5 text-xs bg-white">
+                        {MALL_ACCESS_ROLES.map((r) => <option key={r} value={r}>{t(adminRoleTranslationKey(r))}</option>)}
+                      </select>
+                      <Button type="button" size="sm" variant="outline" className="h-7 text-xs gap-1 shrink-0"
+                        disabled={!addMallId || grantMutation.isPending}
+                        onClick={() => grantMutation.mutate({ mallId: addMallId, role: addMallRole })}>
+                        <Plus size={11} /> {t('users.mallScope.add')}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
-              <Button type="submit" size="sm" className="w-full" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
-              </Button>
-            </form>
-
-            {/* Password reset */}
-            {showResetPwd ? (
-              <form onSubmit={handleSubmit((d) => resetPwdMutation.mutate(d))} className="space-y-2 bg-amber-50 rounded-xl p-4">
-                <div className="text-xs font-semibold text-amber-600 mb-2">ĐỔI MẬT KHẨU</div>
-                <Input {...register('newPassword', { required: true, minLength: 6 })} type="password" placeholder="Mật khẩu mới (tối thiểu 6 ký tự)" />
-                <div className="flex gap-2">
-                  <Button size="sm" type="submit" disabled={resetPwdMutation.isPending} className="flex-1">Đặt lại</Button>
-                  <Button size="sm" type="button" variant="outline" onClick={() => { setShowResetPwd(false); reset(); }}>Hủy</Button>
-                </div>
-              </form>
-            ) : (
-              <Button variant="outline" className="w-full gap-2" size="sm" onClick={() => setShowResetPwd(true)}>
-                <KeyRound size={14} /> Đặt lại mật khẩu
-              </Button>
             )}
 
-            {/* Actions */}
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className={`w-full gap-2 ${user.isActive ? 'text-orange-500 border-orange-200 hover:bg-orange-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
-                onClick={() => toggleMutation.mutate()}
-                disabled={toggleMutation.isPending}
-              >
-                {user.isActive ? <><Lock size={14} /> Khóa tài khoản</> : <><Unlock size={14} /> Mở khóa</>}
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-red-500 border-red-200 hover:bg-red-50"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 size={14} /> Xóa tài khoản
+            {!needsMallAccess && (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                {t(`users.mallScope.${SCOPE_HINT_KEY[selectedRole] ?? 'notApplicableHint'}`)}
+              </p>
+            )}
+
+            {submitError && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <span className="whitespace-pre-line">{submitError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>{t('confirm.cancel')}</Button>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending
+                  ? (isEdit ? t('users.saving') : t('users.creating'))
+                  : (isEdit ? t('users.saveChanges') : t('users.create'))}
               </Button>
             </div>
-          </div>
-        )}
-      </Sheet>
+          </form>
 
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Xóa tài khoản"
-        message={`Bạn có chắc muốn xóa tài khoản "${user?.fullName}"? Hành động này không thể hoàn tác.`}
-        onConfirm={() => deleteMutation.mutate()}
-        onCancel={() => setConfirmDelete(false)}
-        loading={deleteMutation.isPending}
-      />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
+function ResetPasswordDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
   const { toast } = useToast();
-  const { register, handleSubmit, reset, watch } = useForm();
-  const selectedRole = watch('role', ROLE_KEYS[0]);
-
-  const { data: tenantsData } = useQuery({
-    queryKey: ['tenants-lite'],
-    queryFn: () => tenantsApi.listTenants({ limit: 200 }),
-    enabled: selectedRole === 'TENANT',
-  });
-  const tenants: any[] = tenantsData?.data ?? tenantsData ?? [];
+  const { t } = useTranslation('admin');
+  const { register, handleSubmit, reset } = useForm();
 
   const mutation = useMutation({
-    mutationFn: (data: any) => usersApi.createUser(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: 'Tạo tài khoản thành công' }); reset(); onClose(); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    mutationFn: (d: any) => usersApi.resetPassword(user!.id, d.newPassword),
+    onSuccess: () => { toast({ title: t('users.toast.passwordReset') }); reset(); onClose(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Tạo tài khoản mới</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div><Label>Họ tên *</Label><Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" /></div>
-            <div><Label>Email *</Label><Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" /></div>
-            <div><Label>Mật khẩu *</Label><Input {...register('password', { required: true })} type="password" placeholder="••••••••" className="mt-1" /></div>
-            <div>
-              <Label>Vai trò</Label>
-              <select {...register('role')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
-              </select>
-            </div>
-            <div><Label>Điện thoại</Label><Input {...register('phone')} placeholder="0901234567" className="mt-1" /></div>
-            <div><Label>Phòng ban</Label><Input {...register('department')} placeholder="Leasing" className="mt-1" /></div>
-            {selectedRole === 'TENANT' && (
-              <div className="col-span-2">
-                <Label>Khách thuê liên kết</Label>
-                <select {...register('tenantId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
-                  <option value="">— Chưa liên kết —</option>
-                  {tenants.map((t) => <option key={t.id} value={t.id}>{t.brandName ?? t.companyName}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
-            <Button type="submit" disabled={mutation.isPending}>Tạo tài khoản</Button>
+    <Dialog open={!!user} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound size={16} /> {t('users.resetPasswordBtn')}
+          </DialogTitle>
+        </DialogHeader>
+        {user && <p className="text-sm text-gray-500 -mt-1">{t('users.accountLabel')}: <strong>{user.fullName}</strong></p>}
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-3 mt-1">
+          <Input {...register('newPassword', { required: true, minLength: 8 })} type="password" placeholder={t('users.newPasswordPlaceholder')} />
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={() => { reset(); onClose(); }}>{t('confirm.cancel')}</Button>
+            <Button type="submit" disabled={mutation.isPending}>{t('users.resetBtn')}</Button>
           </div>
         </form>
       </DialogContent>
@@ -273,104 +474,212 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
+export function MallAccessCell({ user }: { user: User }) {
+  const { t } = useTranslation('admin');
+  const display = getMallAccessDisplay(user);
+
+  if (display.kind === 'global') {
+    return <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">{t('users.mallScope.global')}</Badge>;
+  }
+  if (display.kind === 'not-applicable') {
+    return <span className="text-gray-300 text-xs">—</span>;
+  }
+  if (display.kind === 'unassigned') {
+    return <span className="text-amber-700 text-xs font-medium">{t('users.mallScope.unassigned')}</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {display.malls.map((m) => (
+        <span key={m.id} className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-blue-100 bg-blue-50 text-blue-700 text-xs">
+          <Building2 size={10} />{m.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [resetPwdUser, setResetPwdUser] = useState<User | null>(null);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<User | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const deferredSearch = useDeferredValue(search.trim());
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
 
-  const { data, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.listUsers() });
-  const users: User[] = data?.data ?? data ?? [];
-
-  const filtered = users.filter((u) => {
-    const matchSearch = !search || u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
-    const matchRole = !roleFilter || u.role === roleFilter;
-    return matchSearch && matchRole;
+  const toggleMutation = useMutation({
+    mutationFn: (u: User) => usersApi.updateUser(u.id, { isActive: !u.isActive }),
+    onSuccess: (_, u) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setTogglingId(null);
+      toast({ title: u.isActive ? t('users.toast.locked') : t('users.toast.unlocked') });
+    },
+    onError: (e: any) => { setTogglingId(null); toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }); },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => usersApi.deleteUser(confirmDeleteUser!.id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('users.toast.deleted') }); setConfirmDeleteUser(null); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  useEffect(() => setPage(1), [deferredSearch, roleFilter, statusFilter]);
+  const queryParams = {
+    page,
+    limit: 20,
+    ...(deferredSearch ? { search: deferredSearch } : {}),
+    ...(roleFilter ? { role: roleFilter } : {}),
+    ...(statusFilter ? { isActive: statusFilter === 'active' } : {}),
+  };
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['users', queryParams],
+    queryFn: () => usersApi.listUsers(queryParams),
+  });
+  const { data: stats } = useQuery({ queryKey: ['users', 'stats'], queryFn: usersApi.getStats });
+  const users: User[] = data?.data ?? [];
+  const totalPages = Number(data?.totalPages ?? 1);
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex gap-3 flex-1 max-w-lg">
-          <div className="relative flex-1">
+      <ERPToolbar className="mb-3">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+          <div className="relative min-w-56 flex-1">
             <Users size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <Input placeholder="Tìm theo tên hoặc email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder={t('users.searchPlaceholder')} value={search} onChange={(e) => setSearch(e.target.value)} className="h-9 pl-9" />
           </div>
-          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="">Tất cả vai trò</option>
-            {ROLE_KEYS.map((k) => <option key={k} value={k}>{ROLE_MAP[k].label}</option>)}
+          <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="h-9 rounded-md border bg-white px-3 text-sm">
+            <option value="">{t('users.allRoles')}</option>
+            {ROLE_KEYS.map((k) => <option key={k} value={k}>{t(adminRoleTranslationKey(k))}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-md border bg-white px-3 text-sm">
+            <option value="">{t('users.allStatuses')}</option>
+            <option value="active">{t('users.statusActive')}</option>
+            <option value="locked">{t('users.statusLocked')}</option>
           </select>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus size={15} /> Thêm tài khoản
+        <Button size="sm" onClick={() => setShowCreate(true)} className="gap-2">
+          <Plus size={15} /> {t('users.create')}
         </Button>
-      </div>
+      </ERPToolbar>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="mb-3 grid grid-cols-2 border-y border-slate-200 bg-white lg:grid-cols-4">
         {[
-          { label: 'Tổng tài khoản', value: users.length, color: 'bg-gray-50 text-gray-700' },
-          { label: 'Đang hoạt động', value: users.filter(u => u.isActive).length, color: 'bg-green-50 text-green-700' },
-          { label: 'Đã khóa', value: users.filter(u => !u.isActive).length, color: 'bg-red-50 text-red-700' },
-          { label: 'Vai trò', value: Object.keys(ROLE_MAP).length, color: 'bg-purple-50 text-purple-700' },
+          { label: t('users.stats.total'), value: stats?.total ?? '—', valueClass: 'text-slate-900' },
+          { label: t('users.stats.active'), value: stats?.active ?? '—', valueClass: 'text-emerald-700' },
+          { label: t('users.stats.locked'), value: stats?.locked ?? '—', valueClass: 'text-red-700' },
+          { label: t('users.stats.roles'), value: Object.keys(ROLE_MAP).length, valueClass: 'text-indigo-700' },
         ].map((s, i) => (
-          <div key={i} className={`${s.color} rounded-xl p-3 text-center`}>
-            <div className="text-2xl font-bold">{s.value}</div>
-            <div className="text-xs opacity-70 mt-0.5">{s.label}</div>
+          <div key={i} className="border-b border-slate-100 px-4 py-2.5 last:border-r-0 odd:border-r lg:border-b-0 lg:border-r">
+            <div className={`text-xl font-semibold tabular-nums ${s.valueClass}`}>{s.value}</div>
+            <div className="mt-0.5 text-xs text-slate-500">{s.label}</div>
           </div>
         ))}
       </div>
 
       {isLoading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : isError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+          <p className="mb-3 text-sm text-red-700">{t('users.loadError')}</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>{t('users.retry')}</Button>
+        </div>
       ) : (
-        <div className="bg-white rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border bg-white">
+          <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Họ tên</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Phòng ban</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Vai trò</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                <th className="px-4 py-3 w-10" />
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.fullName')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.email')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.department')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.role')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.mallAccess')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('users.table.status')}</th>
+                <th className="px-4 py-3 w-36" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((u) => {
+              {users.map((u) => {
                 const roleInfo = ROLE_MAP[u.role] ?? { label: u.role, color: 'bg-gray-100 text-gray-700' };
                 return (
                   <tr key={u.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedUser(u)}>
                     <td className="px-4 py-3 font-medium">{u.fullName}</td>
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{(u as any).department ?? '—'}</td>
-                    <td className="px-4 py-3"><Badge className={`${roleInfo.color} border-0 text-xs`}>{roleInfo.label}</Badge></td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.departmentInfo?.name ?? tDepartments('missingInformation')}</td>
+                    <td className="px-4 py-2.5"><Badge className={`${roleInfo.color} border-0 text-xs`}>{t(adminRoleTranslationKey(u.role))}</Badge></td>
+                    <td className="px-4 py-3"><MallAccessCell user={u} /></td>
                     <td className="px-4 py-3">
                       <Badge className={u.isActive ? 'bg-green-100 text-green-700 border-0 text-xs' : 'bg-gray-100 text-gray-500 border-0 text-xs'}>
-                        {u.isActive ? 'Hoạt động' : 'Đã khóa'}
+                        {t(accountStatusTranslationKey(u.isActive))}
                       </Badge>
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); setSelectedUser(u); }}>
-                        <Pencil size={13} className="text-gray-400" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Chỉnh sửa thông tin" onClick={(e) => { e.stopPropagation(); setSelectedUser(u); }}>
+                          <Pencil size={13} className="text-gray-400" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Đặt lại mật khẩu" onClick={(e) => { e.stopPropagation(); setResetPwdUser(u); }}>
+                          <KeyRound size={13} className="text-gray-400" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                          title={u.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                          disabled={togglingId === u.id}
+                          onClick={(e) => { e.stopPropagation(); setTogglingId(u.id); toggleMutation.mutate(u); }}>
+                          {togglingId === u.id
+                            ? <RefreshCw size={13} className="animate-spin text-gray-400" />
+                            : u.isActive ? <Lock size={13} className="text-orange-400" /> : <Unlock size={13} className="text-green-500" />}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" title="Xóa tài khoản"
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteUser(u); }}>
+                          <Trash2 size={13} className="text-red-400" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
+          {users.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <Users size={36} className="mx-auto mb-2 opacity-20" />
-              <p className="text-sm">Không tìm thấy tài khoản nào</p>
+              <p className="text-sm">{t('users.noResults')}</p>
             </div>
           )}
         </div>
       )}
 
-      <CreateUserDialog open={showCreate} onClose={() => setShowCreate(false)} />
-      <UserDetailSheet user={selectedUser} onClose={() => setSelectedUser(null)} />
+      {!isLoading && !isError && totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
+          <span>{t('users.pagination', { total: data?.total ?? 0, page, totalPages })}</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>{t('users.prev')}</Button>
+            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>{t('users.next')}</Button>
+          </div>
+        </div>
+      )}
+
+      <ResetPasswordDialog user={resetPwdUser} onClose={() => setResetPwdUser(null)} />
+      <ConfirmDialog
+        open={!!confirmDeleteUser}
+        title={t('users.confirmDelete')}
+        message={t('users.confirmDeleteMessage', { name: confirmDeleteUser?.fullName })}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setConfirmDeleteUser(null)}
+        loading={deleteMutation.isPending}
+      />
+      <UserDialog
+        open={showCreate || !!selectedUser}
+        user={selectedUser}
+        onClose={() => { setShowCreate(false); setSelectedUser(null); }}
+      />
     </div>
   );
 }
@@ -626,7 +935,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
   const { register, handleSubmit, reset } = useForm();
 
   useEffect(() => {
-    if (open) reset(mall ?? { name: '', code: '', address: '', city: '', totalArea: '', description: '' });
+    if (open) reset(mall ? { name: mall.name, code: mall.code, address: mall.address, city: mall.city, totalArea: mall.totalArea, description: mall.description } : { name: '', code: '', address: '', city: '', totalArea: '', description: '' });
   }, [open, mall]);
 
   const mutation = useMutation({
@@ -860,7 +1169,7 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
             title="Xem và quản lý mặt bằng của tầng này trong Spaces"
             onClick={() => {
               setSelectedMall(mallId);
-              navigate(`/spaces?floorId=${floor.id}`);
+              navigate(`/spaces?floor=${floor.id}`);
             }}
           >
             <ExternalLink size={11} /> Xem trong Spaces
@@ -943,15 +1252,11 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
 function SpaceStructureTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [showAddFloor, setShowAddFloor] = useState(false);
   const { register, handleSubmit, reset } = useForm();
-
-  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: any[] = mallsData?.data ?? mallsData ?? [];
-
-  // Auto-select first mall
-  if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
 
   const { data: floorsData } = useQuery({
     queryKey: ['floors', selectedMallId],
@@ -968,7 +1273,7 @@ function SpaceStructureTab() {
   const zones: any[] = zonesData?.data ?? zonesData ?? [];
 
   const createFloorMutation = useMutation({
-    mutationFn: (d: any) => spacesApi.createFloor({ mallId: selectedMallId, ...d }),
+    mutationFn: (d: any) => spacesApi.createFloor({ mallId: selectedMallId, ...d, sortOrder: Number(d.sortOrder) || 0 }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['floors', selectedMallId] }); toast({ title: 'Đã tạo tầng' }); setShowAddFloor(false); reset(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
@@ -977,13 +1282,13 @@ function SpaceStructureTab() {
 
   return (
     <div>
-      {/* Mall selector */}
       <div className="flex items-center gap-3 mb-5">
-        <Label className="shrink-0 text-sm">Chọn Mall:</Label>
-        <select value={selectedMallId} onChange={(e) => setSelectedMallId(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white flex-1 max-w-xs">
-          {malls.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        <Button onClick={() => setShowAddFloor(true)} className="gap-2 ml-auto"><Plus size={15} /> Thêm tầng</Button>
+        <Label className="shrink-0 text-sm">Mall hiện tại:</Label>
+        <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm">{selectedMallName}</div>
+        <Button
+          onClick={() => selectedMallId ? setShowAddFloor(true) : openMallContextModal()}
+          className="gap-2 ml-auto"
+        ><Plus size={15} /> Thêm tầng</Button>
       </div>
 
       {/* Add floor form */}
@@ -1015,23 +1320,24 @@ function SpaceStructureTab() {
 // ─── Tab 4: Permissions Matrix ────────────────────────────────────────────────
 
 function PermissionsTab() {
+  const { t } = useTranslation('admin');
   const roles = ROLE_KEYS;
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-xl text-sm text-gray-700">
+      <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <Info size={14} className="shrink-0" />
-        Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code (<code className="text-xs bg-white px-1 rounded border">role-permissions.ts</code> và <code className="text-xs bg-white px-1 rounded border">lib/permissions.ts</code>) và triển khai lại.
+        {t('readOnlyNote')}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="text-left px-3 py-2.5 bg-gray-50 border-b border-r font-medium text-gray-600 sticky left-0 z-10 min-w-36">Chức năng</th>
+              <th className="text-left px-3 py-2.5 bg-gray-50 border-b border-r font-medium text-gray-600 sticky left-0 z-10 min-w-36">{t('permissions.feature')}</th>
               {roles.map((role) => {
                 const r = ROLE_MAP[role];
                 return (
                   <th key={role} className="px-2 py-2.5 bg-gray-50 border-b border-r font-medium text-center min-w-20">
-                    <div className={`text-xs px-1.5 py-0.5 rounded-full ${r.color} whitespace-nowrap`}>{r.label}</div>
+                    <div className={`text-xs px-1.5 py-0.5 rounded-full ${r.color} whitespace-nowrap`}>{t(adminRoleTranslationKey(role))}</div>
                   </th>
                 );
               })}
@@ -1064,8 +1370,8 @@ function PermissionsTab() {
           const r = ROLE_MAP[k];
           return (
             <div key={k} className="flex items-start gap-2.5 p-3 bg-white border border-gray-100 rounded-xl">
-              <Badge className={`${r.color} border-0 shrink-0 mt-0.5`}>{r.label}</Badge>
-              <p className="text-xs text-gray-500">{r.desc}</p>
+              <Badge className={`${r.color} border-0 shrink-0 mt-0.5`}>{t(adminRoleTranslationKey(k))}</Badge>
+              <p className="text-xs text-gray-500">{t(`users.roleDescriptions.${k}`, { defaultValue: r.desc })}</p>
             </div>
           );
         })}
@@ -1109,11 +1415,13 @@ function BrandingCard() {
   const removeLogoMutation = useMutation({
     mutationFn: brandingApi.removeLogo,
     onSuccess: () => { invalidate(); toast({ title: 'Đã xoá logo' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xoá logo', variant: 'destructive' }),
   });
 
   const removeBgMutation = useMutation({
     mutationFn: brandingApi.removeBackground,
     onSuccess: () => { invalidate(); toast({ title: 'Đã xoá ảnh nền' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể xoá ảnh nền', variant: 'destructive' }),
   });
 
   return (
@@ -1187,205 +1495,116 @@ function BrandingCard() {
   );
 }
 
-// ─── Tab 5: System Settings ───────────────────────────────────────────────────
-
-function SystemTab() {
-  const { toast } = useToast();
-  const [anthropicKey, setAnthropicKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-
-  const { data: healthData } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => fetch('/api/health').then((r) => r.json()),
-    refetchInterval: 30000,
-  });
-
-  const configItems = [
-    {
-      label: 'ANTHROPIC_API_KEY',
-      desc: 'Khóa API để dùng Claude Vision phân tích bản vẽ sơ đồ thực tế',
-      status: 'Chưa cấu hình — đang dùng chế độ Demo',
-      statusColor: 'text-amber-600',
-      action: (
-        <div className="mt-2 flex gap-2">
-          <Input
-            type={showKey ? 'text' : 'password'}
-            value={anthropicKey}
-            onChange={(e) => setAnthropicKey(e.target.value)}
-            placeholder="sk-ant-api03-..."
-            className="flex-1 text-xs"
-          />
-          <Button size="sm" variant="outline" onClick={() => setShowKey(!showKey)} className="shrink-0 px-2">
-            {showKey ? '🙈' : '👁'}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              toast({ title: 'Lưu ý: Cần thêm vào file .env và rebuild Docker backend để có hiệu lực', });
-              setAnthropicKey('');
-            }}
-            disabled={!anthropicKey}
-          >
-            Lưu
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
-  const systemInfo = [
-    { label: 'Backend', value: 'NestJS 10 + Prisma 5', icon: <Globe size={14} /> },
-    { label: 'Database', value: 'PostgreSQL 16', icon: <Globe size={14} /> },
-    { label: 'Frontend', value: 'React 18 + Vite + TailwindCSS', icon: <Globe size={14} /> },
-    { label: 'AI Model', value: 'Claude claude-sonnet-4-6 (Anthropic)', icon: <Globe size={14} /> },
-    { label: 'Auth', value: 'JWT Bearer Token (7 ngày)', icon: <Shield size={14} /> },
-    { label: 'Approval Flow', value: '≤5% → Manager | ≤10% → Manager+Director | >10% → +CEO', icon: <CheckCircle size={14} /> },
-  ];
-
-  return (
-    <div className="space-y-5">
-      <BrandingCard />
-
-      {/* Server health */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className={`w-2 h-2 rounded-full ${healthData ? 'bg-green-500' : 'bg-gray-300'}`} />
-          <h3 className="font-semibold text-gray-900 text-sm">Trạng thái hệ thống</h3>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {['Backend API', 'Database', 'Frontend'].map((s, i) => (
-            <div key={i} className="flex items-center gap-2 p-2.5 bg-green-50 rounded-lg">
-              <CheckCircle size={14} className="text-green-500" />
-              <span className="text-xs text-green-700">{s}: Online</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* API Configuration */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Cấu hình API</h3>
-        {configItems.map((item, i) => (
-          <div key={i} className="p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs font-mono font-bold text-gray-800">{item.label}</div>
-                <div className="text-xs text-gray-500 mt-0.5">{item.desc}</div>
-                <div className={`text-xs font-medium mt-1 ${item.statusColor}`}>{item.status}</div>
-              </div>
-            </div>
-            {item.action}
-          </div>
-        ))}
-        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-2">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-          <span>Để áp dụng thay đổi API key: thêm vào <code className="font-mono">apps/backend/.env</code> rồi chạy <code className="font-mono">docker compose up -d --build backend</code></span>
-        </div>
-      </div>
-
-      {/* System info */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Thông tin hệ thống</h3>
-        <div className="space-y-2">
-          {systemInfo.map((info, i) => (
-            <div key={i} className="flex items-center gap-3 py-1.5 border-b border-gray-50 last:border-0">
-              <span className="text-gray-400">{info.icon}</span>
-              <span className="text-xs text-gray-500 w-32 shrink-0">{info.label}</span>
-              <span className="text-xs text-gray-800 font-medium">{info.value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Approval thresholds */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-3">Cấu hình phê duyệt Proposal</h3>
-        <div className="space-y-2">
-          {[
-            { range: 'Discount ≤ 5%', path: 'Leasing Manager', color: 'bg-gray-50 text-gray-700' },
-            { range: 'Discount 5–10%', path: 'Leasing Manager → Mall Director', color: 'bg-yellow-50 text-yellow-700' },
-            { range: 'Discount > 10% hoặc Rent-Free > 60 ngày', path: 'Leasing Manager → Mall Director → CEO', color: 'bg-red-50 text-red-700' },
-            { range: 'Mọi proposal', path: '+ Finance + Legal (song song)', color: 'bg-purple-50 text-purple-700' },
-          ].map((a, i) => (
-            <div key={i} className={`flex items-start gap-2 p-2.5 rounded-lg ${a.color}`}>
-              <ChevronRight size={12} className="mt-0.5 shrink-0" />
-              <div>
-                <div className="text-xs font-medium">{a.range}</div>
-                <div className="text-xs opacity-70">→ {a.path}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main AdminPage ────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'users',       label: 'Tài khoản',         icon: Users },
-  { id: 'malls',       label: 'Mall',               icon: Building2 },
-  { id: 'mall-access', label: 'Quyền Mall',         icon: Shield },
-  { id: 'structure',   label: 'Cấu trúc không gian', icon: Layers },
-  { id: 'categories',  label: 'Ngành hàng & Giá',  icon: SquareStack },
-  { id: 'permissions', label: 'Phân quyền',         icon: Shield },
-  { id: 'approval',    label: 'Approval Policy',    icon: GitBranch },
-  { id: 'system',      label: 'Hệ thống',           icon: Settings },
+  { id: 'users',       labelKey: 'tabs.users',       icon: Users },
+  { id: 'malls',       labelKey: 'tabs.malls',       icon: Building2 },
+  { id: 'mall-access', labelKey: 'tabs.mallAccess',  icon: Shield },
+  { id: 'departments', labelKey: 'tabs.departments', icon: Building2 },
+  { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
+  { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
+  { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
+  { id: 'approval',    labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'system',      labelKey: 'tabs.system',      icon: Settings },
+];
+
+const TAB_GROUPS = [
+  { labelKey: 'tabGroups.userAccess', ids: ['users', 'mall-access', 'permissions'] },
+  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'departments', 'structure'] },
+  { labelKey: 'tabGroups.categories', ids: ['categories'] },
+  { labelKey: 'tabGroups.process', ids: ['approval'] },
+  { labelKey: 'tabGroups.platform', ids: ['system'] },
 ];
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState('users');
+  const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
+  const { user } = useAuthStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isFullAdmin = user?.role === 'ADMIN';
+  const availableTabs = isFullAdmin ? TABS : TABS.filter((tab) => tab.id === 'departments');
+  const requestedSection = searchParams.get('section');
+  const activeTab = availableTabs.some((tab) => tab.id === requestedSection)
+    ? requestedSection!
+    : availableTabs[0]?.id ?? 'departments';
+  const selectTab = (id: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('section', id);
+    setSearchParams(next, { replace: true });
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-slate-900 p-2.5 rounded-xl">
-          <Settings size={20} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cấu hình Hệ thống</h1>
-          <p className="text-sm text-gray-500">Quản lý tài khoản, mall, không gian và phân quyền</p>
-        </div>
-        <div className="ml-auto">
-          <Badge className="bg-red-100 text-red-700 border-0 px-3 py-1">
-            <Shield size={12} className="mr-1.5" /> Super Admin
-          </Badge>
-        </div>
-      </div>
+    <div className="flex h-full flex-col">
+      <PageHeader
+        className="mb-4 border-b border-slate-200 pb-4"
+        eyebrow={t('erpControlCenter')}
+        title={isFullAdmin ? t('systemConfig') : tDepartments('title')}
+        description={isFullAdmin ? t('systemConfigDesc') : tDepartments('description')}
+        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t(adminRoleTranslationKey(user?.role ?? ''))}</Badge>}
+      />
 
-      {/* Tab bar */}
-      <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
-        {TABS.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
-                activeTab === tab.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-white/50'
-              }`}
-            >
-              <Icon size={15} />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Mobile select */}
+      <label htmlFor="admin-section" className="sr-only">Chọn khu vực cấu hình</label>
+      <select
+        id="admin-section"
+        value={activeTab}
+        onChange={(event) => selectTab(event.target.value)}
+        className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
+      >
+        {availableTabs.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
+      </select>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === 'users'       && <UsersTab />}
-        {activeTab === 'malls'       && <MallsTab />}
-        {activeTab === 'mall-access' && <MallAccessTab />}
-        {activeTab === 'structure'   && <SpaceStructureTab />}
-        {activeTab === 'categories'  && <CategoriesTab />}
-        {activeTab === 'permissions' && <PermissionsTab />}
-        {activeTab === 'approval'    && <ApprovalPolicyTab />}
-        {activeTab === 'system'      && <SystemTab />}
+      {/* Sidebar + content */}
+      <div className="flex min-h-0 flex-1 gap-5 overflow-hidden">
+        {/* Sidebar */}
+        <nav className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200 pr-3 sm:flex">
+          {TAB_GROUPS.filter((group) => availableTabs.some((tab) => group.ids.includes(tab.id))).map((group) => (
+            <div key={group.labelKey} className="mb-4">
+              <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t(group.labelKey)}</div>
+              <div className="flex flex-col gap-0.5">
+                {availableTabs.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => selectTab(tab.id)}
+                      aria-current={activeTab === tab.id ? 'page' : undefined}
+                      className={`flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-sm font-medium transition-all text-left ${
+                        activeTab === tab.id
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                      }`}
+                    >
+                      <Icon size={15} />
+                      <span>{t(tab.labelKey)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Content */}
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <div className="mb-3 border-b border-slate-200 pb-3">
+            <p className="text-sm font-semibold text-slate-900">{t(TABS.find((tab) => tab.id === activeTab)?.labelKey ?? '')}</p>
+            <p className="mt-0.5 text-xs text-slate-600">{t(`tabDescriptions.${activeTab}`)}</p>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+            {activeTab === 'users'       && <UsersTab />}
+            {activeTab === 'malls'       && <MallsTab />}
+            {activeTab === 'mall-access' && <MallAccessTab />}
+            {activeTab === 'departments' && <DepartmentsTab />}
+            {activeTab === 'structure'   && <SpaceStructureTab />}
+            {activeTab === 'categories'  && <CategoriesTab />}
+            {activeTab === 'permissions' && <PermissionsTab />}
+            {activeTab === 'approval'    && <ApprovalPolicyTab />}
+            {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><OperationalSystemTab /></div>}
+          </div>
+        </div>
       </div>
     </div>
   );

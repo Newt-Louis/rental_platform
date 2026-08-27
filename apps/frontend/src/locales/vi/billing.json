@@ -1,0 +1,301 @@
+{
+  "title": "Billing & AR",
+  "invoice": {
+    "create": "Tạo hóa đơn",
+    "edit": "Chỉnh sửa",
+    "detail": "Chi tiết hóa đơn",
+    "status": {
+      "DRAFT": "Bản nháp",
+      "ISSUED": "Đã gửi khách",
+      "PARTIALLY_PAID": "Thanh toán 1 phần",
+      "PAID": "Đã thanh toán",
+      "OVERDUE": "Quá hạn",
+      "CANCELLED": "Hủy"
+    },
+    "lineType": {
+      "RENT": "Tiền thuê mặt bằng",
+      "CAM": "Phí quản lý (CAM)",
+      "DEPOSIT": "Đặt cọc",
+      "ELECTRICITY": "Tiền điện",
+      "WATER": "Tiền nước",
+      "MANAGEMENT_FEE": "Phí quản lý bổ sung",
+      "PARKING": "Phí đỗ xe",
+      "CLEANING": "Phí vệ sinh",
+      "SECURITY": "Phí bảo vệ",
+      "MARKETING_FEE": "Phí marketing",
+      "OTHER": "Chi phí khác"
+    },
+    "fields": {
+      "invoiceNo": "Số hóa đơn",
+      "tenant": "Khách thuê",
+      "unit": "Mặt bằng",
+      "period": "Kỳ thanh toán",
+      "dueDate": "Hạn thanh toán",
+      "amount": "Tổng tiền",
+      "paidAmount": "Đã thu",
+      "remainingAmount": "Còn lại",
+      "issuedAt": "Ngày gửi",
+      "paidAt": "Ngày thanh toán"
+    },
+    "actions": {
+      "issue": "Gửi hóa đơn",
+      "recordPayment": "Ghi nhận thanh toán",
+      "cancel": "Hủy hóa đơn",
+      "sendReminder": "Gửi nhắc thanh toán",
+      "generateAll": "Tạo hàng loạt"
+    }
+  },
+  "filters": {
+    "search": "Tìm số HĐ, khách thuê...",
+    "status": "Trạng thái",
+    "period": "Kỳ",
+    "allStatuses": "Tất cả trạng thái"
+  },
+  "tabs": {
+    "invoices": "Hóa đơn",
+    "arAging": "Tuổi nợ",
+    "schedule": "Lịch lập hóa đơn",
+    "dunning": "Nhắc nợ",
+    "kpi": "Hiệu quả thu hồi"
+  },
+  "stats": {
+    "totalInvoices": "Tổng hóa đơn",
+    "collected": "Đã thu",
+    "overdue": "Quá hạn",
+    "collectionRate": "Tỷ lệ thu"
+  },
+  "dunning": {
+    "title": "Nhắc nợ tự động",
+    "level1": "Nhắc lần 1",
+    "level2": "Nhắc lần 2",
+    "level3": "Nhắc lần 3 (Khẩn)"
+  },
+  "arAging": {
+    "title": "AR Aging",
+    "current": "Hiện tại",
+    "days30": "1-30 ngày",
+    "days60": "31-60 ngày",
+    "days90": "61-90 ngày",
+    "over90": "Trên 90 ngày",
+    "tenant": "Khách thuê",
+    "total": "Tổng",
+    "grandTotal": "Tổng cộng"
+  },
+  "sales": {
+    "title": "Doanh thu",
+    "tenant": "Doanh thu tenant",
+    "period": "Kỳ báo cáo",
+    "submitSales": "Nhập doanh thu"
+  },
+  "workflow": {
+    "step1Label": "Hệ thống tạo\nbản draft",
+    "step1Desc": "Theo chu kỳ hợp đồng",
+    "step2Label": "Vận hành bổ sung\nchi phí biến đổi",
+    "step2Desc": "Điện, nước, dịch vụ",
+    "step3Label": "Gửi cho\nkhách hàng",
+    "step3Desc": "Issue → ISSUED",
+    "step4Label": "Kế toán ghi nhận\nthanh toán",
+    "step4Desc": "Thu tiền → PAID",
+    "stepCreate": "Tạo draft",
+    "stepAddCosts": "Thêm chi phí",
+    "stepSend": "Gửi khách",
+    "stepCollect": "Thu tiền"
+  },
+  "detail": {
+    "viewContract": "Xem hợp đồng {{number}}",
+    "fixedCosts": "Chi phí cố định",
+    "variableCosts": "Chi phí biến đổi",
+    "noFixedLines": "Chưa có dòng chi phí cố định",
+    "noVariableLinesDraft": "Chưa có chi phí biến đổi — Bấm \"Thêm chi phí\" để nhập điện/nước/dịch vụ",
+    "noVariableLinesIssued": "Không có chi phí biến đổi trong kỳ này",
+    "addCostLine": "Thêm dòng chi phí",
+    "addCost": "Thêm chi phí",
+    "fixedBadge": "cố định",
+    "description": "Mô tả",
+    "descriptionPlaceholder": "Mô tả (vd: Điện tháng 6/2026)",
+    "qty": "SL",
+    "unitPrice": "Đơn giá",
+    "amount": "Thành tiền",
+    "content": "Nội dung",
+    "totalSection": "Tổng cộng",
+    "subtotal": "Subtotal",
+    "vat": "VAT ({{rate}}%)",
+    "paid": "Đã thanh toán",
+    "remaining": "Còn lại",
+    "paymentHistory": "Lịch sử thanh toán",
+    "reversed": "Đã đảo: {{reason}}",
+    "reversePayment": "Đảo bút toán",
+    "checkBeforeSend": "Kiểm tra và bổ sung các chi phí biến đổi trước khi gửi khách",
+    "issueAndSend": "Phát hành & Gửi khách hàng",
+    "issuing": "Đang phát hành...",
+    "fullAmountFill": "Điền đủ số tiền còn lại ({{amount}})",
+    "invoicePaidFull": "Hóa đơn đã thanh toán đầy đủ",
+    "cancelledReason": "Đã hủy — lý do: {{reason}}",
+    "qtyLabel": "Số lượng",
+    "unitPriceLabel": "Đơn giá ({{currency}})",
+    "subtotalPreview": "Thành tiền: {{amount}}",
+    "paymentAmount": "Số tiền thanh toán *",
+    "paymentMethod": "Phương thức",
+    "paymentReference": "Mã tham chiếu / Số GD",
+    "paymentDate": "Ngày thanh toán",
+    "paymentNotes": "Ghi chú",
+    "paymentNotesPlaceholder": "Thanh toán đợt 1...",
+    "confirmPayment": "Xác nhận thanh toán",
+    "saving": "Đang lưu..."
+  },
+  "paymentMethod": {
+    "BANK_TRANSFER": "Chuyển khoản ngân hàng",
+    "CASH": "Tiền mặt",
+    "CHEQUE": "Séc",
+    "ONLINE": "Thanh toán trực tuyến"
+  },
+  "confirmIssue": {
+    "title": "Phát hành hóa đơn?",
+    "description": "Hóa đơn sẽ được khóa nội dung và gửi thông báo cho khách thuê. Hãy kiểm tra các dòng chi phí, thuế và hạn thanh toán trước khi tiếp tục.",
+    "confirm": "Phát hành hóa đơn",
+    "loading": "Đang phát hành..."
+  },
+  "confirmRemoveLine": {
+    "title": "Xóa dòng chi phí?",
+    "description": "Tổng tiền và thuế của hóa đơn sẽ được tính lại. Chỉ nên xóa khi dòng chi phí được thêm nhầm.",
+    "confirm": "Xóa dòng chi phí",
+    "loading": "Đang xóa..."
+  },
+  "toast": {
+    "paymentRecorded": "Đã ghi nhận thanh toán",
+    "lineAdded": "Đã thêm chi phí",
+    "lineUpdated": "Đã cập nhật",
+    "lineRemoved": "Đã xóa dòng chi phí",
+    "invoiceIssued": "Đã phát hành hóa đơn — Thông báo gửi khách hàng",
+    "invoiceVoided": "Đã hủy hóa đơn",
+    "paymentReversed": "Đã đảo bút toán thanh toán",
+    "exportError": "Lỗi xuất file"
+  },
+  "list": {
+    "invoiceNo": "Số HĐ",
+    "tenant": "Khách thuê",
+    "period": "Kỳ",
+    "type": "Loại",
+    "totalAmount": "Tổng tiền",
+    "dueDate": "Hạn TT",
+    "status": "Trạng thái",
+    "draftsNeedAttention": "{{count}} bản nháp cần xử lý chi phí",
+    "overdueInvoices": "{{count}} hóa đơn quá hạn",
+    "pendingCollection": "{{count}} chờ thu tiền",
+    "searchPlaceholder": "Tìm số hóa đơn, khách thuê...",
+    "exporting": "Đang xuất...",
+    "noInvoices": "Chưa có hóa đơn nào",
+    "noInvoicesHint": "Hóa đơn được tạo tự động theo lịch thu phí, hoặc từ mục \"Chờ xử lý\" phía trên.",
+    "noInvoicesFiltered": "Không có hóa đơn phù hợp bộ lọc",
+    "noInvoicesFilteredHint": "Hãy thay đổi từ khóa hoặc bộ lọc.",
+    "clearFilters": "Xóa bộ lọc"
+  },
+  "header": {
+    "eyebrow": "Vận hành tài chính",
+    "title": "Hóa đơn và thu tiền",
+    "subtitle": "Theo dõi hóa đơn, công nợ và thu tiền theo đúng trạng thái nghiệp vụ.",
+    "collectionRate": "Tỷ lệ thu",
+    "dso": "DSO",
+    "dsoUnit": "ngày",
+    "arOutstanding": "AR còn lại",
+    "operationsCenter": "Trung tâm điều hành Billing",
+    "selectStep": "Ưu tiên hóa đơn cần xử lý, kiểm tra công nợ và mở chi tiết theo ngữ cảnh"
+  },
+  "voidDialog": {
+    "title": "Hủy hóa đơn",
+    "description": "Thao tác ảnh hưởng đến công nợ và sẽ được lưu trong lịch sử kiểm toán.",
+    "confirm": "Xác nhận"
+  },
+  "reverseDialog": {
+    "title": "Đảo bút toán thanh toán",
+    "description": "Thao tác ảnh hưởng đến công nợ và sẽ được lưu trong lịch sử kiểm toán.",
+    "confirm": "Xác nhận"
+  },
+  "noInvoices": "Không có hóa đơn nào",
+  "createSuccess": "Tạo hóa đơn thành công",
+  "issueSuccess": "Đã gửi hóa đơn cho khách",
+  "paymentSuccess": "Ghi nhận thanh toán thành công",
+  "addIn": {
+    "title": "Add-in kỳ thu phí",
+    "eyebrow": "Billing · Vận hành",
+    "description": "Danh sách hợp đồng cần Vận hành (P.CSKT) nhập số liệu biến động trước khi Kế toán lập hoá đơn: Phụ thu Phí Quản Lý, Tiền Điện/Nước, Điện lạnh ngoài giờ.",
+    "chargeType": {
+      "MANAGEMENT_FEE_SURCHARGE": "Phụ thu Phí Quản Lý",
+      "UTILITY": "Điện, Nước",
+      "AFTER_HOURS_COOLING": "Điện lạnh ngoài giờ"
+    },
+    "status": {
+      "PENDING": "Chưa nhập",
+      "DRAFT": "Đã nhập chờ chốt",
+      "CONFIRMED": "Đã chốt",
+      "NO_CHARGE": "Không phát sinh",
+      "INVOICED": "Đã lập hoá đơn"
+    },
+    "leaseCategory": {
+      "OFFICE": "Văn phòng",
+      "MALL": "TTTM"
+    },
+    "filters": {
+      "allChargeTypes": "Tất cả loại phí",
+      "allStatuses": "Tất cả trạng thái",
+      "search": "Tìm theo mã HĐT, khách thuê..."
+    },
+    "columns": {
+      "contract": "Mã HĐT",
+      "tenant": "Khách thuê",
+      "leaseCategory": "Loại HĐT",
+      "chargeType": "Loại phí",
+      "period": "Kỳ",
+      "status": "Trạng thái",
+      "assignee": "Người phụ trách",
+      "dueDate": "Hạn xử lý"
+    },
+    "actions": {
+      "enterNow": "Nhập ngay",
+      "enterData": "Nhập liệu",
+      "viewAndConfirm": "Xem & Chốt",
+      "viewDetail": "Xem chi tiết",
+      "viewInvoice": "Xem hoá đơn"
+    },
+    "form": {
+      "title": "Nhập số liệu add-in",
+      "area": "Diện tích thuê",
+      "norm": "Định mức Access Control",
+      "maxHeadcount": "Số người tối đa theo định mức",
+      "headcount": "Số nhân sự đăng ký thực tế",
+      "headcountHint": "Theo số thẻ Access Control đã cấp trong kỳ",
+      "excess": "Số nhân sự vượt định mức",
+      "surchargeUnitPrice": "Đơn giá phụ thu / người",
+      "surchargeAmount": "Thành tiền Phụ thu Phí Quản Lý",
+      "elecStart": "Chỉ số điện đầu kỳ (kWh)",
+      "elecEnd": "Chỉ số điện cuối kỳ (kWh)",
+      "elecEndHint": "Do Kỹ thuật toà nhà chốt hàng tháng",
+      "waterStart": "Chỉ số nước đầu kỳ (m³)",
+      "waterEnd": "Chỉ số nước cuối kỳ (m³)",
+      "consumption": "Tiêu thụ",
+      "utilityAmount": "Tổng tiền Điện + Nước",
+      "hours": "Số giờ chạy ngoài giờ",
+      "hoursHint": "Kỹ thuật toà nhà xác nhận theo yêu cầu phát sinh",
+      "hoursUnitPrice": "Đơn giá / giờ",
+      "hoursAmount": "Thành tiền Điện lạnh ngoài giờ",
+      "notes": "Ghi chú",
+      "notesPlaceholder": "Ghi chú thêm cho kế toán (nếu có)...",
+      "noCharge": "Xác nhận không phát sinh kỳ này",
+      "saveDraft": "Lưu nháp",
+      "continueConfirm": "Tiếp tục · Chốt số liệu"
+    },
+    "confirmPopup": {
+      "title": "Xác nhận chốt số liệu kỳ {{period}}",
+      "total": "Tổng cộng kỳ này",
+      "warning": "Sau khi chốt, số liệu sẽ chuyển cho Kế toán để lập hoá đơn và không thể tự sửa trực tiếp — mọi thay đổi sau đó cần tạo Phụ lục điều chỉnh (Amendment).",
+      "back": "Quay lại chỉnh sửa",
+      "confirm": "Xác nhận Chốt"
+    },
+    "toast": {
+      "draftSaved": "Đã lưu số liệu nháp",
+      "noChargeConfirmed": "Đã xác nhận kỳ này không phát sinh",
+      "confirmed": "Đã chốt số liệu — sẵn sàng cho Kế toán",
+      "reopened": "Đã mở lại kỳ để chỉnh sửa"
+    }
+  }
+}

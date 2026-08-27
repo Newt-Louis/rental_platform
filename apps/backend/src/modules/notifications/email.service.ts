@@ -7,6 +7,9 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: Transporter | null = null;
   private enabled = false;
+  private readonly maxAttempts = this.envNumber('EMAIL_MAX_ATTEMPTS', 3, 1);
+  private readonly retryBaseMs = this.envNumber('EMAIL_RETRY_BASE_MS', 250, 0);
+  private readonly timeoutMs = this.envNumber('EMAIL_TIMEOUT_MS', 15_000, 100);
 
   constructor() {
     const host = process.env.SMTP_HOST;
@@ -19,7 +22,13 @@ export class EmailService {
         port: Number(process.env.SMTP_PORT ?? 587),
         secure: process.env.SMTP_SECURE === 'true',
         auth: { user, pass },
-        tls: { rejectUnauthorized: false },
+        connectionTimeout: this.timeoutMs,
+        greetingTimeout: this.timeoutMs,
+        socketTimeout: this.timeoutMs,
+        tls: {
+          rejectUnauthorized:
+            process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
+        },
       });
       this.enabled = true;
       this.logger.log(`Email service enabled (${host}:${process.env.SMTP_PORT ?? 587})`);
@@ -34,20 +43,45 @@ export class EmailService {
       return { skipped: true };
     }
 
-    try {
-      const info = await this.transporter.sendMail({
-        from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
-        to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
-        cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc.join(',') : opts.cc) : undefined,
-        subject: opts.subject,
-        html: opts.html,
-      });
-      this.logger.log(`Email sent to ${opts.to}: ${info.messageId}`);
-      return { messageId: info.messageId };
-    } catch (error) {
-      this.logger.error(`Failed to send email to ${opts.to}: ${error.message}`);
-      throw error;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      try {
+        const info = await this.transporter.sendMail({
+          from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
+          to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
+          cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc.join(',') : opts.cc) : undefined,
+          subject: opts.subject,
+          html: opts.html,
+        });
+        this.logger.log(`Email sent to ${opts.to}: ${info.messageId}`);
+        return { messageId: info.messageId };
+      } catch (error) {
+        lastError = error;
+        if (!this.isTransient(error) || attempt === this.maxAttempts) break;
+        await this.delay(this.retryBaseMs * 2 ** (attempt - 1));
+      }
     }
+
+    const error = lastError instanceof Error ? lastError : new Error('Email delivery failed');
+    this.logger.error(`Failed to send email to ${opts.to}: ${error.message}`);
+    throw error;
+  }
+
+  private envNumber(name: string, fallback: number, minimum: number) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value >= minimum ? value : fallback;
+  }
+
+  private isTransient(error: unknown) {
+    const candidate = error as NodeJS.ErrnoException & { responseCode?: number };
+    return ['ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ETIMEDOUT', 'ESOCKET'].includes(
+      candidate?.code ?? '',
+    ) || (candidate?.responseCode !== undefined && candidate.responseCode >= 400
+      && candidate.responseCode < 500);
+  }
+
+  private async delay(ms: number) {
+    if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ─── Templates ─────────────────────────────────────────────────────────────
@@ -188,6 +222,35 @@ export class EmailService {
     <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
     <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
     <p>Liên hệ Finance: <a href="mailto:${data.contactEmail}">${data.contactEmail}</a></p>
+  </div>
+  <div class="footer">THISO Leasing Platform</div>
+</div></body></html>`;
+  }
+
+  invoiceIssuedHtml(data: {
+    tenantName: string;
+    invoiceNumber: string;
+    totalAmount: number;
+    dueDate: string;
+    period: string;
+  }): string {
+    return `
+<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
+  .header { background: #2563eb; color: white; padding: 24px 32px; }
+  .content { padding: 32px; font-size: 14px; color: #374151; }
+  .amount { font-size: 32px; font-weight: bold; color: #2563eb; text-align: center; margin: 20px 0; }
+  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
+</style></head><body>
+<div class="container">
+  <div class="header"><h1 style="margin:0">Hóa đơn mới</h1></div>
+  <div class="content">
+    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
+    <p>Hóa đơn kỳ <strong>${data.period}</strong> đã được phát hành:</p>
+    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
   </div>
   <div class="footer">THISO Leasing Platform</div>
 </div></body></html>`;

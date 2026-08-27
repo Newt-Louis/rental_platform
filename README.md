@@ -44,7 +44,10 @@ cp .env.docker .env
 # 2. Build và khởi động toàn bộ hệ thống
 docker compose up -d --build
 
-# 3. Chạy migration và seed data (lần đầu tiên)
+# 3. Áp dụng migration (BẮT BUỘC mỗi lần deploy có thay đổi schema — không
+#    chỉ lần đầu). Backend container không còn tự chạy migration khi khởi
+#    động (xem docs/reliability/MIGRATION_SAFETY.md) — nếu bỏ qua bước này
+#    sau khi pull code mới, backend sẽ chạy trên schema cũ.
 docker compose --profile migrate up migrate
 
 # 4. Truy cập
@@ -271,3 +274,11 @@ kai update
 
 
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+có cái lệnh này:
+docker compose --env-file .env.build -f docker-compose.build.yml build
+docker compose --env-file .env.build -f docker-compose.build.yml push
+#   docker compose -f docker-compose.uat.yml pull
+#   docker compose -f docker-compose.uat.yml up -d
+
+bash deploy-uat.sh
+\opt\registry\registry_command.sh

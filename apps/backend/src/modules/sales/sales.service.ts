@@ -11,6 +11,17 @@ interface CurrentUser {
 export class SalesService {
   constructor(private prisma: PrismaService) {}
 
+  async getSubmissionUnits(currentUser: CurrentUser) {
+    if (currentUser.role !== 'TENANT' || !currentUser.tenantId) {
+      throw new ForbiddenException('Chỉ tài khoản khách thuê được sử dụng danh sách mặt bằng báo cáo');
+    }
+    return this.prisma.unit.findMany({
+      where: { tenantId: currentUser.tenantId },
+      select: { id: true, code: true, name: true, areaNLA: true },
+      orderBy: { code: 'asc' },
+    });
+  }
+
   async findAll(query: { tenantId?: string; period?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
     const { page = 1, limit = 20, tenantId, period } = query;
     const skip = (page - 1) * +limit;
@@ -52,7 +63,7 @@ export class SalesService {
     });
 
     if (existing) {
-      return this.prisma.salesTurnover.update({
+      const revised = await this.prisma.salesTurnover.update({
         where: { id: existing.id },
         data: {
           grossSales: dto.grossSales,
@@ -64,9 +75,13 @@ export class SalesService {
           status: 'PENDING',
         },
       });
+      await this.prisma.salesAuditTrail.create({
+        data: { salesId: existing.id, action: 'REVISED', oldValue: existing.grossSales, newValue: dto.grossSales, reason: dto.notes, performedById: userId },
+      });
+      return revised;
     }
 
-    return this.prisma.salesTurnover.create({
+    const submitted = await this.prisma.salesTurnover.create({
       data: {
         tenantId: dto.tenantId,
         unitId: dto.unitId,
@@ -79,6 +94,10 @@ export class SalesService {
         recordedById: userId,
       },
     });
+    await this.prisma.salesAuditTrail.create({
+      data: { salesId: submitted.id, action: 'SUBMITTED', oldValue: null, newValue: dto.grossSales, reason: dto.notes, performedById: userId },
+    });
+    return submitted;
   }
 
   async getSummary(period: string, currentUser?: CurrentUser) {

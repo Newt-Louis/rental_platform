@@ -1,1087 +1,559 @@
-import { useState, useRef, useEffect } from 'react';
+import { Fragment, useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { bookingApi, slotsApi, spacesApi, crmApi, customersApi } from '@/api';
+import Selecto from 'react-selecto';
+import { useDragSelect, DRAG_SELECT_CLASS } from '@/hooks/useDragSelect';
+import { BulkSelectionBar } from '@/components/BulkSelectionBar';
+import { bookingApi, slotsApi, spacesApi, authApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { PageHeader } from '@/components/ui/page-header';
+import { AsyncState } from '@/components/ui/async-state';
+import { ERPStatCard, ERPToolbar } from '@/components/erp';
 import {
-  BookmarkCheck, Clock, BookmarkX, ArrowRight, Building2, User, Calendar,
-  ChevronRight, Search, AlertTriangle, DollarSign, RefreshCw,
-  BookmarkPlus, X, FileText, Activity, CalendarDays, Timer, CalendarRange,
-  CheckCircle2, Ban, Hourglass, Plus, ChevronDown, Loader2,
+  BookmarkCheck, Clock, BookmarkX, CalendarDays,
+  Search, AlertTriangle, CheckSquare, Square, Trash2,
+  RotateCcw, Plus, Pencil, Ban, Loader2,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
+import { UNIT_STATUS_CONFIG, SLOT_STATUS_CONFIG, SLOT_TYPE_CONFIG, daysLeft, fmtDate, fmtDatetime, fmtMoney } from './bookings-constants';
+import { BookingDetailSheet } from './BookingDetailSheet';
+import { SlotBookingDetailSheet } from './SlotBookingDetailSheet';
+import { CreateBookingDialog } from './CreateBookingDialog';
+import { CreateSlotBookingDialog } from './CreateSlotBookingDialog';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+const UNIT_EMPTY = { search: '', status: '', expiringSoon: false, dateFrom: '', dateTo: '', floorId: '', unitId: '' };
 
-const UNIT_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  ACTIVE:    { label: 'Đang giữ',   color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  PENDING:   { label: 'Chờ duyệt',  color: 'bg-blue-100 text-blue-700 border-blue-200' },
-  EXPIRED:   { label: 'Hết hạn',    color: 'bg-gray-100 text-gray-500 border-gray-200' },
-  CANCELLED: { label: 'Đã hủy',     color: 'bg-red-100 text-red-600 border-red-200' },
-  CONVERTED: { label: 'Đã lập đề xuất', color: 'bg-green-100 text-green-700 border-green-200' },
-};
+const unitCodeCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-const SLOT_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  PENDING:   { label: 'Chờ xác nhận', color: 'bg-blue-100 text-blue-700 border-blue-200',     icon: Hourglass },
-  CONFIRMED: { label: 'Đã xác nhận',  color: 'bg-violet-100 text-violet-700 border-violet-200', icon: CheckCircle2 },
-  CANCELLED: { label: 'Đã hủy',       color: 'bg-red-100 text-red-600 border-red-200',          icon: Ban },
-  COMPLETED: { label: 'Hoàn thành',   color: 'bg-green-100 text-green-700 border-green-200',    icon: CheckCircle2 },
-};
-
-const SLOT_TYPE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  DAILY:   { label: 'Theo ngày', icon: CalendarDays,  color: 'bg-sky-100 text-sky-700' },
-  HOURLY:  { label: 'Theo giờ', icon: Timer,          color: 'bg-orange-100 text-orange-700' },
-  MONTHLY: { label: 'Theo tháng', icon: CalendarRange, color: 'bg-teal-100 text-teal-700' },
-};
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  CREATED: 'Tạo booking', ACTIVATED: 'Kích hoạt', PRIORITY_CHANGED: 'Đổi ưu tiên',
-  EXTENDED: 'Gia hạn', NOTE_ADDED: 'Ghi chú', CONVERTED: 'Chuyển đề xuất',
-  CANCELLED: 'Hủy booking', EXPIRED: 'Hết hạn tự động',
-};
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n);
-}
-function fmtMoney(n?: number | null) {
-  if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
-}
-function fmtDate(d?: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-function fmtDatetime(d?: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-function daysLeft(expiresAt?: string) {
-  if (!expiresAt) return null;
-  return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000));
-}
-
-// ─── StatCard ──────────────────────────────────────────────────────────────────
-
-function StatCard({ title, value, sub, icon: Icon, color = 'blue', badge }: {
-  title: string; value: string | number; sub?: string;
-  icon: React.ElementType; color?: string; badge?: string;
-}) {
-  const colorMap: Record<string, string> = {
-    blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600',
-    yellow: 'bg-amber-50 text-amber-600', red: 'bg-red-50 text-red-600',
-    purple: 'bg-violet-50 text-violet-600', teal: 'bg-teal-50 text-teal-600',
-  };
-  return (
-    <Card>
-      <CardContent className="pt-5 pb-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-sm text-gray-500">{title}</p>
-            <p className="text-2xl font-bold mt-1">{value}</p>
-            {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-          </div>
-          <div className={`p-2.5 rounded-lg ${colorMap[color]}`}><Icon size={18} /></div>
-        </div>
-        {badge && <Badge variant="secondary" className="mt-2 text-xs">{badge}</Badge>}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── ConvertToProposalDialog ───────────────────────────────────────────────────
-
-function ConvertToProposalDialog({ booking, open, onClose }: {
-  booking: UnitBooking | null; open: boolean; onClose: () => void;
-}) {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [form, setForm] = useState({
-    area: '', term: '36', startDate: '', rentPerSqm: '',
-    camPerSqm: '', deposit: '3', rentFree: '0', escalationPercent: '0', notes: '',
+export function groupUnitBookings(bookings: UnitBooking[]) {
+  const sorted = [...bookings].sort((a, b) => {
+    const unitCodeOrder = unitCodeCollator.compare(a.unit?.code ?? '', b.unit?.code ?? '');
+    if (unitCodeOrder !== 0) return unitCodeOrder;
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
-  const wasOpen = useRef(false);
-  if (open && !wasOpen.current && booking) {
-    wasOpen.current = true;
-    setForm((prev) => ({
-      ...prev,
-      area: booking.requestedArea?.toString() ?? '',
-      term: booking.requestedTerm?.toString() ?? '36',
-      rentPerSqm: booking.expectedRent?.toString() ?? '',
-    }));
+  const groups: Array<{ unitId: string; bookings: UnitBooking[] }> = [];
+  for (const booking of sorted) {
+    const group = groups[groups.length - 1];
+    if (!group || group.unitId !== booking.unitId) {
+      groups.push({ unitId: booking.unitId, bookings: [booking] });
+    } else {
+      group.bookings.push(booking);
+    }
   }
-  if (!open) wasOpen.current = false;
+  return groups;
+}
 
-  const mutation = useMutation({
-    mutationFn: () => bookingApi.convertToProposal(booking!.id, {
-      area: Number(form.area), term: Number(form.term), startDate: form.startDate,
-      rentPerSqm: Number(form.rentPerSqm),
-      camPerSqm: form.camPerSqm ? Number(form.camPerSqm) : undefined,
-      deposit: Number(form.deposit), rentFree: Number(form.rentFree),
-      escalationPercent: Number(form.escalationPercent),
-      notes: form.notes || undefined,
+export function countUnitBookingStatuses(bookings: UnitBooking[]) {
+  return bookings.reduce(
+    (counts, booking) => ({
+      total: counts.total + 1,
+      active: counts.active + (booking.status === 'ACTIVE' ? 1 : 0),
+      pending: counts.pending + (booking.status === 'PENDING' ? 1 : 0),
     }),
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      toast({ title: `Đã tạo Proposal ${data?.proposal?.proposalNumber ?? ''}` });
-      onClose();
-      navigate('/proposals');
-    },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
-  });
-
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((p) => ({ ...p, [k]: e.target.value }));
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ArrowRight size={18} className="text-green-600" />
-            Lập Đề xuất từ Booking {booking?.bookingNumber}
-          </DialogTitle>
-          {booking?.unit && (
-            <p className="text-sm text-gray-500">
-              Unit: {booking.unit.code} · {booking.lead?.brandName ?? booking.customer?.companyName}
-            </p>
-          )}
-        </DialogHeader>
-        <div className="space-y-4 pt-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Diện tích (m²) *</label>
-              <Input value={form.area} onChange={set('area')} type="number" placeholder="120" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Thời hạn (tháng) *</label>
-              <Input value={form.term} onChange={set('term')} type="number" placeholder="36" />
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Ngày bắt đầu dự kiến *</label>
-            <Input value={form.startDate} onChange={set('startDate')} type="date" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê (₫/m²) *</label>
-              <Input value={form.rentPerSqm} onChange={set('rentPerSqm')} type="number" placeholder="680000" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (₫/m²)</label>
-              <Input value={form.camPerSqm} onChange={set('camPerSqm')} type="number" placeholder="85000" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Đặt cọc (tháng)</label>
-              <Input value={form.deposit} onChange={set('deposit')} type="number" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Rent-free (ngày)</label>
-              <Input value={form.rentFree} onChange={set('rentFree')} type="number" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Escalation (%/năm)</label>
-              <Input value={form.escalationPercent} onChange={set('escalationPercent')} type="number" />
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
-            <Textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Đề xuất lần đầu..." />
-          </div>
-          {form.area && form.rentPerSqm && (
-            <div className="rounded-lg bg-green-50 border border-green-100 p-3 text-sm">
-              <span className="text-gray-500">Ước tính/tháng: </span>
-              <span className="font-bold text-green-700">
-                {new Intl.NumberFormat('vi-VN').format(Number(form.area) * Number(form.rentPerSqm))} ₫
-              </span>
-            </div>
-          )}
-        </div>
-        <DialogFooter className="pt-2">
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button
-            disabled={!form.area || !form.term || !form.startDate || !form.rentPerSqm || mutation.isPending}
-            onClick={() => mutation.mutate()}
-            className="bg-green-600 hover:bg-green-700 text-white gap-2"
-          >
-            <ArrowRight size={15} />
-            {mutation.isPending ? 'Đang tạo...' : 'Tạo Proposal'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    { total: 0, active: 0, pending: 0 },
   );
 }
 
-// ─── ExtendDialog ─────────────────────────────────────────────────────────────
-
-function ExtendDialog({ bookingId, open, onClose }: { bookingId: string; open: boolean; onClose: () => void }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [days, setDays] = useState('15');
-  const [reason, setReason] = useState('');
-
-  const mutation = useMutation({
-    mutationFn: () => bookingApi.extend(bookingId, Number(days), reason || undefined),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      toast({ title: `Đã gia hạn thêm ${days} ngày` });
-      onClose();
-    },
-    onError: () => toast({ title: 'Lỗi gia hạn', variant: 'destructive' }),
+export function groupSlotBookings(bookings: any[]) {
+  const sorted = [...bookings].sort((a, b) => {
+    const unitCodeOrder = unitCodeCollator.compare(a.slot?.unit?.code ?? '', b.slot?.unit?.code ?? '');
+    if (unitCodeOrder !== 0) return unitCodeOrder;
+    const slotCodeOrder = unitCodeCollator.compare(a.slot?.code ?? '', b.slot?.code ?? '');
+    if (slotCodeOrder !== 0) return slotCodeOrder;
+    return new Date(a.startDatetime).getTime() - new Date(b.startDatetime).getTime();
   });
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Gia hạn booking</DialogTitle></DialogHeader>
-        <div className="space-y-3 pt-1">
-          <div>
-            <label className="text-sm font-medium mb-1 block">Số ngày gia hạn thêm</label>
-            <Input value={days} onChange={(e) => setDays(e.target.value)} type="number" min={1} />
-          </div>
-          <div>
-            <label className="text-sm font-medium mb-1 block">Lý do (tuỳ chọn)</label>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Khách chờ phê duyệt nội bộ..." />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            {mutation.isPending ? 'Đang gia hạn...' : 'Gia hạn'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+  const groups: Array<{ unitId: string; bookings: any[] }> = [];
+  for (const booking of sorted) {
+    const unitId = booking.slot?.unit?.id ?? booking.slot?.unit?.code ?? 'unknown-unit';
+    const group = groups[groups.length - 1];
+    if (!group || group.unitId !== unitId) {
+      groups.push({ unitId, bookings: [booking] });
+    } else {
+      group.bookings.push(booking);
+    }
+  }
+  return groups;
+}
+
+export function countSlotBookingStatuses(bookings: any[]) {
+  return bookings.reduce(
+    (counts, booking) => ({
+      total: counts.total + 1,
+      pending: counts.pending + (booking.status === 'PENDING' ? 1 : 0),
+      confirmed: counts.confirmed + (booking.status === 'CONFIRMED' ? 1 : 0),
+    }),
+    { total: 0, pending: 0, confirmed: 0 },
   );
 }
 
-// ─── UnitBooking Detail Sheet ──────────────────────────────────────────────────
+export function filterSlotBookings(
+  bookings: any[],
+  filters: { search?: string; floorId?: string; slotId?: string },
+) {
+  const query = filters.search?.trim().toLowerCase() ?? '';
+  return bookings.filter((booking) => {
+    if (filters.floorId && booking.slot?.unit?.floor?.id !== filters.floorId) return false;
+    if (filters.slotId && booking.slot?.id !== filters.slotId) return false;
+    if (!query) return true;
+    return [
+      booking.bookingRef,
+      booking.slot?.unit?.code,
+      booking.slot?.unit?.floor?.name,
+      booking.slot?.code,
+      booking.slot?.name,
+      booking.customer?.companyName,
+      booking.lead?.brandName,
+    ].some((value) => value?.toLowerCase().includes(query));
+  });
+}
 
-function BookingDetailSheet({ booking, onClose }: { booking: UnitBooking | null; onClose: () => void }) {
-  const qc = useQueryClient();
+export default function BookingsPage() {
+  const { t } = useTranslation('bookings');
+  const [searchParams] = useSearchParams();
+  const { selectedMallId, selectedMallName } = useMallStore();
   const { toast } = useToast();
-  const [convertOpen, setConvertOpen] = useState(false);
-  const [extendOpen, setExtendOpen] = useState(false);
+  const qc = useQueryClient();
+  const [typeFilter, setTypeFilter] = useState<'unit' | 'slot'>('unit');
 
-  const { data: detail } = useQuery({
-    queryKey: ['booking-detail', booking?.id],
-    queryFn: () => bookingApi.get(booking!.id),
-    enabled: !!booking?.id,
+  const { data: currentUser } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => authApi.me(),
+  });
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  // ── Bulk selection ──
+  const [selectedUnitIds, setSelectedUnitIds] = useState<Set<string>>(new Set());
+  const [confirmCancelIds, setConfirmCancelIds] = useState<string[] | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [confirmReinstateId, setConfirmReinstateId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteSlotId, setConfirmDeleteSlotId] = useState<string | null>(null);
+  const { gridRef, selectoRef, selectoProps, dialogOpen } = useDragSelect({
+    onSelect: (ids) => setSelectedUnitIds(new Set(ids)),
+    onClear: () => setSelectedUnitIds(new Set()),
+    idAttribute: 'data-booking-id',
+    selectFromInside: true,
   });
 
-  const cancelMutation = useMutation({
-    mutationFn: () => bookingApi.cancel(booking!.id, 'Hủy từ trang Booking'),
+  const reinstateListMutation = useMutation({
+    mutationFn: (id: string) => bookingApi.reinstate(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bookings'] });
       qc.invalidateQueries({ queryKey: ['booking-stats'] });
-      toast({ title: 'Đã hủy booking' });
-      onClose();
+      setConfirmReinstateId(null);
+      toast({ title: t('reinstateSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi hủy booking', variant: 'destructive' }),
+    onError: (e: any) => {
+      setConfirmReinstateId(null);
+      toast({ title: e?.response?.data?.message ?? t('errors.reinstate'), variant: 'destructive' });
+    },
   });
 
-  const d: UnitBooking = detail?.data ?? detail ?? booking;
-  if (!d) return null;
+  const softDeleteMutation = useMutation({
+    mutationFn: (id: string) => bookingApi.softDelete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      setConfirmDeleteId(null);
+      toast({ title: t('deleteSuccess') });
+    },
+    onError: (e: any) => {
+      setConfirmDeleteId(null);
+      toast({ title: e?.response?.data?.message ?? t('errors.delete'), variant: 'destructive' });
+    },
+  });
 
-  const cfg = UNIT_STATUS_CONFIG[d.status];
-  const dl = daysLeft(d.expiresAt);
-  const clientName = d.lead?.brandName ?? d.customer?.companyName ?? '—';
-  const contactName = d.lead?.contactName ?? d.customer?.brandName ?? '';
-  const activities: any[] = (detail?.data ?? detail)?.activities ?? (detail as any)?.activities ?? [];
-
-  return (
-    <Sheet open={!!booking} onClose={onClose} title={d.bookingNumber} subtitle={`${d.unit?.code ?? ''} · ${clientName}`}>
-      <div className="px-6 pb-8 space-y-4 pt-4">
-        {/* Type badge */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 text-xs font-semibold">
-            📌 Giữ lô thuê dài hạn
-          </Badge>
-          <Badge className={`${cfg?.color} border px-3 py-1 text-sm font-medium`}>{cfg?.label}</Badge>
-          <Badge variant="outline" className="text-sm">Ưu tiên #{d.priority}</Badge>
-          {dl !== null && d.status === 'ACTIVE' && (
-            <Badge variant="outline" className={`text-sm ${dl <= 7 ? 'border-red-300 text-red-600' : ''}`}>
-              {dl > 0 ? `Còn ${dl} ngày` : 'Hết hạn hôm nay'}
-            </Badge>
-          )}
-        </div>
-
-        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50">
-          <SheetRow label="Tên"     value={clientName}   icon={User} />
-          {contactName && <SheetRow label="Liên hệ" value={contactName} icon={User} />}
-          <SheetRow label="Nguồn"   value={d.leadId ? 'Lead (CRM)' : 'Customer profile'} icon={User} />
-        </SheetSection>
-
-        <SheetSection label="MẶT BẰNG" className="bg-gray-50">
-          <SheetRow label="Mã"         value={d.unit?.code ?? '—'} icon={Building2} />
-          <SheetRow label="Diện tích"  value={d.unit?.areaNLA ? `${d.unit.areaNLA.toLocaleString()} m² NLA` : '—'} icon={Building2} />
-          <SheetRow label="Tầng"       value={(d.unit as any)?.floor?.name ?? '—'} icon={Building2} />
-          {d.unit?.baseRentPerSqm ? (
-            <SheetRow label="Giá cơ bản" value={`${new Intl.NumberFormat('vi-VN').format(d.unit.baseRentPerSqm)} ₫/m²`} icon={DollarSign} />
-          ) : null}
-        </SheetSection>
-
-        <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50">
-          <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
-          <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
-          <SheetRow label="Giá kỳ vọng"  value={d.expectedRent ? `${new Intl.NumberFormat('vi-VN').format(d.expectedRent)} ₫/m²` : '—'} icon={DollarSign} />
-        </SheetSection>
-
-        <SheetSection label="THỜI GIAN" className="bg-gray-50">
-          <SheetRow label="Tạo lúc"   value={fmtDate(d.createdAt)}   icon={Calendar} />
-          <SheetRow label="Kích hoạt" value={fmtDate(d.activatedAt)} icon={Calendar} />
-          <SheetRow label="Hết hạn"   value={fmtDate(d.expiresAt)}   icon={Calendar} />
-          {d.convertedAt && <SheetRow label="Convert" value={fmtDate(d.convertedAt)} icon={Calendar} />}
-        </SheetSection>
-
-        {d.assignedTo && (
-          <SheetSection label="PHỤ TRÁCH" className="bg-gray-50">
-            <SheetRow label="Sale" value={d.assignedTo.fullName} icon={User} />
-          </SheetSection>
-        )}
-        {d.notes && (
-          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
-        )}
-
-        {d.proposal && (
-          <div className="flex items-center justify-between p-3 bg-green-50 border border-green-100 rounded-xl">
-            <div className="flex items-center gap-2 text-sm">
-              <FileText size={14} className="text-green-600" />
-              <span className="font-medium">{d.proposal.proposalNumber}</span>
-            </div>
-            <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
-          </div>
-        )}
-
-        {['ACTIVE', 'PENDING'].includes(d.status) && (
-          <div className="space-y-2 pt-2 border-t border-gray-100">
-            {d.status === 'ACTIVE' && !d.proposal && (
-              <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => setConvertOpen(true)}>
-                <ArrowRight size={15} /> Lập Đề xuất (Proposal)
-              </Button>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 gap-2" onClick={() => setExtendOpen(true)}>
-                <Clock size={14} /> Gia hạn
-              </Button>
-              <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
-                onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-                <X size={14} /> Hủy booking
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {activities.length > 0 && (
-          <div>
-            <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
-              <Activity size={11} /> LỊCH SỬ ({activities.length})
-            </div>
-            <div className="space-y-2">
-              {activities.map((a: any) => (
-                <div key={a.id} className="flex gap-2 text-xs">
-                  <div className="w-1.5 h-1.5 rounded-full bg-gray-300 mt-1.5 flex-shrink-0" />
-                  <div>
-                    <span className="font-medium">{ACTIVITY_LABELS[a.type] ?? a.type}</span>
-                    {' — '}<span className="text-gray-500">{a.note}</span>
-                    <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <ConvertToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />
-      <ExtendDialog bookingId={d.id} open={extendOpen} onClose={() => setExtendOpen(false)} />
-    </Sheet>
-  );
-}
-
-// ─── SlotBooking Detail Sheet ──────────────────────────────────────────────────
-
-function SlotBookingDetailSheet({ booking, onClose }: { booking: any | null; onClose: () => void }) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-
-  const confirmMutation = useMutation({
-    mutationFn: () => slotsApi.confirmBooking(booking.id),
+  const deleteSlotMutation = useMutation({
+    mutationFn: (id: string) => slotsApi.deleteSlotBooking(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
-      toast({ title: 'Đã xác nhận booking slot' });
-      onClose();
+      setConfirmDeleteSlotId(null);
+      toast({ title: t('deleteSlotSuccess') });
     },
-    onError: () => toast({ title: 'Lỗi xác nhận', variant: 'destructive' }),
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: () => slotsApi.cancelBooking(booking.id, 'Hủy từ trang Booking'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
-      toast({ title: 'Đã hủy booking slot' });
-      onClose();
+    onError: (e: any) => {
+      setConfirmDeleteSlotId(null);
+      toast({ title: e?.response?.data?.message ?? t('errors.deleteSlot'), variant: 'destructive' });
     },
-    onError: () => toast({ title: 'Lỗi hủy', variant: 'destructive' }),
   });
 
-  if (!booking) return null;
-
-  const typeCfg = SLOT_TYPE_CONFIG[booking.type] ?? SLOT_TYPE_CONFIG.DAILY;
-  const statusCfg = SLOT_STATUS_CONFIG[booking.status];
-  const clientName = booking.customer?.companyName ?? booking.lead?.brandName ?? '—';
-
-  return (
-    <Sheet open={!!booking} onClose={onClose}
-      title={booking.bookingRef}
-      subtitle={`${booking.slot?.unit?.code ?? ''} · ${booking.slot?.code ?? ''} · ${clientName}`}
-    >
-      <div className="px-6 pb-8 space-y-4 pt-4">
-        {/* Type + status badges */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge className="bg-violet-50 text-violet-700 border border-violet-200 px-2.5 py-0.5 text-xs font-semibold">
-            🗓 Đặt slot ngắn hạn
-          </Badge>
-          <Badge className={`${typeCfg.color} border-0 px-2.5 py-0.5 text-xs font-medium flex items-center gap-1`}>
-            <typeCfg.icon size={11} /> {typeCfg.label}
-          </Badge>
-          <Badge className={`${statusCfg?.color} border text-xs`}>{statusCfg?.label}</Badge>
-        </div>
-
-        <SheetSection label="KHÁCH HÀNG" className="bg-gray-50">
-          <SheetRow label="Tên"   value={clientName} icon={User} />
-          <SheetRow label="Nguồn" value={booking.customerId ? 'Customer profile' : 'Lead (CRM)'} icon={User} />
-        </SheetSection>
-
-        <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50">
-          <SheetRow label="Lô (Unit)"  value={booking.slot?.unit?.code ?? '—'} icon={Building2} />
-          <SheetRow label="Slot"       value={`${booking.slot?.code ?? '—'} — ${booking.slot?.name ?? ''}`} icon={Building2} />
-          <SheetRow label="Diện tích"  value={booking.slot?.area ? `${booking.slot.area} m²` : '—'} icon={Building2} />
-        </SheetSection>
-
-        <SheetSection label="THỜI GIAN ĐẶT" className="bg-violet-50">
-          <SheetRow label="Bắt đầu"  value={fmtDatetime(booking.startDatetime)} icon={Calendar} />
-          <SheetRow label="Kết thúc" value={fmtDatetime(booking.endDatetime)}   icon={Calendar} />
-        </SheetSection>
-
-        <SheetSection label="GIÁ TIỀN" className="bg-gray-50">
-          <SheetRow label="Giá gốc"     value={fmtMoney(booking.baseAmount)}   icon={DollarSign} />
-          {booking.discountPct > 0 && (
-            <SheetRow label="Chiết khấu" value={`${booking.discountPct}%`} icon={DollarSign} />
-          )}
-          <SheetRow label="Thành tiền"  value={fmtMoney(booking.totalAmount)}  icon={DollarSign} />
-        </SheetSection>
-
-        {booking.notes && (
-          <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{booking.notes}</div>
-        )}
-
-        {['PENDING'].includes(booking.status) && (
-          <div className="flex gap-2 pt-2 border-t border-gray-100">
-            <Button className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-              onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
-              <CheckCircle2 size={14} /> Xác nhận
-            </Button>
-            <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
-              onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-              <X size={14} /> Hủy
-            </Button>
-          </div>
-        )}
-        {booking.status === 'CONFIRMED' && (
-          <Button variant="outline" className="w-full gap-2 text-red-600 border-red-200 hover:bg-red-50"
-            onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-            <X size={14} /> Hủy booking
-          </Button>
-        )}
-      </div>
-    </Sheet>
-  );
-}
-
-// ─── Create Slot Booking Dialog ───────────────────────────────────────────────
-
-type CreateSlotForm = {
-  unitId: string;
-  slotId: string;
-  clientType: 'lead' | 'customer';
-  clientId: string;
-  type: string;
-  startDatetime: string;
-  endDatetime: string;
-  discountPct: string;
-  notes: string;
-};
-
-const EMPTY_FORM: CreateSlotForm = {
-  unitId: '', slotId: '', clientType: 'lead', clientId: '',
-  type: 'DAILY', startDatetime: '', endDatetime: '', discountPct: '0', notes: '',
-};
-
-function CreateSlotBookingDialog({ open, onClose, mallId }: {
-  open: boolean; onClose: () => void; mallId?: string | null;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [form, setForm] = useState<CreateSlotForm>(EMPTY_FORM);
-  const [pricePreview, setPricePreview] = useState<{ baseAmount: number; discountPct: number; totalAmount: number } | null>(null);
-  const [calcLoading, setCalcLoading] = useState(false);
-
-  // Reset on open
-  useEffect(() => {
-    if (open) { setForm(EMPTY_FORM); setPricePreview(null); }
-  }, [open]);
-
-  // Reset slot when unit changes
-  const setField = (k: keyof CreateSlotForm) => (val: string) =>
-    setForm((p) => ({ ...p, [k]: val, ...(k === 'unitId' ? { slotId: '' } : {}), ...(k === 'clientType' ? { clientId: '' } : {}) }));
-
-  // ── Data queries ──
-  const { data: unitsData } = useQuery({
-    queryKey: ['units-for-slot', mallId],
-    queryFn: () => spacesApi.listUnits({ mallId: mallId ?? undefined, limit: 200 }),
-    enabled: open,
-  });
-  const units: any[] = unitsData?.data ?? unitsData ?? [];
-
-  const { data: slotsData } = useQuery({
-    queryKey: ['slots-for-unit', form.unitId],
-    queryFn: () => slotsApi.listSlots(form.unitId),
-    enabled: open && !!form.unitId,
-  });
-  const slots: any[] = Array.isArray(slotsData) ? slotsData : (slotsData?.data ?? []);
-
-  const { data: leadsData } = useQuery({
-    queryKey: ['leads-for-booking'],
-    queryFn: () => crmApi.listLeads({ limit: 100 }),
-    enabled: open && form.clientType === 'lead',
-  });
-  const leads: any[] = leadsData?.data ?? leadsData ?? [];
-
-  const { data: customersData } = useQuery({
-    queryKey: ['customers-for-booking'],
-    queryFn: () => customersApi.listCustomers({ limit: 100 }),
-    enabled: open && form.clientType === 'customer',
-  });
-  const customers: any[] = customersData?.data ?? customersData ?? [];
-
-  // ── Price calculation ──
-  const canCalc = !!(form.slotId && form.type && form.startDatetime && form.endDatetime);
-
-  async function calcPrice() {
-    if (!canCalc) return;
-    setCalcLoading(true);
-    try {
-      const res = await slotsApi.calculatePrice(form.slotId, form.type, form.startDatetime, form.endDatetime);
-      setPricePreview(res);
-    } catch {
-      toast({ title: 'Không tính được giá. Kiểm tra lại thời gian.', variant: 'destructive' });
-    } finally { setCalcLoading(false); }
-  }
-
-  // Auto-calc when required fields change
-  useEffect(() => {
-    setPricePreview(null);
-    if (canCalc) calcPrice();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.slotId, form.type, form.startDatetime, form.endDatetime]);
-
-  // ── Submit ──
-  const mutation = useMutation({
-    mutationFn: () => slotsApi.createBooking(form.slotId, {
-      leadId: form.clientType === 'lead' ? form.clientId || undefined : undefined,
-      customerId: form.clientType === 'customer' ? form.clientId || undefined : undefined,
-      type: form.type,
-      startDatetime: form.startDatetime,
-      endDatetime: form.endDatetime,
-      discountPct: Number(form.discountPct) || undefined,
-      notes: form.notes || undefined,
-    }),
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
-      toast({ title: `Đã tạo booking ${data?.bookingRef ?? ''}`, description: 'Trạng thái: Chờ xác nhận' });
-      onClose();
+  const bulkCancelMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      Promise.allSettled(ids.map((id) => bookingApi.cancel(id, cancelReason.trim()))).then((results) => {
+        const ok = results.filter((r) => r.status === 'fulfilled').length;
+        const fail = results.length - ok;
+        return { ok, fail };
+      }),
+    onSuccess: ({ ok, fail }) => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      setSelectedUnitIds(new Set());
+      setConfirmCancelIds(null);
+      setCancelReason('');
+      if (fail > 0) {
+        toast({ title: `${t('cancelSuccess')} (${ok}), ${fail} ${t('errors.bulkCancel').toLowerCase()}`, variant: 'destructive' });
+      } else {
+        toast({ title: `${t('cancelSuccess')} (${ok})` });
+      }
     },
-    onError: (e: any) => toast({
-      title: e?.response?.data?.message ?? 'Lỗi tạo booking',
-      variant: 'destructive',
-    }),
+    onError: () => toast({ title: t('errors.bulkCancel'), variant: 'destructive' }),
   });
-
-  const canSubmit = form.slotId && form.startDatetime && form.endDatetime && !mutation.isPending;
-
-  const selectedSlot = slots.find((s) => s.id === form.slotId);
-  const fmtM = (n?: number) => n != null ? new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫' : '—';
-
-  // Price hints from slot
-  const priceHints = selectedSlot ? [
-    form.type === 'DAILY' && selectedSlot.pricePerDaySqm && `${fmtM(selectedSlot.pricePerDaySqm)}/m²/ngày`,
-    form.type === 'HOURLY' && selectedSlot.pricePerHour && `${fmtM(selectedSlot.pricePerHour)}/giờ`,
-    form.type === 'MONTHLY' && selectedSlot.pricePerSqmMonth && `${fmtM(selectedSlot.pricePerSqmMonth)}/m²/tháng`,
-  ].filter(Boolean) : [];
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-violet-700">
-            <Plus size={18} />
-            Tạo Booking Slot Mới
-          </DialogTitle>
-          <p className="text-sm text-gray-500">Đặt slot/kiosk ngắn hạn theo ngày, giờ hoặc tháng</p>
-        </DialogHeader>
-
-        <div className="space-y-5 pt-1">
-          {/* ── STEP 1: Lô + Slot ── */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold tracking-wider text-violet-500 uppercase flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold">1</span>
-              Chọn vị trí
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Lô thuê (Unit) *</label>
-              <div className="relative">
-                <select
-                  value={form.unitId}
-                  onChange={(e) => setField('unitId')(e.target.value)}
-                  className="w-full h-9 pl-3 pr-8 text-sm border border-gray-200 rounded-lg bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-violet-300"
-                >
-                  <option value="">— Chọn lô thuê —</option>
-                  {units.map((u: any) => (
-                    <option key={u.id} value={u.id}>
-                      {u.code} {u.name !== u.code ? `— ${u.name}` : ''} {u.areaNLA ? `(${u.areaNLA} m²)` : ''}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Slot *</label>
-              <div className="relative">
-                <select
-                  value={form.slotId}
-                  onChange={(e) => setField('slotId')(e.target.value)}
-                  disabled={!form.unitId || slots.length === 0}
-                  className="w-full h-9 pl-3 pr-8 text-sm border border-gray-200 rounded-lg bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:bg-gray-50 disabled:text-gray-400"
-                >
-                  <option value="">— Chọn slot —</option>
-                  {slots.map((s: any) => (
-                    <option key={s.id} value={s.id}>
-                      {s.code} — {s.name} ({s.area} m²)
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
-              {form.unitId && slots.length === 0 && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Lô này chưa có slot nào. Vào trang Mặt bằng → Quản lý Slot để thêm.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* ── STEP 2: Khách hàng ── */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold tracking-wider text-violet-500 uppercase flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold">2</span>
-              Khách hàng
-            </div>
-
-            <div className="flex gap-2">
-              {(['lead', 'customer'] as const).map((t) => (
-                <button key={t}
-                  onClick={() => setField('clientType')(t)}
-                  className={`flex-1 py-1.5 text-sm rounded-lg border font-medium transition-colors ${
-                    form.clientType === t
-                      ? 'border-violet-400 bg-violet-50 text-violet-700'
-                      : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
-                  {t === 'lead' ? 'Lead (CRM)' : 'Customer profile'}
-                </button>
-              ))}
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                {form.clientType === 'lead' ? 'Chọn Lead' : 'Chọn Khách hàng'}
-                <span className="text-gray-400 font-normal ml-1">(tuỳ chọn)</span>
-              </label>
-              <div className="relative">
-                <select
-                  value={form.clientId}
-                  onChange={(e) => setField('clientId')(e.target.value)}
-                  className="w-full h-9 pl-3 pr-8 text-sm border border-gray-200 rounded-lg bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-violet-300"
-                >
-                  <option value="">— Không chọn / Ẩn danh —</option>
-                  {form.clientType === 'lead'
-                    ? leads.map((l: any) => (
-                        <option key={l.id} value={l.id}>
-                          {l.brandName ?? l.companyName} {l.contactName ? `(${l.contactName})` : ''}
-                        </option>
-                      ))
-                    : customers.map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.companyName ?? c.brandName}
-                        </option>
-                      ))
-                  }
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          {/* ── STEP 3: Loại + Thời gian ── */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold tracking-wider text-violet-500 uppercase flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold">3</span>
-              Thời gian đặt
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Loại đặt *</label>
-              <div className="flex gap-2">
-                {Object.entries(SLOT_TYPE_CONFIG).map(([k, v]) => {
-                  const Icon = v.icon;
-                  return (
-                    <button key={k}
-                      onClick={() => { setField('type')(k); setPricePreview(null); }}
-                      className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border text-xs font-medium transition-colors ${
-                        form.type === k
-                          ? `${v.color} border-current`
-                          : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      <Icon size={15} /> {v.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {priceHints.length > 0 && (
-                <p className="text-xs text-gray-400 mt-1.5">
-                  Giá tham khảo: {priceHints.join(' · ')}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  {form.type === 'HOURLY' ? 'Giờ bắt đầu *' : 'Ngày bắt đầu *'}
-                </label>
-                <Input
-                  type={form.type === 'HOURLY' ? 'datetime-local' : 'date'}
-                  value={form.startDatetime}
-                  onChange={(e) => setField('startDatetime')(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  {form.type === 'HOURLY' ? 'Giờ kết thúc *' : 'Ngày kết thúc *'}
-                </label>
-                <Input
-                  type={form.type === 'HOURLY' ? 'datetime-local' : 'date'}
-                  value={form.endDatetime}
-                  onChange={(e) => setField('endDatetime')(e.target.value)}
-                  className="h-9 text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* ── STEP 4: Giá & chi tiết ── */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold tracking-wider text-violet-500 uppercase flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-bold">4</span>
-              Giá & ghi chú
-            </div>
-
-            {/* Price preview box */}
-            {calcLoading && (
-              <div className="flex items-center gap-2 py-3 px-4 bg-gray-50 rounded-lg border text-sm text-gray-400">
-                <Loader2 size={14} className="animate-spin" /> Đang tính giá...
-              </div>
-            )}
-            {!calcLoading && pricePreview && (
-              <div className="bg-violet-50 border border-violet-100 rounded-lg p-3 space-y-1.5">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Giá gốc</span>
-                  <span>{fmtMoney(pricePreview.baseAmount)}</span>
-                </div>
-                {pricePreview.discountPct > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Chiết khấu tự động</span>
-                    <span className="text-green-600">-{pricePreview.discountPct}%</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm font-bold border-t border-violet-100 pt-1.5">
-                  <span>Thành tiền dự kiến</span>
-                  <span className="text-violet-700">{fmtMoney(pricePreview.totalAmount)}</span>
-                </div>
-              </div>
-            )}
-            {!calcLoading && !pricePreview && canCalc && (
-              <div className="text-center py-2">
-                <Button variant="outline" size="sm" onClick={calcPrice} className="text-violet-600 border-violet-200">
-                  Tính giá
-                </Button>
-              </div>
-            )}
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Chiết khấu bổ sung (%) <span className="text-gray-400 font-normal">— ghi đè giá tự động</span>
-              </label>
-              <Input
-                type="number" min={0} max={100}
-                value={form.discountPct}
-                onChange={(e) => setField('discountPct')(e.target.value)}
-                className="h-9 text-sm w-28"
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Ghi chú</label>
-              <Textarea
-                value={form.notes}
-                onChange={(e) => setField('notes')(e.target.value)}
-                rows={2}
-                placeholder="Pop-up cuối tuần, sự kiện ra mắt sản phẩm..."
-              />
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter className="pt-3 border-t border-gray-100">
-          <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button
-            disabled={!canSubmit}
-            onClick={() => mutation.mutate()}
-            className="bg-violet-600 hover:bg-violet-700 text-white gap-2"
-          >
-            {mutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-            {mutation.isPending ? 'Đang tạo...' : 'Tạo booking'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Tab button ───────────────────────────────────────────────────────────────
-
-function TabBtn({ active, onClick, icon: Icon, label, count, accent }: {
-  active: boolean; onClick: () => void; icon: React.ElementType;
-  label: string; count?: number; accent: string;
-}) {
-  return (
-    <button onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all border ${
-        active
-          ? `${accent} shadow-sm`
-          : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-      }`}
-    >
-      <Icon size={16} />
-      {label}
-      {count !== undefined && (
-        <span className={`text-xs px-1.5 py-0.5 rounded-full font-semibold ${
-          active ? 'bg-white/40' : 'bg-gray-100 text-gray-600'
-        }`}>{count}</span>
-      )}
-    </button>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function BookingsPage() {
-  const { selectedMallId } = useMallStore();
-  const { toast } = useToast();
-  const [tab, setTab] = useState<'unit' | 'slot'>('unit');
 
   // ── UnitBooking state ──
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [expiringSoon, setExpiringSoon] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(null);
+  const initialUnitFilters = () => ({
+    ...UNIT_EMPTY,
+    expiringSoon: searchParams.get('expiringSoon') === 'true',
+  });
+  const [unitDraft, setUnitDraft] = useState(initialUnitFilters);
+  const [unitApplied, setUnitApplied] = useState(initialUnitFilters);
+  const [selectedBooking, setSelectedBooking] = useState<UnitBooking | null>(
+    searchParams.get('id') ? ({ id: searchParams.get('id') } as UnitBooking) : null,
+  );
+  const [editDirectly, setEditDirectly] = useState(false);
+  const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
+  const [createUnitOpen, setCreateUnitOpen] = useState(false);
+
+  const urlFilterKey = searchParams.toString();
+  useEffect(() => {
+    const next = {
+      ...UNIT_EMPTY,
+      expiringSoon: searchParams.get('expiringSoon') === 'true',
+    };
+    setUnitDraft(next);
+    setUnitApplied(next);
+    setPage(1);
+  }, [urlFilterKey]);
+
+  const setUnitField = <K extends keyof typeof UNIT_EMPTY>(k: K, v: typeof UNIT_EMPTY[K]) =>
+    setUnitDraft((f) => ({ ...f, [k]: v }));
+  const unitHasApplied = !!(unitApplied.search || unitApplied.status || unitApplied.expiringSoon || unitApplied.dateFrom || unitApplied.dateTo || unitApplied.floorId || unitApplied.unitId);
+  const unitIsDirty = JSON.stringify(unitDraft) !== JSON.stringify(unitApplied);
+  function applyUnit() { setUnitApplied({ ...unitDraft }); setPage(1); }
+  function clearUnit() { setUnitDraft(UNIT_EMPTY); setUnitApplied(UNIT_EMPTY); setPage(1); }
+  function filterUnit(status = '', expiringSoon = false) {
+    const next = { ...UNIT_EMPTY, status, expiringSoon };
+    setUnitDraft(next);
+    setUnitApplied(next);
+    setPage(1);
+  }
 
   // ── SlotBooking state ──
-  const [slotSearch, setSlotSearch] = useState('');
-  const [slotStatusFilter, setSlotStatusFilter] = useState('');
-  const [slotTypeFilter, setSlotTypeFilter] = useState('');
+  const SLOT_EMPTY = { search: '', status: '', type: '', floorId: '', slotId: '' };
+  const [slotDraft, setSlotDraft] = useState(SLOT_EMPTY);
+  const [slotApplied, setSlotApplied] = useState(SLOT_EMPTY);
   const [selectedSlotBooking, setSelectedSlotBooking] = useState<any | null>(null);
+  const [slotSection, setSlotSection] = useState<string | undefined>();
+  const [editSlotDirectly, setEditSlotDirectly] = useState(false);
   const [createSlotOpen, setCreateSlotOpen] = useState(false);
 
+  const setSlotField = <K extends keyof typeof SLOT_EMPTY>(k: K, v: typeof SLOT_EMPTY[K]) =>
+    setSlotDraft((f) => ({ ...f, [k]: v }));
+  const slotHasApplied = !!(slotApplied.search || slotApplied.status || slotApplied.type || slotApplied.floorId || slotApplied.slotId);
+  const slotIsDirty = JSON.stringify(slotDraft) !== JSON.stringify(slotApplied);
+  function applySlot() { setSlotApplied({ ...slotDraft }); }
+  function clearSlot() { setSlotDraft(SLOT_EMPTY); setSlotApplied(SLOT_EMPTY); }
+  function filterSlot(status = '') {
+    const next = { ...SLOT_EMPTY, status };
+    setSlotDraft(next);
+    setSlotApplied(next);
+  }
+
+  useEffect(() => setSelectedUnitIds(new Set()), [unitApplied, page]);
+
   // ── UnitBooking data ──
-  const { data: stats } = useQuery({
+  const { data: stats, isError: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['booking-stats', selectedMallId],
     queryFn: () => bookingApi.stats(selectedMallId ?? undefined),
     refetchInterval: 60_000,
   });
 
-  const { data, isLoading: unitLoading, refetch: refetchUnit } = useQuery({
-    queryKey: ['bookings', selectedMallId, statusFilter, expiringSoon, search, page],
+  const { data, isLoading: unitLoading, isError: unitError, refetch: refetchUnit } = useQuery({
+    queryKey: ['bookings', selectedMallId, unitApplied, page],
     queryFn: () => bookingApi.list({
       mallId: selectedMallId ?? undefined,
-      status: statusFilter || undefined,
-      expiringSoon: expiringSoon || undefined,
-      search: search || undefined,
-      page, limit: 25,
+      floorId: unitApplied.floorId || undefined,
+      unitId: unitApplied.unitId || undefined,
+      status: unitApplied.status || undefined,
+      expiringSoon: unitApplied.expiringSoon || undefined,
+      search: unitApplied.search || undefined,
+      createdFrom: unitApplied.dateFrom || undefined,
+      createdTo: unitApplied.dateTo || undefined,
+      page, limit: 15,
     }),
     refetchInterval: 60_000,
   });
 
+  const { data: unitFloorsData } = useQuery({
+    queryKey: ['booking-filter-floors', selectedMallId],
+    queryFn: () => spacesApi.listFloors(selectedMallId ?? undefined),
+  });
+  const { data: unitOptionsData } = useQuery({
+    queryKey: ['booking-filter-units', selectedMallId, unitDraft.floorId],
+    queryFn: () => spacesApi.listUnits({
+      mallId: selectedMallId ?? undefined,
+      floorId: unitDraft.floorId || undefined,
+      page: 1,
+      limit: 500,
+    }),
+  });
+
   // ── SlotBooking data ──
-  const { data: slotData, isLoading: slotLoading, refetch: refetchSlot } = useQuery({
-    queryKey: ['slot-bookings', selectedMallId, slotStatusFilter, slotTypeFilter],
+  const { data: slotData, isLoading: slotLoading, isError: slotError, refetch: refetchSlot } = useQuery({
+    queryKey: ['slot-bookings', selectedMallId, slotApplied.status, slotApplied.type],
     queryFn: () => slotsApi.listAllBookings({
       mallId: selectedMallId ?? undefined,
-      status: slotStatusFilter || undefined,
-      type: slotTypeFilter || undefined,
+      status: slotApplied.status || undefined,
+      type: slotApplied.type || undefined,
     }),
     refetchInterval: 60_000,
   });
 
   const unitBookings: UnitBooking[] = data?.data ?? [];
+  const unitBookingGroups = useMemo(() => groupUnitBookings(unitBookings), [unitBookings]);
   const unitTotal: number = data?.total ?? 0;
   const unitTotalPages: number = data?.totalPages ?? 1;
-  const s = stats?.data ?? stats;
+  const unitFloorOptions: any[] = (Array.isArray(unitFloorsData) ? unitFloorsData : unitFloorsData?.data ?? [])
+    .sort((a: any, b: any) => (a.level ?? 0) - (b.level ?? 0) || unitCodeCollator.compare(a.name ?? '', b.name ?? ''));
+  const unitOptions: any[] = (Array.isArray(unitOptionsData) ? unitOptionsData : unitOptionsData?.data ?? [])
+    .sort((a: any, b: any) => unitCodeCollator.compare(a.code ?? '', b.code ?? ''));
 
   const rawSlotBookings: any[] = Array.isArray(slotData) ? slotData : (slotData?.data ?? []);
-
-  // Client-side filter by mallId (backend doesn't filter by mallId) and search
   const allSlotBookings = selectedMallId
     ? rawSlotBookings.filter((b) => b.slot?.unit?.mallId === selectedMallId)
     : rawSlotBookings;
-
-  const slotBookings = slotSearch
-    ? allSlotBookings.filter((b) => {
-        const q = slotSearch.toLowerCase();
-        return (
-          b.bookingRef?.toLowerCase().includes(q) ||
-          b.slot?.unit?.code?.toLowerCase().includes(q) ||
-          b.slot?.code?.toLowerCase().includes(q) ||
-          b.customer?.companyName?.toLowerCase().includes(q) ||
-          b.lead?.brandName?.toLowerCase().includes(q)
-        );
-      })
-    : allSlotBookings;
-
   const slotStats = {
-    pending:   allSlotBookings.filter((b) => b.status === 'PENDING').length,
+    pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
-    revenue:   allSlotBookings
-      .filter((b) => ['CONFIRMED', 'COMPLETED'].includes(b.status))
-      .reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
+    cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
+    revenue: allSlotBookings.filter((b) => b.status === 'COMPLETED').reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
   };
+
+  const floorOptions = Array.from(
+    new Map(
+      allSlotBookings
+        .filter((booking) => booking.slot?.unit?.floor?.id)
+        .map((booking) => [booking.slot.unit.floor.id, booking.slot.unit.floor]),
+    ).values(),
+  ).sort((a: any, b: any) => (a.level ?? 0) - (b.level ?? 0) || unitCodeCollator.compare(a.name ?? '', b.name ?? '')) as any[];
+  const slotOptions = Array.from(
+    new Map(
+      allSlotBookings
+        .filter((booking) => !slotDraft.floorId || booking.slot?.unit?.floor?.id === slotDraft.floorId)
+        .filter((booking) => booking.slot?.id)
+        .map((booking) => [booking.slot.id, booking.slot]),
+    ).values(),
+  ).sort((a: any, b: any) => unitCodeCollator.compare(a.code ?? '', b.code ?? '')) as any[];
+  const slotBookings = filterSlotBookings(allSlotBookings, slotApplied);
+  const slotBookingGroups = useMemo(() => groupSlotBookings(slotBookings), [slotBookings]);
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Booking</h1>
-          <p className="text-sm text-gray-500 mt-1">Theo dõi đặt chỗ lô thuê và slot sự kiện ngắn hạn</p>
-        </div>
-        <Button variant="outline" size="sm" className="gap-2"
-          onClick={() => tab === 'unit' ? refetchUnit() : refetchSlot()}>
-          <RefreshCw size={14} /> Làm mới
+      {/* Bulk Selection Bar */}
+      <BulkSelectionBar
+        selectedCount={selectedUnitIds.size}
+        totalCount={unitBookings.length}
+        onSelectAll={() => setSelectedUnitIds(new Set(unitBookings.map((b) => b.id)))}
+        onClear={() => setSelectedUnitIds(new Set())}
+      >
+        <Button
+          size="sm" variant="ghost"
+          className="text-red-400 gap-1.5 shrink-0"
+          disabled={bulkCancelMutation.isPending}
+          onClick={() => {
+            const cancellable = unitBookings
+              .filter((b) => ['ACTIVE', 'PENDING'].includes(b.status) && selectedUnitIds.has(b.id))
+              .map((b) => b.id);
+            if (cancellable.length === 0) {
+              toast({ title: t('errors.noCancellable'), description: t('errors.noCancellableDesc'), variant: 'destructive' });
+              return;
+            }
+            setConfirmCancelIds(cancellable);
+          }}
+        >
+          <Trash2 size={14} /> {t('page.cancelSelected')}
         </Button>
-      </div>
+      </BulkSelectionBar>
 
-      {/* Tab switcher */}
-      <div className="flex items-center gap-3 mb-6 p-1 bg-gray-50 border border-gray-200 rounded-xl w-fit">
-        <TabBtn
-          active={tab === 'unit'} onClick={() => setTab('unit')}
-          icon={BookmarkCheck} label="Giữ lô thuê dài hạn"
-          count={s?.active ?? unitBookings.length}
-          accent="bg-amber-50 text-amber-700 border-amber-200"
-        />
-        <TabBtn
-          active={tab === 'slot'} onClick={() => setTab('slot')}
-          icon={CalendarDays} label="Đặt slot ngắn hạn"
-          count={slotBookings.length}
-          accent="bg-violet-50 text-violet-700 border-violet-200"
-        />
-      </div>
-
-      {/* ══════════ TAB 1: UNIT BOOKING ══════════ */}
-      {tab === 'unit' && (
+      <PageHeader
+        className="mb-5"
+        eyebrow={t('page.eyebrow')}
+        title={t('page.title')}
+        description={t('page.description')}
+        actions={
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'unit' | 'slot')}>
+            <SelectTrigger className="h-9 w-full sm:w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unit"><span className="flex items-center gap-2"><BookmarkCheck size={13} className="text-amber-600" /> {t('page.unitType')}</span></SelectItem>
+              <SelectItem value="slot"><span className="flex items-center gap-2"><CalendarDays size={13} className="text-violet-600" /> {t('page.slotType')}</span></SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
+      {/* ══════════ UNIT BOOKING ══════════ */}
+      {typeFilter === 'unit' && (
         <>
-          {/* Info callout */}
-          <div className="mb-4 px-4 py-2.5 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700 flex items-start gap-2">
-            <BookmarkCheck size={15} className="mt-0.5 flex-shrink-0" />
-            <span>
-              <strong>Giữ lô thuê:</strong> Đặt chỗ dài hạn một lô (unit) trong hàng đợi ưu tiên để vào pipeline
-              đàm phán → lập đề xuất → ký hợp đồng. Một unit có thể có nhiều booking theo thứ tự ưu tiên.
-            </span>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatCard title="Đang active" value={s?.active ?? 0} icon={BookmarkCheck} color="yellow" sub="Đang giữ slot" />
-            <StatCard title="Chờ trong queue" value={s?.pending ?? 0} icon={BookmarkPlus} color="blue" sub="Hàng đợi ưu tiên" />
-            <StatCard title="Sắp hết hạn" value={s?.expiringSoon ?? 0} icon={AlertTriangle} color="red"
-              badge={s?.expiringSoon > 0 ? 'Cần xử lý' : undefined} />
-            <StatCard title="Đã convert" value={s?.converted ?? 0} icon={ArrowRight} color="green" sub="Thành Proposal" />
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="relative flex-1 min-w-48">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input placeholder="Tìm unit, lead, khách hàng..." className="pl-9 h-9"
-                value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+          {statsError && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <span>{t('page.statsError')}</span>
+              <Button variant="outline" size="sm" onClick={() => refetchStats()}>{t('actions.retry')}</Button>
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v === 'ALL' ? '' : v); setPage(1); }}>
+          )}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label={t('unitStats.all')}>
+            {[
+              { label: t('unitStats.all'), value: stats?.total ?? 0, status: '', urgent: false },
+              { label: t('unitStats.active'), value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
+              { label: t('unitStats.pending'), value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
+              { label: t('unitStats.expiringSoon'), value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
+              { label: t('unitStats.converted'), value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
+            ].map((item) => (
+              <ERPStatCard
+                key={item.label}
+                size="compact"
+                label={item.label}
+                value={item.value}
+                tone={item.urgent && item.value > 0 ? 'danger' : 'neutral'}
+                onClick={() => filterUnit(item.status, !!item.expiring)}
+              />
+            ))}
+          </div>
+          <div className="mb-4 overflow-x-auto pb-1">
+            <div
+              role="tablist"
+              aria-label={t('filterLabels.bookingStatusTabs')}
+              className="inline-flex min-w-max items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 p-1 dark:border-amber-900/40 dark:bg-amber-950/20"
+            >
+              {[
+                { status: '', label: t('filterLabels.all'), count: stats?.total },
+                { status: 'ACTIVE', label: t('status.ACTIVE'), count: stats?.active },
+                { status: 'PENDING', label: t('status.PENDING'), count: stats?.pending },
+                { status: 'CONVERTED', label: t('status.CONVERTED'), count: stats?.converted },
+                { status: 'EXPIRED', label: t('status.EXPIRED') },
+                { status: 'CANCELLED', label: t('status.CANCELLED') },
+              ].map((item) => {
+                const selected = unitApplied.status === item.status && !unitApplied.expiringSoon;
+                return (
+                  <button
+                    key={item.status || 'ALL'}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => filterUnit(item.status)}
+                    className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                      selected ? 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.label}
+                    {item.count !== undefined && (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-amber-100 text-amber-800' : 'bg-white text-gray-500'}`}>
+                        {item.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {/* Filters */}
+          <ERPToolbar className="mb-4">
+            <div className="relative flex-1 min-w-48">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder={t('filterLabels.searchUnit')} className="pl-9 h-9"
+                value={unitDraft.search}
+                onChange={(e) => setUnitField('search', e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyUnit()}
+              />
+            </div>
+            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
-                <SelectValue placeholder="Trạng thái" />
+                <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.all')}</SelectItem>
                 {Object.entries(UNIT_STATUS_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <button
-              className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
-                expiringSoon ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-              onClick={() => { setExpiringSoon(!expiringSoon); setPage(1); }}
+            <Select
+              value={unitDraft.floorId || 'ALL'}
+              onValueChange={(v) => setUnitDraft((filters) => ({
+                ...filters,
+                floorId: v === 'ALL' ? '' : v,
+                unitId: '',
+              }))}
             >
-              <Clock size={13} /> Sắp hết hạn (7 ngày)
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.floor')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allFloors')}</SelectItem>
+                {unitFloorOptions.map((floor) => (
+                  <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={unitDraft.unitId || 'ALL'} onValueChange={(v) => setUnitField('unitId', v === 'ALL' ? '' : v)}>
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.unit')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allUnits')}</SelectItem>
+                {unitOptions.map((unit) => (
+                  <SelectItem key={unit.id} value={unit.id}>{unit.code}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border transition-colors ${
+                unitDraft.expiringSoon ? 'border-red-300 bg-red-50 text-red-600 dark:bg-red-950/30' : 'border-border text-muted-foreground hover:border-foreground/30'
+              }`}
+              onClick={() => setUnitField('expiringSoon', !unitDraft.expiringSoon)}
+            >
+              <Clock size={13} /> {t('filterLabels.expiringSoon')}
             </button>
-          </div>
+            <DateRangePicker
+              from={unitDraft.dateFrom}
+              to={unitDraft.dateTo}
+              onFromChange={(v) => setUnitField('dateFrom', v)}
+              onToChange={(v) => setUnitField('dateTo', v)}
+              placeholder={t('filterLabels.dateRange')}
+            />
+            <Button className="h-9 gap-1.5" onClick={applyUnit} disabled={!unitIsDirty && unitHasApplied}>
+              <Search size={14} /> {t('filters.search')}
+            </Button>
+            {(unitHasApplied || unitIsDirty) && (
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={clearUnit}>
+                <span>✕</span> {t('actions.clear')}
+              </Button>
+            )}
+            <Button className="gap-2 h-9 ml-auto"
+              onClick={() => setCreateUnitOpen(true)}>
+              <Plus size={14} /> {t('page.createUnitBooking')}
+            </Button>
+          </ERPToolbar>
 
           {/* Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {unitLoading ? (
+          {!selectedBooking && !dialogOpen && <Selecto ref={selectoRef} container={gridRef.current} {...selectoProps} />}
+          <div ref={gridRef} className="bg-card rounded-lg border border-border overflow-hidden select-none">
+            {unitError ? (
+              <AsyncState isLoading={false} isError onRetry={refetchUnit} errorTitle={t('page.unitBookingError')}><div /></AsyncState>
+            ) : unitLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex gap-4 items-center">
@@ -1091,64 +563,158 @@ export default function BookingsPage() {
                 ))}
               </div>
             ) : unitBookings.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <BookmarkX size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">Không có booking nào</p>
-                <p className="text-sm mt-1">Tạo booking từ trang Mặt bằng hoặc CRM</p>
-              </div>
+              <AsyncState isLoading={false} isEmpty emptyTitle={t('noBookings')} emptyDescription={t('page.noBookingHint')}><div /></AsyncState>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-amber-50/50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Booking #</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Unit</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách hàng</th>
-                    <th className="text-center px-3 py-3 font-medium text-gray-500 text-xs tracking-wider">Ưu tiên</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Hết hạn</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Sale</th>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="px-3 py-3 w-8">
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => {
+                          if (selectedUnitIds.size === unitBookings.length) {
+                            setSelectedUnitIds(new Set());
+                          } else {
+                            setSelectedUnitIds(new Set(unitBookings.map((b) => b.id)));
+                          }
+                        }}
+                      >
+                        {selectedUnitIds.size === unitBookings.length && unitBookings.length > 0
+                          ? <CheckSquare size={15} className="text-blue-600" />
+                          : <Square size={15} className="text-muted-foreground/40" />}
+                      </div>
+                    </th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.bookingNo')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.customer')}</th>
+                    <th className="text-center px-3 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.priority')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.expiry')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.updatedAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.sale')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {unitBookings.map((b) => {
+                  {unitBookingGroups.map((group) => {
+                    const firstBooking = group.bookings[0];
+                    const counts = countUnitBookingStatuses(group.bookings);
+                    return (
+                      <Fragment key={group.unitId}>
+                        <tr className="border-y border-slate-200 bg-slate-50/90">
+                          <td colSpan={10} className="px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t('table.unit')}</span>
+                                <span className="font-semibold text-slate-900">{firstBooking.unit?.code ?? '—'}</span>
+                                {(firstBooking.unit as any)?.floor?.name && (
+                                  <span className="text-xs text-slate-500">{(firstBooking.unit as any).floor.name}</span>
+                                )}
+                              </div>
+                              <span className="h-4 w-px bg-slate-200" aria-hidden="true" />
+                              <Badge variant="outline" className="border-slate-200 bg-white text-slate-600">
+                                {t('table.bookingCount', { count: counts.total })}
+                              </Badge>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                                <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+                                {t('table.holdingCount', { count: counts.active })}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                                {t('table.waitingCount', { count: counts.pending })}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.bookings.map((b) => {
                     const cfg = UNIT_STATUS_CONFIG[b.status];
                     const dl = daysLeft(b.expiresAt);
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
+                    const openBooking = (section?: string) => { setBookingSection(section); setSelectedBooking(b); };
                     return (
-                      <tr key={b.id} className="hover:bg-amber-50/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedBooking(b)}>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingNumber}</td>
-                        <td className="px-4 py-3">
-                          <span className="font-medium">{b.unit?.code ?? '—'}</span>
-                          {(b.unit as any)?.floor?.name && (
-                            <span className="text-xs text-gray-400 ml-1.5">{(b.unit as any).floor.name}</span>
-                          )}
+                      <tr key={b.id}
+                        className={`${DRAG_SELECT_CLASS} hover:bg-amber-50/30 transition-colors ${selectedUnitIds.has(b.id) ? 'bg-blue-50' : ''}`}
+                        data-booking-id={b.id}>
+                        <td className="px-3 py-3 w-8" data-checkbox>
+                          <div
+                            data-checkbox
+                            className="cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); setSelectedUnitIds((prev) => { const next = new Set(prev); next.has(b.id) ? next.delete(b.id) : next.add(b.id); return next; }); }}
+                          >
+                            {selectedUnitIds.has(b.id)
+                              ? <CheckSquare size={15} className="text-blue-600" />
+                              : <Square size={15} className="text-gray-300 hover:text-gray-500" />}
+                          </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="" className="px-4 py-3 font-mono text-xs text-gray-600 cursor-pointer" onClick={() => openBooking(undefined)}>{b.bookingNumber}</td>
+                        <td data-section="bs-customer" className="px-4 py-3">
                           <div className="font-medium">{clientName}</div>
                           {b.lead?.contactName && <div className="text-xs text-gray-400">{b.lead.contactName}</div>}
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td data-section="" className="px-3 py-3 text-center">
                           <span className={`w-6 h-6 rounded-full inline-flex items-center justify-center text-xs font-bold ${
                             b.priority === 1 ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-600'
                           }`}>{b.priority}</span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="bs-timeline" className="px-4 py-3">
                           {b.status === 'ACTIVE' && dl !== null ? (
                             <span className={`text-xs font-medium ${dl <= 7 ? 'text-red-500' : dl <= 14 ? 'text-amber-500' : 'text-gray-500'}`}>
-                              {dl > 0 ? `${dl} ngày` : 'Hôm nay'}
+                              {dl > 0 ? t('detail.daysLeft', { count: dl }) : t('detail.expiresToday')}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400">{fmtDate(b.expiresAt)}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${cfg?.color}`}>{cfg?.label}</Badge>
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
-                        <td className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td data-section="bs-assignee" className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
+                        <td data-section="" className="px-3 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {['ACTIVE', 'PENDING'].includes(b.status) && (
+                              <>
+                                <button
+                                  className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                  title={t('edit')}
+                                  onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                  title={t('actions.cancel')}
+                                  onClick={(e) => { e.stopPropagation(); setConfirmCancelIds([b.id]); }}
+                                >
+                                  <Ban size={13} />
+                                </button>
+                              </>
+                            )}
+                            {b.status === 'CANCELLED' && (
+                              <button
+                                className="p-1 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                title={t('detail.reinstate')}
+                                onClick={(e) => { e.stopPropagation(); setConfirmReinstateId(b.id); }}
+                              >
+                                <RotateCcw size={13} />
+                              </button>
+                            )}
+                            {(isAdmin || ['CANCELLED', 'EXPIRED'].includes(b.status)) && (
+                              <button
+                                className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title={t('actions.delete')}
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(b.id); }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
+                    );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -1156,11 +722,11 @@ export default function BookingsPage() {
             )}
             {unitTotalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-500">
-                <span>Tổng {unitTotal} bookings</span>
+                <span>{t('page.totalBookings', { count: unitTotal })}</span>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Trước</Button>
-                  <span className="px-2 py-1">Trang {page} / {unitTotalPages}</span>
-                  <Button variant="outline" size="sm" disabled={page >= unitTotalPages} onClick={() => setPage(p => p + 1)}>Sau</Button>
+                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t('page.prev')}</Button>
+                  <span className="px-2 py-1">{t('page.page', { current: page, total: unitTotalPages })}</span>
+                  <Button variant="outline" size="sm" disabled={page >= unitTotalPages} onClick={() => setPage(p => p + 1)}>{t('page.next')}</Button>
                 </div>
               </div>
             )}
@@ -1168,68 +734,143 @@ export default function BookingsPage() {
         </>
       )}
 
-      {/* ══════════ TAB 2: SLOT BOOKING ══════════ */}
-      {tab === 'slot' && (
+      {/* ══════════ SLOT BOOKING ══════════ */}
+      {typeFilter === 'slot' && (
         <>
-          {/* Info callout */}
-          <div className="mb-4 px-4 py-2.5 bg-violet-50 border border-violet-100 rounded-lg text-sm text-violet-700 flex items-start gap-2">
-            <CalendarDays size={15} className="mt-0.5 flex-shrink-0" />
-            <span>
-              <strong>Đặt slot ngắn hạn:</strong> Thuê một phần diện tích (slot/kiosk) trong lô thuê
-              theo ngày, theo giờ hoặc theo tháng — dùng cho pop-up store, sự kiện, quầy bán lẻ tạm thời.
-              Không liên quan đến pipeline hợp đồng dài hạn.
-            </span>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
+            {[
+              { label: t('slotStats.pending'), value: slotStats.pending, status: 'PENDING' },
+              { label: t('slotStats.confirmed'), value: slotStats.confirmed, status: 'CONFIRMED' },
+              { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
+              { label: t('slotStats.revenue'), value: fmtMoney(slotStats.revenue), status: '' },
+            ].map((item) => (
+              <ERPStatCard
+                key={item.label}
+                size="compact"
+                label={item.label}
+                value={item.value}
+                tone="neutral"
+                onClick={() => filterSlot(item.status)}
+              />
+            ))}
           </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <StatCard title="Chờ xác nhận" value={slotStats.pending} icon={Hourglass} color="blue" sub="Cần xử lý" />
-            <StatCard title="Đã xác nhận"  value={slotStats.confirmed} icon={CheckCircle2} color="purple" sub="Đang hiệu lực" />
-            <StatCard title="Hoàn thành"   value={slotStats.completed} icon={CalendarRange} color="green" sub="Đã kết thúc" />
-            <StatCard title="Doanh thu slot" value={fmt(slotStats.revenue)} icon={DollarSign} color="teal"
-              sub="Confirmed + Completed" badge={slotStats.revenue > 0 ? '₫' : undefined} />
-          </div>
-
-          {/* Filters + Create */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <Button
-              className="gap-2 bg-violet-600 hover:bg-violet-700 text-white h-9"
-              onClick={() => setCreateSlotOpen(true)}
+          <div className="mb-4 overflow-x-auto pb-1">
+            <div
+              role="tablist"
+              aria-label={t('filterLabels.bookingStatusTabs')}
+              className="inline-flex min-w-max items-center gap-1 rounded-lg border border-violet-200 bg-violet-50/60 p-1 dark:border-violet-900/40 dark:bg-violet-950/20"
             >
-              <Plus size={14} /> Tạo booking slot
-            </Button>
-            <div className="relative flex-1 min-w-48">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input placeholder="Tìm ref, unit, slot, khách hàng..." className="pl-9 h-9"
-                value={slotSearch} onChange={(e) => setSlotSearch(e.target.value)} />
+              {[
+                { status: '', label: t('filterLabels.all'), count: allSlotBookings.length },
+                { status: 'PENDING', label: t('slotStatus.PENDING'), count: slotStats.pending },
+                { status: 'CONFIRMED', label: t('slotStatus.CONFIRMED'), count: slotStats.confirmed },
+                { status: 'COMPLETED', label: t('slotStatus.COMPLETED'), count: slotStats.completed },
+                { status: 'CANCELLED', label: t('slotStatus.CANCELLED'), count: slotStats.cancelled },
+              ].map((item) => {
+                const selected = slotApplied.status === item.status;
+                return (
+                  <button
+                    key={item.status || 'ALL'}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => filterSlot(item.status)}
+                    className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
+                      selected ? 'bg-white text-violet-800 shadow-sm ring-1 ring-violet-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                    }`}
+                  >
+                    {item.label}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-violet-100 text-violet-800' : 'bg-white text-gray-500'}`}>
+                      {item.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <Select value={slotStatusFilter} onValueChange={(v) => setSlotStatusFilter(v === 'ALL' ? '' : v)}>
+          </div>
+          {/* Filters + Create */}
+          <ERPToolbar className="mb-4">
+            <div className="relative flex-1 min-w-48">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder={t('filterLabels.searchSlot')} className="pl-9 h-9"
+                value={slotDraft.search}
+                onChange={(e) => setSlotField('search', e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applySlot()}
+              />
+            </div>
+            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotField('status', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-44">
-                <SelectValue placeholder="Trạng thái" />
+                <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.allStatuses')}</SelectItem>
                 {Object.entries(SLOT_STATUS_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Select value={slotTypeFilter} onValueChange={(v) => setSlotTypeFilter(v === 'ALL' ? '' : v)}>
+            <Select value={slotDraft.type || 'ALL'} onValueChange={(v) => setSlotField('type', v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
-                <SelectValue placeholder="Loại slot" />
+                <SelectValue placeholder={t('table.type')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Tất cả loại</SelectItem>
+                <SelectItem value="ALL">{t('filterLabels.allTypes')}</SelectItem>
                 {Object.entries(SLOT_TYPE_CONFIG).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
+            <Select
+              value={slotDraft.floorId || 'ALL'}
+              onValueChange={(value) => {
+                const floorId = value === 'ALL' ? '' : value;
+                setSlotDraft((filters) => ({ ...filters, floorId, slotId: '' }));
+              }}
+            >
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue placeholder={t('filterLabels.floor')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allFloors')}</SelectItem>
+                {floorOptions.map((floor) => (
+                  <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={slotDraft.slotId || 'ALL'} onValueChange={(value) => setSlotField('slotId', value === 'ALL' ? '' : value)}>
+              <SelectTrigger className="h-9 w-44">
+                <SelectValue placeholder={t('filterLabels.slot')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t('filterLabels.allSlots')}</SelectItem>
+                {slotOptions.map((slot) => (
+                  <SelectItem key={slot.id} value={slot.id}>
+                    {slot.code}{slot.name ? ` · ${slot.name}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button className="h-9 gap-1.5" onClick={applySlot} disabled={!slotIsDirty && slotHasApplied}>
+              <Search size={14} /> {t('filters.search')}
+            </Button>
+            {(slotHasApplied || slotIsDirty) && (
+              <Button variant="outline" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={clearSlot}>
+                <span>✕</span> {t('actions.clear')}
+              </Button>
+            )}
+            <Button
+              className="gap-2 h-9 ml-auto"
+              onClick={() => setCreateSlotOpen(true)}
+            >
+              <Plus size={14} /> {t('page.createSlotBooking')}
+            </Button>
+          </ERPToolbar>
 
           {/* Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {slotLoading ? (
+          <div className="bg-card rounded-lg border border-border overflow-x-auto">
+            {slotError ? (
+              <AsyncState isLoading={false} isError onRetry={refetchSlot} errorTitle={t('page.slotBookingError')}><div /></AsyncState>
+            ) : slotLoading ? (
               <div className="p-6 space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex gap-4 items-center">
@@ -1239,43 +880,73 @@ export default function BookingsPage() {
                 ))}
               </div>
             ) : slotBookings.length === 0 ? (
-              <div className="text-center py-16 text-gray-400">
-                <CalendarDays size={40} className="mx-auto mb-3 opacity-40" />
-                <p className="font-medium">Không có đặt slot nào</p>
-                <p className="text-sm mt-1">Tạo đặt slot từ trang Mặt bằng → chọn lô → Quản lý Slot</p>
-              </div>
+              <AsyncState isLoading={false} isEmpty emptyTitle={t('noSlotBookings')} emptyDescription={t('page.noSlotHint')}><div /></AsyncState>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 bg-violet-50/50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Ref #</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Loại</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Unit / Slot</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Khách hàng</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thời gian</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Thành tiền</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Trạng thái</th>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.ref')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.type')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.slot')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.customer')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.timeRange')}</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.amount')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.status')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.createdAt')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs uppercase tracking-wider">{t('table.updatedAt')}</th>
                     <th className="px-3 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {slotBookings.map((b: any) => {
+                  {slotBookingGroups.map((group) => {
+                    const firstBooking = group.bookings[0];
+                    const counts = countSlotBookingStatuses(group.bookings);
+                    return (
+                      <Fragment key={group.unitId}>
+                        <tr className="border-y border-violet-200 bg-violet-50/70">
+                          <td colSpan={10} className="px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs font-semibold uppercase tracking-wider text-violet-400">{t('table.unit')}</span>
+                                <span className="font-semibold text-slate-900">{firstBooking.slot?.unit?.code ?? '—'}</span>
+                                {firstBooking.slot?.unit?.floor?.name && (
+                                  <span className="text-xs text-slate-500">{firstBooking.slot.unit.floor.name}</span>
+                                )}
+                              </div>
+                              <span className="h-4 w-px bg-violet-200" aria-hidden="true" />
+                              <Badge variant="outline" className="border-violet-200 bg-white text-violet-700">
+                                {t('table.bookingCount', { count: counts.total })}
+                              </Badge>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700">
+                                <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                                {t('table.pendingConfirmationCount', { count: counts.pending })}
+                              </span>
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700">
+                                <span className="h-2 w-2 rounded-full bg-violet-500" aria-hidden="true" />
+                                {t('table.confirmedCount', { count: counts.confirmed })}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {group.bookings.map((b: any) => {
                     const typeCfg = SLOT_TYPE_CONFIG[b.type] ?? SLOT_TYPE_CONFIG.DAILY;
                     const statusCfg = SLOT_STATUS_CONFIG[b.status];
                     const clientName = b.customer?.companyName ?? b.lead?.brandName ?? '—';
                     const TypeIcon = typeCfg.icon;
                     return (
-                      <tr key={b.id} className="hover:bg-violet-50/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedSlotBooking(b)}>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{b.bookingRef}</td>
+                      <tr key={b.id} className="hover:bg-violet-50/30 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-violet-600 cursor-pointer hover:text-violet-800 hover:underline"
+                          onClick={() => { setSlotSection(undefined); setSelectedSlotBooking(b); }}>
+                          {b.bookingRef}
+                        </td>
                         <td className="px-4 py-3">
                           <Badge className={`${typeCfg.color} border-0 text-xs flex items-center gap-1 w-fit`}>
                             <TypeIcon size={11} /> {typeCfg.label}
                           </Badge>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="font-medium">{b.slot?.unit?.code ?? '—'}</div>
-                          <div className="text-xs text-gray-400">{b.slot?.code} · {b.slot?.name}</div>
+                          <div className="font-medium">{b.slot?.code ?? '—'}</div>
+                          {b.slot?.name && <div className="text-xs text-gray-400">{b.slot.name}</div>}
                         </td>
                         <td className="px-4 py-3 font-medium">{clientName}</td>
                         <td className="px-4 py-3 text-xs text-gray-600">
@@ -1288,8 +959,34 @@ export default function BookingsPage() {
                         <td className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>
                         </td>
-                        <td className="px-3 py-3"><ChevronRight size={15} className="text-gray-300" /></td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            {['PENDING', 'CONFIRMED'].includes(b.status) && (
+                              <button
+                                className="p-1 rounded text-violet-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                                title={t('edit')}
+                                onClick={() => { setSelectedSlotBooking(b); setEditSlotDirectly(true); }}
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            )}
+                            {b.status === 'CANCELLED' && (
+                              <button
+                                className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title={t('actions.deleteSlot')}
+                                onClick={() => setConfirmDeleteSlotId(b.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
+                    );
+                        })}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -1300,9 +997,135 @@ export default function BookingsPage() {
       )}
 
       {/* Detail sheets */}
-      <BookingDetailSheet booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
-      <SlotBookingDetailSheet booking={selectedSlotBooking} onClose={() => setSelectedSlotBooking(null)} />
+      <BookingDetailSheet
+        booking={selectedBooking}
+        scrollTo={bookingSection}
+        initialEditing={editDirectly}
+        onClose={() => { setSelectedBooking(null); setBookingSection(undefined); setEditDirectly(false); }}
+      />
+      <SlotBookingDetailSheet
+        booking={selectedSlotBooking}
+        scrollTo={slotSection}
+        initialEditing={editSlotDirectly}
+        onClose={() => { setSelectedSlotBooking(null); setSlotSection(undefined); setEditSlotDirectly(false); }}
+      />
       <CreateSlotBookingDialog open={createSlotOpen} onClose={() => setCreateSlotOpen(false)} mallId={selectedMallId} />
+      <CreateBookingDialog open={createUnitOpen} onClose={() => setCreateUnitOpen(false)} mallId={selectedMallId} mallName={selectedMallName} />
+
+      {/* Reinstate Confirmation */}
+      <Dialog open={!!confirmReinstateId} onOpenChange={(o) => { if (!o) setConfirmReinstateId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-600">
+              <RotateCcw size={18} /> {t('confirmations.reinstate')}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t('confirmations.reinstateDesc')}
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmReinstateId(null)} disabled={reinstateListMutation.isPending}>{t('confirmations.no')}</Button>
+            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={reinstateListMutation.isPending}
+              onClick={() => confirmReinstateId && reinstateListMutation.mutate(confirmReinstateId)}>
+              {reinstateListMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              {t('actions.reinstate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Soft Delete Confirmation */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle size={18} /> {t('confirmations.delete')}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t('confirmations.deleteDesc')}
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)} disabled={softDeleteMutation.isPending}>{t('confirmations.no')}</Button>
+            <Button variant="destructive" size="sm" disabled={softDeleteMutation.isPending}
+              onClick={() => confirmDeleteId && softDeleteMutation.mutate(confirmDeleteId)}>
+              {softDeleteMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              {t('actions.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Slot Booking Delete Confirmation */}
+      <Dialog open={!!confirmDeleteSlotId} onOpenChange={(o) => { if (!o) setConfirmDeleteSlotId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle size={18} /> {t('confirmations.deleteSlot')}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t('confirmations.deleteSlotDesc')}
+          </p>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteSlotId(null)} disabled={deleteSlotMutation.isPending}>{t('confirmations.no')}</Button>
+            <Button variant="destructive" size="sm" disabled={deleteSlotMutation.isPending}
+              onClick={() => confirmDeleteSlotId && deleteSlotMutation.mutate(confirmDeleteSlotId)}>
+              {deleteSlotMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              {t('actions.deleteSlot')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Cancel Confirmation */}
+      <Dialog open={!!confirmCancelIds} onOpenChange={(o) => { if (!o) setConfirmCancelIds(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle size={18} /> {t('confirmations.bulkCancel')}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {t('confirmations.bulkCancelDesc', { count: confirmCancelIds?.length ?? 0 })}
+            {selectedUnitIds.size > 0 && selectedUnitIds.size !== (confirmCancelIds?.length ?? 0) && (
+              <span className="block mt-1 text-amber-600 text-xs">
+                {t('confirmations.skipped', { count: selectedUnitIds.size - (confirmCancelIds?.length ?? 0) })}
+              </span>
+            )}
+          </p>
+          <div className="space-y-1.5">
+            <label htmlFor="booking-cancel-reason" className="text-sm font-medium text-gray-700">
+              {t('confirmations.cancelReason')} <span className="text-red-500">*</span>
+            </label>
+            <Textarea
+              id="booking-cancel-reason"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder={t('confirmations.cancelReasonPlaceholder')}
+              rows={3}
+              autoFocus
+            />
+            {cancelReason.trim().length > 0 && cancelReason.trim().length < 5 && (
+              <p className="text-xs text-red-500">{t('confirmations.cancelReasonMinLength')}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => { setConfirmCancelIds(null); setCancelReason(''); }} disabled={bulkCancelMutation.isPending}>
+              {t('confirmations.no')}
+            </Button>
+            <Button
+              variant="destructive" size="sm"
+              disabled={bulkCancelMutation.isPending || cancelReason.trim().length < 5}
+              onClick={() => confirmCancelIds && bulkCancelMutation.mutate(confirmCancelIds)}
+            >
+              {bulkCancelMutation.isPending ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+              {t('confirmations.yes')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

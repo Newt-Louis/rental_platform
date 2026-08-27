@@ -21,6 +21,7 @@ export const MODULE_ROLES = {
     Role.LEGAL,
     Role.OPERATION,
   ],
+  spacesManage: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER],
   crm: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
   booking: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
   proposals: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO],
@@ -43,11 +44,15 @@ export const MODULE_ROLES = {
   billing: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.TENANT],
   // Các endpoint quản trị billing (tạo/sửa hóa đơn, dunning, đối soát, cấu hình...) — KHÔNG cho TENANT dù module chung có.
   billingStaff: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR],
+  // Billing Add-in vận hành: vận hành (OPERATION) nhập/chốt số liệu mỗi kỳ; Finance/Mall Director chỉ xem để theo dõi tiến độ trước khi lập hóa đơn.
+  billingAddIn: [Role.ADMIN, Role.OPERATION, Role.MALL_DIRECTOR, Role.FINANCE],
+  billingAddInWrite: [Role.ADMIN, Role.OPERATION],
   sap: [Role.ADMIN, Role.FINANCE],
   reports: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER],
   analytics: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER],
   ai: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO],
   admin: [Role.ADMIN],
+  departments: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR],
   branding: [Role.ADMIN],
   announcements: [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER, Role.TENANT],
   categories: [Role.ADMIN],
@@ -75,6 +80,7 @@ export const MODULE_ROLES = {
   tenantPortal: [Role.TENANT],
   // Nhật ký hệ thống (ai đã sửa gì) — công cụ tuân thủ, giới hạn ADMIN/CEO.
   auditLog: [Role.ADMIN, Role.CEO],
+  parking: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION],
 } as const satisfies Record<string, Role[]>;
 
 export type ModuleKey = keyof typeof MODULE_ROLES;

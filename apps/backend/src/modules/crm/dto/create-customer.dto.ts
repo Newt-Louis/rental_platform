@@ -3,6 +3,11 @@ import { IsString, IsOptional, IsEmail, IsNumber, IsEnum, IsUrl } from 'class-va
 import { LeadSource } from '@prisma/client';
 
 export class CreateCustomerDto {
+  @ApiPropertyOptional({ description: 'Lead to link to this new customer profile' })
+  @IsOptional()
+  @IsString()
+  leadId?: string;
+
   @ApiProperty()
   @IsString()
   companyName: string;

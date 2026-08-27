@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ApprovalsService } from './approvals.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -8,19 +8,75 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
+import { ApproveDecisionDto, RejectDecisionDto } from './dto/approval-decision.dto';
+import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Approvals')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.approvals)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'approvalStepOrWorkflow' }, status: EnforcementStatus.ENFORCED })
 @Controller('approvals')
 export class ApprovalsController {
-  constructor(private readonly approvalsService: ApprovalsService) {}
+  constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
+
+  private async mallIds(user: any, requestedMallId?: string): Promise<string[] | undefined> {
+    const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
+    // CR-101 Phase 3G: CEO's "perform Approval actions only where the workflow
+    // assigns CEO" grant requires seeing pending/history/all-workflow lists
+    // across every Mall, not just its own UserMallAccess set -- the real
+    // authorization gate for approve/reject is ApprovalStep.approverRole,
+    // enforced independently in ApprovalsService, not Mall membership.
+    if (mallId) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, mallId, { crossMallRead: true });
+      return [mallId];
+    }
+    return (await this.mallAccess.getAccessibleMallIds(user.id, user.role, { crossMallRead: true })) ?? undefined;
+  }
+
+  private validateEntityType(entityType?: string) {
+    if (entityType !== undefined && entityType !== 'PROPOSAL' && entityType !== 'FITOUT_SUBMITTAL') {
+      throw new BadRequestException('entityType must be PROPOSAL or FITOUT_SUBMITTAL');
+    }
+  }
+
+  private async fitoutMallIds(user: any, requestedMallId?: string, requireRequestedAccess = false): Promise<string[] | undefined> {
+    if (user.role === Role.ADMIN) return requestedMallId ? [requestedMallId] : undefined;
+    if (requestedMallId && requireRequestedAccess) {
+      await this.mallAccess.assertMallAccess(user.id, user.role, requestedMallId);
+      return [requestedMallId];
+    }
+    const accessible = (await this.mallAccess.getAccessibleMallIds(user.id, user.role)) ?? [];
+    return requestedMallId ? accessible.filter((mallId) => mallId === requestedMallId) : accessible;
+  }
 
   @Get('pending')
   @ApiOperation({ summary: 'Get pending approval steps for current user' })
-  getPending(@CurrentUser() user: any) {
-    return this.approvalsService.getPending(user.id, user.role);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'entityType', required: false, enum: ['PROPOSAL', 'FITOUT_SUBMITTAL'] })
+  async getPending(@CurrentUser() user: any, @Query() query: any) {
+    this.validateEntityType(query.entityType);
+    const proposalMallIds = await this.mallIds(user, query.mallId);
+    const fitoutMallIds = await this.fitoutMallIds(
+      user,
+      query.mallId,
+      query.entityType === 'FITOUT_SUBMITTAL',
+    );
+    return this.approvalsService.getPending(user.id, user.role, query, proposalMallIds, fitoutMallIds);
+  }
+
+  @Get('history')
+  @ApiOperation({ summary: 'Get decided approval steps (approved/rejected) for current user' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'status', required: false, enum: ['APPROVED', 'REJECTED'] })
+  async getHistory(@CurrentUser() user: any, @Query() query: any) {
+    return this.approvalsService.getHistory(user.id, user.role, query, await this.mallIds(user, query.mallId));
   }
 
   @Get()
@@ -28,8 +84,8 @@ export class ApprovalsController {
   @ApiQuery({ name: 'status', required: false, enum: WorkflowStatus })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  getAll(@Query() query: any) {
-    return this.approvalsService.getAllWorkflows(query);
+  async getAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.approvalsService.getAllWorkflows(query, await this.mallIds(user, query.mallId));
   }
 
   @Get('policy/rules')
@@ -55,27 +111,30 @@ export class ApprovalsController {
 
   @Post(':id/approve')
   @ApiOperation({ summary: 'Approve a step' })
-  approve(
+  async approve(
     @Param('id') id: string,
-    @Body('comment') comment: string,
+    @Body() dto: ApproveDecisionDto,
     @CurrentUser() user: any,
   ) {
-    return this.approvalsService.approve(id, user.id, user.role, comment);
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id }, { crossMallRead: true });
+    return this.approvalsService.approve(id, user.id, user.role, dto.comment);
   }
 
   @Post(':id/reject')
   @ApiOperation({ summary: 'Reject a step' })
-  reject(
+  async reject(
     @Param('id') id: string,
-    @Body('comment') comment: string,
+    @Body() dto: RejectDecisionDto,
     @CurrentUser() user: any,
   ) {
-    return this.approvalsService.reject(id, user.id, user.role, comment);
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalStepId: id }, { crossMallRead: true });
+    return this.approvalsService.reject(id, user.id, user.role, dto.comment);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get workflow details' })
-  getWorkflow(@Param('id') id: string) {
-    return this.approvalsService.getWorkflow(id);
+  async getWorkflow(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { approvalWorkflowId: id }, { crossMallRead: true });
+    return this.approvalsService.getWorkflow(id, user, await this.fitoutMallIds(user));
   }
 }

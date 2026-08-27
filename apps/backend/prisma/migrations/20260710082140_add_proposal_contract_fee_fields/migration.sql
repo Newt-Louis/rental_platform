@@ -1,0 +1,25 @@
+-- DropIndex
+DROP INDEX "Unit_leaseTermType_idx";
+
+-- DropIndex
+DROP INDEX "Unit_spaceType_idx";
+
+-- DropIndex
+DROP INDEX "Unit_tier_idx";
+
+-- AlterTable
+ALTER TABLE "Contract" ADD COLUMN     "afterHoursFee" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "depositFitout" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "depositLease" DOUBLE PRECISION,
+ADD COLUMN     "fitoutFee" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "operatingHours" TEXT,
+ADD COLUMN     "utilityFee" DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "Proposal" ADD COLUMN     "afterHoursFee" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "depositFitout" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "depositLease" DOUBLE PRECISION,
+ADD COLUMN     "fitoutFee" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "operatingHours" TEXT,
+ADD COLUMN     "paymentTermDays" INTEGER NOT NULL DEFAULT 30,
+ADD COLUMN     "utilityFee" DOUBLE PRECISION NOT NULL DEFAULT 0;

@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { aiApi, floorPlanApi, spacesApi } from '@/api';
+import { aiApi, floorPlanApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
 import {
   Send, Bot, User, Sparkles, Upload, FileText, CheckCircle, Clock,
   XCircle, ChevronRight, Building2, Layers, Map, BarChart3, Lightbulb,
@@ -147,7 +148,7 @@ function ChatTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const { data: suggestionsData } = useQuery({
+  const { data: suggestionsData, isError: suggestionsError, refetch: refetchSuggestions } = useQuery({
     queryKey: ['ai-suggestions'],
     queryFn: aiApi.suggestions,
   });
@@ -250,6 +251,17 @@ function ChatTab() {
             ))}
           </div>
         </div>
+      )}
+      {messages.length <= 1 && suggestionsError && (
+        <AsyncState
+          isLoading={false}
+          isError
+          onRetry={refetchSuggestions}
+          errorTitle="Không thể tải gợi ý câu hỏi"
+          errorDescription="Bạn vẫn có thể nhập câu hỏi trực tiếp bên dưới."
+        >
+          <div />
+        </AsyncState>
       )}
 
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
@@ -653,18 +665,18 @@ function FloorPlanTab() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: { id: string; name: string; code: string }[] = mallsData?.data ?? mallsData ?? [];
-
   useEffect(() => {
-    if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
-  }, [malls, selectedMallId]);
+    setSelectedAnalysisId(null);
+    setPendingId(null);
+  }, [selectedMallId]);
 
-  const { data: analysesData, refetch: refetchAnalyses } = useQuery({
+  const { data: analysesData, isError: analysesError, refetch: refetchAnalyses } = useQuery({
     queryKey: ['floor-plan-analyses', selectedMallId],
     queryFn: () => floorPlanApi.listAnalyses(selectedMallId),
     enabled: !!selectedMallId,
@@ -714,9 +726,13 @@ function FloorPlanTab() {
   });
 
   const handleFile = useCallback((file: File) => {
-    if (!selectedMallId) { toast({ title: 'Vui lòng chọn mall trước', variant: 'destructive' }); return; }
+    if (!selectedMallId) {
+      openMallContextModal();
+      toast({ title: 'Vui lòng chọn Mall tại bộ chọn chung', variant: 'destructive' });
+      return;
+    }
     uploadMutation.mutate(file);
-  }, [selectedMallId, uploadMutation, toast]);
+  }, [selectedMallId, uploadMutation, toast, openMallContextModal]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -728,19 +744,15 @@ function FloorPlanTab() {
   const isPending = !!pendingId;
 
   return (
-    <div className="flex gap-4 h-full">
+    <div className="flex h-full flex-col gap-4 lg:flex-row">
       {/* Left panel: upload + history */}
-      <div className="w-72 shrink-0 flex flex-col gap-4 overflow-y-auto">
-        {/* Mall selector */}
+      <div className="flex max-h-72 w-full shrink-0 flex-col gap-4 overflow-y-auto lg:max-h-none lg:w-72">
+        {/* Mall context comes from the global selector */}
         <div>
           <label className="text-xs font-medium text-gray-500 mb-1 block">THISO Mall</label>
-          <select
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={selectedMallId}
-            onChange={(e) => setSelectedMallId(e.target.value)}
-          >
-            {malls.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            {selectedMallName}
+          </div>
         </div>
 
         {/* Upload area */}
@@ -808,7 +820,9 @@ function FloorPlanTab() {
           </div>
         )}
 
-        {analyses.length === 0 && !uploadMutation.isPending && (
+        {analysesError ? (
+          <AsyncState isLoading={false} isError onRetry={refetchAnalyses} errorTitle="Không thể tải lịch sử phân tích"><div /></AsyncState>
+        ) : analyses.length === 0 && !uploadMutation.isPending && (
           <div className="text-center py-6 text-gray-400">
             <Map size={32} className="mx-auto mb-2 opacity-20" />
             <p className="text-xs">Chưa có phân tích nào<br />Upload bản vẽ để bắt đầu</p>
@@ -892,7 +906,7 @@ export default function AiPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-5 shrink-0">
+      <div className="mb-5 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
         <div className="bg-gradient-to-br from-blue-500 to-purple-600 p-2.5 rounded-xl">
           <Bot size={22} className="text-white" />
         </div>
@@ -901,10 +915,10 @@ export default function AiPage() {
           <p className="text-sm text-gray-500">Trợ lý AI nội bộ THISO Leasing</p>
         </div>
         {/* Tab buttons */}
-        <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-gray-50 p-0.5 gap-0.5">
+        <div className="flex w-full gap-0.5 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 p-0.5 sm:w-auto">
           <button
             onClick={() => setTab('chat')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
               tab === 'chat'
                 ? 'bg-white text-gray-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
@@ -914,7 +928,7 @@ export default function AiPage() {
           </button>
           <button
             onClick={() => setTab('floorplan')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
               tab === 'floorplan'
                 ? 'bg-white text-gray-700 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'

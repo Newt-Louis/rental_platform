@@ -16,18 +16,27 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CategoriesService } from './categories.service';
 import { Role } from '@prisma/client';
+import { MallAccessService } from '../../common/services/mall-access.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import {
   CreateCategoryPricingDto,
   UpdateCategoryPricingDto,
   ValidatePriceDto,
 } from './dto/category-pricing.dto';
+import { GlobalScope } from '../../common/decorators/scope.decorator';
 
+// CR-101 Phase 1: descriptive only. Class default = base taxonomy (GLOBAL); the
+// CategoryMallPricing sub-resource is separately Mall-scoped and enforced --
+// not individually re-annotated per-method this pass, tracked as a follow-up.
 @ApiTags('Categories')
+@GlobalScope('Base category taxonomy is global platform config; CategoryMallPricing sub-resource is separately Mall-scoped and enforced (not re-annotated per-method this pass)')
 @Controller('categories')
 @UseGuards(JwtAuthGuard)
 export class CategoriesController {
-  constructor(private readonly categoriesService: CategoriesService) {}
+  constructor(
+    private readonly categoriesService: CategoriesService,
+    private readonly mallAccess: MallAccessService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CATEGORY ENDPOINTS
@@ -95,12 +104,18 @@ export class CategoriesController {
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
   async getCategoryPricings(
+    @Req() req: any,
     @Query('mallId') mallId?: string,
     @Query('categoryId') categoryId?: string,
-    @Query('includeInactive') includeInactive?: string
+    @Query('includeInactive') includeInactive?: string,
   ) {
+    if (mallId) await this.mallAccess.assertMallAccess(req.user.id, req.user.role, mallId);
+    const mallIds = mallId
+      ? undefined
+      : (await this.mallAccess.getAccessibleMallIds(req.user.id, req.user.role)) ?? undefined;
     return this.categoriesService.getCategoryPricings({
       mallId,
+      mallIds,
       categoryId,
       includeInactive: includeInactive === 'true',
     });
@@ -114,11 +129,13 @@ export class CategoriesController {
   @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'zoneId', required: false })
   async getApplicablePricing(
+    @Req() req: any,
     @Query('mallId') mallId: string,
     @Query('categoryId') categoryId: string,
     @Query('floorId') floorId?: string,
-    @Query('zoneId') zoneId?: string
+    @Query('zoneId') zoneId?: string,
   ) {
+    await this.mallAccess.assertMallAccess(req.user.id, req.user.role, mallId);
     const pricing = await this.categoriesService.getApplicablePricing({
       mallId,
       categoryId,
@@ -136,7 +153,8 @@ export class CategoriesController {
   @Post('pricing/validate')
   @Roles(...MODULE_ROLES.categoriesRead)
   @ApiOperation({ summary: 'Validate proposed price against category pricing' })
-  async validatePrice(@Body() dto: ValidatePriceDto) {
+  async validatePrice(@Body() dto: ValidatePriceDto, @Req() req: any) {
+    await this.mallAccess.assertMallAccess(req.user.id, req.user.role, dto.mallId);
     return this.categoriesService.validateProposedPrice({
       mallId: dto.mallId,
       categoryId: dto.categoryId,
@@ -149,15 +167,18 @@ export class CategoriesController {
   @Get('pricing/mall/:mallId/summary')
   @Roles(...MODULE_ROLES.categoriesRead)
   @ApiOperation({ summary: 'Get pricing summary for a mall (all categories)' })
-  async getMallPricingSummary(@Param('mallId') mallId: string) {
+  async getMallPricingSummary(@Param('mallId') mallId: string, @Req() req: any) {
+    await this.mallAccess.assertMallAccess(req.user.id, req.user.role, mallId);
     return this.categoriesService.getMallPricingSummary(mallId);
   }
 
   @Get('pricing/:id')
   @Roles(...MODULE_ROLES.categoriesRead)
   @ApiOperation({ summary: 'Get category pricing details' })
-  async getCategoryPricing(@Param('id') id: string) {
-    return this.categoriesService.getCategoryPricing(id);
+  async getCategoryPricing(@Param('id') id: string, @Req() req: any) {
+    const pricing = await this.categoriesService.getCategoryPricing(id);
+    await this.mallAccess.assertMallAccess(req.user.id, req.user.role, pricing.mallId);
+    return pricing;
   }
 
   @Post('pricing')

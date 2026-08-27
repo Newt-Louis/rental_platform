@@ -40,14 +40,26 @@ export class FitoutDocumentsService {
     });
   }
 
+  // CR-101 Phase 3C (C4-01): confirmed ID-substitution bug -- this method
+  // previously looked up `documentId` alone, with no `projectId` filter, even
+  // though the caller (fitout.controller.ts's reviewDocument) already
+  // Mall-authorized a specific `projectId`. A caller with legitimate access to
+  // their own Mall's project could pass a `docId` belonging to a DIFFERENT
+  // project (any Mall) and have it approved/rejected. Fixed by requiring the
+  // document to belong to the already-authorized project -- `findFirst({id,
+  // projectId})`, not `findUnique({id})` -- so authorization of the parent can
+  // never be used to act on an unrelated child. Response/error semantics
+  // unchanged: a mismatched or unknown docId still surfaces as the same
+  // NotFoundException the route already threw for a missing document.
   async reviewDocument(
     documentId: string,
+    projectId: string,
     decision: 'APPROVED' | 'REJECTED',
     reviewNote?: string,
     reviewedById?: string,
   ) {
-    const doc = await this.prisma.fitoutDocument.findUnique({
-      where: { id: documentId },
+    const doc = await this.prisma.fitoutDocument.findFirst({
+      where: { id: documentId, projectId },
     });
     if (!doc) throw new NotFoundException('Document not found');
 

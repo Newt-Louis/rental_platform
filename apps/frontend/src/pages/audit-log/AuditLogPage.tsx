@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Search, ShieldAlert, ListChecks, AlertTriangle } from 'lucide-react';
+import { AsyncState } from '@/components/ui/async-state';
+import { useTranslation } from 'react-i18next';
+import { roleTranslationKey } from '@/lib/erpEnumPresentation';
 
 const ACTION_COLOR: Record<string, string> = {
   POST: 'bg-blue-100 text-gray-700',
@@ -22,6 +25,7 @@ function fmtDateTime(d: string) {
 }
 
 function LogDetailDialog({ log, onClose }: { log: any; onClose: () => void }) {
+  const { t } = useTranslation(['admin', 'common']);
   if (!log) return null;
   let payload: unknown = log.payload;
   try { payload = log.payload ? JSON.parse(log.payload) : null; } catch { /* keep raw string */ }
@@ -33,7 +37,7 @@ function LogDetailDialog({ log, onClose }: { log: any; onClose: () => void }) {
         <div className="space-y-3 text-sm">
           <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
             <div>Người dùng: <span className="text-gray-800 font-medium">{log.user?.fullName ?? 'Hệ thống'}</span></div>
-            <div>Vai trò: <span className="text-gray-800 font-medium">{log.user?.role ?? '—'}</span></div>
+            <div>Vai trò: <span className="text-gray-800 font-medium">{log.user?.role ? t(roleTranslationKey(log.user.role)) : '—'}</span></div>
             <div>Thời gian: <span className="text-gray-800 font-medium">{fmtDateTime(log.createdAt)}</span></div>
             <div>Thời lượng: <span className="text-gray-800 font-medium">{log.duration ?? '—'} ms</span></div>
             <div>IP: <span className="text-gray-800 font-medium">{log.ipAddress ?? '—'}</span></div>
@@ -65,7 +69,7 @@ export default function AuditLogPage() {
   const [dateTo, setDateTo] = useState('');
   const [selectedLog, setSelectedLog] = useState<any>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['audit-logs', { search, entityType, action, status, userId, dateFrom, dateTo }],
     queryFn: () => auditLogApi.listLogs({
       search: search || undefined,
@@ -165,7 +169,9 @@ export default function AuditLogPage() {
         <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-36 h-9 text-sm" />
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải nhật ký kiểm toán"><div /></AsyncState>
+      ) : isLoading ? (
         <div className="space-y-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
       ) : (
         <div className="bg-white rounded-lg border overflow-hidden">

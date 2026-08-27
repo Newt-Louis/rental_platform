@@ -1,32 +1,78 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateLeadDto } from './dto/create-lead.dto';
+import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { LeadStatus } from '@prisma/client';
+import { LeadStatus, Role, UnitLeaseTermType } from '@prisma/client';
 import { CustomersService } from './customers.service';
 
 @Injectable()
 export class CrmService {
+  private readonly logger = new Logger(CrmService.name);
   constructor(
     private prisma: PrismaService,
     private customersService: CustomersService,
   ) {}
 
+  private leadScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    if (!scope?.mallIds) return {};
+    const mallIds = scope.mallIds;
+    const relatedToMall = [
+      { mallId: { in: mallIds } },
+      { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: mallIds } } } } },
+      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
+      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } } },
+    ];
+    return { AND: [{
+      OR: scope.role === Role.LEASING_EXECUTIVE
+        ? [{ assignedToId: scope.userId }]
+        : relatedToMall,
+    }] };
+  }
+
+  async assertLeadAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const lead = await this.prisma.lead.findFirst({ where: { id, isActive: true, ...this.leadScope(scope) }, select: { id: true } });
+    if (!lead) throw new NotFoundException('Lead not found or outside your mall access');
+  }
+
   async findAll(query: {
     status?: LeadStatus;
+    statuses?: string;
     assignedToId?: string;
     customerId?: string;
+    mallId?: string;
+    leaseTermType?: UnitLeaseTermType;
     search?: string;
     page?: number;
     limit?: number;
+    scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
-    const { page = 1, limit = 20, search, status, assignedToId, customerId } = query;
+    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, mallId, leaseTermType } = query;
     const skip = (page - 1) * limit;
 
-    const where: any = { isActive: true, deletedAt: null };
-    if (status) where.status = status;
+    const where: any = { isActive: true, deletedAt: null, ...this.leadScope(query.scope) };
+    if (status && statuses) {
+      throw new BadRequestException('Chỉ dùng một trong hai bộ lọc status hoặc statuses');
+    }
+    if (statuses) {
+      const requestedStatuses = [...new Set(statuses.split(',').map((value) => value.trim()).filter(Boolean))];
+      const validStatuses = new Set<string>(Object.values(LeadStatus));
+      const invalidStatuses = requestedStatuses.filter((value) => !validStatuses.has(value));
+      if (!requestedStatuses.length || invalidStatuses.length) {
+        throw new BadRequestException(`Trạng thái Lead không hợp lệ: ${invalidStatuses.join(', ') || statuses}`);
+      }
+      where.status = { in: requestedStatuses as LeadStatus[] };
+    } else if (status) {
+      where.status = status;
+    }
     if (assignedToId) where.assignedToId = assignedToId;
     if (customerId) where.customerId = customerId;
+    // An explicit Mall filter is stricter than the general CRM visibility
+    // scope. Booking may only pair a Lead whose owning mallId matches the
+    // selected Unit, so related/assigned Leads from another Mall must not be
+    // returned as selectable finder results.
+    if (mallId) where.mallId = mallId;
+    if (leaseTermType) where.leaseTermType = leaseTermType;
     if (search) {
       where.OR = [
         { brandName: { contains: search, mode: 'insensitive' } },
@@ -55,7 +101,7 @@ export class CrmService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async getPipeline(limit = 100) {
+  async getPipeline(limit = 100, scope?: { userId: string; role: Role; mallIds?: string[] }, leaseTermType?: UnitLeaseTermType) {
     const statuses = Object.values(LeadStatus);
     const pipeline: Record<string, { leads: any[]; total: number; hasMore: boolean }> = {};
 
@@ -63,7 +109,7 @@ export class CrmService {
       statuses.map(async (status) => {
         const [leads, total] = await Promise.all([
           this.prisma.lead.findMany({
-            where: { status, isActive: true, deletedAt: null },
+            where: { status, isActive: true, deletedAt: null, ...(leaseTermType ? { leaseTermType } : {}), ...this.leadScope(scope) },
             include: {
               assignedTo: { select: { id: true, fullName: true, avatar: true } },
               customer: { select: { id: true, customerCode: true } },
@@ -76,7 +122,7 @@ export class CrmService {
             ],
             take: limit,
           }),
-          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null } }),
+          this.prisma.lead.count({ where: { status, isActive: true, deletedAt: null, ...(leaseTermType ? { leaseTermType } : {}), ...this.leadScope(scope) } }),
         ]);
         pipeline[status] = { leads, total, hasMore: total > limit };
       }),
@@ -162,6 +208,7 @@ export class CrmService {
           orderBy: { createdAt: 'desc' },
         },
         proposals: {
+          where: { isActive: true },
           include: {
             unit: { select: { id: true, code: true, name: true } },
             approvalWorkflow: {
@@ -203,6 +250,15 @@ export class CrmService {
     });
   }
 
+  async createCustomerProfile(leadId: string, userId: string) {
+    return this.customersService.createProfileFromLead(leadId, userId);
+  }
+
+  async syncLeadToCustomer(leadId: string, customerId: string) {
+    if (!customerId) throw new BadRequestException('Vui lòng chọn hồ sơ khách hàng.');
+    return this.customersService.syncFromLead(customerId, leadId);
+  }
+
   // Lead status → corresponding Customer status
   private readonly LEAD_TO_CUSTOMER: Record<string, string> = {
     NEW: 'PROSPECT', CONTACTED: 'PROSPECT', QUALIFIED: 'PROSPECT',
@@ -214,11 +270,42 @@ export class CrmService {
     PROSPECT: 1, NEGOTIATING: 2, ACTIVE: 3, INACTIVE: 0, BLACKLISTED: 0,
   };
 
-  async update(id: string, dto: Partial<CreateLeadDto> & { customerId?: string }, userId?: string) {
+  async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
     const existing = await this.findOne(id);
+
+    // Chặn nhảy thẳng lên WON khi chưa có Proposal nào được duyệt — tránh tạo Customer/kích hoạt
+    // (customersService.createFromLead bên dưới) cho một lead chưa thực sự chốt được deal, cùng
+    // lớp bảo vệ như state machine đã thêm cho Contract/Proposal.
+    if (dto.status === 'WON' && existing.status !== 'WON') {
+      const hasApprovedProposal = (existing as any).proposals?.some((p: any) =>
+        ['APPROVED', 'CONVERTED'].includes(p.status),
+      );
+      if (!hasApprovedProposal) {
+        throw new BadRequestException(
+          'Lead cần có ít nhất một đề xuất (Proposal) đã được duyệt trước khi đánh dấu Đã chốt (WON).',
+        );
+      }
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (dto.brandName !== undefined) updateData.brandName = dto.brandName;
+    if (dto.company !== undefined) updateData.company = dto.company;
+    if (dto.contactName !== undefined) updateData.contactName = dto.contactName;
+    if (dto.phone !== undefined) updateData.phone = dto.phone;
+    if (dto.email !== undefined) updateData.email = dto.email;
+    if (dto.category !== undefined) updateData.category = dto.category;
+    if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.source !== undefined) updateData.source = dto.source;
+    if (dto.status !== undefined) updateData.status = dto.status;
+    if (dto.priority !== undefined) updateData.priority = dto.priority;
+    if (dto.leaseTermType !== undefined) updateData.leaseTermType = dto.leaseTermType;
+    if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
+    if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
+    if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
+    if ((dto as any).customerId !== undefined) updateData.customerId = (dto as any).customerId;
     const updated = await this.prisma.lead.update({
       where: { id },
-      data: dto,
+      data: updateData,
       include: {
         assignedTo: { select: { id: true, fullName: true } },
         customer: { select: { id: true, customerCode: true, status: true } },
@@ -281,24 +368,25 @@ export class CrmService {
     return activity;
   }
 
-  async getStats() {
+  async getStats(scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const scopedWhere = { isActive: true, ...this.leadScope(scope) };
     const [total, byStatus, wonThisMonth, lostThisMonth] = await Promise.all([
-      this.prisma.lead.count({ where: { isActive: true } }),
+      this.prisma.lead.count({ where: scopedWhere }),
       this.prisma.lead.groupBy({
         by: ['status'],
-        where: { isActive: true },
+        where: scopedWhere,
         _count: true,
       }),
       this.prisma.lead.count({
         where: {
-          isActive: true,
+          ...scopedWhere,
           status: 'WON',
           updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
       }),
       this.prisma.lead.count({
         where: {
-          isActive: true,
+          ...scopedWhere,
           status: 'LOST',
           updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
@@ -308,7 +396,7 @@ export class CrmService {
     return { total, byStatus, wonThisMonth, lostThisMonth };
   }
 
-  async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number }) {
+  async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number; scope?: { userId: string; role: Role; mallIds?: string[] } }) {
     const where: any = {};
     if (query.leadId) where.leadId = query.leadId;
     if (query.assignedToId) where.assignedToId = query.assignedToId;
@@ -317,6 +405,12 @@ export class CrmService {
       const future = new Date();
       future.setDate(future.getDate() + +query.daysAhead);
       where.dueDate = { lte: future };
+    }
+    if (query.scope?.mallIds && !query.assignedToId) {
+      where.AND = [{ OR: [
+        { lead: { is: this.leadScope(query.scope) } },
+        { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: query.scope.mallIds } } } } },
+      ] }];
     }
     return this.prisma.leadFollowUp.findMany({
       where,
@@ -417,15 +511,25 @@ export class CrmService {
 
   // ─── Pipeline Analytics ─────────────────────────────────────────────────────────
 
-  async getPipelineStats() {
+  async getPipelineStats(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const mallFilter = scope?.mallIds;
+    const assetScope = mallFilter ? [
+      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
+      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
+      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } } },
+    ] : [];
+    const leadWhere: any = { isActive: true };
+    if (mallFilter) {
+      leadWhere.OR = scope?.role === Role.LEASING_EXECUTIVE
+        ? [{ assignedToId: scope.userId }]
+        : assetScope;
+    }
 
     // Get all leads for calculations
     const leads = await this.prisma.lead.findMany({
-      where: { isActive: true },
+      where: leadWhere,
       select: {
         id: true,
         status: true,
@@ -438,6 +542,7 @@ export class CrmService {
         estimatedValue: true,
         expectedRent: true,
         expectedArea: true,
+        leaseTermType: true,
       },
     });
 
@@ -460,12 +565,13 @@ export class CrmService {
     const totalLost = statusCounts['LOST'] || 0;
     const totalActive = leads.length - totalWon - totalLost;
 
+    const percent = (numerator: number, denominator: number) => denominator > 0 ? (numerator / denominator) * 100 : 0;
     const conversionRates = {
-      newToContacted: totalNew > 0 ? ((totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon) / (totalNew + totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon + totalLost)) * 100 : 0,
-      contactedToQualified: totalContacted > 0 ? ((totalQualified + totalProposal + totalNegotiation + totalWon) / (totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      qualifiedToProposal: totalQualified > 0 ? ((totalProposal + totalNegotiation + totalWon) / (totalQualified + totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      proposalToNegotiation: totalProposal > 0 ? ((totalNegotiation + totalWon) / (totalProposal + totalNegotiation + totalWon)) * 100 : 0,
-      negotiationToWon: totalNegotiation > 0 ? (totalWon / (totalNegotiation + totalWon)) * 100 : 0,
+      newToContacted: percent(leads.length - totalNew, leads.length),
+      contactedToQualified: percent(totalQualified + totalProposal + totalNegotiation + totalWon, totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon),
+      qualifiedToProposal: percent(totalProposal + totalNegotiation + totalWon, totalQualified + totalProposal + totalNegotiation + totalWon),
+      proposalToNegotiation: percent(totalNegotiation + totalWon, totalProposal + totalNegotiation + totalWon),
+      negotiationToWon: percent(totalWon, totalNegotiation + totalWon),
       overallWinRate: (totalWon + totalLost) > 0 ? (totalWon / (totalWon + totalLost)) * 100 : 0,
     };
 
@@ -516,10 +622,63 @@ export class CrmService {
       .filter(l => !['WON', 'LOST'].includes(l.status))
       .reduce((sum, l) => sum + (l.estimatedValue ?? ((l.expectedRent ?? 0) * (l.expectedArea ?? 0))), 0);
 
+    const proposalWhere: any = { isActive: true };
+    if (mallFilter) proposalWhere.unit = { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] };
+    const proposalGroups = await this.prisma.proposal.groupBy({
+      by: ['status'], where: proposalWhere, _count: { _all: true }, _sum: { totalContractValue: true },
+    });
+    // Multi-currency: proposalValueByStatus/totalContractValue sums are single VND figures --
+    // a separate VND-scoped groupBy avoids blending USD/MMK proposals into them, while
+    // proposalByStatus (a pure count) stays currency-agnostic from the query above.
+    const proposalValueGroups = await this.prisma.proposal.groupBy({
+      by: ['status'], where: { ...proposalWhere, rentCurrency: 'VND' }, _sum: { totalContractValue: true },
+    });
+    const proposalByStatus: Record<string, number> = {};
+    const proposalValueByStatus: Record<string, number> = {};
+    proposalGroups.forEach((group) => {
+      proposalByStatus[group.status] = group._count._all;
+    });
+    proposalValueGroups.forEach((group) => {
+      proposalValueByStatus[group.status] = group._sum.totalContractValue ?? 0;
+    });
+
     // This month stats
     const wonThisMonth = leads.filter(l => l.status === 'WON' && new Date(l.updatedAt) >= startOfMonth).length;
     const lostThisMonth = leads.filter(l => l.status === 'LOST' && new Date(l.updatedAt) >= startOfMonth).length;
     const newThisMonth = leads.filter(l => new Date(l.createdAt) >= startOfMonth).length;
+
+    const summarizeLeaseTerm = (leaseTermType: UnitLeaseTermType) => {
+      const segment = leads.filter((lead) => lead.leaseTermType === leaseTermType);
+      const byStatus: Record<string, number> = {};
+      const valueByStatus: Record<string, number> = {};
+      const byPriority: Record<string, number> = {};
+      segment.forEach((lead) => {
+        byStatus[lead.status] = (byStatus[lead.status] || 0) + 1;
+        valueByStatus[lead.status] = (valueByStatus[lead.status] || 0)
+          + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0)));
+        byPriority[lead.priority] = (byPriority[lead.priority] || 0) + 1;
+      });
+      const won = byStatus.WON || 0;
+      const lost = byStatus.LOST || 0;
+      return {
+        summary: {
+          total: segment.length,
+          totalActive: segment.length - won - lost,
+          totalWon: won,
+          totalLost: lost,
+          totalPipelineValue: segment
+            .filter((lead) => !['WON', 'LOST'].includes(lead.status))
+            .reduce((sum, lead) => sum + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0))), 0),
+          wonThisMonth: segment.filter((lead) => lead.status === 'WON' && new Date(lead.updatedAt) >= startOfMonth).length,
+          lostThisMonth: segment.filter((lead) => lead.status === 'LOST' && new Date(lead.updatedAt) >= startOfMonth).length,
+          newThisMonth: segment.filter((lead) => new Date(lead.createdAt) >= startOfMonth).length,
+        },
+        byStatus,
+        valueByStatus,
+        byPriority,
+        conversionRates: { overallWinRate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0 },
+      };
+    };
 
     return {
       summary: {
@@ -536,21 +695,28 @@ export class CrmService {
       byStatus: statusCounts,
       valueByStatus: statusValues,
       byPriority,
+      proposalByStatus,
+      proposalValueByStatus,
       conversionRates,
       winLossBySource,
       winLossByCategory,
+      byLeaseTerm: {
+        LONG: summarizeLeaseTerm(UnitLeaseTermType.LONG),
+        SHORT: summarizeLeaseTerm(UnitLeaseTermType.SHORT),
+      },
     };
   }
 
   // ─── Stale Leads ────────────────────────────────────────────────────────────────
 
-  async getStaleLeads(days: number = 14) {
+  async getStaleLeads(days: number = 14, scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
     return this.prisma.lead.findMany({
       where: {
         isActive: true,
+        ...this.leadScope(scope),
         status: { notIn: ['WON', 'LOST'] },
         OR: [
           { lastActivityAt: { lt: cutoffDate } },
@@ -660,6 +826,7 @@ export class CrmService {
     stage?: string;
     page?: number;
     limit?: number;
+    scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
     const { page = 1, limit = 50, search, mallId, stage } = query;
     const skip = (page - 1) * +limit;
@@ -668,7 +835,10 @@ export class CrmService {
       isActive: true,
       deletedAt: null,
       status: { not: LeadStatus.LOST },
+      ...this.leadScope(query.scope),
     };
+
+    if (mallId) where.mallId = mallId;
 
     if (search) {
       where.OR = [
@@ -741,6 +911,10 @@ export class CrmService {
           priority: lead.priority,
           assignedTo: lead.assignedTo,
           estimatedValue: lead.estimatedValue ?? proposal?.totalContractValue ?? null,
+          // Lead.estimatedValue/expectedRent have no currency field (always VND); once a deal
+          // reaches PROPOSAL+ and estimatedValue falls back to totalContractValue, it must carry
+          // that proposal's actual currency instead of silently assuming VND.
+          currencyCode: lead.estimatedValue == null && proposal ? proposal.rentCurrency : 'VND',
           stage: dealStage,
           nextAction,
           mall,

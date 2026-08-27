@@ -19,8 +19,8 @@ export class FitoutDashboardService {
   ) {}
 
   /** Tổng quan toàn bộ dự án đang mở — tái dùng getFitoutProgress() đã có thay vì viết lại. */
-  async getOverview() {
-    const projects = await this.slaService.getFitoutProgress();
+  async getOverview(mallIds?: string[] | null) {
+    const projects = await this.slaService.getFitoutProgress(mallIds);
     return {
       totalActive: projects.length,
       atRiskCount: projects.filter((p) => p.isAtRisk).length,

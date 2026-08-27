@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsEnum } from 'class-validator';
+import { MallLeaseCategory } from '@prisma/client';
 
 export class CreateMallDto {
   @ApiProperty()
@@ -9,6 +10,11 @@ export class CreateMallDto {
   @ApiProperty()
   @IsString()
   code: string;
+
+  @ApiPropertyOptional({ enum: MallLeaseCategory, description: 'Loại hình thuê (OFFICE/MALL) — quyết định loại phí Billing Add-in áp dụng, vd Phụ thu Phí Quản Lý chỉ áp dụng OFFICE' })
+  @IsOptional()
+  @IsEnum(MallLeaseCategory)
+  leaseCategory?: MallLeaseCategory;
 
   @ApiPropertyOptional()
   @IsOptional()

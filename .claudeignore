@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+.next/
+out/
+**/dist/
+**/build/
+
+# Prisma generated
+apps/backend/src/generated/
+**/generated/
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Docker volumes & data
+docker/data/
+*.sql.gz
+
+# Test coverage
+coverage/
+**/coverage/
+.nyc_output/
+
+# Cache
+.cache/
+**/.cache/
+.turbo/
+**/.turbo/
+*.tsbuildinfo
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docs (large generated files)
+docs/superpowers/
+*.pptx
+*.pdf
+
+# Temp
+tmp/
+temp/

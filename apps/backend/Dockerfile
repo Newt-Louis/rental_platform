@@ -8,7 +8,7 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat python3 make g++ vips-dev fftw-dev
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -17,6 +17,7 @@ RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
+RUN npx prisma generate --schema=prisma/mssql/schema.prisma
 RUN npm run build
 RUN npm prune --production
 
@@ -53,10 +54,19 @@ USER nestjs
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget -qO- http://localhost:3000/api/health || exit 1
+    CMD wget -qO- http://localhost:3000/api/health/ready || exit 1
 
 # Use dumb-init for proper signal handling
 ENTRYPOINT ["dumb-init", "--"]
 
-# Run migrations and start server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Migration safety (docs/reliability/MIGRATION_SAFETY.md): this container no
+# longer runs `prisma migrate deploy` on startup. A production application
+# instance auto-migrating on every boot means schema changes are applied by
+# whichever replica happens to start first/fastest, with no distinct
+# "migration succeeded" signal separate from "the app happened to start,"
+# and a broken migration surfaces as an app crash-loop instead of a clean,
+# isolated pipeline failure. Migrations are applied by the dedicated
+# `migrate`/`migrate-uat` Compose service (already existed, was just not the
+# only path — see docker-compose.yml/docker-compose.uat.yml) as an explicit,
+# separately-observable step *before* this container is deployed/restarted.
+CMD ["node", "dist/main.js"]

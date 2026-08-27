@@ -1,0 +1,151 @@
+{
+  "title": "Reports",
+  "eyebrow": "Performance management",
+  "financialUnit": "Unit: VND billion",
+  "leaseTerm": { "LONG": "Long-term leasing", "SHORT": "Short-term leasing" },
+  "analytics": {
+    "title": "Performance analytics",
+    "subtitle": "Occupancy, renewal risk and operational indicators from current source data",
+    "tabs": { "occupancy": "Occupancy & vacancy", "renewalRisk": "Renewal risk", "multiMall": "Mall comparison", "compliance": "Compliance" },
+    "occupancyRate": "Occupancy rate", "effectiveOccupancy": "Effective occupancy", "includesFitout": "Includes fitout units",
+    "vacantArea": "Vacant area", "estimatedLoss": "Estimated loss", "units": "units",
+    "riskCritical": "Critical risk", "riskHigh": "High risk", "actNow": "Action required", "monitor": "Monitor closely",
+    "revenueAtRisk": "Revenue at risk", "perMonth": "per month", "trackedContracts": "Tracked contracts",
+    "exportStatus": { "PENDING": "Pending", "COMPLETED": "Completed", "FAILED": "Failed" }
+  },
+  "filters": {
+    "period": "Reporting period",
+    "mall": "Mall",
+    "dateRange": "Date range",
+    "groupBy": "Group by"
+  },
+  "sections": {
+    "occupancy": "Occupancy rate",
+    "revenue": "Revenue",
+    "contracts": "Contracts",
+    "pipeline": "Pipeline",
+    "tenants": "Tenants",
+    "fitout": "Fitout"
+  },
+  "charts": {
+    "occupancyTrend": "Occupancy trend",
+    "revenueTrend": "Revenue trend",
+    "tenantMix": "Tenant mix",
+    "categoryBreakdown": "Category breakdown",
+    "expiryTimeline": "Contract expiry timeline"
+  },
+  "export": {
+    "excel": "Export Excel",
+    "pdf": "Export PDF",
+    "csv": "Export CSV"
+  },
+  "sap": {
+    "title": "SAP Integration",
+    "sync": "Sync with SAP",
+    "lastSync": "Last synced",
+    "status": "Connection status"
+  },
+  "crossMall": {
+    "title": "Cross-Mall CEO View",
+    "comparison": "Mall comparison",
+    "consolidated": "Consolidated view"
+  },
+  "ai": {
+    "title": "AI Assistant",
+    "placeholder": "Ask about operational data...",
+    "analyzing": "Analyzing...",
+    "noConversation": "Start a conversation with AI"
+  },
+  "noData": "No report data available",
+  "subtitle": "Aggregated reports · VND financial totals exclude USD/MMK records",
+  "exportCsv": "Export CSV",
+  "exportError": "Export error",
+  "exportTruncatedTitle": "Exported {{count}} rows (limited)",
+  "exportTruncatedDescription": "The export is capped at {{limit}} rows. Narrow the active filters to retrieve the remaining records.",
+  "exporting": "Exporting...",
+  "dateFrom": "From",
+  "dateTo": "To",
+  "tabs": {
+    "occupancy": "Occupancy",
+    "revenue": "Revenue",
+    "pipeline": "Pipeline",
+    "expiry": "Expiring contracts",
+    "revenueReceivables": "Revenue & Receivables",
+    "arAging": "AR Aging",
+    "compliance": "Compliance"
+  },
+  "occupancy": {
+    "byStatus": "By status",
+    "byFloor": "By floor",
+    "occupied": "Occupied",
+    "total": "Total",
+    "empty": "No occupancy data yet",
+    "emptyDesc": "Data will appear when spaces are configured and status updated."
+  },
+  "revenue": {
+    "byMonth": "Monthly revenue {{year}}",
+    "issued": "Total issued",
+    "collected": "Collected",
+    "empty": "No revenue data yet"
+  },
+  "pipeline": {
+    "leadsByStatus": "Leads by status",
+    "proposalsByStatus": "Proposals by status",
+    "empty": "No pipeline data yet",
+    "leadStatus": { "NEW": "New", "CONTACTED": "Contacted", "QUALIFIED": "Qualified", "PROPOSAL": "Proposal", "NEGOTIATION": "Negotiation", "WON": "Won", "LOST": "Lost" },
+    "proposalStatus": { "DRAFT": "Draft", "SUBMITTED": "Submitted", "UNDER_REVIEW": "Under review", "APPROVED": "Approved", "REJECTED": "Rejected", "CONVERTED": "Converted to contract" }
+  },
+  "expiry": {
+    "title": "Expiring contracts",
+    "contractNo": "Contract no.",
+    "tenant": "Tenant",
+    "unit": "Space",
+    "endDate": "Expiry date",
+    "remaining": "Remaining",
+    "daysRemaining": "{{count}} days",
+    "empty": "No expiring contracts",
+    "emptyDesc": "No contracts expiring within 180 days."
+  },
+  "revenueReceivables": {
+    "subtitle": "Revenue & receivables detail — does not replace P&L report (no cost/OPEX data to offset).",
+    "totalBilled": "Total issued (VND)",
+    "totalCollected": "Collected (VND)",
+    "totalOutstanding": "Outstanding (VND)",
+    "collectionRate": "Collection rate",
+    "byMonth": "By month",
+    "byType": "By invoice type",
+    "issued": "Issued",
+    "collected": "Collected",
+    "empty": "No revenue and receivables data yet",
+    "invoiceTypes": {
+      "MONTHLY_RENT": "Recurring rent",
+      "DEPOSIT": "Deposit",
+      "UTILITY": "Utilities",
+      "MARKETING_FEE": "Marketing fee",
+      "PARKING": "Parking",
+      "PENALTY": "Payment penalty",
+      "REVENUE_SHARE": "Revenue share",
+      "SERVICE_CONTRACT": "Service contract"
+    }
+  },
+  "arAging": {
+    "tenant": "Tenant",
+    "current": "Current",
+    "days30": "1-30 days",
+    "days60": "31-60 days",
+    "days90": "61-90 days",
+    "days90plus": ">90 days",
+    "total": "Total",
+    "empty": "No AR aging data",
+    "emptyDesc": "No outstanding receivables to categorize by age."
+  },
+  "compliance": {
+    "totalActions": "Total write operations (30 days)",
+    "errorCount": "Error count",
+    "errorRate": "Error rate",
+    "entityTypes": "Entity types tracked",
+    "recentErrors": "Recent errors",
+    "noErrors": "No errors in this period",
+    "empty": "No compliance data yet"
+  }
+}

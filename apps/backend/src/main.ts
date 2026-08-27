@@ -5,13 +5,46 @@ import { WinstonModule } from 'nest-winston';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { RequestObservabilityInterceptor } from './common/interceptors/request-observability.interceptor';
+import { OperationalMetricsService } from './common/services/operational-metrics.service';
 import { PrismaService } from './prisma/prisma.service';
 import * as winston from 'winston';
 import helmet from 'helmet';
 import { json, urlencoded, static as expressStatic } from 'express';
 import * as path from 'path';
 
+function getCorsOrigins(): string[] | boolean {
+  const configuredOrigins = process.env.CORS_ORIGIN
+    ?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configuredOrigins?.length) return configuredOrigins;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CORS_ORIGIN must be configured in production');
+  }
+
+  return true;
+}
+
+function validateProductionSecrets() {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  const jwtSecret = process.env.JWT_SECRET;
+  const knownPlaceholder =
+    jwtSecret?.includes('change-me') ||
+    jwtSecret?.includes('change-in-production') ||
+    jwtSecret?.includes('replace-with');
+
+  if (!jwtSecret || jwtSecret.length < 32 || knownPlaceholder) {
+    throw new Error('JWT_SECRET must be a unique secret of at least 32 characters in production');
+  }
+}
+
 async function bootstrap() {
+  validateProductionSecrets();
+
   const logger = WinstonModule.createLogger({
     transports: [
       new winston.transports.Console({
@@ -41,9 +74,21 @@ async function bootstrap() {
   app.use(json({ limit: '20mb' }));
   app.use(urlencoded({ extended: true, limit: '20mb' }));
 
-  // Serve uploaded files (unit media, floor plans) as static assets
+  // Static uploads mount — deliberately narrow (docs/security/SECRET_INCIDENT_REMEDIATION.md
+  // P1). This used to serve the *entire* uploads directory unauthenticated,
+  // which meant Contract/Billing/Fitout/service business documents were
+  // fetchable by anyone who had or guessed a URL. Those now go through the
+  // authenticated, per-record-authorized routes in FilesController instead
+  // (see src/files/files.controller.ts). Only genuinely public, low-sensitivity
+  // assets stay on this static mount: unit/floor-plan images (shown in the
+  // Spaces/Booking UI and AI floor-plan analysis, no PII/financial data) and
+  // mall branding logos (rendered as plain <img> tags, including on the login
+  // screen before authentication).
   const uploadRoot = path.resolve(process.env.UPLOAD_DIR?.replace('/unit-media', '') ?? 'uploads');
-  app.use('/uploads', expressStatic(uploadRoot, { maxAge: '1d' }));
+  const PUBLIC_UPLOAD_SUBPATHS = ['floor-plans', 'branding', 'unit-media'];
+  for (const subpath of PUBLIC_UPLOAD_SUBPATHS) {
+    app.use(`/uploads/${subpath}`, expressStatic(path.join(uploadRoot, subpath), { maxAge: '1d' }));
+  }
 
   app.setGlobalPrefix('api');
 
@@ -54,7 +99,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? '*',
+    origin: getCorsOrigins(),
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Accept, Authorization',
     credentials: true,
@@ -70,6 +115,12 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Response transform interceptor — wrap responses with { success, data }
+  app.useGlobalInterceptors(
+    new RequestObservabilityInterceptor(app.get(OperationalMetricsService)),
+    new TransformInterceptor(),
+  );
 
   // Audit log interceptor — log tất cả write operations
   const prisma = app.get(PrismaService);

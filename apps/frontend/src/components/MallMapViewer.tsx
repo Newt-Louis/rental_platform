@@ -1,44 +1,44 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  X, MapPin, Building2, ArrowRight, Image as ImageIcon,
+  X, MapPin, Building2, Image as ImageIcon,
   ChevronLeft, ChevronRight, Maximize2, Minimize2,
 } from 'lucide-react';
 import type { FloorMapData, Unit, Floor } from '@/types';
 import { cn } from '@/lib/utils';
+import { formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, {
   fill: string; stroke: string; fillOpacity: number;
-  label: string; badgeClass: string; animate?: boolean;
+  badgeClass: string;
 }> = {
-  VACANT:       { fill: '#ef4444', stroke: '#dc2626', fillOpacity: 0.55, label: 'Trống',        badgeClass: 'bg-red-100 text-red-700 border-red-300' },
-  BOOKING:      { fill: '#f59e0b', stroke: '#d97706', fillOpacity: 0.55, label: 'Booking',      badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
-  NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', fillOpacity: 0.55, label: 'Thương thảo', badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
-  CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', fillOpacity: 0.55, label: 'Hợp đồng',    badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
-  UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', fillOpacity: 0.5,  label: 'Thi công',    badgeClass: 'bg-purple-100 text-purple-700 border-purple-300', animate: true },
-  OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', fillOpacity: 0.55, label: 'Đang thuê',   badgeClass: 'bg-green-100 text-green-700 border-green-300' },
+  VACANT:       { fill: '#ef4444', stroke: '#dc2626', fillOpacity: 0.55, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
+  BOOKING:      { fill: '#f59e0b', stroke: '#d97706', fillOpacity: 0.55, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
+  NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', fillOpacity: 0.55, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
+  CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', fillOpacity: 0.55, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
+  UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', fillOpacity: 0.5, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
+  OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', fillOpacity: 0.55, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 type Pt = [number, number];
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+
 function resolveFileUrl(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   if (raw.startsWith('http')) return raw;
   const normalized = raw.replace(/\\/g, '/');
   const idx = normalized.indexOf('uploads/');
-  return idx !== -1 ? '/' + normalized.slice(idx) : undefined;
-}
-
-function fmtMoney(n?: number | null) {
-  if (n == null) return null;
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+  if (idx === -1) return undefined;
+  return `${API_ORIGIN}/${normalized.slice(idx)}`;
 }
 
 function centroid(pts: Pt[]): Pt {
@@ -80,6 +80,7 @@ function UnitInfoPopup({
   onViewDetail?: (u: Unit) => void;
   onBook?: (u: Unit) => void;
 }) {
+  const { t } = useTranslation('spaces');
   const [mediaIdx, setMediaIdx] = useState(0);
   const cfg = STATUS_CFG[unit.status] ?? STATUS_CFG.VACANT;
   const photos = (unit.media ?? []).filter((m) => m.mimeType?.startsWith('image'));
@@ -123,7 +124,7 @@ function UnitInfoPopup({
             <div className="font-bold text-gray-900 text-base">{unit.code}</div>
             {unit.name && <div className="text-xs text-gray-500 mt-0.5">{unit.name}</div>}
           </div>
-          <Badge className={cn('text-xs border shrink-0', cfg.badgeClass)}>{cfg.label}</Badge>
+          <Badge className={cn('text-xs border shrink-0', cfg.badgeClass)}>{getUnitStatusLabel(t, unit.status)}</Badge>
         </div>
 
         {unit.tenant && (
@@ -138,10 +139,10 @@ function UnitInfoPopup({
 
         <div className="space-y-1.5 text-xs text-gray-600 mb-4">
           <div className="flex justify-between">
-            <span className="text-gray-400">Diện tích NLA:</span>
+            <span className="text-gray-400">{t('map.areaNLA')}</span>
             <span className="font-semibold text-gray-800">{unit.areaNLA.toLocaleString('vi-VN')} m²</span>
           </div>
-          {unit.zone && <div className="flex justify-between"><span className="text-gray-400">Khu vực:</span><span>{unit.zone.name}</span></div>}
+          {unit.zone && <div className="flex justify-between"><span className="text-gray-400">{t('map.zone')}</span><span>{unit.zone.name}</span></div>}
           {unit.category && (
             <div className="flex justify-between">
               <span className="text-gray-400">Loại:</span>
@@ -150,8 +151,8 @@ function UnitInfoPopup({
           )}
           {(unit.baseRentPerSqm > 0 || unit.askingRentPerSqm) && (
             <div className="flex justify-between">
-              <span className="text-gray-400">Giá thuê:</span>
-              <span className="font-medium text-gray-800">{fmtMoney(unit.askingRentPerSqm ?? unit.baseRentPerSqm)}/m²</span>
+              <span className="text-gray-400">{t('map.rent')}</span>
+              <span className="font-medium text-gray-800 tabular-nums">{formatVndRate(unit.askingRentPerSqm ?? unit.baseRentPerSqm)}</span>
             </div>
           )}
           {unit.leaseEndDate && (
@@ -168,7 +169,7 @@ function UnitInfoPopup({
           )}
           {onViewDetail && (
             <Button size="sm" variant="outline" className="flex-1 text-xs gap-1 h-8" onClick={() => onViewDetail(unit)}>
-              Chi tiết <ArrowRight size={11} />
+              {t('detail.viewDetail')}
             </Button>
           )}
         </div>
@@ -180,6 +181,7 @@ function UnitInfoPopup({
 // ─── Stats Bar ────────────────────────────────────────────────────────────────
 
 function StatsBar({ units }: { units: Unit[] }) {
+  const { t } = useTranslation('spaces');
   const placed = units.filter(isPlaced);
   const byStatus = Object.entries(STATUS_CFG)
     .map(([key, cfg]) => ({ key, cfg, count: placed.filter((u) => u.status === key).length }))
@@ -190,17 +192,17 @@ function StatsBar({ units }: { units: Unit[] }) {
 
   return (
     <div className="flex items-center gap-4 flex-wrap text-xs">
-      <div className="font-semibold text-gray-700">{placed.length}/{units.length} unit có vị trí</div>
+      <div className="font-semibold text-gray-700">{t('map.placedCount', { placed: placed.length, total: units.length })}</div>
       <div className="h-3 w-px bg-gray-200" />
       {byStatus.map(({ key, cfg, count }) => (
         <span key={key} className="flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.fill }} />
-          <span style={{ color: cfg.stroke }}>{count} {cfg.label.toLowerCase()}</span>
+          <span style={{ color: cfg.stroke }}>{count} {getUnitStatusLabel(t, key).toLowerCase()}</span>
         </span>
       ))}
       {totalArea > 0 && (
         <div className="ml-auto text-gray-400">
-          Lấp đầy: <span className="font-semibold text-gray-700">{occupancyPct}%</span>
+          {t('map.occupancy')}: <span className="font-semibold text-gray-700">{occupancyPct}%</span>
           <span className="ml-1 text-gray-300">({occupiedArea.toLocaleString()} / {totalArea.toLocaleString()} m²)</span>
         </div>
       )}
@@ -228,6 +230,7 @@ interface MallMapViewerProps {
 }
 
 export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit, issuePins }: MallMapViewerProps) {
+  const { t } = useTranslation('spaces');
   const sortedFloors = [...floors].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
   const [activeFloorId, setActiveFloorId] = useState<string>(initialFloorId ?? sortedFloors[0]?.id ?? '');
@@ -311,7 +314,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     if (isLoading) {
       return (
         <div className={cn('flex items-center justify-center text-sm text-gray-400', fullscreen ? 'h-full' : 'h-64')}>
-          Đang tải bản đồ...
+          {t('map.loading')}
         </div>
       );
     }
@@ -319,7 +322,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
       return (
         <div className={cn('flex flex-col items-center justify-center gap-2 text-gray-300', fullscreen ? 'h-full' : 'h-64')}>
           <MapPin size={36} className="opacity-40" />
-          <p className="text-sm text-gray-400">Tầng này chưa có sơ đồ mặt bằng</p>
+          <p className="text-sm text-gray-400">{t('map.noFloorPlan')}</p>
         </div>
       );
     }
@@ -464,7 +467,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
 
         {placedUnits.length === 0 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/70 text-white text-xs px-4 py-2 rounded-full">
-            Chưa có unit nào được đặt vị trí — vào Admin → Sơ đồ để thiết lập
+            {t('map.noPositions')}
           </div>
         )}
       </div>
@@ -546,7 +549,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
               <button onClick={() => setFilterStatus(null)}
                 className={cn('px-2 py-0.5 rounded-full text-xs font-medium border transition-all',
                   !filterStatus ? 'bg-white text-gray-900 border-white' : 'text-white/60 border-white/20 hover:border-white/40')}>
-                Tất cả
+                {t('filters.all')}
               </button>
               {Object.entries(STATUS_CFG).map(([key, cfg]) => {
                 const count = placedUnits.filter((u) => u.status === key).length;
@@ -556,7 +559,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
                     className={cn('px-2 py-0.5 rounded-full text-xs font-medium border transition-all',
                       filterStatus === key ? 'text-white border-transparent' : 'text-white/60 border-white/20 hover:border-white/40')}
                     style={filterStatus === key ? { background: cfg.fill, borderColor: cfg.stroke } : {}}>
-                    {cfg.label} ({count})
+                    {getUnitStatusLabel(t, key)} ({count})
                   </button>
                 );
               })}
@@ -565,7 +568,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
             <Button size="sm" variant="outline"
               className="gap-1.5 text-xs h-8 text-white border-white/30 bg-transparent hover:bg-white/10"
               onClick={() => setIsFullscreen(false)}>
-              <Minimize2 size={13} /> Thoát toàn màn hình
+              <Minimize2 size={13} /> {t('map.exitFullscreen')}
             </Button>
           </div>
         </div>
@@ -591,7 +594,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
           className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-400 px-2.5 py-1.5 rounded-lg transition-all"
           title="Toàn màn hình (F)"
         >
-          <Maximize2 size={13} /> Toàn màn hình
+          <Maximize2 size={13} /> {t('map.fullscreen')}
         </button>
       </div>
 
@@ -603,7 +606,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
         <button onClick={() => setFilterStatus(null)}
           className={cn('px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
             !filterStatus ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400')}>
-          Tất cả ({placedUnits.length})
+          {t('filters.all')} ({placedUnits.length})
         </button>
         {Object.entries(STATUS_CFG).map(([key, cfg]) => {
           const count = placedUnits.filter((u) => u.status === key).length;
@@ -613,7 +616,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
               className={cn('px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
                 filterStatus === key ? 'text-white border-transparent' : 'bg-white border-gray-200 hover:border-gray-400')}
               style={filterStatus === key ? { background: cfg.fill, borderColor: cfg.stroke } : { color: cfg.stroke }}>
-              {cfg.label} ({count})
+              {getUnitStatusLabel(t, key)} ({count})
             </button>
           );
         })}
@@ -626,15 +629,15 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500 pt-1">
-        <span className="font-semibold text-gray-400 tracking-wide uppercase text-[10px]">Chú thích:</span>
+        <span className="font-semibold text-gray-400 tracking-wide uppercase text-[10px]">{t('map.legend')}</span>
         {Object.entries(STATUS_CFG).map(([key, cfg]) => (
           <span key={key} className="flex items-center gap-1.5">
             <span className="w-3.5 h-3.5 rounded border-2 inline-block"
               style={{ background: cfg.fill, borderColor: cfg.stroke, opacity: 0.85 }} />
-            {cfg.label}
+            {getUnitStatusLabel(t, key)}
           </span>
         ))}
-        <span className="ml-auto text-gray-400 text-[11px]">Click unit để xem thông tin · F = toàn màn hình · ← → chuyển tầng</span>
+        <span className="ml-auto text-gray-400 text-[11px]">{t('map.clickHint')}</span>
       </div>
     </div>
   );

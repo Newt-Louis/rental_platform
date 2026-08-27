@@ -31,6 +31,12 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Access denied');
     }
 
+    // ADMIN là Super Admin của hệ thống: metadata @Roles ở từng endpoint không
+    // được phép vô tình thu hẹp quyền của vai trò này.
+    if (user.role === Role.ADMIN) {
+      return true;
+    }
+
     if (!requiredRoles.includes(user.role)) {
       throw new ForbiddenException('Insufficient permissions for this action');
     }

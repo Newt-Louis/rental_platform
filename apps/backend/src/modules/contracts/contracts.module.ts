@@ -6,9 +6,14 @@ import { ContractsService } from './contracts.service';
 import { ContractEventsService } from './contract-events.service';
 import { ContractTemplatesService, ContractAmendmentsService } from './contract-templates.service';
 import { ContractTerminationService } from './contract-termination.service';
+import { ContractExpiryStatusScheduler } from './contract-expiry-status.scheduler';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [MulterModule.register({ storage: memoryStorage() })],
+  imports: [
+    MulterModule.register({ storage: memoryStorage() }),
+    BillingModule,
+  ],
   controllers: [ContractsController],
   providers: [
     ContractsService,
@@ -16,6 +21,7 @@ import { ContractTerminationService } from './contract-termination.service';
     ContractTemplatesService,
     ContractAmendmentsService,
     ContractTerminationService,
+    ContractExpiryStatusScheduler,
   ],
   exports: [ContractsService, ContractEventsService, ContractTerminationService],
 })

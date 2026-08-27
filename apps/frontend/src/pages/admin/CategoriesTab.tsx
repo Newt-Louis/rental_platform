@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { categoriesApi, spacesApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
@@ -8,17 +8,31 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { useForm } from 'react-hook-form';
+import { useMallStore } from '@/store/mall.store';
+import { Controller, useForm } from 'react-hook-form';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight, Tags, DollarSign,
   Building2, RefreshCw, AlertTriangle,
 } from 'lucide-react';
-import type { Category, CategoryMallPricing, Mall, Floor, Zone } from '@/types';
+import type { Category, CategoryMallPricing, Floor, Zone } from '@/types';
 
 function formatCurrency(value: number | undefined | null) {
-  if (!value) return '—';
+  if (value == null) return 'Kế thừa';
   return new Intl.NumberFormat('vi-VN').format(value);
 }
+
+type PricingFormValues = {
+  categoryId: string;
+  floorId: string;
+  zoneId: string;
+  minRentPerSqm: string;
+  maxRentPerSqm: string;
+  suggestedRent: string;
+  camPerSqm: string;
+  effectiveFrom: string;
+  effectiveTo: string;
+  notes: string;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CATEGORY MANAGEMENT
@@ -149,7 +163,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { register, handleSubmit, reset, watch } = useForm();
+  const { register, handleSubmit, reset, watch, setValue, control } = useForm<PricingFormValues>();
 
   const { data: categoriesData } = useQuery({ queryKey: ['categories-options'], queryFn: () => categoriesApi.getOptions() });
   const categories: Category[] = categoriesData ?? [];
@@ -167,18 +181,63 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
     enabled: !!mallId,
   });
   const zones: Zone[] = zonesData?.data ?? zonesData ?? [];
+  const selectedFloorId = watch('floorId');
+  const selectedZoneId = watch('zoneId');
+  const isOverride = !!selectedFloorId || !!selectedZoneId;
+  const visibleZones = selectedFloorId
+    ? zones.filter((zone: any) => !zone.floorId || zone.floorId === selectedFloorId)
+    : zones;
+
+  useEffect(() => {
+    if (!open) return;
+    const dateValue = (value?: string | null) => value ? value.slice(0, 10) : '';
+    reset({
+      categoryId: pricing?.categoryId ?? '',
+      floorId: pricing?.floorId ?? '',
+      zoneId: pricing?.zoneId ?? '',
+      minRentPerSqm: pricing?.minRentPerSqm?.toString() ?? '',
+      maxRentPerSqm: pricing?.maxRentPerSqm?.toString() ?? '',
+      suggestedRent: pricing?.suggestedRent?.toString() ?? '',
+      camPerSqm: pricing?.camPerSqm?.toString() ?? '',
+      effectiveFrom: dateValue(pricing?.effectiveFrom),
+      effectiveTo: dateValue(pricing?.effectiveTo),
+      notes: pricing?.notes ?? '',
+    });
+  }, [open, pricing, reset]);
+
+  const optionalNumber = (value: unknown, label: string): number | null => {
+    if (value == null) return null;
+    const normalized = typeof value === 'number'
+      ? value
+      : String(value).trim().replace(/[\s,]/g, '');
+    if (normalized === '') return null;
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${label} phải là số không âm hợp lệ`);
+    return parsed;
+  };
 
   const mutation = useMutation({
-    mutationFn: (data: any) => {
-      const payload = {
-        ...data,
+    mutationFn: (data: PricingFormValues) => {
+      const minRentPerSqm = optionalNumber(data.minRentPerSqm, 'Giá sàn');
+      const maxRentPerSqm = optionalNumber(data.maxRentPerSqm, 'Giá trần');
+      if (!data.floorId && !data.zoneId && (minRentPerSqm == null || maxRentPerSqm == null)) {
+        throw new Error('Giá nền toàn Mall bắt buộc có giá sàn và giá trần');
+      }
+      const values = {
+        minRentPerSqm,
+        maxRentPerSqm,
+        suggestedRent: optionalNumber(data.suggestedRent, 'Giá đề xuất'),
+        camPerSqm: optionalNumber(data.camPerSqm, 'CAM'),
+        effectiveTo: data.effectiveTo || null,
+        notes: data.notes.trim() || null,
+      };
+      const payload = pricing ? values : {
+        ...values,
         mallId,
-        minRentPerSqm: Number(data.minRentPerSqm),
-        maxRentPerSqm: Number(data.maxRentPerSqm),
-        suggestedRent: data.suggestedRent ? Number(data.suggestedRent) : undefined,
-        camPerSqm: data.camPerSqm ? Number(data.camPerSqm) : 0,
+        categoryId: data.categoryId,
         floorId: data.floorId || undefined,
         zoneId: data.zoneId || undefined,
+        effectiveFrom: data.effectiveFrom || undefined,
       };
       return pricing
         ? categoriesApi.updatePricing(pricing.id, payload)
@@ -190,11 +249,11 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
       reset();
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? e?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{pricing ? 'Chỉnh sửa Giá' : 'Tạo Giá mới'}</DialogTitle>
@@ -203,7 +262,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>Ngành hàng *</Label>
-              <select {...register('categoryId', { required: true })} defaultValue={pricing?.categoryId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
+              <select {...register('categoryId', { required: true })} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
                 <option value="">— Chọn ngành hàng —</option>
                 {categories.map(c => (
                   <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
@@ -212,7 +271,13 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
             </div>
             <div>
               <Label>Tầng (tùy chọn)</Label>
-              <select {...register('floorId')} defaultValue={pricing?.floorId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+              <select
+                {...register('floorId', {
+                  onChange: () => setValue('zoneId', ''),
+                })}
+                className="mt-1 w-full border rounded-md px-3 py-2 text-sm"
+                disabled={!!pricing}
+              >
                 <option value="">— Tất cả tầng —</option>
                 {floors.map(f => (
                   <option key={f.id} value={f.id}>{f.name} ({f.level})</option>
@@ -221,32 +286,66 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
             </div>
             <div>
               <Label>Khu vực (tùy chọn)</Label>
-              <select {...register('zoneId')} defaultValue={pricing?.zoneId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+              <select {...register('zoneId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
                 <option value="">— Tất cả zone —</option>
-                {zones.map(z => (
+                {visibleZones.map(z => (
                   <option key={z.id} value={z.id}>{z.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <Label>Giá sàn (VND/m²) *</Label>
-              <Input {...register('minRentPerSqm', { required: true })} type="number" defaultValue={pricing?.minRentPerSqm} placeholder="400000" className="mt-1" />
+              <Label>Giá sàn (VND/m²) {!isOverride && '*'}</Label>
+              <Controller
+                name="minRentPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '400000'} className="mt-1" />}
+              />
             </div>
             <div>
-              <Label>Giá trần (VND/m²) *</Label>
-              <Input {...register('maxRentPerSqm', { required: true })} type="number" defaultValue={pricing?.maxRentPerSqm} placeholder="800000" className="mt-1" />
+              <Label>Giá trần (VND/m²) {!isOverride && '*'}</Label>
+              <Controller
+                name="maxRentPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '800000'} className="mt-1" />}
+              />
             </div>
             <div>
               <Label>Giá đề xuất (VND/m²)</Label>
-              <Input {...register('suggestedRent')} type="number" defaultValue={pricing?.suggestedRent ?? ''} placeholder="550000" className="mt-1" />
+              <Controller
+                name="suggestedRent"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '550000'} className="mt-1" />}
+              />
             </div>
             <div>
               <Label>CAM (VND/m²)</Label>
-              <Input {...register('camPerSqm')} type="number" defaultValue={pricing?.camPerSqm ?? 0} placeholder="80000" className="mt-1" />
+              <Controller
+                name="camPerSqm"
+                control={control}
+                render={({ field }) => <Input {...field} type="number" min="0" placeholder={isOverride ? 'Để trống để kế thừa' : '80000'} className="mt-1" />}
+              />
             </div>
+            {!pricing && (
+              <>
+                <div>
+                  <Label>Hiệu lực từ</Label>
+                  <Input {...register('effectiveFrom')} type="date" className="mt-1" />
+                </div>
+                <div>
+                  <Label>Hiệu lực đến</Label>
+                  <Input {...register('effectiveTo')} type="date" className="mt-1" />
+                </div>
+              </>
+            )}
+            {pricing && (
+              <div className="col-span-2">
+                <Label>Hiệu lực đến</Label>
+                <Input {...register('effectiveTo')} type="date" className="mt-1" />
+              </div>
+            )}
             <div className="col-span-2">
               <Label>Ghi chú</Label>
-              <Input {...register('notes')} defaultValue={pricing?.notes ?? ''} placeholder="Ghi chú..." className="mt-1" />
+              <Input {...register('notes')} placeholder="Ghi chú..." className="mt-1" />
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -275,7 +374,9 @@ export function CategoriesTab() {
   const [confirmDelete, setConfirmDelete] = useState<Category | null>(null);
 
   // Pricing state
-  const [selectedMallId, setSelectedMallId] = useState('');
+  const selectedMallId = useMallStore((state) => state.selectedMallId) || '';
+  const selectedMallName = useMallStore((state) => state.selectedMallName);
+  const openMallContextModal = useMallStore((state) => state.openMallContextModal);
   const [showCreatePricing, setShowCreatePricing] = useState(false);
   const [editPricing, setEditPricing] = useState<CategoryMallPricing | null>(null);
   const [confirmDeletePricing, setConfirmDeletePricing] = useState<CategoryMallPricing | null>(null);
@@ -286,12 +387,6 @@ export function CategoriesTab() {
     queryFn: () => categoriesApi.getTree(),
   });
   const categories: Category[] = categoriesData ?? [];
-
-  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
-  const malls: Mall[] = mallsData?.data ?? mallsData ?? [];
-
-  // Auto-select first mall
-  if (malls.length > 0 && !selectedMallId) setSelectedMallId(malls[0].id);
 
   const { data: pricingData, isLoading: loadingPricing } = useQuery({
     queryKey: ['category-pricing', selectedMallId],
@@ -348,16 +443,14 @@ export function CategoriesTab() {
           </Button>
         ) : (
           <>
-            <select
-              value={selectedMallId}
-              onChange={(e) => setSelectedMallId(e.target.value)}
-              className="border rounded-lg px-3 py-2 text-sm bg-white"
+            <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm">{selectedMallName}</div>
+            <Button
+              onClick={() => {
+                if (!selectedMallId) return openMallContextModal();
+                setShowCreatePricing(true);
+              }}
+              className="gap-2"
             >
-              {malls.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-            <Button onClick={() => setShowCreatePricing(true)} className="gap-2" disabled={!selectedMallId}>
               <Plus size={15} /> Thêm giá
             </Button>
           </>

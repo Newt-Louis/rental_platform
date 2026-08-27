@@ -1,0 +1,414 @@
+{
+  "title": "System Administration",
+  "systemConfig": "System Configuration",
+  "systemConfigDesc": "Centralized administration of identity, base data and control processes.",
+  "erpControlCenter": "ERP Control Center",
+  "superAdmin": "Super Admin · Full Access",
+  "readOnlyNote": "This table is read-only — it accurately reflects the live permission configuration (not a separate hardcoded copy). To change a role's permissions, update the configuration in code and redeploy.",
+  "selectConfigArea": "Select configuration area",
+  "commonError": "Unable to complete the action",
+  "tabs": {
+    "users": "Accounts",
+    "malls": "Mall",
+    "mallAccess": "Mall Access",
+    "departments": "Departments",
+    "structure": "Space Structure",
+    "categories": "Categories & Pricing",
+    "permissions": "Permissions",
+    "approval": "Approval Policy",
+    "system": "System",
+    "approvalPolicy": "Approval policy",
+    "branding": "Branding"
+  },
+  "tabGroups": {
+    "userAccess": "Users & Access",
+    "orgMall": "Organization & Mall",
+    "categories": "Business Categories",
+    "process": "Process",
+    "platform": "Platform"
+  },
+  "tabDescriptions": {
+    "users": "Manage account lifecycle and system access status.",
+    "malls": "Set up Mall catalog and platform operating information.",
+    "mall-access": "Control Mall data scope per user.",
+    "departments": "Manage department information and hierarchies.",
+    "structure": "Standardize blocks, floors and space structures for the whole system.",
+    "categories": "Manage categories, unit prices and shared business catalogs.",
+    "permissions": "Design role-based permissions following least-privilege principles.",
+    "approval": "Configure approval flows, approval levels and business thresholds.",
+    "system": "Manage brand identity and platform operating configuration."
+  },
+  "confirm": {
+    "cancel": "Cancel",
+    "confirm": "Confirm Delete"
+  },
+  "users": {
+    "title": "User management",
+    "create": "Add account",
+    "createNew": "Create new account",
+    "edit": "Edit",
+    "info": "INFORMATION",
+    "editSection": "EDIT",
+    "resetPassword": "RESET PASSWORD",
+    "resetPasswordBtn": "Reset password",
+    "resetBtn": "Reset",
+    "lockAccount": "Lock account",
+    "unlockAccount": "Unlock",
+    "deleteAccount": "Delete account",
+    "confirmDelete": "Delete account",
+    "confirmDeleteMessage": "Are you sure you want to delete the account \"{{name}}\"? This action cannot be undone.",
+    "active": "Active",
+    "locked": "Locked",
+    "allRoles": "All roles",
+    "allStatuses": "All statuses",
+    "statusActive": "Active",
+    "statusLocked": "Locked",
+    "searchPlaceholder": "Search by name or email...",
+    "stats": {
+      "total": "Total accounts",
+      "active": "Active",
+      "locked": "Locked",
+      "roles": "Roles"
+    },
+    "table": {
+      "fullName": "Full name",
+      "email": "Email",
+      "department": "Department",
+      "role": "Role",
+      "mallAccess": "Mall scope",
+      "status": "Status"
+    },
+    "pagination": "{{total}} accounts · Page {{page}}/{{totalPages}}",
+    "prev": "Previous",
+    "next": "Next",
+    "noResults": "No accounts found",
+    "loadError": "Unable to load account list.",
+    "retry": "Retry",
+    "saving": "Saving...",
+    "creating": "Creating...",
+    "saveChanges": "Save changes",
+    "accountLabel": "Account",
+    "newPasswordPlaceholder": "New password (min 8 characters)",
+    "linkedTenant": "Linked tenant",
+    "noLinked": "— Not linked —",
+    "toast": {
+      "updated": "Account updated",
+      "locked": "Account locked",
+      "unlocked": "Account unlocked",
+      "cannotToggle": "Cannot change account status",
+      "passwordReset": "Password changed successfully",
+      "deleted": "Account deleted",
+      "cannotDelete": "Cannot delete account",
+      "created": "Account created successfully"
+    },
+    "fields": {
+      "fullName": "Full name",
+      "fullNameRequired": "Full name *",
+      "email": "Email",
+      "emailRequired": "Email *",
+      "password": "Password *",
+      "passwordPlaceholder": "Min 8 characters",
+      "phone": "Phone",
+      "department": "Department",
+      "role": "Role",
+      "status": "Status",
+      "mall": "Assigned mall"
+    },
+    "roles": {
+      "ADMIN": "Administrator",
+      "CEO": "CEO",
+      "MALL_DIRECTOR": "Mall Director",
+      "LEASING_MANAGER": "Leasing Manager",
+      "LEASING_EXECUTIVE": "Leasing Executive",
+      "FINANCE": "Finance",
+      "LEGAL": "Legal",
+      "OPERATION": "Operations",
+      "TENANT": "Tenant"
+    },
+    "roleDescriptions": {
+      "ADMIN": "Full system access and configuration",
+      "CEO": "Portfolio reporting and executive approvals",
+      "MALL_DIRECTOR": "Operations management within assigned Malls",
+      "LEASING_MANAGER": "Leasing team management and business approvals",
+      "LEASING_EXECUTIVE": "Customer and leasing record management",
+      "FINANCE": "Invoices, receivables and financial reporting",
+      "LEGAL": "Legal document preparation and review",
+      "OPERATION": "Mall operations and technical work management",
+      "TENANT": "Access to the tenant self-service portal"
+    },
+    "mallScope": {
+      "global": "All Malls",
+      "unassigned": "No Mall assigned",
+      "assignmentSummary": "Assign the {{role}} role to {{count}} Mall(s)",
+      "label": "Mall access scope",
+      "noMalls": "No Malls available",
+      "addMall": "Add Mall...",
+      "add": "Add",
+      "emptyMeansAll": "No Mall selected: the account will not see any Mall business data until access is granted. You can grant it later from the edit account screen.",
+      "notApplicableHint": "The Administrator role is not scoped per Mall — the account can see and act on data from every Mall.",
+      "ceoHint": "The CEO role sees portfolio-wide figures on Dashboard / Reports / Analytics. All other modules still follow the granted Malls.",
+      "tenantHint": "Tenant accounts are not scoped per Mall — their data scope comes from the linked tenant record above."
+    },
+    "validation": {
+      "fullNameRequired": "Please enter the full name.",
+      "emailRequired": "Please enter an email address.",
+      "emailInvalid": "This email address is not valid.",
+      "passwordRequired": "Please enter a password.",
+      "passwordTooShort": "The password must be at least 8 characters."
+    }
+  },
+  "malls": {
+    "title": "Mall",
+    "create": "Add Mall",
+    "createNew": "Create new Mall",
+    "edit": "Edit Mall",
+    "noMalls": "No Malls yet. Create the first one!",
+    "confirmDelete": "Delete Mall",
+    "confirmDeleteMessage": "Delete Mall \"{{name}}\"? Related data (floors, zones, units) will not be deleted but will not be visible.",
+    "stats": {
+      "units": "Units",
+      "floors": "Floors"
+    },
+    "wizard": {
+      "title": "Create new Mall",
+      "step1": "Basic information",
+      "step2": "Floor structure",
+      "next": "Next →",
+      "back": "← Back",
+      "creating": "Creating...",
+      "quickTemplates": "Quick templates",
+      "noFloors": "No floors yet. Choose a quick template or add manually below.",
+      "floorPlaceholder": "Floor name (e.g. Ground Floor)",
+      "addZone": "Add zone",
+      "addFloor": "Add floor",
+      "templates": {
+        "large": "Large Mall",
+        "medium": "Medium Mall",
+        "small": "Small Mall"
+      }
+    },
+    "fields": {
+      "name": "Mall name *",
+      "code": "Mall code *",
+      "address": "Address",
+      "city": "City",
+      "totalArea": "Total area (m²)",
+      "description": "Description"
+    },
+    "toast": {
+      "created": "Mall created successfully!",
+      "updated": "Mall updated",
+      "deleted": "Mall deleted"
+    }
+  },
+  "structure": {
+    "title": "Space structure",
+    "selectMall": "Select Mall:",
+    "addFloor": "Add floor",
+    "noFloors": "No floors yet. Add the first floor!",
+    "selectMallFirst": "Select a Mall to view structure",
+    "zones": "{{count}} zones",
+    "units": "{{count}} units",
+    "noZones": "No zones yet",
+    "viewInSpaces": "View in Spaces",
+    "addZone": "Zone",
+    "cannotDelete": "Cannot delete: {{count}} active units remaining",
+    "editFloor": "Edit floor",
+    "deleteFloor": "Delete floor",
+    "deleteZone": "Delete zone",
+    "deleteFloorMessage": "Delete floor \"{{name}}\"?",
+    "deleteZoneMessage": "Delete zone \"{{name}}\"?",
+    "floorFields": {
+      "name": "Floor name",
+      "level": "Floor symbol",
+      "sortOrder": "Sort order"
+    },
+    "zoneFields": {
+      "name": "Zone name",
+      "code": "Code (optional)",
+      "namePlaceholder": "Zone name",
+      "codePlaceholder": "Code"
+    },
+    "addZoneBtn": "Add zone",
+    "addFloorForm": {
+      "name": "Floor name",
+      "level": "Symbol",
+      "order": "Order",
+      "addBtn": "Add"
+    },
+    "toast": {
+      "floorCreated": "Floor created",
+      "floorUpdated": "Floor updated",
+      "floorDeleted": "Floor deleted",
+      "floorUpdateError": "Error updating floor",
+      "zoneCreated": "Zone created",
+      "zoneUpdated": "Zone updated",
+      "zoneDeleted": "Zone deleted"
+    }
+  },
+  "permissions": {
+    "title": "Permissions",
+    "feature": "Feature"
+  },
+  "branding": {
+    "title": "Branding",
+    "subtitle": "Logo and background image shown on the login screen",
+    "logo": "Logo",
+    "logoLabel": "Company logo",
+    "noLogo": "No logo — using THISO default",
+    "background": "Background image",
+    "backgroundLabel": "Login screen background image",
+    "noBackground": "No background image",
+    "upload": "Upload",
+    "remove": "Remove",
+    "primaryColor": "Primary color",
+    "toast": {
+      "logoUpdated": "Logo updated",
+      "logoUploadError": "Error uploading logo",
+      "logoRemoved": "Logo removed",
+      "logoRemoveError": "Cannot remove logo",
+      "bgUpdated": "Background image updated",
+      "bgUploadError": "Error uploading background image",
+      "bgRemoved": "Background image removed",
+      "bgRemoveError": "Cannot remove background image"
+    }
+  },
+  "categories": {
+    "title": "Industry categories",
+    "create": "Add category",
+    "edit": "Edit",
+    "fields": {
+      "name": "Category name",
+      "code": "Code",
+      "description": "Description"
+    }
+  },
+  "mallAccess": {
+    "title": "Mall access control",
+    "assignUser": "Assign user",
+    "revokeAccess": "Revoke access",
+    "workspaceTitle": "Mall access scope",
+    "scopeNote": "Operational accounts can only work with data in their assigned Malls.",
+    "selectMall": "Select Mall...",
+    "selectUser": "Select user...",
+    "grant": "Grant access",
+    "empty": "No users are assigned to this Mall",
+    "selectPrompt": "Select a Mall to review and manage access scope.",
+    "revokeFor": "Revoke access for {{name}}",
+    "revokeTitle": "Revoke Mall access?",
+    "revokeDescription": "{{name}} will no longer be able to work with data in the selected Mall.",
+    "userFallback": "User",
+    "toast": {
+      "granted": "Mall access granted",
+      "revoked": "Mall access revoked",
+      "grantError": "Unable to grant Mall access",
+      "revokeError": "Unable to revoke Mall access"
+    }
+  },
+  "approvalPolicy": {
+    "title": "Approval policy",
+    "addRule": "Add rule",
+    "threshold": "Value threshold",
+    "approvers": "Approvers",
+    "sequential": "Sequential approval"
+  },
+  "auditLog": {
+    "title": "System audit log",
+    "action": "Action",
+    "entity": "Entity",
+    "user": "User",
+    "timestamp": "Timestamp",
+    "details": "Details",
+    "filters": {
+      "action": "Filter action",
+      "user": "User",
+      "dateRange": "Date range"
+    }
+  },
+  "announcements": {
+    "title": "Mall announcements",
+    "create": "Create announcement",
+    "createTitle": "Create new announcement",
+    "edit": "Edit",
+    "broadcastCenter": "Broadcast Center",
+    "subtitle": "Track operational updates, events and important alerts in one place.",
+    "createDisabledHint": "Select a Mall before creating an announcement",
+    "filterAll": "All",
+    "errorLoad": "Cannot load announcements",
+    "empty": "No announcements yet",
+    "expand": "View details",
+    "collapse": "Collapse",
+    "expiresAt": "Expires: ",
+    "createdBy": "by ",
+    "deleteCancel": "Cancel",
+    "deleteConfirm": "Confirm",
+    "delete": "Delete",
+    "deleteSuccess": "Announcement deleted",
+    "deleteError": "Cannot delete announcement",
+    "createSuccess": "Announcement created",
+    "createError": "Error creating announcement",
+    "cancel": "Cancel",
+    "publishing": "Publishing...",
+    "publish": "Publish",
+    "stats": {
+      "total": "Total shown",
+      "urgent": "Urgent",
+      "scheduled": "Scheduled"
+    },
+    "categories": {
+      "MAINTENANCE": "Maintenance",
+      "EVENT": "Event",
+      "POLICY": "Policy",
+      "PROMOTION": "Promotion",
+      "EMERGENCY": "Emergency"
+    },
+    "priorities": {
+      "LOW": "Low",
+      "NORMAL": "Normal",
+      "HIGH": "High",
+      "URGENT": "Urgent"
+    },
+    "fields": {
+      "title": "Title",
+      "titleLabel": "Title *",
+      "titlePlaceholder": "Announcement title...",
+      "content": "Content",
+      "contentLabel": "Content *",
+      "contentPlaceholder": "Detailed content...",
+      "categoryLabel": "Category *",
+      "priorityLabel": "Priority",
+      "publishedAtLabel": "Publish date",
+      "expiresAtLabel": "Expires at",
+      "type": "Type",
+      "targetAudience": "Target audience",
+      "publishAt": "Publish at",
+      "expiresAt": "Expires at"
+    },
+    "validation": {
+      "titleRequired": "Please enter a title",
+      "contentRequired": "Please enter content",
+      "expiresAfterPublished": "Expiry time must be after publish time"
+    },
+    "types": {
+      "INFO": "Information",
+      "WARNING": "Warning",
+      "MAINTENANCE": "Maintenance",
+      "EVENT": "Event"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "noNotifications": "No notifications",
+    "noTasks": "Nothing needs your attention",
+    "viewAll": "View all notifications",
+    "pendingApprovals": "{{count}} approval(s) awaiting you",
+    "pendingApprovalsAction": "Click to handle now",
+    "minutesAgo": "{{count}} minutes ago",
+    "hoursAgo": "{{count}} hours ago",
+    "tabs": {
+      "tasks": "Tasks",
+      "notifications": "Notifications"
+    }
+  }
+}

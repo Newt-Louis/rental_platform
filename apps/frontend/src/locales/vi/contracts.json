@@ -1,0 +1,314 @@
+{
+  "title": "Hợp đồng",
+  "subtitle": "Quản lý hợp đồng cho thuê — upload scan & ký điện tử",
+  "status": {
+    "DRAFT": "Bản nháp",
+    "PENDING_LEGAL": "Chờ Legal",
+    "PENDING_SIGNATURE": "Chờ ký",
+    "ACTIVE": "Hiệu lực",
+    "EXPIRING": "Sắp hết hạn",
+    "EXPIRED": "Hết hạn",
+    "TERMINATING": "Đang chấm dứt",
+    "TERMINATED": "Đã chấm dứt"
+  },
+  "type": {
+    "LOI": "LOI",
+    "LEASE_AGREEMENT": "Hợp đồng thuê",
+    "APPENDIX": "Phụ lục",
+    "RENEWAL": "Gia hạn",
+    "TERMINATION": "Chấm dứt HĐ"
+  },
+  "workflow": {
+    "label": "Quy trình xử lý hợp đồng",
+    "notReadyForActive": "Chưa đủ điều kiện kích hoạt (ACTIVE) — cần xử lý:",
+    "updateSuccess": "Đã cập nhật trạng thái hợp đồng",
+    "moveTo": {
+      "PENDING_LEGAL": "Chuyển sang Chờ Legal",
+      "PENDING_SIGNATURE": "Chuyển sang Chờ ký",
+      "ACTIVE": "Kích hoạt hợp đồng",
+      "DRAFT": "Trả về Bản nháp",
+      "EXPIRING": "Đánh dấu Sắp hết hạn",
+      "EXPIRED": "Đánh dấu Hết hạn"
+    }
+  },
+  "filters": {
+    "searchPlaceholder": "Số HĐ / khách thuê / mặt bằng...",
+    "allTypes": "Tất cả loại",
+    "allStatuses": "Tất cả TT",
+    "typeLabel": "Loại HĐ",
+    "statusLabel": "Trạng thái",
+    "datePlaceholder": "Ngày bắt đầu HĐ",
+    "clearFilters": "Xóa lọc"
+  },
+  "actions": {
+    "showExpiring": "Sắp hết hạn",
+    "showAll": "Tất cả HĐ"
+  },
+  "table": {
+    "contractNo": "Số HĐ",
+    "tenant": "Khách thuê",
+    "unit": "Mặt bằng",
+    "type": "Loại",
+    "monthlyRent": "Thuê/tháng",
+    "startDate": "Bắt đầu",
+    "endDate": "Kết thúc",
+    "remaining": "Còn lại",
+    "status": "Trạng thái",
+    "documents": "Tài liệu",
+    "daysRemaining": "{{count}} ngày"
+  },
+  "handoff": {
+    "title": "Bàn giao vận hành",
+    "billing": "Lịch thu phí",
+    "fitout": "Dự án Fitout",
+    "fitoutStarted": "Fitout đã được khởi tạo",
+    "fitoutNotStarted": "Fitout chưa được khởi tạo",
+    "viewFitout": "Xem Fitout",
+    "billingScheduled": "Đã có lịch thu phí",
+    "billingNotScheduled": "Chưa có lịch thu phí",
+    "viewBilling": "Xem Billing"
+  },
+  "empty": "Chưa có hợp đồng nào",
+  "emptyNoData": {
+    "subtitle": "Hợp đồng được tạo tự động khi một Đề xuất được duyệt. Hãy bắt đầu từ Đề xuất.",
+    "cta": "Đi tới Đề xuất"
+  },
+  "emptyFiltered": {
+    "title": "Không có hợp đồng phù hợp bộ lọc",
+    "subtitle": "Hãy thay đổi từ khóa hoặc bộ lọc."
+  },
+  "total": "{{count}} hợp đồng",
+  "pagination": {
+    "prev": "Trước",
+    "next": "Sau",
+    "page": "Trang {{current}} / {{total}}"
+  },
+  "errorLoad": "Không thể tải danh sách hợp đồng",
+  "sheet": {
+    "defaultTitle": "Hợp đồng",
+    "tabs": {
+      "overview": "Tổng quan",
+      "financial": "Tài chính & Billing",
+      "activity": "Hoạt động",
+      "detail": "Chi tiết",
+      "documents": "Tài liệu",
+      "events": "Timeline",
+      "amendments": "Phụ lục",
+      "template": "Template",
+      "billing": "Thu tiền",
+      "termination": "Chấm dứt"
+    },
+    "daysLeft": "Còn {{count}} ngày",
+    "source": {
+      "label": "NGUỒN GỐC",
+      "booking": "Booking: ",
+      "proposal": "Đề xuất: ",
+      "lead": "Lead: "
+    },
+    "sections": {
+      "keyFacts": "Thông tin chính",
+      "parties": "CÁC BÊN",
+      "financial": "ĐIỀU KHOẢN TÀI CHÍNH",
+      "period": "THỜI HẠN HỢP ĐỒNG",
+      "terminationInfo": "THÔNG TIN CHẤM DỨT"
+    },
+    "fields": {
+      "tenant": "Khách thuê",
+      "company": "Công ty",
+      "unit": "Mặt bằng",
+      "rent": "Tiền thuê",
+      "cam": "Phí CAM",
+      "serviceCharge": "Phí dịch vụ",
+      "totalMonthly": "Tổng / tháng",
+      "deposit": "Tiền đặt cọc",
+      "startDate": "Ngày bắt đầu",
+      "endDate": "Ngày kết thúc",
+      "signedDate": "Ngày ký",
+      "duration": "Thời hạn",
+      "durationMonths": "{{count}} tháng",
+      "perMonth": " ₫/tháng",
+      "perMonthSuffix": "/tháng",
+      "reason": "Lý do",
+      "initiatedBy": "Khởi tạo bởi",
+      "initiatedByThiso": "THISO (BQL)",
+      "initiatedByTenant": "Khách thuê",
+      "noticePeriod": "Báo trước",
+      "noticePeriodDays": "{{count}} ngày",
+      "depositRefund": "Hoàn cọc",
+      "penalty": "Phạt vi phạm"
+    }
+  },
+  "sign": {
+    "title": "Ký điện tử tài liệu",
+    "infoBox": "Hệ thống sẽ tạo mã hash SHA-256 từ tài liệu + thông tin người ký + thời gian, tạo mã xác thực độc lập.",
+    "warningBox": "đây là xác thực toàn vẹn nội bộ (hash), không phải chữ ký số có giá trị pháp lý theo Nghị định 130/2018. Dùng cho biên bản/phụ lục nội bộ; hợp đồng cần giá trị pháp lý cao nên ký qua nhà cung cấp chữ ký số hợp pháp.",
+    "warningNote": "Lưu ý:",
+    "signerName": "Tên người ký *",
+    "signerNamePlaceholder": "Nguyễn Văn A",
+    "signerRole": "Vai trò",
+    "roles": {
+      "TENANT": "Khách thuê",
+      "LANDLORD": "Chủ đầu tư (BQL)",
+      "LEGAL": "Pháp chế",
+      "CEO": "Tổng giám đốc",
+      "WITNESS": "Người chứng kiến"
+    },
+    "cancel": "Hủy",
+    "confirm": "Xác nhận ký",
+    "signing": "Đang ký...",
+    "success": "Đã ký điện tử thành công"
+  },
+  "verify": {
+    "title": "Xác thực chữ ký điện tử",
+    "valid": "Tài liệu hợp lệ",
+    "validDesc": "Chữ ký điện tử đã được xác thực",
+    "fileName": "Tài liệu",
+    "contractNo": "Số HĐ",
+    "signerName": "Người ký",
+    "signerRole": "Vai trò",
+    "signedAt": "Thời gian ký",
+    "hash": "SHA-256 Hash",
+    "invalidCode": "Mã xác thực không hợp lệ",
+    "close": "Đóng"
+  },
+  "documents": {
+    "uploadDrag": "Kéo & thả hoặc bấm để chọn file",
+    "uploadTypes": "PDF, JPG, PNG, DOCX, XLSX · Tối đa 30 MB",
+    "uploading": "Đang tải lên...",
+    "empty": "Chưa có tài liệu nào — upload bản scan hợp đồng",
+    "signedBadge": "Đã ký (nội bộ)",
+    "signedBadgeTitle": "Xác thực toàn vẹn nội bộ (hash) — không phải chữ ký số có giá trị pháp lý",
+    "verifyCode": "Mã xác thực: ",
+    "download": "Tải xuống",
+    "sign": "Ký điện tử",
+    "verifyBtn": "Xác thực chữ ký",
+    "delete": "Xóa",
+    "uploadSuccess": "Đã upload: {{name}}",
+    "uploadError": "Upload thất bại",
+    "deleteSuccess": "Đã xóa tài liệu",
+    "deleteTitle": "Xóa tài liệu hợp đồng",
+    "deleteDesc": "Tài liệu \"{{name}}\" sẽ bị xóa khỏi hợp đồng.",
+    "deleteConfirm": "Xóa tài liệu"
+  },
+  "amendments": {
+    "status": { "DRAFT": "Bản nháp", "SUBMITTED": "Đã trình", "APPLIED": "Đã áp dụng" },
+    "effectiveDate": "Ngày hiệu lực",
+    "fields": { "newRent": "Tiền thuê mới", "newCam": "Phí CAM mới", "newRentFree": "Tháng miễn thuê", "newEndDate": "Ngày kết thúc mới" },
+    "confirm": { "title": "Áp dụng phụ lục này?", "description": "Phụ lục {{number}} sẽ được áp dụng vào hợp đồng theo vòng đời hiện hành." },
+    "createBtn": "Tạo phụ lục",
+    "createSuccess": "Đã tạo phụ lục bản nháp",
+    "submitSuccess": "Đã gửi phụ lục để duyệt",
+    "approveSuccess": "Đã duyệt và áp dụng phụ lục",
+    "submitBtn": "Gửi duyệt",
+    "approveBtn": "Duyệt",
+    "dialogTitle": "Tạo phụ lục hợp đồng",
+    "typeLabel": "Loại phụ lục",
+    "type": {
+      "RENT_CHANGE": "Điều chỉnh tiền thuê",
+      "CAM_CHANGE": "Điều chỉnh phí quản lý (CAM)",
+      "RENT_FREE_CHANGE": "Điều chỉnh số tháng miễn phí thuê",
+      "TERM_EXTENSION": "Gia hạn thời hạn hợp đồng",
+      "RENEWAL": "Tái ký / gia hạn mới",
+      "OTHER": "Khác"
+    },
+    "newRentLabel": "Tiền thuê mới ({{currency}}/tháng)",
+    "newCamLabel": "Phí CAM mới ({{currency}}/tháng)",
+    "newRentFreeLabel": "Số tháng miễn phí thuê mới",
+    "newEndDateLabel": "Ngày kết thúc mới",
+    "effectiveDateLabel": "Ngày hiệu lực",
+    "reasonLabel": "Lý do",
+    "reasonPlaceholder": "Mô tả lý do điều chỉnh...",
+    "cancel": "Hủy",
+    "submit": "Tạo phụ lục",
+    "noAmendments": "Chưa có phụ lục nào cho hợp đồng này."
+  },
+  "template": {
+    "utilityTitle": "Xem trước mẫu",
+    "utilityDescription": "Xem trước tài liệu được tạo từ mẫu. Hồ sơ hợp đồng đã lưu vẫn nằm ở danh sách phía trên.",
+    "preview": "Xem trước",
+    "select": "Chọn mẫu hợp đồng...",
+    "render": "Xuất hợp đồng",
+    "renderSuccess": "Đã xuất mẫu hợp đồng"
+  },
+  "activity": {
+    "title": "Hoạt động hợp đồng",
+    "description": "Các sự kiện hợp đồng do hệ thống ghi nhận.",
+    "empty": "Chưa có hoạt động được ghi nhận."
+  },
+  "financialTerms": {
+    "title": "Điều khoản tài chính",
+    "rent": "Tiền thuê / tháng",
+    "cam": "Phí CAM / tháng",
+    "deposit": "Tiền đặt cọc",
+    "fitoutDeposit": "Đặt cọc Fitout",
+    "fitoutFee": "Phí Fitout",
+    "currency": "Tiền tệ"
+  },
+  "billingTab": {
+    "summary": {
+      "totalScheduled": "Tổng giá trị theo lịch",
+      "collected": "Đã thu",
+      "remaining": "Còn phải thu",
+      "collectionRate": "Tỷ lệ thu",
+      "periodCount": "{{count}} kỳ"
+    },
+    "rebuild": "Làm mới lịch thu",
+    "rebuildSuccess": "Đã làm mới lịch thu tiền theo hợp đồng",
+    "notActiveHint": "Lịch thu tiền chỉ tự tạo khi hợp đồng ở trạng thái Hiệu lực/Sắp hết hạn — bấm \"Làm mới lịch thu\" nếu cần tạo lại thủ công.",
+    "noSchedule": "Chưa có lịch thu tiền cho hợp đồng này.",
+    "table": {
+      "period": "Kỳ",
+      "rent": "Tiền thuê",
+      "cam": "CAM",
+      "total": "Tổng",
+      "dueDate": "Hạn thu",
+      "periodStatus": "Trạng thái kỳ",
+      "invoice": "Hóa đơn",
+      "collectedOfTotal": "{{collected}} / {{total}}"
+    },
+    "entryStatus": {
+      "PENDING": "Chờ lập hóa đơn",
+      "INVOICED": "Đã lập hóa đơn",
+      "SKIPPED": "Miễn thu (rent-free)"
+    },
+    "noInvoiceYet": "Chưa có hóa đơn",
+    "viewInvoice": "Xem hóa đơn"
+  },
+  "termination": {
+    "workspaceAction": "Khu vực chấm dứt",
+    "workspaceTitle": "Xử lý chấm dứt hợp đồng",
+    "backToContract": "Quay lại hợp đồng",
+    "confirm": {
+      "initiate": { "title": "Khởi tạo chấm dứt?", "description": "Thao tác này bắt đầu quy trình chấm dứt hợp đồng hiện hành.", "action": "Khởi tạo chấm dứt" },
+      "complete": { "title": "Hoàn tất chấm dứt?", "description": "Thao tác này hoàn tất quy trình chấm dứt và các hiệu ứng backend hiện hành.", "action": "Hoàn tất chấm dứt" },
+      "cancel": { "title": "Hủy quy trình chấm dứt?", "description": "Thao tác này hủy quy trình chấm dứt hiện tại.", "action": "Hủy quy trình" }
+    },
+    "noRequest": "Chưa có yêu cầu chấm dứt hợp đồng nào cho hợp đồng này.",
+    "reasonLabel": "Lý do chấm dứt *",
+    "reasonPlaceholder": "VD: Khách thuê ngừng kinh doanh, vi phạm hợp đồng...",
+    "effectiveDateLabel": "Ngày hiệu lực *",
+    "noticePeriodLabel": "Số ngày báo trước",
+    "depositRefundLabel": "Hoàn cọc (nếu có)",
+    "penaltyLabel": "Phạt vi phạm (nếu có)",
+    "initiateBtn": "Khởi tạo chấm dứt hợp đồng",
+    "initiateSuccess": "Đã khởi tạo quy trình chấm dứt hợp đồng",
+    "effectiveFrom": "Hiệu lực từ {{date}}",
+    "statuses": {
+      "INITIATED": "Đã khởi tạo",
+      "IN_PROGRESS": "Đang xử lý",
+      "COMPLETED": "Đã hoàn tất"
+    },
+    "checklist": {
+      "title": "Checklist bàn giao",
+      "accessCard": "Đã thu hồi thẻ ra vào",
+      "signage": "Đã tháo dỡ biển hiệu",
+      "keys": "Đã bàn giao chìa khóa"
+    },
+    "completeBtn": "Hoàn tất chấm dứt",
+    "cancelBtn": "Hủy quy trình",
+    "completeSuccess": "Đã hoàn tất chấm dứt hợp đồng — mặt bằng chuyển về trống",
+    "cancelSuccess": "Đã hủy quy trình chấm dứt",
+    "completedAt": "Hoàn tất ngày {{date}} — mặt bằng đã chuyển về trống",
+    "updateSuccess": "Đã cập nhật"
+  }
+}

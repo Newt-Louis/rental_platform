@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Building2, TrendingUp, AlertTriangle, Ticket, DollarSign } from 'lucide-react';
+import { AsyncState } from '@/components/ui/async-state';
+import { useState } from 'react';
 
 function fmt(n: number) {
   return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
@@ -19,7 +21,8 @@ function OccupancyBar({ rate }: { rate: number }) {
 }
 
 export default function CrossMallDashboard() {
-  const { data, isLoading } = useQuery({
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['cross-mall-dashboard'],
     queryFn: () => dashboardApi.getCrossMallDashboard(),
     refetchInterval: 120_000,
@@ -27,7 +30,10 @@ export default function CrossMallDashboard() {
 
   const d = data?.data ?? data;
   const malls = d?.malls ?? [];
-  const totals = d?.totals;
+  const rawTotals = d?.totals;
+  const totals = rawTotals?.byLeaseTerm?.[leaseTermType]
+    ? { ...rawTotals, ...rawTotals.byLeaseTerm[leaseTermType] }
+    : rawTotals;
 
   if (isLoading) {
     return (
@@ -42,6 +48,9 @@ export default function CrossMallDashboard() {
       </div>
     );
   }
+  if (isError) {
+    return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải so sánh liên trung tâm"><div /></AsyncState>;
+  }
 
   return (
     <div>
@@ -51,6 +60,19 @@ export default function CrossMallDashboard() {
           <p className="text-sm text-gray-500 mt-1">Tổng hợp toàn bộ các Mall — CEO/ADMIN View</p>
         </div>
         <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">Live</Badge>
+      </div>
+
+      <div className="inline-flex rounded-lg border bg-white p-1 mb-6" aria-label="Loại hình cho thuê">
+        {(['LONG', 'SHORT'] as const).map((term) => (
+          <button
+            key={term}
+            type="button"
+            onClick={() => setLeaseTermType(term)}
+            className={`rounded-md px-4 py-2 text-sm font-medium ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+          >
+            {term === 'LONG' ? 'Cho thuê dài hạn' : 'Cho thuê ngắn hạn'}
+          </button>
+        ))}
       </div>
 
       {/* Consolidated totals */}
@@ -116,7 +138,10 @@ export default function CrossMallDashboard() {
             <p>Chưa có Mall nào</p>
           </div>
         ) : (
-          malls.map((m: any) => (
+          malls.map((rawMall: any) => {
+            const segment = rawMall.byLeaseTerm?.[leaseTermType];
+            const m = segment ? { ...rawMall, ...segment } : rawMall;
+            return (
             <Card key={m.mall.id} className="hover:shadow-md transition-shadow">
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-start justify-between mb-3">
@@ -171,7 +196,8 @@ export default function CrossMallDashboard() {
                 </div>
               </CardContent>
             </Card>
-          ))
+            );
+          })
         )}
       </div>
     </div>

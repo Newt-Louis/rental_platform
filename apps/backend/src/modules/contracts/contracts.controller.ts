@@ -14,11 +14,20 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AmendmentType, ContractStatus, Role } from '@prisma/client';
+import { MallAccessService } from '../../common/services/mall-access.service';
+import { Scope } from '../../common/decorators/scope.decorator';
+import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+
+const CONTRACT_EDIT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.LEGAL];
+const CONTRACT_STATUS_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR];
+
+// CR-101 Phase 1: descriptive only.
 
 @ApiTags('Contracts')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.contracts)
+@Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'contract' }, status: EnforcementStatus.ENFORCED })
 @Controller('contracts')
 export class ContractsController {
   constructor(
@@ -27,7 +36,12 @@ export class ContractsController {
     private readonly templatesService: ContractTemplatesService,
     private readonly amendmentsService: ContractAmendmentsService,
     private readonly terminationService: ContractTerminationService,
+    private readonly mallAccess: MallAccessService,
   ) {}
+
+  private validateContract(user: any, contractId: string) {
+    return this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { contractId });
+  }
 
   @Get('templates')
   @ApiOperation({ summary: 'List contract templates' })
@@ -36,6 +50,7 @@ export class ContractsController {
   }
 
   @Post('templates')
+  @Roles(Role.ADMIN, Role.LEGAL)
   @ApiOperation({ summary: 'Create contract template' })
   createTemplate(@Body() body: any) {
     return this.templatesService.createTemplate(body);
@@ -51,121 +66,164 @@ export class ContractsController {
   @ApiOperation({ summary: 'List contracts' })
   @Roles(...MODULE_ROLES.contracts, Role.TENANT)
   @ApiQuery({ name: 'status', required: false, enum: ContractStatus })
+  @ApiQuery({ name: 'type', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
+  @ApiQuery({ name: 'unitId', required: false })
+  @ApiQuery({ name: 'floorId', required: false })
+  @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'startDateFrom', required: false })
+  @ApiQuery({ name: 'startDateTo', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.contractsService.findAll(query, user);
+  async findAll(@Query() query: any, @CurrentUser() user: any) {
+    if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.contractsService.findAll({ ...query, mallIds: mallIds ?? undefined }, user);
   }
 
   @Get('expiring')
   @ApiOperation({ summary: 'Get contracts expiring soon' })
   @ApiQuery({ name: 'days', required: false })
-  getExpiring(@Query('days') days?: number) {
-    return this.contractsService.getExpiring(days ? +days : 90);
+  @ApiQuery({ name: 'mallId', required: false })
+  async getExpiring(@Query('days') days: number | undefined, @Query('mallId') mallId: string | undefined, @Query('leaseTermType') leaseTermType: string | undefined, @CurrentUser() user: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.contractsService.getExpiring(days ? +days : 90, mallIds ?? undefined, leaseTermType);
   }
 
   @Get(':id/events')
   @ApiOperation({ summary: 'Contract event timeline with audit diff' })
-  getEvents(@Param('id') id: string) {
+  async getEvents(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.eventsService.getTimeline(id);
   }
 
   @Get(':id/amendments')
   @ApiOperation({ summary: 'List contract amendments' })
-  listAmendments(@Param('id') id: string) {
+  async listAmendments(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.amendmentsService.list(id);
   }
 
   @Post(':id/amendments')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Create contract amendment' })
-  createAmendment(
+  async createAmendment(
     @Param('id') id: string,
     @Body() body: { type: AmendmentType; effectiveDate: string; changes: Record<string, unknown>; reason?: string },
     @CurrentUser() user: any,
   ) {
+    await this.validateContract(user, id);
     return this.amendmentsService.create(id, { ...body, createdById: user.id });
   }
 
   @Post(':id/amendments/:amendmentId/submit')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Submit amendment for approval' })
-  submitAmendment(@Param('amendmentId') amendmentId: string) {
+  async submitAmendment(@Param('id') id: string, @Param('amendmentId') amendmentId: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.amendmentsService.submit(amendmentId);
   }
 
   @Post(':id/amendments/:amendmentId/approve')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Approve and apply amendment' })
-  approveAmendment(@Param('amendmentId') amendmentId: string, @CurrentUser() user: any) {
+  async approveAmendment(@Param('id') id: string, @Param('amendmentId') amendmentId: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.amendmentsService.approve(amendmentId, user.id);
   }
 
   @Post(':id/render-template')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Render contract document from template' })
-  renderTemplate(@Param('id') id: string, @Body('templateId') templateId: string) {
+  async renderTemplate(@Param('id') id: string, @Body('templateId') templateId: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.templatesService.renderForContract(id, templateId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get contract details' })
   @Roles(...MODULE_ROLES.contracts, Role.TENANT)
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.contractsService.findOne(id, user);
   }
 
   @Post()
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Create contract' })
-  create(@Body() dto: CreateContractDto, @CurrentUser() user: any) {
+  async create(@Body() dto: CreateContractDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: dto.unitId });
     return this.contractsService.create(dto, user?.id);
   }
 
   @Patch(':id')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Update contract' })
-  update(@Param('id') id: string, @Body() dto: Partial<CreateContractDto>, @CurrentUser() user: any) {
+  async update(@Param('id') id: string, @Body() dto: Partial<CreateContractDto>, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
+    if (dto.unitId) await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: dto.unitId });
     return this.contractsService.update(id, dto, user?.id);
   }
 
   @Patch(':id/status')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Update contract status' })
-  updateStatus(@Param('id') id: string, @Body('status') status: ContractStatus, @CurrentUser() user: any) {
+  async updateStatus(@Param('id') id: string, @Body('status') status: ContractStatus, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.contractsService.updateStatus(id, status, user?.id);
+  }
+
+  @Get(':id/activation-readiness')
+  @ApiOperation({ summary: 'Check prerequisites before activating a contract' })
+  async activationReadiness(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
+    return this.contractsService.getActivationReadiness(id);
   }
 
   // ── Contract Files (scan upload, delete) ────────────────────────────────────
 
   @Get(':id/files')
   @ApiOperation({ summary: 'List uploaded files for a contract' })
-  listFiles(@Param('id') id: string) {
+  async listFiles(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.contractsService.listFiles(id);
   }
 
   @Post(':id/files')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Upload a scanned/signed contract document' })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 30 * 1024 * 1024 } }))
-  uploadFile(
+  async uploadFile(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: any,
   ) {
+    await this.validateContract(user, id);
     return this.contractsService.uploadFile(id, file, user?.id);
   }
 
   @Delete(':id/files/:fileId')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'Delete a contract file' })
-  deleteFile(@Param('id') id: string, @Param('fileId') fileId: string) {
+  async deleteFile(@Param('id') id: string, @Param('fileId') fileId: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.contractsService.deleteFile(id, fileId);
   }
 
   // ── E-Signature ─────────────────────────────────────────────────────────────
 
   @Post(':id/files/:fileId/sign')
+  @Roles(...CONTRACT_EDIT_ROLES)
   @ApiOperation({ summary: 'E-sign a contract file — stores SHA-256 hash + verify code' })
-  signFile(
+  async signFile(
     @Param('id') id: string,
     @Param('fileId') fileId: string,
     @Body() body: { signerName: string; signerRole: string },
     @CurrentUser() user: any,
   ) {
+    await this.validateContract(user, id);
     return this.contractsService.signFile(id, fileId, body.signerName, body.signerRole, user.id);
   }
 
@@ -179,31 +237,40 @@ export class ContractsController {
 
   @Get(':id/termination')
   @ApiOperation({ summary: 'Get termination details for a contract' })
-  getTermination(@Param('id') id: string) {
+  async getTermination(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.terminationService.getByContract(id);
   }
 
   @Post(':id/termination')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Initiate contract termination' })
-  initiate(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+  async initiate(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.terminationService.initiate(id, dto, user.id);
   }
 
   @Patch(':id/termination')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Update termination details (handover checklist)' })
-  updateTermination(@Param('id') id: string, @Body() dto: any) {
+  async updateTermination(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.terminationService.update(id, dto);
   }
 
   @Post(':id/termination/complete')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Complete termination — sets contract to TERMINATED and unit to AVAILABLE' })
-  completeTermination(@Param('id') id: string) {
+  async completeTermination(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.terminationService.complete(id);
   }
 
   @Post(':id/termination/cancel')
+  @Roles(...CONTRACT_STATUS_ROLES)
   @ApiOperation({ summary: 'Cancel termination — restores contract to ACTIVE' })
-  cancelTermination(@Param('id') id: string) {
+  async cancelTermination(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateContract(user, id);
     return this.terminationService.cancel(id);
   }
 }

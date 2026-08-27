@@ -1,3 +1,5 @@
+import type { CurrencyCode } from '@/lib/currency';
+export type { CurrencyCode };
 export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
 export type UnitStatus = 'VACANT' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
@@ -5,7 +7,7 @@ export type LeadPriority = 'HOT' | 'WARM' | 'COLD';
 export type CustomerStatus = 'PROSPECT' | 'NEGOTIATING' | 'ACTIVE' | 'INACTIVE' | 'BLACKLISTED';
 export type ActivityType = 'CALL' | 'EMAIL' | 'MEETING' | 'SITE_VISIT' | 'PROPOSAL_SENT' | 'NOTE' | 'OTHER';
 export type LeadSource = 'BROKER' | 'WEBSITE' | 'REFERRAL' | 'WALK_IN' | 'EXISTING_TENANT';
-export type ContractStatus = 'DRAFT' | 'PENDING_LEGAL' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TERMINATED';
+export type ContractStatus = 'DRAFT' | 'PENDING_LEGAL' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TERMINATING' | 'TERMINATED';
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type TicketStatus = 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'WAITING_TENANT' | 'RESOLVED' | 'CLOSED';
 // Stage code — FK to FitoutStageConfig.code, configurable via admin UI (not a fixed union).
@@ -19,9 +21,32 @@ export interface User {
   role: Role;
   phone?: string;
   department?: string;
+  departmentInfo?: {
+    id: string;
+    name: string;
+    mallId: string;
+    mall?: { id: string; name: string; code?: string };
+  } | null;
   avatar?: string;
   isActive: boolean;
   tenantId?: string | null;
+  mallAccess?: { mall: { id: string; name: string } }[];
+  activeMallId?: string | null;
+  activeMall?: { name: string } | null;
+}
+
+export interface Department {
+  id: string;
+  mallId: string;
+  name: string;
+  description?: string | null;
+  parentId?: string | null;
+  parent?: { id: string; name: string } | null;
+  mall?: { id: string; name: string; code?: string };
+  children?: { id: string; name: string }[];
+  _count?: { children: number };
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthState {
@@ -29,10 +54,13 @@ export interface AuthState {
   token: string | null;
 }
 
+export type MallLeaseCategory = 'OFFICE' | 'MALL';
+
 export interface Mall {
   id: string;
   name: string;
   code: string;
+  leaseCategory?: MallLeaseCategory;
   address?: string;
   totalArea?: number;
   isActive: boolean;
@@ -81,10 +109,10 @@ export interface CategoryMallPricing {
   floor?: Floor;
   zoneId?: string;
   zone?: Zone;
-  minRentPerSqm: number;
-  maxRentPerSqm: number;
-  suggestedRent?: number;
-  camPerSqm: number;
+  minRentPerSqm: number | null;
+  maxRentPerSqm: number | null;
+  suggestedRent?: number | null;
+  camPerSqm: number | null;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -104,6 +132,7 @@ export interface PriceValidationResult {
   requiresApproval: boolean;
   approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
   message: string;
+  sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
 
 export interface Tenant {
@@ -121,6 +150,8 @@ export interface Tenant {
 export interface Unit {
   id: string;
   mallId: string;
+  floorId?: string;
+  zoneId?: string;
   code: string;
   name?: string;
   areaGFA: number;
@@ -131,6 +162,12 @@ export interface Unit {
   baseRentPerSqm: number;
   camPerSqm: number;
   status: UnitStatus;
+  spaceType?: string;
+  tier?: string;
+  leaseTermType?: string;
+  isFlexibleArea?: boolean;
+  minFlexArea?: number;
+  maxFlexArea?: number;
   tenant?: Tenant;
   floor?: Floor;
   zone?: Zone;
@@ -226,7 +263,17 @@ export interface UnitBooking {
   priority: number;
   requestedArea?: number;
   requestedTerm?: number;
+  budgetRentMin?: number;
+  budgetRentMax?: number;
   expectedRent?: number;
+  currencyCode?: CurrencyCode;
+  exchangeRate?: number;
+  proposedRentPerSqm?: number;
+  proposedCamPerSqm?: number;
+  serviceFeeSqm?: number;
+  businessSupportFeeSqm?: number;
+  pricingSnapshot?: Record<string, unknown>;
+  priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   holdDays: number;
   expiresAt?: string;
   activatedAt?: string;
@@ -314,6 +361,7 @@ export interface Lead {
   source: string;
   status: LeadStatus;
   priority: LeadPriority;
+  leaseTermType: 'LONG' | 'SHORT';
   assignedTo?: User & { avatar?: string };
   customer?: { id: string; customerCode: string; companyName: string };
   customerId?: string;
@@ -380,15 +428,45 @@ export interface Proposal {
   proposalNumber: string;
   unit: Unit;
   tenant?: Tenant;
+  lead?: { id: string; brandName?: string; contactName?: string };
+  booking?: {
+    lead?: { id: string; brandName?: string; contactName?: string };
+    customer?: { id: string; brandName?: string; companyName?: string };
+  };
   area: number;
   term: number;
   startDate: string;
   rentPerSqm: number;
+  camPerSqm: number;
+  deposit: number;
   monthlyRent: number;
+  monthlyCAM: number;
+  depositAmount: number;
   totalContractValue: number;
   status: string;
   discount: number;
+  // Tờ Trình fields
+  businessModel?: string;
+  serviceFeeSqm: number;
+  businessSupportFeeSqm: number;
+  rentCurrency: CurrencyCode;
+  fitoutDays: number;
+  handoverDate?: string;
+  openingDate?: string;
+  specialConditions?: string;
+  exchangeRate?: number;
+  exchangeRateSource?: string;
+  // GAP #91–94
+  utilityFee: number;
+  operatingHours?: string;
+  afterHoursFee: number;
+  paymentTermDays: number;
+  // GAP #41
+  depositLease?: number;
+  depositFitout: number;
+  fitoutFee: number;
   createdAt: string;
+  contract?: { id: string; contractNumber: string; status: string };
 }
 
 export interface Contract {
@@ -403,6 +481,15 @@ export interface Contract {
   rent: number;
   cam: number;
   deposit: number;
+  currencyCode: CurrencyCode;
+  // GAP #41
+  depositLease?: number;
+  depositFitout: number;
+  fitoutFee: number;
+  // GAP #91, #93
+  utilityFee: number;
+  afterHoursFee: number;
+  operatingHours?: string;
   managedBy?: User;
   createdAt: string;
 }
@@ -410,15 +497,33 @@ export interface Contract {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  tenant: Tenant;
-  contract: Contract;
+  tenant?: Tenant;
+  contract?: Contract;
+  serviceContractPayment?: {
+    milestone?: string;
+    contract?: { id: string; contractNumber: string; title?: string };
+  };
+  billingParty?: { id: string; name: string; taxCode?: string };
+  sourceType?: string;
+  sourceId?: string;
+  counterpartyName?: string;
+  counterpartyTaxCode?: string;
   period: string;
   type: string;
   status: InvoiceStatus;
   totalAmount: number;
+  currencyCode?: CurrencyCode;
   dueDate: string;
   issuedAt?: string;
   paidAt?: string;
+  totalPaid?: number;
+  balance?: number;
+  daysOverdue?: number;
+  sourceContractNumber?: string;
+  sourceContractType?: string;
+  sourceStatus?: string;
+  sourcePaidAmount?: number;
+  sourceTotalAmount?: number;
 }
 
 export interface Ticket {
@@ -432,6 +537,7 @@ export interface Ticket {
   subject: string;
   assignedTo?: User;
   createdAt: string;
+  slaDueAt?: string;
 }
 
 export interface SalesTurnover {
@@ -445,19 +551,27 @@ export interface SalesTurnover {
 }
 
 export interface DashboardData {
-  occupancyRate: number;
-  totalArea: number;
-  vacantArea: number;
-  leasedArea: number;
-  totalTenants: number;
-  monthlyRevenue: number;
-  collectedRevenue: number;
-  overdueAmount: number;
-  overdueCount: number;
-  expiringIn30: number;
-  expiringIn90: number;
-  pendingApprovals: number;
-  openTickets: number;
+  mallId: string | null;
+  focusAreas: string[];
+  occupancyRate?: number;
+  totalArea?: number;
+  vacantArea?: number;
+  leasedArea?: number;
+  totalTenants?: number;
+  monthlyRevenue?: number;
+  collectedRevenue?: number;
+  overdueAmount?: number;
+  overdueCount?: number;
+  expiringIn30?: number;
+  expiringIn90?: number;
+  pendingApprovals?: number;
+  openTickets?: number;
+  bookingStats?: {
+    active: number;
+    pending: number;
+    expiringSoon: number;
+  };
+  fromCache?: boolean;
 }
 
 export interface Fitout {
@@ -501,7 +615,10 @@ export interface Notification {
 }
 
 export interface ArAgingRow {
-  tenant: Tenant;
+  tenant?: Tenant;
+  billingParty?: { id: string; name: string; taxCode?: string };
+  counterpartyName?: string;
+  currencyCode?: CurrencyCode;
   current: number;
   days30: number;
   days60: number;

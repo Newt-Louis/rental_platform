@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { crmApi, customersApi, usersApi, categoriesApi, followUpApi } from '@/api';
@@ -14,6 +15,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
+import { useAuthStore } from '@/store/auth.store';
+import { formatMoney, type CurrencyCode } from '@/lib/currency';
 import {
   DndContext,
   DragOverlay,
@@ -33,10 +39,12 @@ import {
   ChevronRight, Star, Activity, FileText, UserCheck, Ban, Clock, PhoneCall,
   MailIcon, MapPin, Globe, Hash, Briefcase, MessageSquare, CheckCircle,
   ArrowRight, Link2, AlertCircle, LayoutList, Kanban, Bell, Target,
-  Percent, Layers, Flame, AlertTriangle, DollarSign, Filter, X, GripVertical,
+  Flame, AlertTriangle, DollarSign, Filter, X, GripVertical,
   Trash2, UserPlus, BarChart3, CheckSquare, Square, RefreshCw, Zap,
-  BookmarkCheck, GitBranch,
+  BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
+import { LeadEditDialog } from '@/components/crm';
+import { useMallStore } from '@/store/mall.store';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
 
@@ -149,12 +157,12 @@ const LEAD_CATEGORIES = [
 ];
 
 const PROPOSAL_STATUS: Record<string, { label: string; color: string }> = {
-  DRAFT:        { label: 'Draft',      color: 'bg-gray-100 text-gray-600' },
+  DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
   SUBMITTED:    { label: 'Chờ duyệt', color: 'bg-yellow-100 text-yellow-700' },
   UNDER_REVIEW: { label: 'Đang xem',  color: 'bg-blue-100 text-gray-700' },
   APPROVED:     { label: 'Đã duyệt',  color: 'bg-green-100 text-green-700' },
   REJECTED:     { label: 'Từ chối',   color: 'bg-red-100 text-red-700' },
-  CONVERTED:    { label: 'Đã ký HĐ', color: 'bg-purple-100 text-purple-700' },
+  CONVERTED:    { label: 'Đã tạo HĐ', color: 'bg-purple-100 text-purple-700' },
 };
 
 const BOOKING_STATUS_CFG: Record<string, { label: string; color: string }> = {
@@ -186,70 +194,22 @@ function RatingStars({ value }: { value?: number }) {
   );
 }
 
-// ─── Stats Header ──────────────────────────────────────────────────────────────
-
-function StatsHeader() {
-  const { data: leadStats } = useQuery({
-    queryKey: ['crm-stats'],
-    queryFn: crmApi.stats,
-    select: (r) => r?.data ?? r,
-  });
-  const { data: custStats } = useQuery({
-    queryKey: ['customers-stats'],
-    queryFn: customersApi.stats,
-    select: (r) => r?.data ?? r,
-  });
-  const { data: followUps } = useQuery({
-    queryKey: ['follow-ups-today'],
-    queryFn: () => Promise.resolve(0),
-    select: () => 0,
-  });
-
-  const totalLeads: number = leadStats?.total ?? 0;
-  const wonLeads: number = leadStats?.won ?? 0;
-  const winRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
-  const activeCustomers: number = (custStats?.byStatus ?? []).find((s: any) => s.status === 'ACTIVE')?.count ?? 0;
-  const negotiating: number = (custStats?.byStatus ?? []).find((s: any) => s.status === 'NEGOTIATING')?.count ?? 0;
-
-  const kpis = [
-    { label: 'Tổng leads',      value: totalLeads,    icon: Layers,   color: 'text-gray-700',  bg: 'bg-gray-50' },
-    { label: 'Tỷ lệ thành công', value: `${winRate}%`, icon: Percent,  color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Đang đàm phán',   value: negotiating,   icon: Target,   color: 'text-orange-600',bg: 'bg-orange-50' },
-    { label: 'Đang thuê',       value: activeCustomers, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Follow-up hôm nay', value: followUps ?? 0, icon: Bell, color: 'text-purple-600', bg: 'bg-purple-50' },
-  ];
-
-  return (
-    <div className="grid grid-cols-5 gap-3 mb-5">
-      {kpis.map((k) => {
-        const Icon = k.icon;
-        return (
-          <div key={k.label} className={`${k.bg} rounded-xl p-3 flex items-center gap-3`}>
-            <div className={`shrink-0 w-9 h-9 rounded-lg bg-white flex items-center justify-center shadow-sm`}>
-              <Icon size={17} className={k.color} />
-            </div>
-            <div>
-              <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
-              <div className="text-xs text-gray-500 leading-tight">{k.label}</div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Unified Add Dialog ────────────────────────────────────────────────────────
 
-function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { selectedMallId } = useMallStore();
+  const { user } = useAuthStore();
+  const isSelfOnlyAssignee = user?.role === 'LEASING_EXECUTIVE';
   const [mode, setMode] = useState<'lead' | 'customer'>('lead');
   const [form, setForm] = useState({
     brandName: '', companyName: '', contactName: '', contactTitle: '',
     phone: '', email: '', category: '', expectedArea: '',
     source: 'WALK_IN', notes: '', website: '',
     budgetMin: '', budgetMax: '', rating: '3',
+    leaseTermType: 'LONG',
   });
   const { data: usersData } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.listUsers({ limit: 100 }) });
   const users: any[] = usersData?.data ?? usersData ?? [];
@@ -258,9 +218,35 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
     const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
     return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
   }, [categoryOptions]);
-  const [assignedToId, setAssignedToId] = useState('');
+  const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [leadSearch, setLeadSearch] = useState('');
+  const { data: selectableLeadsRaw, isLoading: isLoadingSelectableLeads } = useQuery({
+    queryKey: ['selectable-customer-leads', leadSearch, selectedMallId],
+    queryFn: () => crmApi.listLeads({ search: leadSearch || undefined, limit: 50, mallId: selectedMallId ?? undefined }),
+    enabled: open && mode === 'customer',
+  });
+  const selectableLeads: Lead[] = (selectableLeadsRaw?.data ?? selectableLeadsRaw ?? []).filter((lead: Lead) => !lead.customerId);
+  const selectedLead = selectableLeads.find((lead) => lead.id === selectedLeadId);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const selectLeadForCustomer = (lead: Lead) => {
+    setSelectedLeadId(lead.id);
+    setForm((current) => ({
+      ...current,
+      brandName: lead.brandName || current.brandName,
+      companyName: lead.company || lead.brandName || current.companyName,
+      contactName: lead.contactName || current.contactName,
+      phone: lead.phone || current.phone,
+      email: lead.email || current.email,
+      category: lead.category || current.category,
+      expectedArea: lead.expectedArea != null ? String(lead.expectedArea) : current.expectedArea,
+      budgetMin: lead.expectedRent != null ? String(lead.expectedRent) : current.budgetMin,
+      source: lead.source || current.source,
+      notes: lead.notes || current.notes,
+    }));
+    if (lead.assignedTo?.id && !isSelfOnlyAssignee) setAssignedToId(lead.assignedTo.id);
+  };
 
   const createLead = useMutation({
     mutationFn: () => crmApi.createLead({
@@ -274,21 +260,24 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
       source: form.source as any,
       notes: form.notes || undefined,
       assignedToId: assignedToId || undefined,
+      leaseTermType: form.leaseTermType,
+      mallId: selectedMallId ?? undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
       qc.invalidateQueries({ queryKey: ['crm-stats'] });
-      toast({ title: 'Đã thêm lead vào pipeline' });
+      toast({ title: t('addDialog.leadSuccess') });
       onClose();
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.errors?.join(', ') ?? err?.response?.data?.message ?? 'Lỗi tạo lead';
+      const msg = err?.response?.data?.errors?.join(', ') ?? err?.response?.data?.message ?? t('addDialog.leadError');
       toast({ title: msg, variant: 'destructive' });
     },
   });
 
   const createCustomer = useMutation({
     mutationFn: () => customersApi.createCustomer({
+      leadId: selectedLeadId || undefined,
       companyName: form.companyName || form.brandName,
       brandName: form.brandName || undefined,
       contactName: form.contactName,
@@ -308,11 +297,15 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers'] });
       qc.invalidateQueries({ queryKey: ['customers-stats'] });
-      toast({ title: 'Đã đăng ký hồ sơ khách hàng' });
+      qc.invalidateQueries({ queryKey: ['crm-pipeline'] });
+      if (selectedLeadId) qc.invalidateQueries({ queryKey: ['lead-detail', selectedLeadId] });
+      toast({ title: t('addDialog.customerSuccess') });
+      setSelectedLeadId('');
+      setLeadSearch('');
       onClose();
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.errors?.join(', ') ?? err?.response?.data?.message ?? 'Lỗi tạo khách hàng';
+      const msg = err?.response?.data?.errors?.join(', ') ?? err?.response?.data?.message ?? t('addDialog.customerError');
       toast({ title: msg, variant: 'destructive' });
     },
   });
@@ -323,70 +316,104 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Thêm vào CRM</DialogTitle>
+          <DialogTitle>{t('addDialog.title')}</DialogTitle>
         </DialogHeader>
 
         {/* Mode selector */}
-        <div className="flex gap-2 p-1 bg-gray-100 rounded-xl mb-4">
+        <div className="mb-4 flex gap-2 rounded-xl bg-muted p-1">
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'lead' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
-            onClick={() => setMode('lead')}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'lead' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => { setMode('lead'); setSelectedLeadId(''); setLeadSearch(''); }}
           >
-            <Target size={14} /> Lead / Cơ hội
+            <Target size={14} /> {t('addDialog.modeLead')}
           </button>
           <button
-            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${mode === 'customer' ? 'bg-white shadow text-gray-700' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${mode === 'customer' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => setMode('customer')}
           >
-            <Users size={14} /> Hồ sơ Khách hàng
+            <Users size={14} /> {t('addDialog.modeCustomer')}
           </button>
         </div>
 
-        <p className="text-xs text-gray-400 -mt-2 mb-3 px-1">
-          {mode === 'lead'
-            ? 'Thêm cơ hội tiềm năng vào pipeline bán hàng. Theo dõi qua từng giai đoạn cho đến khi ký hợp đồng.'
-            : 'Đăng ký hồ sơ khách hàng đầy đủ với thông tin công ty, yêu cầu thuê và phân công nhân viên.'}
+        <p className="-mt-2 mb-3 px-1 text-xs text-muted-foreground">
+          {mode === 'lead' ? t('addDialog.leadDesc') : t('addDialog.customerDesc')}
         </p>
 
         <div className="space-y-3 text-sm">
+          {mode === 'customer' && (
+            <div className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-800 dark:bg-blue-950/40">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label className="text-xs font-semibold text-blue-900 dark:text-blue-100">{t('addDialog.selectLeadTitle')}</Label>
+                  <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">{t('addDialog.selectLeadHint')}</p>
+                </div>
+                {selectedLeadId && <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelectedLeadId('')}><X size={12} className="mr-1" />{t('addDialog.clearLead')}</Button>}
+              </div>
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder={t('addDialog.searchLeadPlaceholder')} className="h-9 pl-8" />
+              </div>
+              {selectedLead ? (
+                <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-card px-3 py-2 dark:border-blue-800">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">{selectedLead.brandName}</div>
+                    <div className="truncate text-xs text-muted-foreground">{selectedLead.contactName}{selectedLead.phone ? ` · ${selectedLead.phone}` : ''}</div>
+                  </div>
+                  <Badge className="border-0 bg-blue-100 text-blue-700">{t('addDialog.leadSelected')}</Badge>
+                </div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {isLoadingSelectableLeads ? <p className="py-3 text-center text-xs text-gray-400">{t('customersView.loading')}</p> : selectableLeads.length === 0 ? <p className="py-3 text-center text-xs text-gray-500">{t('addDialog.noSelectableLeads')}</p> : selectableLeads.map((lead) => (
+                    <button key={lead.id} type="button" onClick={() => selectLeadForCustomer(lead)} className="flex w-full items-center justify-between rounded-lg bg-card px-3 py-2 text-left text-card-foreground hover:bg-blue-100/60 dark:hover:bg-blue-900/40">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{lead.brandName}</div>
+                        <div className="truncate text-xs text-muted-foreground">{lead.contactName}{lead.phone ? ` · ${lead.phone}` : ''}</div>
+                      </div>
+                      <Plus size={13} className="shrink-0 text-blue-600" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Shared fields */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Thương hiệu / Brand *</Label>
-              <Input value={form.brandName} onChange={(e) => set('brandName', e.target.value)} placeholder="VD: Highlands Coffee" className="mt-1 h-9" />
+              <Label className="text-xs">{t('addDialog.fieldBrand')}</Label>
+              <Input value={form.brandName} onChange={(e) => set('brandName', e.target.value)} placeholder={t('addDialog.fieldBrandPlaceholder')} className="mt-1 h-9" />
             </div>
             {mode === 'customer' && (
               <div>
-                <Label className="text-xs">Tên công ty</Label>
-                <Input value={form.companyName} onChange={(e) => set('companyName', e.target.value)} placeholder="Công ty TNHH..." className="mt-1 h-9" />
+                <Label className="text-xs">{t('addDialog.fieldCompany')}</Label>
+                <Input value={form.companyName} onChange={(e) => set('companyName', e.target.value)} placeholder={t('addDialog.fieldCompanyPlaceholder')} className="mt-1 h-9" />
               </div>
             )}
             <div>
-              <Label className="text-xs">Người liên hệ *</Label>
-              <Input value={form.contactName} onChange={(e) => set('contactName', e.target.value)} placeholder="Nguyễn Văn A" className="mt-1 h-9" />
+              <Label className="text-xs">{t('addDialog.fieldContact')}</Label>
+              <Input value={form.contactName} onChange={(e) => set('contactName', e.target.value)} placeholder={t('addDialog.fieldContactPlaceholder')} className="mt-1 h-9" />
             </div>
             {mode === 'customer' && (
               <div>
-                <Label className="text-xs">Chức danh</Label>
-                <Input value={form.contactTitle} onChange={(e) => set('contactTitle', e.target.value)} placeholder="Giám đốc KD" className="mt-1 h-9" />
+                <Label className="text-xs">{t('addDialog.fieldTitle')}</Label>
+                <Input value={form.contactTitle} onChange={(e) => set('contactTitle', e.target.value)} placeholder={t('addDialog.fieldTitlePlaceholder')} className="mt-1 h-9" />
               </div>
             )}
             <div>
-              <Label className="text-xs">Điện thoại</Label>
+              <Label className="text-xs">{t('addDialog.fieldPhone')}</Label>
               <Input value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="0901234567" className="mt-1 h-9" />
             </div>
             <div>
-              <Label className="text-xs">Email</Label>
+              <Label className="text-xs">{t('addDialog.fieldEmail')}</Label>
               <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="contact@brand.com" className="mt-1 h-9" />
             </div>
             <div>
-              <Label className="text-xs">Ngành hàng</Label>
+              <Label className="text-xs">{t('addDialog.fieldIndustry')}</Label>
               <Select value={form.category || '_none'} onValueChange={(v) => set('category', v === '_none' ? '' : v)}>
                 <SelectTrigger className="mt-1 h-9">
-                  <SelectValue placeholder="Chọn ngành hàng..." />
+                  <SelectValue placeholder={t('addDialog.fieldIndustryPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_none">— Chưa xác định —</SelectItem>
+                  <SelectItem value="_none">{t('addDialog.fieldIndustryNone')}</SelectItem>
                   {categoryNames.map((c) => (
                     <SelectItem key={c} value={c}>{c}</SelectItem>
                   ))}
@@ -394,30 +421,39 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Diện tích (m²)</Label>
+              <Label className="text-xs">{t('addDialog.fieldArea')}</Label>
               <Input type="number" value={form.expectedArea} onChange={(e) => set('expectedArea', e.target.value)} placeholder="100" className="mt-1 h-9" />
             </div>
+            {mode === 'lead' && (
+              <div>
+                <Label className="text-xs">Loại hình cho thuê</Label>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={form.leaseTermType} onChange={(e) => set('leaseTermType', e.target.value)}>
+                  <option value="LONG">Cho thuê dài hạn</option>
+                  <option value="SHORT">Cho thuê ngắn hạn</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Customer-only fields */}
           {mode === 'customer' && (
             <div className="grid grid-cols-3 gap-3 border-t pt-3">
               <div>
-                <Label className="text-xs">Ngân sách tối thiểu (tr/m²)</Label>
+                <Label className="text-xs">{t('addDialog.fieldBudgetMin')}</Label>
                 <Input type="number" step="0.1" value={form.budgetMin} onChange={(e) => set('budgetMin', e.target.value)} placeholder="0.5" className="mt-1 h-9" />
               </div>
               <div>
-                <Label className="text-xs">Ngân sách tối đa (tr/m²)</Label>
+                <Label className="text-xs">{t('addDialog.fieldBudgetMax')}</Label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" className="mt-1 h-9" />
               </div>
               <div>
-                <Label className="text-xs">Tiềm năng (1–5★)</Label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
+                <Label className="text-xs">{t('addDialog.fieldRating')}</Label>
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.rating} onChange={(e) => set('rating', e.target.value)}>
                   {[1, 2, 3, 4, 5].map((v) => <option key={v} value={v}>{'★'.repeat(v)} ({v}/5)</option>)}
                 </select>
               </div>
               <div className="col-span-2">
-                <Label className="text-xs">Website</Label>
+                <Label className="text-xs">{t('addDialog.fieldWebsite')}</Label>
                 <Input value={form.website} onChange={(e) => set('website', e.target.value)} placeholder="https://..." className="mt-1 h-9" />
               </div>
             </div>
@@ -425,23 +461,30 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
           <div className="grid grid-cols-2 gap-3 border-t pt-3">
             <div>
-              <Label className="text-xs">Nguồn khách hàng</Label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={form.source} onChange={(e) => set('source', e.target.value)}>
+              <Label className="text-xs">{t('addDialog.fieldSource')}</Label>
+              <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={form.source} onChange={(e) => set('source', e.target.value)}>
                 {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div>
-              <Label className="text-xs">Phụ trách</Label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm mt-1" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
-                <option value="">— Chưa phân công —</option>
-                {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-              </select>
+              <Label className="text-xs">{t('addDialog.fieldAssignee')}</Label>
+              {isSelfOnlyAssignee ? (
+                <div className="mt-1 flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+                  {user?.fullName}
+                  <span className="ml-1 text-gray-400">({t('addDialog.fieldAssigneeSelfHint')})</span>
+                </div>
+              ) : (
+                <select className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
+                  <option value="">{t('addDialog.fieldAssigneeNone')}</option>
+                  {users.map((u: any) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+                </select>
+              )}
             </div>
             <div className="col-span-2">
-              <Label className="text-xs">Ghi chú</Label>
+              <Label className="text-xs">{t('addDialog.fieldNotes')}</Label>
               <textarea
-                className="w-full border rounded-md p-2 text-sm resize-none h-16 mt-1"
-                placeholder="Yêu cầu đặc biệt, lịch sử tiếp cận..."
+                className="mt-1 h-16 w-full resize-none rounded-md border border-input bg-background p-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder={t('addDialog.fieldNotesPlaceholder')}
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
               />
@@ -449,14 +492,14 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="outline" onClick={onClose}>Hủy</Button>
+            <Button variant="outline" onClick={onClose}>{t('addDialog.cancel')}</Button>
             <Button
               disabled={!form.brandName || !form.contactName || isPending}
               onClick={() => mode === 'lead' ? createLead.mutate() : createCustomer.mutate()}
               className="gap-2"
             >
               <Plus size={14} />
-              {mode === 'lead' ? 'Thêm vào Pipeline' : 'Đăng ký Khách hàng'}
+              {mode === 'lead' ? t('addDialog.addToPipeline') : t('addDialog.registerCustomer')}
             </Button>
           </div>
         </div>
@@ -467,13 +510,15 @@ function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
 // ─── Lead Detail Sheet ─────────────────────────────────────────────────────────
 
-function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
+function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null; onClose: () => void; onOpenCustomer?: (customerId: string) => void }) {
+  const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'profile' | 'pipeline' | 'activities'>('profile');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [leadEditOpen, setLeadEditOpen] = useState(false);
 
   const { data: fullLead } = useQuery({
     queryKey: ['lead-detail', lead?.id],
@@ -487,6 +532,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     enabled: !!lead?.id,
   });
   const [newFollowUp, setNewFollowUp] = useState({ dueDate: '', note: '' });
+
+  // Sheet dùng chung 1 instance cho mọi lead (không remount) — nếu không reset thủ công, tab đang
+  // mở và nội dung follow-up nháp của lead trước sẽ còn nguyên khi chuyển sang xem lead khác.
+  useEffect(() => {
+    setActiveTab('profile');
+    setNewFollowUp({ dueDate: '', note: '' });
+  }, [lead?.id]);
 
   const displayLead: any = fullLead ?? lead;
   const customer: any = fullLead?.customer ?? null;
@@ -505,19 +557,21 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     onSuccess: () => {
       invalidateFollowUps();
       setNewFollowUp({ dueDate: '', note: '' });
-      toast({ title: 'Đã tạo nhắc hẹn theo dõi' });
+      toast({ title: t('sheet.createFollowUp') });
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const completeFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.complete(id),
-    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã hoàn thành nhắc hẹn' }); },
+    onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.completeFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const deleteFollowUpMutation = useMutation({
     mutationFn: (id: string) => followUpApi.delete(id),
-    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã xóa nhắc hẹn' }); },
+    onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.deleteFollowUp') }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const invalidateAll = () => {
@@ -535,10 +589,11 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
       invalidateAll();
       const syncedTo = LEAD_TO_CUSTOMER_LABEL[status];
       toast({
-        title: `Pipeline → ${LEAD_STAGES.find(s => s.key === status)?.label}`,
-        description: customer && syncedTo ? `Hồ sơ KH đã cập nhật: ${syncedTo}` : undefined,
+        title: t('leadSheet.advanceSuccess', { label: LEAD_STAGES.find(s => s.key === status)?.label }),
+        description: customer && syncedTo ? t('leadSheet.advanceSyncHint', { label: syncedTo }) : undefined,
       });
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
   const lostMutation = useMutation({
@@ -546,16 +601,27 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
     onSuccess: () => {
       invalidateAll();
       toast({
-        title: 'Đã đánh dấu thất bại',
-        description: customer ? 'Hồ sơ KH → Không hợp tác' : undefined,
+        title: t('sheet.markedLost'),
+        description: customer ? t('leadSheet.customerLostHint') : undefined,
       });
       onClose();
     },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
+  });
+
+  const customerProfileMutation = useMutation({
+    mutationFn: () => crmApi.createCustomerProfile(lead!.id),
+    onSuccess: (createdCustomer: any) => {
+      invalidateAll();
+      toast({ title: t('leadSheet.customerProfileReady'), description: t('leadSheet.customerProfileReadyHint') });
+      onOpenCustomer?.(createdCustomer.id);
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('leadSheet.customerProfileError'), variant: 'destructive' }),
   });
 
   return (
     <>
-      <Sheet open={!!lead} onClose={onClose} title={displayLead?.brandName ?? ''} subtitle={stage?.label}>
+      <Sheet open={!!lead} onClose={onClose} title={displayLead?.brandName ?? ''} subtitle={stage ? t(`lead.stages.${stage.key}`, { defaultValue: stage.label }) : undefined}>
         {displayLead && (
           <div className="px-6 pb-8 pt-3 space-y-3">
 
@@ -568,13 +634,13 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                   return (
                     <div key={s.key}
                       className={`flex-1 h-1.5 rounded-full ${s.key === displayLead.status ? s.bar : i < idx ? 'bg-green-400' : 'bg-gray-200'}`}
-                      title={s.label}
+                      title={t(`lead.stages.${s.key}`, { defaultValue: s.label })}
                     />
                   );
                 })}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {stage && <Badge className={`${stage.color} border-0 text-xs`}>{stage.label}</Badge>}
+                {stage && <Badge className={`${stage.color} border-0 text-xs`}>{t(`lead.stages.${stage.key}`, { defaultValue: stage.label })}</Badge>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -595,12 +661,12 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
             {/* 3 tabs */}
             <div className="flex border-b -mx-0">
               {([
-                ['profile',    'Hồ sơ'],
-                ['pipeline',   `Quy trình${bookings.length + proposals.length > 0 ? ` (${bookings.length + proposals.length})` : ''}`],
-                ['activities', `Hoạt động${activities.length > 0 ? ` (${activities.length})` : ''}`],
-              ] as const).map(([t, label]) => (
-                <button key={t} onClick={() => setActiveTab(t)}
-                  className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === t ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                ['profile',    t('leadSheet.profileTab')],
+                ['pipeline',   bookings.length + proposals.length > 0 ? `${t('sheet.pipelineTab')} (${bookings.length + proposals.length})` : t('sheet.pipelineTab')],
+                ['activities', activities.length > 0 ? `${t('sheet.activitiesTab')} (${activities.length})` : t('sheet.activitiesTab')],
+              ] as const).map(([tab, label]) => (
+                <button key={tab} onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                   {label}
                 </button>
               ))}
@@ -610,40 +676,55 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
             {activeTab === 'profile' && (
               <div className="space-y-3">
                 {/* Lead contact */}
-                <SheetSection label="LIÊN HỆ" className="bg-gray-50">
-                  <SheetRow label="Thương hiệu" value={displayLead.brandName} icon={Building2} />
-                  <SheetRow label="Người liên hệ" value={displayLead.contactName} icon={Users} />
-                  {displayLead.phone && <SheetRow label="Điện thoại" value={displayLead.phone} icon={Phone} />}
-                  {displayLead.email && <SheetRow label="Email" value={displayLead.email} icon={Mail} />}
+                <SheetSection
+                  label={t('leadSheet.contact')}
+                  className="bg-gray-50"
+                  action={
+                    <button
+                      onClick={() => setLeadEditOpen(true)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <Pencil size={11} /> {t('leadSheet.edit')}
+                    </button>
+                  }
+                >
+                  <SheetRow label={t('leadSheet.fieldBrand')} value={displayLead.brandName} icon={Building2} />
+                  <SheetRow label={t('leadSheet.fieldContact')} value={displayLead.contactName} icon={Users} />
+                  {displayLead.phone && <SheetRow label={t('leadSheet.fieldPhone')} value={displayLead.phone} icon={Phone} />}
+                  {displayLead.email && <SheetRow label={t('leadSheet.fieldEmail')} value={displayLead.email} icon={Mail} />}
                 </SheetSection>
 
                 {/* Customer company profile (nếu đã đăng ký) */}
                 {customer && (
-                  <SheetSection label="HỒ SƠ DOANH NGHIỆP" className="bg-blue-50">
-                    {customer.companyName && <SheetRow label="Công ty" value={customer.companyName} icon={Building2} />}
-                    {customer.taxCode && <SheetRow label="Mã số thuế" value={customer.taxCode} icon={Hash} />}
-                    {customer.industry && <SheetRow label="Ngành nghề" value={customer.industry} icon={Briefcase} />}
-                    {customer.address && <SheetRow label="Địa chỉ" value={customer.address} icon={MapPin} />}
-                    {customer.website && <SheetRow label="Website" value={customer.website} icon={Globe} />}
-                    {customer.contactTitle && <SheetRow label="Chức danh" value={customer.contactTitle} icon={UserCheck} />}
+                  <SheetSection
+                    label={t('leadSheet.companyProfile')}
+                    className="bg-blue-50"
+                    action={<button onClick={() => onOpenCustomer?.(customer.id)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">{t('leadSheet.openCustomerProfile')} <ArrowRight size={11} /></button>}
+                  >
+                    {customer.companyName && <SheetRow label={t('leadSheet.fieldCompany')} value={customer.companyName} icon={Building2} />}
+                    {customer.taxCode && <SheetRow label={t('leadSheet.fieldTaxCode')} value={customer.taxCode} icon={Hash} />}
+                    {customer.industry && <SheetRow label={t('leadSheet.fieldIndustry')} value={customer.industry} icon={Briefcase} />}
+                    {customer.address && <SheetRow label={t('leadSheet.fieldAddress')} value={customer.address} icon={MapPin} />}
+                    {customer.website && <SheetRow label={t('leadSheet.fieldWebsite')} value={customer.website} icon={Globe} />}
+                    {customer.contactTitle && <SheetRow label={t('leadSheet.fieldTitle')} value={customer.contactTitle} icon={UserCheck} />}
                     {(customer.budgetMin || customer.budgetMax) && (
-                      <SheetRow label="Ngân sách" value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />
+                      <SheetRow label={t('leadSheet.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />
                     )}
                   </SheetSection>
                 )}
 
                 {/* Yêu cầu thuê */}
-                <SheetSection label="YÊU CẦU THUÊ" className="bg-gray-50">
-                  {displayLead.category && <SheetRow label="Ngành hàng" value={displayLead.category} icon={Tag} />}
-                  {displayLead.expectedArea && <SheetRow label="Diện tích" value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {displayLead.expectedRent && <SheetRow label="Kỳ vọng" value={`${new Intl.NumberFormat('vi-VN').format(displayLead.expectedRent)} ₫/m²`} icon={TrendingUp} />}
-                  <SheetRow label="Ngày tạo" value={fmtDate(displayLead.createdAt)} icon={Calendar} />
+                <SheetSection label={t('leadSheet.rentRequirements')} className="bg-gray-50">
+                  {displayLead.category && <SheetRow label={t('leadSheet.fieldCategory')} value={displayLead.category} icon={Tag} />}
+                  {displayLead.expectedArea && <SheetRow label={t('leadSheet.fieldArea')} value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
+                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatMoney(displayLead.expectedRent, 'VND')}/m²`} icon={TrendingUp} />}
+                  <SheetRow label={t('leadSheet.fieldCreated')} value={fmtDate(displayLead.createdAt)} icon={Calendar} />
                 </SheetSection>
 
                 {/* Khách thuê sau khi WON */}
                 {fullLead?.tenant && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <div className="text-xs font-semibold text-emerald-700 mb-1.5 flex items-center gap-1"><Link2 size={11} /> ĐÃ TRỞ THÀNH KHÁCH THUÊ</div>
+                    <div className="text-xs font-semibold text-emerald-700 mb-1.5 flex items-center gap-1"><Link2 size={11} /> {t('leadSheet.becameTenant')}</div>
                     <button className="flex items-center justify-between w-full text-sm group" onClick={() => { onClose(); navigate('/tenants'); }}>
                       <div>
                         <div className="font-medium">{fullLead.tenant.brandName}</div>
@@ -656,22 +737,43 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
 
                 {displayLead.notes && (
                   <div className="rounded-xl bg-amber-50 p-3">
-                    <div className="text-xs font-semibold text-amber-600 mb-1">GHI CHÚ</div>
+                    <div className="text-xs font-semibold text-amber-600 mb-1">{t('leadSheet.notes')}</div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{displayLead.notes}</p>
+                  </div>
+                )}
+
+                {!customer && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+                    <div className="text-sm font-semibold text-blue-900">{t('leadSheet.noLinkedCustomer')}</div>
+                    <p className="text-xs text-blue-700">{t('leadSheet.createCustomerProfileHint')}</p>
+                    <Button className="w-full gap-2" onClick={() => customerProfileMutation.mutate()} disabled={customerProfileMutation.isPending}>
+                      <UserPlus size={14} /> {customerProfileMutation.isPending ? t('leadSheet.creatingCustomerProfile') : t('leadSheet.createCustomerProfile')}
+                    </Button>
                   </div>
                 )}
 
                 {/* Pipeline advance actions */}
                 {!['WON', 'LOST'].includes(displayLead.status) && (
                   <div className="space-y-2 pt-1">
-                    {nextStage && (
-                      <Button className="w-full flex-col h-auto py-2.5" onClick={() => advanceMutation.mutate(nextStage.key)} disabled={advanceMutation.isPending}>
-                        <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> Pipeline → {nextStage.label}</span>
-                        {customer && <span className="text-[10px] opacity-75 mt-0.5">Hồ sơ KH → {LEAD_TO_CUSTOMER_LABEL[nextStage.key]}</span>}
-                      </Button>
-                    )}
+                    {nextStage && (() => {
+                      const needsApprovedProposal = nextStage.key === 'WON'
+                        && !proposals.some((p: any) => ['APPROVED', 'CONVERTED'].includes(p.status));
+                      return (
+                        <>
+                          <Button className="w-full flex-col h-auto py-2.5"
+                            onClick={() => advanceMutation.mutate(nextStage.key)}
+                            disabled={advanceMutation.isPending || needsApprovedProposal}>
+                            <span className="flex items-center gap-1.5 font-medium"><ChevronRight size={14} /> {t('leadSheet.advancePipeline', { label: nextStage.label })}</span>
+                            {customer && <span className="text-[10px] opacity-75 mt-0.5">{t('leadSheet.customerSyncHint', { label: LEAD_TO_CUSTOMER_LABEL[nextStage.key] })}</span>}
+                          </Button>
+                          {needsApprovedProposal && (
+                            <p className="text-xs text-amber-600">{t('leadSheet.wonRequiresApprovedProposal')}</p>
+                          )}
+                        </>
+                      );
+                    })()}
                     <Button variant="outline" className="w-full text-red-500 border-red-200 hover:bg-red-50" onClick={() => lostMutation.mutate()} disabled={lostMutation.isPending}>
-                      Đánh dấu thất bại
+                      {t('sheet.markLost')}
                     </Button>
                   </div>
                 )}
@@ -683,7 +785,11 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
               <div className="space-y-4">
                 {/* Flow header */}
                 <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium overflow-x-auto pb-1 flex-nowrap">
-                  {['Booking', '→', 'Đề xuất', '→', 'Phê duyệt', '→', 'Hợp đồng'].map((s, i) => (
+                  {t('leadSheet.pipelineFlow').split('→').reduce<string[]>((acc, part, i, arr) => {
+                    acc.push(part.trim());
+                    if (i < arr.length - 1) acc.push('→');
+                    return acc;
+                  }, []).map((s, i) => (
                     <span key={i} className={s === '→' ? 'opacity-40' : 'bg-gray-100 px-2 py-0.5 rounded-full'}>{s}</span>
                   ))}
                 </div>
@@ -692,14 +798,17 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                 {bookings.length > 0 && (
                   <div>
                     <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
-                      <BookmarkCheck size={11} /> BOOKING ({bookings.length})
+                      <BookmarkCheck size={11} /> {t('leadSheet.bookingSection', { count: bookings.length })}
                     </div>
                     <div className="space-y-2">
                       {bookings.map((b: any) => {
                         const bcfg = BOOKING_STATUS_CFG[b.status] ?? BOOKING_STATUS_CFG.PENDING;
                         const dl = b.expiresAt ? Math.max(0, Math.ceil((new Date(b.expiresAt).getTime() - Date.now()) / 86400000)) : null;
                         return (
-                          <div key={b.id} className={`rounded-xl border p-3 ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+                          <div key={b.id}
+                            className={`rounded-xl border p-3 cursor-pointer hover:border-blue-300 transition-colors ${b.priority === 1 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}
+                            onClick={() => { onClose(); navigate(`/bookings?id=${b.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${b.priority === 1 ? 'bg-amber-400 text-white' : 'bg-gray-200 text-gray-600'}`}>{b.priority}</span>
@@ -712,15 +821,19 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                                 {dl !== null && b.status === 'ACTIVE' && (
                                   <span className={`text-xs ${dl <= 7 ? 'text-red-500' : 'text-gray-400'}`}><Clock size={10} className="inline" /> {dl}d</span>
                                 )}
-                                <Badge className={`text-xs border-0 ${bcfg.color}`}>{bcfg.label}</Badge>
+                                <Badge className={`text-xs border-0 ${bcfg.color}`}>{t(`bookingStatus.${b.status}`, { defaultValue: bcfg.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
                               </div>
                             </div>
                             {b.proposal && (
-                              <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8">
+                              <button
+                                className="mt-1.5 flex items-center gap-2 text-xs text-gray-500 pl-8 hover:text-blue-600"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/proposals?id=${b.proposal.id}`); }}
+                              >
                                 <ArrowRight size={10} />
                                 <span className="font-mono">{b.proposal.proposalNumber}</span>
-                                <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{PROPOSAL_STATUS[b.proposal.status]?.label}</Badge>
-                              </div>
+                                <Badge className={`text-xs border-0 ${PROPOSAL_STATUS[b.proposal.status]?.color}`}>{t(`proposalStatus.${b.proposal.status}`, { defaultValue: PROPOSAL_STATUS[b.proposal.status]?.label ?? t('common:unknownValue') })}</Badge>
+                              </button>
                             )}
                           </div>
                         );
@@ -734,35 +847,41 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold tracking-wider text-gray-400 flex items-center gap-1.5">
-                        <FileText size={11} /> ĐỀ XUẤT ({proposals.length})
+                        <FileText size={11} /> {t('leadSheet.proposalSection', { count: proposals.length })}
                       </span>
-                      <button className="text-xs text-gray-500 hover:underline" onClick={() => { onClose(); navigate('/proposals'); }}>Quản lý →</button>
+                      <button className="text-xs text-gray-500 hover:underline" onClick={() => { onClose(); navigate('/proposals'); }}>{t('leadSheet.manageProposals')}</button>
                     </div>
                     <div className="space-y-3">
                       {proposals.map((p: any) => {
                         const ps = PROPOSAL_STATUS[p.status] ?? PROPOSAL_STATUS.DRAFT;
                         const steps: any[] = p.approvalWorkflow?.steps ?? [];
                         return (
-                          <div key={p.id} className={`rounded-xl border p-3 space-y-2 ${
+                          <div key={p.id}
+                            className={`rounded-xl border p-3 space-y-2 cursor-pointer hover:border-blue-300 transition-colors ${
                             p.status === 'APPROVED' ? 'border-green-200 bg-green-50' :
                             p.status === 'REJECTED' ? 'border-red-100 bg-red-50/40' :
                             p.status === 'CONVERTED' ? 'border-purple-100 bg-purple-50/30' :
                             p.status === 'SUBMITTED' || p.status === 'UNDER_REVIEW' ? 'border-yellow-200 bg-yellow-50/40' :
                             'border-gray-200 bg-white'
-                          }`}>
+                          }`}
+                            onClick={() => { onClose(); navigate(`/proposals?id=${p.id}`); }}
+                          >
                             <div className="flex items-center justify-between">
                               <div>
                                 <span className="text-sm font-mono font-semibold">{p.proposalNumber}</span>
                                 {p.unit && <span className="text-xs text-gray-400 ml-2">{p.unit.code}</span>}
                               </div>
-                              <Badge className={`text-xs border-0 ${ps.color}`}>{ps.label}</Badge>
+                              <div className="flex items-center gap-1.5">
+                                <Badge className={`text-xs border-0 ${ps.color}`}>{t(`proposalStatus.${p.status}`, { defaultValue: ps.label })}</Badge>
+                                <ArrowRight size={12} className="text-gray-300" />
+                              </div>
                             </div>
                             {(p.monthlyRent || p.totalContractValue) && (
                               <div className="grid grid-cols-2 gap-x-4 text-xs">
-                                {p.monthlyRent && <div><span className="text-gray-400">Thuê/tháng: </span><span className="font-semibold">{new Intl.NumberFormat('vi-VN').format(p.monthlyRent)} ₫</span></div>}
-                                {p.totalContractValue && <div><span className="text-gray-400">Tổng HĐ: </span><span className="font-bold text-green-700">{new Intl.NumberFormat('vi-VN').format(p.totalContractValue)} ₫</span></div>}
-                                {p.term && <div><span className="text-gray-400">Thời hạn: </span><span>{p.term} tháng</span></div>}
-                                {p.startDate && <div><span className="text-gray-400">Bắt đầu: </span><span>{fmtDate(p.startDate)}</span></div>}
+                                {p.monthlyRent && <div><span className="text-gray-400">{t('leadSheet.monthlyRent')} </span><span className="font-semibold">{formatMoney(p.monthlyRent, p.rentCurrency as CurrencyCode)}</span></div>}
+                                {p.totalContractValue && <div><span className="text-gray-400">{t('leadSheet.contractValue')} </span><span className="font-bold text-green-700">{formatMoney(p.totalContractValue, p.rentCurrency as CurrencyCode)}</span></div>}
+                                {p.term && <div><span className="text-gray-400">{t('leadSheet.term')} </span><span>{t('leadSheet.termMonths', { term: p.term })}</span></div>}
+                                {p.startDate && <div><span className="text-gray-400">{t('leadSheet.startDate')} </span><span>{fmtDate(p.startDate)}</span></div>}
                               </div>
                             )}
                             {steps.length > 0 && (
@@ -772,20 +891,26 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                                     {s.status === 'APPROVED' ? <CheckCircle size={11} className="text-green-500 flex-shrink-0" /> :
                                      s.status === 'REJECTED' ? <X size={11} className="text-red-500 flex-shrink-0" /> :
                                      <div className="w-3 h-3 rounded-full border-2 border-gray-300 flex-shrink-0" />}
-                                    <span className="flex-1 text-gray-600">Bước {s.stepOrder}: {s.approver?.fullName ?? s.approverRole}</span>
+                                    <span className="flex-1 text-gray-600">{t('leadSheet.approvalStep', { order: s.stepOrder, name: s.approver?.fullName ?? s.approverRole })}</span>
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${s.status === 'APPROVED' ? 'bg-green-100 text-green-700' : s.status === 'REJECTED' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
-                                      {s.status === 'APPROVED' ? 'Duyệt' : s.status === 'REJECTED' ? 'Từ chối' : 'Chờ'}
+                                      {s.status === 'APPROVED' ? t('leadSheet.stepApproved') : s.status === 'REJECTED' ? t('leadSheet.stepRejected') : t('leadSheet.stepPending')}
                                     </span>
                                   </div>
                                 ))}
                               </div>
                             )}
                             {p.contract && (
-                              <div className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2">
+                              <button
+                                className="flex items-center gap-2 text-xs bg-purple-50 border border-purple-100 rounded-lg p-2 w-full hover:border-purple-300"
+                                onClick={(e) => { e.stopPropagation(); onClose(); navigate(`/contracts?id=${p.contract.id}`); }}
+                              >
                                 <FileText size={11} className="text-purple-500" />
                                 <span className="font-mono font-medium">{p.contract.contractNumber}</span>
-                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">{p.contract.status}</Badge>
-                              </div>
+                                <Badge className="text-xs border-0 bg-purple-100 text-purple-700 ml-auto">
+                                  {t(`contractStatus.${p.contract.status}`, { defaultValue: t('common:unknownValue') })}
+                                </Badge>
+                                <ArrowRight size={11} className="text-purple-300" />
+                              </button>
                             )}
                           </div>
                         );
@@ -797,8 +922,8 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                 {bookings.length === 0 && proposals.length === 0 && (
                   <div className="text-center py-10 text-gray-400 text-sm">
                     <Target size={30} className="mx-auto mb-2 opacity-20" />
-                    Chưa có booking hay đề xuất nào.<br />
-                    <span className="text-xs">Tạo booking từ trang Mặt bằng để bắt đầu.</span>
+                    {t('leadSheet.noBookingsProposals')}<br />
+                    <span className="text-xs">{t('leadSheet.noBookingsProposalsHint')}</span>
                   </div>
                 )}
               </div>
@@ -810,7 +935,7 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                 {/* ── Nhắc hẹn theo dõi ── */}
                 <div>
                   <div className="text-xs font-semibold tracking-wider text-gray-400 mb-2 uppercase flex items-center gap-1.5">
-                    <Bell size={12} /> Nhắc hẹn theo dõi
+                    <Bell size={12} /> {t('leadSheet.followUpsSection')}
                   </div>
                   <div className="space-y-2 mb-2">
                     {followUps.filter((f: any) => !f.isDone).map((f: any) => (
@@ -822,24 +947,26 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
-                            title="Hoàn thành" onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            title={t('followUpsWorkspace.complete')} disabled={completeFollowUpMutation.isPending}
+                            onClick={() => completeFollowUpMutation.mutate(f.id)}>
                             <CheckCircle size={13} />
                           </Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
-                            title="Xóa" onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            title={t('lead.delete')} disabled={deleteFollowUpMutation.isPending}
+                            onClick={() => deleteFollowUpMutation.mutate(f.id)}>
                             <X size={13} />
                           </Button>
                         </div>
                       </div>
                     ))}
                     {followUps.filter((f: any) => !f.isDone).length === 0 && (
-                      <p className="text-xs text-gray-400">Chưa có nhắc hẹn nào đang chờ.</p>
+                      <p className="text-xs text-gray-400">{t('leadSheet.noFollowUps')}</p>
                     )}
                   </div>
                   <div className="flex gap-2">
                     <Input type="date" className="h-8 text-xs" value={newFollowUp.dueDate}
                       onChange={(e) => setNewFollowUp((f) => ({ ...f, dueDate: e.target.value }))} />
-                    <Input placeholder="Ghi chú..." className="h-8 text-xs flex-1" value={newFollowUp.note}
+                    <Input placeholder={t('leadSheet.notePlaceholder')} className="h-8 text-xs flex-1" value={newFollowUp.note}
                       onChange={(e) => setNewFollowUp((f) => ({ ...f, note: e.target.value }))} />
                     <Button size="sm" className="h-8 shrink-0" disabled={!newFollowUp.dueDate || createFollowUpMutation.isPending}
                       onClick={() => createFollowUpMutation.mutate()}>
@@ -851,16 +978,16 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
                 {customer ? (
                   <>
                     <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>
-                      <Plus size={13} /> Ghi nhận hoạt động
+                      <Plus size={13} /> {t('leadSheet.addActivity')}
                     </Button>
                     <ActivityTimeline activities={activities} />
                   </>
                 ) : (
                   <div className="text-center py-8 text-gray-400 text-sm">
                     <Activity size={28} className="mx-auto mb-2 opacity-20" />
-                    Chưa có hồ sơ KH — hoạt động chưa được ghi nhận.
+                    {t('leadSheet.noCustomerProfile')}
                     <br />
-                    <span className="text-xs">Đăng ký hồ sơ khách hàng để bắt đầu ghi chú.</span>
+                    <span className="text-xs">{t('leadSheet.noCustomerProfileHint')}</span>
                   </div>
                 )}
               </div>
@@ -887,6 +1014,18 @@ function LeadDetailSheet({ lead, onClose }: { lead: Lead | null; onClose: () => 
         open={timelineOpen}
         onClose={() => setTimelineOpen(false)}
       />
+
+      {displayLead && (
+        <LeadEditDialog
+          lead={displayLead}
+          open={leadEditOpen}
+          onClose={() => setLeadEditOpen(false)}
+          queryKeys={{
+            pipeline: 'crm-pipeline',
+            leadDetail: 'lead-detail',
+          }}
+        />
+      )}
     </>
   );
 }
@@ -903,6 +1042,7 @@ interface LeadCardProps {
 }
 
 function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, selectionMode }: LeadCardProps) {
+  const { t } = useTranslation('crm');
   const priority = lead.priority ?? 'WARM';
   const priorityStyle = LEAD_PRIORITIES[priority] ?? LEAD_PRIORITIES.WARM;
   const daysAgo = getDaysAgo(lead.lastActivityAt);
@@ -936,7 +1076,7 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
           </div>
           <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${priorityStyle.color}`}>
             {priority === 'HOT' && <Flame size={9} className="inline mr-0.5" />}
-            {priority}
+            {t(`priority.${priority}`, { defaultValue: t('common:unknownValue') })}
           </span>
         </div>
 
@@ -1041,10 +1181,11 @@ interface DroppableColumnProps {
 }
 
 function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, onSelectLead, isOver, selectionMode, selectedIds, onToggleSelect }: DroppableColumnProps) {
+  const { t } = useTranslation('crm');
   return (
     <div className="shrink-0 w-56">
       <div className={`flex items-center justify-between px-3 py-2 rounded-t-xl ${stage.color}`}>
-        <span className="text-xs font-semibold">{stage.short}</span>
+        <span className="text-xs font-semibold">{t(`lead.stages.${stage.key}`, { defaultValue: stage.short })}</span>
         <span className="text-xs font-bold opacity-70">
           {total}{hasMore && '+'}
         </span>
@@ -1056,7 +1197,7 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
           <SortableContext items={leads.map(l => l.id)} strategy={verticalListSortingStrategy}>
             {leads.length === 0 ? (
               <div className={`text-center py-6 text-xs ${isOver ? 'text-blue-400' : 'text-gray-300'}`}>
-                {isOver ? 'Thả vào đây' : 'Trống'}
+                {isOver ? t('kanban.dropHere') : t('kanban.empty')}
               </div>
             ) : (
               <>
@@ -1072,7 +1213,7 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
                 ))}
                 {hasMore && (
                   <div className="text-center py-1.5 text-[10px] text-gray-400 bg-gray-100 rounded">
-                    +{total - leads.length} thêm
+                    {t('kanban.more', { count: total - leads.length })}
                   </div>
                 )}
               </>
@@ -1081,7 +1222,7 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
         )}
         {stage.key === 'NEW' && (
           <button onClick={onAddNew} className="w-full py-2 border-2 border-dashed border-gray-200 rounded-lg text-xs text-gray-400 hover:border-gray-300 hover:text-gray-600 transition-colors flex items-center justify-center gap-1">
-            <Plus size={11} /> Thêm lead
+            <Plus size={11} /> {t('kanban.addLead')}
           </button>
         )}
       </div>
@@ -1092,23 +1233,29 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
 // ─── Filter Types ───────────────────────────────────────────────────────────────
 
 interface PipelineFilters {
+  status?: string;
   assignedTo?: string;
   category?: string;
   source?: string;
   priority?: string;
-  quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | null;
+  quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | 'unassigned' | null;
 }
 
 // ─── Pipeline View (Kanban + List) ─────────────────────────────────────────────
 
-function PipelineView({ onAddNew }: { onAddNew: () => void }) {
+function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew: () => void; onOpenCustomers?: () => void; onOpenCustomer?: (customerId: string) => void }) {
+  const { t } = useTranslation('crm');
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const { selectedMallId } = useMallStore();
 
   // State
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'kanban' | 'list' | 'analytics' | 'customers'>('kanban');
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [listPage, setListPage] = useState(1);
   const LIST_PAGE_SIZE = 20;
@@ -1120,9 +1267,11 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkActionOpen, setBulkActionOpen] = useState<'assign' | 'status' | 'priority' | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   // Filters from URL
   const filters: PipelineFilters = useMemo(() => ({
+    status: searchParams.get('status') || undefined,
     assignedTo: searchParams.get('assignedTo') || undefined,
     category: searchParams.get('category') || undefined,
     source: searchParams.get('source') || undefined,
@@ -1161,8 +1310,14 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 
   // Pipeline data
   const { data: pipeline, isLoading } = useQuery({
-    queryKey: ['crm-pipeline'],
-    queryFn: () => crmApi.pipeline(100),
+    queryKey: ['crm-pipeline', selectedMallId, leaseTermType],
+    queryFn: () => crmApi.pipeline(100, selectedMallId ?? undefined, leaseTermType),
+  });
+  const requestedLeadId = searchParams.get('leadId');
+  const { data: requestedLeadData } = useQuery({
+    queryKey: ['crm-lead', requestedLeadId],
+    queryFn: () => crmApi.getLead(requestedLeadId!),
+    enabled: !!requestedLeadId,
   });
 
   // Move lead mutation
@@ -1173,7 +1328,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['crm-pipeline'] });
     },
     onError: () => {
-      toast({ title: 'Lỗi', description: 'Không thể di chuyển lead', variant: 'destructive' });
+      toast({ title: t('bulk.error'), description: t('bulk.errorMove'), variant: 'destructive' });
       queryClient.invalidateQueries({ queryKey: ['crm-pipeline'] });
     },
   });
@@ -1183,14 +1338,15 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     mutationFn: ({ action, data }: { action: string; data?: Record<string, unknown> }) =>
       crmApi.bulkAction(action, Array.from(selectedIds), data),
     onSuccess: (result: any) => {
-      toast({ title: 'Thành công', description: result.message });
+      toast({ title: t('bulk.success'), description: result.message });
       queryClient.invalidateQueries({ queryKey: ['crm-pipeline'] });
       setSelectedIds(new Set());
       setSelectionMode(false);
       setBulkActionOpen(null);
+      setConfirmBulkDelete(false);
     },
     onError: () => {
-      toast({ title: 'Lỗi', description: 'Không thể thực hiện hành động', variant: 'destructive' });
+      toast({ title: t('bulk.error'), description: t('bulk.errorAction'), variant: 'destructive' });
     },
   });
 
@@ -1211,12 +1367,8 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     return result;
   }, [pipeline]);
 
-  // Get current user ID from auth context (simplified)
-  const currentUserId = useMemo(() => {
-    const authStr = localStorage.getItem('auth');
-    if (!authStr) return null;
-    try { return JSON.parse(authStr)?.user?.id; } catch { return null; }
-  }, []);
+  const currentUserId = user?.id ?? null;
+  const canManageTeam = ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(user?.role ?? '');
 
   // Apply filters to leads
   const filteredPipelineData = useMemo(() => {
@@ -1224,6 +1376,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 
     for (const [status, data] of Object.entries(pipelineData)) {
       let leads = [...data.leads];
+      if (filters.status && status !== filters.status) leads = [];
 
       // Quick filters
       if (filters.quickFilter === 'my-leads' && currentUserId) {
@@ -1232,6 +1385,8 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
         leads = leads.filter(l => l.priority === 'HOT');
       } else if (filters.quickFilter === 'stale-leads') {
         leads = leads.filter(l => getDaysAgo(l.lastActivityAt) > 7);
+      } else if (filters.quickFilter === 'unassigned') {
+        leads = leads.filter(l => !l.assignedTo);
       }
 
       // Individual filters
@@ -1268,6 +1423,16 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
     [filteredPipelineData],
   );
 
+  useEffect(() => {
+    if (!requestedLeadId || selectedLead?.id === requestedLeadId) return;
+    const match = Object.values(pipelineData)
+      .flatMap((column) => column.leads)
+      .find((lead) => lead.id === requestedLeadId);
+    const fetched = requestedLeadData?.data ?? requestedLeadData;
+    if (match) setSelectedLead(match);
+    else if (fetched?.id === requestedLeadId) setSelectedLead(fetched);
+  }, [pipelineData, requestedLeadId, requestedLeadData, selectedLead?.id]);
+
   // Reset to page 1 whenever the filtered data changes
   useEffect(() => { setListPage(1); }, [filteredPipelineData]);
 
@@ -1279,6 +1444,13 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 
   const totalValue = allLeads.filter((l) => l.expectedRent && l.expectedArea)
     .reduce((s, l) => s + (l.expectedRent ?? 0) * (l.expectedArea ?? 0), 0);
+  const allUnfilteredLeads = useMemo(() => Object.values(pipelineData).flatMap(v => v.leads), [pipelineData]);
+  const discoveryStats = {
+    mine: allUnfilteredLeads.filter((lead) => lead.assignedTo?.id === currentUserId).length,
+    hot: allUnfilteredLeads.filter((lead) => lead.priority === 'HOT' && !['WON', 'LOST'].includes(lead.status)).length,
+    stale: allUnfilteredLeads.filter((lead) => getDaysAgo(lead.lastActivityAt) > 7 && !['WON', 'LOST'].includes(lead.status)).length,
+    unassigned: allUnfilteredLeads.filter((lead) => !lead.assignedTo).length,
+  };
 
   // Selection helpers
   const toggleSelect = useCallback((leadId: string, selected: boolean) => {
@@ -1363,7 +1535,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       });
 
       toast({
-        title: 'Lead đã được di chuyển',
+        title: t('kanban.leadMoved'),
         description: `${draggedLead.brandName} → ${LEAD_STAGES.find(s => s.key === targetStatus)?.label}`,
       });
     }
@@ -1376,11 +1548,28 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 
   return (
     <div className="space-y-4">
+      <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { key: 'my-leads', label: t('quickFilters.myLeads'), value: discoveryStats.mine, hint: t('quickFilters.myLeadsHint'), valueClassName: 'text-blue-700' },
+          { key: 'hot-leads', label: t('quickFilters.hotLeads'), value: discoveryStats.hot, hint: t('quickFilters.hotLeadsHint'), valueClassName: 'text-red-700' },
+          { key: 'stale-leads', label: t('quickFilters.staleLeads'), value: discoveryStats.stale, hint: t('quickFilters.staleLeadsHint'), valueClassName: 'text-amber-700' },
+          { key: 'unassigned', label: t('quickFilters.unassigned'), value: discoveryStats.unassigned, hint: t('quickFilters.unassignedHint'), valueClassName: 'text-slate-700' },
+        ].map((item, index) => <button key={item.label} type="button" onClick={() => item.key && updateFilter('quickFilter', filters.quickFilter === item.key ? null : item.key)} className={`px-3 py-2.5 text-left transition hover:bg-slate-50 ${index > 0 ? 'border-t border-slate-100 sm:border-l sm:border-t-0' : ''} ${index === 2 ? 'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0' : ''} ${filters.quickFilter === item.key ? 'bg-slate-50 ring-1 ring-inset ring-slate-300' : ''}`}>
+          <div className="flex items-baseline justify-between gap-3"><span className="text-xs font-semibold text-slate-600">{item.label}</span><span className={`text-xl font-bold tabular-nums ${item.valueClassName}`}>{item.value}</span></div><p className="mt-0.5 truncate text-[11px] text-slate-400">{item.hint}</p>
+        </button>)}
+      </div>
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <ERPToolbar>
+        <div className="inline-flex rounded-lg border bg-white p-1">
+          {(['LONG', 'SHORT'] as const).map((term) => (
+            <button key={term} type="button" onClick={() => setLeaseTermType(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+              {t(`leaseTerm.${term}`)}
+            </button>
+          ))}
+        </div>
         <div className="relative flex-1 max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm lead..." className="pl-8 h-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('toolbar.search')} className="pl-8 h-9" />
         </div>
         <Button
           variant={showFilters ? 'default' : 'outline'}
@@ -1389,7 +1578,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
           className={hasActiveFilters ? 'border-gray-400 text-gray-900' : ''}
         >
           <Filter size={14} className="mr-1" />
-          Lọc {hasActiveFilters && <Badge className="ml-1 h-5 px-1.5">{Object.values(filters).filter(Boolean).length}</Badge>}
+          {t('toolbar.filter')} {hasActiveFilters && <Badge className="ml-1 h-5 px-1.5">{Object.values(filters).filter(Boolean).length}</Badge>}
         </Button>
         <Button
           variant={selectionMode ? 'default' : 'outline'}
@@ -1397,66 +1586,76 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
           onClick={() => { setSelectionMode(!selectionMode); if (selectionMode) setSelectedIds(new Set()); }}
         >
           <CheckSquare size={14} className="mr-1" />
-          Chọn nhiều {selectedIds.size > 0 && <Badge className="ml-1 h-5 px-1.5">{selectedIds.size}</Badge>}
+          {t('toolbar.selectMany')} {selectedIds.size > 0 && <Badge className="ml-1 h-5 px-1.5">{selectedIds.size}</Badge>}
         </Button>
         <div className="flex rounded-lg border overflow-hidden">
           <button onClick={() => setView('kanban')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'kanban' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
-            <Kanban size={13} /> Kanban
+            <Kanban size={13} /> {t('toolbar.kanban')}
           </button>
           <button onClick={() => setView('list')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'list' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
-            <LayoutList size={13} /> Danh sách
+            <LayoutList size={13} /> {t('toolbar.list')}
           </button>
-          <button onClick={() => setView('analytics')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
-            <BarChart3 size={13} /> Analytics
+          <button onClick={() => navigate('/crm-overview')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'analytics' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+            <BarChart3 size={13} /> {t('toolbar.analytics')}
           </button>
-          <button onClick={() => setView('customers')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'customers' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
-            <Users size={13} /> Hồ sơ KH
+          <button onClick={() => onOpenCustomers ? onOpenCustomers() : setView('customers')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${view === 'customers' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+            <Users size={13} /> {t('toolbar.customerProfiles')}
           </button>
         </div>
         {totalValue > 0 && (
           <div className="text-xs text-gray-500 ml-auto">
-            Pipeline value: <span className="font-semibold text-gray-700">{new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(totalValue)} ₫</span>
+            {t('toolbar.pipelineValue')} <span className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>{formatMoney(totalValue, 'VND')}</span>
           </div>
         )}
-      </div>
+      </ERPToolbar>
 
       {/* Bulk Action Bar */}
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white rounded-xl shadow-2xl px-6 py-3 flex items-center gap-4 z-50">
-          <span className="text-sm font-medium">{selectedIds.size} leads đã chọn</span>
+        <div className="fixed bottom-3 md:bottom-6 left-3 right-3 md:left-1/2 md:right-auto md:-translate-x-1/2 bg-gray-900 text-white rounded-xl shadow-2xl px-3 md:px-6 py-3 flex items-center gap-2 md:gap-4 z-50 overflow-x-auto">
+          <span className="text-sm font-medium whitespace-nowrap">{t('bulk.selected', { count: selectedIds.size })}</span>
           <div className="h-6 w-px bg-gray-700" />
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={selectAll}>
-            <CheckSquare size={14} className="mr-1" /> Chọn tất cả
+            <CheckSquare size={14} className="mr-1" /> {t('bulk.selectAll')}
           </Button>
-          <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('assign')}>
-            <UserPlus size={14} className="mr-1" /> Assign
-          </Button>
+          {canManageTeam && <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('assign')}>
+            <UserPlus size={14} className="mr-1" /> {t('bulk.assign')}
+          </Button>}
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('status')}>
-            <ArrowRight size={14} className="mr-1" /> Đổi status
+            <ArrowRight size={14} className="mr-1" /> {t('bulk.changeStatus')}
           </Button>
           <Button size="sm" variant="ghost" className="text-white hover:bg-gray-800" onClick={() => setBulkActionOpen('priority')}>
-            <Flame size={14} className="mr-1" /> Đổi priority
+            <Flame size={14} className="mr-1" /> {t('bulk.changePriority')}
           </Button>
-          <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => bulkMutation.mutate({ action: 'delete' })}>
-            <Trash2 size={14} className="mr-1" /> Xóa
-          </Button>
+          {canManageTeam && <Button size="sm" variant="ghost" className="text-red-400 hover:bg-red-900/30" onClick={() => setConfirmBulkDelete(true)}>
+            <Trash2 size={14} className="mr-1" /> {t('bulk.delete')}
+          </Button>}
           <div className="h-6 w-px bg-gray-700" />
           <Button size="sm" variant="ghost" className="text-gray-400 hover:bg-gray-800" onClick={clearSelection}>
-            <X size={14} />
+            <X size={14} /><span className="sr-only">{t('bulk.selectAll')}</span>
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={t('bulk.confirmDelete', { count: selectedIds.size })}
+        description={t('bulk.confirmDeleteDesc')}
+        onCancel={() => setConfirmBulkDelete(false)}
+        onConfirm={() => bulkMutation.mutate({ action: 'delete' })}
+        loading={bulkMutation.isPending}
+        confirmLabel={t('bulk.confirmDeleteBtn')}
+        loadingLabel={t('bulk.deleting')}
+      />
 
       {/* Bulk Action Dialogs */}
       <Dialog open={bulkActionOpen === 'assign'} onOpenChange={(open) => !open && setBulkActionOpen(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Assign {selectedIds.size} leads</DialogTitle>
+            <DialogTitle>{t('bulk.assignTitle', { count: selectedIds.size })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Select onValueChange={(userId) => bulkMutation.mutate({ action: 'assign', data: { assignedToId: userId } })}>
               <SelectTrigger>
-                <SelectValue placeholder="Chọn người phụ trách" />
+                <SelectValue placeholder={t('bulk.selectAssignee')} />
               </SelectTrigger>
               <SelectContent>
                 {(Array.isArray(users) ? users : users?.data ?? []).map((u: any) => (
@@ -1471,7 +1670,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       <Dialog open={bulkActionOpen === 'status'} onOpenChange={(open) => !open && setBulkActionOpen(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Đổi status {selectedIds.size} leads</DialogTitle>
+            <DialogTitle>{t('bulk.statusTitle', { count: selectedIds.size })}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-2">
             {LEAD_STAGES.map((s) => (
@@ -1481,7 +1680,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
                 className={`justify-start ${s.color}`}
                 onClick={() => bulkMutation.mutate({ action: 'changeStatus', data: { status: s.key } })}
               >
-                {s.label}
+                {t(`lead.stages.${s.key}`, { defaultValue: s.label })}
               </Button>
             ))}
           </div>
@@ -1491,7 +1690,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       <Dialog open={bulkActionOpen === 'priority'} onOpenChange={(open) => !open && setBulkActionOpen(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Đổi priority {selectedIds.size} leads</DialogTitle>
+            <DialogTitle>{t('bulk.priorityTitle', { count: selectedIds.size })}</DialogTitle>
           </DialogHeader>
           <div className="flex gap-2">
             {(['HOT', 'WARM', 'COLD'] as const).map((p) => (
@@ -1513,20 +1712,20 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
       {showFilters && (
         <div className="bg-gray-50 border rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Bộ lọc</span>
+            <span className="text-sm font-medium text-gray-700">{t('toolbar.filterPanel')}</span>
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="text-gray-500 h-7">
-                <X size={12} className="mr-1" /> Xóa lọc
+                <X size={12} className="mr-1" /> {t('toolbar.clearFilter')}
               </Button>
             )}
           </div>
           <div className="flex flex-wrap gap-3">
             <Select value={filters.assignedTo || '_all'} onValueChange={(v) => updateFilter('assignedTo', v === '_all' ? null : v)}>
               <SelectTrigger className="w-40 h-8 text-xs">
-                <SelectValue placeholder="Người phụ trách" />
+                <SelectValue placeholder={t('toolbar.assignee')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Tất cả</SelectItem>
+                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
                 {(Array.isArray(users) ? users : users?.data ?? []).map((u: any) => (
                   <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
                 ))}
@@ -1534,10 +1733,10 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
             </Select>
             <Select value={filters.category || '_all'} onValueChange={(v) => updateFilter('category', v === '_all' ? null : v)}>
               <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue placeholder="Ngành hàng" />
+                <SelectValue placeholder={t('toolbar.industry')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Tất cả</SelectItem>
+                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
                 {LEAD_CATEGORIES.map((c) => (
                   <SelectItem key={c} value={c}>{c}</SelectItem>
                 ))}
@@ -1545,24 +1744,24 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
             </Select>
             <Select value={filters.source || '_all'} onValueChange={(v) => updateFilter('source', v === '_all' ? null : v)}>
               <SelectTrigger className="w-32 h-8 text-xs">
-                <SelectValue placeholder="Nguồn" />
+                <SelectValue placeholder={t('toolbar.source')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Tất cả</SelectItem>
+                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
                 {LEAD_SOURCES.map((s) => (
-                  <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
+                  <SelectItem key={s.key} value={s.key}>{t(`sources.${s.key}`, { defaultValue: s.label })}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={filters.priority || '_all'} onValueChange={(v) => updateFilter('priority', v === '_all' ? null : v)}>
               <SelectTrigger className="w-28 h-8 text-xs">
-                <SelectValue placeholder="Ưu tiên" />
+                <SelectValue placeholder={t('toolbar.priority')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Tất cả</SelectItem>
-                <SelectItem value="HOT">Hot</SelectItem>
-                <SelectItem value="WARM">Warm</SelectItem>
-                <SelectItem value="COLD">Cold</SelectItem>
+                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
+                <SelectItem value="HOT">{t('priority.HOT')}</SelectItem>
+                <SelectItem value="WARM">{t('priority.WARM')}</SelectItem>
+                <SelectItem value="COLD">{t('priority.COLD')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1597,7 +1796,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
           if (!count) return null;
           return (
             <div key={s.key} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${s.color}`}>
-              {s.short} <span className="font-bold">{count}</span>
+              {t(`lead.stages.${s.key}`, { defaultValue: s.short })} <span className="font-bold">{count}</span>
             </div>
           );
         })}
@@ -1650,23 +1849,23 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Liên hệ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Ngành</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Diện tích</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Giai đoạn</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nguồn</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Ngày tạo</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colBrand')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colContact')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colIndustry')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{t('listView.colArea')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colStage')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colSource')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('listView.colCreated')}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-12 text-gray-400">Đang tải...</td></tr>
+                <tr><td colSpan={7} className="text-center py-12 text-gray-400">{t('listView.loading')}</td></tr>
               ) : allLeads.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-gray-400">
                     <Target size={36} className="mx-auto mb-2 opacity-20" />
-                    <p>Chưa có lead nào</p>
+                    <p>{t('listView.noLeads')}</p>
                   </td>
                 </tr>
               ) : pagedLeads.map((lead: any) => {
@@ -1686,10 +1885,10 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full ${s?.bar}`} />
-                        <Badge className={`${s?.color} border-0 text-xs`}>{s?.short}</Badge>
+                        <Badge className={`${s?.color} border-0 text-xs`}>{s ? t(`lead.stages.${s.key}`, { defaultValue: s.short }) : ''}</Badge>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-400">{SOURCE_LABELS[lead.source] ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{lead.source ? t(`sources.${lead.source}`, { defaultValue: SOURCE_LABELS[lead.source] ?? t('common:unknownValue') }) : '—'}</td>
                     <td className="px-4 py-3 text-gray-400 text-xs">{fmtDate(lead.createdAt)}</td>
                   </tr>
                 );
@@ -1707,7 +1906,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
                   disabled={listPage === 1}
                   className="px-2.5 py-1 rounded text-xs border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  ‹ Trước
+                  {t('listView.prev')}
                 </button>
                 {Array.from({ length: listTotalPages }, (_, i) => i + 1)
                   .filter(p => p === 1 || p === listTotalPages || Math.abs(p - listPage) <= 1)
@@ -1734,7 +1933,7 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
                   disabled={listPage === listTotalPages}
                   className="px-2.5 py-1 rounded text-xs border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Sau ›
+                  {t('listView.next')}
                 </button>
               </div>
             </div>
@@ -1751,7 +1950,14 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
         </div>
       )}
 
-      <LeadDetailSheet lead={selectedLead} onClose={() => setSelectedLead(null)} />
+      <LeadDetailSheet lead={selectedLead} onOpenCustomer={onOpenCustomer} onClose={() => {
+        setSelectedLead(null);
+        setSearchParams((previous) => {
+          const next = new URLSearchParams(previous);
+          next.delete('leadId');
+          return next;
+        }, { replace: true });
+      }} />
     </div>
   );
 }
@@ -1759,9 +1965,10 @@ function PipelineView({ onAddNew }: { onAddNew: () => void }) {
 // ─── Pipeline Analytics Component ────────────────────────────────────────────────
 
 function PipelineAnalytics() {
+  const { t } = useTranslation('crm');
   const { data: stats, isLoading } = useQuery({
     queryKey: ['crm-pipeline-stats'],
-    queryFn: crmApi.pipelineStats,
+    queryFn: () => crmApi.pipelineStats(),
   });
 
   const { data: staleLeads, isLoading: staleLoading } = useQuery({
@@ -1783,47 +1990,47 @@ function PipelineAnalytics() {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-gray-900">{summary.total ?? 0}</div>
-          <div className="text-xs text-gray-500">Tổng leads</div>
+          <div className="text-xs text-gray-500">{t('analytics.totalLeads')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-gray-700">{summary.totalActive ?? 0}</div>
-          <div className="text-xs text-gray-500">Đang xử lý</div>
+          <div className="text-xs text-gray-500">{t('analytics.active')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-green-600">{summary.totalWon ?? 0}</div>
-          <div className="text-xs text-gray-500">Thắng</div>
+          <div className="text-xs text-gray-500">{t('analytics.won')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-red-500">{summary.totalLost ?? 0}</div>
-          <div className="text-xs text-gray-500">Thất bại</div>
+          <div className="text-xs text-gray-500">{t('analytics.lost')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-purple-600">{(conversionRates.overallWinRate ?? 0).toFixed(1)}%</div>
-          <div className="text-xs text-gray-500">Tỷ lệ thắng</div>
+          <div className="text-xs text-gray-500">{t('analytics.winRate')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
           <div className="text-2xl font-bold text-orange-600">{summary.avgDaysToWin ?? 0}</div>
-          <div className="text-xs text-gray-500">Ngày TB để thắng</div>
+          <div className="text-xs text-gray-500">{t('analytics.avgDaysToWin')}</div>
         </div>
       </div>
 
       {/* This Month */}
       <div className="bg-white rounded-xl border p-5">
         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Calendar size={16} /> Tháng này
+          <Calendar size={16} /> {t('analytics.thisMonth')}
         </h3>
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center p-3 bg-gray-50 rounded-lg">
             <div className="text-xl font-bold text-gray-700">{summary.newThisMonth ?? 0}</div>
-            <div className="text-xs text-gray-600">Leads mới</div>
+            <div className="text-xs text-gray-600">{t('analytics.newLeads')}</div>
           </div>
           <div className="text-center p-3 bg-green-50 rounded-lg">
             <div className="text-xl font-bold text-green-600">{summary.wonThisMonth ?? 0}</div>
-            <div className="text-xs text-gray-600">Thắng</div>
+            <div className="text-xs text-gray-600">{t('analytics.won')}</div>
           </div>
           <div className="text-center p-3 bg-red-50 rounded-lg">
             <div className="text-xl font-bold text-red-500">{summary.lostThisMonth ?? 0}</div>
-            <div className="text-xs text-gray-600">Thất bại</div>
+            <div className="text-xs text-gray-600">{t('analytics.lost')}</div>
           </div>
         </div>
       </div>
@@ -1832,7 +2039,7 @@ function PipelineAnalytics() {
         {/* Conversion Funnel */}
         <div className="bg-white rounded-xl border p-5">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingUp size={16} /> Conversion Rates
+            <TrendingUp size={16} /> {t('analytics.conversionRates')}
           </h3>
           <div className="space-y-3">
             {[
@@ -1858,7 +2065,7 @@ function PipelineAnalytics() {
         {/* By Priority */}
         <div className="bg-white rounded-xl border p-5">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Flame size={16} /> Theo Priority
+            <Flame size={16} /> {t('analytics.byPriority')}
           </h3>
           <div className="space-y-3">
             {['HOT', 'WARM', 'COLD'].map((p) => {
@@ -1887,12 +2094,12 @@ function PipelineAnalytics() {
         {/* Win/Loss by Source */}
         <div className="bg-white rounded-xl border p-5">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Target size={16} /> Tỷ lệ thắng theo nguồn
+            <Target size={16} /> {t('analytics.winBySource')}
           </h3>
           <div className="space-y-2">
             {Object.entries(winLossBySource).map(([source, data]: [string, any]) => (
               <div key={source} className="flex items-center gap-3">
-                <div className="w-24 text-xs text-gray-600 truncate">{SOURCE_LABELS[source] ?? source}</div>
+                <div className="w-24 text-xs text-gray-600 truncate">{t(`sources.${source}`, { defaultValue: SOURCE_LABELS[source] ?? t('common:unknownValue') })}</div>
                 <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden flex">
                   <div className="h-full bg-green-500" style={{ width: `${data.rate}%` }} />
                   <div className="h-full bg-red-400" style={{ width: `${100 - data.rate}%` }} />
@@ -1905,7 +2112,7 @@ function PipelineAnalytics() {
               </div>
             ))}
             {Object.keys(winLossBySource).length === 0 && (
-              <div className="text-center text-gray-400 text-sm py-4">Chưa có dữ liệu</div>
+              <div className="text-center text-gray-400 text-sm py-4">{t('analytics.noData')}</div>
             )}
           </div>
         </div>
@@ -1913,7 +2120,7 @@ function PipelineAnalytics() {
         {/* Win/Loss by Category */}
         <div className="bg-white rounded-xl border p-5">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Tag size={16} /> Tỷ lệ thắng theo ngành
+            <Tag size={16} /> {t('analytics.winByCategory')}
           </h3>
           <div className="space-y-2">
             {Object.entries(winLossByCategory).map(([cat, data]: [string, any]) => (
@@ -1931,7 +2138,7 @@ function PipelineAnalytics() {
               </div>
             ))}
             {Object.keys(winLossByCategory).length === 0 && (
-              <div className="text-center text-gray-400 text-sm py-4">Chưa có dữ liệu</div>
+              <div className="text-center text-gray-400 text-sm py-4">{t('analytics.noData')}</div>
             )}
           </div>
         </div>
@@ -1940,12 +2147,12 @@ function PipelineAnalytics() {
       {/* Stale Leads Alert */}
       <div className="bg-orange-50 border border-orange-200 rounded-xl p-5">
         <h3 className="font-semibold text-orange-800 mb-3 flex items-center gap-2">
-          <AlertTriangle size={16} /> Leads cần theo dõi (không có activity &gt; 14 ngày)
+          <AlertTriangle size={16} /> {t('analytics.staleAlert')}
         </h3>
         {staleLoading ? (
           <div className="text-center py-4"><RefreshCw className="animate-spin text-orange-400 mx-auto" /></div>
         ) : (staleLeads?.length ?? 0) === 0 ? (
-          <div className="text-center text-orange-600 text-sm py-4">Không có leads nào cần theo dõi</div>
+          <div className="text-center text-orange-600 text-sm py-4">{t('analytics.noStaleLeads')}</div>
         ) : (
           <div className="space-y-2">
             {(staleLeads ?? []).slice(0, 10).map((lead: any) => {
@@ -1964,7 +2171,7 @@ function PipelineAnalytics() {
             })}
             {(staleLeads?.length ?? 0) > 10 && (
               <div className="text-center text-xs text-orange-600 pt-2">
-                và {staleLeads.length - 10} leads khác...
+                {t('analytics.moreLeads', { count: staleLeads.length - 10 })}
               </div>
             )}
           </div>
@@ -1977,16 +2184,17 @@ function PipelineAnalytics() {
 // ─── Customer Detail Sheet ─────────────────────────────────────────────────────
 
 function ActivityTimeline({ activities }: { activities: CustomerActivity[] }) {
+  const { t } = useTranslation('crm');
   if (!activities?.length) return (
     <div className="text-center py-8 text-gray-400 text-sm">
       <Activity size={28} className="mx-auto mb-2 opacity-20" />
-      Chưa có hoạt động
+      {t('leadSheet.noActivities')}
     </div>
   );
   return (
     <div className="space-y-3">
       {activities.map((act) => {
-        const typeInfo = ACTIVITY_TYPES.find((t) => t.key === act.type) ?? ACTIVITY_TYPES[ACTIVITY_TYPES.length - 1];
+        const typeInfo = ACTIVITY_TYPES.find((item) => item.key === act.type) ?? ACTIVITY_TYPES[ACTIVITY_TYPES.length - 1];
         const Icon = typeInfo.icon;
         return (
           <div key={act.id} className="flex gap-3">
@@ -1995,7 +2203,7 @@ function ActivityTimeline({ activities }: { activities: CustomerActivity[] }) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-xs font-medium text-gray-700">{typeInfo.label}</span>
+                <span className="text-xs font-medium text-gray-700">{t(`activityTypes.${typeInfo.key}`, { defaultValue: typeInfo.label })}</span>
                 {act.subject && <span className="text-xs text-gray-400">— {act.subject}</span>}
               </div>
               <p className="text-xs text-gray-600 whitespace-pre-wrap">{act.note}</p>
@@ -2010,6 +2218,7 @@ function ActivityTimeline({ activities }: { activities: CustomerActivity[] }) {
 }
 
 function AddActivityDialog({ customerId, open, onClose }: { customerId: string; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ type: 'CALL', subject: '', note: '', outcome: '' });
@@ -2019,38 +2228,38 @@ function AddActivityDialog({ customerId, open, onClose }: { customerId: string; 
     mutationFn: () => customersApi.addActivity(customerId, form as any),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customer', customerId] });
-      toast({ title: 'Đã ghi nhận hoạt động' });
+      toast({ title: t('addActivity.success') });
       onClose();
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: () => toast({ title: t('addActivity.error'), variant: 'destructive' }),
   });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Ghi nhận hoạt động</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('addActivity.title')}</DialogTitle></DialogHeader>
         <div className="space-y-3 text-sm">
           <div>
-            <Label className="text-xs">Loại *</Label>
+            <Label className="text-xs">{t('addActivity.type')}</Label>
             <select className="w-full border rounded-md h-9 px-2 mt-1 text-sm" value={form.type} onChange={(e) => set('type', e.target.value)}>
-              {ACTIVITY_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              {ACTIVITY_TYPES.map((act) => <option key={act.key} value={act.key}>{t(`activityTypes.${act.key}`, { defaultValue: act.label })}</option>)}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Tiêu đề</Label>
-            <Input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Tóm tắt nội dung..." className="mt-1 h-9" />
+            <Label className="text-xs">{t('addActivity.subject')}</Label>
+            <Input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder={t('addActivity.subjectPlaceholder')} className="mt-1 h-9" />
           </div>
           <div>
-            <Label className="text-xs">Nội dung *</Label>
-            <textarea className="w-full border rounded-md p-2 text-sm resize-none h-20 mt-1" value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Chi tiết..." />
+            <Label className="text-xs">{t('addActivity.content')}</Label>
+            <textarea className="w-full border rounded-md p-2 text-sm resize-none h-20 mt-1" value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={t('addActivity.contentPlaceholder')} />
           </div>
           <div>
-            <Label className="text-xs">Kết quả</Label>
-            <Input value={form.outcome} onChange={(e) => set('outcome', e.target.value)} placeholder="Kết quả đạt được..." className="mt-1 h-9" />
+            <Label className="text-xs">{t('addActivity.result')}</Label>
+            <Input value={form.outcome} onChange={(e) => set('outcome', e.target.value)} placeholder={t('addActivity.resultPlaceholder')} className="mt-1 h-9" />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>Hủy</Button>
-            <Button disabled={!form.note || mutation.isPending} onClick={() => mutation.mutate()}>Lưu</Button>
+            <Button variant="outline" onClick={onClose}>{t('addActivity.cancel')}</Button>
+            <Button disabled={!form.note || mutation.isPending} onClick={() => mutation.mutate()}>{t('addActivity.save')}</Button>
           </div>
         </div>
       </DialogContent>
@@ -2059,6 +2268,7 @@ function AddActivityDialog({ customerId, open, onClose }: { customerId: string; 
 }
 
 function CustomerDetailSheet({ customerId, onClose }: { customerId: string | null; onClose: () => void }) {
+  const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -2066,6 +2276,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const [showActivity, setShowActivity] = useState(false);
   const [showInactiveReason, setShowInactiveReason] = useState(false);
   const [inactiveReason, setInactiveReason] = useState('');
+  const [showLeadSync, setShowLeadSync] = useState(false);
+  const [syncLeadId, setSyncLeadId] = useState('');
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2078,6 +2290,13 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const statusInfo = CUSTOMER_STATUSES.find((s) => s.key === customer?.status);
   const nextStatusKey = customer?.status === 'PROSPECT' ? 'NEGOTIATING' : customer?.status === 'NEGOTIATING' ? 'ACTIVE' : null;
   const nextStatusInfo = nextStatusKey ? CUSTOMER_STATUSES.find((s) => s.key === nextStatusKey) : null;
+
+  const { data: leadOptionsRaw, isLoading: isLoadingLeads } = useQuery({
+    queryKey: ['customer-sync-leads'],
+    queryFn: () => crmApi.listLeads({ limit: 200 }),
+    enabled: showLeadSync,
+  });
+  const leadOptions: Lead[] = (leadOptionsRaw?.data ?? leadOptionsRaw ?? []).filter((item: Lead) => !item.customerId || item.customerId === customerId);
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['customer', customerId] });
@@ -2097,9 +2316,10 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
       invalidateAll();
       const leadsCount = customer?.leads?.length ?? 0;
       const syncLabel = CUSTOMER_TO_LEAD_LABEL[status];
+      const statusLabel = CUSTOMER_STATUSES.find((s) => s.key === status)?.label;
       toast({
-        title: `Hồ sơ KH → ${CUSTOMER_STATUSES.find((s) => s.key === status)?.label}`,
-        description: leadsCount > 0 && syncLabel ? `${leadsCount} lead liên kết → ${syncLabel}` : undefined,
+        title: t('customerDetail.advanceStatus', { label: statusLabel }),
+        description: leadsCount > 0 && syncLabel ? t('customerDetail.leadsSyncHint', { count: leadsCount, label: syncLabel }) : undefined,
       });
     },
   });
@@ -2110,11 +2330,22 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
       invalidateAll();
       const leadsCount = customer?.leads?.filter((l: any) => !['WON', 'LOST'].includes(l.status)).length ?? 0;
       toast({
-        title: 'Đã kết thúc hợp tác',
-        description: leadsCount > 0 ? `${leadsCount} lead liên kết → Thất bại` : undefined,
+        title: t('customerDetail.endCoopSuccess'),
+        description: leadsCount > 0 ? t('customerDetail.endCoopLeads', { count: leadsCount }) : undefined,
       });
       setShowInactiveReason(false);
     },
+  });
+
+  const syncLeadMutation = useMutation({
+    mutationFn: () => crmApi.syncLeadToCustomer(syncLeadId, customer!.id),
+    onSuccess: () => {
+      invalidateAll();
+      setShowLeadSync(false);
+      setSyncLeadId('');
+      toast({ title: t('customerDetail.syncLeadSuccess'), description: t('customerDetail.syncLeadSuccessHint') });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('customerDetail.syncLeadError'), variant: 'destructive' }),
   });
 
   return (
@@ -2134,11 +2365,11 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
             {/* Inline tabs */}
             <div className="flex border-b">
               {([
-                ['overview', 'Tổng quan'],
-                ['activities', `Hoạt động (${customer.activities?.length ?? 0})`],
-                ['leads', `Leads (${customer.leads?.length ?? 0})`],
-              ] as const).map(([t, label]) => (
-                <button key={t} onClick={() => setDetailTab(t)} className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${detailTab === t ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                ['overview', t('customerDetail.overview')],
+                ['activities', t('customerDetail.activities', { count: customer.activities?.length ?? 0 })],
+                ['leads', t('customerDetail.leads', { count: customer.leads?.length ?? 0 })],
+              ] as const).map(([tab, label]) => (
+                <button key={tab} onClick={() => setDetailTab(tab)} className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${detailTab === tab ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                   {label}
                 </button>
               ))}
@@ -2147,39 +2378,39 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
             {/* Overview */}
             {detailTab === 'overview' && (
               <div className="space-y-3">
-                <SheetSection label="CÔNG TY" className="bg-gray-50">
-                  <SheetRow label="Công ty" value={customer.companyName} icon={Building2} />
-                  {customer.brandName && <SheetRow label="Brand" value={customer.brandName} icon={Tag} />}
-                  {customer.taxCode && <SheetRow label="Mã số thuế" value={customer.taxCode} icon={Hash} />}
-                  {customer.industry && <SheetRow label="Ngành nghề" value={customer.industry} icon={Briefcase} />}
-                  {customer.address && <SheetRow label="Địa chỉ" value={customer.address} icon={MapPin} />}
-                  {customer.website && <SheetRow label="Website" value={customer.website} icon={Globe} />}
+                <SheetSection label={t('customerDetail.colCompany')} className="bg-gray-50">
+                  <SheetRow label={t('customerDetail.fieldCompany')} value={customer.companyName} icon={Building2} />
+                  {customer.brandName && <SheetRow label={t('customerDetail.fieldBrand')} value={customer.brandName} icon={Tag} />}
+                  {customer.taxCode && <SheetRow label={t('customerDetail.fieldTaxCode')} value={customer.taxCode} icon={Hash} />}
+                  {customer.industry && <SheetRow label={t('customerDetail.fieldIndustry')} value={customer.industry} icon={Briefcase} />}
+                  {customer.address && <SheetRow label={t('customerDetail.fieldAddress')} value={customer.address} icon={MapPin} />}
+                  {customer.website && <SheetRow label={t('customerDetail.fieldWebsite')} value={customer.website} icon={Globe} />}
                 </SheetSection>
 
-                <SheetSection label="LIÊN HỆ" className="bg-gray-50">
-                  <SheetRow label="Họ tên" value={customer.contactName} icon={Users} />
-                  {customer.contactTitle && <SheetRow label="Chức danh" value={customer.contactTitle} icon={Briefcase} />}
-                  {customer.phone && <SheetRow label="Điện thoại" value={customer.phone} icon={Phone} />}
-                  {customer.email && <SheetRow label="Email" value={customer.email} icon={Mail} />}
+                <SheetSection label={t('customerDetail.colContact')} className="bg-gray-50">
+                  <SheetRow label={t('customerDetail.fieldFullName')} value={customer.contactName} icon={Users} />
+                  {customer.contactTitle && <SheetRow label={t('customerDetail.fieldTitle')} value={customer.contactTitle} icon={Briefcase} />}
+                  {customer.phone && <SheetRow label={t('customerDetail.fieldPhone')} value={customer.phone} icon={Phone} />}
+                  {customer.email && <SheetRow label={t('customerDetail.fieldEmail')} value={customer.email} icon={Mail} />}
                 </SheetSection>
 
-                <SheetSection label="YÊU CẦU THUÊ" className="bg-purple-50">
-                  {customer.preferredCategory && <SheetRow label="Ngành hàng" value={customer.preferredCategory} icon={Tag} />}
-                  {customer.expectedArea && <SheetRow label="Diện tích" value={`${customer.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label="Ngân sách" value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />}
+                <SheetSection label={t('customerDetail.colRent')} className="bg-purple-50">
+                  {customer.preferredCategory && <SheetRow label={t('customerDetail.fieldCategory')} value={customer.preferredCategory} icon={Tag} />}
+                  {customer.expectedArea && <SheetRow label={t('customerDetail.fieldArea')} value={`${customer.expectedArea.toLocaleString()} m²`} icon={Building2} />}
+                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />}
                 </SheetSection>
 
                 {customer.assignedTo && (
-                  <SheetSection label="PHỤ TRÁCH" className="bg-green-50">
-                    <SheetRow label="Nhân viên" value={customer.assignedTo.fullName} icon={UserCheck} />
-                    <SheetRow label="Email" value={customer.assignedTo.email} icon={Mail} />
+                  <SheetSection label={t('customerDetail.colAssignee')} className="bg-green-50">
+                    <SheetRow label={t('customerDetail.fieldStaff')} value={customer.assignedTo.fullName} icon={UserCheck} />
+                    <SheetRow label={t('customerDetail.fieldEmail')} value={customer.assignedTo.email} icon={Mail} />
                   </SheetSection>
                 )}
 
                 {/* Linked tenant */}
                 {customer.tenant && (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <div className="text-xs font-semibold text-emerald-700 mb-1 flex items-center gap-1"><Link2 size={11} /> ĐÃ TRỞ THÀNH KHÁCH THUÊ</div>
+                    <div className="text-xs font-semibold text-emerald-700 mb-1 flex items-center gap-1"><Link2 size={11} /> {t('leadSheet.becameTenant')}</div>
                     <button className="flex items-center justify-between w-full group" onClick={() => { onClose(); navigate('/tenants'); }}>
                       <div>
                         <div className="text-sm font-medium">{customer.tenant.brandName}</div>
@@ -2192,14 +2423,14 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
 
                 {customer.notes && (
                   <div className="rounded-xl bg-amber-50 p-3">
-                    <div className="text-xs font-semibold text-amber-600 mb-1">GHI CHÚ</div>
+                    <div className="text-xs font-semibold text-amber-600 mb-1">{t('customerDetail.notes')}</div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{customer.notes}</p>
                   </div>
                 )}
 
                 {customer.lostAt && customer.lostReason && (
                   <div className="rounded-xl bg-red-50 p-3">
-                    <div className="text-xs font-semibold text-red-600 mb-1">LÝ DO KẾT THÚC</div>
+                    <div className="text-xs font-semibold text-red-600 mb-1">{t('customerDetail.lostReason')}</div>
                     <p className="text-sm text-red-700">{customer.lostReason}</p>
                     <p className="text-xs text-red-400 mt-1">{fmtDate(customer.lostAt)}</p>
                   </div>
@@ -2213,21 +2444,21 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                       return (
                         <Button className="w-full flex-col h-auto py-2.5" onClick={() => advanceMutation.mutate(nextStatusKey!)} disabled={advanceMutation.isPending}>
                           <span className="flex items-center gap-1.5 font-medium">
-                            <ChevronRight size={14} /> Hồ sơ KH → {nextStatusInfo.label}
+                            <ChevronRight size={14} /> {t('customerDetail.advanceStatus', { label: nextStatusInfo.label })}
                           </span>
                           {leadsCount > 0 && (
                             <span className="text-[10px] opacity-75 mt-0.5">
-                              {leadsCount} lead liên kết → {leadSyncLabel}
+                              {t('customerDetail.leadsSyncHint', { count: leadsCount, label: leadSyncLabel })}
                             </span>
                           )}
                         </Button>
                       );
                     })()}
                     <Button variant="outline" className="w-full flex-col h-auto py-2 text-orange-500 border-orange-200 hover:bg-orange-50" onClick={() => setShowInactiveReason(true)}>
-                      <span>Kết thúc hợp tác</span>
+                      <span>{t('customerDetail.endCooperation')}</span>
                       {(customer.leads ?? []).filter((l: any) => !['WON', 'LOST'].includes(l.status)).length > 0 && (
                         <span className="text-[10px] opacity-60 mt-0.5">
-                          {(customer.leads ?? []).filter((l: any) => !['WON', 'LOST'].includes(l.status)).length} lead → Thất bại
+                          {t('customerDetail.endCoopHint', { count: (customer.leads ?? []).filter((l: any) => !['WON', 'LOST'].includes(l.status)).length })}
                         </span>
                       )}
                     </Button>
@@ -2239,7 +2470,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
             {detailTab === 'activities' && (
               <div className="space-y-3">
                 <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowActivity(true)}>
-                  <Plus size={13} /> Ghi nhận hoạt động
+                  <Plus size={13} /> {t('customerDetail.addActivity')}
                 </Button>
                 <ActivityTimeline activities={customer.activities ?? []} />
               </div>
@@ -2247,8 +2478,11 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
 
             {detailTab === 'leads' && (
               <div className="space-y-2">
+                <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowLeadSync(true)}>
+                  <RefreshCw size={13} /> {t('customerDetail.getInfoFromLead')}
+                </Button>
                 {(customer.leads ?? []).length === 0 ? (
-                  <div className="text-center py-8 text-gray-400 text-sm"><Target size={28} className="mx-auto mb-2 opacity-20" />Chưa có leads liên kết</div>
+                  <div className="text-center py-8 text-gray-400 text-sm"><Target size={28} className="mx-auto mb-2 opacity-20" />{t('customerDetail.noLinkedLeads')}</div>
                 ) : (customer.leads ?? []).map((lead: any) => {
                   const s = LEAD_STAGES.find((s) => s.key === lead.status);
                   return (
@@ -2259,7 +2493,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full ${s?.bar}`} />
-                        <Badge className={`${s?.color} border-0 text-xs`}>{s?.short}</Badge>
+                        <Badge className={`${s?.color} border-0 text-xs`}>{s ? t(`lead.stages.${s.key}`, { defaultValue: s.short }) : ''}</Badge>
                       </div>
                     </div>
                   );
@@ -2275,12 +2509,33 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
       {customer && <AddActivityDialog customerId={customer.id} open={showActivity} onClose={() => setShowActivity(false)} />}
       <Dialog open={showInactiveReason} onOpenChange={setShowInactiveReason}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Kết thúc hợp tác</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('customerDetail.endCoopTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 text-sm">
-            <textarea className="w-full border rounded-md p-2 text-sm h-24 resize-none" placeholder="Lý do kết thúc hợp tác..." value={inactiveReason} onChange={(e) => setInactiveReason(e.target.value)} />
+            <textarea className="w-full border rounded-md p-2 text-sm h-24 resize-none" placeholder={t('customerDetail.endCoopPlaceholder')} value={inactiveReason} onChange={(e) => setInactiveReason(e.target.value)} />
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowInactiveReason(false)}>Hủy</Button>
-              <Button variant="destructive" disabled={!inactiveReason.trim() || inactiveMutation.isPending} onClick={() => inactiveMutation.mutate()}>Xác nhận</Button>
+              <Button variant="outline" onClick={() => setShowInactiveReason(false)}>{t('customerDetail.cancel')}</Button>
+              <Button variant="destructive" disabled={!inactiveReason.trim() || inactiveMutation.isPending} onClick={() => inactiveMutation.mutate()}>{t('customerDetail.confirm')}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showLeadSync} onOpenChange={(open) => { setShowLeadSync(open); if (!open) setSyncLeadId(''); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('customerDetail.getInfoFromLead')}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">{t('customerDetail.syncLeadDescription')}</p>
+            <Select value={syncLeadId} onValueChange={setSyncLeadId} disabled={isLoadingLeads}>
+              <SelectTrigger><SelectValue placeholder={isLoadingLeads ? t('customersView.loading') : t('customerDetail.selectLead')} /></SelectTrigger>
+              <SelectContent>
+                {leadOptions.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.brandName} — {item.contactName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!isLoadingLeads && leadOptions.length === 0 && <p className="text-sm text-amber-600">{t('customerDetail.noAvailableLeads')}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowLeadSync(false)}>{t('customerDetail.cancel')}</Button>
+              <Button disabled={!syncLeadId || syncLeadMutation.isPending} onClick={() => syncLeadMutation.mutate()}>{t('customerDetail.syncNow')}</Button>
             </div>
           </div>
         </DialogContent>
@@ -2291,10 +2546,15 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
 
 // ─── Customers View ────────────────────────────────────────────────────────────
 
-function CustomersView({ onAddNew }: { onAddNew: () => void }) {
+function CustomersView({ onAddNew, requestedCustomerId, onCustomerClosed }: { onAddNew: () => void; requestedCustomerId?: string | null; onCustomerClosed?: () => void }) {
+  const { t } = useTranslation('crm');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (requestedCustomerId) setSelectedId(requestedCustomerId);
+  }, [requestedCustomerId]);
 
   const { data: statsData } = useQuery({
     queryKey: ['customers-stats'],
@@ -2317,14 +2577,14 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
         {/* Status filter bar */}
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setStatusFilter('')} className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${!statusFilter ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-            Tất cả <span className="font-bold ml-1">{statsData?.total ?? 0}</span>
+            {t('customersView.all')} <span className="font-bold ml-1">{statsData?.total ?? 0}</span>
           </button>
           {CUSTOMER_STATUSES.map((s) => {
             const count = stats.find((x) => x.status === s.key)?.count ?? 0;
             const Icon = s.icon;
             return (
               <button key={s.key} onClick={() => setStatusFilter(s.key === statusFilter ? '' : s.key)} className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${statusFilter === s.key ? `${s.color} border-current` : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                <Icon size={11} />{s.label} <span className="font-bold">{count}</span>
+                <Icon size={11} />{t(`customerStatuses.${s.key}`, { defaultValue: s.label })} <span className="font-bold">{count}</span>
               </button>
             );
           })}
@@ -2334,7 +2594,7 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
         <div className="flex gap-2">
           <div className="relative flex-1 max-w-xs">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm mã KH, tên, email..." className="pl-8 h-9" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('customersView.searchPlaceholder')} className="pl-8 h-9" />
           </div>
         </div>
 
@@ -2343,26 +2603,26 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Mã KH</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Công ty / Brand</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Liên hệ</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Ngành</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Diện tích</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Đánh giá</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Leads</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Ngày tạo</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colCode')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colCompany')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colContact')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colIndustry')}</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">{t('customersView.colArea')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colStatus')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colRating')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colLeads')}</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">{t('customersView.colCreated')}</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9} className="text-center py-12 text-gray-400">Đang tải...</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-400">{t('customersView.loading')}</td></tr>
               ) : customers.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-center py-12 text-gray-400">
                     <Users size={36} className="mx-auto mb-2 opacity-20" />
-                    <p>Chưa có khách hàng nào</p>
-                    <Button size="sm" variant="outline" className="mt-3 gap-1.5" onClick={onAddNew}><Plus size={13} />Đăng ký KH mới</Button>
+                    <p>{t('customersView.noCustomers')}</p>
+                    <Button size="sm" variant="outline" className="mt-3 gap-1.5" onClick={onAddNew}><Plus size={13} />{t('customersView.registerNew')}</Button>
                   </td>
                 </tr>
               ) : customers.map((c) => {
@@ -2386,13 +2646,13 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
                     <td className="px-4 py-2.5 text-right text-xs text-gray-500">{c.expectedArea ? `${c.expectedArea.toLocaleString()} m²` : '—'}</td>
                     <td className="px-4 py-2.5">
                       <div className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${s?.color}`}>
-                        <Icon size={10} />{s?.label}
+                        <Icon size={10} />{s ? t(`customerStatuses.${s.key}`, { defaultValue: s.label }) : ''}
                       </div>
                     </td>
                     <td className="px-4 py-2.5"><RatingStars value={c.rating} /></td>
                     <td className="px-4 py-2.5">
                       {leadCount > 0 ? (
-                        <span className="text-xs bg-gray-50 text-gray-700 px-2 py-0.5 rounded-full font-medium">{leadCount} leads</span>
+                        <span className="text-xs bg-gray-50 text-gray-700 px-2 py-0.5 rounded-full font-medium">{t('customersView.leadCount', { count: leadCount })}</span>
                       ) : <span className="text-xs text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-gray-400 text-xs">{fmtDate(c.createdAt)}</td>
@@ -2404,7 +2664,7 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
         </div>
       </div>
 
-      <CustomerDetailSheet customerId={selectedId} onClose={() => setSelectedId(null)} />
+      <CustomerDetailSheet customerId={selectedId} onClose={() => { setSelectedId(null); onCustomerClosed?.(); }} />
     </div>
   );
 }
@@ -2412,6 +2672,7 @@ function CustomersView({ onAddNew }: { onAddNew: () => void }) {
 // ─── Follow-ups View ───────────────────────────────────────────────────────────
 
 function FollowUpsView() {
+  const { t } = useTranslation('crm');
   const { data, isLoading } = useQuery({
     queryKey: ['follow-ups'],
     queryFn: () => (crmApi as any).listFollowUps ? (crmApi as any).listFollowUps({ isDone: false, daysAhead: 7 }) : Promise.resolve([]),
@@ -2454,22 +2715,22 @@ function FollowUpsView() {
       {overdue.length > 0 && (
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-red-600 mb-3">
-            <AlertCircle size={14} /> Quá hạn ({overdue.length})
+            <AlertCircle size={14} /> {t('followUpsWorkspace.overdue')} ({overdue.length})
           </div>
           <div className="space-y-2">{renderList(overdue, '')}</div>
         </div>
       )}
       <div>
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
-          <Clock size={14} /> Hôm nay ({todayItems.length})
+          <Clock size={14} /> {t('followUpsWorkspace.today')} ({todayItems.length})
         </div>
-        {renderList(todayItems, 'Không có follow-up nào hôm nay 🎉')}
+        {renderList(todayItems, t('followUpsWorkspace.noTasks'))}
       </div>
       <div>
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-3">
-          <Calendar size={14} /> 7 ngày tới ({upcoming.length})
+          <Calendar size={14} /> {t('followUpsWorkspace.upcoming')} ({upcoming.length})
         </div>
-        {renderList(upcoming, 'Chưa có kế hoạch follow-up nào')}
+        {renderList(upcoming, t('followUpsWorkspace.noTasks'))}
       </div>
     </div>
   );
@@ -2477,36 +2738,42 @@ function FollowUpsView() {
 
 // ─── Main CRM Page ─────────────────────────────────────────────────────────────
 
-export default function CrmPage() {
+function LegacyCrmPage() {
+  const { t } = useTranslation('crm');
   const [activeTab, setActiveTab] = useState('pipeline');
   const [showAdd, setShowAdd] = useState(false);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-5 shrink-0">
+      <PageHeader
+        className="mb-5 shrink-0"
+        eyebrow={t('pipeline.eyebrow')}
+        title={t('pipeline.title')}
+        description={t('pipeline.description')}
+        actions={<Button onClick={() => setShowAdd(true)} className="w-full gap-2 sm:w-auto"><Plus size={15} /> {t('pipeline.addBtn')}</Button>}
+      />
+      <div className="hidden">
         <div>
           <h1 className="text-xl font-bold text-gray-900">CRM — Sales & Marketing</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Quản lý toàn bộ vòng đời khách hàng: Tiếp cận → Đàm phán → Ký hợp đồng</p>
+          <p className="text-sm text-gray-500 mt-0.5">{t('pipeline.description')}</p>
         </div>
         <Button onClick={() => setShowAdd(true)} className="gap-2 shrink-0">
-          <Plus size={15} /> Thêm mới
+          <Plus size={15} /> {t('pipeline.addBtn')}
         </Button>
       </div>
 
-      {/* Stats */}
-      <StatsHeader />
-
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="mb-4 w-full justify-start bg-gray-100 p-1 rounded-xl shrink-0">
+        <div className="mb-4 overflow-x-auto pb-1 shrink-0">
+        <TabsList className="w-max min-w-full justify-start bg-gray-100 p-1 rounded-xl">
           <TabsTrigger value="pipeline" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            <Target size={14} /> Liên hệ & Pipeline
+            <Target size={14} /> {t('pipeline.tabPipeline')}
           </TabsTrigger>
           <TabsTrigger value="followups" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm">
-            <Bell size={14} /> Follow-ups
+            <Bell size={14} /> {t('pipeline.tabFollowUps')}
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="pipeline" className="flex-1 overflow-y-auto pb-4 mt-0">
           <PipelineView onAddNew={() => setShowAdd(true)} />
@@ -2517,6 +2784,128 @@ export default function CrmPage() {
         </TabsContent>
       </Tabs>
 
+      <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
+    </div>
+  );
+}
+
+function FollowUpsWorkspace() {
+  const { t } = useTranslation('crm');
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['follow-ups', 'open', 7],
+    queryFn: () => followUpApi.list({ isDone: 'false', daysAhead: 7 }),
+    select: (response: any) => response?.data ?? response ?? [],
+  });
+  const completeMutation = useMutation({
+    mutationFn: (id: string) => followUpApi.complete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
+      toast({ title: t('followUpsWorkspace.completeSuccess') });
+    },
+    onError: () => toast({ title: t('followUpsWorkspace.completeError'), variant: 'destructive' }),
+  });
+
+  const items: any[] = Array.isArray(data) ? data : [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today.getTime() + 86_400_000);
+  const groups = [
+    { key: 'overdue', label: t('followUpsWorkspace.overdue'), tone: 'text-red-700', items: items.filter((item) => new Date(item.dueDate) < today) },
+    { key: 'today', label: t('followUpsWorkspace.today'), tone: 'text-amber-700', items: items.filter((item) => new Date(item.dueDate) >= today && new Date(item.dueDate) < tomorrow) },
+    { key: 'upcoming', label: t('followUpsWorkspace.upcoming'), tone: 'text-gray-700', items: items.filter((item) => new Date(item.dueDate) >= tomorrow) },
+  ];
+
+  if (isLoading) return <div className="space-y-2">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-20 rounded-xl" />)}</div>;
+  if (isError) return (
+    <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+      <p className="font-medium text-red-700">{t('followUpsWorkspace.loadError')}</p>
+      <p className="mt-1 text-sm text-red-600">{t('followUpsWorkspace.loadErrorHint')}</p>
+      <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>{t('followUpsWorkspace.retry')}</Button>
+    </div>
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-3">
+      {groups.map((group) => (
+        <section key={group.key} className="rounded-xl border bg-white p-4" aria-labelledby={`follow-up-${group.key}`}>
+          <h2 id={`follow-up-${group.key}`} className={`mb-3 flex items-center justify-between text-sm font-semibold ${group.tone}`}>
+            {group.label}<Badge variant="outline">{group.items.length}</Badge>
+          </h2>
+          {group.items.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">{t('followUpsWorkspace.noTasks')}</p>
+          ) : (
+            <div className="space-y-2">
+              {group.items.map((item: any) => {
+                const leadStage = item.lead?.status ? LEAD_STAGES.find((s) => s.key === item.lead.status) : null;
+                return (
+                <article key={item.id} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="text-left text-sm font-semibold text-gray-900 hover:text-blue-600 hover:underline"
+                      onClick={() => item.lead?.id && navigate(`/crm?leadId=${item.lead.id}`)}
+                    >{item.lead?.brandName ?? item.customer?.companyName ?? t('followUpsWorkspace.fallbackName')}</button>
+                    {leadStage && <Badge className={`${leadStage.color} border-0 text-[10px] shrink-0`}>{leadStage.short}</Badge>}
+                  </div>
+                  {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-400">{t('followUpsWorkspace.dueDate', { date: fmtDate(item.dueDate) })}</span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
+                      <CheckCircle size={12} className="mr-1" /> {t('followUpsWorkspace.complete')}
+                    </Button>
+                  </div>
+                </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+export default function CrmPage() {
+  const { t } = useTranslation('crm');
+  const [searchParams] = useSearchParams();
+  const requestedSection = searchParams.get('section');
+  const [activeTab, setActiveTab] = useState(
+    requestedSection === 'followups' || requestedSection === 'customers' ? requestedSection : 'leads',
+  );
+  const [showAdd, setShowAdd] = useState(false);
+  const [customerToOpen, setCustomerToOpen] = useState<string | null>(searchParams.get('customerId'));
+
+  const openCustomerProfile = (customerId: string) => {
+    setCustomerToOpen(customerId);
+    setActiveTab('customers');
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        className="mb-5 shrink-0"
+        eyebrow={t('page.eyebrow')}
+        title={t('page.title')}
+        description={t('page.description')}
+        actions={<Button onClick={() => setShowAdd(true)} className="w-full gap-2 sm:w-auto"><Plus size={15} /> {t('page.createBtn')}</Button>}
+      />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-4 shrink-0 overflow-x-auto pb-1">
+          <TabsList className="w-max min-w-full justify-start rounded-xl bg-gray-100 p-1">
+            <TabsTrigger value="leads" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Target size={14} /> {t('page.tabLeads')}</TabsTrigger>
+            <TabsTrigger value="followups" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Bell size={14} /> {t('page.tabFollowUps')}</TabsTrigger>
+            <TabsTrigger value="customers" className="gap-2 rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm"><Users size={14} /> {t('page.tabCustomers')}</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="leads" className="mt-0 flex-1 overflow-y-auto pb-4">
+          <PipelineView onAddNew={() => setShowAdd(true)} onOpenCustomers={() => setActiveTab('customers')} onOpenCustomer={openCustomerProfile} />
+        </TabsContent>
+        <TabsContent value="followups" className="mt-0 flex-1 overflow-y-auto pb-4"><FollowUpsWorkspace /></TabsContent>
+        <TabsContent value="customers" className="mt-0 flex-1 overflow-y-auto pb-4"><CustomersView onAddNew={() => setShowAdd(true)} requestedCustomerId={customerToOpen} onCustomerClosed={() => setCustomerToOpen(null)} /></TabsContent>
+      </Tabs>
       <UnifiedAddDialog open={showAdd} onClose={() => setShowAdd(false)} />
     </div>
   );

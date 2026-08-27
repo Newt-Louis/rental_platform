@@ -5,6 +5,7 @@ import { TicketType, TicketPriority, Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 import { EmailService } from '../notifications/email.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
 export class TicketSlaService {
@@ -14,6 +15,7 @@ export class TicketSlaService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private schedulerLock: SchedulerLockService,
   ) {}
 
   async listPolicies() {
@@ -59,6 +61,10 @@ export class TicketSlaService {
 
   @Cron('0 */2 * * *', { name: 'ticket-sla-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkSlaBreaches() {
+    return this.schedulerLock.runExclusive('ticket-sla-check', 5_400_000, () => this.checkSlaBreachesUnlocked());
+  }
+
+  private async checkSlaBreachesUnlocked() {
     this.logger.log('Checking ticket SLA breaches...');
     const now = new Date();
 
@@ -146,32 +152,36 @@ export class TicketSlaService {
     this.logger.log(`Ticket SLA check: ${breachedTickets.length} breached, ${escalated} escalated`);
   }
 
-  async getStats() {
+  async getStats(mallIds?: string[]) {
     const now = new Date();
+    const mallScope = mallIds
+      ? { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } }
+      : {};
+    const activeScope = { isActive: true, ...mallScope };
 
     const [total, openTickets, breached, byPriority] = await Promise.all([
-      this.prisma.ticket.count({ where: { isActive: true } }),
+      this.prisma.ticket.count({ where: activeScope }),
       this.prisma.ticket.findMany({
-        where: { isActive: true, status: { notIn: ['RESOLVED', 'CLOSED'] } },
+        where: { ...activeScope, status: { notIn: ['RESOLVED', 'CLOSED'] } },
         select: { slaDueAt: true, resolvedAt: true, createdAt: true },
       }),
       this.prisma.ticket.count({
         where: {
-          isActive: true,
+          ...activeScope,
           status: { notIn: ['RESOLVED', 'CLOSED'] },
           slaDueAt: { lt: now },
         },
       }),
       this.prisma.ticket.groupBy({
         by: ['priority'],
-        where: { isActive: true },
+        where: activeScope,
         _count: true,
       }),
     ]);
 
     const resolvedTickets = await this.prisma.ticket.findMany({
       where: {
-        isActive: true,
+        ...activeScope,
         status: { in: ['RESOLVED', 'CLOSED'] },
         resolvedAt: { not: null },
       },

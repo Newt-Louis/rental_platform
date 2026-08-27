@@ -7,6 +7,7 @@ import {
   Upload, Trash2, Save, X, CheckCircle, AlertTriangle, LayoutGrid, Pentagon, Undo,
 } from 'lucide-react';
 import type { FloorMapData, Unit } from '@/types';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,12 +26,15 @@ const STATUS_COLOR: Record<string, { fill: string; stroke: string; label: string
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const API_ORIGIN = ((import.meta as any).env?.VITE_API_URL || '/api').replace(/\/api\/?$/, '');
+
 function resolveFileUrl(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   if (raw.startsWith('http')) return raw;
   const normalized = raw.replace(/\\/g, '/');
   const idx = normalized.indexOf('uploads/');
-  return idx !== -1 ? '/' + normalized.slice(idx) : undefined;
+  if (idx === -1) return undefined;
+  return `${API_ORIGIN}/${normalized.slice(idx)}`;
 }
 
 function centroid(pts: Pt[]): Pt {
@@ -76,6 +80,7 @@ export function MallMapEditor({ floorId }: { floorId: string }) {
   const [drawPoints, setDrawPoints] = useState<Pt[]>([]);
   const [cursorPt, setCursorPt] = useState<Pt | null>(null);
   const [nearClose, setNearClose] = useState(false);
+  const [confirmDeletePlan, setConfirmDeletePlan] = useState(false);
 
   const { data: floor, isLoading } = useQuery<FloorMapData>({
     queryKey: ['floor-map', floorId],
@@ -131,6 +136,16 @@ export function MallMapEditor({ floorId }: { floorId: string }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // Warn before leaving with unsaved positions
+  useEffect(() => {
+    const hasPendingData = Object.keys(pendingPositions).length > 0;
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasPendingData) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [pendingPositions]);
 
   const cancelDrawing = () => {
     setIsDrawing(false);
@@ -362,7 +377,7 @@ export function MallMapEditor({ floorId }: { floorId: string }) {
           {floor?.floorPlanUrl && (
             <Button
               size="sm" variant="outline" className="gap-1 h-8 text-xs text-red-500 hover:bg-red-50"
-              onClick={() => { if (confirm('Xóa sơ đồ mặt bằng?')) deletePlanMutation.mutate(); }}
+              onClick={() => setConfirmDeletePlan(true)}
             >
               <Trash2 size={11} /> Xóa sơ đồ
             </Button>
@@ -630,6 +645,16 @@ export function MallMapEditor({ floorId }: { floorId: string }) {
           </span>
         </div>
       </div>
+      <ConfirmActionDialog
+        open={confirmDeletePlan}
+        onOpenChange={setConfirmDeletePlan}
+        title="Xóa sơ đồ mặt bằng"
+        description="Ảnh sơ đồ hiện tại sẽ bị xóa. Các vị trí hiển thị có thể không còn sử dụng được."
+        confirmLabel="Xóa sơ đồ"
+        destructive
+        loading={deletePlanMutation.isPending}
+        onConfirm={() => deletePlanMutation.mutate(undefined, { onSuccess: () => setConfirmDeletePlan(false) })}
+      />
     </div>
   );
 }

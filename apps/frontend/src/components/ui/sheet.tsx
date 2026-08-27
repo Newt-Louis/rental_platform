@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 interface SheetProps {
   open: boolean;
   onClose: () => void;
-  title?: string;
+  title?: React.ReactNode;
   subtitle?: string;
   children: React.ReactNode;
   className?: string;
@@ -27,21 +27,21 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
     <>
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/40 transition-opacity duration-200',
+          'fixed inset-0 z-[105] bg-black/40 transition-opacity duration-200',
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
         )}
         onClick={onClose}
       />
       <div
         className={cn(
-          'fixed right-0 top-0 z-50 h-full w-[560px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
+          'fixed right-0 top-0 z-[110] h-full w-[560px] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out',
           open ? 'translate-x-0' : 'translate-x-full',
           className,
         )}
       >
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-200 shrink-0">
-          <div>
-            {title && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
+        <div className="flex min-w-0 shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-6 py-5">
+          <div className="min-w-0 flex-1">
+            {title && <h2 className="min-w-0 text-lg font-semibold text-gray-900">{title}</h2>}
             {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
           </div>
           <button
@@ -51,16 +51,19 @@ export function Sheet({ open, onClose, title, subtitle, children, className }: S
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </>
   );
 }
 
-export function SheetSection({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+export function SheetSection({ label, children, className, id, action }: { label: string; children: React.ReactNode; className?: string; id?: string; action?: React.ReactNode }) {
   return (
-    <div className={cn('rounded-xl p-4', className)}>
-      <div className="text-xs font-semibold tracking-wider mb-3 opacity-60">{label}</div>
+    <div id={id} className={cn('rounded-xl p-4', className)}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold tracking-wider opacity-60">{label}</div>
+        {action}
+      </div>
       <div className="space-y-0">{children}</div>
     </div>
   );

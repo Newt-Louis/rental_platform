@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { Building2, Plus, Trash2, Shield } from 'lucide-react';
+import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
+import { useTranslation } from 'react-i18next';
+import { adminRoleTranslationKey } from './adminPresentation';
 
 const GRANT_ROLES = [
   'MALL_DIRECTOR',
@@ -19,16 +22,18 @@ const GRANT_ROLES = [
 ];
 
 export function MallAccessTab() {
+  const { t } = useTranslation('admin');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [selectedMallId, setSelectedMallId] = useState('');
   const [grantUserId, setGrantUserId] = useState('');
   const [grantRole, setGrantRole] = useState('LEASING_EXECUTIVE');
+  const [revokeTarget, setRevokeTarget] = useState<any | null>(null);
 
   const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
 
-  const { data: usersData } = useQuery({ queryKey: ['users'], queryFn: () => usersApi.listUsers() });
+  const { data: usersData } = useQuery({ queryKey: ['users', 'mall-access-options'], queryFn: () => usersApi.listUsers({ limit: 100, isActive: true }) });
   const users: any[] = usersData?.data ?? usersData ?? [];
 
   const { data: mallUsers, isLoading } = useQuery({
@@ -43,9 +48,9 @@ export function MallAccessTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mall-access', selectedMallId] });
       setGrantUserId('');
-      toast({ title: 'Đã cấp quyền truy cập mall' });
+      toast({ title: t('mallAccess.toast.granted') });
     },
-    onError: () => toast({ title: 'Lỗi cấp quyền', variant: 'destructive' }),
+    onError: () => toast({ title: t('mallAccess.toast.grantError'), variant: 'destructive' }),
   });
 
   const revokeMutation = useMutation({
@@ -53,8 +58,10 @@ export function MallAccessTab() {
       mallAccessApi.revoke(userId, mallId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mall-access', selectedMallId] });
-      toast({ title: 'Đã thu hồi quyền' });
+      toast({ title: t('mallAccess.toast.revoked') });
+      setRevokeTarget(null);
     },
+    onError: (error: any) => toast({ title: error?.response?.data?.message ?? t('mallAccess.toast.revokeError'), variant: 'destructive' }),
   });
 
   const accessList: any[] = Array.isArray(mallUsers) ? mallUsers : mallUsers?.data ?? [];
@@ -65,17 +72,17 @@ export function MallAccessTab() {
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
             <Shield size={16} />
-            Phân quyền truy cập theo Mall (UserMallAccess)
+            {t('mallAccess.workspaceTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-gray-500 mb-4">
-            User không phải ADMIN/CEO chỉ thao tác được dữ liệu mall được gán quyền.
+            {t('mallAccess.scopeNote')}
           </p>
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
             <Select value={selectedMallId} onValueChange={setSelectedMallId}>
               <SelectTrigger className="sm:w-64">
-                <SelectValue placeholder="Chọn mall..." />
+                <SelectValue placeholder={t('mallAccess.selectMall')} />
               </SelectTrigger>
               <SelectContent>
                 {malls.map((m) => (
@@ -90,11 +97,11 @@ export function MallAccessTab() {
               <div className="flex flex-col sm:flex-row gap-2 p-3 bg-gray-50 rounded-lg mb-4">
                 <Select value={grantUserId} onValueChange={setGrantUserId}>
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Chọn user..." />
+                    <SelectValue placeholder={t('mallAccess.selectUser')} />
                   </SelectTrigger>
                   <SelectContent>
                     {users
-                      .filter((u) => !['ADMIN', 'CEO', 'TENANT'].includes(u.role))
+                      .filter((u) => u.isActive && !['ADMIN', 'CEO', 'TENANT'].includes(u.role))
                       .map((u) => (
                         <SelectItem key={u.id} value={u.id}>
                           {u.fullName} ({u.email})
@@ -108,7 +115,7 @@ export function MallAccessTab() {
                   </SelectTrigger>
                   <SelectContent>
                     {GRANT_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                      <SelectItem key={r} value={r}>{t(adminRoleTranslationKey(r))}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -117,7 +124,7 @@ export function MallAccessTab() {
                   disabled={!grantUserId || grantMutation.isPending}
                   onClick={() => grantMutation.mutate()}
                 >
-                  <Plus size={14} /> Cấp quyền
+                  <Plus size={14} /> {t('mallAccess.grant')}
                 </Button>
               </div>
 
@@ -132,12 +139,14 @@ export function MallAccessTab() {
                         <p className="text-xs text-gray-400">{u.email}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px]">{u.mallRole ?? u.role}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{t(adminRoleTranslationKey(u.mallRole ?? u.role))}</Badge>
                         <Button
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0 text-red-500"
-                          onClick={() => revokeMutation.mutate({ userId: u.id, mallId: selectedMallId })}
+                          aria-label={t('mallAccess.revokeFor', { name: u.fullName })}
+                          title={t('mallAccess.revokeAccess')}
+                          onClick={() => setRevokeTarget(u)}
                         >
                           <Trash2 size={14} />
                         </Button>
@@ -147,15 +156,31 @@ export function MallAccessTab() {
                   {accessList.length === 0 && (
                     <div className="text-center py-8 text-gray-400 text-sm">
                       <Building2 size={32} className="mx-auto mb-2 opacity-30" />
-                      Chưa có user nào được gán quyền mall này
+                      {t('mallAccess.empty')}
                     </div>
                   )}
                 </div>
               )}
             </>
           )}
+          {!selectedMallId && (
+            <div className="rounded-lg border border-dashed py-10 text-center text-sm text-gray-400">
+              <Building2 size={32} className="mx-auto mb-2 opacity-30" />
+              {t('mallAccess.selectPrompt')}
+            </div>
+          )}
         </CardContent>
       </Card>
+      <ConfirmActionDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}
+        title={t('mallAccess.revokeTitle')}
+        description={t('mallAccess.revokeDescription', { name: revokeTarget?.fullName ?? t('mallAccess.userFallback') })}
+        confirmLabel={t('mallAccess.revokeAccess')}
+        destructive
+        loading={revokeMutation.isPending}
+        onConfirm={() => revokeTarget && revokeMutation.mutate({ userId: revokeTarget.id, mallId: selectedMallId })}
+      />
     </div>
   );
 }

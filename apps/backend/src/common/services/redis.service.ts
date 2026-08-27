@@ -10,6 +10,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client !== null;
   }
 
+  get isConfigured(): boolean {
+    return !!process.env.REDIS_URL;
+  }
+
+  async ping(): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      return (await this.client.ping()) === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
   async onModuleInit() {
     const url = process.env.REDIS_URL;
     if (!url) {
@@ -88,6 +101,30 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       await this.client.del(key);
     } catch {
       // ignore
+    }
+  }
+
+  async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      return (await this.client.set(key, token, 'PX', ttlMs, 'NX')) === 'OK';
+    } catch {
+      return false;
+    }
+  }
+
+  async releaseLock(key: string, token: string): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const released = await this.client.eval(
+        'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end',
+        1,
+        key,
+        token,
+      );
+      return released === 1;
+    } catch {
+      return false;
     }
   }
 

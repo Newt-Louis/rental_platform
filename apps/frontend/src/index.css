@@ -10,9 +10,11 @@
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 9%;
-    /* primary = rgb(255,247,208), foreground = rgb(112,113,115) */
-    --primary: 50 100% 91%;
-    --primary-foreground: 220 1% 44%;
+    /* ERP design system (docs/ux/02-ERP-DESIGN-SYSTEM.md): enterprise blue primary,
+       replacing the previous pale-yellow token which read as decorative rather
+       than actionable and had low contrast for a filled button. */
+    --primary: 221 83% 41%;
+    --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 96%;
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96%;
@@ -23,7 +25,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 90%;
     --input: 0 0% 90%;
-    --ring: 50 100% 91%;
+    --ring: 221 83% 41%;
     --radius: 0.5rem;
   }
 
@@ -34,8 +36,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222 40% 12%;
     --popover-foreground: 210 40% 98%;
-    /* dark mode primary: golden amber that contrasts on dark bg */
-    --primary: 44 85% 50%;
+    /* dark mode primary: same enterprise blue family, lightened for contrast on dark bg */
+    --primary: 217 91% 60%;
     --primary-foreground: 222 47% 8%;
     --secondary: 222 30% 18%;
     --secondary-foreground: 210 40% 98%;
@@ -47,11 +49,12 @@
     --destructive-foreground: 210 40% 98%;
     --border: 222 30% 20%;
     --input: 222 30% 20%;
-    --ring: 44 85% 50%;
+    --ring: 217 91% 60%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
+  main > div { @apply px-6; }
 }

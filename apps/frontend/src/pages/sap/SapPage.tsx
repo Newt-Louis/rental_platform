@@ -8,21 +8,27 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
-import { Cpu, RefreshCw, CheckCircle, XCircle, Clock, Link2, AlertCircle, Scale, FlaskConical } from 'lucide-react';
+import { AsyncState } from '@/components/ui/async-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { ERPToolbar } from '@/components/erp';
+import { useTranslation } from 'react-i18next';
+import { sapStatusTranslationKey } from '@/lib/erpEnumPresentation';
+import { Cpu, RefreshCw, CheckCircle, XCircle, Clock, Link2, AlertCircle, Scale, FlaskConical, ShieldCheck } from 'lucide-react';
 
 const STATUS_MAP = {
-  PENDING: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700', icon: Clock },
-  SUCCESS: { label: 'Success', color: 'bg-green-100 text-green-700', icon: CheckCircle },
-  FAILED: { label: 'Failed', color: 'bg-red-100 text-red-700', icon: XCircle },
-  RETRYING: { label: 'Retrying', color: 'bg-gray-100 text-gray-700', icon: RefreshCw },
+  PENDING: { color: 'bg-yellow-100 text-yellow-700', icon: Clock },
+  SUCCESS: { color: 'bg-green-100 text-green-700', icon: CheckCircle },
+  FAILED: { color: 'bg-red-100 text-red-700', icon: XCircle },
+  RETRYING: { color: 'bg-gray-100 text-gray-700', icon: RefreshCw },
 };
 
 export default function SapPage() {
+  const { t } = useTranslation(['sap', 'common']);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [mappingForm, setMappingForm] = useState({ entityType: 'TENANT', entityId: '', sapRef: '', sapCompanyCode: '1000' });
 
-  const { data: logsData, isLoading } = useQuery({
+  const { data: logsData, isLoading, isError: logsError, refetch: refetchLogs, dataUpdatedAt: logsUpdatedAt } = useQuery({
     queryKey: ['sap-logs'],
     queryFn: () => sapApi.getLogs({ limit: 50 }),
     refetchInterval: 15_000,
@@ -43,7 +49,7 @@ export default function SapPage() {
     queryFn: () => sapApi.getStats(),
   });
 
-  const { data: reconciliationData, isLoading: reconLoading } = useQuery({
+  const { data: reconciliationData, isLoading: reconLoading, isError: reconError, refetch: refetchReconciliation } = useQuery({
     queryKey: ['sap-reconciliation'],
     queryFn: () => sapApi.listReconciliation({ limit: 50 }),
     refetchInterval: 30_000,
@@ -53,29 +59,35 @@ export default function SapPage() {
     mutationFn: () => sapApi.runReconciliation(),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ['sap-reconciliation'] });
+      qc.invalidateQueries({ queryKey: ['sap-stats'] });
       toast({
         title: 'Đối soát hoàn tất',
         description: `Khớp: ${r?.matched ?? 0}, lệch: ${r?.mismatched ?? 0}`,
       });
     },
+    onError: (e: any) => toast({ title: 'Không thể chạy đối soát', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const syncPendingMutation = useMutation({
     mutationFn: () => sapApi.syncPendingMappings(),
     onSuccess: (r: any) => {
       qc.invalidateQueries({ queryKey: ['sap-mappings'] });
+      qc.invalidateQueries({ queryKey: ['sap-mapping-summary'] });
+      qc.invalidateQueries({ queryKey: ['sap-logs'] });
       toast({ title: `Đã xử lý ${r?.processed ?? 0} mapping` });
     },
+    onError: (e: any) => toast({ title: 'Không thể đồng bộ mapping', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const upsertMappingMutation = useMutation({
     mutationFn: (dto: typeof mappingForm) => sapApi.upsertMapping(dto),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sap-mappings'] });
+      qc.invalidateQueries({ queryKey: ['sap-mapping-summary'] });
       setMappingForm({ entityType: 'TENANT', entityId: '', sapRef: '', sapCompanyCode: '1000' });
       toast({ title: 'Đã lưu mapping' });
     },
-    onError: () => toast({ title: 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: 'Không thể lưu mapping', description: e?.response?.data?.message, variant: 'destructive' }),
   });
 
   const logs = logsData?.data ?? [];
@@ -93,24 +105,22 @@ export default function SapPage() {
   const pendingMappings = mappings.filter((m: any) => m.syncStatus === 'PENDING' || m.syncStatus === 'FAILED').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-gray-900">SAP Integration</h1>
-            {sapEnabled ? (
-              <Badge className="bg-green-100 text-green-700 border-0 gap-1">
-                <CheckCircle size={12} /> Live
-              </Badge>
-            ) : (
-              <Badge className="bg-amber-100 text-amber-800 border-0 gap-1">
-                <FlaskConical size={12} /> Demo mode — SAP_ENABLED=false
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-gray-500 mt-1">Đồng bộ dữ liệu với SAP FI/CO</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={t('sap:eyebrow')}
+        title={t('sap:title')}
+        description={t('sap:subtitle')}
+        actions={sapEnabled ? (
+          <Badge className="gap-1 border-0 bg-emerald-100 text-emerald-700">
+            <CheckCircle size={12} /> {t('sap:live')}
+          </Badge>
+        ) : (
+          <Badge className="gap-1 border-0 bg-amber-100 text-amber-700">
+            <FlaskConical size={12} /> {t('sap:demo')}
+          </Badge>
+        )}
+      />
+      <ERPToolbar>
           <Button
             size="sm"
             variant="outline"
@@ -118,59 +128,47 @@ export default function SapPage() {
             onClick={() => runReconciliationMutation.mutate()}
             disabled={runReconciliationMutation.isPending}
           >
-            <Scale size={14} /> Chạy đối soát
+            <Scale size={14} /> {t('sap:runReconciliation')}
           </Button>
           {pendingMappings > 0 && (
-            <Button size="sm" variant="outline" className="gap-2 border-orange-300 text-orange-600"
+            <Button size="sm" variant="outline" className="gap-2 border-amber-300 text-amber-700"
               onClick={() => syncPendingMutation.mutate()} disabled={syncPendingMutation.isPending}>
-              <AlertCircle size={14} /> Sync {pendingMappings} pending
+              <AlertCircle size={14} /> {t('sap:syncPending', { count: pendingMappings })}
             </Button>
           )}
           <Button variant="outline" size="sm" className="gap-2" onClick={() => qc.invalidateQueries({ queryKey: ['sap-logs'] })}>
-            <RefreshCw size={14} /> Làm mới
+            <RefreshCw size={14} /> {t('sap:refresh')}
           </Button>
-        </div>
-      </div>
+      </ERPToolbar>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-green-600">{successCount}</p>
-            <p className="text-xs text-gray-500 mt-1">Log thành công</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-red-500">{failedCount}</p>
-            <p className="text-xs text-gray-500 mt-1">Log thất bại</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-yellow-600">{pendingCount}</p>
-            <p className="text-xs text-gray-500 mt-1">Log đang chờ</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-purple-600">{mappings.length}</p>
-            <p className="text-xs text-gray-500 mt-1">SAP Mappings</p>
-          </CardContent>
-        </Card>
+      {logsUpdatedAt > 0 && <p className="-mt-4 mb-4 text-right text-xs text-gray-400">Cập nhật gần nhất: {new Date(logsUpdatedAt).toLocaleTimeString('vi-VN')}</p>}
+      <div className="grid grid-cols-2 border-y bg-card md:grid-cols-4">
+        {[
+          [t('sap:stats.success'), successCount, 'text-emerald-700'],
+          [t('sap:stats.failed'), failedCount, 'text-red-700'],
+          [t('sap:stats.pending'), pendingCount, 'text-amber-700'],
+          [t('sap:stats.mappings'), mappings.length, 'text-slate-900'],
+        ].map(([label, value, tone]) => (
+          <div key={String(label)} className="border-b px-4 py-3 even:border-l md:border-b-0 md:border-l md:first:border-l-0">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className={`mt-1 text-xl font-semibold tabular-nums ${tone}`}>{value}</p>
+          </div>
+        ))}
       </div>
 
+      <div className="flex items-center gap-2"><ShieldCheck size={17} className="text-cyan-700" /><div><h2 className="text-lg font-semibold text-slate-950">Kiểm soát tích hợp</h2><p className="text-xs text-slate-500">Ưu tiên ngoại lệ đối soát trước khi xem log kỹ thuật</p></div></div>
       <Tabs defaultValue="reconciliation">
-        <TabsList className="mb-4 flex-wrap h-auto">
+        <TabsList className="mb-4 h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
           <TabsTrigger value="reconciliation" className="gap-1">
             Đối soát
             {mismatchCount > 0 && (
               <Badge className="ml-1 bg-red-500 text-white border-0 text-[10px] px-1.5">{mismatchCount}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="mappings">Entity Mappings</TabsTrigger>
-          <TabsTrigger value="logs">Integration Log</TabsTrigger>
-          <TabsTrigger value="endpoints">Endpoints</TabsTrigger>
+          <TabsTrigger value="mappings">Ánh xạ dữ liệu</TabsTrigger>
+          <TabsTrigger value="logs">Nhật ký tích hợp</TabsTrigger>
+          <TabsTrigger value="endpoints">Điểm kết nối</TabsTrigger>
         </TabsList>
 
         <TabsContent value="reconciliation">
@@ -201,7 +199,10 @@ export default function SapPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {reconLoading ? (
+              {reconError ? (
+                <AsyncState isLoading={false} isError onRetry={refetchReconciliation}
+                  errorTitle="Không thể tải dữ liệu đối soát"><div /></AsyncState>
+              ) : reconLoading ? (
                 <Skeleton className="h-48 m-4" />
               ) : (
                 <div className="divide-y">
@@ -228,7 +229,7 @@ export default function SapPage() {
                               : 'bg-yellow-100 text-yellow-700'
                         }`}
                       >
-                        {rec.status}
+                        <span>{t(sapStatusTranslationKey(rec.status))}</span>
                       </Badge>
                     </div>
                   ))}
@@ -304,7 +305,7 @@ export default function SapPage() {
                     </div>
                     <div className="text-right">
                       <Badge className={`border-0 text-xs ${m.syncStatus === 'SYNCED' ? 'bg-green-100 text-green-700' : m.syncStatus === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {m.syncStatus}
+                        <span title={m.syncStatus}>{t(sapStatusTranslationKey(m.syncStatus))}</span>
                       </Badge>
                       <div className="text-xs text-gray-400 mt-0.5">{new Date(m.lastSyncAt).toLocaleDateString('vi-VN')}</div>
                     </div>
@@ -321,7 +322,10 @@ export default function SapPage() {
         <TabsContent value="logs">
           <Card>
             <CardContent className="p-0">
-              {isLoading ? <Skeleton className="h-64 m-4" /> : (
+              {logsError ? (
+                <AsyncState isLoading={false} isError onRetry={refetchLogs}
+                  errorTitle="Không thể tải nhật ký tích hợp"><div /></AsyncState>
+              ) : isLoading ? <Skeleton className="h-64 m-4" /> : (
                 <div className="divide-y">
                   {logs.map((log: any) => {
                     const st = STATUS_MAP[log.status as keyof typeof STATUS_MAP];
@@ -331,7 +335,7 @@ export default function SapPage() {
                         <Icon size={16} className={`mt-0.5 shrink-0 ${log.status === 'SUCCESS' ? 'text-green-500' : log.status === 'FAILED' ? 'text-red-500' : 'text-yellow-500'}`} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-0.5">
-                            <Badge className={`${st?.color} border-0 text-xs`}>{st?.label}</Badge>
+                            <Badge className={`${st?.color ?? 'bg-gray-100 text-gray-700'} border-0 text-xs`}>{t(sapStatusTranslationKey(log.status))}</Badge>
                             <Badge variant="outline" className="text-xs">{log.entityType}</Badge>
                             <span className="text-xs text-gray-400 font-mono">{log.endpoint}</span>
                           </div>
@@ -367,7 +371,7 @@ export default function SapPage() {
                       <p className="text-sm font-medium">{e.label}</p>
                       <p className="text-xs text-gray-400 font-mono">{e.endpoint}</p>
                     </div>
-                    <Badge className="bg-green-100 text-green-700 border-0 text-xs">Online</Badge>
+                    <Badge className={`border-0 text-xs ${sapEnabled ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>{sapEnabled ? 'Online' : 'Chưa kết nối'}</Badge>
                   </div>
                 ))}
               </div>

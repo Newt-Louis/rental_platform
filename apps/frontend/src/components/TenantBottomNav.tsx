@@ -1,21 +1,23 @@
 import { NavLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Home, Receipt, Ticket, TrendingUp, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const ITEMS = [
-  { path: '/tenant-portal', label: 'Tổng quan', icon: Home, end: true },
-  { path: '/billing', label: 'Hóa đơn', icon: Receipt },
-  { path: '/tickets', label: 'Hỗ trợ', icon: Ticket },
-  { path: '/sales', label: 'Doanh thu', icon: TrendingUp },
-  { path: '/announcements', label: 'TB', icon: Megaphone },
+  { path: '/tenant-portal', module: 'overview', label: 'Tổng quan', icon: Home, end: true },
+  { path: '/billing', module: 'billing', label: 'Hóa đơn', icon: Receipt },
+  { path: '/tickets', module: 'tickets', label: 'Hỗ trợ', icon: Ticket },
+  { path: '/sales', module: 'sales', label: 'Doanh thu', icon: TrendingUp },
+  { path: '/announcements', module: 'announcements', label: 'TB', icon: Megaphone },
 ];
 
 /** Bottom navigation for tenant mobile / PWA */
 export function TenantBottomNav() {
+  const { t } = useTranslation('nav');
   return (
-    <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-slate-900 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
+    <nav aria-label={t('ui.mainNav')} className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-slate-900 border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
       <div className="flex justify-around items-stretch h-14">
-        {ITEMS.map(({ path, label, icon: Icon, end }) => (
+        {ITEMS.map(({ path, module, label, icon: Icon, end }) => (
           <NavLink
             key={path}
             to={path}
@@ -27,8 +29,8 @@ export function TenantBottomNav() {
               )
             }
           >
-            <Icon size={20} />
-            <span>{label}</span>
+            <Icon size={20} aria-hidden="true" />
+            <span>{t(`tenantBottomNav.${module}`, label)}</span>
           </NavLink>
         ))}
       </div>

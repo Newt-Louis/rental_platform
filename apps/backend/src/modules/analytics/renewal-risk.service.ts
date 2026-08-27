@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractStatus, InvoiceStatus } from '@prisma/client';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -9,7 +10,7 @@ type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export class RenewalRiskService {
   private readonly logger = new Logger(RenewalRiskService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private schedulerLock: SchedulerLockService) {}
 
   async calculateRiskScore(contractId: string) {
     const contract = await this.prisma.contract.findUnique({
@@ -123,6 +124,10 @@ export class RenewalRiskService {
 
   @Cron('0 2 * * *', { name: 'renewal-risk-calc', timeZone: 'Asia/Ho_Chi_Minh' })
   async recalculateAllRisks() {
+    return this.schedulerLock.runExclusive('renewal-risk-calc', 21_600_000, () => this.recalculateAllRisksUnlocked());
+  }
+
+  private async recalculateAllRisksUnlocked() {
     this.logger.log('Recalculating renewal risks...');
 
     const contracts = await this.prisma.contract.findMany({
@@ -140,7 +145,7 @@ export class RenewalRiskService {
     this.logger.log(`Recalculated risk for ${contracts.length} contracts`);
   }
 
-  async getRiskDashboard(mallId?: string) {
+  async getRiskDashboard(mallId?: string, mallIds?: string[] | null) {
     const where: any = {
       contract: {
         isActive: true,
@@ -149,6 +154,8 @@ export class RenewalRiskService {
     };
     if (mallId) {
       where.contract.unit = { mallId };
+    } else if (mallIds) {
+      where.contract.unit = { mallId: { in: mallIds } };
     }
 
     const scores = await this.prisma.renewalRiskScore.findMany({
@@ -159,6 +166,7 @@ export class RenewalRiskService {
             contractNumber: true,
             endDate: true,
             rent: true,
+            currencyCode: true,
             tenant: { select: { brandName: true } },
             unit: { select: { code: true } },
           },
@@ -174,10 +182,14 @@ export class RenewalRiskService {
       LOW: scores.filter((s) => s.riskLevel === 'LOW'),
     };
 
-    const atRiskRevenue = [...byLevel.CRITICAL, ...byLevel.HIGH].reduce(
-      (sum, s) => sum + (s.contract.rent ?? 0),
-      0,
-    );
+    // CR-110 (INV-CUR-001 -- never sum different currencies): contract.rent is
+    // currency-aware (VND/USD/MMK), so at-risk revenue is bucketed per currency
+    // instead of blindly summed into one figure.
+    const atRiskRevenueByCurrency: Record<string, number> = {};
+    for (const s of [...byLevel.CRITICAL, ...byLevel.HIGH]) {
+      const code = s.contract.currencyCode ?? 'VND';
+      atRiskRevenueByCurrency[code] = (atRiskRevenueByCurrency[code] ?? 0) + (s.contract.rent ?? 0);
+    }
 
     return {
       summary: {
@@ -186,7 +198,7 @@ export class RenewalRiskService {
         high: byLevel.HIGH.length,
         medium: byLevel.MEDIUM.length,
         low: byLevel.LOW.length,
-        atRiskMonthlyRevenue: atRiskRevenue,
+        atRiskMonthlyRevenueByCurrency: atRiskRevenueByCurrency,
       },
       topRisks: scores.slice(0, 10).map((s) => ({
         contractNumber: s.contract.contractNumber,

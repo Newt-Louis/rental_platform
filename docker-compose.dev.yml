@@ -3,35 +3,67 @@
 
 services:
   postgres:
+    image: postgres:16-alpine
+    container_name: leasing-db
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - ./docker/postgres-data:/var/lib/postgresql/data
       - ./docker/init-db:/docker-entrypoint-initdb.d:ro
 
   redis:
+    image: redis:7-alpine
+    container_name: leasing-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
+    volumes:
+      - ./docker/redis-data:/data
 
   backend:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile.dev
+    container_name: leasing-backend
     volumes:
       - ./apps/backend/src:/app/src:ro
       - ./apps/backend/prisma:/app/prisma
       - uploads_data:/app/uploads
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      CORS_ORIGIN: http://localhost:5173
+      ALLOW_PUBLIC_REGISTER: ${ALLOW_PUBLIC_REGISTER:-false}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-THISO Leasing <noreply@thiso.com.vn>}
+      MSSQL_ENABLED: ${MSSQL_ENABLED:-false}
+      MSSQL_DATABASE_URL: ${MSSQL_DATABASE_URL:-}
       NODE_ENV: development
+      PORT: 3000
+      TZ: Asia/Ho_Chi_Minh
     command: npm run start:dev
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
 
   frontend:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile.dev
+    container_name: leasing-frontend
     volumes:
       - ./apps/frontend/src:/app/src:ro
       - ./apps/frontend/public:/app/public:ro
+      - ./apps/frontend/index.html:/app/index.html:ro
       - ./apps/frontend/tailwind.config.js:/app/tailwind.config.js:ro
     environment:
       VITE_API_URL: http://localhost:3000/api
@@ -40,3 +72,15 @@ services:
       - "5173:5173"
     # Dev: only expose Vite port (no 8080/nginx)
     expose: []
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5173/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  uploads_data:
+    name: leasing-uploads
+  logs_data:
+    name: leasing-logs

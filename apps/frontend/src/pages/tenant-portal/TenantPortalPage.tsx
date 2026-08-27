@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { contractsApi, billingApi, ticketsApi, spacesApi, fitoutApi } from '@/api';
+import { contractsApi, billingApi, ticketsApi, fitoutApi } from '@/api';
 import { useAuthStore } from '@/store/auth.store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AuthenticatedImage } from '@/components/ui/authenticated-image';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,9 +15,13 @@ import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AsyncState } from '@/components/ui/async-state';
 import { useToast } from '@/components/ui/use-toast';
+import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
+import { getFitoutPresentationLabel } from '@/pages/fitout/fitoutPresentation';
+import { groupPendingInvoiceAmounts } from './tenantPortalPresentation';
 import {
-  ShoppingBag, File, Receipt, Ticket, Plus, Send, Building2,
+  File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
   ArrowRight, User, AlertCircle, ImagePlus, RotateCcw,
 } from 'lucide-react';
@@ -56,17 +62,13 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
   ISSUED:  { label: 'Đã phát', color: 'bg-blue-100 text-gray-700' },
   PAID:    { label: 'Đã TT',   color: 'bg-green-100 text-green-700' },
   OVERDUE: { label: 'Quá hạn', color: 'bg-red-100 text-red-700' },
-  PARTIAL: { label: 'TT 1 phần', color: 'bg-yellow-100 text-yellow-700' },
+  PARTIALLY_PAID: { label: 'TT 1 phần', color: 'bg-yellow-100 text-yellow-700' },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact', maximumFractionDigits: 1 }).format(n) + ' ₫';
-}
-
-function fmtFull(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
+function fmtFull(n: number, currencyCode: CurrencyCode = 'VND') {
+  return formatMoney(n, currencyCode);
 }
 
 function fmtDate(d?: string | null) {
@@ -97,17 +99,20 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
-  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm({
     defaultValues: { unitId: '', type: '', priority: 'MEDIUM', subject: '', description: '' },
   });
 
   const { data: unitsData } = useQuery({
     queryKey: ['units-my-tenant', user?.tenantId],
-    queryFn: () => spacesApi.listUnits({ tenantId: user!.tenantId, limit: 500 }),
+    queryFn: () => ticketsApi.listMyUnits(),
     enabled: open && !!user?.tenantId,
   });
 
-  const myUnits: any[] = unitsData?.data ?? [];
+  const myUnits: any[] = Array.isArray(unitsData) ? unitsData : unitsData?.data ?? [];
+  const unitId = watch('unitId');
+  const type = watch('type');
+  const priority = watch('priority');
 
   const mutation = useMutation({
     mutationFn: (data: any) => ticketsApi.createTicket({ ...data, tenantId: user!.tenantId }),
@@ -135,7 +140,7 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
           {/* Unit */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Mặt bằng *</label>
-            <Select onValueChange={(v) => setValue('unitId', v)}>
+            <Select value={unitId} onValueChange={(v) => setValue('unitId', v, { shouldValidate: true })}>
               <SelectTrigger className={errors.unitId ? 'border-red-400' : ''}>
                 <SelectValue placeholder="Chọn mặt bằng..." />
               </SelectTrigger>
@@ -148,13 +153,14 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
               </SelectContent>
             </Select>
             <input type="hidden" {...register('unitId', { required: true })} />
+            {errors.unitId && <p className="mt-1 text-xs text-red-600">Vui lòng chọn mặt bằng cần hỗ trợ</p>}
           </div>
 
           {/* Type + Priority row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Loại yêu cầu *</label>
-              <Select onValueChange={(v) => setValue('type', v)}>
+              <Select value={type} onValueChange={(v) => setValue('type', v, { shouldValidate: true })}>
                 <SelectTrigger className={errors.type ? 'border-red-400' : ''}>
                   <SelectValue placeholder="Loại..." />
                 </SelectTrigger>
@@ -165,10 +171,11 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
                 </SelectContent>
               </Select>
               <input type="hidden" {...register('type', { required: true })} />
+              {errors.type && <p className="mt-1 text-xs text-red-600">Vui lòng chọn loại yêu cầu</p>}
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Mức độ ưu tiên</label>
-              <Select defaultValue="MEDIUM" onValueChange={(v) => setValue('priority', v)}>
+              <Select value={priority} onValueChange={(v) => setValue('priority', v, { shouldValidate: true })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -185,10 +192,11 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
           <div>
             <label className="text-sm font-medium text-gray-700 mb-1 block">Tiêu đề *</label>
             <Input
-              {...register('subject', { required: true })}
+              {...register('subject', { required: true, minLength: 5 })}
               placeholder="Mô tả ngắn gọn vấn đề..."
               className={errors.subject ? 'border-red-400' : ''}
             />
+            {errors.subject && <p className="mt-1 text-xs text-red-600">Tiêu đề cần ít nhất 5 ký tự</p>}
           </div>
 
           {/* Description */}
@@ -217,6 +225,7 @@ function CreateTicketDialog({ open, onClose }: { open: boolean; onClose: () => v
 // ─── Ticket Detail Sheet ─────────────────────────────────────────────────────
 
 function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onClose: () => void }) {
+  const { t: translate } = useTranslation('common');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [comment, setComment] = useState('');
@@ -295,7 +304,7 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
           <SheetSection label="CHI TIẾT">
             <SheetRow label="Khách thuê"  value={t.tenant?.brandName}      icon={Building2} />
             <SheetRow label="Mặt bằng"   value={t.unit?.code}             icon={Building2} />
-            <SheetRow label="Loại"        value={TICKET_TYPES.find((x) => x.value === t.type)?.label ?? t.type} icon={Ticket} />
+            <SheetRow label="Loại"        value={TICKET_TYPES.find((x) => x.value === t.type)?.label ?? translate('unknownValue')} icon={Ticket} />
             <SheetRow label="Phụ trách"  value={t.assignedTo?.fullName}   icon={User} />
             <SheetRow label="Ngày tạo"   value={fmtDate(t.createdAt)}     icon={Calendar} />
             {t.resolvedAt && (
@@ -358,9 +367,9 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
             {photos.length > 0 && (
               <div className="grid grid-cols-3 gap-2">
                 {photos.map((p: any) => (
-                  <a key={p.id} href={`/uploads/${p.filePath}`} target="_blank" rel="noreferrer" className="block aspect-square rounded-lg overflow-hidden bg-gray-100 border">
-                    <img src={`/uploads/${p.filePath}`} alt={p.fileName} className="w-full h-full object-cover" />
-                  </a>
+                  <div key={p.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                    <AuthenticatedImage src={`/files/documents/${p.id}`} alt={p.fileName} className="w-full h-full object-cover" />
+                  </div>
                 ))}
               </div>
             )}
@@ -419,6 +428,7 @@ function TicketDetailSheet({ ticketId, onClose }: { ticketId: string | null; onC
 // ─── Invoice Payment Dialog ───────────────────────────────────────────────────
 
 function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () => void }) {
+  const { t } = useTranslation('tenants');
   const qc = useQueryClient();
   const { toast } = useToast();
   const { register, handleSubmit, reset, setValue: setPayVal } = useForm({
@@ -429,11 +439,11 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
     mutationFn: (data: any) => billingApi.recordPayment(invoice.id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['portal-invoices'] });
-      toast({ title: 'Đã ghi nhận thanh toán' });
+      toast({ title: t('portalWorkspace.payment.success') });
       reset();
       onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('portalWorkspace.payment.error'), variant: 'destructive' }),
   });
 
   if (!invoice) return null;
@@ -442,42 +452,42 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
     <Dialog open={!!invoice} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Ghi nhận thanh toán</DialogTitle>
+          <DialogTitle>{t('portalWorkspace.payment.title')}</DialogTitle>
         </DialogHeader>
         <div className="mb-3 p-3 bg-gray-50 rounded-lg text-sm">
           <p className="font-medium text-blue-800">{invoice.invoiceNumber}</p>
-          <p className="text-gray-700 mt-0.5">Tổng: {fmtFull(invoice.totalAmount)}</p>
+          <p className="text-gray-700 mt-0.5">{t('portalWorkspace.payment.total')}: {fmtFull(invoice.totalAmount, invoice.currencyCode)}</p>
         </div>
         <form onSubmit={handleSubmit((d) => mutation.mutate({ ...d, amount: Number(d.amount) }))} className="space-y-3">
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Số tiền (₫)</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('portalWorkspace.payment.amount')} ({invoice.currencyCode ?? 'VND'})</label>
             <Input {...register('amount', { required: true })} type="number" />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Ngày thanh toán</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('portalWorkspace.payment.date')}</label>
             <Input {...register('paymentDate', { required: true })} type="date" />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Phương thức</label>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('portalWorkspace.payment.method')}</label>
             <Select defaultValue="BANK_TRANSFER" onValueChange={(v) => setPayVal('method', v)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="BANK_TRANSFER">Chuyển khoản</SelectItem>
-                <SelectItem value="CASH">Tiền mặt</SelectItem>
-                <SelectItem value="CHECK">Séc</SelectItem>
+                <SelectItem value="BANK_TRANSFER">{t('portalWorkspace.payment.methods.BANK_TRANSFER')}</SelectItem>
+                <SelectItem value="CASH">{t('portalWorkspace.payment.methods.CASH')}</SelectItem>
+                <SelectItem value="CHECK">{t('portalWorkspace.payment.methods.CHECK')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Mã tham chiếu</label>
-            <Input {...register('reference')} placeholder="Số bút toán, mã giao dịch..." />
+            <label className="text-sm font-medium text-gray-700 mb-1 block">{t('portalWorkspace.payment.reference')}</label>
+            <Input {...register('reference')} placeholder={t('portalWorkspace.payment.referencePlaceholder')} />
           </div>
           <DialogFooter>
-            <Button variant="outline" type="button" onClick={onClose}>Hủy</Button>
+            <Button variant="outline" type="button" onClick={onClose}>{t('form.cancel')}</Button>
             <Button type="submit" disabled={mutation.isPending} className="gap-2">
-              <CheckCircle2 size={14} /> Xác nhận
+              <CheckCircle2 size={14} /> {t('portalWorkspace.payment.confirm')}
             </Button>
           </DialogFooter>
         </form>
@@ -489,28 +499,29 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TenantPortalPage() {
+  const { t } = useTranslation(['tenants', 'fitout']);
   const [createTicketOpen, setCreateTicketOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [payingInvoice, setPayingInvoice] = useState<any>(null);
   const [invoiceFilter, setInvoiceFilter] = useState('');
   const [ticketSearch, setTicketSearch] = useState('');
 
-  const { data: contractsData, isLoading: cLoading } = useQuery({
+  const { data: contractsData, isLoading: cLoading, isError: cError, refetch: refetchContracts } = useQuery({
     queryKey: ['portal-contracts'],
     queryFn: () => contractsApi.listContracts({ status: 'ACTIVE', limit: 50 }),
   });
 
-  const { data: invoicesData, isLoading: iLoading } = useQuery({
+  const { data: invoicesData, isLoading: iLoading, isError: iError, refetch: refetchInvoices } = useQuery({
     queryKey: ['portal-invoices', invoiceFilter],
     queryFn: () => billingApi.listInvoices({ status: invoiceFilter || undefined, limit: 100 }),
   });
 
-  const { data: ticketsData, isLoading: tLoading } = useQuery({
+  const { data: ticketsData, isLoading: tLoading, isError: tError, refetch: refetchTickets } = useQuery({
     queryKey: ['portal-tickets', ticketSearch],
     queryFn: () => ticketsApi.listTickets({ search: ticketSearch || undefined, limit: 100 }),
   });
 
-  const { data: fitoutsData } = useQuery({
+  const { data: fitoutsData, isLoading: fLoading, isError: fError, refetch: refetchFitouts } = useQuery({
     queryKey: ['portal-fitouts'],
     queryFn: () => fitoutApi.listFitouts({ limit: 50 }),
   });
@@ -527,106 +538,113 @@ export default function TenantPortalPage() {
   const fitouts: any[] = fitoutsData?.data ?? [];
 
   const overdueInvoices = invoices.filter((i) => i.status === 'OVERDUE');
-  const pendingInvoicesTotal = invoices
-    .filter((i) => i.status === 'ISSUED' || i.status === 'OVERDUE')
-    .reduce((sum, i) => sum + (i.totalAmount ?? 0), 0);
+  const pendingInvoiceTotals = groupPendingInvoiceAmounts(invoices);
   const openTickets = tickets.filter((t) => !['RESOLVED', 'CLOSED'].includes(t.status));
   const activeFitouts = fitouts.filter((f) => f.status !== 'OPENED');
 
   return (
-    <div>
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="bg-teal-600 p-2.5 rounded-xl">
-          <ShoppingBag size={20} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tenant Portal</h1>
-          <p className="text-sm text-gray-500">Quản lý hợp đồng, hóa đơn và yêu cầu vận hành</p>
+      <div className="border-b border-slate-200 pb-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{t('tenants:portalWorkspace.eyebrow')}</div>
+            <h1 className="mt-1 text-2xl font-bold text-slate-950">{t('tenants:portalWorkspace.title')}</h1>
+            <p className="mt-1 text-sm text-slate-500">{t('tenants:portalWorkspace.description')}</p>
+          </div>
+          <Button onClick={() => setCreateTicketOpen(true)} className="gap-2"><Plus size={15} /> {t('tenants:portalWorkspace.createRequest')}</Button>
         </div>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Card className="border-0 bg-gray-50">
-          <CardContent className="pt-4 pb-3">
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-200 bg-white md:grid-cols-4">
+        <div>
+          <CardContent className="pb-3 pt-3">
             <div className="flex items-center gap-2 mb-1">
               <File size={16} className="text-gray-500" />
-              <span className="text-xs font-medium text-gray-700">HĐ đang hiệu lực</span>
+              <span className="text-xs font-medium text-gray-700">{t('tenants:portalWorkspace.activeContracts')}</span>
             </div>
-            <p className="text-2xl font-bold text-blue-800">{contracts.length}</p>
+            <p className="text-xl font-bold tabular-nums text-slate-900">{contracts.length}</p>
           </CardContent>
-        </Card>
-        <Card className="border-0 bg-orange-50">
-          <CardContent className="pt-4 pb-3">
+        </div>
+        <div className="border-l border-slate-100">
+          <CardContent className="pb-3 pt-3">
             <div className="flex items-center gap-2 mb-1">
               <Receipt size={16} className="text-orange-500" />
-              <span className="text-xs font-medium text-orange-700">Tổng chờ thanh toán</span>
+              <span className="text-xs font-medium text-slate-600">{t('tenants:portalWorkspace.pendingPayment')}</span>
             </div>
-            <p className="text-xl font-bold text-orange-800">{fmt(pendingInvoicesTotal)}</p>
+            <div className="space-y-0.5">
+              {Object.keys(pendingInvoiceTotals).length === 0 ? <p className="text-lg font-bold tabular-nums text-slate-900">—</p> : Object.entries(pendingInvoiceTotals).map(([currency, amount]) => (
+                <p key={currency} className="truncate text-base font-bold tabular-nums text-slate-900" title={fmtFull(amount, currency as CurrencyCode)}>{fmtFull(amount, currency as CurrencyCode)}</p>
+              ))}
+            </div>
           </CardContent>
-        </Card>
-        <Card className={`border-0 ${overdueInvoices.length > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-          <CardContent className="pt-4 pb-3">
+        </div>
+        <div className="border-t border-slate-100 md:border-l md:border-t-0">
+          <CardContent className="pb-3 pt-3">
             <div className="flex items-center gap-2 mb-1">
               <AlertCircle size={16} className={overdueInvoices.length > 0 ? 'text-red-500' : 'text-gray-400'} />
               <span className={`text-xs font-medium ${overdueInvoices.length > 0 ? 'text-red-700' : 'text-gray-600'}`}>
-                Hóa đơn quá hạn
+                {t('tenants:portalWorkspace.overdueInvoices')}
               </span>
             </div>
             <p className={`text-2xl font-bold ${overdueInvoices.length > 0 ? 'text-red-800' : 'text-gray-700'}`}>
               {overdueInvoices.length}
             </p>
           </CardContent>
-        </Card>
-        <Card className="border-0 bg-purple-50">
-          <CardContent className="pt-4 pb-3">
+        </div>
+        <div className="border-l border-t border-slate-100 md:border-t-0">
+          <CardContent className="pb-3 pt-3">
             <div className="flex items-center gap-2 mb-1">
               <Ticket size={16} className="text-purple-500" />
-              <span className="text-xs font-medium text-purple-700">Yêu cầu đang xử lý</span>
+              <span className="text-xs font-medium text-slate-600">{t('tenants:portalWorkspace.openRequests')}</span>
             </div>
             <p className="text-2xl font-bold text-purple-800">{openTickets.length}</p>
           </CardContent>
-        </Card>
+        </div>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="contracts">
-        <TabsList className="mb-4">
+        <div className="mb-4 overflow-x-auto pb-1">
+        <TabsList className="w-max min-w-full justify-start">
           <TabsTrigger value="contracts" className="gap-1.5">
-            <File size={13} /> Hợp đồng
+            <File size={13} /> {t('tenants:portalWorkspace.tabs.contracts')}
             {contracts.length > 0 && (
               <span className="ml-1 text-xs bg-blue-100 text-gray-700 px-1.5 py-0.5 rounded-full">{contracts.length}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="invoices" className="gap-1.5">
-            <Receipt size={13} /> Hóa đơn
+            <Receipt size={13} /> {t('tenants:portalWorkspace.tabs.invoices')}
             {overdueInvoices.length > 0 && (
               <span className="ml-1 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{overdueInvoices.length}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="tickets" className="gap-1.5">
-            <MessageSquare size={13} /> Yêu cầu
+            <MessageSquare size={13} /> {t('tenants:portalWorkspace.tabs.requests')}
             {openTickets.length > 0 && (
               <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">{openTickets.length}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="fitout" className="gap-1.5">
-            <Hammer size={13} /> Fitout
+            <Hammer size={13} /> {t('tenants:portalWorkspace.tabs.fitout')}
             {activeFitouts.length > 0 && (
               <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">{activeFitouts.length}</span>
             )}
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* ── Contracts tab ─────────────────────────────────── */}
         <TabsContent value="contracts">
-          {cLoading ? (
+          {cError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchContracts} errorTitle={t('tenants:portalWorkspace.errors.contracts')}><div /></AsyncState>
+          ) : cLoading ? (
             <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-24" />)}</div>
           ) : contracts.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <File size={40} className="mx-auto mb-2 opacity-20" />
-              <p>Không có hợp đồng đang hiệu lực</p>
+              <p>{t('tenants:portalWorkspace.empty.contracts')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -637,7 +655,7 @@ export default function TenantPortalPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="font-mono text-sm font-medium">{c.contractNumber}</p>
-                          <Badge className="bg-green-100 text-green-700 border-0 text-xs">ACTIVE</Badge>
+                          <Badge className="bg-green-100 text-green-700 border-0 text-xs">{t('tenants:contractStatus.ACTIVE')}</Badge>
                         </div>
                         <p className="text-sm text-gray-600 font-medium">{c.tenant?.brandName}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{c.unit?.code} — {c.unit?.floor?.name}</p>
@@ -648,13 +666,13 @@ export default function TenantPortalPage() {
                           </span>
                           <span className="flex items-center gap-1 text-gray-900 font-medium">
                             <DollarSign size={11} />
-                            {fmt(c.rent)}/tháng
+                            {fmtFull(c.rent, c.currencyCode)}{t('tenants:info.perMonth')}
                           </span>
                         </div>
                       </div>
                       {c.files?.length > 0 && (
                         <div className="text-xs text-gray-400 shrink-0">
-                          {c.files.length} file
+                          {t('tenants:portalWorkspace.fileCount', { count: c.files.length })}
                         </div>
                       )}
                     </div>
@@ -678,28 +696,31 @@ export default function TenantPortalPage() {
                       ? 'bg-gray-900 text-white border-gray-900'
                       : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                 >
-                  {s === '' ? 'Tất cả' : INVOICE_STATUS[s]?.label ?? s}
+                  {s === '' ? t('tenants:portalWorkspace.all') : t(`tenants:invoiceStatus.${s}`, { defaultValue: INVOICE_STATUS[s]?.label ?? s })}
                 </button>
               ))}
             </div>
           </div>
 
-          {iLoading ? (
+          {iError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchInvoices} errorTitle={t('tenants:portalWorkspace.errors.invoices')}><div /></AsyncState>
+          ) : iLoading ? (
             <Skeleton className="h-48" />
           ) : invoices.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <Receipt size={40} className="mx-auto mb-2 opacity-20" />
-              <p>Không có hóa đơn</p>
+              <p>{t('tenants:portalWorkspace.empty.invoices')}</p>
             </div>
           ) : (
-            <div className="bg-white rounded-lg border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-lg border overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Số HD</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Khách thuê</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Kỳ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Tổng tiền</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Tiền tệ</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Hạn TT</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
                     <th className="px-4 py-3" />
@@ -714,13 +735,14 @@ export default function TenantPortalPage() {
                         <td className="px-4 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
                         <td className="px-4 py-3 hidden md:table-cell">{inv.tenant?.brandName}</td>
                         <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{inv.period}</td>
-                        <td className="px-4 py-3 text-right font-medium">{fmt(inv.totalAmount)}</td>
+                        <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{formatMoneyAmount(inv.totalAmount, inv.currencyCode)}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-gray-500">{inv.currencyCode ?? 'VND'}</td>
                         <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                           {fmtDate(inv.dueDate)}
                         </td>
                         <td className="px-4 py-3">
                           {st && (
-                            <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>
+                            <Badge className={`${st.color} border-0 text-xs`}>{t(`tenants:invoiceStatus.${inv.status}`, { defaultValue: st.label })}</Badge>
                           )}
                         </td>
                         <td className="px-4 py-3">
@@ -731,7 +753,7 @@ export default function TenantPortalPage() {
                               className="h-7 text-xs gap-1"
                               onClick={() => setPayingInvoice(inv)}
                             >
-                              <DollarSign size={11} /> Thanh toán
+                              <DollarSign size={11} /> {t('tenants:portalWorkspace.pay')}
                             </Button>
                           )}
                         </td>
@@ -749,7 +771,7 @@ export default function TenantPortalPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="relative flex-1 max-w-xs">
               <Input
-                placeholder="Tìm yêu cầu..."
+                placeholder={t('tenants:portalWorkspace.searchRequests')}
                 value={ticketSearch}
                 onChange={(e) => setTicketSearch(e.target.value)}
                 className="text-sm pl-3"
@@ -760,48 +782,50 @@ export default function TenantPortalPage() {
               className="gap-1.5 ml-3"
               onClick={() => setCreateTicketOpen(true)}
             >
-              <Plus size={14} /> Tạo yêu cầu
+              <Plus size={14} /> {t('tenants:portalWorkspace.createRequestShort')}
             </Button>
           </div>
 
-          {tLoading ? (
+          {tError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchTickets} errorTitle={t('tenants:portalWorkspace.errors.requests')}><div /></AsyncState>
+          ) : tLoading ? (
             <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-20" />)}</div>
           ) : tickets.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <MessageSquare size={40} className="mx-auto mb-2 opacity-20" />
-              <p className="mb-3">Chưa có yêu cầu nào</p>
+              <p className="mb-3">{t('tenants:portalWorkspace.empty.requests')}</p>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setCreateTicketOpen(true)}>
-                <Plus size={14} /> Tạo yêu cầu đầu tiên
+                <Plus size={14} /> {t('tenants:portalWorkspace.createFirstRequest')}
               </Button>
             </div>
           ) : (
             <div className="space-y-2">
-              {tickets.map((t: any) => {
-                const st = TICKET_STATUS[t.status];
-                const pr = PRIORITIES.find((p) => p.value === t.priority);
-                const typeLabel = TICKET_TYPES.find((x) => x.value === t.type)?.label ?? t.type;
-                const isDone = ['RESOLVED', 'CLOSED'].includes(t.status);
+              {tickets.map((ticket: any) => {
+                const st = TICKET_STATUS[ticket.status];
+                const pr = PRIORITIES.find((p) => p.value === ticket.priority);
+                const typeLabel = t(`tenants:portalWorkspace.ticketType.${ticket.type}`, { defaultValue: TICKET_TYPES.find((x) => x.value === ticket.type)?.label ?? t('common:unknownValue') });
+                const isDone = ['RESOLVED', 'CLOSED'].includes(ticket.status);
                 return (
                   <Card
-                    key={t.id}
+                    key={ticket.id}
                     className={`cursor-pointer hover:border-gray-200 transition-colors ${isDone ? 'opacity-60' : ''}`}
-                    onClick={() => setSelectedTicketId(t.id)}
+                    onClick={() => setSelectedTicketId(ticket.id)}
                   >
                     <CardContent className="py-3 px-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate">{t.subject}</p>
+                          <p className="text-sm font-medium truncate">{ticket.subject}</p>
                           <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
-                            <span>{t.ticketNumber}</span>
+                            <span>{ticket.ticketNumber}</span>
                             <span>·</span>
                             <span>{typeLabel}</span>
                             <span>·</span>
-                            <span>{t.tenant?.brandName}</span>
+                            <span>{ticket.tenant?.brandName}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {pr && <Badge className={`${pr.color} border-0 text-xs`}>{pr.label}</Badge>}
-                          {st && <Badge className={`${st.color} border-0 text-xs`}>{st.label}</Badge>}
+                          {pr && <Badge className={`${pr.color} border-0 text-xs`}>{t(`tenants:portalWorkspace.priority.${ticket.priority}`, { defaultValue: pr.label })}</Badge>}
+                          {st && <Badge className={`${st.color} border-0 text-xs`}>{t(`tenants:ticketStatus.${ticket.status}`, { defaultValue: st.label })}</Badge>}
                           <ArrowRight size={14} className="text-gray-300" />
                         </div>
                       </div>
@@ -815,10 +839,14 @@ export default function TenantPortalPage() {
 
         {/* ── Fitout tab ────────────────────────────────────── */}
         <TabsContent value="fitout">
-          {fitouts.length === 0 ? (
+          {fError ? (
+            <AsyncState isLoading={false} isError onRetry={refetchFitouts} errorTitle={t('tenants:portalWorkspace.errors.fitout')}><div /></AsyncState>
+          ) : fLoading ? (
+            <div className="space-y-3">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-32" />)}</div>
+          ) : fitouts.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <Hammer size={40} className="mx-auto mb-2 opacity-20" />
-              <p>Không có dự án fitout nào</p>
+              <p>{t('tenants:portalWorkspace.empty.fitout')}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -836,7 +864,7 @@ export default function TenantPortalPage() {
                           <p className="text-sm text-gray-500 mt-0.5">{f.unit?.code} — {f.unit?.floor?.name}</p>
                         </div>
                         <Badge className="border-0 text-xs" style={fitoutBadgeStyle(step?.colorHex)}>
-                          {step?.name ?? f.status}
+                          {step?.name ?? getFitoutPresentationLabel(t, 'fitout:project.status', f.status)}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -844,7 +872,7 @@ export default function TenantPortalPage() {
                       {/* Progress */}
                       <div className="mb-3">
                         <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                          <span>Tiến độ: Bước {curOrder}/{fitoutStages.length}</span>
+                          <span>{t('tenants:portalWorkspace.fitoutProgress', { current: curOrder, total: fitoutStages.length })}</span>
                           <span className="font-medium">{Math.round(progress)}%</span>
                         </div>
                         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">

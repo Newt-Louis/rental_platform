@@ -20,11 +20,31 @@ export class TransformInterceptor<T>
     context: ExecutionContext,
     next: CallHandler,
   ): Observable<Response<T>> {
+    const request = context.switchToHttp().getRequest();
+    const url = request.url as string;
+
+    // Skip wrapping for auth endpoints to maintain compatibility
+    if (url.includes('/auth/')) {
+      return next.handle();
+    }
+
     return next.handle().pipe(
-      map((data) => ({
-        success: true,
-        data,
-      })),
+      map((data) => {
+        // If response is a paginated object (has data, total, limit), spread it with success flag
+        // to avoid double wrapping: { data: [...], total, page, limit, totalPages }
+        if (
+          data &&
+          typeof data === 'object' &&
+          'data' in data &&
+          'total' in data &&
+          'limit' in data
+        ) {
+          return { success: true, requestId: request.requestId ?? null, ...data };
+        }
+
+        // Otherwise, wrap in data property
+        return { success: true, requestId: request.requestId ?? null, data };
+      }),
     );
   }
 }

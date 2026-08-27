@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { analyticsApi, spacesApi } from '@/api';
+import { useTranslation } from 'react-i18next';
+import { analyticsApi } from '@/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,28 +14,35 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
+import { AsyncState } from '@/components/ui/async-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { useMallStore } from '@/store/mall.store';
 import {
   TrendingUp, TrendingDown, Building2, AlertTriangle, DollarSign,
   Calendar, Percent, Users, Clock, Shield, RefreshCw,
 } from 'lucide-react';
+import { formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
+import { formatExactReportingMoney } from '@/pages/reports/reportingPresentation';
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
+function StatCard({ title, value, valueTitle, subtitle, icon: Icon, trend, trendUp }: {
   title: string;
   value: string | number;
+  /** CR-109 Wave 2: full, non-abbreviated value shown as a native tooltip when
+   * `value` is a compact/abbreviated display. */
+  valueTitle?: string;
   subtitle?: string;
   icon: any;
   trend?: string;
   trendUp?: boolean;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4">
+    <div className="min-w-0 border-b px-4 py-3 even:border-l md:border-b-0 md:border-l md:first:border-l-0">
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs text-gray-500 mb-1">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="break-words text-lg font-semibold tabular-nums text-gray-900" title={valueTitle}>{value}</p>
             {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
             {trend && (
               <div className={`flex items-center gap-1 mt-1 text-xs ${trendUp ? 'text-green-500' : 'text-red-500'}`}>
@@ -44,17 +51,15 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp }: {
               </div>
             )}
           </div>
-          <div className="p-2 bg-gray-50 rounded-lg">
-            <Icon size={20} className="text-gray-500" />
-          </div>
+          <Icon size={16} className="text-gray-400" />
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
 function OccupancyTab({ mallId }: { mallId?: string }) {
-  const { data: occupancy, isLoading } = useQuery({
+  const { t } = useTranslation('reports');
+  const { data: occupancy, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-occupancy', mallId],
     queryFn: () => analyticsApi.getOccupancyV2({ mallId }),
   });
@@ -70,24 +75,50 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích lấp đầy"><div /></AsyncState>;
 
   const s = occupancy?.summary ?? {};
   const byCategory = occupancy?.byCategory ?? [];
   const byFloor = occupancy?.byFloor ?? [];
+  const byLeaseTerm = occupancy?.byLeaseTerm ?? [];
   const trendData = trend as any[];
   const vacancySummary = vacancy?.summary ?? {};
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Tỷ lệ lấp đầy" value={`${s.occupancyRate ?? 0}%`} icon={Percent}
-          subtitle={`${s.occupiedUnits ?? 0}/${s.totalUnits ?? 0} units`} />
-        <StatCard title="Lấp đầy hiệu dụng" value={`${s.effectiveOccupancy ?? 0}%`} icon={Building2}
-          subtitle="Bao gồm đang fitout" />
-        <StatCard title="Diện tích trống" value={`${Math.round(s.vacantArea ?? 0).toLocaleString()} m²`}
-          icon={AlertTriangle} subtitle={`${s.vacantUnits ?? 0} units`} />
-        <StatCard title="Ước tính thất thu" value={`${Math.round((vacancySummary.totalEstimatedLoss ?? 0) / 1_000_000).toLocaleString()}M`}
-          icon={DollarSign} subtitle="VND / tháng" />
+      <div className="grid grid-cols-2 border-y bg-card md:grid-cols-4">
+        <StatCard title={t('analytics.occupancyRate')} value={`${s.occupancyRate ?? 0}%`} icon={Percent}
+          subtitle={`${s.occupiedUnits ?? 0}/${s.totalUnits ?? 0} ${t('analytics.units')}`} />
+        <StatCard title={t('analytics.effectiveOccupancy')} value={`${s.effectiveOccupancy ?? 0}%`} icon={Building2}
+          subtitle={t('analytics.includesFitout')} />
+        <StatCard title={t('analytics.vacantArea')} value={`${Math.round(s.vacantArea ?? 0).toLocaleString()} m²`}
+          icon={AlertTriangle} subtitle={`${s.vacantUnits ?? 0} ${t('analytics.units')}`} />
+        <StatCard title={t('analytics.estimatedLoss')} value={formatExactReportingMoney(vacancySummary.totalEstimatedLoss ?? 0, 'VND')}
+          valueTitle={formatExactReportingMoney(vacancySummary.totalEstimatedLoss ?? 0, 'VND')}
+          icon={DollarSign} subtitle="/ tháng" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {byLeaseTerm.map((zone: any) => (
+          <Card key={zone.leaseTermType} className={zone.leaseTermType === 'LONG' ? 'border-blue-200' : 'border-violet-200'}>
+            <CardContent className="p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800">{zone.name}</div>
+                  <div className="text-xs text-gray-400">Tính theo diện tích từng khu</div>
+                </div>
+                <div className={`text-2xl font-bold ${zone.leaseTermType === 'LONG' ? 'text-blue-700' : 'text-violet-700'}`}>
+                  {zone.occupancyRate}%
+                </div>
+              </div>
+              <Progress value={zone.occupancyRate} className="h-3" />
+              <div className="mt-2 flex justify-between text-xs text-gray-500">
+                <span>{zone.occupied}/{zone.total} mặt bằng</span>
+                <span>{Math.round(zone.occupiedArea ?? 0).toLocaleString()} / {Math.round(zone.area ?? 0).toLocaleString()} m²</span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -154,12 +185,14 @@ function OccupancyTab({ mallId }: { mallId?: string }) {
 }
 
 function RenewalRiskTab({ mallId }: { mallId?: string }) {
-  const { data, isLoading } = useQuery({
+  const { t } = useTranslation('reports');
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-renewal-risk', mallId],
     queryFn: () => analyticsApi.getRenewalRiskDashboard(mallId),
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích rủi ro gia hạn"><div /></AsyncState>;
 
   const summary = data?.summary ?? {};
   const topRisks = data?.topRisks ?? [];
@@ -173,14 +206,33 @@ function RenewalRiskTab({ mallId }: { mallId?: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="Critical" value={summary.critical ?? 0} icon={AlertTriangle}
-          subtitle="Cần hành động ngay" />
-        <StatCard title="High Risk" value={summary.high ?? 0} icon={TrendingDown}
-          subtitle="Cần theo dõi" />
-        <StatCard title="Doanh thu rủi ro" value={`${Math.round((summary.atRiskMonthlyRevenue ?? 0) / 1_000_000).toLocaleString()}M`}
-          icon={DollarSign} subtitle="VND / tháng" />
-        <StatCard title="Tổng HĐ theo dõi" value={summary.total ?? 0} icon={Users} />
+      <div className="grid grid-cols-2 border-y bg-card md:grid-cols-4">
+        <StatCard title={t('analytics.riskCritical')} value={summary.critical ?? 0} icon={AlertTriangle}
+          subtitle={t('analytics.actNow')} />
+        <StatCard title={t('analytics.riskHigh')} value={summary.high ?? 0} icon={TrendingDown}
+          subtitle={t('analytics.monitor')} />
+        {(() => {
+          // CR-110 (INV-CUR-001): atRiskMonthlyRevenueByCurrency is a per-currency
+          // map -- never summed across VND/USD/MMK. Show the largest currency's
+          // figure as the headline value; list any others in the subtitle rather
+          // than silently dropping them.
+          const byCurrency: Record<string, number> = summary.atRiskMonthlyRevenueByCurrency ?? {};
+          const entries = Object.entries(byCurrency).filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a);
+          const [primaryCode, primaryValue] = entries[0] ?? ['VND', 0];
+          const others = entries.slice(1);
+          return (
+            <StatCard
+              title={t('analytics.revenueAtRisk')}
+              value={formatExactReportingMoney(primaryValue, primaryCode as CurrencyCode)}
+              valueTitle={formatExactReportingMoney(primaryValue, primaryCode as CurrencyCode)}
+              icon={DollarSign}
+              subtitle={others.length > 0
+                ? `+ ${others.map(([code, v]) => formatExactReportingMoney(v, code as CurrencyCode)).join(', ')} · ${t('analytics.perMonth')}`
+                : t('analytics.perMonth')}
+            />
+          );
+        })()}
+        <StatCard title={t('analytics.trackedContracts')} value={summary.total ?? 0} icon={Users} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -240,30 +292,43 @@ function RenewalRiskTab({ mallId }: { mallId?: string }) {
 }
 
 function MultiMallTab() {
-  const { data, isLoading } = useQuery({
+  const { t } = useTranslation('reports');
+  const [leaseTermType, setLeaseTermType] = useState<'LONG' | 'SHORT'>('LONG');
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-multi-mall'],
     queryFn: () => analyticsApi.getMultiMallComparison(),
   });
 
   if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}</div>;
+  if (isError) return <AsyncState isLoading={false} isError onRetry={refetch} errorTitle="Không thể tải phân tích liên trung tâm"><div /></AsyncState>;
 
-  const malls = (data ?? []) as any[];
+  const malls = ((data ?? []) as any[]).map((mall) => {
+    const segment = mall.byLeaseTerm?.[leaseTermType];
+    return segment ? { ...mall, ...segment, totalUnits: segment.total, occupiedUnits: segment.occupied } : mall;
+  });
 
   return (
     <div className="space-y-6">
+      <div className="inline-flex rounded-lg border bg-white p-1">
+        {(['LONG', 'SHORT'] as const).map((term) => (
+          <button key={term} type="button" onClick={() => setLeaseTermType(term)} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${leaseTermType === term ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
+            {t(`leaseTerm.${term}`)}
+          </button>
+        ))}
+      </div>
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">So sánh hiệu suất các TTTM</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-[720px] w-full text-sm">
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-2 font-medium">TTTM</th>
                   <th className="text-right py-2 font-medium">Lấp đầy</th>
                   <th className="text-right py-2 font-medium">Units</th>
-                  <th className="text-right py-2 font-medium">Doanh thu/tháng</th>
+                  <th className="text-right py-2 font-medium">Doanh thu/tháng (VND)</th>
                   <th className="text-right py-2 font-medium">VND/m²</th>
                   <th className="text-center py-2 font-medium">Policy</th>
                 </tr>
@@ -281,8 +346,8 @@ function MultiMallTab() {
                       </span>
                     </td>
                     <td className="text-right py-3">{m.occupiedUnits}/{m.totalUnits}</td>
-                    <td className="text-right py-3">{Math.round(m.monthlyRevenue / 1_000_000).toLocaleString()}M</td>
-                    <td className="text-right py-3">{Math.round(m.revenuePerSqm).toLocaleString()}</td>
+                    <td className="text-right py-3 whitespace-nowrap">{formatMoneyAmount(m.monthlyRevenue, 'VND')}</td>
+                    <td className="text-right py-3 whitespace-nowrap">{formatMoneyAmount(m.revenuePerSqm, 'VND')}</td>
                     <td className="text-center py-3">
                       {m.hasPolicy ? (
                         <Badge className="bg-green-100 text-green-700">Đã cấu hình</Badge>
@@ -321,6 +386,7 @@ function MultiMallTab() {
 }
 
 function ComplianceTab({ mallId }: { mallId?: string }) {
+  const { t } = useTranslation('reports');
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -419,7 +485,7 @@ function ComplianceTab({ mallId }: { mallId?: string }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <Badge className={`${STATUS_COLOR[e.status] ?? 'bg-gray-100 text-gray-600'} border-0 text-xs`}>{e.status}</Badge>
+                  <Badge className={`${STATUS_COLOR[e.status] ?? 'bg-gray-100 text-gray-600'} border-0 text-xs`}>{t(`analytics.exportStatus.${e.status}`, { defaultValue: e.status })}</Badge>
                   <div className="text-xs text-gray-400 mt-0.5">{new Date(e.createdAt).toLocaleString('vi-VN')}</div>
                 </div>
               </div>
@@ -456,40 +522,19 @@ function ComplianceTab({ mallId }: { mallId?: string }) {
 }
 
 export default function AnalyticsDashboard() {
-  const [selectedMall, setSelectedMall] = useState<string>('');
-
-  const { data: mallsData } = useQuery({
-    queryKey: ['malls'],
-    queryFn: () => spacesApi.listMalls(),
-  });
-  const malls = (mallsData ?? []) as any[];
+  const { t } = useTranslation('reports');
+  const selectedMall = useMallStore((state) => state.selectedMallId) || '';
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
-          <p className="text-gray-500 text-sm">Phân tích hiệu suất và rủi ro</p>
-        </div>
-        <Select value={selectedMall} onValueChange={setSelectedMall}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Tất cả TTTM" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">Tất cả TTTM</SelectItem>
-            {malls.map((m: any) => (
-              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="space-y-4 p-4 sm:p-6">
+      <PageHeader eyebrow={t('eyebrow')} title={t('analytics.title')} description={t('analytics.subtitle')} />
 
       <Tabs defaultValue="occupancy">
-        <TabsList className="mb-6">
-          <TabsTrigger value="occupancy">Lấp đầy & Trống</TabsTrigger>
-          <TabsTrigger value="renewal-risk">Rủi ro gia hạn</TabsTrigger>
-          <TabsTrigger value="multi-mall">So sánh TTTM</TabsTrigger>
-          <TabsTrigger value="compliance">Compliance</TabsTrigger>
+        <TabsList className="mb-4 max-w-full justify-start overflow-x-auto">
+          <TabsTrigger value="occupancy">{t('analytics.tabs.occupancy')}</TabsTrigger>
+          <TabsTrigger value="renewal-risk">{t('analytics.tabs.renewalRisk')}</TabsTrigger>
+          <TabsTrigger value="multi-mall">{t('analytics.tabs.multiMall')}</TabsTrigger>
+          <TabsTrigger value="compliance">{t('analytics.tabs.compliance')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="occupancy">

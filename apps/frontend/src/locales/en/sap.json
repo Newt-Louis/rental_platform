@@ -1,0 +1,25 @@
+{
+  "eyebrow": "Financial integration control",
+  "title": "SAP FI/CO Integration",
+  "subtitle": "Monitor synchronization reliability, resolve exceptions and reconcile platform data with the financial system.",
+  "live": "Connected",
+  "demo": "Simulation mode · SAP_ENABLED=false",
+  "runReconciliation": "Run reconciliation",
+  "syncPending": "Sync {{count}} pending records",
+  "refresh": "Refresh",
+  "stats": {
+    "success": "Successful logs",
+    "failed": "Failed logs",
+    "pending": "Pending logs",
+    "mappings": "SAP mappings"
+  },
+  "statuses": {
+    "PENDING": "Pending",
+    "SUCCESS": "Successful",
+    "FAILED": "Failed",
+    "RETRYING": "Retrying",
+    "SYNCED": "Synced",
+    "MATCHED": "Matched",
+    "MISMATCH": "Mismatch"
+  }
+}

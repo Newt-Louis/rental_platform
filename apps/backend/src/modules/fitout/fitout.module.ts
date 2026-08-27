@@ -15,6 +15,9 @@ import { FitoutIssueService } from './fitout-issue.service';
 import { FitoutDailyReportService } from './fitout-daily-report.service';
 import { FitoutGanttService } from './fitout-gantt.service';
 import { FitoutDashboardService } from './fitout-dashboard.service';
+import { FitoutControlsController } from './fitout-controls.controller';
+import { FitoutControlsService } from './fitout-controls.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StorageModule } from '../../storage/storage.module';
 
@@ -26,6 +29,7 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutIssueController,
     FitoutDailyReportController,
     FitoutGanttController,
+    FitoutControlsController,
   ],
   providers: [
     FitoutService,
@@ -39,6 +43,8 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutDailyReportService,
     FitoutGanttService,
     FitoutDashboardService,
+    FitoutControlsService,
+    FitoutAccessPolicyService,
   ],
   exports: [
     FitoutService,
@@ -52,6 +58,8 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutDailyReportService,
     FitoutGanttService,
     FitoutDashboardService,
+    FitoutControlsService,
+    FitoutAccessPolicyService,
   ],
 })
 export class FitoutModule {}

@@ -3,6 +3,21 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AmendmentStatus, AmendmentType } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ContractEventsService } from './contract-events.service';
+import { BillingScheduleService } from '../billing/billing-schedule.service';
+import { formatMoney } from '../../common/utils/format-money';
+
+// Field hợp đồng được phép thay đổi qua Amendment — không cho amend tenantId/unitId/status/...
+// (những field này ảnh hưởng workflow riêng: tạo hợp đồng mới, termination, activation).
+const AMENDABLE_CONTRACT_FIELDS = new Set([
+  'rent', 'cam', 'deposit', 'currencyCode', 'depositLease', 'depositFitout', 'fitoutFee',
+  'utilityFee', 'afterHoursFee', 'operatingHours', 'billingCycle', 'paymentTerm',
+  'rentFree', 'escalationPercent', 'startDate', 'endDate', 'term', 'notes',
+]);
+const AMENDMENT_DATE_FIELDS = new Set(['startDate', 'endDate']);
+// Field nào đổi thì lịch thu tiền (billing schedule) đã sinh trước đó phải build lại.
+const BILLING_RELEVANT_FIELDS = new Set([
+  'rent', 'cam', 'currencyCode', 'billingCycle', 'paymentTerm', 'rentFree', 'escalationPercent', 'startDate', 'endDate',
+]);
 
 @Injectable()
 export class ContractTemplatesService {
@@ -72,8 +87,8 @@ export class ContractTemplatesService {
       tenantName: contract.tenant.brandName,
       companyName: contract.tenant.companyName,
       unitCode: contract.unit?.code ?? contract.unitId,
-      rent: contract.rent.toLocaleString('vi-VN'),
-      cam: contract.cam.toLocaleString('vi-VN'),
+      rent: formatMoney(contract.rent, contract.currencyCode),
+      cam: formatMoney(contract.cam, contract.currencyCode),
       startDate: contract.startDate.toLocaleDateString('vi-VN'),
       endDate: contract.endDate.toLocaleDateString('vi-VN'),
       term: String(contract.term),
@@ -99,6 +114,7 @@ export class ContractAmendmentsService {
   constructor(
     private prisma: PrismaService,
     private events: ContractEventsService,
+    private billingScheduleService: BillingScheduleService,
   ) {}
 
   private generateNumber() {
@@ -123,6 +139,11 @@ export class ContractAmendmentsService {
   }) {
     const contract = await this.prisma.contract.findUnique({ where: { id: contractId } });
     if (!contract) throw new NotFoundException('Contract not found');
+
+    const invalidKeys = Object.keys(data.changes).filter((key) => !AMENDABLE_CONTRACT_FIELDS.has(key));
+    if (invalidKeys.length) {
+      throw new BadRequestException(`Không thể amend các trường: ${invalidKeys.join(', ')}`);
+    }
 
     return this.prisma.contractAmendment.create({
       data: {
@@ -151,51 +172,58 @@ export class ContractAmendmentsService {
   }
 
   async approve(amendmentId: string, userId?: string) {
-    const amendment = await this.prisma.contractAmendment.findUnique({
-      where: { id: amendmentId },
-      include: { contract: true },
-    });
-    if (!amendment) throw new NotFoundException('Amendment not found');
-    if (amendment.status !== AmendmentStatus.SUBMITTED) {
-      throw new BadRequestException('Amendment must be SUBMITTED');
-    }
-
-    const changes = amendment.changes as Record<string, unknown>;
-    const updateData: Record<string, unknown> = {};
-    const before: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(changes)) {
-      if (key in amendment.contract) {
-        before[key] = (amendment.contract as any)[key];
-        updateData[key] = value;
+    return this.prisma.$transaction(async (tx) => {
+      const amendment = await tx.contractAmendment.findUnique({
+        where: { id: amendmentId },
+        include: { contract: true },
+      });
+      if (!amendment) throw new NotFoundException('Amendment not found');
+      if (amendment.status !== AmendmentStatus.SUBMITTED) {
+        throw new BadRequestException('Amendment must be SUBMITTED');
       }
-    }
 
-    if (amendment.type === AmendmentType.RENEWAL) {
-      updateData.type = 'RENEWAL';
-      updateData.status = 'ACTIVE';
-    }
+      const changes = amendment.changes as Record<string, unknown>;
+      const updateData: Record<string, unknown> = {};
+      const before: Record<string, unknown> = {};
 
-    await this.prisma.contract.update({
-      where: { id: amendment.contractId },
-      data: updateData as any,
+      // Whitelist tường minh — tránh amendment ghi đè field không dự tính (status, tenantId,
+      // unitId...) chỉ vì tên field đó trùng với 1 property trên Contract.
+      for (const [key, value] of Object.entries(changes)) {
+        if (AMENDABLE_CONTRACT_FIELDS.has(key)) {
+          before[key] = (amendment.contract as any)[key];
+          updateData[key] = AMENDMENT_DATE_FIELDS.has(key) ? new Date(value as string) : value;
+        }
+      }
+
+      if (amendment.type === AmendmentType.RENEWAL) {
+        updateData.type = 'RENEWAL';
+      }
+
+      await tx.contract.update({
+        where: { id: amendment.contractId },
+        data: updateData as any,
+      });
+
+      if (Object.keys(updateData).some((key) => BILLING_RELEVANT_FIELDS.has(key))) {
+        await this.billingScheduleService.buildScheduleForContract(amendment.contractId, tx);
+      }
+
+      const updated = await tx.contractAmendment.update({
+        where: { id: amendmentId },
+        data: { status: AmendmentStatus.APPLIED, approvedAt: new Date() },
+      });
+
+      await this.events.logEvent({
+        contractId: amendment.contractId,
+        eventType: 'AMENDMENT_APPLIED',
+        title: `Amendment ${amendment.amendmentNumber} applied`,
+        description: amendment.reason ?? undefined,
+        beforeValue: JSON.stringify(before),
+        afterValue: JSON.stringify(changes),
+        userId,
+      }, tx);
+
+      return updated;
     });
-
-    const updated = await this.prisma.contractAmendment.update({
-      where: { id: amendmentId },
-      data: { status: AmendmentStatus.APPLIED, approvedAt: new Date() },
-    });
-
-    await this.events.logEvent({
-      contractId: amendment.contractId,
-      eventType: 'AMENDMENT_APPLIED',
-      title: `Amendment ${amendment.amendmentNumber} applied`,
-      description: amendment.reason ?? undefined,
-      beforeValue: JSON.stringify(before),
-      afterValue: JSON.stringify(changes),
-      userId,
-    });
-
-    return updated;
   }
 }

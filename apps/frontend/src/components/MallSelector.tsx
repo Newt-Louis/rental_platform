@@ -1,33 +1,69 @@
 import { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
+import { authApi } from '@/api/auth';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { Building2 } from 'lucide-react';
+import { Building2, ChevronDown } from 'lucide-react';
 
 export function MallSelector() {
+  const qc = useQueryClient();
   const { user } = useAuthStore();
-  const { selectedMallId, setSelectedMall } = useMallStore();
+  const { selectedMallId, selectedMallName, setSelectedMall, openMallContextModal } = useMallStore();
 
-  const { data: malls } = useQuery({
+  const { data: malls, isSuccess } = useQuery({
     queryKey: ['malls'],
     queryFn: spacesApi.listMalls,
   });
-
   const mallList: any[] = malls?.data ?? malls ?? [];
 
-  // Auto-select the first mall if not yet set and not admin
+  // Reconcile persisted context with the permission-filtered Mall list.
   useEffect(() => {
-    if (mallList.length > 0 && selectedMallId === null && user?.role !== 'ADMIN') {
-      setSelectedMall(mallList[0].id, mallList[0].name);
+    if (!isSuccess || !user) return;
+
+    const selectedMall = mallList.find((mall) => mall.id === selectedMallId);
+    if (selectedMall) {
+      if (selectedMall.name !== selectedMallName) {
+        setSelectedMall(selectedMall.id, selectedMall.name);
+      }
+      return;
     }
-  }, [mallList, selectedMallId, user?.role, setSelectedMall]);
+
+    if (user.role === 'ADMIN' && selectedMallId === null) return;
+
+    if (mallList.length === 0) {
+      if (selectedMallId !== null) {
+        setSelectedMall(null);
+        void authApi.setActiveMall(null);
+      }
+      return;
+    }
+
+    const first = mallList[0];
+    let cancelled = false;
+    void authApi.setActiveMall(first.id).then(() => {
+      if (cancelled) return;
+      setSelectedMall(first.id, first.name);
+      qc.invalidateQueries();
+    });
+    return () => { cancelled = true; };
+  }, [isSuccess, mallList, qc, selectedMallId, selectedMallName, setSelectedMall, user]);
+
+  if (isSuccess && mallList.length === 0) {
+    return (
+      <button
+        onClick={openMallContextModal}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-amber-700 hover:bg-amber-50"
+      >
+        <Building2 size={14} />
+        Chưa được cấp Mall
+      </button>
+    );
+  }
 
   if (mallList.length === 0) return null;
 
+  // Non-admin with only one mall — show name, no interaction needed
   if (user?.role !== 'ADMIN' && mallList.length === 1) {
     return (
       <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
@@ -38,31 +74,13 @@ export function MallSelector() {
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <button
+      onClick={openMallContextModal}
+      className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors rounded-md px-2 py-1 hover:bg-gray-100"
+    >
       <Building2 size={14} className="text-gray-500 shrink-0" />
-      <Select
-        value={selectedMallId ?? '__all__'}
-        onValueChange={(v) => {
-          if (v === '__all__') {
-            setSelectedMall(null, 'Tất cả Mall');
-          } else {
-            const m = mallList.find((x: any) => x.id === v);
-            setSelectedMall(v, m?.name);
-          }
-        }}
-      >
-        <SelectTrigger className="border-0 shadow-none h-7 text-sm font-medium text-gray-700 px-1 gap-1 w-auto min-w-0 focus:ring-0">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {user?.role === 'ADMIN' && (
-            <SelectItem value="__all__">Tất cả Mall</SelectItem>
-          )}
-          {mallList.map((m: any) => (
-            <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+      <span className="max-w-[160px] truncate">{selectedMallName}</span>
+      <ChevronDown size={13} className="text-gray-400 shrink-0" />
+    </button>
   );
 }

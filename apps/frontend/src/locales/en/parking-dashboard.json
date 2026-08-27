@@ -1,0 +1,43 @@
+{
+  "report": {
+    "title": "Parking Report",
+    "todayRevenue": "Today's Revenue",
+    "todayTransactions": "Today's Transactions",
+    "lastMonthRevenue": "Last Month Revenue",
+    "lastMonthTransactions": "Last Month Transactions",
+    "revenueByMonth": "Revenue by Day",
+    "trafficByMonth": "Traffic by Day",
+    "empty": "No data yet"
+  },
+  "transaction": {
+    "title": "Parking Transaction",
+    "parkingLot": "Parking Lot",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "cardCode": "Card Code",
+    "licensePlate": "License Plate",
+    "search": "Search",
+    "export": "Export Excel",
+    "exporting": "Exporting...",
+    "exportError": "Could not export Excel",
+    "empty": "No transactions found",
+    "total": "Total: {{count}} transactions",
+    "prev": "Previous",
+    "next": "Next",
+    "imagePreview": "License Plate Image",
+    "entryImage": "Entry Image",
+    "exitImage": "Exit Image",
+    "noImage": "No image",
+    "col": {
+      "recordId": "ID",
+      "vehicleType": "Vehicle Type",
+      "cardCode": "Card Code",
+      "entryPlate": "Entry Plate",
+      "exitPlate": "Exit Plate",
+      "entryTime": "Entry Time",
+      "exitTime": "Exit Time",
+      "totalAmount": "Total Amount",
+      "image": "Image"
+    }
+  }
+}

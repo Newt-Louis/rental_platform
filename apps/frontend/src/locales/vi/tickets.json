@@ -1,0 +1,190 @@
+{
+  "title": "Quản lý Ticket",
+  "create": "Tạo ticket",
+  "edit": "Chỉnh sửa",
+  "detail": "Chi tiết ticket",
+  "status": {
+    "NEW": "Mới",
+    "ASSIGNED": "Đã giao",
+    "OPEN": "Đang mở",
+    "IN_PROGRESS": "Đang xử lý",
+    "WAITING_TENANT": "Chờ KH",
+    "RESOLVED": "Đã giải quyết",
+    "CLOSED": "Đóng",
+    "CANCELLED": "Đã hủy"
+  },
+  "priority": {
+    "LOW": "Thấp",
+    "MEDIUM": "Trung bình",
+    "HIGH": "Cao",
+    "URGENT": "Khẩn cấp"
+  },
+  "category": {
+    "MAINTENANCE": "Bảo trì",
+    "UTILITIES": "Điện nước",
+    "SECURITY": "An ninh",
+    "CLEANING": "Vệ sinh",
+    "OTHER": "Khác"
+  },
+  "types": {
+    "ELECTRICAL": "Điện",
+    "WATER": "Nước",
+    "HVAC": "Điều hòa / thông gió",
+    "CLEANING": "Vệ sinh",
+    "SECURITY": "An ninh",
+    "PARKING": "Bãi đỗ xe",
+    "INTERNET": "Internet / mạng",
+    "DELIVERY": "Giao hàng / logistics",
+    "MARKETING_EVENT": "Marketing / sự kiện",
+    "OTHER": "Khác"
+  },
+  "source": {
+    "STAFF_INSPECTION": "Phiếu kiểm tra",
+    "TENANT_REQUEST": "Yêu cầu từ KH"
+  },
+  "tabs": {
+    "active": "Đang xử lý",
+    "history": "Lịch sử",
+    "maintenance": "Bảo trì định kỳ",
+    "power": "Cúp điện",
+    "inspection": "Kiểm tra hiện trường"
+  },
+  "fields": {
+    "title": "Tiêu đề",
+    "subject": "Tiêu đề",
+    "description": "Mô tả vấn đề",
+    "unit": "Mặt bằng",
+    "tenant": "Khách thuê",
+    "category": "Danh mục",
+    "type": "Loại",
+    "priority": "Độ ưu tiên",
+    "assignee": "Người xử lý",
+    "dueDate": "Hạn xử lý",
+    "resolution": "Kết quả xử lý",
+    "creator": "Người tạo",
+    "createdAt": "Ngày tạo",
+    "updatedAt": "Cập nhật"
+  },
+  "filters": {
+    "search": "Tìm kiếm ticket...",
+    "status": "Trạng thái",
+    "priority": "Ưu tiên",
+    "category": "Danh mục",
+    "assignee": "Người xử lý",
+    "allStatuses": "Tất cả trạng thái",
+    "allPriorities": "Tất cả ưu tiên"
+  },
+  "actions": {
+    "assign": "Phân công",
+    "changeStatus": "Chuyển trạng thái",
+    "resolve": "Đánh dấu đã xử lý",
+    "close": "Đóng ticket",
+    "reopen": "Mở lại",
+    "addComment": "Thêm bình luận",
+    "sendComment": "Gửi",
+    "uploadPhoto": "Tải ảnh lên",
+    "createInspection": "Tạo phiếu kiểm tra"
+  },
+  "sheet": {
+    "sectionDetail": "CHI TIẾT",
+    "sectionComments": "BÌNH LUẬN",
+    "sectionPhotos": "ẢNH HIỆN TRƯỜNG",
+    "sectionAssign": "PHÂN CÔNG",
+    "sectionTransition": "CHUYỂN TRẠNG THÁI",
+    "sectionChecklist": "CHECKLIST BÀO TRÌ",
+    "commentPlaceholder": "Nhập bình luận hoặc ghi chú...",
+    "internalNote": "Ghi chú nội bộ (ẩn với KH)",
+    "noComments": "Chưa có bình luận nào",
+    "noPhotos": "Chưa có ảnh nào",
+    "loading": "Đang tải..."
+  },
+  "inspection": {
+    "createTitle": "Tạo phiếu kiểm tra hiện trường",
+    "tenantLabel": "Khách thuê *",
+    "tenantPlaceholder": "Chọn khách thuê...",
+    "unitLabel": "Mặt bằng *",
+    "unitPlaceholder": "Chọn mặt bằng...",
+    "unitDisabled": "Chọn khách thuê trước",
+    "typeLabel": "Loại *",
+    "typePlaceholder": "Loại...",
+    "priorityLabel": "Mức độ ưu tiên",
+    "subjectLabel": "Tiêu đề *",
+    "subjectPlaceholder": "Mô tả ngắn gọn phát hiện...",
+    "descLabel": "Chi tiết kiểm tra",
+    "descPlaceholder": "Mô tả chi tiết những gì phát hiện được khi kiểm tra hiện trường...",
+    "submitBtn": "Tạo phiếu & gửi cho khách thuê",
+    "tenantRequired": "Vui lòng chọn khách thuê",
+    "unitRequired": "Vui lòng chọn mặt bằng",
+    "typeRequired": "Vui lòng chọn loại yêu cầu"
+  },
+  "maintenance": {
+    "title": "Bảo trì định kỳ",
+    "schedule": "Lịch bảo trì",
+    "noSchedules": "Chưa có lịch bảo trì nào",
+    "complete": "Hoàn thành",
+    "completeTitle": "Đánh dấu hoàn thành bảo trì",
+    "note": "Ghi chú",
+    "notePlaceholder": "Ghi chú kết quả bảo trì...",
+    "confirmComplete": "Xác nhận hoàn thành"
+  },
+  "power": {
+    "title": "Thông báo cúp điện",
+    "createTitle": "Tạo thông báo cúp điện",
+    "noSchedules": "Chưa có lịch cúp điện nào",
+    "fields": {
+      "affectedArea": "Khu vực ảnh hưởng",
+      "startTime": "Bắt đầu",
+      "endTime": "Kết thúc",
+      "reason": "Lý do",
+      "notify": "Thông báo cho khách thuê"
+    }
+  },
+  "noTickets": "Không có ticket nào",
+  "noHistory": "Chưa có lịch sử",
+  "createSuccess": "Đã tạo phiếu kiểm tra",
+  "updateSuccess": "Đã chuyển trạng thái",
+  "assignSuccess": "Đã phân công xử lý",
+  "commentSuccess": "Đã thêm bình luận",
+  "photoSuccess": "Đã tải ảnh lên",
+  "maintenanceCompleteSuccess": "Đã đánh dấu hoàn thành",
+  "errors": {
+    "create": "Lỗi tạo phiếu",
+    "assign": "Lỗi phân công",
+    "transition": "Lỗi chuyển trạng thái",
+    "comment": "Lỗi thêm bình luận",
+    "photo": "Lỗi tải ảnh lên",
+    "maintenanceComplete": "Lỗi hoàn thành bảo trì"
+  },
+  "table": {
+    "ticketNo": "Ticket #",
+    "subject": "Tiêu đề",
+    "tenant": "Khách thuê",
+    "type": "Loại",
+    "priority": "Ưu tiên",
+    "status": "Trạng thái",
+    "assignee": "Người xử lý",
+    "createdAt": "Ngày tạo",
+    "updatedAt": "Cập nhật"
+  },
+  "page": {
+    "title": "Yêu cầu & Ticket",
+    "subtitle": "Quản lý ticket bảo trì, yêu cầu hỗ trợ và kiểm tra hiện trường",
+    "totalActive": "{{count}} ticket đang xử lý",
+    "totalHistory": "{{count}} lịch sử",
+    "eyebrow": "Vận hành",
+    "createInspection": "Tạo phiếu kiểm tra",
+    "queueHealthy": "Hàng đợi đang trong SLA",
+    "queueOverdue": "{{count}} yêu cầu đã quá SLA",
+    "queueHint": "Mở phiếu, phân công và chuyển trạng thái theo hồ sơ vận hành.",
+    "open": "Đang mở",
+    "new": "Mới tiếp nhận",
+    "unassigned": "Chưa phân công",
+    "overdue": "Quá SLA",
+    "urgent": "Khẩn cấp",
+    "noMatch": "Không có ticket phù hợp bộ lọc",
+    "empty": "Chưa có ticket nào",
+    "adjustFilters": "Hãy thay đổi từ khóa hoặc bộ lọc.",
+    "emptyHint": "Tạo phiếu đầu tiên để bắt đầu theo dõi xử lý.",
+    "clearFilters": "Xóa bộ lọc"
+  }
+}

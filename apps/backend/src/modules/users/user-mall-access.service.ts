@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class UserMallAccessService {
   constructor(private prisma: PrismaService) {}
+
+  private static readonly GRANTABLE_ROLES = new Set<Role>([
+    Role.MALL_DIRECTOR,
+    Role.LEASING_MANAGER,
+    Role.LEASING_EXECUTIVE,
+    Role.FINANCE,
+    Role.LEGAL,
+    Role.OPERATION,
+  ]);
 
   async listForUser(userId: string) {
     return this.prisma.userMallAccess.findMany({
@@ -26,7 +35,11 @@ export class UserMallAccessService {
       this.prisma.mall.findUnique({ where: { id: dto.mallId } }),
     ]);
     if (!user) throw new NotFoundException('User not found');
+    if (!user.isActive) throw new BadRequestException('Cannot grant mall access to an inactive user');
     if (!mall) throw new NotFoundException('Mall not found');
+    if (!UserMallAccessService.GRANTABLE_ROLES.has(dto.role)) {
+      throw new BadRequestException('Role is not valid for mall access');
+    }
 
     return this.prisma.userMallAccess.upsert({
       where: { userId_mallId: { userId: dto.userId, mallId: dto.mallId } },

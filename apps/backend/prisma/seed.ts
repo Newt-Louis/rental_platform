@@ -1,6 +1,7 @@
-import { PrismaClient, Role, UnitStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
+import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from './approval-policy-seed.util';
+import { generateBillingPeriods } from '../src/modules/billing/billing-schedule.util';
 
 const prisma = new PrismaClient();
 
@@ -8,6 +9,9 @@ async function main() {
   console.log('Starting seed...');
 
   // Clean up existing data (Wave 6-7 tables first)
+  await prisma.emailDelivery.deleteMany();
+  await prisma.outboxEvent.deleteMany();
+  await prisma.unifiedDocument.deleteMany();
   await prisma.bookingActivity.deleteMany();
   await prisma.unitBooking.deleteMany();
   await prisma.customerActivity.deleteMany();
@@ -17,9 +21,16 @@ async function main() {
   await prisma.fitoutContractor.deleteMany();
   await prisma.salesAuditTrail.deleteMany();
   await prisma.proposalScenario.deleteMany();
-  await prisma.proposalNegotiationRound.deleteMany();
   await prisma.sapEntityMapping.deleteMany();
   await prisma.userMallAccess.deleteMany();
+  // Department has a self-referencing RESTRICT relation. Delete leaves first so
+  // a repeated base seed remains valid after department master data is introduced.
+  while (await prisma.department.count()) {
+    const result = await prisma.department.deleteMany({
+      where: { children: { none: {} } },
+    });
+    if (result.count === 0) throw new Error('Cannot clear Department hierarchy because it contains a cycle');
+  }
   await prisma.mallAnnouncement.deleteMany();
   await prisma.ticketRating.deleteMany();
   await prisma.maintenanceSchedule.deleteMany();
@@ -53,7 +64,6 @@ async function main() {
   await prisma.payment.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
-  await prisma.ticketFile.deleteMany();
   await prisma.ticketComment.deleteMany();
   await prisma.ticket.deleteMany();
   await prisma.salesTurnover.deleteMany();
@@ -664,17 +674,23 @@ async function main() {
 
   const tenantPortalPassword = await bcrypt.hash('Tenant123!', 10);
   const tenants = await Promise.all(
-    tenantsData.map((t) =>
-      prisma.tenant.create({
-        data: {
-          ...t,
-          isPortalUser: true,
-          portalPassword: tenantPortalPassword,
-          isActive: true,
-        },
-      })
-    )
+    tenantsData.map(({ portalEmail: _portalEmail, ...tenant }) =>
+      prisma.tenant.create({ data: { ...tenant, isPortalUser: true, isActive: true } })
+    ),
   );
+
+  await Promise.all(tenants.map((tenant, index) =>
+    prisma.user.create({
+      data: {
+        email: tenantsData[index].portalEmail,
+        password: tenantPortalPassword,
+        fullName: tenantsData[index].contactName,
+        role: Role.TENANT,
+        tenantId: tenant.id,
+        isActive: true,
+      },
+    }),
+  ));
 
   console.log('Tenants created');
 
@@ -961,6 +977,12 @@ async function main() {
     const term = 36;
     const totalContractValue = monthlyRent * term;
 
+    // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md, spec §30):
+    // the multinational rollout needs USD/MMK examples in dev/UAT seed data, not just VND.
+    // Proposal #1 is quoted in USD, #2 in MMK -- everything else stays VND exactly as before.
+    const seedCurrency: 'VND' | 'USD' | 'MMK' = i === 0 ? 'USD' : i === 1 ? 'MMK' : 'VND';
+    const currencyScale = seedCurrency === 'USD' ? 1 / 24000 : seedCurrency === 'MMK' ? 1 / 11 : 1;
+
     const proposal = await prisma.proposal.create({
       data: {
         proposalNumber: `PROP-2026-${String(i + 1).padStart(4, '0')}`,
@@ -971,21 +993,22 @@ async function main() {
         term: term,
         startDate: new Date('2026-07-01'),
         endDate: new Date('2029-06-30'),
-        rentPerSqm: rentPerSqm,
-        camPerSqm: unit.camPerSqm,
+        rentPerSqm: rentPerSqm * currencyScale,
+        camPerSqm: unit.camPerSqm * currencyScale,
         deposit: depositMonths,
         rentFree: i % 3 === 0 ? 30 : 0,
         escalationPercent: 5,
         revenueSharePercent: 0,
         marketingFee: 0,
-        monthlyRent: monthlyRent,
-        monthlyCAM: monthlyCAM,
-        depositAmount: depositAmount,
-        totalContractValue: totalContractValue,
+        monthlyRent: monthlyRent * currencyScale,
+        monthlyCAM: monthlyCAM * currencyScale,
+        depositAmount: depositAmount * currencyScale,
+        totalContractValue: totalContractValue * currencyScale,
         discount: i % 4 === 0 ? 8 : i % 4 === 1 ? 3 : 0,
         status: i < 2 ? ProposalStatus.APPROVED : i < 4 ? ProposalStatus.UNDER_REVIEW : i < 6 ? ProposalStatus.SUBMITTED : ProposalStatus.DRAFT,
+        rentCurrency: seedCurrency,
         createdById: leasingExec.id,
-        notes: 'Standard lease proposal',
+        notes: seedCurrency === 'VND' ? 'Standard lease proposal' : `Standard lease proposal (quoted in ${seedCurrency})`,
         isActive: true,
       },
     });
@@ -1007,8 +1030,16 @@ async function main() {
   for (let i = 0; i < 15; i++) {
     const tenant = tenants[i % 10];
     const unit = units[i < 10 ? i : i % 10];
-    const rent = unit.baseRentPerSqm * unit.areaNLA;
-    const cam = unit.camPerSqm * unit.areaNLA;
+    // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): contract #1
+    // and #2 carry over the USD/MMK currency of proposals[0]/proposals[1] above -- the
+    // Proposal.rentCurrency -> Contract.currencyCode invariant must hold in seed data too,
+    // since seeded rows bypass ContractsService.create()'s own propagation logic and are
+    // checked by scripts/backbone-reconciliation.mjs just like real data.
+    const sourceProposal = i < proposals.length ? proposals[i] : null;
+    const contractCurrency = sourceProposal?.rentCurrency ?? 'VND';
+    const currencyScale = contractCurrency === 'USD' ? 1 / 24000 : contractCurrency === 'MMK' ? 1 / 11 : 1;
+    const rent = unit.baseRentPerSqm * unit.areaNLA * currencyScale;
+    const cam = unit.camPerSqm * unit.areaNLA * currencyScale;
     const deposit = rent * 3;
 
     const isExpiring = i === 10 || i === 11;
@@ -1018,7 +1049,7 @@ async function main() {
     const contract = await prisma.contract.create({
       data: {
         contractNumber: `CTR-2026-${String(i + 1).padStart(4, '0')}`,
-        proposalId: i < proposals.length ? proposals[i].id : null,
+        proposalId: sourceProposal?.id ?? null,
         tenantId: tenant.id,
         unitId: unit.id,
         type: ContractType.LEASE_AGREEMENT,
@@ -1029,12 +1060,15 @@ async function main() {
         rent: rent,
         cam: cam,
         deposit: deposit,
+        currencyCode: contractCurrency,
         billingCycle: BillingCycle.MONTHLY,
         paymentTerm: 30,
         rentFree: 0,
         escalationPercent: 5,
         managedById: leasingManager.id,
-        notes: `Lease agreement for ${tenant.brandName} at unit ${unit.code}`,
+        notes: contractCurrency === 'VND'
+          ? `Lease agreement for ${tenant.brandName} at unit ${unit.code}`
+          : `Lease agreement for ${tenant.brandName} at unit ${unit.code} (billed in ${contractCurrency})`,
         isActive: true,
       },
     });
@@ -1042,6 +1076,44 @@ async function main() {
   }
 
   console.log('Contracts created');
+
+  // Phase 6 early cleanup (docs/program/RELIABILITY_BACKLOG.md item 18, found by the
+  // Backbone Consolidation Gate's live-data reconciliation script): contracts above are
+  // inserted directly via prisma.contract.create with status ACTIVE/EXPIRING already set,
+  // bypassing ContractsService.updateStatus() — the one place that normally guarantees an
+  // ACTIVE contract also gets a billing schedule (Phase 3 hardening). Reuses the actual
+  // application's period-generation algorithm (generateBillingPeriods) rather than
+  // reimplementing it, so seeded schedules match exactly what buildScheduleForContract would
+  // have produced had the contract gone through real activation.
+  for (const contract of contracts) {
+    if (contract.status !== ContractStatus.ACTIVE && contract.status !== ContractStatus.EXPIRING) continue;
+    const periods = generateBillingPeriods({
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      rent: contract.rent,
+      cam: contract.cam,
+      rentFree: contract.rentFree,
+      escalationPercent: contract.escalationPercent,
+      paymentTerm: contract.paymentTerm,
+      billingCycle: contract.billingCycle,
+    });
+    await prisma.billingScheduleEntry.createMany({
+      data: periods.map((period) => ({
+        contractId: contract.id,
+        period: period.period,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        rentAmount: period.rentAmount,
+        camAmount: period.camAmount,
+        subtotal: period.subtotal,
+        currencyCode: contract.currencyCode,
+        dueDate: period.dueDate,
+        status: period.skipped ? BillingScheduleStatus.SKIPPED : BillingScheduleStatus.PENDING,
+      })),
+    });
+  }
+
+  console.log('Billing schedules seeded for ACTIVE/EXPIRING contracts');
 
   // Create FitoutProjects for active contracts (status = FitoutStageConfig.code, seeded in migration 20260702100000)
   const fitoutStatuses = [
@@ -1133,6 +1205,7 @@ async function main() {
           vatRate: 10,
           vatAmount: vatAmount,
           totalAmount: totalAmount,
+          currencyCode: contract.currencyCode,
           dueDate: dueDate,
           issuedAt: status !== InvoiceStatus.DRAFT ? new Date(`${year}-${month}-01`) : null,
           paidAt: status === InvoiceStatus.PAID ? new Date(`${year}-${month}-10`) : null,
@@ -1174,6 +1247,7 @@ async function main() {
             invoiceId: invoice.id,
             tenantId: contract.tenantId,
             amount: totalAmount,
+            currencyCode: contract.currencyCode,
             method: PaymentMethod.BANK_TRANSFER,
             reference: `TXN-${period}-${String(invoiceCount).padStart(4, '0')}`,
             paidAt: new Date(`${year}-${month}-10`),
@@ -1186,6 +1260,7 @@ async function main() {
             invoiceId: invoice.id,
             tenantId: contract.tenantId,
             amount: totalAmount * 0.5,
+            currencyCode: contract.currencyCode,
             method: PaymentMethod.BANK_TRANSFER,
             reference: `TXN-PARTIAL-${period}-${String(invoiceCount).padStart(4, '0')}`,
             paidAt: new Date(`${year}-${month}-12`),

@@ -1,0 +1,120 @@
+services:
+  postgres-uat:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${UAT_POSTGRES_USER:-leasing_uat}
+      POSTGRES_PASSWORD: ${UAT_POSTGRES_PASSWORD:?UAT_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${UAT_POSTGRES_DB:-leasing_platform_uat}
+    volumes:
+      - leasing_uat_postgres:/var/lib/postgresql/data
+    ports:
+      - "${UAT_DB_PORT:-55432}:5432"
+    networks: [leasing-uat]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${UAT_POSTGRES_USER:-leasing_uat} -d ${UAT_POSTGRES_DB:-leasing_platform_uat}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis-uat:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - leasing_uat_redis:/data
+    ports:
+      - "${UAT_REDIS_PORT:-56379}:6379"
+    networks: [leasing-uat]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Migration safety (docs/reliability/MIGRATION_SAFETY.md): SEED_DATABASE used
+  # to be hardcoded "true", meaning any invocation of this service — including
+  # a routine re-run — unconditionally ran prisma/seed.ts, which starts by
+  # deleteMany()-ing across most tables before reseeding demo fixtures. On a
+  # real UAT environment with real data, that's a silent full data wipe. Now
+  # opt-in and defaulted off, matching the already-correct pattern used by the
+  # local `migrate` service in docker-compose.yml. Pass SEED_DATABASE=true
+  # explicitly only when you actually want to reset this environment to demo
+  # data (e.g. first-time setup).
+  migrate-uat:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.dev
+    environment:
+      DATABASE_URL: postgresql://${UAT_POSTGRES_USER:-leasing_uat}:${UAT_POSTGRES_PASSWORD:?UAT_POSTGRES_PASSWORD is required}@postgres-uat:5432/${UAT_POSTGRES_DB:-leasing_platform_uat}
+      SEED_DATABASE: ${SEED_DATABASE:-false}
+    depends_on:
+      postgres-uat:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && if [ \"$$SEED_DATABASE\" = \"true\" ]; then npx ts-node --transpile-only prisma/seed.ts; fi"
+    networks: [leasing-uat]
+    profiles: [setup]
+
+  backend-uat:
+    image: registry.thisoretail.store/leasing-platform/backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+      args:
+        NODE_ENV: production
+    environment:
+      DATABASE_URL: postgresql://${UAT_POSTGRES_USER:-leasing_uat}:${UAT_POSTGRES_PASSWORD:?UAT_POSTGRES_PASSWORD is required}@postgres-uat:5432/${UAT_POSTGRES_DB:-leasing_platform_uat}
+      REDIS_URL: redis://redis-uat:6379
+      JWT_SECRET: ${UAT_JWT_SECRET:?UAT_JWT_SECRET is required}
+      JWT_EXPIRES_IN: 1d
+      CORS_ORIGIN: ${UAT_CORS_ORIGIN:-http://125.234.136.72:58080}
+      ALLOW_PUBLIC_REGISTER: "false"
+      NODE_ENV: production
+      PORT: 3000
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "${UAT_BACKEND_PORT:-53000}:3000"
+    depends_on:
+      postgres-uat:
+        condition: service_healthy
+      redis-uat:
+        condition: service_healthy
+    volumes:
+      - leasing_uat_uploads:/app/uploads
+      - leasing_uat_logs:/app/logs
+    networks:
+      leasing-uat:
+        aliases: [backend]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend-uat:
+    image: registry.thisoretail.store/leasing-platform/frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    ports:
+      - "${UAT_FRONTEND_PORT:-58080}:80"
+    depends_on:
+      backend-uat:
+        condition: service_healthy
+    networks: [leasing-uat]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+networks:
+  leasing-uat:
+    name: leasing-uat
+
+volumes:
+  leasing_uat_postgres:
+  leasing_uat_redis:
+  leasing_uat_uploads:
+  leasing_uat_logs:

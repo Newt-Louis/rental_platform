@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class AnnouncementsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(query: { mallId?: string; category?: string; priority?: string; page?: number; limit?: number }) {
+  async findAll(query: { mallId?: string; category?: string; priority?: string; page?: number; limit?: number }, currentUser?: { role: string; tenantId?: string | null }) {
     const { page = 1, limit = 20, ...filters } = query;
     const skip = (page - 1) * +limit;
     const now = new Date();
@@ -15,7 +15,16 @@ export class AnnouncementsService {
       publishedAt: { lte: now },
       OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
     };
-    if (filters.mallId) where.mallId = filters.mallId;
+    if (currentUser?.role === 'TENANT') {
+      const units = await this.prisma.unit.findMany({
+        where: { tenantId: currentUser.tenantId ?? '__none__', isActive: true },
+        select: { mallId: true },
+      });
+      const allowedMallIds = [...new Set(units.map((unit) => unit.mallId))];
+      where.mallId = filters.mallId && allowedMallIds.includes(filters.mallId)
+        ? filters.mallId
+        : { in: allowedMallIds };
+    } else if (filters.mallId) where.mallId = filters.mallId;
     if (filters.category) where.category = filters.category;
     if (filters.priority) where.priority = filters.priority;
 
@@ -68,6 +77,17 @@ export class AnnouncementsService {
     return a;
   }
 
+  async findOneForUser(id: string, currentUser: { role: string; tenantId?: string | null }) {
+    const announcement = await this.findOne(id);
+    if (currentUser.role === 'TENANT') {
+      const hasAccess = await this.prisma.unit.count({
+        where: { tenantId: currentUser.tenantId ?? '__none__', mallId: announcement.mallId, isActive: true },
+      });
+      if (!hasAccess) throw new ForbiddenException('Bạn không có quyền xem thông báo này');
+    }
+    return announcement;
+  }
+
   async create(dto: {
     mallId: string;
     title: string;
@@ -80,6 +100,17 @@ export class AnnouncementsService {
     targetCategories?: string[];
     attachmentUrl?: string;
   }, createdById: string) {
+    if (!dto.mallId || !dto.title?.trim() || !dto.content?.trim() || !dto.category) {
+      throw new BadRequestException('Vui lòng chọn Mall và nhập đầy đủ tiêu đề, nội dung, danh mục');
+    }
+    const publishedAt = dto.publishedAt ? new Date(dto.publishedAt) : new Date();
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
+    if (Number.isNaN(publishedAt.getTime()) || (expiresAt && Number.isNaN(expiresAt.getTime()))) {
+      throw new BadRequestException('Thời gian đăng hoặc hết hạn không hợp lệ');
+    }
+    if (expiresAt && expiresAt <= publishedAt) {
+      throw new BadRequestException('Thời gian hết hạn phải sau thời gian đăng');
+    }
     return this.prisma.mallAnnouncement.create({
       data: {
         mallId: dto.mallId,
@@ -87,8 +118,8 @@ export class AnnouncementsService {
         content: dto.content,
         category: dto.category,
         priority: dto.priority ?? 'NORMAL',
-        publishedAt: dto.publishedAt ? new Date(dto.publishedAt) : new Date(),
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        publishedAt,
+        expiresAt,
         targetAll: dto.targetAll ?? true,
         targetCategories: dto.targetCategories ?? [],
         attachmentUrl: dto.attachmentUrl,

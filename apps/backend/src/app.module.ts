@@ -9,6 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { PrismaMssqlModule } from './prisma-mssql/prisma-mssql.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
@@ -21,12 +22,14 @@ import { FitoutModule } from './modules/fitout/fitout.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { BillingAddInModule } from './modules/billing-addin/billing-addin.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SapModule } from './modules/sap/sap.module';
 import { AiModule } from './modules/ai/ai.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { StorageModule } from './storage/storage.module';
+import { FilesModule } from './files/files.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { BookingModule } from './modules/booking/booking.module';
@@ -35,6 +38,14 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { BrandingModule } from './modules/branding/branding.module';
 import { HealthController } from './health/health.controller';
+import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { WorkOrdersModule } from './modules/work-orders/work-orders.module';
+import { PatrolModule } from "./modules/patrol/patrol.module";
+import { ParkingModule } from "./modules/parking/parking.module";
+import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
 
 @Module({
   imports: [
@@ -52,6 +63,7 @@ import { HealthController } from './health/health.controller';
       ignoreUserAgents: [/googlebot/i, /bingbot/i],
     }),
     PrismaModule,
+    PrismaMssqlModule,
     CommonModule,
     AuthModule,
     UsersModule,
@@ -65,12 +77,14 @@ import { HealthController } from './health/health.controller';
     TicketsModule,
     SalesModule,
     BillingModule,
+    BillingAddInModule,
     ReportsModule,
     SapModule,
     AiModule,
     DashboardModule,
     NotificationsModule,
     StorageModule,
+    FilesModule,
     AnalyticsModule,
     AnnouncementsModule,
     BookingModule,
@@ -78,6 +92,14 @@ import { HealthController } from './health/health.controller';
     CategoriesModule,
     AuditLogModule,
     BrandingModule,
+    ServiceContractsModule,
+    InventoryModule,
+    WorkOrdersModule,
+    ParkingDashboardModule,
+    PatrolModule,
+    ParkingModule,
+    TelemetryModule,
+    DepartmentsModule,
   ],
   controllers: [HealthController],
   providers: [

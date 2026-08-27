@@ -1,0 +1,10 @@
+{
+  "title": "Service Contract Management", "subtitle": "Manage lifecycle, counterparties and operational contract records",
+  "create": "Create contract", "selectMall": "Please select a Mall to view and create contracts.", "search": "Search contract number, title, counterparty...",
+  "allStatuses": "All statuses", "empty": "No service contracts", "number": "Contract No.", "contractPartner": "Contract / Counterparty", "type": "Type", "term": "Term", "value": "Value", "statusLabel": "Status", "files": "Files",
+  "createTitle": "Create service contract", "contractNumber": "Contract number *", "contractTitle": "Contract title *", "counterparty": "Counterparty *", "taxCode": "Tax code", "payable": "Payable contract", "receivable": "Receivable contract", "product": "Product / service", "contractValue": "Contract value", "startDate": "Start date", "endDate": "End date", "notes": "Notes", "cancel": "Cancel", "save": "Save contract",
+  "lifecycle": "Contract lifecycle", "documents": "Contract documents", "upload": "Upload", "noDocuments": "No documents", "history": "History",
+  "payments": "Payments", "checklist": "Checklist", "milestones": "Milestones", "add": "Add", "singlePayment": "Add installment", "recurring": "Create recurring payments", "monthly": "Monthly", "quarterly": "Quarterly", "annually": "Annually", "reminderDays": "Remind before (days)", "createPeriods": "Create periods", "invoice": "Save invoice", "proof": "Payment proof", "markCollected": "Mark collected", "markPaid": "Mark paid", "completed": "Completed",
+  "statuses": { "DRAFT": "Draft", "PROPOSAL": "Proposal", "UNDER_REVIEW": "Under review", "PENDING_SIGNATURE": "Pending signature", "ACTIVE": "Active", "EXPIRING": "Expiring", "EXPIRED": "Expired", "TERMINATED": "Terminated", "RENEWED": "Renewed", "CANCELLED": "Cancelled" },
+  "types": { "SERVICE": "Service", "SUPPLY": "Supply", "LABOR": "Labor", "MAINTENANCE": "Maintenance", "CONSTRUCTION": "Construction", "CONSULTING": "Consulting", "PARTNERSHIP": "Partnership", "CONFIDENTIALITY": "Confidentiality", "SOFTWARE": "Software", "INSURANCE": "Insurance", "SECURITY": "Security", "CLEANING": "Cleaning", "OTHER": "Other" }
+}

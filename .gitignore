@@ -1,14 +1,39 @@
+# ─── Deploy Scripts (chứa credentials) ──────────────────────────────────────
+deploy-uat.sh
+deploy-uat.sh.*
+deploy-prod.sh
+deploy-prod.sh.*
+
 # ─── Environment / Secrets ─────────────────────────────────────────────────
 .env
 .env.local
 .env.production
+.env.uat-server
 apps/backend/.env
 apps/backend/.env.local
 apps/backend/.env.production
 # Keep example files (no real credentials)
 !.env.example
 !.env.docker
+!.env.uat-server.example
 !apps/backend/.env.example
+
+# ─── Secret incident 2026-08-19 (docs/security/SECRET_INCIDENT_REMEDIATION.md) ──
+# artifacts/uat-preflight.env and the UAT DB dumps were committed with real
+# credentials/data — untracked as part of remediation. Real database backups
+# belong in a proper backup store (see docs/readiness/BACKUP_RESTORE_READINESS.md),
+# never in git.
+artifacts/uat-preflight.env
+!artifacts/uat-preflight.env.example
+artifacts/backups/*.dump
+artifacts/backups/*.dump.json
+artifacts/backups/*.dump.sha256
+# Go-Live Workstream C (docs/golive/GO_LIVE_BLOCKERS.md GL-03): uploaded-file backup
+# archives contain real tenant business documents — never belong in git, same reasoning
+# as the DB dumps above.
+artifacts/backups/*.tar.gz
+artifacts/backups/*.tar.gz.json
+artifacts/backups/*.tar.gz.sha256
 
 # ─── Node Modules ────────────────────────────────────────────────────────────
 node_modules/
@@ -25,7 +50,7 @@ uploads/
 apps/backend/uploads/
 
 # ─── Docker volumes / local data ─────────────────────────────────────────────
-docker/postgres-data/
+docker/postgres-data*/
 docker/redis-data/
 *.log
 
@@ -48,6 +73,10 @@ Thumbs.db
 # ─── Test artifacts ──────────────────────────────────────────────────────────
 coverage/
 .nyc_output/
+test-results/
+e2e/screenshots/*.png
+e2e/screenshots/*
+!e2e/screenshots/.gitkeep
 
 # ─── Prisma generated ────────────────────────────────────────────────────────
 apps/backend/prisma/migrations/.DS_Store
@@ -56,3 +85,5 @@ apps/backend/prisma/migrations/.DS_Store
 .agents/*
 .codex/
 .codex/*
+.claude/
+.claude/*

@@ -1,12 +1,93 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UnitStatus, UnitHistoryType, Prisma } from '@prisma/client';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { MallAccessService } from '../../common/services/mall-access.service';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
+import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
+
+// Relation fields and read-only fields that must never be written directly to Prisma
+const UNIT_RELATION_FIELDS = new Set([
+  'id', 'createdAt', 'updatedAt',
+  'mall', 'building', 'floor', 'zone', 'tenant',
+  'categoryRef', 'contracts', 'media', 'bookings', 'proposals',
+  'unitHistory',
+]);
+
+// Scalar fields that are non-nullable in schema.prisma -- sending `null` for these
+// makes Prisma throw a misleading "Unknown argument `floorId`" error instead of the
+// real "Argument `x` must not be null", because the query engine mis-reports the
+// first field it can't reconcile once any field in the payload fails validation.
+const UNIT_REQUIRED_FIELDS = new Set([
+  'mallId', 'code', 'areaGFA', 'areaNLA', 'baseRentPerSqm', 'camPerSqm',
+  'status', 'isActive', 'isFlexibleArea', 'isCombined',
+]);
+
+// These fields are owned by the leasing lifecycle. Generic Spaces edits must
+// never overwrite them, otherwise a live contract can be shown as BOOKING/VACANT.
+const UNIT_LIFECYCLE_FIELDS = new Set([
+  'mallId', 'status', 'tenantId', 'leaseStartDate', 'leaseEndDate',
+  'vacantSince', 'isActive', 'isCombined', 'mergedFromIds', 'mergedIntoId',
+]);
+function sanitizeUnitDto(dto: any): any {
+  const out: any = {};
+  for (const key of Object.keys(dto)) {
+    if (UNIT_RELATION_FIELDS.has(key)) continue;
+    if (UNIT_LIFECYCLE_FIELDS.has(key)) {
+      throw new BadRequestException(`Trường "${key}" được quản lý bởi quy trình trạng thái và không thể sửa trực tiếp`);
+    }
+    if (dto[key] === null && UNIT_REQUIRED_FIELDS.has(key)) {
+      throw new BadRequestException(`Trường "${key}" không được để trống`);
+    }
+    out[key] = dto[key];
+  }
+  return out;
+}
+
+// CR-101 Phase 3B (INV-AUTH-010 / INV-DATA-002): Floor and Zone's generic update
+// routes previously accepted any field present in the request body -- including
+// `mallId` -- straight through to Prisma, because their controller methods type
+// the body as a plain object literal rather than a class-validator DTO, so the
+// global ValidationPipe's `whitelist: true` never engages (it only strips
+// properties for a real decorated class). Unlike Unit (protected via
+// `sanitizeUnitDto`'s UNIT_LIFECYCLE_FIELDS + UpdateUnitDto's OmitType), Floor and
+// Zone had no equivalent guard. Mirror the same rule here: a resource may not be
+// relocated across Mall boundaries via its generic info-update route. No business
+// operation for moving a Floor or Zone between Malls has been requested or
+// designed -- if one is needed later, it requires its own authorized command
+// (BC required), not silent acceptance of a client-supplied mallId.
+const HIERARCHY_IMMUTABLE_FIELDS = new Set(['mallId']);
+function sanitizeHierarchyDto(dto: any): any {
+  const out: any = {};
+  for (const key of Object.keys(dto)) {
+    if (HIERARCHY_IMMUTABLE_FIELDS.has(key)) {
+      throw new BadRequestException(`Trường "${key}" không thể thay đổi qua API cập nhật thông tin chung`);
+    }
+    out[key] = dto[key];
+  }
+  return out;
+}
+
+export interface MergeUnitDto {
+  code: string;
+  name?: string;
+  baseRentPerSqm?: number;
+  camPerSqm?: number;
+}
+
+export interface MergeResult {
+  combinedUnit: any;
+  mergedUnitIds: string[];
+}
+
+export interface SplitResult {
+  restoredUnits: any[];
+  deactivatedCombinedId: string;
+}
 
 @Injectable()
 export class SpacesService {
@@ -14,12 +95,69 @@ export class SpacesService {
   constructor(
     private prisma: PrismaService,
     private unitStatus: UnitStatusService,
+    private mallAccess: MallAccessService,
   ) {}
 
+  private assertVacantForModification(unit: { code?: string; status: UnitStatus }) {
+    if (unit.status !== UnitStatus.VACANT) {
+      const unitLabel = unit.code ? ` "${unit.code}"` : '';
+      throw new BadRequestException(
+        `Chỉ có thể điều chỉnh thông tin mặt bằng${unitLabel} khi đang trống (VACANT). Trạng thái hiện tại: ${unit.status}.`,
+      );
+    }
+  }
+
+  private async validateUnitLocation(mallId: string, floorId?: string | null, zoneId?: string | null) {
+    const mall = await this.prisma.mall.findFirst({ where: { id: mallId, isActive: true }, select: { id: true } });
+    if (!mall) throw new BadRequestException('Mall không tồn tại hoặc đã ngừng hoạt động');
+    if (floorId) {
+      const floor = await this.prisma.floor.findFirst({ where: { id: floorId, mallId, isActive: true } });
+      if (!floor) throw new BadRequestException('Tầng không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+    }
+    if (zoneId) {
+      const zone = await this.prisma.zone.findFirst({ where: { id: zoneId, mallId, isActive: true } });
+      if (!zone) throw new BadRequestException('Zone không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+      if (floorId && zone.floorId && zone.floorId !== floorId) {
+        throw new BadRequestException('Zone không thuộc tầng đã chọn');
+      }
+    }
+  }
+
+  // CR-101 Phase 3B (INV-AUTH-007 / INV-DATA-002): mirrors validateUnitLocation's
+  // shape for Floor -- if a buildingId is supplied, it must belong to the same
+  // Mall as the Floor itself. Building.mallId is the source of truth for a
+  // Building's Mall; a Floor referencing a Building from a different Mall than its
+  // own mallId would be exactly the kind of silent cross-Mall hierarchy drift the
+  // read-only reconciliation this phase checked for (found clean in the current
+  // dataset, but structurally unguarded before this fix).
+  private async validateFloorLocation(mallId: string, buildingId?: string | null) {
+    if (!buildingId) return;
+    const building = await this.prisma.building.findFirst({ where: { id: buildingId, mallId, isActive: true } });
+    if (!building) throw new BadRequestException('Tòa nhà không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+  }
+
+  // CR-101 Phase 3B (INV-AUTH-008 / INV-DATA-002): mirrors validateUnitLocation's
+  // Zone/Floor consistency check, applied at the Zone's own creation time (today
+  // only Unit's placement into an existing Zone was validated -- the Zone's own
+  // placement under a Floor was not).
+  private async validateZoneLocation(mallId: string, floorId?: string | null, buildingId?: string | null) {
+    if (floorId) {
+      const floor = await this.prisma.floor.findFirst({ where: { id: floorId, mallId, isActive: true } });
+      if (!floor) throw new BadRequestException('Tầng không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+    }
+    if (buildingId) {
+      const building = await this.prisma.building.findFirst({ where: { id: buildingId, mallId, isActive: true } });
+      if (!building) throw new BadRequestException('Tòa nhà không thuộc mall đang chọn hoặc đã ngừng hoạt động');
+    }
+  }
+
   // MALLS
-  async getMalls() {
+  async getMalls(mallIds?: string[]) {
     return this.prisma.mall.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(mallIds ? { id: { in: mallIds } } : {}),
+      },
       include: {
         _count: {
           select: { units: true, buildings: true, floors: true },
@@ -82,9 +220,15 @@ export class SpacesService {
   }
 
   // FLOORS
-  async getFloors(mallId?: string) {
+  // CR-101 Phase 3B (INV-AUTH-007, Section 17): when the caller doesn't supply an
+  // explicit mallId, fall back to their accessible-Mall set instead of returning
+  // every Floor platform-wide. `accessibleMallIds === null` means the caller
+  // bypasses Mall restrictions entirely (ADMIN/CEO/TENANT, per MallAccessService)
+  // -- same convention as getMalls above.
+  async getFloors(mallId?: string, accessibleMallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     return this.prisma.floor.findMany({
       where,
@@ -97,11 +241,12 @@ export class SpacesService {
   }
 
   async createFloor(data: { mallId: string; name: string; level: string; sortOrder?: number; buildingId?: string }) {
+    await this.validateFloorLocation(data.mallId, data.buildingId);
     return this.prisma.floor.create({ data: { ...data, sortOrder: data.sortOrder ?? 0 } });
   }
 
   async updateFloor(id: string, data: { name?: string; level?: string; sortOrder?: number }) {
-    return this.prisma.floor.update({ where: { id }, data });
+    return this.prisma.floor.update({ where: { id }, data: sanitizeHierarchyDto(data) });
   }
 
   async deleteFloor(id: string) {
@@ -116,10 +261,11 @@ export class SpacesService {
   }
 
   // ZONES
-  async getZones(floorId?: string, mallId?: string) {
+  async getZones(floorId?: string, mallId?: string, accessibleMallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (floorId) where.floorId = floorId;
     if (mallId) where.mallId = mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     return this.prisma.zone.findMany({
       where,
@@ -131,12 +277,18 @@ export class SpacesService {
     });
   }
 
-  async createZone(data: { mallId: string; floorId?: string; name: string; code?: string }) {
+  async createZone(data: { mallId: string; floorId?: string; buildingId?: string; name: string; code?: string }) {
+    await this.validateZoneLocation(data.mallId, data.floorId, data.buildingId);
     return this.prisma.zone.create({ data });
   }
 
   async updateZone(id: string, data: { name?: string; code?: string; floorId?: string }) {
-    return this.prisma.zone.update({ where: { id }, data });
+    if (Object.prototype.hasOwnProperty.call(data, 'floorId')) {
+      const current = await this.prisma.zone.findUnique({ where: { id }, select: { mallId: true } });
+      if (!current) throw new NotFoundException('Zone không tồn tại');
+      await this.validateZoneLocation(current.mallId, data.floorId ?? undefined);
+    }
+    return this.prisma.zone.update({ where: { id }, data: sanitizeHierarchyDto(data) });
   }
 
   async deleteZone(id: string) {
@@ -163,9 +315,12 @@ export class SpacesService {
     maxArea?: number;
     minRent?: number;
     maxRent?: number;
+    spaceType?: string;
+    tier?: string;
+    leaseTermType?: string;
     page?: number;
     limit?: number;
-  }) {
+  }, accessibleMallIds?: string[] | null) {
     const { search, ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
@@ -175,9 +330,14 @@ export class SpacesService {
     if (filters.floorId) where.floorId = filters.floorId;
     if (filters.zoneId) where.zoneId = filters.zoneId;
     if (filters.mallId) where.mallId = filters.mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
     if (filters.status) where.status = filters.status;
     if (filters.category) where.category = filters.category;
     if (filters.tenantId) where.tenantId = filters.tenantId;
+    // GAP #3 / #4 / #6
+    if (filters.spaceType) where.spaceType = filters.spaceType;
+    if (filters.tier) where.tier = filters.tier;
+    if (filters.leaseTermType) where.leaseTermType = filters.leaseTermType;
 
     if (filters.minArea !== undefined || filters.maxArea !== undefined) {
       where.areaNLA = {};
@@ -311,8 +471,18 @@ export class SpacesService {
   }
 
   async createUnit(dto: CreateUnitDto) {
+    const { mallId } = dto;
+    if (!mallId) throw new BadRequestException('mallId is required to create a unit');
+    await this.validateUnitLocation(mallId, dto.floorId, dto.zoneId);
+
+    const existing = await this.prisma.unit.findUnique({
+      where: { mallId_code: { mallId, code: dto.code } },
+      select: { id: true },
+    });
+    if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
+
     return this.prisma.unit.create({
-      data: dto,
+      data: { ...dto, mallId: dto.mallId } as Prisma.UnitUncheckedCreateInput,
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -321,10 +491,23 @@ export class SpacesService {
   }
 
   async updateUnit(id: string, dto: any) {
-    await this.getUnit(id);
+    const current = await this.getUnit(id);
+    this.assertVacantForModification(current);
+    const nextFloorId = Object.prototype.hasOwnProperty.call(dto, 'floorId') ? dto.floorId : current.floorId;
+    const nextZoneId = Object.prototype.hasOwnProperty.call(dto, 'zoneId') ? dto.zoneId : current.zoneId;
+    await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+    if (dto.code && dto.code !== current.code) {
+      const duplicate = await this.prisma.unit.findUnique({
+        where: { mallId_code: { mallId: current.mallId, code: dto.code } },
+        select: { id: true },
+      });
+      if (duplicate && duplicate.id !== id) {
+        throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
+      }
+    }
     return this.prisma.unit.update({
       where: { id },
-      data: dto,
+      data: sanitizeUnitDto(dto),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -335,18 +518,53 @@ export class SpacesService {
 
   async updateUnitStatus(id: string, status: UnitStatus, userId?: string) {
     await this.getUnit(id);
-    return this.unitStatus.transition(id, status, { force: true, userId, reason: 'Manual status update' });
+    return this.unitStatus.transition(id, status, { userId, reason: 'Manual status update' });
   }
 
-  async deleteUnit(id: string) {
-    await this.getUnit(id);
-    await this.prisma.unit.update({ where: { id }, data: { isActive: false } });
+  async deleteUnit(id: string, userId?: string) {
+    const unit = await this.getUnit(id);
+    const [activeBookings, liveContracts, liveProposals, activeSlots] = await Promise.all([
+      this.prisma.unitBooking.count({
+        where: { unitId: id, isActive: true, status: { in: ['ACTIVE', 'PENDING'] } },
+      }),
+      this.prisma.contract.count({
+        where: { unitId: id, isActive: true, deletedAt: null, status: { notIn: ['EXPIRED', 'TERMINATED'] } },
+      }),
+      this.prisma.proposal.count({
+        where: { unitId: id, status: { in: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED'] } },
+      }),
+      this.prisma.unitSlot.count({ where: { unitId: id, isActive: true } }),
+    ]);
+    const blockers = [
+      activeBookings && `${activeBookings} booking đang hiệu lực`,
+      liveContracts && `${liveContracts} hợp đồng đang hiệu lực`,
+      liveProposals && `${liveProposals} đề xuất đang xử lý`,
+      activeSlots && `${activeSlots} slot đang hoạt động`,
+    ].filter(Boolean);
+    if (blockers.length > 0) {
+      throw new BadRequestException(`Không thể xóa mặt bằng ${unit.code}: ${blockers.join(', ')}.`);
+    }
+    await this.prisma.$transaction([
+      this.prisma.unit.update({ where: { id }, data: { isActive: false } }),
+      this.prisma.unitHistory.create({
+        data: {
+          unitId: id,
+          changeType: UnitHistoryType.INFO_UPDATE,
+          fieldName: 'isActive',
+          oldValue: true,
+          newValue: false,
+          changedById: userId,
+          notes: 'Unit deactivated from Spaces',
+        },
+      }),
+    ]);
     return { message: 'Unit deactivated' };
   }
 
-  async getOccupancySummary(mallId?: string) {
+  async getOccupancySummary(mallId?: string, accessibleMallIds?: string[] | null) {
     const where: any = { isActive: true };
     if (mallId) where.mallId = mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     const [total, vacant, booking, negotiating, contracted, underFitout, occupied] =
       await Promise.all([
@@ -361,8 +579,30 @@ export class SpacesService {
 
     const units = await this.prisma.unit.findMany({
       where,
-      select: { status: true, areaNLA: true },
+      select: { id: true, status: true, areaNLA: true, leaseTermType: true },
     });
+    const shortBookings = await this.prisma.slotBooking.findMany({
+      where: {
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        slot: {
+          unit: {
+            isActive: true,
+            leaseTermType: 'SHORT',
+            ...(mallId ? { mallId } : accessibleMallIds ? { mallId: { in: accessibleMallIds } } : {}),
+          },
+        },
+      },
+      select: {
+        status: true,
+        installationStartDatetime: true,
+        dismantlingEndDatetime: true,
+        startDatetime: true,
+        endDatetime: true,
+        slot: { select: { id: true, unitId: true, area: true } },
+      },
+    });
+
+    const byLeaseTerm = summarizeOccupancyByLeaseTerm(units, shortBookings);
 
     const totalArea = units.reduce((sum, u) => sum + u.areaNLA, 0);
     const vacantArea = units
@@ -380,10 +620,11 @@ export class SpacesService {
       contracted,
       underFitout,
       occupied,
-      occupancyRate: total > 0 ? ((occupied / total) * 100).toFixed(1) : '0',
+      occupancyRate: totalArea > 0 ? ((leasedArea / totalArea) * 100).toFixed(1) : '0',
       totalArea,
       vacantArea,
       leasedArea,
+      byLeaseTerm,
     };
   }
 
@@ -391,7 +632,7 @@ export class SpacesService {
   // PHASE 1: Stale Vacant Units
   // ═══════════════════════════════════════════════════════════════════════════
 
-  async getStaleVacantUnits(mallId?: string, days: number = 90) {
+  async getStaleVacantUnits(mallId?: string, days: number = 90, accessibleMallIds?: string[] | null) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
@@ -407,6 +648,7 @@ export class SpacesService {
       ],
     };
     if (mallId) where.mallId = mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     const units = await this.prisma.unit.findMany({
       where,
@@ -472,69 +714,53 @@ export class SpacesService {
 
   async updateUnitWithHistory(id: string, dto: any, userId?: string) {
     const current = await this.getUnit(id);
+    const { status, ...infoDto } = dto;
+    if (Object.keys(infoDto).length > 0) this.assertVacantForModification(current);
     const changes: { field: string; oldVal: any; newVal: any; type: UnitHistoryType }[] = [];
 
-    // Track status changes
-    if (dto.status && dto.status !== current.status) {
-      changes.push({
-        field: 'status',
-        oldVal: current.status,
-        newVal: dto.status,
-        type: UnitHistoryType.STATUS_CHANGE,
-      });
-      // Auto-set vacantSince when status changes to VACANT
-      if (dto.status === UnitStatus.VACANT && current.status !== UnitStatus.VACANT) {
-        dto.vacantSince = new Date();
-      }
-      // Clear vacantSince when no longer vacant
-      if (dto.status !== UnitStatus.VACANT && current.status === UnitStatus.VACANT) {
-        dto.vacantSince = null;
-      }
+    if (status && status !== current.status) {
+      await this.unitStatus.transition(id, status, { userId, reason: 'Status update from Spaces' });
     }
 
     // Track rent changes
     const rentFields = ['baseRentPerSqm', 'marketRentPerSqm', 'askingRentPerSqm', 'camPerSqm', 'escalationRate'];
     for (const field of rentFields) {
-      if (dto[field] !== undefined && dto[field] !== (current as any)[field]) {
+      if (infoDto[field] !== undefined && infoDto[field] !== (current as any)[field]) {
         changes.push({
           field,
           oldVal: (current as any)[field],
-          newVal: dto[field],
+          newVal: infoDto[field],
           type: UnitHistoryType.RENT_CHANGE,
         });
       }
     }
 
-    // Track tenant changes
-    if (dto.tenantId !== undefined && dto.tenantId !== current.tenantId) {
-      changes.push({
-        field: 'tenantId',
-        oldVal: current.tenantId,
-        newVal: dto.tenantId,
-        type: UnitHistoryType.TENANT_CHANGE,
-      });
-    }
-
     // Track condition changes
-    if (dto.condition !== undefined && dto.condition !== (current as any).condition) {
+    if (infoDto.condition !== undefined && infoDto.condition !== (current as any).condition) {
       changes.push({
         field: 'condition',
         oldVal: (current as any).condition,
-        newVal: dto.condition,
+        newVal: infoDto.condition,
         type: UnitHistoryType.CONDITION_CHANGE,
       });
     }
 
     // Perform update
-    const updated = await this.prisma.unit.update({
-      where: { id },
-      data: dto,
-      include: {
-        floor: { select: { id: true, name: true, level: true } },
-        zone: { select: { id: true, name: true, code: true } },
-        tenant: { select: { id: true, brandName: true, companyName: true } },
-      },
-    });
+    let updated: any = status && status !== current.status ? await this.getUnit(id) : current;
+    if (Object.keys(infoDto).length > 0) {
+      const nextFloorId = Object.prototype.hasOwnProperty.call(infoDto, 'floorId') ? infoDto.floorId : current.floorId;
+      const nextZoneId = Object.prototype.hasOwnProperty.call(infoDto, 'zoneId') ? infoDto.zoneId : current.zoneId;
+      await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+      updated = await this.prisma.unit.update({
+        where: { id },
+        data: sanitizeUnitDto(infoDto),
+        include: {
+          floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true, code: true } },
+          tenant: { select: { id: true, brandName: true, companyName: true } },
+        },
+      });
+    }
 
     // Record history for each change
     for (const change of changes) {
@@ -548,7 +774,10 @@ export class SpacesService {
   // PHASE 2: Compare Units
   // ═══════════════════════════════════════════════════════════════════════════
 
-  async compareUnits(unitIds: string[]) {
+  // CR-101 Phase 3B (P0-002): read-only, but still exposes rent/area/tenant data
+  // for units the caller may not have Mall access to -- same accessible-set check
+  // as bulkUpdateUnits above.
+  async compareUnits(unitIds: string[], user?: { id: string; role: string }) {
     if (unitIds.length < 2 || unitIds.length > 5) {
       throw new BadRequestException('Please select 2-5 units to compare');
     }
@@ -567,6 +796,14 @@ export class SpacesService {
 
     if (units.length !== unitIds.length) {
       throw new NotFoundException('One or more units not found');
+    }
+
+    if (user) {
+      const accessibleMallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+      if (accessibleMallIds) {
+        const unauthorized = units.some((u) => !accessibleMallIds.includes(u.mallId));
+        if (unauthorized) throw new ForbiddenException('Bạn không có quyền so sánh một hoặc nhiều mặt bằng trong danh sách đã chọn');
+      }
     }
 
     // Calculate comparison metrics
@@ -595,7 +832,7 @@ export class SpacesService {
   // PHASE 2: Expiring Leases
   // ═══════════════════════════════════════════════════════════════════════════
 
-  async getExpiringLeases(mallId?: string, days: number = 90) {
+  async getExpiringLeases(mallId?: string, days: number = 90, accessibleMallIds?: string[] | null) {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
@@ -608,6 +845,7 @@ export class SpacesService {
       },
     };
     if (mallId) where.mallId = mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     const units = await this.prisma.unit.findMany({
       where,
@@ -691,7 +929,7 @@ export class SpacesService {
     limit?: number;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
-  }) {
+  }, accessibleMallIds?: string[] | null) {
     const { search, sortBy = 'code', sortOrder = 'asc', ...filters } = query;
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
@@ -703,6 +941,7 @@ export class SpacesService {
     if (filters.floorId) where.floorId = filters.floorId;
     if (filters.zoneId) where.zoneId = filters.zoneId;
     if (filters.mallId) where.mallId = filters.mallId;
+    else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
     // Status filter (single or array)
     if (filters.status) {
@@ -1049,6 +1288,12 @@ export class SpacesService {
   // PHASE 3: Bulk Operations
   // ═══════════════════════════════════════════════════════════════════════════
 
+  // CR-101 Phase 3B (P0-002): unlike mergeUnits, bulk-update has no same-Mall
+  // constraint on the selected units today -- so a caller could otherwise mix
+  // unit ids from Malls they don't have access to into one request. Check every
+  // distinct mallId among the selected units against the caller's accessible set
+  // (bypass roles get `null` back from getAccessibleMallIds and skip the check
+  // entirely, same convention as everywhere else in MallAccessService).
   async bulkUpdateUnits(
     unitIds: string[],
     updates: {
@@ -1059,6 +1304,7 @@ export class SpacesService {
       condition?: string;
     },
     userId?: string,
+    user?: { id: string; role: string },
   ) {
     if (unitIds.length === 0) {
       throw new BadRequestException('No units selected');
@@ -1070,16 +1316,47 @@ export class SpacesService {
     // Verify all units exist
     const existingUnits = await this.prisma.unit.findMany({
       where: { id: { in: unitIds }, isActive: true },
-      select: { id: true, status: true, baseRentPerSqm: true, camPerSqm: true, category: true, condition: true },
+      select: { id: true, code: true, status: true, baseRentPerSqm: true, camPerSqm: true, category: true, condition: true, mallId: true },
     });
 
     if (existingUnits.length !== unitIds.length) {
       throw new NotFoundException('One or more units not found');
     }
 
+    // CR-101 Phase 3G (BC-BULK-UNIT-CROSS-MALL: DENY) -- a single bulk-update
+    // request must not span more than one Mall. Mirrors mergeUnits' existing
+    // same-Mall guard below; any future enterprise cross-Mall bulk operation
+    // requires its own explicitly designed workflow and authorization model,
+    // not a widened accessible-set check on this route.
+    const distinctMallIds = [...new Set(existingUnits.map((u) => u.mallId))];
+    if (distinctMallIds.length > 1) {
+      throw new BadRequestException('Không thể cập nhật hàng loạt các mặt bằng thuộc nhiều mall khác nhau trong một lần');
+    }
+
+    if (user) {
+      const accessibleMallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+      if (accessibleMallIds) {
+        const unauthorized = distinctMallIds.filter((m) => !accessibleMallIds.includes(m));
+        if (unauthorized.length > 0) {
+          throw new ForbiddenException('Bạn không có quyền cập nhật một hoặc nhiều mặt bằng trong danh sách đã chọn');
+        }
+      }
+    }
+
+    const unavailableUnits = existingUnits.filter((unit) => unit.status !== UnitStatus.VACANT);
+    if (unavailableUnits.length > 0) {
+      const codes = unavailableUnits.slice(0, 5).map((unit) => unit.code).join(', ');
+      const remaining = unavailableUnits.length > 5 ? ` và ${unavailableUnits.length - 5} mặt bằng khác` : '';
+      throw new BadRequestException(
+        `Chỉ có thể cập nhật hàng loạt các mặt bằng đang trống (VACANT). Không thể điều chỉnh: ${codes}${remaining}.`,
+      );
+    }
+
     // Prepare update data
     const updateData: any = {};
-    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.status !== undefined) {
+      throw new BadRequestException('Trạng thái mặt bằng được cập nhật tự động theo Booking, Hợp đồng và Fit-out; không thể đổi hàng loạt.');
+    }
     if (updates.category !== undefined) updateData.category = updates.category;
     if (updates.baseRentPerSqm !== undefined) updateData.baseRentPerSqm = updates.baseRentPerSqm;
     if (updates.camPerSqm !== undefined) updateData.camPerSqm = updates.camPerSqm;
@@ -1246,12 +1523,44 @@ export class SpacesService {
     });
   }
 
+  // CR-101 Phase 3B.1 (INV-SPACE-MAP-001/002): confirmed gap -- this method
+  // authorized the Floor but then updated `p.unitId` for every entry in the
+  // payload with no check that the unit actually belongs to that Floor (or even
+  // that Mall). An authorized caller for Floor A could supply a unitId from
+  // Floor B (same or different Mall) and silently move its map coordinates.
+  // Fixed by resolving the full set of referenced units in one batch query and
+  // validating floorId + mallId against the authoritative Floor record before
+  // any write happens. The existing array-form `$transaction` below was already
+  // atomic (all-or-nothing) -- this validation runs entirely before it, so a
+  // rejected request never reaches a partial write.
   async saveMapPositions(
     floorId: string,
     positions: Array<{ unitId: string; polygon?: number[][]; x?: number; y?: number; w?: number; h?: number }>,
   ) {
     const floor = await this.prisma.floor.findUnique({ where: { id: floorId } });
     if (!floor) throw new NotFoundException('Floor không tồn tại');
+
+    if (positions.length === 0) return { updated: 0 };
+
+    const requestedIds = positions.map((p) => p.unitId);
+    const uniqueIds = [...new Set(requestedIds)];
+    if (uniqueIds.length !== requestedIds.length) {
+      throw new BadRequestException('Danh sách vị trí chứa unitId trùng lặp -- vui lòng gửi mỗi mặt bằng một lần');
+    }
+
+    const units = await this.prisma.unit.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, floorId: true, mallId: true },
+    });
+    if (units.length !== uniqueIds.length) {
+      throw new BadRequestException('Một hoặc nhiều mặt bằng trong danh sách không tồn tại');
+    }
+    const mismatched = units.filter((u) => u.floorId !== floorId || u.mallId !== floor.mallId);
+    if (mismatched.length > 0) {
+      throw new BadRequestException(
+        `Mặt bằng ${mismatched.map((u) => u.id).join(', ')} không thuộc tầng đang chỉnh sửa`,
+      );
+    }
 
     await this.prisma.$transaction(
       positions.map((p) =>
@@ -1289,6 +1598,191 @@ export class SpacesService {
     return this.prisma.unit.update({
       where: { id: unitId },
       data: { mapPosX: null, mapPosY: null, mapPosW: null, mapPosH: null, mapPolygon: null },
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GAP #2 — Merge / Split Units
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // CR-101 Phase 3B (P0-002): mergeUnits spans multiple Unit ids supplied by the
+  // client, so the Mall to check is only known after reading the units from the
+  // DB -- unlike the single-entity routes, this can't be resolved at the
+  // controller layer without a duplicate query. Checked here, right after the
+  // existing same-Mall invariant is confirmed (mallIds.size > 1 already throws
+  // above), against the one shared mallId all source units are guaranteed to have.
+  async mergeUnits(unitIds: string[], dto: MergeUnitDto, userId?: string, user?: { id: string; role: string }): Promise<MergeResult> {
+    if (unitIds.length < 2) {
+      throw new BadRequestException('Cần ít nhất 2 mặt bằng để gộp');
+    }
+
+    const sourceUnits = await this.prisma.unit.findMany({
+      where: { id: { in: unitIds }, isActive: true },
+    });
+
+    if (sourceUnits.length !== unitIds.length) {
+      throw new NotFoundException('Một hoặc nhiều mặt bằng không tồn tại');
+    }
+
+    const mallIds = new Set(sourceUnits.map((u) => u.mallId));
+    if (mallIds.size > 1) {
+      throw new BadRequestException('Tất cả mặt bằng phải thuộc cùng một mall');
+    }
+    if (user) await this.mallAccess.assertMallAccess(user.id, user.role, sourceUnits[0].mallId);
+
+    const nonVacant = sourceUnits.filter((u) => u.status !== UnitStatus.VACANT);
+    if (nonVacant.length > 0) {
+      throw new BadRequestException(
+        `Không thể gộp: mặt bằng ${nonVacant.map((u) => u.code).join(', ')} chưa trống (status: ${nonVacant.map((u) => u.status).join(', ')})`,
+      );
+    }
+
+    const totalGFA = sourceUnits.reduce((s, u) => s + u.areaGFA, 0);
+    const totalNLA = sourceUnits.reduce((s, u) => s + u.areaNLA, 0);
+    const avgRent = dto.baseRentPerSqm
+      ?? sourceUnits.reduce((s, u) => s + u.baseRentPerSqm, 0) / sourceUnits.length;
+    const avgCam = dto.camPerSqm
+      ?? sourceUnits.reduce((s, u) => s + u.camPerSqm, 0) / sourceUnits.length;
+
+    const ref = sourceUnits[0];
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Create the combined unit
+      const combined = await tx.unit.create({
+        data: {
+          mallId: ref.mallId,
+          buildingId: ref.buildingId,
+          floorId: ref.floorId,
+          zoneId: ref.zoneId,
+          code: dto.code,
+          name: dto.name ?? dto.code,
+          areaGFA: totalGFA,
+          areaNLA: totalNLA,
+          baseRentPerSqm: avgRent,
+          camPerSqm: avgCam,
+          status: UnitStatus.VACANT,
+          isCombined: true,
+          mergedFromIds: unitIds,
+          categoryId: ref.categoryId,
+          category: ref.category,
+          leaseTermType: (ref as any).leaseTermType,
+          spaceType: (ref as any).spaceType,
+          tier: (ref as any).tier,
+        },
+        include: {
+          floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true, code: true } },
+        },
+      });
+
+      // 2. Mark source units as MERGED
+      for (const unit of sourceUnits) {
+        await tx.unit.update({
+          where: { id: unit.id },
+          data: { status: UnitStatus.MERGED, mergedIntoId: combined.id },
+        });
+
+        await tx.unitHistory.create({
+          data: {
+            unitId: unit.id,
+            changeType: UnitHistoryType.STATUS_CHANGE,
+            fieldName: 'status',
+            oldValue: unit.status,
+            newValue: UnitStatus.MERGED,
+            changedById: userId,
+            notes: `Gộp vào mặt bằng ${combined.code} (${combined.id})`,
+          },
+        });
+      }
+
+      // 3. Record history on combined unit
+      await tx.unitHistory.create({
+        data: {
+          unitId: combined.id,
+          changeType: UnitHistoryType.INFO_UPDATE,
+          fieldName: 'mergedFromIds',
+          oldValue: null,
+          newValue: unitIds,
+          changedById: userId,
+          notes: `Gộp từ: ${sourceUnits.map((u) => u.code).join(', ')}`,
+        },
+      });
+
+      return {
+        combinedUnit: combined,
+        mergedUnitIds: unitIds,
+      };
+    });
+  }
+
+  async splitUnit(unitId: string, userId?: string): Promise<SplitResult> {
+    const combined = await this.prisma.unit.findUnique({ where: { id: unitId } });
+    if (!combined) throw new NotFoundException('Mặt bằng không tồn tại');
+    if (!(combined as any).isCombined) {
+      throw new BadRequestException('Mặt bằng này không phải là mặt bằng gộp');
+    }
+    if (([UnitStatus.OCCUPIED, UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT] as UnitStatus[]).includes(combined.status)) {
+      throw new BadRequestException('Không thể tách khi mặt bằng gộp đang có khách thuê hoặc đang thi công');
+    }
+
+    const mergedFromIds = (combined as any).mergedFromIds as string[] | null;
+    if (!mergedFromIds || mergedFromIds.length === 0) {
+      throw new BadRequestException('Không có thông tin mặt bằng gốc để phục hồi');
+    }
+
+    const sourceUnits = await this.prisma.unit.findMany({
+      where: { id: { in: mergedFromIds } },
+    });
+
+    if (sourceUnits.length !== mergedFromIds.length) {
+      throw new NotFoundException('Không tìm thấy đủ mặt bằng gốc để phục hồi');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Restore source units to VACANT
+      const restored: any[] = [];
+      for (const unit of sourceUnits) {
+        const u = await tx.unit.update({
+          where: { id: unit.id },
+          data: { status: UnitStatus.VACANT, mergedIntoId: null, isActive: true },
+        });
+        restored.push(u);
+
+        await tx.unitHistory.create({
+          data: {
+            unitId: unit.id,
+            changeType: UnitHistoryType.STATUS_CHANGE,
+            fieldName: 'status',
+            oldValue: unit.status,
+            newValue: UnitStatus.VACANT,
+            changedById: userId,
+            notes: `Phục hồi từ mặt bằng gộp ${combined.code} (${combined.id})`,
+          },
+        });
+      }
+
+      // 2. Deactivate combined unit
+      await tx.unit.update({
+        where: { id: unitId },
+        data: { isActive: false },
+      });
+
+      await tx.unitHistory.create({
+        data: {
+          unitId,
+          changeType: UnitHistoryType.STATUS_CHANGE,
+          fieldName: 'isActive',
+          oldValue: true,
+          newValue: false,
+          changedById: userId,
+          notes: `Tách mặt bằng gộp, phục hồi: ${sourceUnits.map((u) => u.code).join(', ')}`,
+        },
+      });
+
+      return {
+        restoredUnits: restored,
+        deactivatedCombinedId: unitId,
+      };
     });
   }
 }

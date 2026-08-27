@@ -53,6 +53,32 @@ function cycleMonths(cycle: ContractBillingInput['billingCycle']): number {
   }
 }
 
+function startOfDay(date: Date): Date {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function endOfDay(date: Date): Date {
+  const value = new Date(date);
+  value.setHours(23, 59, 59, 999);
+  return value;
+}
+
+function daysInMonth(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+function inclusiveDays(start: Date, end: Date): number {
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.floor((endUtc - startUtc) / 86_400_000) + 1;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 export function generateBillingPeriods(contract: ContractBillingInput): BillingPeriodEntry[] {
   const monthsPerPeriod = cycleMonths(contract.billingCycle);
   const entries: BillingPeriodEntry[] = [];
@@ -60,31 +86,46 @@ export function generateBillingPeriods(contract: ContractBillingInput): BillingP
   cursor.setDate(1);
   cursor.setHours(0, 0, 0, 0);
 
-  const contractStart = new Date(contract.startDate);
-  contractStart.setHours(0, 0, 0, 0);
-  const contractEnd = new Date(contract.endDate);
-  contractEnd.setHours(23, 59, 59, 999);
+  const contractStart = startOfDay(contract.startDate);
+  const contractEnd = endOfDay(contract.endDate);
 
   while (cursor <= contractEnd) {
-    const periodStart = new Date(cursor);
-    const periodEnd = addMonths(cursor, monthsPerPeriod);
-    periodEnd.setDate(0);
-    periodEnd.setHours(23, 59, 59, 999);
+    const cycleStart = new Date(cursor);
+    const cycleEnd = addMonths(cursor, monthsPerPeriod);
+    cycleEnd.setDate(0);
+    cycleEnd.setHours(23, 59, 59, 999);
 
-    if (periodEnd < contractStart) {
+    if (cycleEnd < contractStart) {
       cursor = addMonths(cursor, monthsPerPeriod);
       continue;
     }
 
-    const monthIdx = monthIndexFromStart(contractStart, periodStart);
-    const rentFreeMonths = contract.rentFree;
-    const inRentFree = monthIdx < rentFreeMonths;
+    const periodStart = cycleStart < contractStart ? contractStart : cycleStart;
+    const periodEnd = cycleEnd > contractEnd ? contractEnd : cycleEnd;
+    let rentAmount = 0;
+    let camAmount = 0;
 
-    const rentMultiplier = monthsPerPeriod;
-    const baseRent = applyEscalation(contract.rent, contract.escalationPercent, monthIdx);
-    const rentAmount = inRentFree ? 0 : baseRent * rentMultiplier;
-    const camAmount = contract.cam * rentMultiplier;
-    const subtotal = rentAmount + camAmount;
+    // Calculate each calendar month separately so that proration, rent-free and
+    // annual escalation remain correct for quarterly/annual billing cycles.
+    for (let monthOffset = 0; monthOffset < monthsPerPeriod; monthOffset++) {
+      const month = addMonths(cycleStart, monthOffset);
+      const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
+      const monthEnd = endOfDay(new Date(month.getFullYear(), month.getMonth() + 1, 0));
+      const overlapStart = monthStart < contractStart ? contractStart : monthStart;
+      const overlapEnd = monthEnd > contractEnd ? contractEnd : monthEnd;
+      if (overlapStart > overlapEnd) continue;
+
+      const proportion = inclusiveDays(overlapStart, overlapEnd) / daysInMonth(month);
+      const monthIdx = monthIndexFromStart(contractStart, month);
+      const inRentFree = monthIdx < contract.rentFree;
+      const escalatedRent = applyEscalation(contract.rent, contract.escalationPercent, monthIdx);
+      if (!inRentFree) rentAmount += escalatedRent * proportion;
+      camAmount += contract.cam * proportion;
+    }
+
+    rentAmount = roundMoney(rentAmount);
+    camAmount = roundMoney(camAmount);
+    const subtotal = roundMoney(rentAmount + camAmount);
     const dueDate = new Date(periodEnd);
     dueDate.setDate(dueDate.getDate() + contract.paymentTerm);
 
@@ -96,7 +137,7 @@ export function generateBillingPeriods(contract: ContractBillingInput): BillingP
       camAmount,
       subtotal,
       dueDate,
-      skipped: inRentFree && camAmount === 0,
+      skipped: subtotal === 0,
     });
 
     cursor = addMonths(cursor, monthsPerPeriod);

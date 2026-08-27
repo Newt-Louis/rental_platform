@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
+
+type Db = PrismaService | Prisma.TransactionClient;
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 
 @Injectable()
 export class FitoutSlaService {
@@ -13,6 +18,9 @@ export class FitoutSlaService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private emailService: EmailService,
+    private emailDelivery: EmailDeliveryService,
+    private schedulerLock: SchedulerLockService,
+    private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
   async listPolicies() {
@@ -35,8 +43,8 @@ export class FitoutSlaService {
     });
   }
 
-  async recordMilestone(projectId: string, stage: string) {
-    const policy = await this.prisma.fitoutSlaPolicy.findUnique({
+  async recordMilestone(projectId: string, stage: string, db: Db = this.prisma) {
+    const policy = await db.fitoutSlaPolicy.findUnique({
       where: { stage },
     });
 
@@ -44,7 +52,7 @@ export class FitoutSlaService {
       ? new Date(Date.now() + policy.targetDays * 24 * 60 * 60 * 1000)
       : null;
 
-    return this.prisma.fitoutMilestone.upsert({
+    return db.fitoutMilestone.upsert({
       where: { projectId_stage: { projectId, stage } },
       create: {
         projectId,
@@ -63,13 +71,13 @@ export class FitoutSlaService {
     });
   }
 
-  async completeMilestone(projectId: string, stage: string) {
-    const milestone = await this.prisma.fitoutMilestone.findUnique({
+  async completeMilestone(projectId: string, stage: string, db: Db = this.prisma) {
+    const milestone = await db.fitoutMilestone.findUnique({
       where: { projectId_stage: { projectId, stage } },
     });
 
     if (milestone) {
-      return this.prisma.fitoutMilestone.update({
+      return db.fitoutMilestone.update({
         where: { id: milestone.id },
         data: { completedAt: new Date() },
       });
@@ -78,6 +86,10 @@ export class FitoutSlaService {
 
   @Cron('0 8 * * *', { name: 'fitout-sla-check', timeZone: 'Asia/Ho_Chi_Minh' })
   async checkSlaBreaches() {
+    return this.schedulerLock.runExclusive('fitout-sla-check', 14_400_000, () => this.checkSlaBreachesUnlocked());
+  }
+
+  private async checkSlaBreachesUnlocked() {
     this.logger.log('Checking fitout SLA breaches...');
     const now = new Date();
 
@@ -113,7 +125,20 @@ export class FitoutSlaService {
       const stageName = stageConfig?.name ?? milestone.stage;
       const targetDateStr = milestone.targetDate?.toLocaleDateString('vi-VN') ?? '—';
 
-      if (milestone.project.operationManagerId && milestone.project.operationManager) {
+      const operationRecipients = await this.accessPolicy.findProjectMallRecipients(
+        milestone.projectId,
+        Role.OPERATION,
+      );
+      const operationRecipientIds = new Set(
+        operationRecipients
+          .filter((recipient) => recipient.role === Role.OPERATION)
+          .map((recipient) => recipient.id),
+      );
+      if (
+        milestone.project.operationManagerId
+        && milestone.project.operationManager
+        && operationRecipientIds.has(milestone.project.operationManagerId)
+      ) {
         await this.notifications.create({
           userId: milestone.project.operationManagerId,
           title: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
@@ -124,7 +149,8 @@ export class FitoutSlaService {
         });
 
         if (milestone.project.operationManager.email) {
-          await this.emailService.sendMail({
+          await this.emailDelivery.enqueue(this.prisma, {
+            eventKey: `fitout-sla:${milestone.id}:manager:${milestone.project.operationManagerId}`,
             to: milestone.project.operationManager.email,
             subject: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
             html: this.emailService.fitoutSlaHtml({
@@ -140,9 +166,10 @@ export class FitoutSlaService {
       }
 
       if (policy?.escalateToRole) {
-        const managers = await this.prisma.user.findMany({
-          where: { role: policy.escalateToRole, isActive: true },
-        });
+        const managers = await this.accessPolicy.findProjectMallRecipients(
+          milestone.projectId,
+          policy.escalateToRole,
+        );
         for (const mgr of managers) {
           await this.notifications.create({
             userId: mgr.id,
@@ -154,7 +181,8 @@ export class FitoutSlaService {
           });
 
           if (mgr.email) {
-            await this.emailService.sendMail({
+            await this.emailDelivery.enqueue(this.prisma, {
+              eventKey: `fitout-sla:${milestone.id}:escalation:${mgr.id}`,
               to: mgr.email,
               subject: `🚨 Fitout escalation — ${milestone.project.tenant.brandName}`,
               html: this.emailService.fitoutSlaHtml({
@@ -181,7 +209,7 @@ export class FitoutSlaService {
     });
   }
 
-  async getFitoutProgress() {
+  async getFitoutProgress(mallIds?: string[] | null) {
     const stages = await this.prisma.fitoutStageConfig.findMany({
       where: { isActive: true },
       orderBy: { order: 'asc' },
@@ -190,7 +218,12 @@ export class FitoutSlaService {
     const lastStageCode = stageCodes[stageCodes.length - 1];
 
     const projects = await this.prisma.fitoutProject.findMany({
-      where: { status: { not: lastStageCode } },
+      where: {
+        status: { not: lastStageCode },
+        ...(mallIds
+          ? { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } }
+          : {}),
+      },
       include: {
         tenant: { select: { brandName: true } },
         unit: { select: { code: true } },
