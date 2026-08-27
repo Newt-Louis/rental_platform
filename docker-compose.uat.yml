@@ -60,6 +60,8 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_ENV: production
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://${UAT_POSTGRES_USER:-leasing_uat}:${UAT_POSTGRES_PASSWORD:?UAT_POSTGRES_PASSWORD is required}@postgres-uat:5432/${UAT_POSTGRES_DB:-leasing_platform_uat}
       REDIS_URL: redis://redis-uat:6379
