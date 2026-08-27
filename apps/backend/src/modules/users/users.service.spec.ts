@@ -88,6 +88,6 @@ describe('UsersService admin safety and listing', () => {
     prisma.user.update.mockResolvedValue({ id: 'admin-1', isActive: false });
 
     await expect(service.update('admin-1', { isActive: false }, 'admin-2'))
-      .resolves.toEqual({ id: 'admin-1', isActive: false });
+      .resolves.toEqual({ id: 'admin-1', isActive: false, departmentInfo: null });
   });
 });

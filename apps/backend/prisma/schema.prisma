@@ -420,6 +420,8 @@ model User {
   role               Role      @default(LEASING_EXECUTIVE)
   phone              String?
   avatar             String?
+  // Legacy-compatible Department reference. New assignments store Department.id,
+  // while historic free-text values remain valid and resolve to no Department.
   department         String?
   isActive           Boolean   @default(true)
   deletedAt          DateTime?
@@ -554,6 +556,27 @@ model Mall {
   parkingContracts      ParkingCustomerContract[]
   billingParties        BillingParty[]
   invoices              Invoice[]
+  departments           Department[]
+}
+
+// Mall-scoped organisational master data. User.department intentionally stays
+// an unconstrained String so historic labels survive; services resolve matching
+// Department IDs explicitly and show null for unmatched legacy values.
+model Department {
+  id          String       @id @default(cuid())
+  mallId      String
+  mall        Mall         @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  parentId    String?
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children    Department[] @relation("DepartmentHierarchy")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([mallId, name])
+  @@index([parentId])
+  @@map("Departments")
 }
 
 enum InventoryItemType {

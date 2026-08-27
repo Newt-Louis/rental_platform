@@ -60,7 +60,7 @@ export class UsersService {
     ]);
 
     return {
-      data: users,
+      data: await this.attachDepartmentInfo(users),
       total,
       page,
       limit,
@@ -96,7 +96,7 @@ export class UsersService {
     });
 
     if (!user) throw new NotFoundException(`User ${id} not found`);
-    return user;
+    return this.attachOneDepartmentInfo(user);
   }
 
   async update(id: string, dto: UpdateUserDto, actorId?: string) {
@@ -109,7 +109,7 @@ export class UsersService {
       (dto.isActive === false || (dto.role !== undefined && dto.role !== Role.ADMIN));
     if (removesAdmin) await this.ensureAnotherActiveAdmin(id);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -125,16 +125,18 @@ export class UsersService {
         tenantId: true,
       },
     });
+    return this.attachOneDepartmentInfo(updated);
   }
 
   async create(dto: CreateUserDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already registered');
     const hashed = await bcrypt.hash(dto.password, 10);
-    return this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: { ...dto, password: hashed, role: dto.role ?? Role.LEASING_EXECUTIVE },
-      select: { id: true, email: true, fullName: true, role: true, isActive: true, tenantId: true },
+      select: { id: true, email: true, fullName: true, role: true, department: true, isActive: true, tenantId: true },
     });
+    return this.attachOneDepartmentInfo(created);
   }
 
   async resetPassword(id: string, newPassword: string) {
@@ -165,5 +167,32 @@ export class UsersService {
       where: { id: { not: excludedId }, role: Role.ADMIN, isActive: true, deletedAt: null },
     });
     if (count === 0) throw new BadRequestException('At least one active administrator must remain');
+  }
+
+  private async attachDepartmentInfo<T extends { department?: string | null }>(users: T[]) {
+    const ids = [...new Set(users.map((user) => user.department).filter(Boolean))] as string[];
+    if (ids.length === 0) {
+      return users.map((user) => ({ ...user, departmentInfo: null }));
+    }
+
+    const departments = await this.prisma.department.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        mallId: true,
+        mall: { select: { id: true, name: true, code: true } },
+      },
+    });
+    const byId = new Map(departments.map((department) => [department.id, department]));
+    return users.map((user) => ({
+      ...user,
+      departmentInfo: user.department ? byId.get(user.department) ?? null : null,
+    }));
+  }
+
+  private async attachOneDepartmentInfo<T extends { department?: string | null }>(user: T) {
+    const [resolved] = await this.attachDepartmentInfo([user]);
+    return resolved;
   }
 }

@@ -1,8 +1,9 @@
 import { useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi, departmentsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
+import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import {
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { DepartmentsTab } from './DepartmentsTab';
 import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
@@ -85,6 +87,7 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
   const { register, handleSubmit, reset, watch } = useForm();
   const selectedRole = watch('role', user?.role ?? ROLE_KEYS[4]); // default LEASING_EXECUTIVE
   const [selectedMallIds, setSelectedMallIds] = useState<string[]>([]);
@@ -119,9 +122,28 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
   const { data: mallsData } = useQuery({
     queryKey: ['malls'],
     queryFn: spacesApi.listMalls,
-    enabled: needsMallAccess,
+    enabled: open,
   });
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
+
+  const { data: departmentOptions = [] } = useQuery({
+    queryKey: ['departments', 'user-options', malls.map((mall) => mall.id)],
+    queryFn: async () => {
+      const results = await Promise.all(
+        malls.map((mall) => departmentsApi.options(mall.id)),
+      );
+      return results.flatMap((result, index) =>
+        (result ?? []).map((department: any) => ({
+          ...department,
+          mall: department.mall ?? malls[index],
+        })),
+      );
+    },
+    enabled: open && malls.length > 0,
+  });
+  const legacyDepartment = user?.department && !departmentOptions.some((item: any) => item.id === user.department)
+    ? user.department
+    : null;
 
   const { data: userMallsData, refetch: refetchUserMalls } = useQuery({
     queryKey: ['user-mall-access', user?.id],
@@ -213,7 +235,21 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               </div>
               <div>
                 <Label>{t('users.fields.department')}</Label>
-                <Input {...register('department')} placeholder="Leasing" className="mt-1" />
+                <select {...register('department')} className="mt-1 w-full rounded-md border px-3 py-2 text-sm">
+                  <option value="">{tDepartments('missingInformation')}</option>
+                  {legacyDepartment && (
+                    <option value={legacyDepartment}>{tDepartments('missingInformation')}</option>
+                  )}
+                  {malls.map((mall) => (
+                    <optgroup key={mall.id} label={mall.name}>
+                      {departmentOptions
+                        .filter((department: any) => department.mallId === mall.id)
+                        .map((department: any) => (
+                          <option key={department.id} value={department.id}>{department.name}</option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
               {selectedRole === 'TENANT' && (
                 <div className="col-span-2">
@@ -381,6 +417,7 @@ function UsersTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
 
   const toggleMutation = useMutation({
     mutationFn: (u: User) => usersApi.updateUser(u.id, { isActive: !u.isActive }),
@@ -480,7 +517,7 @@ function UsersTab() {
                   <tr key={u.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedUser(u)}>
                     <td className="px-4 py-3 font-medium">{u.fullName}</td>
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{(u as any).department ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.departmentInfo?.name ?? tDepartments('missingInformation')}</td>
                     <td className="px-4 py-2.5"><Badge className={`${roleInfo.color} border-0 text-xs`}>{t(adminRoleTranslationKey(u.role))}</Badge></td>
                     <td className="px-4 py-3"><MallAccessCell user={u} /></td>
                     <td className="px-4 py-3">
@@ -1369,6 +1406,7 @@ const TABS = [
   { id: 'users',       labelKey: 'tabs.users',       icon: Users },
   { id: 'malls',       labelKey: 'tabs.malls',       icon: Building2 },
   { id: 'mall-access', labelKey: 'tabs.mallAccess',  icon: Shield },
+  { id: 'departments', labelKey: 'tabs.departments', icon: Building2 },
   { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
   { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
   { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
@@ -1378,7 +1416,7 @@ const TABS = [
 
 const TAB_GROUPS = [
   { labelKey: 'tabGroups.userAccess', ids: ['users', 'mall-access', 'permissions'] },
-  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'structure'] },
+  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'departments', 'structure'] },
   { labelKey: 'tabGroups.categories', ids: ['categories'] },
   { labelKey: 'tabGroups.process', ids: ['approval'] },
   { labelKey: 'tabGroups.platform', ids: ['system'] },
@@ -1386,9 +1424,15 @@ const TAB_GROUPS = [
 
 export default function AdminPage() {
   const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
+  const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isFullAdmin = user?.role === 'ADMIN';
+  const availableTabs = isFullAdmin ? TABS : TABS.filter((tab) => tab.id === 'departments');
   const requestedSection = searchParams.get('section');
-  const activeTab = TABS.some((tab) => tab.id === requestedSection) ? requestedSection! : 'users';
+  const activeTab = availableTabs.some((tab) => tab.id === requestedSection)
+    ? requestedSection!
+    : availableTabs[0]?.id ?? 'departments';
   const selectTab = (id: string) => {
     const next = new URLSearchParams(searchParams);
     next.set('section', id);
@@ -1400,9 +1444,9 @@ export default function AdminPage() {
       <PageHeader
         className="mb-4 border-b border-slate-200 pb-4"
         eyebrow={t('erpControlCenter')}
-        title={t('systemConfig')}
-        description={t('systemConfigDesc')}
-        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t('superAdmin')}</Badge>}
+        title={isFullAdmin ? t('systemConfig') : tDepartments('title')}
+        description={isFullAdmin ? t('systemConfigDesc') : tDepartments('description')}
+        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t(adminRoleTranslationKey(user?.role ?? ''))}</Badge>}
       />
 
       {/* Mobile select */}
@@ -1413,18 +1457,18 @@ export default function AdminPage() {
         onChange={(event) => selectTab(event.target.value)}
         className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
       >
-        {TABS.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
+        {availableTabs.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
       </select>
 
       {/* Sidebar + content */}
       <div className="flex min-h-0 flex-1 gap-5 overflow-hidden">
         {/* Sidebar */}
         <nav className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200 pr-3 sm:flex">
-          {TAB_GROUPS.map((group) => (
+          {TAB_GROUPS.filter((group) => availableTabs.some((tab) => group.ids.includes(tab.id))).map((group) => (
             <div key={group.labelKey} className="mb-4">
               <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t(group.labelKey)}</div>
               <div className="flex flex-col gap-0.5">
-                {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
+                {availableTabs.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
                   const Icon = tab.icon;
                   return (
                     <button
@@ -1458,6 +1502,7 @@ export default function AdminPage() {
             {activeTab === 'users'       && <UsersTab />}
             {activeTab === 'malls'       && <MallsTab />}
             {activeTab === 'mall-access' && <MallAccessTab />}
+            {activeTab === 'departments' && <DepartmentsTab />}
             {activeTab === 'structure'   && <SpaceStructureTab />}
             {activeTab === 'categories'  && <CategoriesTab />}
             {activeTab === 'permissions' && <PermissionsTab />}

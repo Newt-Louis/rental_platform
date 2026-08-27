@@ -1,0 +1,64 @@
+{
+  "title": "Quản lý phòng ban/bộ phận",
+  "description": "Tạo và quản lý cơ cấu phòng ban, bộ phận theo từng Mall.",
+  "mall": {
+    "label": "Mall",
+    "select": "Chọn Mall",
+    "required": "Vui lòng chọn Mall để xem danh sách bộ phận.",
+    "locked": "Mall hiện hành của tài khoản",
+    "noAccess": "Tài khoản chưa có Mall hiện hành được phân quyền."
+  },
+  "actions": {
+    "create": "Thêm bộ phận",
+    "edit": "Chỉnh sửa",
+    "delete": "Xóa",
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "retry": "Thử lại",
+    "previous": "Trước",
+    "next": "Sau"
+  },
+  "search": {
+    "placeholder": "Tìm theo tên bộ phận..."
+  },
+  "table": {
+    "name": "Tên bộ phận",
+    "parent": "Thuộc bộ phận",
+    "description": "Mô tả",
+    "children": "Bộ phận con",
+    "actions": "Thao tác",
+    "root": "Không thuộc",
+    "empty": "Chưa có bộ phận nào trong Mall này.",
+    "loading": "Đang tải danh sách bộ phận...",
+    "pagination": "{{total}} bộ phận · Trang {{page}}/{{totalPages}}"
+  },
+  "form": {
+    "createTitle": "Thêm bộ phận mới",
+    "editTitle": "Chỉnh sửa bộ phận",
+    "name": "Tên phòng ban/bộ phận",
+    "namePlaceholder": "Ví dụ: Công nghệ thông tin",
+    "parent": "Bộ phận cha",
+    "noParent": "Không thuộc",
+    "description": "Mô tả",
+    "descriptionPlaceholder": "Nhập mô tả bộ phận",
+    "saving": "Đang lưu..."
+  },
+  "delete": {
+    "title": "Xóa bộ phận",
+    "description": "Bạn có chắc chắn muốn xóa bộ phận \"{{name}}\" không?",
+    "confirm": "Đồng ý",
+    "cancel": "Hủy",
+    "processing": "Đang xóa...",
+    "hasChildren": "Bộ phận này đang có thông tin các bộ phận con bên trong, không thể xóa."
+  },
+  "toast": {
+    "created": "Đã tạo bộ phận",
+    "updated": "Đã cập nhật bộ phận",
+    "deleted": "Đã xóa bộ phận",
+    "loadError": "Không thể tải danh sách bộ phận",
+    "saveError": "Không thể lưu thông tin bộ phận",
+    "deleteError": "Không thể xóa bộ phận"
+  },
+  "missingInformation": "Chưa có thông tin",
+  "notAvailable": "—"
+}

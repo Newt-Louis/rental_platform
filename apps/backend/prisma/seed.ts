@@ -23,6 +23,14 @@ async function main() {
   await prisma.proposalScenario.deleteMany();
   await prisma.sapEntityMapping.deleteMany();
   await prisma.userMallAccess.deleteMany();
+  // Department has a self-referencing RESTRICT relation. Delete leaves first so
+  // a repeated base seed remains valid after department master data is introduced.
+  while (await prisma.department.count()) {
+    const result = await prisma.department.deleteMany({
+      where: { children: { none: {} } },
+    });
+    if (result.count === 0) throw new Error('Cannot clear Department hierarchy because it contains a cycle');
+  }
   await prisma.mallAnnouncement.deleteMany();
   await prisma.ticketRating.deleteMany();
   await prisma.maintenanceSchedule.deleteMany();

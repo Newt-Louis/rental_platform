@@ -317,7 +317,13 @@ export class WorkOrdersService {
       }),
       this.prisma.workOrder.count({ where }),
     ]);
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return {
+      data: await this.attachRequesterDepartments(data),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async detail(id: string) {
@@ -348,7 +354,32 @@ export class WorkOrdersService {
       },
     });
     if (!row) throw new NotFoundException("Không tìm thấy công việc");
-    return row;
+    const [resolved] = await this.attachRequesterDepartments([row]);
+    return resolved;
+  }
+
+  private async attachRequesterDepartments<T extends { requester?: { department?: string | null } | null }>(rows: T[]) {
+    const ids = [...new Set(
+      rows.map((row) => row.requester?.department).filter(Boolean),
+    )] as string[];
+    const departments = ids.length
+      ? await this.prisma.department.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, mallId: true },
+        })
+      : [];
+    const byId = new Map(departments.map((department) => [department.id, department]));
+    return rows.map((row) => ({
+      ...row,
+      requester: row.requester
+        ? {
+            ...row.requester,
+            departmentInfo: row.requester.department
+              ? byId.get(row.requester.department) ?? null
+              : null,
+          }
+        : null,
+    }));
   }
 
   async create(dto: CreateWorkOrderDto, userId: string) {

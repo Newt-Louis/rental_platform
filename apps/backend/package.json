@@ -22,6 +22,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "prisma:seed:departments": "ts-node --transpile-only prisma/scripts/seed-departments.ts",
     "prisma:studio": "prisma studio",
     "prisma:mssql:pull": "prisma db pull --schema=prisma/mssql/schema.prisma",
     "prisma:mssql:generate": "prisma generate --schema=prisma/mssql/schema.prisma"

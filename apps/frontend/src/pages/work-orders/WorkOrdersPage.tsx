@@ -70,6 +70,7 @@ const err = (e: any) =>
 
 export default function WorkOrdersPage() {
   const { t } = useTranslation("workOrders");
+  const { t: tDepartments } = useTranslation("departments");
   const qc = useQueryClient(),
     { toast } = useToast(),
     selectedMallId = useMallStore((s) => s.selectedMallId),
@@ -99,7 +100,7 @@ export default function WorkOrdersPage() {
   }, [mallId]);
   const usersQ = useQuery({
     queryKey: ["work-order-users"],
-    queryFn: () => usersApi.listUsers({ limit: 200 }),
+    queryFn: () => usersApi.listUsers({ limit: 100 }),
   });
   const listQ = useQuery({
     queryKey: ["work-orders", mallId, status, category, priority, department, alert, search, page],
@@ -136,7 +137,7 @@ export default function WorkOrdersPage() {
   const item: any = detailQ.data;
   const departments = useMemo(() => Array.from(new Set([
     ...Object.values(CATEGORIES).filter(value => value !== "Khác"),
-    ...users.map((user: any) => user.department).filter(Boolean),
+    ...users.map((user: any) => user.departmentInfo?.name).filter(Boolean),
     ...rows.map((row: any) => row.assignedDepartment).filter(Boolean),
   ])).sort((a, b) => a.localeCompare(b, "vi")), [users, rows]);
   const refresh = () => {
@@ -371,7 +372,7 @@ export default function WorkOrdersPage() {
                 <td className="px-4 py-3">
                   {t(`category.${w.category}`, { defaultValue: w.category })}
                 </td>
-                <td className="px-4 py-3">{w.requester?.department || "—"}</td>
+                <td className="px-4 py-3">{w.requester?.departmentInfo?.name || tDepartments("missingInformation")}</td>
                 <td className="px-4 py-3">{w.assignedDepartment || "—"}</td>
                 <td className="px-4 py-3">
                   <Badge
@@ -467,14 +468,14 @@ export default function WorkOrdersPage() {
                   setForm({
                     ...form,
                     assigneeId: e.target.value,
-                    assignedDepartment: assignee?.department || form.assignedDepartment,
+                    assignedDepartment: assignee?.departmentInfo?.name || form.assignedDepartment,
                   });
                 }}
               >
                 <option value="">Chưa phân công</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.fullName}{u.department ? ` — ${u.department}` : ""}
+                    {u.fullName}{u.departmentInfo?.name ? ` — ${u.departmentInfo.name}` : ""}
                   </option>
                 ))}
               </select>
@@ -570,7 +571,7 @@ export default function WorkOrdersPage() {
                   <b>Người gửi:</b> {item.requester?.fullName || "—"}
                 </div>
                 <div>
-                  <b>Bộ phận gửi:</b> {item.requester?.department || "—"}
+                  <b>Bộ phận gửi:</b> {item.requester?.departmentInfo?.name || tDepartments("missingInformation")}
                 </div>
                 <div>
                   <b>Bộ phận xử lý:</b> {item.assignedDepartment || "—"}

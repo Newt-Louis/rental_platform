@@ -18,6 +18,7 @@ interface ConfirmActionDialogProps {
   cancelLabel?: string;
   destructive?: boolean;
   loading?: boolean;
+  loadingLabel?: string;
   onConfirm: () => void;
 }
 
@@ -30,6 +31,7 @@ export function ConfirmActionDialog({
   cancelLabel = 'Quay lại',
   destructive = false,
   loading = false,
+  loadingLabel = 'Đang xử lý…',
   onConfirm,
 }: ConfirmActionDialogProps) {
   return (
@@ -52,11 +54,10 @@ export function ConfirmActionDialog({
             disabled={loading}
             aria-busy={loading}
           >
-            {loading ? 'Đang xử lý…' : confirmLabel}
+            {loading ? loadingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-

@@ -62,6 +62,13 @@ describe('route permissions', () => {
     expect(getDefaultHomePath(undefined)).toBe('/dashboard');
   });
 
+  it('allows Department operators into Admin while keeping other roles out', () => {
+    expect(canAccessPath('ADMIN', '/admin?tab=departments')).toBe(true);
+    expect(canAccessPath('CEO', '/admin?tab=departments')).toBe(true);
+    expect(canAccessPath('MALL_DIRECTOR', '/admin?tab=departments')).toBe(true);
+    expect(canAccessPath('FINANCE', '/admin?tab=departments')).toBe(false);
+  });
+
   it('covers every RouteModule and keeps every navigation path unique (regression guard for the ' +
     'Wave 2 sidebar regroup — see docs/implementation/UX_DECISIONS.md DECISION-003)', () => {
     const modules = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.module));
