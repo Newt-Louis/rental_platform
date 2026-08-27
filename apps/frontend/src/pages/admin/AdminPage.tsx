@@ -30,6 +30,7 @@ import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
+import { getApiErrorMessage } from '@/lib/api-error';
 import type { User } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -82,18 +83,37 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 
 // ─── Tab 1: Users ─────────────────────────────────────────────────────────────
 
+/**
+ * Roles that carry no UserMallAccess grant. Their data scope differs per role,
+ * so each gets its own wording instead of one blanket "sees every Mall" note:
+ * only ADMIN truly bypasses the Mall check (`MallAccessService.BYPASS_ROLES`),
+ * CEO is portfolio-wide only on the approved oversight reads, and TENANT is
+ * scoped by its linked tenant record.
+ */
+const SCOPE_HINT_KEY: Record<string, string> = {
+  ADMIN: 'notApplicableHint',
+  CEO: 'ceoHint',
+  TENANT: 'tenantHint',
+};
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-red-600">{message}</p>;
+}
+
 function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null; onClose: () => void }) {
   const isEdit = !!user;
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
   const { t: tDepartments } = useTranslation('departments');
-  const { register, handleSubmit, reset, watch } = useForm();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
   const selectedRole = watch('role', user?.role ?? ROLE_KEYS[4]); // default LEASING_EXECUTIVE
   const [selectedMallIds, setSelectedMallIds] = useState<string[]>([]);
   const [mallRole, setMallRole] = useState('LEASING_EXECUTIVE');
   const [addMallId, setAddMallId] = useState('');
   const [addMallRole, setAddMallRole] = useState('LEASING_EXECUTIVE');
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const needsMallAccess = MALL_ACCESS_ROLES.includes(selectedRole);
 
@@ -107,10 +127,18 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
         tenantId: (user as any).tenantId ?? '',
       } : { role: ROLE_KEYS[4] });
       setSelectedMallIds([]);
-      setMallRole('LEASING_EXECUTIVE');
+      setMallRole(user && MALL_ACCESS_ROLES.includes(user.role) ? user.role : 'LEASING_EXECUTIVE');
       setAddMallId('');
+      setSubmitError(null);
     }
   }, [open, user?.id]);
+
+  // A role without Mall scope (ADMIN/CEO/TENANT) must not carry a stale Mall
+  // selection made before the role was switched -- the backend rejects it.
+  useEffect(() => {
+    if (!needsMallAccess) setSelectedMallIds([]);
+    else if (MALL_ACCESS_ROLES.includes(selectedRole)) setMallRole(selectedRole);
+  }, [selectedRole, needsMallAccess]);
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants-lite'],
@@ -152,37 +180,64 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
   });
   const userMalls: any[] = Array.isArray(userMallsData) ? userMallsData : userMallsData?.data ?? [];
 
+  /**
+   * Only send what this role actually uses. React Hook Form keeps values of
+   * fields that were unmounted (e.g. the tenant picker after switching away
+   * from the TENANT role), and an empty `tenantId` used to reach Prisma as a
+   * foreign key of '' -- a 500 with a raw query dump in the toast.
+   */
+  const buildPayload = (data: any) => {
+    const role = data.role || (isEdit ? user!.role : ROLE_KEYS[4]);
+    const payload: Record<string, unknown> = {
+      fullName: (data.fullName ?? '').trim(),
+      role,
+      phone: (data.phone ?? '').trim() || null,
+      department: (data.department ?? '').trim() || null,
+      tenantId: role === 'TENANT' ? ((data.tenantId ?? '').trim() || null) : null,
+    };
+
+    if (!isEdit) {
+      payload.email = (data.email ?? '').trim();
+      payload.password = data.password;
+      // Mall grants travel with the account so both succeed or neither does.
+      if (needsMallAccess && selectedMallIds.length > 0) {
+        payload.mallIds = selectedMallIds;
+        payload.mallRole = mallRole;
+      }
+    }
+
+    return payload;
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
-      if (isEdit) return usersApi.updateUser(user!.id, data);
-      const newUser = await usersApi.createUser(data);
-      const userId = newUser?.data?.id ?? newUser?.id;
-      if (userId && selectedMallIds.length > 0) {
-        await Promise.allSettled(
-          selectedMallIds.map((mallId) => mallAccessApi.grant({ userId, mallId, role: mallRole })),
-        );
-      }
-      return newUser;
+      const payload = buildPayload(data);
+      return isEdit ? usersApi.updateUser(user!.id, payload) : usersApi.createUser(payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['mall-access'] });
+      qc.invalidateQueries({ queryKey: ['user-mall-access'] });
       toast({ title: isEdit ? t('users.toast.updated') : t('users.toast.created') });
-      reset(); setSelectedMallIds([]); onClose();
+      setSubmitError(null); reset(); setSelectedMallIds([]); onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onError: (e: any) => {
+      const message = getApiErrorMessage(e, t('commonError'));
+      setSubmitError(message);
+      toast({ title: message, variant: 'destructive' });
+    },
   });
 
   const grantMutation = useMutation({
     mutationFn: ({ mallId, role }: { mallId: string; role: string }) => mallAccessApi.grant({ userId: user!.id, mallId, role }),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.grantError')), variant: 'destructive' }),
   });
 
   const revokeMutation = useMutation({
     mutationFn: (mallId: string) => mallAccessApi.revoke(user!.id, mallId),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); toast({ title: t('mallAccess.toast.revoked') }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('mallAccess.toast.revoked') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.revokeError')), variant: 'destructive' }),
   });
 
   const roleInfo = user ? ROLE_MAP[user.role] : null;
@@ -209,18 +264,43 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('users.fields.fullNameRequired')}</Label>
-                <Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" />
+                <Input
+                  {...register('fullName', { required: t('users.validation.fullNameRequired') as string })}
+                  placeholder="Nguyễn Văn A" className="mt-1"
+                  aria-invalid={!!errors.fullName}
+                />
+                <FieldError message={errors.fullName?.message as string | undefined} />
               </div>
               <div>
                 <Label>Email{!isEdit && ' *'}</Label>
                 {isEdit
                   ? <Input value={user!.email} disabled className="mt-1 bg-gray-50 text-gray-500" />
-                  : <Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" />}
+                  : (
+                    <>
+                      <Input
+                        {...register('email', {
+                          required: t('users.validation.emailRequired') as string,
+                          pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: t('users.validation.emailInvalid') as string },
+                        })}
+                        type="email" placeholder="user@thiso.com" className="mt-1"
+                        aria-invalid={!!errors.email}
+                      />
+                      <FieldError message={errors.email?.message as string | undefined} />
+                    </>
+                  )}
               </div>
               {!isEdit && (
                 <div>
                   <Label>{t('users.fields.password')}</Label>
-                  <Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1" />
+                  <Input
+                    {...register('password', {
+                      required: t('users.validation.passwordRequired') as string,
+                      minLength: { value: 8, message: t('users.validation.passwordTooShort') as string },
+                    })}
+                    type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1"
+                    aria-invalid={!!errors.password}
+                  />
+                  <FieldError message={errors.password?.message as string | undefined} />
                 </div>
               )}
               <div>
@@ -291,9 +371,11 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                       })}
                       {malls.length === 0 && <span className="text-xs text-gray-400">{t('users.mallScope.noMalls')}</span>}
                     </div>
-                    {selectedMallIds.length > 0 && (
-                      <p className="text-xs text-blue-600">{t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })}</p>
-                    )}
+                    <p className="text-xs text-blue-600">
+                      {selectedMallIds.length > 0
+                        ? t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })
+                        : t('users.mallScope.emptyMeansAll')}
+                    </p>
                   </>
                 ) : (
                   <div className="space-y-2">
@@ -328,6 +410,19 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {!needsMallAccess && (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                {t(`users.mallScope.${SCOPE_HINT_KEY[selectedRole] ?? 'notApplicableHint'}`)}
+              </p>
+            )}
+
+            {submitError && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <span className="whitespace-pre-line">{submitError}</span>
               </div>
             )}
 

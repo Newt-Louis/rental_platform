@@ -178,5 +178,26 @@
   },
   "selected": "{{count}} selected",
   "of": "of",
-  "items": "items"
+  "items": "items",
+  "apiErrors": {
+    "generic": "The action could not be completed. Please review the information you entered.",
+    "network": "Cannot reach the server. Check your connection and try again.",
+    "server": "The system is having a problem. Please try again shortly or contact IT.",
+    "codes": {
+      "DUPLICATE_VALUE": "This value already exists in the system. Please enter a different one.",
+      "INVALID_REFERENCE": "The linked record you selected no longer exists. Please pick another one.",
+      "MISSING_REQUIRED_FIELD": "Required information is missing. Please complete all mandatory fields.",
+      "RELATION_CONSTRAINT": "This cannot be done because the record is still linked to other data.",
+      "RECORD_NOT_FOUND": "The record no longer exists. Please reload the page.",
+      "DATABASE_ERROR": "The data could not be saved because it is not valid. Please review the fields.",
+      "INTERNAL_ERROR": "The system is having a problem. Please try again shortly or contact IT.",
+      "USER_EMAIL_TAKEN": "This email is already used by another account.",
+      "USER_TENANT_ROLE_MISMATCH": "Only accounts with the Tenant role can be linked to a tenant record.",
+      "USER_TENANT_NOT_FOUND": "The selected tenant no longer exists. Please pick another one.",
+      "USER_DEPARTMENT_NOT_FOUND": "The selected department no longer exists. Please pick another one.",
+      "USER_MALL_SCOPE_NOT_APPLICABLE": "This role does not use Mall scope: the account always sees data from every Mall.",
+      "USER_MALL_ROLE_NOT_GRANTABLE": "The selected role cannot be granted per Mall.",
+      "USER_MALL_NOT_FOUND": "One or more selected Malls no longer exist. Please pick again."
+    }
+  }
 }

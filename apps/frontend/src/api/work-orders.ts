@@ -47,7 +47,12 @@ export const workOrdersApi = {
     form.append("file", file);
     form.append("evidenceType", evidenceType);
     if (caption) form.append("caption", caption);
-    return api.post(`/work-orders/${id}/evidence`, form).then((r) => r.data);
+    return api
+      .post(`/work-orders/${id}/evidence`, form, {
+        // Let the browser set multipart/form-data with its boundary.
+        headers: { "Content-Type": undefined },
+      })
+      .then((r) => r.data);
   },
   addComment: (id: string, content: string) =>
     api.post(`/work-orders/${id}/comments`, { content }).then((r) => r.data),

@@ -178,5 +178,26 @@
   },
   "selected": "{{count}} đã chọn",
   "of": "trong số",
-  "items": "mục"
+  "items": "mục",
+  "apiErrors": {
+    "generic": "Không thể hoàn tất thao tác. Vui lòng kiểm tra lại thông tin đã nhập.",
+    "network": "Không kết nối được máy chủ. Vui lòng kiểm tra đường truyền rồi thử lại.",
+    "server": "Hệ thống đang gặp sự cố. Vui lòng thử lại sau ít phút hoặc báo bộ phận IT.",
+    "codes": {
+      "DUPLICATE_VALUE": "Thông tin này đã tồn tại trong hệ thống. Vui lòng nhập giá trị khác.",
+      "INVALID_REFERENCE": "Dữ liệu liên kết bạn chọn không còn tồn tại. Vui lòng chọn lại.",
+      "MISSING_REQUIRED_FIELD": "Còn thiếu thông tin bắt buộc. Vui lòng nhập đầy đủ rồi lưu lại.",
+      "RELATION_CONSTRAINT": "Không thể thực hiện vì dữ liệu này đang được liên kết với bản ghi khác.",
+      "RECORD_NOT_FOUND": "Bản ghi không còn tồn tại. Vui lòng tải lại trang.",
+      "DATABASE_ERROR": "Dữ liệu không hợp lệ nên chưa thể lưu. Vui lòng kiểm tra lại các trường đã nhập.",
+      "INTERNAL_ERROR": "Hệ thống đang gặp sự cố. Vui lòng thử lại sau ít phút hoặc báo bộ phận IT.",
+      "USER_EMAIL_TAKEN": "Email này đã được dùng cho một tài khoản khác.",
+      "USER_TENANT_ROLE_MISMATCH": "Chỉ tài khoản vai trò Khách thuê mới được liên kết với hồ sơ khách thuê.",
+      "USER_TENANT_NOT_FOUND": "Khách thuê được chọn không còn tồn tại. Vui lòng chọn lại.",
+      "USER_DEPARTMENT_NOT_FOUND": "Phòng ban được chọn không còn tồn tại. Vui lòng chọn lại.",
+      "USER_MALL_SCOPE_NOT_APPLICABLE": "Vai trò này không dùng phạm vi Mall: tài khoản luôn xem được dữ liệu của tất cả Mall.",
+      "USER_MALL_ROLE_NOT_GRANTABLE": "Vai trò được chọn không thể cấp quyền theo Mall.",
+      "USER_MALL_NOT_FOUND": "Một hoặc nhiều Mall được chọn không còn tồn tại. Vui lòng chọn lại."
+    }
+  }
 }

@@ -143,7 +143,18 @@
       "label": "Phạm vi truy cập Mall",
       "noMalls": "Chưa có Mall nào",
       "addMall": "Thêm Mall...",
-      "add": "Thêm"
+      "add": "Thêm",
+      "emptyMeansAll": "Chưa chọn Mall nào: tài khoản sẽ chưa xem được dữ liệu nghiệp vụ của Mall nào cho tới khi được cấp quyền. Có thể cấp bổ sung sau ở màn hình chỉnh sửa tài khoản.",
+      "notApplicableHint": "Vai trò Quản trị viên không phân quyền theo Mall — tài khoản xem và thao tác được dữ liệu của tất cả Mall.",
+      "ceoHint": "Vai trò CEO xem được số liệu tổng hợp toàn hệ thống ở Dashboard / Báo cáo / Phân tích. Các nghiệp vụ còn lại vẫn theo Mall được cấp quyền.",
+      "tenantHint": "Tài khoản Khách thuê không phân quyền theo Mall — phạm vi dữ liệu được xác định bởi hồ sơ khách thuê được liên kết ở trên."
+    },
+    "validation": {
+      "fullNameRequired": "Vui lòng nhập họ tên.",
+      "emailRequired": "Vui lòng nhập email.",
+      "emailInvalid": "Email không đúng định dạng.",
+      "passwordRequired": "Vui lòng nhập mật khẩu.",
+      "passwordTooShort": "Mật khẩu phải có tối thiểu 8 ký tự."
     }
   },
   "malls": {
