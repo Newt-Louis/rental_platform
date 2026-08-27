@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -27,6 +27,14 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 
 const VIEW_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.FINANCE, Role.LEGAL, Role.OPERATION];
 const EDIT_ROLES = [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEGAL, Role.OPERATION];
+const DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/jpeg',
+  'image/png',
+];
+const MAX_DOCUMENT_BYTES = 30 * 1024 * 1024;
 
 @ApiTags('Service Contracts')
 @ApiBearerAuth('JWT-auth')
@@ -90,7 +98,16 @@ export class ServiceContractsController {
 
   @Post(':id/documents')
   @Roles(...EDIT_ROLES)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 30 * 1024 * 1024 }, fileFilter: (_req, file, cb) => cb(null, ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'].includes(file.mimetype)) }))
+  // A rejected type used to be dropped silently (`cb(null, false)`), leaving the
+  // handler with no file and the caller with a misleading "please choose a file"
+  // -- the same message as forgetting the file entirely. Reject with the reason.
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: MAX_DOCUMENT_BYTES },
+    fileFilter: (_req, file, cb) =>
+      DOCUMENT_MIME_TYPES.includes(file.mimetype)
+        ? cb(null, true)
+        : cb(new BadRequestException('Định dạng file không được hỗ trợ. Chỉ nhận PDF, Word (.doc, .docx), JPG hoặc PNG.'), false),
+  }))
   async upload(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Body('documentType') documentType: string, @Body('paymentId') paymentId: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.uploadDocument(id, file, documentType || 'CONTRACT', user.id, paymentId || undefined); }
 
   @Delete(':id/documents/:documentId')

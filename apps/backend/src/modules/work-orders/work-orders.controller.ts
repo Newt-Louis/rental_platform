@@ -57,6 +57,21 @@ export class WorkOrdersController {
       undefined
     );
   }
+  /**
+   * Mall scope for the assignment lookups. Unlike `ids()` this never throws:
+   * a caller holding no grant for the requested Mall simply gets an empty
+   * scope, and the query returns nothing. The pickers are a read-only lookup,
+   * so a silent empty list is the correct answer rather than a 403 the operator
+   * cannot act on.
+   */
+  private async lookupScope(user: any, mallId?: string) {
+    const accessible = await this.mallAccess.getAccessibleMallIds(
+      user.id,
+      user.role,
+    );
+    if (accessible === null) return mallId ? [mallId] : undefined;
+    return mallId ? accessible.filter((id) => id === mallId) : accessible;
+  }
   private async assert(id: string, user: any) {
     await this.mallAccess.assertMallAccess(
       user.id,
@@ -92,6 +107,29 @@ export class WorkOrdersController {
       `attachment; filename="work-orders-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.send(csv);
+  }
+  // Assignment pickers. Departments live behind the Departments module, whose
+  // roles are the narrower administration set (ADMIN/CEO/MALL_DIRECTOR); these
+  // read-only lookups are a different capability and follow the Work Orders
+  // role list so OPERATION can assign work too.
+  @Get("assignment/departments") async assignmentDepartments(
+    @Query() q: any,
+    @CurrentUser() u: any,
+  ) {
+    return this.service.assignmentDepartments(
+      await this.lookupScope(u, q.mallId),
+      q.search,
+    );
+  }
+  @Get("assignment/assignees") async assignmentAssignees(
+    @Query() q: any,
+    @CurrentUser() u: any,
+  ) {
+    return this.service.assignmentAssignees(
+      await this.lookupScope(u, q.mallId),
+      q.departmentId,
+      q.search,
+    );
   }
   @Post("reminders/run")
   @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION)

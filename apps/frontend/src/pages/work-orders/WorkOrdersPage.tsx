@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +13,7 @@ import {
   MessageSquare,
   History,
 } from "lucide-react";
-import { usersApi, workOrdersApi } from "@/api";
+import { workOrdersApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
 import WorkOrderTemplates from "./WorkOrderTemplates";
 import { PageHeader } from "@/components/ui/page-header";
 import { ERPToolbar } from "@/components/erp";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const CATEGORIES: Record<string, string> = {
   TECHNICAL: "Kỹ thuật",
@@ -61,6 +62,10 @@ const empty = {
   priority: "MEDIUM",
   location: "",
   assignedDepartment: "",
+  // WorkOrder.assignedDepartment stays the free-text name (CR-114 left it out of
+  // the relational move), so the id is kept alongside it purely to filter the
+  // assignee list and is stripped before the payload is sent.
+  assignedDepartmentId: "",
   assigneeId: "",
   dueDate: "",
   checklistText: "",
@@ -91,16 +96,49 @@ export default function WorkOrdersPage() {
     [comment, setComment] = useState(""),
     [newChecklist, setNewChecklist] = useState("");
 
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const deferredDepartmentSearch = useDeferredValue(departmentSearch.trim());
+  const deferredAssigneeSearch = useDeferredValue(assigneeSearch.trim());
+
   useEffect(() => {
     setPage(1);
     setSelectedId(null);
     setCreateOpen(false);
     setForm({ ...empty, mallId });
     setCreateImages([]);
+    setDepartmentSearch("");
+    setAssigneeSearch("");
   }, [mallId]);
+  // Department master data for the active Mall. An account with no grant for
+  // that Mall gets an empty catalogue from the server rather than an error, so
+  // the picker shows its empty state instead of a failure the user cannot fix.
+  const departmentsQ = useQuery({
+    queryKey: ["work-order-departments", mallId, deferredDepartmentSearch],
+    queryFn: () =>
+      workOrdersApi.assignmentDepartments({
+        ...(mallId && { mallId }),
+        ...(deferredDepartmentSearch && { search: deferredDepartmentSearch }),
+      }),
+    retry: false,
+  });
   const usersQ = useQuery({
-    queryKey: ["work-order-users"],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    queryKey: ["work-order-assignees", mallId, form.assignedDepartmentId, deferredAssigneeSearch],
+    queryFn: () =>
+      workOrdersApi.assignmentAssignees({
+        ...(mallId && { mallId }),
+        ...(form.assignedDepartmentId && { departmentId: form.assignedDepartmentId }),
+        ...(deferredAssigneeSearch && { search: deferredAssigneeSearch }),
+      }),
+    retry: false,
+  });
+  // Unfiltered roster for surfaces that assign without a department context
+  // (detail dialog, templates).
+  const allAssigneesQ = useQuery({
+    queryKey: ["work-order-assignees", mallId, "", ""],
+    queryFn: () =>
+      workOrdersApi.assignmentAssignees({ ...(mallId && { mallId }) }),
+    retry: false,
   });
   const listQ = useQuery({
     queryKey: ["work-orders", mallId, status, category, priority, department, alert, search, page],
@@ -127,19 +165,29 @@ export default function WorkOrdersPage() {
     queryFn: () => workOrdersApi.detail(selectedId!),
     enabled: !!selectedId,
   });
-  const users: any[] = ((usersQ.data as any)?.data || usersQ.data || []).filter(
-    (u: any) => u.role !== "TENANT",
-  );
+  const asList = (result: any): any[] =>
+    Array.isArray(result) ? result : result?.data || [];
+  const users: any[] = asList(usersQ.data);
+  const allUsers: any[] = asList(allAssigneesQ.data);
+  const departmentOptions: any[] = asList(departmentsQ.data);
   const rows: any[] = (listQ.data as any)?.data || [];
   const total = (listQ.data as any)?.total || 0;
   const totalPages = (listQ.data as any)?.totalPages || 1;
   const summary: any = summaryQ.data || {};
   const item: any = detailQ.data;
-  const departments = useMemo(() => Array.from(new Set([
-    ...Object.values(CATEGORIES).filter(value => value !== "Khác"),
-    ...users.map((user: any) => user.departmentInfo?.name).filter(Boolean),
-    ...rows.map((row: any) => row.assignedDepartment).filter(Boolean),
-  ])).sort((a, b) => a.localeCompare(b, "vi")), [users, rows]);
+  // Toolbar filter matches WorkOrder.assignedDepartment, which stores the name.
+  // Values already on existing rows stay listed so a saved filter never
+  // disappears just because the Department was renamed or removed.
+  const departments = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...departmentOptions.map((department: any) => department.name),
+          ...rows.map((row: any) => row.assignedDepartment).filter(Boolean),
+        ]),
+      ).sort((a, b) => a.localeCompare(b, "vi")),
+    [departmentOptions, rows],
+  );
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["work-orders"] });
     qc.invalidateQueries({ queryKey: ["work-order-summary"] });
@@ -220,6 +268,7 @@ export default function WorkOrdersPage() {
       kind: "create",
       data: {
         ...form,
+        assignedDepartmentId: undefined,
         images: createImages,
         assigneeId: form.assigneeId || undefined,
         dueDate: form.dueDate || undefined,
@@ -310,7 +359,7 @@ export default function WorkOrdersPage() {
           ["CRITICAL", t("summary.critical"), summary.critical || 0],
         ].map(([key, title, count]) => <button key={String(key)} className={`flex items-center justify-between border-b px-4 py-2.5 text-left hover:bg-muted/40 even:border-l lg:border-b-0 lg:border-l lg:first:border-l-0 ${alert === key ? "bg-muted ring-1 ring-inset ring-primary" : ""}`} onClick={() => { setAlert(String(key)); setStatus(""); setPage(1); }}><span className="text-xs font-medium text-muted-foreground">{title}</span><span className="text-lg font-semibold tabular-nums">{String(count)}</span></button>)}
       </div>
-      <WorkOrderTemplates mallId={mallId} mallName={selectedMallName} users={users} />
+      <WorkOrderTemplates mallId={mallId} mallName={selectedMallName} users={allUsers} departmentOptions={departmentOptions} />
       <ERPToolbar>
         <select
           className="h-10 rounded-md border px-3"
@@ -448,37 +497,64 @@ export default function WorkOrdersPage() {
               </F>
             </div>
             <F label="Bộ phận xử lý">
-              <select
-                className="h-10 rounded-md border px-3"
-                value={form.assignedDepartment}
-                onChange={(e) =>
-                  setForm({ ...form, assignedDepartment: e.target.value })
-                }
-              >
-                <option value="">Chọn bộ phận xử lý</option>
-                {departments.map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </F>
-            <F label="Người xử lý">
-              <select
-                className="h-10 rounded-md border px-3"
-                value={form.assigneeId}
-                onChange={(e) => {
-                  const assignee = users.find((user: any) => user.id === e.target.value);
+              <SearchableSelect
+                id="wo-department"
+                value={form.assignedDepartmentId}
+                options={departmentOptions.map((department: any) => ({
+                  value: department.id,
+                  label: department.name,
+                  hint: department.parent?.name,
+                }))}
+                onSearchChange={setDepartmentSearch}
+                loading={departmentsQ.isFetching}
+                placeholder="Chọn bộ phận xử lý"
+                searchPlaceholder="Tìm bộ phận..."
+                emptyText="Không có bộ phận nào trong Mall này"
+                clearLabel="Không chọn bộ phận"
+                onChange={(value, option) =>
+                  // Switching department invalidates the person underneath it.
                   setForm({
                     ...form,
-                    assigneeId: e.target.value,
-                    assignedDepartment: assignee?.departmentInfo?.name || form.assignedDepartment,
+                    assignedDepartmentId: value,
+                    assignedDepartment: option?.label || "",
+                    assigneeId: "",
+                  })
+                }
+              />
+            </F>
+            <F label="Người xử lý">
+              <SearchableSelect
+                id="wo-assignee"
+                value={form.assigneeId}
+                options={users.map((user: any) => ({
+                  value: user.id,
+                  label: user.fullName,
+                  hint: user.departmentInfo?.name,
+                }))}
+                onSearchChange={setAssigneeSearch}
+                loading={usersQ.isFetching}
+                placeholder="Chưa phân công"
+                searchPlaceholder="Tìm người xử lý..."
+                emptyText={
+                  form.assignedDepartmentId
+                    ? "Không có nhân sự nào trong bộ phận này"
+                    : "Không có nhân sự nào trong Mall này"
+                }
+                clearLabel="Chưa phân công"
+                onChange={(value) => {
+                  // Picking the person first fills the department back in from
+                  // that person's own record.
+                  const assignee = users.find((user: any) => user.id === value);
+                  setForm({
+                    ...form,
+                    assigneeId: value,
+                    assignedDepartmentId:
+                      assignee?.departmentInfo?.id || form.assignedDepartmentId,
+                    assignedDepartment:
+                      assignee?.departmentInfo?.name || form.assignedDepartment,
                   });
                 }}
-              >
-                <option value="">Chưa phân công</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.fullName}{u.departmentInfo?.name ? ` — ${u.departmentInfo.name}` : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </F>
             <F label="Vị trí">
               <Input
@@ -601,9 +677,10 @@ export default function WorkOrdersPage() {
                   }
                 >
                   <option value="">Chưa phân công</option>
-                  {users.map((u) => (
+                  {allUsers.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.fullName}
+                      {u.departmentInfo?.name ? ` — ${u.departmentInfo.name}` : ""}
                     </option>
                   ))}
                 </select>

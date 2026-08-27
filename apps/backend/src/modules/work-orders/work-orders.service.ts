@@ -358,6 +358,114 @@ export class WorkOrdersService {
     return resolved;
   }
 
+  /**
+   * Department catalogue used by the assignment pickers. `mallIds` follows the
+   * module convention: `undefined` means "no Mall restriction" (ADMIN bypass),
+   * an empty array means the caller holds no Mall grant and must therefore see
+   * nothing -- an empty list, not an error.
+   */
+  async assignmentDepartments(mallIds?: string[], search?: string) {
+    if (mallIds && mallIds.length === 0) return [];
+    const term = search?.trim();
+
+    return this.prisma.department.findMany({
+      where: {
+        ...(mallIds ? { mallId: { in: mallIds } } : {}),
+        ...(term ? { name: { contains: term, mode: "insensitive" } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        parentId: true,
+        mallId: true,
+        mall: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true } },
+      },
+      orderBy: [{ name: "asc" }],
+      take: 100,
+    });
+  }
+
+  /**
+   * Staff assignable to a Work Order in the caller's Mall scope. Membership is
+   * UserMallAccess, so an account with no grant is never offered as an assignee
+   * -- it could not act on the Mall's data anyway.
+   */
+  async assignmentAssignees(mallIds?: string[], departmentId?: string, search?: string) {
+    if (mallIds && mallIds.length === 0) return [];
+    const term = search?.trim();
+
+    // CR-114 left `User.department` a plain string: new assignments store a
+    // Department id, staff onboarded earlier still carry the free-text label.
+    // Matching on both keeps the department -> assignee link working on
+    // existing records instead of silently returning nobody.
+    const target = departmentId
+      ? await this.prisma.department.findUnique({
+          where: { id: departmentId },
+          select: { id: true, name: true },
+        })
+      : null;
+    const departmentValues = target ? [target.id, target.name] : [];
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        role: { not: "TENANT" },
+        ...(mallIds
+          ? { mallAccess: { some: { mallId: { in: mallIds }, isActive: true } } }
+          : {}),
+        ...(departmentId ? { department: { in: departmentValues } } : {}),
+        ...(term
+          ? {
+              OR: [
+                { fullName: { contains: term, mode: "insensitive" } },
+                { email: { contains: term, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      select: { id: true, fullName: true, email: true, role: true, department: true },
+      orderBy: { fullName: "asc" },
+      take: 100,
+    });
+
+    return this.attachAssigneeDepartments(users, mallIds);
+  }
+
+  /**
+   * Resolves each user's stored department value to a Department record, by id
+   * for current assignments and by name for legacy labels. The name lookup is
+   * confined to the caller's Mall scope so one Mall's catalogue never resolves
+   * a label into another Mall's Department.
+   */
+  private async attachAssigneeDepartments<T extends { department: string | null }>(
+    users: T[],
+    mallIds?: string[],
+  ) {
+    const values = [...new Set(users.map((user) => user.department).filter(Boolean))] as string[];
+    if (values.length === 0) {
+      return users.map((user) => ({ ...user, departmentInfo: null }));
+    }
+
+    const departments = await this.prisma.department.findMany({
+      where: {
+        ...(mallIds ? { mallId: { in: mallIds } } : {}),
+        OR: [{ id: { in: values } }, { name: { in: values } }],
+      },
+      select: { id: true, name: true, mallId: true },
+    });
+    const byId = new Map(departments.map((department) => [department.id, department]));
+    const byName = new Map(departments.map((department) => [department.name, department]));
+
+    return users.map((user) => ({
+      ...user,
+      departmentInfo: user.department
+        ? byId.get(user.department) ?? byName.get(user.department) ?? null
+        : null,
+    }));
+  }
+
   private async attachRequesterDepartments<T extends { requester?: { department?: string | null } | null }>(rows: T[]) {
     const ids = [...new Set(
       rows.map((row) => row.requester?.department).filter(Boolean),

@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "ANNUALLY"] as const;
 const CATEGORIES = ["TECHNICAL", "CLEANING", "SECURITY", "LANDSCAPE", "FACILITY", "OTHER"] as const;
@@ -34,17 +35,21 @@ const blank = {
   checklistText: "",
 };
 
-export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
+export default function WorkOrderTemplates({ mallId, mallName, users, departmentOptions = [] }: any) {
   const { t, i18n } = useTranslation("workOrders");
   const qc = useQueryClient(),
     { toast } = useToast();
   const [expanded, setExpanded] = useState(false),
     [open, setOpen] = useState(false),
     [form, setForm] = useState<any>(blank);
-  const departments = Array.from(new Set([
-    ...DEFAULT_DEPARTMENTS,
-    ...users.map((user: any) => user.department).filter(Boolean),
-  ])).sort((a, b) => a.localeCompare(b, "vi"));
+  const departmentNames: string[] = departmentOptions.map((department: any) => department.name);
+  const departments = Array.from(
+    new Set(
+      departmentNames.length
+        ? departmentNames
+        : [...DEFAULT_DEPARTMENTS, ...users.map((user: any) => user.departmentInfo?.name).filter(Boolean)],
+    ),
+  ).sort((a, b) => a.localeCompare(b, "vi"));
   const query = useQuery({
     queryKey: ["work-order-templates", mallId],
     queryFn: () => workOrdersApi.templates(mallId ? { mallId } : undefined),
@@ -281,38 +286,48 @@ export default function WorkOrderTemplates({ mallId, mallName, users }: any) {
             </label>
             <label className="text-sm">
               {t("templates.department")}
-              <select
-                className="mt-1 h-10 w-full rounded-md border px-3"
+              <SearchableSelect
+                className="mt-1"
                 value={form.assignedDepartment}
-                onChange={(e) =>
-                  setForm({ ...form, assignedDepartment: e.target.value })
+                options={departments.map((name) => ({ value: name, label: name }))}
+                placeholder={t("templates.selectDepartment")}
+                searchPlaceholder={t("templates.searchDepartment")}
+                emptyText={t("templates.noDepartment")}
+                clearLabel={t("templates.selectDepartment")}
+                onChange={(value) =>
+                  setForm({ ...form, assignedDepartment: value, assigneeId: "" })
                 }
-              >
-                <option value="">{t("templates.selectDepartment")}</option>
-                {departments.map(value => <option key={value} value={value}>{value}</option>)}
-              </select>
+              />
             </label>
             <label className="text-sm">
               {t("templates.assignee")}
-              <select
-                className="mt-1 h-10 w-full rounded-md border px-3"
+              <SearchableSelect
+                className="mt-1"
                 value={form.assigneeId}
-                onChange={(e) => {
-                  const assignee = users.find((user: any) => user.id === e.target.value);
+                options={users
+                  .filter((user: any) =>
+                    !form.assignedDepartment ||
+                    user.departmentInfo?.name === form.assignedDepartment,
+                  )
+                  .map((user: any) => ({
+                    value: user.id,
+                    label: user.fullName,
+                    hint: user.departmentInfo?.name,
+                  }))}
+                placeholder={t("table.unassigned")}
+                searchPlaceholder={t("templates.searchAssignee")}
+                emptyText={t("templates.noAssignee")}
+                clearLabel={t("table.unassigned")}
+                onChange={(value) => {
+                  const assignee = users.find((user: any) => user.id === value);
                   setForm({
                     ...form,
-                    assigneeId: e.target.value,
-                    assignedDepartment: assignee?.department || form.assignedDepartment,
+                    assigneeId: value,
+                    assignedDepartment:
+                      assignee?.departmentInfo?.name || form.assignedDepartment,
                   });
                 }}
-              >
-                <option value="">{t("table.unassigned")}</option>
-                {users.map((x: any) => (
-                  <option key={x.id} value={x.id}>
-                    {x.fullName}{x.department ? ` — ${x.department}` : ""}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm sm:col-span-2">
               {t("templates.location")}
