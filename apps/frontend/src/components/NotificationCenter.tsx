@@ -23,21 +23,60 @@ interface NotificationItem {
   createdAt: string;
 }
 
+// Routes that take an id-bearing query param and deep-link straight to that record
+// (each param name matches exactly what the destination page itself reads from the URL —
+// see ContractsPage/ProposalsPage/BillingPage/BookingsPage/CrmPage/FitoutPage/TicketsPage).
+// Previously most entries here pointed at the bare list route with no id at all, so clicking
+// a notification always landed on the general menu instead of the specific record.
 function entityLink(entityType?: string, entityId?: string): string | null {
-  if (!entityType || !entityId) return null;
-  const map: Record<string, string> = {
-    PROPOSAL: `/proposals?id=${entityId}`,
-    APPROVAL: '/approvals',
-    CONTRACT: `/contracts?id=${entityId}`,
-    INVOICE: '/billing',
-    TICKET: `/tickets?id=${entityId}`,
-    MAINTENANCE_SCHEDULE: '/tickets?tab=maintenance',
-    MAINTENANCE_REMINDER: '/tickets?tab=maintenance',
-    BOOKING: '/bookings',
-    LEAD: '/crm',
-    PERIODIC_CHARGE_ENTRY: '/billing-addin',
-  };
-  return map[entityType.toUpperCase()] ?? null;
+  if (!entityType) return null;
+  const type = entityType.toUpperCase();
+  switch (type) {
+    case 'PROPOSAL':
+      return entityId ? `/proposals?id=${entityId}` : '/proposals';
+    case 'CONTRACT':
+      return entityId ? `/contracts?id=${entityId}` : '/contracts';
+    case 'INVOICE':
+      return entityId ? `/billing?invoiceId=${entityId}` : '/billing';
+    case 'TICKET':
+      return entityId ? `/tickets?id=${entityId}` : '/tickets';
+    case 'MAINTENANCE_SCHEDULE':
+    case 'MAINTENANCE_REMINDER':
+      return '/tickets?tab=maintenance';
+    case 'BOOKING':
+      return entityId ? `/bookings?id=${entityId}` : '/bookings';
+    case 'LEAD':
+      return entityId ? `/crm?leadId=${entityId}` : '/crm';
+    case 'PERIODIC_CHARGE_ENTRY':
+      return '/billing-addin';
+    case 'FITOUT':
+      return entityId ? `/fitout?projectId=${entityId}` : '/fitout';
+    case 'FITOUT_SUBMITTAL':
+      // No per-submittal deep-link exists yet (FitoutApprovalsPage lists all pending submittals
+      // inline, no URL-addressable selection) — lands on that list, not the specific submittal.
+      return '/fitout-approvals';
+    case 'FITOUT_ISSUE':
+      // No per-issue deep-link exists yet, and the notification's entityId is the Issue's own
+      // id (not its parent project's), so it can't even resolve /fitout?projectId= correctly —
+      // lands on the general Fitout list.
+      return '/fitout';
+    case 'WORK_ORDER':
+    case 'WORK_ORDER_OVERDUE':
+    case 'WORK_ORDER_DUE_SOON':
+      return entityId ? `/work-orders?id=${entityId}` : '/work-orders';
+    case 'PATROL_SHIFT':
+    case 'PATROL_SHIFT_CANCELLED':
+    case 'PATROL_SHIFT_OVERDUE':
+    case 'PATROL_CHECK_ESCALATION':
+      return entityId ? `/patrol?id=${entityId}` : '/patrol';
+    case 'SERVICE_CONTRACT':
+      return entityId ? `/service-contracts?id=${entityId}` : '/service-contracts';
+    case 'CRM':
+      return '/crm';
+    default:
+      // SYSTEM, TENANT, E_INVOICE, LEAD_ACTIVITY: no dedicated destination page/view exists yet.
+      return null;
+  }
 }
 
 function fmtTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string) {

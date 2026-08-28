@@ -81,6 +81,34 @@ describe('PatrolService abnormal-check atomicity', () => {
     }));
   });
 
+  it('notifies mall directors of a HIGH/URGENT escalation using the shift id, not the check id', async () => {
+    // PatrolPage only has a shift-level detail view — no standalone per-check screen — so a
+    // notification pointing at the PatrolCheck id would 404 in the frontend. It must resolve to
+    // current.shift.id (the record NotificationCenter's /patrol?id=... route can actually open).
+    prisma.userMallAccess.findMany.mockResolvedValue([{ userId: 'director-1' }, { userId: 'director-2' }]);
+
+    await service.check('check-1', { result: 'ABNORMAL', severity: 'HIGH' }, 'user-1');
+
+    expect(notifications.create).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'director-1',
+      entityType: 'PATROL_CHECK_ESCALATION',
+      entityId: 'shift-1',
+    }));
+    expect(notifications.create).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'director-2',
+      entityType: 'PATROL_CHECK_ESCALATION',
+      entityId: 'shift-1',
+    }));
+  });
+
+  it('does not notify directors for a LOW/MEDIUM severity abnormal check', async () => {
+    prisma.userMallAccess.findMany.mockResolvedValue([{ userId: 'director-1' }]);
+
+    await service.check('check-1', { result: 'ABNORMAL', severity: 'MEDIUM' }, 'user-1');
+
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
   it('retries a recognized Serializable collision with a fresh link read', async () => {
     prisma.$transaction
       .mockRejectedValueOnce(Object.assign(new Error('serialization conflict'), { code: 'P2034' }))
