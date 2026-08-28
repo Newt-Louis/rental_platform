@@ -22,6 +22,7 @@ export * from './dashboard';
 export * from './notifications';
 export * from './announcements';
 export * from './users';
+export * from './departments';
 export * from './audit-log';
 export * from './mall-access';
 export * from './analytics';

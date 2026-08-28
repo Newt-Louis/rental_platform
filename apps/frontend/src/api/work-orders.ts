@@ -19,6 +19,17 @@ export const workOrdersApi = {
       .get("/work-orders/summary", { params: mallId ? { mallId } : undefined })
       .then((r) => r.data),
   detail: (id: string) => api.get(`/work-orders/${id}`).then((r) => r.data),
+  // Assignment pickers -- Mall-scoped server side; an account with no grant for
+  // the Mall gets nothing back rather than a partial catalogue.
+  assignmentDepartments: (params: { mallId?: string; search?: string }) =>
+    api
+      .get("/work-orders/assignment/departments", { params })
+      .then((r) => r.data),
+  assignmentAssignees: (params: {
+    mallId?: string;
+    departmentId?: string;
+    search?: string;
+  }) => api.get("/work-orders/assignment/assignees", { params }).then((r) => r.data),
   create: (data: Record<string, unknown>) =>
     api.post("/work-orders", data).then((r) => r.data),
   update: (id: string, data: Record<string, unknown>) =>
@@ -47,7 +58,12 @@ export const workOrdersApi = {
     form.append("file", file);
     form.append("evidenceType", evidenceType);
     if (caption) form.append("caption", caption);
-    return api.post(`/work-orders/${id}/evidence`, form).then((r) => r.data);
+    return api
+      .post(`/work-orders/${id}/evidence`, form, {
+        // Let the browser set multipart/form-data with its boundary.
+        headers: { "Content-Type": undefined },
+      })
+      .then((r) => r.data);
   },
   addComment: (id: string, content: string) =>
     api.post(`/work-orders/${id}/comments`, { content }).then((r) => r.data),

@@ -11,6 +11,7 @@
     "users": "Accounts",
     "malls": "Mall",
     "mallAccess": "Mall Access",
+    "departments": "Departments",
     "structure": "Space Structure",
     "categories": "Categories & Pricing",
     "permissions": "Permissions",
@@ -30,6 +31,7 @@
     "users": "Manage account lifecycle and system access status.",
     "malls": "Set up Mall catalog and platform operating information.",
     "mall-access": "Control Mall data scope per user.",
+    "departments": "Manage department information and hierarchies.",
     "structure": "Standardize blocks, floors and space structures for the whole system.",
     "categories": "Manage categories, unit prices and shared business catalogs.",
     "permissions": "Design role-based permissions following least-privilege principles.",
@@ -141,7 +143,18 @@
       "label": "Mall access scope",
       "noMalls": "No Malls available",
       "addMall": "Add Mall...",
-      "add": "Add"
+      "add": "Add",
+      "emptyMeansAll": "No Mall selected: the account will not see any Mall business data until access is granted. You can grant it later from the edit account screen.",
+      "notApplicableHint": "The Administrator role is not scoped per Mall — the account can see and act on data from every Mall.",
+      "ceoHint": "The CEO role sees portfolio-wide figures on Dashboard / Reports / Analytics. All other modules still follow the granted Malls.",
+      "tenantHint": "Tenant accounts are not scoped per Mall — their data scope comes from the linked tenant record above."
+    },
+    "validation": {
+      "fullNameRequired": "Please enter the full name.",
+      "emailRequired": "Please enter an email address.",
+      "emailInvalid": "This email address is not valid.",
+      "passwordRequired": "Please enter a password.",
+      "passwordTooShort": "The password must be at least 8 characters."
     }
   },
   "malls": {

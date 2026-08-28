@@ -21,6 +21,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   login: (token, user) => {
     localStorage.setItem('token', token);
     set({ token, user, isHydrated: true });
+    useMallStore.getState().setSelectedMall(user.activeMallId ?? null, user.activeMall?.name);
   },
   logout: async () => {
     try {

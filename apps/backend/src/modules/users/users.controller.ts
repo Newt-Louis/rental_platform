@@ -35,14 +35,14 @@ export class UsersController {
 
   @Get('stats')
   @ApiOperation({ summary: 'User totals by account status' })
-  stats() {
-    return this.usersService.stats();
+  stats(@CurrentUser() user: any) {
+    return this.usersService.stats(user.activeMallId);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create user' })
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() actor: any) {
+    return this.usersService.create(dto, actor.id);
   }
 
   @Get(':id')

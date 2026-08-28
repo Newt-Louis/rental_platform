@@ -23,6 +23,7 @@ import viParking from '@/locales/vi/parking-dashboard.json';
 import viWorkOrders from '@/locales/vi/workOrders.json';
 import viPatrol from '@/locales/vi/patrol.json';
 import viSap from '@/locales/vi/sap.json';
+import viDepartments from '@/locales/vi/departments.json';
 
 import enCommon from '@/locales/en/common.json';
 import enNav from '@/locales/en/nav.json';
@@ -45,6 +46,7 @@ import enParking from '@/locales/en/parking-dashboard.json';
 import enWorkOrders from '@/locales/en/workOrders.json';
 import enPatrol from '@/locales/en/patrol.json';
 import enSap from '@/locales/en/sap.json';
+import enDepartments from '@/locales/en/departments.json';
 
 i18n
   .use(LanguageDetector)
@@ -73,6 +75,7 @@ i18n
         workOrders: viWorkOrders,
         patrol: viPatrol,
         sap: viSap,
+        departments: viDepartments,
       },
       en: {
         common: enCommon,
@@ -96,6 +99,7 @@ i18n
         workOrders: enWorkOrders,
         patrol: enPatrol,
         sap: enSap,
+        departments: enDepartments,
       },
     },
     defaultNS: 'common',

@@ -1,0 +1,64 @@
+{
+  "title": "Department management",
+  "description": "Create and manage the Department hierarchy for each Mall.",
+  "mall": {
+    "label": "Mall",
+    "select": "Select Mall",
+    "required": "Select a Mall to view its Departments.",
+    "locked": "Current Mall for this account",
+    "noAccess": "This account has no authorised active Mall."
+  },
+  "actions": {
+    "create": "Add Department",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "search": {
+    "placeholder": "Search by Department name..."
+  },
+  "table": {
+    "name": "Department name",
+    "parent": "Parent Department",
+    "description": "Description",
+    "children": "Child Departments",
+    "actions": "Actions",
+    "root": "Not belong",
+    "empty": "No Departments exist in this Mall.",
+    "loading": "Loading Departments...",
+    "pagination": "{{total}} Departments · Page {{page}}/{{totalPages}}"
+  },
+  "form": {
+    "createTitle": "Add new Department",
+    "editTitle": "Edit Department",
+    "name": "Department name",
+    "namePlaceholder": "For example: Information Technology",
+    "parent": "Parent Department",
+    "noParent": "Not belong",
+    "description": "Description",
+    "descriptionPlaceholder": "Enter a Department description",
+    "saving": "Saving..."
+  },
+  "delete": {
+    "title": "Delete Department",
+    "description": "Are you sure you want to delete the Department \"{{name}}\"?",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "processing": "Deleting...",
+    "hasChildren": "This Department contains child Departments and cannot be deleted."
+  },
+  "toast": {
+    "created": "Department created",
+    "updated": "Department updated",
+    "deleted": "Department deleted",
+    "loadError": "Unable to load Departments",
+    "saveError": "Unable to save Department information",
+    "deleteError": "Unable to delete Department"
+  },
+  "missingInformation": "No information available",
+  "notAvailable": "—"
+}

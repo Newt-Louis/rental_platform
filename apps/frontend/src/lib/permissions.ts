@@ -153,7 +153,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   reports: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
   analytics: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "LEASING_MANAGER"],
   ai: ["ADMIN", "LEASING_MANAGER", "MALL_DIRECTOR", "CEO"],
-  admin: ["ADMIN"],
+  admin: ["ADMIN", "CEO", "MALL_DIRECTOR"],
   announcements: [
     "ADMIN",
     "MALL_DIRECTOR",

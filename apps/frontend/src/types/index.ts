@@ -21,10 +21,32 @@ export interface User {
   role: Role;
   phone?: string;
   department?: string;
+  departmentInfo?: {
+    id: string;
+    name: string;
+    mallId: string;
+    mall?: { id: string; name: string; code?: string };
+  } | null;
   avatar?: string;
   isActive: boolean;
   tenantId?: string | null;
   mallAccess?: { mall: { id: string; name: string } }[];
+  activeMallId?: string | null;
+  activeMall?: { name: string } | null;
+}
+
+export interface Department {
+  id: string;
+  mallId: string;
+  name: string;
+  description?: string | null;
+  parentId?: string | null;
+  parent?: { id: string; name: string } | null;
+  mall?: { id: string; name: string; code?: string };
+  children?: { id: string; name: string }[];
+  _count?: { children: number };
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthState {

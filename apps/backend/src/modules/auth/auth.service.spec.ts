@@ -81,6 +81,7 @@ describe('AuthService', () => {
       phone: null,
       avatar: null,
       tenantId: null,
+      activeMallId: 'mall-1',
     });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     jwt.sign.mockReturnValue('signed-token');
@@ -96,6 +97,7 @@ describe('AuthService', () => {
       role: Role.LEASING_EXECUTIVE,
     });
     expect(result.accessToken).toBe('signed-token');
+    expect(result.user.activeMallId).toBe('mall-1');
     expect(result.user).not.toHaveProperty('password');
   });
 

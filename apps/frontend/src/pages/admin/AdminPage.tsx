@@ -1,8 +1,9 @@
 import { useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi, departmentsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
+import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,12 +23,14 @@ import {
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
 import { MallAccessTab } from './MallAccessTab';
+import { DepartmentsTab } from './DepartmentsTab';
 import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
+import { getApiErrorMessage } from '@/lib/api-error';
 import type { User } from '@/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -80,17 +83,37 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
 
 // ─── Tab 1: Users ─────────────────────────────────────────────────────────────
 
+/**
+ * Roles that carry no UserMallAccess grant. Their data scope differs per role,
+ * so each gets its own wording instead of one blanket "sees every Mall" note:
+ * only ADMIN truly bypasses the Mall check (`MallAccessService.BYPASS_ROLES`),
+ * CEO is portfolio-wide only on the approved oversight reads, and TENANT is
+ * scoped by its linked tenant record.
+ */
+const SCOPE_HINT_KEY: Record<string, string> = {
+  ADMIN: 'notApplicableHint',
+  CEO: 'ceoHint',
+  TENANT: 'tenantHint',
+};
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-red-600">{message}</p>;
+}
+
 function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null; onClose: () => void }) {
   const isEdit = !!user;
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
-  const { register, handleSubmit, reset, watch } = useForm();
+  const { t: tDepartments } = useTranslation('departments');
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
   const selectedRole = watch('role', user?.role ?? ROLE_KEYS[4]); // default LEASING_EXECUTIVE
   const [selectedMallIds, setSelectedMallIds] = useState<string[]>([]);
   const [mallRole, setMallRole] = useState('LEASING_EXECUTIVE');
   const [addMallId, setAddMallId] = useState('');
   const [addMallRole, setAddMallRole] = useState('LEASING_EXECUTIVE');
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const needsMallAccess = MALL_ACCESS_ROLES.includes(selectedRole);
 
@@ -104,10 +127,18 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
         tenantId: (user as any).tenantId ?? '',
       } : { role: ROLE_KEYS[4] });
       setSelectedMallIds([]);
-      setMallRole('LEASING_EXECUTIVE');
+      setMallRole(user && MALL_ACCESS_ROLES.includes(user.role) ? user.role : 'LEASING_EXECUTIVE');
       setAddMallId('');
+      setSubmitError(null);
     }
   }, [open, user?.id]);
+
+  // A role without Mall scope (ADMIN/CEO/TENANT) must not carry a stale Mall
+  // selection made before the role was switched -- the backend rejects it.
+  useEffect(() => {
+    if (!needsMallAccess) setSelectedMallIds([]);
+    else if (MALL_ACCESS_ROLES.includes(selectedRole)) setMallRole(selectedRole);
+  }, [selectedRole, needsMallAccess]);
 
   const { data: tenantsData } = useQuery({
     queryKey: ['tenants-lite'],
@@ -119,9 +150,28 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
   const { data: mallsData } = useQuery({
     queryKey: ['malls'],
     queryFn: spacesApi.listMalls,
-    enabled: needsMallAccess,
+    enabled: open,
   });
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
+
+  const { data: departmentOptions = [] } = useQuery({
+    queryKey: ['departments', 'user-options', malls.map((mall) => mall.id)],
+    queryFn: async () => {
+      const results = await Promise.all(
+        malls.map((mall) => departmentsApi.options(mall.id)),
+      );
+      return results.flatMap((result, index) =>
+        (result ?? []).map((department: any) => ({
+          ...department,
+          mall: department.mall ?? malls[index],
+        })),
+      );
+    },
+    enabled: open && malls.length > 0,
+  });
+  const legacyDepartment = user?.department && !departmentOptions.some((item: any) => item.id === user.department)
+    ? user.department
+    : null;
 
   const { data: userMallsData, refetch: refetchUserMalls } = useQuery({
     queryKey: ['user-mall-access', user?.id],
@@ -130,37 +180,64 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
   });
   const userMalls: any[] = Array.isArray(userMallsData) ? userMallsData : userMallsData?.data ?? [];
 
+  /**
+   * Only send what this role actually uses. React Hook Form keeps values of
+   * fields that were unmounted (e.g. the tenant picker after switching away
+   * from the TENANT role), and an empty `tenantId` used to reach Prisma as a
+   * foreign key of '' -- a 500 with a raw query dump in the toast.
+   */
+  const buildPayload = (data: any) => {
+    const role = data.role || (isEdit ? user!.role : ROLE_KEYS[4]);
+    const payload: Record<string, unknown> = {
+      fullName: (data.fullName ?? '').trim(),
+      role,
+      phone: (data.phone ?? '').trim() || null,
+      department: (data.department ?? '').trim() || null,
+      tenantId: role === 'TENANT' ? ((data.tenantId ?? '').trim() || null) : null,
+    };
+
+    if (!isEdit) {
+      payload.email = (data.email ?? '').trim();
+      payload.password = data.password;
+      // Mall grants travel with the account so both succeed or neither does.
+      if (needsMallAccess && selectedMallIds.length > 0) {
+        payload.mallIds = selectedMallIds;
+        payload.mallRole = mallRole;
+      }
+    }
+
+    return payload;
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (data: any) => {
-      if (isEdit) return usersApi.updateUser(user!.id, data);
-      const newUser = await usersApi.createUser(data);
-      const userId = newUser?.data?.id ?? newUser?.id;
-      if (userId && selectedMallIds.length > 0) {
-        await Promise.allSettled(
-          selectedMallIds.map((mallId) => mallAccessApi.grant({ userId, mallId, role: mallRole })),
-        );
-      }
-      return newUser;
+      const payload = buildPayload(data);
+      return isEdit ? usersApi.updateUser(user!.id, payload) : usersApi.createUser(payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['mall-access'] });
+      qc.invalidateQueries({ queryKey: ['user-mall-access'] });
       toast({ title: isEdit ? t('users.toast.updated') : t('users.toast.created') });
-      reset(); setSelectedMallIds([]); onClose();
+      setSubmitError(null); reset(); setSelectedMallIds([]); onClose();
     },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onError: (e: any) => {
+      const message = getApiErrorMessage(e, t('commonError'));
+      setSubmitError(message);
+      toast({ title: message, variant: 'destructive' });
+    },
   });
 
   const grantMutation = useMutation({
     mutationFn: ({ mallId, role }: { mallId: string; role: string }) => mallAccessApi.grant({ userId: user!.id, mallId, role }),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); setAddMallId(''); toast({ title: t('mallAccess.toast.granted') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.grantError')), variant: 'destructive' }),
   });
 
   const revokeMutation = useMutation({
     mutationFn: (mallId: string) => mallAccessApi.revoke(user!.id, mallId),
-    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); toast({ title: t('mallAccess.toast.revoked') }); },
-    onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('commonError'), variant: 'destructive' }),
+    onSuccess: () => { refetchUserMalls(); qc.invalidateQueries({ queryKey: ['mall-access'] }); qc.invalidateQueries({ queryKey: ['users'] }); toast({ title: t('mallAccess.toast.revoked') }); },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, t('mallAccess.toast.revokeError')), variant: 'destructive' }),
   });
 
   const roleInfo = user ? ROLE_MAP[user.role] : null;
@@ -187,18 +264,43 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t('users.fields.fullNameRequired')}</Label>
-                <Input {...register('fullName', { required: true })} placeholder="Nguyễn Văn A" className="mt-1" />
+                <Input
+                  {...register('fullName', { required: t('users.validation.fullNameRequired') as string })}
+                  placeholder="Nguyễn Văn A" className="mt-1"
+                  aria-invalid={!!errors.fullName}
+                />
+                <FieldError message={errors.fullName?.message as string | undefined} />
               </div>
               <div>
                 <Label>Email{!isEdit && ' *'}</Label>
                 {isEdit
                   ? <Input value={user!.email} disabled className="mt-1 bg-gray-50 text-gray-500" />
-                  : <Input {...register('email', { required: true })} type="email" placeholder="user@thiso.com" className="mt-1" />}
+                  : (
+                    <>
+                      <Input
+                        {...register('email', {
+                          required: t('users.validation.emailRequired') as string,
+                          pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: t('users.validation.emailInvalid') as string },
+                        })}
+                        type="email" placeholder="user@thiso.com" className="mt-1"
+                        aria-invalid={!!errors.email}
+                      />
+                      <FieldError message={errors.email?.message as string | undefined} />
+                    </>
+                  )}
               </div>
               {!isEdit && (
                 <div>
                   <Label>{t('users.fields.password')}</Label>
-                  <Input {...register('password', { required: true, minLength: 8 })} type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1" />
+                  <Input
+                    {...register('password', {
+                      required: t('users.validation.passwordRequired') as string,
+                      minLength: { value: 8, message: t('users.validation.passwordTooShort') as string },
+                    })}
+                    type="password" placeholder={t('users.fields.passwordPlaceholder')} className="mt-1"
+                    aria-invalid={!!errors.password}
+                  />
+                  <FieldError message={errors.password?.message as string | undefined} />
                 </div>
               )}
               <div>
@@ -213,7 +315,21 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
               </div>
               <div>
                 <Label>{t('users.fields.department')}</Label>
-                <Input {...register('department')} placeholder="Leasing" className="mt-1" />
+                <select {...register('department')} className="mt-1 w-full rounded-md border px-3 py-2 text-sm">
+                  <option value="">{tDepartments('missingInformation')}</option>
+                  {legacyDepartment && (
+                    <option value={legacyDepartment}>{tDepartments('missingInformation')}</option>
+                  )}
+                  {malls.map((mall) => (
+                    <optgroup key={mall.id} label={mall.name}>
+                      {departmentOptions
+                        .filter((department: any) => department.mallId === mall.id)
+                        .map((department: any) => (
+                          <option key={department.id} value={department.id}>{department.name}</option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
               {selectedRole === 'TENANT' && (
                 <div className="col-span-2">
@@ -255,9 +371,11 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                       })}
                       {malls.length === 0 && <span className="text-xs text-gray-400">{t('users.mallScope.noMalls')}</span>}
                     </div>
-                    {selectedMallIds.length > 0 && (
-                      <p className="text-xs text-blue-600">{t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })}</p>
-                    )}
+                    <p className="text-xs text-blue-600">
+                      {selectedMallIds.length > 0
+                        ? t('users.mallScope.assignmentSummary', { role: t(adminRoleTranslationKey(mallRole)), count: selectedMallIds.length })
+                        : t('users.mallScope.emptyMeansAll')}
+                    </p>
                   </>
                 ) : (
                   <div className="space-y-2">
@@ -292,6 +410,19 @@ function UserDialog({ open, user, onClose }: { open: boolean; user?: User | null
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {!needsMallAccess && (
+              <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                {t(`users.mallScope.${SCOPE_HINT_KEY[selectedRole] ?? 'notApplicableHint'}`)}
+              </p>
+            )}
+
+            {submitError && (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <span className="whitespace-pre-line">{submitError}</span>
               </div>
             )}
 
@@ -381,6 +512,7 @@ function UsersTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
 
   const toggleMutation = useMutation({
     mutationFn: (u: User) => usersApi.updateUser(u.id, { isActive: !u.isActive }),
@@ -480,7 +612,7 @@ function UsersTab() {
                   <tr key={u.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => setSelectedUser(u)}>
                     <td className="px-4 py-3 font-medium">{u.fullName}</td>
                     <td className="px-4 py-3 text-gray-500">{u.email}</td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{(u as any).department ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.departmentInfo?.name ?? tDepartments('missingInformation')}</td>
                     <td className="px-4 py-2.5"><Badge className={`${roleInfo.color} border-0 text-xs`}>{t(adminRoleTranslationKey(u.role))}</Badge></td>
                     <td className="px-4 py-3"><MallAccessCell user={u} /></td>
                     <td className="px-4 py-3">
@@ -1369,6 +1501,7 @@ const TABS = [
   { id: 'users',       labelKey: 'tabs.users',       icon: Users },
   { id: 'malls',       labelKey: 'tabs.malls',       icon: Building2 },
   { id: 'mall-access', labelKey: 'tabs.mallAccess',  icon: Shield },
+  { id: 'departments', labelKey: 'tabs.departments', icon: Building2 },
   { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
   { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
   { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
@@ -1378,7 +1511,7 @@ const TABS = [
 
 const TAB_GROUPS = [
   { labelKey: 'tabGroups.userAccess', ids: ['users', 'mall-access', 'permissions'] },
-  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'structure'] },
+  { labelKey: 'tabGroups.orgMall', ids: ['malls', 'departments', 'structure'] },
   { labelKey: 'tabGroups.categories', ids: ['categories'] },
   { labelKey: 'tabGroups.process', ids: ['approval'] },
   { labelKey: 'tabGroups.platform', ids: ['system'] },
@@ -1386,9 +1519,15 @@ const TAB_GROUPS = [
 
 export default function AdminPage() {
   const { t } = useTranslation('admin');
+  const { t: tDepartments } = useTranslation('departments');
+  const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isFullAdmin = user?.role === 'ADMIN';
+  const availableTabs = isFullAdmin ? TABS : TABS.filter((tab) => tab.id === 'departments');
   const requestedSection = searchParams.get('section');
-  const activeTab = TABS.some((tab) => tab.id === requestedSection) ? requestedSection! : 'users';
+  const activeTab = availableTabs.some((tab) => tab.id === requestedSection)
+    ? requestedSection!
+    : availableTabs[0]?.id ?? 'departments';
   const selectTab = (id: string) => {
     const next = new URLSearchParams(searchParams);
     next.set('section', id);
@@ -1400,9 +1539,9 @@ export default function AdminPage() {
       <PageHeader
         className="mb-4 border-b border-slate-200 pb-4"
         eyebrow={t('erpControlCenter')}
-        title={t('systemConfig')}
-        description={t('systemConfigDesc')}
-        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t('superAdmin')}</Badge>}
+        title={isFullAdmin ? t('systemConfig') : tDepartments('title')}
+        description={isFullAdmin ? t('systemConfigDesc') : tDepartments('description')}
+        actions={<Badge variant="outline" className="hidden gap-1.5 text-xs sm:inline-flex"><Shield size={12} /> {t(adminRoleTranslationKey(user?.role ?? ''))}</Badge>}
       />
 
       {/* Mobile select */}
@@ -1413,18 +1552,18 @@ export default function AdminPage() {
         onChange={(event) => selectTab(event.target.value)}
         className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm sm:hidden"
       >
-        {TABS.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
+        {availableTabs.map((tab) => <option key={tab.id} value={tab.id}>{t(tab.labelKey)}</option>)}
       </select>
 
       {/* Sidebar + content */}
       <div className="flex min-h-0 flex-1 gap-5 overflow-hidden">
         {/* Sidebar */}
         <nav className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r border-slate-200 pr-3 sm:flex">
-          {TAB_GROUPS.map((group) => (
+          {TAB_GROUPS.filter((group) => availableTabs.some((tab) => group.ids.includes(tab.id))).map((group) => (
             <div key={group.labelKey} className="mb-4">
               <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t(group.labelKey)}</div>
               <div className="flex flex-col gap-0.5">
-                {TABS.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
+                {availableTabs.filter((tab) => group.ids.includes(tab.id)).map((tab) => {
                   const Icon = tab.icon;
                   return (
                     <button
@@ -1458,6 +1597,7 @@ export default function AdminPage() {
             {activeTab === 'users'       && <UsersTab />}
             {activeTab === 'malls'       && <MallsTab />}
             {activeTab === 'mall-access' && <MallAccessTab />}
+            {activeTab === 'departments' && <DepartmentsTab />}
             {activeTab === 'structure'   && <SpaceStructureTab />}
             {activeTab === 'categories'  && <CategoriesTab />}
             {activeTab === 'permissions' && <PermissionsTab />}

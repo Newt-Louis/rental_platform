@@ -353,7 +353,8 @@ export class ApprovalsService {
     });
 
     if (!workflow) throw new NotFoundException('Workflow not found');
-    if (workflow.entityType !== 'FITOUT_SUBMITTAL') return workflow;
+    const workflowWithDepartments = await this.attachApproverDepartments(workflow);
+    if (workflow.entityType !== 'FITOUT_SUBMITTAL') return workflowWithDepartments;
 
     const submittal = workflow.fitoutSubmittal;
     if (!submittal || submittal.id !== workflow.entityId || submittal.workflowId !== workflow.id) {
@@ -389,7 +390,37 @@ export class ApprovalsService {
       where: { code: submittal.stageCode },
       select: { code: true, name: true },
     });
-    return { ...workflow, fitoutSubmittal: { ...submittal, stage, attachments } };
+    return { ...workflowWithDepartments, fitoutSubmittal: { ...submittal, stage, attachments } };
+  }
+
+  private async attachApproverDepartments<T extends { steps: any[] }>(workflow: T) {
+    const ids = [...new Set(
+      workflow.steps
+        .map((step) => step.approver?.department)
+        .filter(Boolean),
+    )] as string[];
+    if (ids.length === 0) return workflow;
+    const departments = ids.length
+      ? await this.prisma.department.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true, mallId: true },
+        })
+      : [];
+    const byId = new Map(departments.map((department) => [department.id, department]));
+    return {
+      ...workflow,
+      steps: workflow.steps.map((step) => ({
+        ...step,
+        approver: step.approver
+          ? {
+              ...step.approver,
+              departmentInfo: step.approver.department
+                ? byId.get(step.approver.department) ?? null
+                : null,
+            }
+          : null,
+      })),
+    };
   }
 
   async getAllWorkflows(query: { status?: WorkflowStatus; page?: number; limit?: number }, mallIds?: string[]) {

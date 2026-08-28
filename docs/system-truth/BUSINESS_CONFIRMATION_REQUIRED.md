@@ -24,6 +24,10 @@ Live register. Consolidated from all 5 research streams, 2026-08-21.
 | BC-018 | What is the current status of the `/uploads` static-serving guard-bypass noted in `docs/readiness/SECURITY_READINESS.md:17`? | Security stream (carried forward, not independently re-verified) | ~~P0 if still current~~ | **RESOLVED 2026-08-21 — see correction below** |
 | BC-019 | What backend module/data source does the `pipeline-stats` frontend page actually consume? | Orchestrator synthesis | P3 | OPEN |
 | BC-020 | Is the Tickets `escalations`/`rate`/`rating`/SLA-policy tenant-isolation gap (CONTRA-003) an intentional simplification (trusting the frontend to never expose these to tenants) or an oversight? | Security stream | P1 | OPEN |
+| BC-021 | Which roles may administer Departments, and at what access level? | CR-114 | P0 — incorrect answer can grant cross-Mall/org-master-data mutation | **ANSWERED 2026-08-27 — ADMIN, CEO, MALL_DIRECTOR** |
+| BC-022 | How should free-text `User.department` migrate to Mall-scoped Department records? | CR-114 | P0 — incorrect mapping can corrupt staff organisation assignments | **ANSWERED 2026-08-27 — retain string; new values are Department IDs; unmatched legacy values resolve null** |
+| BC-023 | What happens to children and user assignments on hard delete of a Department? | CR-114 | P0 — incorrect referential action can destroy or orphan organisation data | **ANSWERED 2026-08-27 — reject parent deletion; leaf delete clears matching User values** |
+| BC-024 | Which Mall context is fixed for a multi-Mall Department operator? | CR-114 | P0 — incorrect selection can breach Mall isolation | **ANSWERED 2026-08-27 — one Department per User; administer in active Mall** |
 
 ## Correction record — BC-018 (2026-08-21, Architecture Review phase)
 

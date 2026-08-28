@@ -50,9 +50,11 @@ export class AuthService {
         fullName: user.fullName,
         role: user.role,
         department: user.department,
+        departmentInfo: await this.resolveDepartment(user.department),
         phone: user.phone,
         avatar: user.avatar,
         tenantId: user.tenantId,
+        activeMallId: user.activeMallId,
       },
     };
   }
@@ -127,7 +129,10 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return user;
+    return {
+      ...user,
+      departmentInfo: await this.resolveDepartment(user.department),
+    };
   }
 
   async setActiveMall(userId: string, mallId: string | null) {
@@ -152,5 +157,18 @@ export class AuthService {
     }
 
     return { success: true };
+  }
+
+  private async resolveDepartment(departmentId?: string | null) {
+    if (!departmentId) return null;
+    return this.prisma.department.findUnique({
+      where: { id: departmentId },
+      select: {
+        id: true,
+        name: true,
+        mallId: true,
+        mall: { select: { id: true, name: true, code: true } },
+      },
+    });
   }
 }

@@ -20,7 +20,6 @@ export default function ProfilePage() {
   const [infoForm, setInfoForm] = useState({
     fullName: user?.fullName ?? '',
     phone: user?.phone ?? '',
-    department: user?.department ?? '',
   });
   const [infoLoading, setInfoLoading] = useState(false);
 
@@ -35,7 +34,6 @@ export default function ProfilePage() {
       const updated = await usersApi.updateUser(user.id, {
         fullName: infoForm.fullName,
         phone: infoForm.phone,
-        department: infoForm.department,
       });
       setUser({ ...user, ...updated });
       toast({ title: t('saveSuccess') });
@@ -128,9 +126,9 @@ export default function ProfilePage() {
                 <Label htmlFor="department">{t('fields.department')}</Label>
                 <Input
                   id="department"
-                  value={infoForm.department}
-                  onChange={(e) => setInfoForm((f) => ({ ...f, department: e.target.value }))}
+                  value={user?.departmentInfo?.name ?? ''}
                   placeholder={t('departmentPlaceholder')}
+                  disabled
                 />
               </div>
             </div>

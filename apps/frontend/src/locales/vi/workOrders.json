@@ -38,7 +38,11 @@
     "dialogTitle": "Tạo mẫu công việc định kỳ", "mall": "Trung tâm thương mại", "name": "Tên mẫu",
     "category": "Nhóm", "frequencyLabel": "Tần suất", "workOrderTitle": "Tiêu đề Work Order",
     "nextRunAt": "Lần chạy tiếp theo", "slaHours": "SLA (giờ)", "department": "Bộ phận",
-    "selectDepartment": "Chọn bộ phận xử lý", "assignee": "Người phụ trách", "location": "Vị trí",
+    "selectDepartment": "Chọn bộ phận xử lý",
+    "searchDepartment": "Tìm bộ phận...",
+    "searchAssignee": "Tìm người xử lý...",
+    "noDepartment": "Không có bộ phận nào trong Mall này",
+    "noAssignee": "Không có nhân sự nào phù hợp", "assignee": "Người phụ trách", "location": "Vị trí",
     "checklist": "Checklist (mỗi dòng một mục)", "saving": "Đang lưu...", "save": "Lưu mẫu",
     "frequency": { "DAILY": "Hàng ngày", "WEEKLY": "Hàng tuần", "MONTHLY": "Hàng tháng", "QUARTERLY": "Hàng quý", "ANNUALLY": "Hàng năm" },
     "toast": {
