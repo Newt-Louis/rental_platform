@@ -206,7 +206,6 @@ describe('WorkOrdersPage — URL-driven work order selection', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(usersApi.listUsers).mockResolvedValue({ data: [] } as never);
     vi.mocked(workOrdersApi.list).mockResolvedValue({ data: [], total: 0, totalPages: 1 } as never);
     vi.mocked(workOrdersApi.summary).mockResolvedValue({ total: 0, byStatus: {}, pendingReview: 0, overdue: 0 } as never);
   });

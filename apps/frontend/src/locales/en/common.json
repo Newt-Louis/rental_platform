@@ -198,7 +198,8 @@
       "USER_MALL_SCOPE_NOT_APPLICABLE": "This role does not use Mall scope: the account always sees data from every Mall.",
       "USER_MALL_ROLE_NOT_GRANTABLE": "The selected role cannot be granted per Mall.",
       "USER_MALL_NOT_FOUND": "One or more selected Malls no longer exist. Please pick again."
-    },
+    }
+  },
   "dateRangePicker": {
     "placeholder": "Select date range",
     "clear": "Clear date",

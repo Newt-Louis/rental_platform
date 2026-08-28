@@ -198,7 +198,8 @@
       "USER_MALL_SCOPE_NOT_APPLICABLE": "Vai trò này không dùng phạm vi Mall: tài khoản luôn xem được dữ liệu của tất cả Mall.",
       "USER_MALL_ROLE_NOT_GRANTABLE": "Vai trò được chọn không thể cấp quyền theo Mall.",
       "USER_MALL_NOT_FOUND": "Một hoặc nhiều Mall được chọn không còn tồn tại. Vui lòng chọn lại."
-    },
+    }
+  },
   "dateRangePicker": {
     "placeholder": "Chọn khoảng ngày",
     "clear": "Xóa ngày",
