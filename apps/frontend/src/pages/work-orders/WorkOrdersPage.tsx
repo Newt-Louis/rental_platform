@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -84,13 +85,35 @@ export default function WorkOrdersPage() {
   const [alert, setAlert] = useState("");
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false),
-    [selectedId, setSelectedId] = useState<string | null>(null),
     [form, setForm] = useState<any>({ ...empty, mallId: selectedMallId || "" }),
     [createImages, setCreateImages] = useState<File[]>([]),
     [comment, setComment] = useState(""),
     [newChecklist, setNewChecklist] = useState("");
 
+  // The selected work order lives in the URL (not local state) so a notification's
+  // /work-orders?id=... link opens the exact record, the URL stays shareable/bookmarkable,
+  // a refresh preserves it, and browser Back/Forward restores it for free. Closing removes
+  // only `id`, leaving search/status/category/priority/department/alert/page untouched.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get("id");
+  const setSelectedId = (id: string | null) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set("id", id);
+      else next.delete("id");
+      return next;
+    });
+  };
+
+  // Skip on the very first render: this effect exists to reset selection when the operator
+  // switches malls, not to wipe out a ?id= a notification link (or a bookmark/refresh) put in
+  // the URL before this component ever mounted.
+  const isInitialMallMount = useRef(true);
   useEffect(() => {
+    if (isInitialMallMount.current) {
+      isInitialMallMount.current = false;
+      return;
+    }
     setPage(1);
     setSelectedId(null);
     setCreateOpen(false);
@@ -548,8 +571,15 @@ export default function WorkOrdersPage() {
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{item?.title || "Đang tải..."}</DialogTitle>
+            <DialogTitle>
+              {item?.title || (detailQ.isError ? "Không tìm thấy công việc" : "Đang tải...")}
+            </DialogTitle>
           </DialogHeader>
+          {detailQ.isError && (
+            <p className="text-sm text-muted-foreground">
+              Công việc này không tồn tại hoặc đã bị xóa.
+            </p>
+          )}
           {item && (
             <div className="space-y-5">
               <div className="flex flex-wrap gap-2">

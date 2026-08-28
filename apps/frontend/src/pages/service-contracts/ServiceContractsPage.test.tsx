@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ServiceContractsPage from './ServiceContractsPage';
 import { serviceContractsApi } from '@/api';
+
+// Renders the current URL's querystring into the DOM so tests can assert on it directly —
+// MemoryRouter keeps its own in-memory history and never touches window.location.
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="url-probe">{location.pathname}{location.search}</div>;
+}
 
 const mallContext = vi.hoisted(() => ({ selectedMallId: null as string | null }));
 
@@ -91,9 +99,11 @@ describe('ServiceContractsPage all-mall view', () => {
     });
 
     render(
-      <QueryClientProvider client={queryClient}>
-        <ServiceContractsPage />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <ServiceContractsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     expect(await screen.findByText('HD-ALL-001')).toBeInTheDocument();
@@ -117,7 +127,7 @@ describe('ServiceContractsPage all-mall view', () => {
     vi.mocked(serviceContractsApi.upload).mockResolvedValue({ id: 'document-1' } as never);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'create' }));
     fireEvent.change(screen.getByLabelText('Số hợp đồng pháp lý *'), { target: { value: 'PL-2026-001' } });
     fireEvent.change(screen.getByLabelText('Tên hợp đồng *'), { target: { value: 'Hợp đồng bảo trì' } });
@@ -144,7 +154,7 @@ describe('ServiceContractsPage all-mall view', () => {
 
   it('explains lifecycle choices and requires confirmation before changing status', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
     expect(await screen.findByText('Trạng thái hiện tại')).toBeInTheDocument();
@@ -154,5 +164,82 @@ describe('ServiceContractsPage all-mall view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
 
     await waitFor(() => expect(serviceContractsApi.updateStatus).toHaveBeenCalledWith('contract-1', 'PROPOSAL'));
+  });
+});
+
+// Notification Deep-Link Completeness Wave: the selected contract now lives in the URL
+// (?id=...), not local state, so a notification's /service-contracts?id=<id> link opens the
+// exact record. Regression-critical: a "reset selection on mall change" effect used to also
+// fire on the very first mount, silently wiping out a ?id= that arrived from a notification link.
+describe('ServiceContractsPage — URL-driven contract selection', () => {
+  const renderAt = (path: string) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <QueryClientProvider client={queryClient}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/service-contracts" element={<ServiceContractsPage />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mallContext.selectedMallId = null;
+    vi.mocked(serviceContractsApi.list).mockResolvedValue({ data: [], total: 0, page: 1, limit: 25, totalPages: 1 } as never);
+    vi.mocked(serviceContractsApi.alerts).mockResolvedValue({ expiring: 0, receivableDue: 0, payableDue: 0, overdue: 0 } as never);
+  });
+
+  it('opens the exact contract when the URL already carries ?id= on first load (fresh session / direct link / refresh)', async () => {
+    vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      id: 'svc-9', contractNumber: 'PL-2026-009', title: 'Hợp đồng vệ sinh', counterpartyName: 'Đối tác',
+      type: 'CLEANING', status: 'ACTIVE', totalValue: 5000000, currency: 'VND',
+      documents: [], events: [], payments: [], checklist: [], milestones: [],
+    } as never);
+
+    renderAt('/service-contracts?id=svc-9');
+
+    expect(await screen.findByText('Hợp đồng vệ sinh')).toBeInTheDocument();
+    expect(serviceContractsApi.detail).toHaveBeenCalledWith('svc-9');
+  });
+
+  it('fails gracefully for a nonexistent contract id instead of breaking the page', async () => {
+    vi.mocked(serviceContractsApi.detail).mockRejectedValue(new Error('Not Found'));
+
+    renderAt('/service-contracts?id=does-not-exist');
+
+    expect(await screen.findByText('Không tìm thấy hợp đồng')).toBeInTheDocument();
+    expect(screen.getByText('Hợp đồng dịch vụ này không tồn tại hoặc đã bị xóa.')).toBeInTheDocument();
+  });
+
+  it('closing the detail removes only ?id, preserving every other query param', async () => {
+    vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      id: 'svc-9', contractNumber: 'PL-2026-009', title: 'Hợp đồng vệ sinh', counterpartyName: 'Đối tác',
+      type: 'CLEANING', status: 'ACTIVE', totalValue: 5000000, currency: 'VND',
+      documents: [], events: [], payments: [], checklist: [], milestones: [],
+    } as never);
+
+    renderAt('/service-contracts?id=svc-9&status=ACTIVE&alert=PAYMENT_DUE');
+    await screen.findByText('Hợp đồng vệ sinh');
+    expect(screen.getByTestId('url-probe')).toHaveTextContent('id=svc-9');
+    expect(screen.getByTestId('url-probe')).toHaveTextContent('status=ACTIVE');
+
+    const closeButtons = screen.getAllByRole('button');
+    const closeButton = closeButtons.find((b) => b.querySelector('svg.lucide-x'));
+    await userEvent.setup().click(closeButton!);
+
+    await screen.findByText((_, node) => {
+      const text = node?.textContent ?? '';
+      return text.includes('/service-contracts?') && !text.includes('id=svc-9') && text.includes('status=ACTIVE');
+    }, { selector: '[data-testid="url-probe"]' });
+  });
+
+  it('does not fetch a contract at all when the URL has no ?id (no dead/erroneous request)', async () => {
+    renderAt('/service-contracts');
+    await waitFor(() => expect(serviceContractsApi.list).toHaveBeenCalled());
+    expect(serviceContractsApi.detail).not.toHaveBeenCalled();
   });
 });

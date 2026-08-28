@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
@@ -125,7 +126,20 @@ export default function ServiceContractsPage() {
   const [paymentDirection, setPaymentDirection] = useState("");
   const [alert, setAlert] = useState("");
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The selected contract lives in the URL (not local state) so a notification's
+  // /service-contracts?id=... link opens the exact record, the URL stays
+  // shareable/bookmarkable, a refresh preserves it, and browser Back/Forward restores it for
+  // free. Closing removes only `id`, leaving every other filter/param untouched.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get("id");
+  const setSelectedId = (id: string | null) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set("id", id);
+      else next.delete("id");
+      return next;
+    });
+  };
   const [showCreate, setShowCreate] = useState(false);
   const [createPaymentDirection, setCreatePaymentDirection] = useState("PAYABLE");
   const [createOriginalFile, setCreateOriginalFile] = useState<File>();
@@ -133,7 +147,15 @@ export default function ServiceContractsPage() {
   const [exporting, setExporting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
+  // Skip on the very first render: this effect exists to reset selection when the operator
+  // switches malls, not to wipe out a ?id= a notification link (or a bookmark/refresh) put in
+  // the URL before this component ever mounted.
+  const isInitialMallMount = useRef(true);
   useEffect(() => {
+    if (isInitialMallMount.current) {
+      isInitialMallMount.current = false;
+      return;
+    }
     setSelectedId(null);
     setShowEdit(false);
     setShowRenew(false);
@@ -533,6 +555,19 @@ export default function ServiceContractsPage() {
               <Button disabled={create.isPending}>{create.isPending ? "Đang tạo và lưu tài liệu..." : "Tạo hợp đồng"}</Button>
             </div>
           </form>
+        </div>
+      )}
+      {selectedId && !item && detail.isError && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
+          <div className="h-full w-full max-w-2xl overflow-y-auto bg-background p-6 shadow-xl">
+            <div className="flex justify-between">
+              <h2 className="text-xl font-semibold">Không tìm thấy hợp đồng</h2>
+              <button onClick={() => setSelectedId(null)}><X /></button>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Hợp đồng dịch vụ này không tồn tại hoặc đã bị xóa.
+            </p>
+          </div>
         </div>
       )}
       {selectedId && item && (

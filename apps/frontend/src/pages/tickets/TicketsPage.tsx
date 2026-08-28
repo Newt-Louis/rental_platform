@@ -663,7 +663,7 @@ export default function TicketsPage() {
   const [priority, setPriority] = useState('');
   const [queue, setQueue] = useState(searchParams.get('queue') ?? 'open');
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(searchParams.get('id'));
   const [page, setPage] = useState(1);
 
   const { data, isLoading, isError, refetch } = useQuery({

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -137,10 +138,24 @@ export default function PatrolPage() {
     [shiftOpen, setShiftOpen] = useState(false),
     [scheduleOpen, setScheduleOpen] = useState(false),
     [pointDialog, setPointDialog] = useState<{ routeId: string; point?: any } | null>(null),
-    [selectedId, setSelectedId] = useState<string | null>(null),
     [cancelTarget, setCancelTarget] = useState<string | null>(null),
     [deleteTarget, setDeleteTarget] = useState<{ kind: "point" | "schedule"; id: string } | null>(null),
     [abnormalTarget, setAbnormalTarget] = useState<{ checkId: string; pointName: string } | null>(null);
+
+  // The selected shift lives in the URL (not local state) so a notification's
+  // /patrol?id=... link opens the exact shift, the URL stays shareable/bookmarkable, a
+  // refresh preserves it, and browser Back/Forward restores it for free. Closing removes
+  // only `id`, leaving every other filter/param untouched.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get("id");
+  const setSelectedId = (id: string | null) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set("id", id);
+      else next.delete("id");
+      return next;
+    });
+  };
   const [routeForm, setRouteForm] = useState<any>(routeBlank),
     [shiftForm, setShiftForm] = useState<any>(shiftBlank),
     [pointForm, setPointForm] = useState<any>(pointBlank),
@@ -157,7 +172,15 @@ export default function PatrolPage() {
   });
   const [reportRange, setReportRange] = useState({ from: "", to: "" });
 
+  // Skip on the very first render: this effect exists to reset selection when the operator
+  // switches malls, not to wipe out a ?id= a notification link (or a bookmark/refresh) put in
+  // the URL before this component ever mounted.
+  const isInitialMallMount = useRef(true);
   useEffect(() => {
+    if (isInitialMallMount.current) {
+      isInitialMallMount.current = false;
+      return;
+    }
     setSelectedId(null);
     setRouteOpen(false);
     setShiftOpen(false);
@@ -1162,9 +1185,18 @@ export default function PatrolPage() {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {detail?.shiftNumber} · {detail?.route?.name}
+              {detail
+                ? `${detail.shiftNumber} · ${detail.route?.name ?? ''}`
+                : detailQ.isError
+                  ? 'Không tìm thấy ca tuần tra'
+                  : 'Đang tải...'}
             </DialogTitle>
           </DialogHeader>
+          {detailQ.isError && (
+            <p className="text-sm text-muted-foreground">
+              Ca tuần tra này không tồn tại hoặc đã bị xóa.
+            </p>
+          )}
           {detail && (
             <>
               <div className="flex flex-wrap items-center gap-2">
