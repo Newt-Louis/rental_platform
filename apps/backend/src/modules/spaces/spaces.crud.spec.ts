@@ -139,4 +139,22 @@ describe('SpacesService unit CRUD safeguards', () => {
 
     expect(prisma.unit.updateMany).toHaveBeenCalled();
   });
+
+  it('rejects a manual LIQUIDATED status change — it must stay paired with Contract.TERMINATING via ContractTerminationService', async () => {
+    await expect(service.updateUnitStatus('unit-1', UnitStatus.LIQUIDATED, 'user-1'))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(service.getUnit).not.toHaveBeenCalled();
+    expect(unitStatus.transition).not.toHaveBeenCalled();
+  });
+
+  it('still allows other manual status changes (e.g. VACANT) through the same endpoint', async () => {
+    unitStatus.transition.mockResolvedValue({ ...unit, status: UnitStatus.VACANT });
+
+    await service.updateUnitStatus('unit-1', UnitStatus.VACANT, 'user-1');
+
+    expect(unitStatus.transition).toHaveBeenCalledWith('unit-1', UnitStatus.VACANT, {
+      userId: 'user-1',
+      reason: 'Manual status update',
+    });
+  });
 });

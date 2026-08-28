@@ -9,11 +9,13 @@ import {
 
 const labels: Record<string, string> = {
   VACANT: 'Trống',
+  OFFERING: 'Chào thuê',
   BOOKING: 'Đang giữ chỗ',
   NEGOTIATING: 'Đang thương thảo',
   CONTRACTED: 'Đã ký hợp đồng',
   UNDER_FITOUT: 'Đang thi công',
   OCCUPIED: 'Đang thuê',
+  LIQUIDATED: 'Đang thanh lý',
   MERGED: 'Đã gộp',
   unknownValue: 'Không xác định',
 };

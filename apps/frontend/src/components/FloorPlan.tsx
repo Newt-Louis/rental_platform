@@ -15,11 +15,13 @@ interface FloorMeta {
 
 const STATUS_CFG: Record<string, { bg: string; border: string; text: string }> = {
   VACANT:       { bg: 'bg-red-50',     border: 'border-red-300',    text: 'text-red-800' },
+  OFFERING:     { bg: 'bg-yellow-50',  border: 'border-yellow-300', text: 'text-yellow-800' },
   BOOKING:      { bg: 'bg-amber-50',   border: 'border-amber-300',  text: 'text-amber-800' },
   NEGOTIATING:  { bg: 'bg-orange-50',  border: 'border-orange-300', text: 'text-orange-800' },
   CONTRACTED:   { bg: 'bg-blue-50',    border: 'border-blue-300',   text: 'text-blue-800' },
   UNDER_FITOUT: { bg: 'bg-purple-50',  border: 'border-purple-300', text: 'text-purple-800' },
   OCCUPIED:     { bg: 'bg-green-50',   border: 'border-green-300',  text: 'text-green-800' },
+  LIQUIDATED:   { bg: 'bg-rose-50',    border: 'border-rose-300',   text: 'text-rose-800' },
 };
 
 const FLOOR_SORT: Record<string, number> = { B2: -2, B1: -1, GF: 0, L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, RF: 9 };
@@ -77,10 +79,12 @@ export function FloorPlan({
     total: floorUnits.length,
     occupied: floorUnits.filter(u => u.status === 'OCCUPIED').length,
     vacant: floorUnits.filter(u => u.status === 'VACANT').length,
+    offering: floorUnits.filter(u => u.status === 'OFFERING').length,
     booking: floorUnits.filter(u => u.status === 'BOOKING').length,
     negotiating: floorUnits.filter(u => u.status === 'NEGOTIATING').length,
     contracted: floorUnits.filter(u => u.status === 'CONTRACTED').length,
     fitout: floorUnits.filter(u => u.status === 'UNDER_FITOUT').length,
+    liquidated: floorUnits.filter(u => u.status === 'LIQUIDATED').length,
     totalArea: floorUnits.reduce((s, u) => s + u.areaNLA, 0),
     leasedArea: floorUnits.filter(u => u.status === 'OCCUPIED').reduce((s, u) => s + u.areaNLA, 0),
   }), [floorUnits]);
@@ -154,10 +158,12 @@ export function FloorPlan({
         <span className="text-gray-300">|</span>
         <span className="text-green-600 font-medium">{stats.occupied} {getUnitStatusLabel(t, 'OCCUPIED').toLowerCase()}</span>
         <span className="text-red-500">{stats.vacant} {getUnitStatusLabel(t, 'VACANT').toLowerCase()}</span>
+        {stats.offering > 0 && <span className="text-yellow-500">{stats.offering} {getUnitStatusLabel(t, 'OFFERING').toLowerCase()}</span>}
         {stats.booking > 0 && <span className="text-amber-500">{stats.booking} {getUnitStatusLabel(t, 'BOOKING').toLowerCase()}</span>}
         {stats.negotiating > 0 && <span className="text-orange-500">{stats.negotiating} {getUnitStatusLabel(t, 'NEGOTIATING').toLowerCase()}</span>}
         {stats.contracted > 0 && <span className="text-blue-500">{stats.contracted} {getUnitStatusLabel(t, 'CONTRACTED').toLowerCase()}</span>}
         {stats.fitout > 0 && <span className="text-purple-500">{stats.fitout} {getUnitStatusLabel(t, 'UNDER_FITOUT').toLowerCase()}</span>}
+        {stats.liquidated > 0 && <span className="text-rose-500">{stats.liquidated} {getUnitStatusLabel(t, 'LIQUIDATED').toLowerCase()}</span>}
         <span className="ml-auto text-xs text-gray-400">
           {stats.leasedArea.toLocaleString()} / {stats.totalArea.toLocaleString()} m² NLA
         </span>

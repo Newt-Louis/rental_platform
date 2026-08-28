@@ -52,6 +52,15 @@ export class ContractTerminationService {
         throw new BadRequestException('Termination already exists for this contract');
       }
 
+      // Captured before the Unit moves to LIQUIDATED so cancel() can restore the exact prior
+      // state — a live Contract can be terminated while the Unit is CONTRACTED, UNDER_FITOUT,
+      // or OCCUPIED, not only OCCUPIED.
+      const unitBeforeTermination = await tx.unit.findUnique({
+        where: { id: current.unitId },
+        select: { status: true },
+      });
+      if (!unitBeforeTermination) throw new NotFoundException('Unit not found');
+
       const termination = await tx.contractTermination.upsert({
         where: { contractId },
         create: {
@@ -65,6 +74,7 @@ export class ContractTerminationService {
           notes: dto.notes,
           createdById,
           status: 'INITIATED',
+          preTerminationUnitStatus: unitBeforeTermination.status,
         },
         update: {
           initiatedBy: dto.initiatedBy,
@@ -75,6 +85,7 @@ export class ContractTerminationService {
           penaltyAmount: dto.penaltyAmount,
           notes: dto.notes,
           status: 'INITIATED',
+          preTerminationUnitStatus: unitBeforeTermination.status,
         },
         include: { contract: { select: { id: true, contractNumber: true } } },
       });
@@ -82,6 +93,10 @@ export class ContractTerminationService {
         where: { id: contractId },
         data: { status: ContractStatus.TERMINATING },
       });
+      await this.unitStatus.transition(current.unitId, UnitStatus.LIQUIDATED, {
+        reason: `Termination initiated for contract ${contractId}`,
+        userId: createdById,
+      }, tx);
       return termination;
     });
   }
@@ -123,7 +138,7 @@ export class ContractTerminationService {
     return this.prisma.contractTermination.update({ where: { contractId }, data });
   }
 
-  async complete(contractId: string) {
+  async complete(contractId: string, userId?: string) {
     return this.prisma.$transaction(async (tx) => {
       const term = await tx.contractTermination.findUnique({ where: { contractId } });
       if (!term) throw new NotFoundException('Termination not found');
@@ -149,32 +164,44 @@ export class ContractTerminationService {
       });
       await this.unitStatus.transition(contract.unitId, UnitStatus.VACANT, {
         reason: `Contract ${contractId} terminated`,
+        userId,
       }, tx);
       return termination;
     });
   }
 
-  async cancel(contractId: string) {
+  async cancel(contractId: string, userId?: string) {
     const term = await this.prisma.contractTermination.findUnique({ where: { contractId } });
     if (!term) throw new NotFoundException('Termination not found');
     if (term.status === 'COMPLETED') throw new BadRequestException('Cannot cancel a completed termination');
 
     // Hợp đồng có thể đã ở EXPIRING (không chỉ ACTIVE) trước khi initiate() chuyển sang
     // TERMINATING — khôi phục đúng theo endDate thay vì luôn set cứng ACTIVE.
-    const contract = await this.prisma.contract.findUnique({ where: { id: contractId }, select: { endDate: true } });
+    const contract = await this.prisma.contract.findUnique({ where: { id: contractId }, select: { unitId: true, endDate: true } });
+    if (!contract) throw new NotFoundException('Contract not found');
     const now = new Date();
     const expiringThreshold = new Date(now);
     expiringThreshold.setDate(expiringThreshold.getDate() + 90);
-    const restoredStatus = !contract || contract.endDate < now
+    const restoredStatus = contract.endDate < now
       ? ContractStatus.EXPIRED
       : contract.endDate <= expiringThreshold
       ? ContractStatus.EXPIRING
       : ContractStatus.ACTIVE;
 
-    await this.prisma.$transaction([
-      this.prisma.contractTermination.update({ where: { contractId }, data: { status: 'CANCELLED' } }),
-      this.prisma.contract.update({ where: { id: contractId }, data: { status: restoredStatus } }),
-    ]);
+    // Restore the Unit to exactly the status it was in before initiate() — a live Contract can
+    // be terminated while the Unit is CONTRACTED, UNDER_FITOUT, or OCCUPIED, so this must not
+    // assume OCCUPIED. Falls back to OCCUPIED only for a pre-existing termination row created
+    // before preTerminationUnitStatus existed.
+    const restoredUnitStatus = term.preTerminationUnitStatus ?? UnitStatus.OCCUPIED;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contractTermination.update({ where: { contractId }, data: { status: 'CANCELLED' } });
+      await tx.contract.update({ where: { id: contractId }, data: { status: restoredStatus } });
+      await this.unitStatus.transition(contract.unitId, restoredUnitStatus, {
+        reason: `Termination cancelled for contract ${contractId}`,
+        userId,
+      }, tx);
+    });
 
     return { message: 'Termination cancelled' };
   }

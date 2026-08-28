@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '../../node_modules/.prisma/mssql-client';
+import { PrismaClient } from '../../node_modules/.prisma/parking-client';
 
 @Injectable()
-export class PrismaMssqlService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(PrismaMssqlService.name);
+export class PrismaParkingService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PrismaParkingService.name);
   private connected = false;
 
   constructor() {
@@ -13,7 +13,7 @@ export class PrismaMssqlService extends PrismaClient implements OnModuleInit, On
   }
 
   get isConfigured(): boolean {
-    return process.env.MSSQL_ENABLED === 'true' && !!process.env.MSSQL_DATABASE_URL;
+    return !!process.env.PARKING_DATABASE_URL;
   }
 
   get isEnabled(): boolean {
@@ -32,16 +32,16 @@ export class PrismaMssqlService extends PrismaClient implements OnModuleInit, On
 
   async onModuleInit() {
     if (!this.isConfigured) {
-      this.logger.warn('MSSQL_ENABLED/MSSQL_DATABASE_URL not set - external MSSQL Prisma client disabled');
+      this.logger.warn('PARKING_DATABASE_URL not set - parking dashboard Prisma client disabled');
       return;
     }
 
     try {
       await this.$connect();
       this.connected = true;
-      this.logger.log('MSSQL Prisma client connected');
+      this.logger.log('Parking Prisma client connected');
     } catch (err) {
-      this.logger.warn(`MSSQL unavailable - external MSSQL integration disabled: ${(err as Error).message}`);
+      this.logger.warn(`Parking DB unavailable - parking dashboard integration disabled: ${(err as Error).message}`);
       this.connected = false;
     }
   }

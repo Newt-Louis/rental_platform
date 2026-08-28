@@ -1,7 +1,7 @@
 import React from 'react';
 import {
-  AlertCircle, BookmarkPlus, Users, FileText, Building2,
-  CheckCircle, GitMerge,
+  AlertCircle, Megaphone, BookmarkPlus, Users, FileText, Building2,
+  CheckCircle, ClipboardX, GitMerge,
 } from 'lucide-react';
 import { formatVndRate } from './spacesPresentation';
 
@@ -9,21 +9,25 @@ export const STATUS_CONFIG: Record<string, {
   color: string; iconBg: string; leftBorder: string; textColor: string;
 }> = {
   VACANT:       { color: 'bg-red-100 text-red-700 border-red-200',          iconBg: 'bg-red-50',    leftBorder: 'border-l-red-400',    textColor: 'text-red-500' },
+  OFFERING:     { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', iconBg: 'bg-yellow-50', leftBorder: 'border-l-yellow-400', textColor: 'text-yellow-500' },
   BOOKING:      { color: 'bg-amber-100 text-amber-700 border-amber-200',    iconBg: 'bg-amber-50',  leftBorder: 'border-l-amber-400',  textColor: 'text-amber-500' },
   NEGOTIATING:  { color: 'bg-orange-100 text-orange-700 border-orange-200', iconBg: 'bg-orange-50', leftBorder: 'border-l-orange-400', textColor: 'text-orange-500' },
   CONTRACTED:   { color: 'bg-blue-100 text-gray-700 border-gray-200',       iconBg: 'bg-blue-50',   leftBorder: 'border-l-blue-400',   textColor: 'text-blue-500' },
   UNDER_FITOUT: { color: 'bg-purple-100 text-purple-700 border-purple-200', iconBg: 'bg-purple-50', leftBorder: 'border-l-purple-400', textColor: 'text-purple-500' },
   OCCUPIED:     { color: 'bg-green-100 text-green-700 border-green-200',    iconBg: 'bg-green-50',  leftBorder: 'border-l-green-400',  textColor: 'text-green-500' },
+  LIQUIDATED:   { color: 'bg-rose-100 text-rose-700 border-rose-200',       iconBg: 'bg-rose-50',   leftBorder: 'border-l-rose-400',   textColor: 'text-rose-500' },
   MERGED:       { color: 'bg-gray-100 text-gray-500 border-gray-200',       iconBg: 'bg-gray-50',   leftBorder: 'border-l-gray-300',   textColor: 'text-gray-400' },
 };
 
 export const STATUS_ICONS: Record<string, React.ReactNode> = {
   VACANT:       <AlertCircle size={14} />,
+  OFFERING:     <Megaphone size={14} />,
   BOOKING:      <BookmarkPlus size={14} />,
   NEGOTIATING:  <Users size={14} />,
   CONTRACTED:   <FileText size={14} />,
   UNDER_FITOUT: <Building2 size={14} />,
   OCCUPIED:     <CheckCircle size={14} />,
+  LIQUIDATED:   <ClipboardX size={14} />,
   MERGED:       <GitMerge size={14} />,
 };
 
