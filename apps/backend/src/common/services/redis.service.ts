@@ -35,6 +35,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: 1,
         connectTimeout: 3000,
         retryStrategy: () => null,
+        keyPrefix: 'leasing:',
       });
       await this.client.ping();
       this.logger.log('Redis connected');

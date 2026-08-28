@@ -22,11 +22,13 @@ enum Role {
 
 enum UnitStatus {
   VACANT // Trng
+  OFFERING // Chao thue - dang marketing chu dong, chua co khach giu cho
   BOOKING // ang booking/gi ch
   NEGOTIATING // ang thng tho (proposal stage)
   CONTRACTED //  k hp ng, ch thi cng
   UNDER_FITOUT // ang thi cng
   OCCUPIED // ang thu
+  LIQUIDATED // Thanh ly - hop dong dang cham dut, cho ban giao xong moi ve Trong
   MERGED //  gp vo snh khc (n khi danh sch thng)
 }
 
@@ -2973,6 +2975,10 @@ model ContractTermination {
   signageRemoved    Boolean   @default(false)
   keysReturned      Boolean   @default(false)
   status            String    @default("INITIATED") // INITIATED | IN_PROGRESS | COMPLETED | CANCELLED
+  // Unit.status captured at initiate() time, before the Unit is moved to LIQUIDATED - a live
+  // Contract can be terminated while the Unit is CONTRACTED, UNDER_FITOUT, or OCCUPIED (fit-out
+  // hasn't necessarily finished). cancel() restores exactly this instead of assuming OCCUPIED.
+  preTerminationUnitStatus UnitStatus?
   completedAt       DateTime?
   notes             String?
   createdById       String?

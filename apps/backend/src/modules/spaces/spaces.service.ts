@@ -517,6 +517,15 @@ export class SpacesService {
   }
 
   async updateUnitStatus(id: string, status: UnitStatus, userId?: string) {
+    // LIQUIDATED must stay paired with the linked Contract's TERMINATING state — setting it
+    // here would move the Unit without ever touching the Contract, leaving them desynced with
+    // no way back except another manual override. Only ContractTerminationService.initiate()
+    // (and its cancel/complete counterparts) may drive this transition.
+    if (status === UnitStatus.LIQUIDATED) {
+      throw new BadRequestException(
+        'LIQUIDATED chỉ được thiết lập tự động khi khởi tạo thanh lý hợp đồng (Contract Termination), không thể đổi thủ công.',
+      );
+    }
     await this.getUnit(id);
     return this.unitStatus.transition(id, status, { userId, reason: 'Manual status update' });
   }
@@ -566,15 +575,17 @@ export class SpacesService {
     if (mallId) where.mallId = mallId;
     else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
-    const [total, vacant, booking, negotiating, contracted, underFitout, occupied] =
+    const [total, vacant, offering, booking, negotiating, contracted, underFitout, occupied, liquidated] =
       await Promise.all([
         this.prisma.unit.count({ where }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.VACANT } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.OFFERING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.BOOKING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.NEGOTIATING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.CONTRACTED } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.UNDER_FITOUT } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.OCCUPIED } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.LIQUIDATED } }),
       ]);
 
     const units = await this.prisma.unit.findMany({
@@ -615,11 +626,13 @@ export class SpacesService {
     return {
       total,
       vacant,
+      offering,
       booking,
       negotiating,
       contracted,
       underFitout,
       occupied,
+      liquidated,
       occupancyRate: totalArea > 0 ? ((leasedArea / totalArea) * 100).toFixed(1) : '0',
       totalArea,
       vacantArea,

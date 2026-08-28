@@ -2,7 +2,14 @@ import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/comm
 import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ParkingDashboardService } from './parking-dashboard.service';
-import { ParkingTransactionFilterDto, ParkingTransactionExportFilterDto } from './dto/parking-transaction-filter.dto';
+import {
+  ParkingMonthlyChartFilterDto,
+  ParkingMonthlySummaryFilterDto,
+  ParkingTransactionExportFilterDto,
+  ParkingTransactionFilterDto,
+  ParkingTransactionFilterV2Dto,
+  ParkingYearlyChartFilterDto,
+} from './dto/parking-transaction-filter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
@@ -21,45 +28,29 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 export class ParkingDashboardController {
   constructor(private readonly parkingService: ParkingDashboardService) {}
 
-  @Get('revenue-report')
-  @ApiOperation({ summary: 'KPI doanh thu bãi đỗ xe hôm nay / tháng trước' })
+  @Get('monthly-summary')
+  @ApiOperation({ summary: 'Doanh thu & lượt xe tháng này / tháng trước (theo tháng dương lịch)' })
   @ApiQuery({ name: 'parkingCode', required: true })
-  revenueReport(@Query('parkingCode') parkingCode: string) {
-    return this.parkingService.getRevenueReport(parkingCode);
+  monthlySummary(@Query() filter: ParkingMonthlySummaryFilterDto) {
+    return this.parkingService.getMonthlySummary(filter.parkingCode);
   }
 
-  @Get('transaction-chart')
-  @ApiOperation({ summary: 'Biểu đồ số lượt giao dịch theo ngày' })
-  @ApiQuery({ name: 'parkingCode', required: true })
-  @ApiQuery({ name: 'startTime', required: true })
-  @ApiQuery({ name: 'finishTime', required: true })
-  transactionChart(
-    @Query('parkingCode') parkingCode: string,
-    @Query('startTime') startTime: string,
-    @Query('finishTime') finishTime: string,
-  ) {
-    return this.parkingService.getTransactionChart(parkingCode, startTime, finishTime);
+  @Get('revenue-vehicle-chart-by-month')
+  @ApiOperation({ summary: 'Doanh thu & lượt xe theo tháng trong một năm' })
+  revenueVehicleChartByMonth(@Query() filter: ParkingMonthlyChartFilterDto) {
+    return this.parkingService.getRevenueVehicleChartByMonth(filter.parkingCode, filter.year);
   }
 
-  @Get('revenue-chart')
-  @ApiOperation({ summary: 'Biểu đồ doanh thu theo ngày' })
-  @ApiQuery({ name: 'parkingCode', required: true })
-  @ApiQuery({ name: 'startTime', required: true })
-  @ApiQuery({ name: 'finishTime', required: true })
-  revenueChart(
-    @Query('parkingCode') parkingCode: string,
-    @Query('startTime') startTime: string,
-    @Query('finishTime') finishTime: string,
-  ) {
-    return this.parkingService.getRevenueChart(parkingCode, startTime, finishTime);
+  @Get('revenue-vehicle-chart-by-year')
+  @ApiOperation({ summary: 'Doanh thu & lượt xe theo năm, trong một khoảng năm' })
+  revenueVehicleChartByYear(@Query() filter: ParkingYearlyChartFilterDto) {
+    return this.parkingService.getRevenueVehicleChartByYear(filter.parkingCode, filter.fromYear, filter.toYear);
   }
 
-  @Get('revenue-chart-by-year')
-  @ApiOperation({ summary: 'Biểu đồ doanh thu theo tháng trong năm' })
-  @ApiQuery({ name: 'parkingCode', required: true })
-  @ApiQuery({ name: 'year', required: true })
-  revenueChartByYear(@Query('parkingCode') parkingCode: string, @Query('year') year: string) {
-    return this.parkingService.getRevenueChartByYear(parkingCode, Number(year));
+  @Get('tenants')
+  @ApiOperation({ summary: 'Danh sách bãi đỗ xe (tenant)' })
+  getTenants() {
+    return this.parkingService.getTenants();
   }
 
   @Post('transactions')
@@ -68,12 +59,17 @@ export class ParkingDashboardController {
     return this.parkingService.getTransactions(filter);
   }
 
+  @Post('transactions/v2')
+  @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang kiểu keyset/cursor' })
+  transactionsV2(@Body() filter: ParkingTransactionFilterV2Dto) {
+    return this.parkingService.getTransactionsV2(filter);
+  }
+
   @Post('transactions/export')
   @ApiOperation({ summary: 'Xuất Excel danh sách giao dịch bãi đỗ xe theo bộ lọc' })
   async exportTransactions(@Body() filter: ParkingTransactionExportFilterDto, @Res() res: Response) {
-    const buffer = await this.parkingService.exportTransactions(filter);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="ParkingHistory.xlsx"');
-    res.send(buffer);
+    // Streamed by the service (sets headers itself after validation, so an error still
+    // produces a normal JSON response instead of a half-started xlsx download).
+    await this.parkingService.exportTransactions(filter, res);
   }
 }
