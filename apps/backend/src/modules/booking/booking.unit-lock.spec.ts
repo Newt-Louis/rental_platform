@@ -111,6 +111,23 @@ describe('BookingService — unit status lock (#20)', () => {
     await expect(service.create(createDto as any, 'user-1')).rejects.toThrow(BadRequestException);
   });
 
+  it('blocks booking when unit is LIQUIDATED — still has a live (TERMINATING) contract', async () => {
+    prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.LIQUIDATED));
+    unitStatus.isCommittedToTenant.mockReturnValue(true);
+    unitStatus.isLockedForBooking.mockReturnValue(true);
+
+    await expect(service.create(createDto as any, 'user-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('allows booking when unit is OFFERING — actively marketed, no hold yet', async () => {
+    prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.OFFERING));
+    unitStatus.isCommittedToTenant.mockReturnValue(false);
+    unitStatus.isLockedForBooking.mockReturnValue(false);
+
+    const result = await service.create(createDto as any, 'user-1');
+    expect(result).toBeDefined();
+  });
+
   it('allows booking when unit is VACANT', async () => {
     prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.VACANT));
     unitStatus.isCommittedToTenant.mockReturnValue(false);

@@ -12,7 +12,7 @@ describe("BookingService.findUnits", () => {
   const unitStatus: any = {
     isLockedForBooking: jest.fn(
       (status: UnitStatus) =>
-        !([UnitStatus.VACANT, UnitStatus.BOOKING] as UnitStatus[]).includes(
+        !([UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING] as UnitStatus[]).includes(
           status,
         ),
     ),
@@ -110,10 +110,11 @@ describe("BookingService.findUnits", () => {
   it("returns immediate, queue, and blocked eligibility from UnitStatusService", async () => {
     prisma.unit.findMany.mockResolvedValue([
       unit("vacant", UnitStatus.VACANT),
+      unit("offering", UnitStatus.OFFERING),
       unit("queued", UnitStatus.BOOKING),
       unit("locked", UnitStatus.CONTRACTED),
     ]);
-    prisma.unit.count.mockResolvedValue(3);
+    prisma.unit.count.mockResolvedValue(4);
     prisma.unitBooking.groupBy.mockResolvedValue([
       { unitId: "queued", _count: { _all: 2 } },
     ]);
@@ -126,13 +127,21 @@ describe("BookingService.findUnits", () => {
       reasonCode: null,
       queueCount: 0,
     });
+    // OFFERING (Chào thuê): actively marketed but no hold on it yet — must be just as
+    // immediately bookable as VACANT, not silently BLOCKED alongside real commitments.
     expect(result.data[1].currentEligibility).toEqual({
+      selectable: true,
+      mode: "IMMEDIATE",
+      reasonCode: null,
+      queueCount: 0,
+    });
+    expect(result.data[2].currentEligibility).toEqual({
       selectable: true,
       mode: "QUEUE",
       reasonCode: null,
       queueCount: 2,
     });
-    expect(result.data[2].currentEligibility).toEqual({
+    expect(result.data[3].currentEligibility).toEqual({
       selectable: false,
       mode: "BLOCKED",
       reasonCode: "UNIT_STATUS_CONTRACTED",

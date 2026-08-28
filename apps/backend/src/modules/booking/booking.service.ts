@@ -325,11 +325,14 @@ export class BookingService {
     return {
       data: units.map((unit) => {
         const locked = this.unitStatus.isLockedForBooking(unit.status);
+        // Mirrors UnitStatusService.isLockedForBooking's notion of "available": VACANT and
+        // OFFERING both have no active/live contract and no existing hold, so both go straight
+        // to IMMEDIATE — only BOOKING (already has a queue) is QUEUE.
         const mode = locked
           ? 'BLOCKED'
           : unit.status === UnitStatus.BOOKING
             ? 'QUEUE'
-            : unit.status === UnitStatus.VACANT
+            : unit.status === UnitStatus.VACANT || unit.status === UnitStatus.OFFERING
               ? 'IMMEDIATE'
               : 'BLOCKED';
         return {

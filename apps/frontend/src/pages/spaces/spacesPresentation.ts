@@ -2,11 +2,13 @@ import { formatMoneyWithCode } from '@/lib/currency';
 
 export const UNIT_STATUSES = [
   'VACANT',
+  'OFFERING',
   'BOOKING',
   'NEGOTIATING',
   'CONTRACTED',
   'UNDER_FITOUT',
   'OCCUPIED',
+  'LIQUIDATED',
   'MERGED',
 ] as const;
 

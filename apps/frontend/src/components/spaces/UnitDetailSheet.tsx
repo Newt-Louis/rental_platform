@@ -353,14 +353,14 @@ export function UnitDetailSheet({
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-100"
-                  disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT'}
+                  disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT' || d.status === 'LIQUIDATED'}
                   onClick={() => setSplitConfirmOpen(true)}
                 >
                   <Scissors size={12} />
                   {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
                 </Button>}
               </div>
-              {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
+              {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT' || d.status === 'LIQUIDATED') && (
                 <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
               )}
             </SheetSection>
@@ -449,7 +449,7 @@ export function UnitDetailSheet({
             >
               <Save size={14} /> {updateInfoMutation.isPending ? 'Đang lưu...' : 'Lưu'}
             </Button>}
-            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
+            {canManageSales && (d.status === 'VACANT' || d.status === 'OFFERING' || d.status === 'BOOKING') && (
               <Button
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}
