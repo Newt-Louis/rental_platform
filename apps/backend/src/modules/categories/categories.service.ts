@@ -270,7 +270,7 @@ export class CategoriesService {
         code: dto.code.toUpperCase(),
         name: dto.name,
         description: dto.description,
-        parentId: dto.parentId,
+        parentId: dto.parentId || null,
         sortOrder: dto.sortOrder ?? 0,
       },
       include: {
@@ -300,7 +300,7 @@ export class CategoriesService {
         ...(dto.code && { code: dto.code.toUpperCase() }),
         ...(dto.name && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+        ...(dto.parentId !== undefined && { parentId: dto.parentId || null }),
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
       },

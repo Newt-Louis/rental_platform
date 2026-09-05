@@ -38,6 +38,28 @@ describe('CategoriesService hardening', () => {
     );
   });
 
+  it('clears parentId instead of writing an empty string when unset via the "no parent" option', async () => {
+    prisma.category.findUnique.mockResolvedValueOnce({ id: 'child', code: 'C' });
+    prisma.category.update.mockResolvedValue({ id: 'child' });
+
+    await service.updateCategory('child', { parentId: '' } as any);
+
+    expect(prisma.category.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ parentId: null }) }),
+    );
+  });
+
+  it('creates a root category with a null parentId when parentId is an empty string', async () => {
+    prisma.category.findUnique.mockResolvedValueOnce(null);
+    prisma.category.create = jest.fn().mockResolvedValue({ id: 'new' });
+
+    await service.createCategory({ code: 'X', name: 'X', parentId: '' } as any);
+
+    expect(prisma.category.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ parentId: null }) }),
+    );
+  });
+
   it('rejects invalid pricing bounds and suggested rent', async () => {
     prisma.mall.findUnique.mockResolvedValue({ id: 'mall' });
     prisma.category.findUnique.mockResolvedValue({ id: 'category' });
