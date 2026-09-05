@@ -162,7 +162,7 @@ export interface Unit {
   categoryRef?: Category;
   baseRentPerSqm: number;
   camPerSqm: number;
-  currencyCode?: string;
+  currencyCode?: CurrencyCode;
   status: UnitStatus;
   spaceType?: string;
   tier?: string;
