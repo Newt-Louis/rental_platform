@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
-import { formatMoneyWithCode } from '@/lib/currency';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
@@ -33,9 +33,15 @@ import {
 } from '../proposals/proposalApprovalPresentation';
 import { formatFitoutAttachmentSize, getFitoutAttachmentDownloadPath, getFitoutStageName, getFitoutSubmittalFromApproval } from './fitoutApprovalPresentation';
 
-function fmtPrice(n: number | null | undefined) {
+// The price-approval queue compares a booking's proposed rent against the
+// category floor/ceiling. Those figures used to render as bare numbers with no
+// currency at all, so a USD booking sat next to a VND band with nothing telling
+// the approver they weren't the same unit of account. The backend only ever
+// matches a pricing band in the booking's own currency, so one label per row is
+// accurate for all three columns.
+function fmtPrice(n: number | null | undefined, currencyCode?: CurrencyCode | null) {
   if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN').format(n);
+  return formatMoneyWithCode(n, currencyCode ?? 'VND');
 }
 
 function fmtDateTime(value?: string | null, locale = 'vi-VN') {
@@ -776,13 +782,13 @@ export default function ApprovalsPage() {
                             {unit?.category ?? unit?.categoryRef?.name ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                            {fmtPrice(cp?.minRentPerSqm)}
+                            {fmtPrice(cp?.minRentPerSqm, booking.currencyCode)}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
-                            <span className={`font-bold ${devColor}`}>{fmtPrice(booking.proposedRentPerSqm)}</span>
+                            <span className={`font-bold ${devColor}`}>{fmtPrice(booking.proposedRentPerSqm, booking.currencyCode)}</span>
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-green-700">
-                            {fmtPrice(cp?.maxRentPerSqm)}
+                            {fmtPrice(cp?.maxRentPerSqm, booking.currencyCode)}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${devBg} ${devColor}`}>
@@ -999,7 +1005,7 @@ export default function ApprovalsPage() {
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-y border-gray-100 py-3">
               <span className="text-gray-500">{t('approvals.table.bookingNo')}</span><span className="text-right font-mono font-medium">{priceApproveTarget?.bookingNumber ?? '—'}</span>
               <span className="text-gray-500">{t('approvals.table.unit')}</span><span className="text-right font-medium">{priceApproveTarget?.unit?.code ?? '—'}</span>
-              <span className="text-gray-500">{t('approvals.table.proposed')}</span><span className="text-right font-semibold tabular-nums">{fmtPrice(priceApproveTarget?.proposedRentPerSqm)}</span>
+              <span className="text-gray-500">{t('approvals.table.proposed')}</span><span className="text-right font-semibold tabular-nums">{fmtPrice(priceApproveTarget?.proposedRentPerSqm, priceApproveTarget?.currencyCode)}</span>
             </div>
           </div>
           <DialogFooter>

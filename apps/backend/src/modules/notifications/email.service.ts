@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+import { CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EncryptionService } from '../../common/services/encryption.service';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
+import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
 
 interface ResolvedSmtpConfig {
   host: string;
@@ -192,7 +195,9 @@ export class EmailService {
     monthlyRent: number;
     discount: number;
     submittedBy: string;
+    currencyCode?: CurrencyCode;
   }): string {
+    const money = (value: number) => formatMoneyWithCode(value, data.currencyCode ?? DEFAULT_CURRENCY_CODE);
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
 <style>
@@ -222,8 +227,8 @@ export class EmailService {
       <div class="info-row"><span class="label">Số Proposal</span><span class="value">${data.proposalNumber}</span></div>
       <div class="info-row"><span class="label">Khách thuê</span><span class="value">${data.tenantName}</span></div>
       <div class="info-row"><span class="label">Mã lô</span><span class="value">${data.unitCode}</span></div>
-      <div class="info-row"><span class="label">Giá thuê/m²</span><span class="value">${data.rentPerSqm.toLocaleString('vi-VN')} VNĐ</span></div>
-      <div class="info-row"><span class="label">Tiền thuê/tháng</span><span class="value">${data.monthlyRent.toLocaleString('vi-VN')} VNĐ</span></div>
+      <div class="info-row"><span class="label">Giá thuê/m²</span><span class="value">${money(data.rentPerSqm)}</span></div>
+      <div class="info-row"><span class="label">Tiền thuê/tháng</span><span class="value">${money(data.monthlyRent)}</span></div>
       ${data.discount > 0 ? `<div class="info-row"><span class="label">Chiết khấu</span><span class="value" style="color:#dc2626">${data.discount}%</span></div>` : ''}
       <div class="info-row"><span class="label">Người lập</span><span class="value">${data.submittedBy}</span></div>
     </div>
@@ -242,6 +247,7 @@ export class EmailService {
     dueDate: string;
     daysOverdue: number;
     contactEmail: string;
+    currencyCode?: CurrencyCode;
   }): string {
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
@@ -258,7 +264,7 @@ export class EmailService {
   <div class="content">
     <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
     <p>Hóa đơn đã quá hạn <strong>${data.daysOverdue} ngày</strong>:</p>
-    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
     <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
     <p>Liên hệ Finance: <a href="mailto:${data.contactEmail}">${data.contactEmail}</a></p>
   </div>
@@ -272,6 +278,7 @@ export class EmailService {
     totalAmount: number;
     dueDate: string;
     period: string;
+    currencyCode?: CurrencyCode;
   }): string {
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
@@ -288,7 +295,7 @@ export class EmailService {
   <div class="content">
     <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
     <p>Hóa đơn kỳ <strong>${data.period}</strong> đã được phát hành:</p>
-    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
     <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
   </div>
   <div class="footer">THISO Leasing Platform</div>

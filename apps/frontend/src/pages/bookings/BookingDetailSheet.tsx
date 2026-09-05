@@ -447,8 +447,11 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
               <SheetRow label="Mã"         value={d.unit?.code ?? '—'} icon={Building2} />
               <SheetRow label="Diện tích"  value={d.unit?.areaNLA ? `${d.unit.areaNLA.toLocaleString()} m² NLA` : '—'} icon={Building2} />
               <SheetRow label="Tầng"       value={(d.unit as any)?.floor?.name ?? '—'} icon={Building2} />
+              {/* The Unit's own currency, not the booking's: this row shows the unit's
+                  master-data base rent, which can be quoted in a different currency
+                  than the deal being negotiated on it. */}
               {d.unit?.baseRentPerSqm ? (
-                <SheetRow label="Giá cơ bản" value={`${new Intl.NumberFormat('vi-VN').format(d.unit.baseRentPerSqm)} ₫/m²`} icon={DollarSign} />
+                <SheetRow label="Giá cơ bản" value={`${formatMoney(d.unit.baseRentPerSqm, (d.unit as any).currencyCode ?? 'VND')}/m²`} icon={DollarSign} />
               ) : null}
             </SheetSection>
 

@@ -526,6 +526,7 @@ export class ProposalsService {
               monthlyRent: proposal.monthlyRent,
               discount: proposal.discount,
               submittedBy: creator?.fullName ?? 'Leasing',
+              currencyCode: proposal.rentCurrency,
             }),
           });
         } catch (e) {

@@ -95,6 +95,39 @@ describe('buildProposalPrefill', () => {
     expect(result.camPerSqm).toBe('75000');
   });
 
+  // Units carry their own currencyCode now, so the fallback rule is "same currency as the
+  // proposal", not "proposal is VND". These two cases only became reachable once a Unit
+  // could be quoted in something other than VND.
+  it('falls back to a USD Unit for a USD booking (previously left blank)', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-7', bookingNumber: 'BK-2026-00007', unitId: 'unit-7', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      currencyCode: 'USD',
+      unit: {
+        id: 'unit-7', mallId: 'mall-1', code: 'L3-E01', areaGFA: 60, areaNLA: 55,
+        baseRentPerSqm: 25, camPerSqm: 3, status: 'BOOKING', currencyCode: 'USD',
+      } as any,
+    });
+
+    expect(result.rentPerSqm).toBe('25');
+    expect(result.camPerSqm).toBe('3');
+  });
+
+  it('does not let a USD Unit prefill a VND booking', () => {
+    const result = buildProposalPrefill({
+      id: 'booking-8', bookingNumber: 'BK-2026-00008', unitId: 'unit-8', status: 'ACTIVE',
+      priority: 1, holdDays: 30, createdAt: '', updatedAt: '',
+      currencyCode: 'VND',
+      unit: {
+        id: 'unit-8', mallId: 'mall-1', code: 'L3-E02', areaGFA: 60, areaNLA: 55,
+        baseRentPerSqm: 25, camPerSqm: 3, status: 'BOOKING', currencyCode: 'USD',
+      } as any,
+    });
+
+    expect(result.rentPerSqm).toBe('');
+    expect(result.camPerSqm).toBe('');
+  });
+
   it('defaults to VND when the booking has no currencyCode', () => {
     const result = buildProposalPrefill({
       id: 'booking-4', bookingNumber: 'BK-2026-00004', unitId: 'unit-4', status: 'ACTIVE',
