@@ -48,7 +48,7 @@ const TIME_FORMATTER = new Intl.DateTimeFormat('vi-VN', {
   minute: '2-digit',
   second: '2-digit',
   hour12: false,
-  timeZone: 'UTC',
+  timeZone: 'Asia/Ho_Chi_Minh',
 });
 
 export function formatDateTimeVN(dateVal: string | Date | null | undefined): string {

@@ -32,19 +32,21 @@ function addMonths(d: Date, months: number): Date {
   return r;
 }
 
-function startOfDay(d: Date): Date {
-  const r = new Date(d);
-  r.setHours(0, 0, 0, 0);
-  return r;
+// Both the date-only picker and the datetime-local inputs carry no UTC offset — they're the
+// user's Vietnam wall-clock time, so anchor them at +07:00, not the server's local timezone
+// (Docker runs UTC, which would shift a same-day filter by 7 hours and drop edge rows).
+function vnLocalToUtc(dateStr: string): Date {
+  const withSeconds = dateStr.length <= 16 ? `${dateStr}:00` : dateStr;
+  return new Date(`${withSeconds}+07:00`);
 }
 
-// Date-only strings keep the whole-day behavior (midnight to next midnight); a string with a
-// time component is used as-is, so a picked time range isn't widened back to whole days.
+// Date-only strings keep the whole-day behavior (midnight to next midnight, VN time); a string
+// with a time component is used as-is, so a picked time range isn't widened back to whole days.
 function parseRangeBoundary(dateStr: string, isEnd: boolean): Date {
   if (dateStr.includes('T')) {
-    return new Date(dateStr);
+    return vnLocalToUtc(dateStr);
   }
-  const day = startOfDay(new Date(dateStr));
+  const day = vnLocalToUtc(dateStr);
   return isEnd ? addDays(day, 1) : day;
 }
 
