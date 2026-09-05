@@ -20,6 +20,7 @@ import {
 import { CategoriesService } from '../categories/categories.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
 
 @Injectable()
 export class BookingService {
@@ -668,7 +669,7 @@ export class BookingService {
     });
 
     await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${booking.proposedRentPerSqm?.toLocaleString()} VND/m² được phê duyệt${dto.note ? '. ' + dto.note : ''}`,
+      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² được phê duyệt${dto.note ? '. ' + dto.note : ''}`,
     });
 
     return updated;
@@ -697,7 +698,7 @@ export class BookingService {
     });
 
     await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${booking.proposedRentPerSqm?.toLocaleString()} VND/m² bị từ chối. Lý do: ${dto.reason}`,
+      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² bị từ chối. Lý do: ${dto.reason}`,
     });
 
     return updated;
@@ -1345,6 +1346,9 @@ export class BookingService {
           category: true,
           baseRentPerSqm: true,
           camPerSqm: true,
+          // Without this the Unit's own rent figures reach the UI stripped of
+          // their currency, so a USD-quoted unit renders as VND.
+          currencyCode: true,
           askingRentPerSqm: true,
           escalationRate: true,
           minLeaseTerm: true,

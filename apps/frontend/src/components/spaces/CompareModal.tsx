@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Columns } from 'lucide-react';
 import { formatVndAmount, formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { formatMoneyWithCode } from '@/lib/currency';
 
 export function CompareModal({
   unitIds,
@@ -100,7 +101,7 @@ export function CompareModal({
                     <td className="py-2 px-3 text-gray-500">{t('spaces:compare.rentPerSqm')}</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-medium">
-                        {formatVndAmount(u.baseRentPerSqm)}
+                        {formatMoneyWithCode(u.baseRentPerSqm, u.currencyCode ?? 'VND')}
                         <span className={`ml-1 text-xs ${Number(u.rentVsAvg) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           ({u.rentVsAvg > 0 ? '+' : ''}{u.rentVsAvg}%)
                         </span>
@@ -110,14 +111,14 @@ export function CompareModal({
                   <tr className="border-b">
                     <td className="py-2 px-3 text-gray-500">{t('spaces:compare.camPerSqm')}</td>
                     {units.map((u: any) => (
-                      <td key={u.id} className="py-2 px-3 tabular-nums">{formatVndAmount(u.camPerSqm)}</td>
+                      <td key={u.id} className="py-2 px-3 tabular-nums">{formatMoneyWithCode(u.camPerSqm, u.currencyCode ?? 'VND')}</td>
                     ))}
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 px-3 text-gray-500">{t('spaces:compare.totalMonthly')}</td>
                     {units.map((u: any) => (
                       <td key={u.id} className="py-2 px-3 font-semibold text-gray-700">
-                        {formatVndAmount(u.totalMonthlyRent)}
+                        {formatMoneyWithCode(u.totalMonthlyRent, u.currencyCode ?? 'VND')}
                       </td>
                     ))}
                   </tr>

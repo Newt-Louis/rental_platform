@@ -77,4 +77,45 @@ describe('EmailService resilience', () => {
 
     expect(nodemailer.createTransport).not.toHaveBeenCalled();
   });
+
+  // Regression: every money figure in these templates used to be rendered as
+  // `${amount.toLocaleString('vi-VN')} VNĐ`, so a USD proposal's approval email
+  // and a USD invoice's issued/overdue email all told the approver/customer the
+  // amount was in VND.
+  describe('template currency labelling', () => {
+    const service = () => new EmailService(prismaStub, encryptionStub);
+
+    it('labels proposal approval amounts with the proposal currency', () => {
+      const html = service().proposalApprovalHtml({
+        approverName: 'A', proposalNumber: 'PRO-1', tenantName: 'T', unitCode: 'L3-C01',
+        rentPerSqm: 25, monthlyRent: 2500, discount: 0, submittedBy: 'S', currencyCode: 'USD',
+      });
+      expect(html).toContain('25,00 USD');
+      expect(html).toContain('2.500,00 USD');
+      expect(html).not.toContain('VNĐ');
+    });
+
+    it('defaults to VND when no currency is supplied', () => {
+      const html = service().proposalApprovalHtml({
+        approverName: 'A', proposalNumber: 'PRO-1', tenantName: 'T', unitCode: 'L3-C01',
+        rentPerSqm: 450000, monthlyRent: 45000000, discount: 0, submittedBy: 'S',
+      });
+      expect(html).toContain('450.000 VND');
+    });
+
+    it('labels invoice issued/overdue amounts with the invoice currency', () => {
+      const issued = service().invoiceIssuedHtml({
+        tenantName: 'T', invoiceNumber: 'INV-1', totalAmount: 1200, dueDate: '01/01/2026',
+        period: '2026-01', currencyCode: 'USD',
+      });
+      const overdue = service().invoiceOverdueHtml({
+        tenantName: 'T', invoiceNumber: 'INV-1', totalAmount: 1200, dueDate: '01/01/2026',
+        daysOverdue: 5, contactEmail: 'f@t.vn', currencyCode: 'USD',
+      });
+      expect(issued).toContain('1.200,00 USD');
+      expect(overdue).toContain('1.200,00 USD');
+      expect(issued).not.toContain('VNĐ');
+      expect(overdue).not.toContain('VNĐ');
+    });
+  });
 });

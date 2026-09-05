@@ -15,18 +15,22 @@ const businessModelFromSpaceType = (spaceType?: string) => {
 export function buildProposalPrefill(booking: UnitBooking | null) {
   const unit = booking?.unit;
   const rentCurrency = booking?.currencyCode ?? 'VND';
-  // Unit.camPerSqm/askingRentPerSqm/baseRentPerSqm have no currency field of their own -- they
-  // are always VND (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Falling back to them for a
-  // non-VND booking would silently mix a VND-scale number into a USD/MMK proposal (e.g. a VND
-  // 75,000/sqm CAM rate submitted as if it were $75,000/sqm), producing a wildly wrong monthly
-  // bill once the contract is billed. Only use the Unit fallback when the proposal is actually
-  // VND; otherwise leave the field blank so the user must enter it explicitly in the right unit.
-  const isVndPricing = rentCurrency === 'VND';
+  // Unit.camPerSqm/askingRentPerSqm/baseRentPerSqm now carry the Unit's own currencyCode
+  // (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Falling back to them across a currency
+  // boundary would silently mix scales into the proposal (e.g. a VND 75,000/sqm CAM rate
+  // submitted as if it were $75,000/sqm), producing a wildly wrong monthly bill once the
+  // contract is billed. So the fallback applies only when the Unit is quoted in the same
+  // currency as the proposal -- otherwise leave the field blank for explicit entry. This
+  // replaces an older `rentCurrency === 'VND'` check, which both blocked a legitimate
+  // USD-unit → USD-proposal prefill and, once Units gained their own currency, would have
+  // let a USD-quoted Unit prefill a VND proposal.
+  const unitCurrency = (unit as { currencyCode?: string } | undefined)?.currencyCode ?? 'VND';
+  const unitCurrencyMatches = unitCurrency === rentCurrency;
   const rawSnapshotCam = (booking?.pricingSnapshot as any)?.camPerSqm;
   const snapshotCam = rawSnapshotCam == null ? undefined : Number(rawSnapshotCam);
   const camPerSqm = booking?.proposedCamPerSqm
     ?? (snapshotCam !== undefined && Number.isFinite(snapshotCam) ? snapshotCam : undefined)
-    ?? (isVndPricing ? unit?.camPerSqm : undefined);
+    ?? (unitCurrencyMatches ? unit?.camPerSqm : undefined);
 
   return {
     area: String(booking?.requestedArea ?? unit?.areaNLA ?? ''),
@@ -35,7 +39,7 @@ export function buildProposalPrefill(booking: UnitBooking | null) {
     rentPerSqm: String(
       booking?.proposedRentPerSqm
       ?? booking?.expectedRent
-      ?? (isVndPricing ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined)
+      ?? (unitCurrencyMatches ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined)
       ?? '',
     ),
     camPerSqm: String(camPerSqm ?? ''),
