@@ -37,8 +37,8 @@ export class CreateServiceContractDto {
   @IsOptional() @IsString() @MaxLength(500) counterpartyAddress?: string;
   @IsOptional() @IsEnum(ServiceContractType) type?: ServiceContractType;
   @IsOptional() @IsDateString() signedDate?: string;
-  @IsOptional() @IsDateString() startDate?: string;
-  @IsOptional() @IsDateString() endDate?: string;
+  @IsDateString() startDate: string;
+  @IsDateString() endDate: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
   @IsOptional() @IsIn(PAYMENT_DIRECTIONS) paymentDirection?: string;
@@ -157,7 +157,7 @@ export class UpdateMilestoneDto {
 export class RenewServiceContractDto {
   @IsString() @IsNotEmpty() @MaxLength(100) contractNumber: string;
   @IsOptional() @IsString() @MaxLength(250) title?: string;
-  @IsOptional() @IsDateString() startDate?: string;
+  @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;

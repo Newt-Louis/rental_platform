@@ -119,7 +119,11 @@ export class ServiceContractsController {
   async remove(@Param('id') id: string, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.remove(id, user.id); }
 
   @Post(':id/renew') @Roles(...EDIT_ROLES)
-  async renew(@Param('id') id: string, @Body() body: RenewServiceContractDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.renew(id, body, user.id); }
+  async renew(@Param('id') id: string, @Body() body: RenewServiceContractDto, @CurrentUser() user: any) { 
+    // Tạm thời không sử dụng tính năng renew contract nữa
+     return {}; 
+     await this.assertItemAccess(id, user); return this.service.renew(id, body, user.id); 
+  }
 
   @Post(':id/payments') @Roles(...EDIT_ROLES)
   async createPayment(@Param('id') id: string, @Body() body: CreateServiceContractPaymentDto, @CurrentUser() user: any) { await this.assertItemAccess(id, user); return this.service.createPayment(id, body); }

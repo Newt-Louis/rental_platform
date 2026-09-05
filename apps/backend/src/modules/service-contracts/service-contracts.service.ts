@@ -14,18 +14,16 @@ import {
   UpdateServiceContractDto,
   UpdateServiceContractPaymentDto,
 } from './dto/service-contract.dto';
+import { getServiceContractDateWindow, SERVICE_CONTRACT_EXPIRING_DAYS } from './service-contract-expiry';
 
 // Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
 const EDITABLE_STATUSES: ServiceContractStatus[] = ['DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE'];
 const ALLOWED_TRANSITIONS: Record<ServiceContractStatus, ServiceContractStatus[]> = {
   DRAFT: ['PROPOSAL', 'UNDER_REVIEW', 'CANCELLED'], PROPOSAL: ['DRAFT', 'UNDER_REVIEW', 'PENDING_SIGNATURE', 'CANCELLED'], UNDER_REVIEW: ['DRAFT', 'PROPOSAL', 'PENDING_SIGNATURE', 'CANCELLED'],
-  PENDING_SIGNATURE: ['UNDER_REVIEW', 'ACTIVE', 'CANCELLED'], ACTIVE: ['EXPIRING', 'EXPIRED', 'TERMINATED'],
-  EXPIRING: ['ACTIVE', 'EXPIRED', 'TERMINATED'], EXPIRED: [], TERMINATED: [], RENEWED: [], CANCELLED: [],
+  PENDING_SIGNATURE: ['UNDER_REVIEW', 'ACTIVE', 'CANCELLED'], ACTIVE: ['TERMINATED'],
+  EXPIRING: ['TERMINATED'], EXPIRED: [], TERMINATED: [], RENEWED: [], CANCELLED: [],
 };
 const DOCUMENT_TYPES = ['CONTRACT', 'APPENDIX', 'INVOICE', 'PAYMENT_PROOF', 'OTHER'];
-const EXPIRY_ALERT_STATUSES: ServiceContractStatus[] = [
-  'DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE', 'ACTIVE', 'EXPIRING',
-];
 
 @Injectable()
 export class ServiceContractsService {
@@ -42,7 +40,8 @@ export class ServiceContractsService {
     const now = new Date();
     const alertDays = Math.min(365, Math.max(1, Number(query.alertDays) || 30));
     const horizon = new Date(now.getTime() + alertDays * 86400000);
-    if (query.alert === 'EXPIRING') { where.endDate = { gte: now, lte: horizon }; where.status = { in: EXPIRY_ALERT_STATUSES }; }
+    const { today, expiringThrough } = getServiceContractDateWindow(now);
+    if (query.alert === 'EXPIRING') { where.endDate = { gte: today, lte: expiringThrough }; where.status = { in: ['ACTIVE', 'EXPIRING'] }; }
     if (query.alert === 'PAYMENT_DUE') where.payments = { some: { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon } } };
     if (query.alert === 'OVERDUE') where.payments = { some: { OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } };
     if (query.search) where.OR = [
@@ -176,7 +175,8 @@ export class ServiceContractsService {
   }
 
   async create(dto: CreateServiceContractDto, userId: string) {
-    if (dto.startDate && dto.endDate && new Date(dto.endDate) < new Date(dto.startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
+    if (!dto.startDate || !dto.endDate) throw new BadRequestException('Ngày bắt đầu và ngày kết thúc là bắt buộc');
+    if (new Date(dto.endDate) < new Date(dto.startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
     const { signedDate, startDate, endDate, totalValue, contractNumber, counterpartyAddress, ...data } = dto;
     const finalContractNumber = contractNumber.trim();
     if (!finalContractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý');
@@ -204,7 +204,8 @@ export class ServiceContractsService {
     }
     const effectiveStartDate = startDate ? new Date(startDate) : before.startDate;
     const effectiveEndDate = endDate ? new Date(endDate) : before.endDate;
-    if (effectiveStartDate && effectiveEndDate && effectiveEndDate < effectiveStartDate) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
+    if (!effectiveStartDate || !effectiveEndDate) throw new BadRequestException('Ngày bắt đầu và ngày kết thúc là bắt buộc');
+    if (effectiveEndDate < effectiveStartDate) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
     const updated = await this.prisma.$transaction(async tx => {
       let billingPartyId = before.billingPartyId;
       if (billingPartyId) await tx.billingParty.update({ where: { id: billingPartyId }, data: { name: data.counterpartyName, taxCode: data.counterpartyTax, email: data.counterpartyEmail, phone: data.counterpartyPhone, address: counterpartyAddress } });
@@ -224,6 +225,7 @@ export class ServiceContractsService {
 
   async updateStatus(id: string, status: ServiceContractStatus, description: string | undefined, userId: string) {
     const before = await this.findOne(id);
+    if (status === 'EXPIRING' || status === 'EXPIRED') throw new BadRequestException('Trạng thái sắp hết hạn và hết hạn được hệ thống tự động cập nhật theo ngày kết thúc');
     if (before.status === status) return before;
     if (before.status !== status && !ALLOWED_TRANSITIONS[before.status].includes(status)) throw new BadRequestException(`Không thể chuyển trạng thái từ ${before.status} sang ${status}`);
     return this.prisma.$transaction(async tx => {
@@ -263,12 +265,12 @@ export class ServiceContractsService {
 
   async stats(mallIds?: string[]) {
     const where: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
-    const soon = new Date(); soon.setDate(soon.getDate() + 30);
+    const { today, expiringThrough } = getServiceContractDateWindow();
     const [total, grouped, categories, valueBases, expiringSoon, valueByCurrency] = await Promise.all([
       this.prisma.serviceContract.count({ where }), this.prisma.serviceContract.groupBy({ by: ['status'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['serviceCategory'], where, _count: true }),
       this.prisma.serviceContract.groupBy({ by: ['valueBasis'], where, _count: true }),
-      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: new Date(), lte: soon }, status: { in: EXPIRY_ALERT_STATUSES } } }),
+      this.prisma.serviceContract.count({ where: { ...where, endDate: { gte: today, lte: expiringThrough }, status: { in: ['ACTIVE', 'EXPIRING'] } } }),
       // Money Domain Consolidation (INV-CUR-001): ServiceContract.totalValue is
       // currency-aware (VND/USD/MMK) -- group by currency instead of a blind
       // _sum, same pattern as CR-110's reports/renewal-risk fixes.
@@ -307,16 +309,17 @@ export class ServiceContractsService {
 
   async alerts(mallIds?: string[], days = 30) {
     const now = new Date(); const horizon = new Date(now.getTime() + Math.min(365, Math.max(1, days)) * 86400000);
+    const { today, expiringThrough } = getServiceContractDateWindow(now);
     const accessibleContracts: Prisma.ServiceContractWhereInput = { isDeleted: false, ...(mallIds ? { mallId: { in: mallIds } } : {}) };
     const activeContractWhere: Prisma.ServiceContractWhereInput = { ...accessibleContracts, status: { in: ['ACTIVE', 'EXPIRING'] } };
     const paymentBase: Prisma.ServiceContractPaymentWhereInput = { contract: activeContractWhere };
     const [expiring, receivableDue, payableDue, overdue] = await Promise.all([
-      this.prisma.serviceContract.count({ where: { ...accessibleContracts, status: { in: EXPIRY_ALERT_STATUSES }, endDate: { gte: now, lte: horizon } } }),
+      this.prisma.serviceContract.count({ where: { ...accessibleContracts, status: { in: ['ACTIVE', 'EXPIRING'] }, endDate: { gte: today, lte: expiringThrough } } }),
       this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'RECEIVABLE' } } }),
       this.prisma.serviceContractPayment.count({ where: { ...paymentBase, status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { gte: now, lte: horizon }, contract: { ...activeContractWhere, paymentDirection: 'PAYABLE' } } }),
       this.prisma.serviceContractPayment.count({ where: { ...paymentBase, OR: [{ status: 'OVERDUE' }, { status: { in: ['PENDING', 'PARTIAL'] }, dueDate: { lt: now } }] } }),
     ]);
-    return { days, expiring, receivableDue, payableDue, overdue };
+    return { days, expiryDays: SERVICE_CONTRACT_EXPIRING_DAYS, expiring, receivableDue, payableDue, overdue };
   }
   async updatePayment(contractId: string, paymentId: string, body: UpdateServiceContractPaymentDto) {
     const current = await this.prisma.serviceContractPayment.findFirst({ where: { id: paymentId, contractId } });
@@ -408,9 +411,10 @@ export class ServiceContractsService {
   async renew(id: string, body: RenewServiceContractDto, userId: string) {
     const old = await this.findOne(id);
     if (!['EXPIRING', 'EXPIRED'].includes(old.status)) throw new BadRequestException('Chỉ hợp đồng sắp hết hạn hoặc đã hết hạn mới được gia hạn');
-    const startDate = body.startDate ? new Date(body.startDate) : old.endDate;
+    if (!body.startDate || !body.endDate) throw new BadRequestException('Ngày bắt đầu và ngày kết thúc hợp đồng gia hạn là bắt buộc');
+    const startDate = new Date(body.startDate);
     const endDate = new Date(body.endDate);
-    if (!startDate || endDate <= startDate) throw new BadRequestException('Ngày kết thúc hợp đồng gia hạn phải sau ngày bắt đầu');
+    if (endDate <= startDate) throw new BadRequestException('Ngày kết thúc hợp đồng gia hạn phải sau ngày bắt đầu');
     const contractNumber = body.contractNumber.trim();
     if (!contractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý của hợp đồng gia hạn');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber }, select: { id: true } });

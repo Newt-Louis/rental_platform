@@ -8,6 +8,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { OutboxService } from '../../common/services/outbox.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { validateContractFileUpload } from './contract-file-validation';
 
 interface CurrentUser {
   id: string;
@@ -585,6 +586,7 @@ export class ContractsService {
   async uploadFile(contractId: string, file: Express.Multer.File, uploadedById: string) {
     const contract = await this.prisma.contract.findUnique({ where: { id: contractId } });
     if (!contract) throw new NotFoundException('Contract not found');
+    validateContractFileUpload(file);
 
     const fs = await import('fs/promises');
     const path = await import('path');

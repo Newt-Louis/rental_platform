@@ -3,16 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
-import { openAuthenticatedFile } from "@/lib/downloadFile";
+import { openOrDownloadAuthenticatedDocument } from "@/lib/authenticatedDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePermission } from "@/hooks/usePermission";
 import type { Role } from "@/types";
 import { formatMoney, formatMoneyAmount, type CurrencyCode } from "@/lib/currency";
 import { serviceContractTypeTranslationKey } from "@/lib/erpEnumPresentation";
+import { getServiceContractExpiryPresentation } from "@/lib/serviceContractExpiry";
 
 const STATUSES = [
   "DRAFT",
@@ -33,8 +35,8 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   PROPOSAL: ["DRAFT", "UNDER_REVIEW", "PENDING_SIGNATURE", "CANCELLED"],
   UNDER_REVIEW: ["DRAFT", "PROPOSAL", "PENDING_SIGNATURE", "CANCELLED"],
   PENDING_SIGNATURE: ["UNDER_REVIEW", "ACTIVE", "CANCELLED"],
-  ACTIVE: ["EXPIRING", "EXPIRED", "TERMINATED"],
-  EXPIRING: ["ACTIVE", "EXPIRED", "TERMINATED"],
+  ACTIVE: ["TERMINATED"],
+  EXPIRING: ["TERMINATED"],
   EXPIRED: [],
   TERMINATED: [],
   RENEWED: [],
@@ -81,6 +83,10 @@ const VALUE_BASES = [
   ["PROJECT", "Theo dự án"],
   ["OTHER", "Cơ sở khác"],
 ] as const;
+
+function RequiredMark() {
+  return <span className="text-red-600" aria-hidden="true">*</span>;
+}
 const categoryLabel = (value: string) => SERVICE_CATEGORIES.find(([key]) => key === value)?.[1] ?? value;
 const valueBasisLabel = (value: string) => VALUE_BASES.find(([key]) => key === value)?.[1] ?? value;
 const labels: Record<string, string> = {
@@ -305,6 +311,20 @@ export default function ServiceContractsPage() {
       });
     }
   }
+  async function openDocument(document: { id: string; fileName: string; mimeType?: string | null }) {
+    try {
+      await openOrDownloadAuthenticatedDocument(
+        `/files/service-contract-documents/${document.id}`,
+        document,
+      );
+    } catch (e: any) {
+      toast({
+        title: "Không thể mở hoặc tải tài liệu",
+        description: e?.response?.data?.message || e?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    }
+  }
   async function exportExcel() {
     setExporting(true);
     try {
@@ -366,7 +386,7 @@ export default function ServiceContractsPage() {
           ["OVERDUE", "Kỳ đã quá hạn", alertData.overdue || 0, "border-red-200 bg-red-50 text-red-800"],
         ].map(([key, title, count, color]) => <button key={String(key)} className={`rounded-lg border p-4 text-left ${color} ${alert === key || paymentDirection === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setPage(1); setStatus(""); if (key === "RECEIVABLE" || key === "PAYABLE") { setPaymentDirection(String(key)); setAlert("PAYMENT_DUE"); } else { setPaymentDirection(""); setAlert(String(key)); } }}>
           <div className="flex items-center justify-between text-sm font-medium"><span>{title}</span>{key === "OVERDUE" ? <AlertTriangle size={18} /> : <Clock size={18} />}</div>
-          <div className="mt-2 text-2xl font-semibold">{String(count)}</div><div className="text-xs opacity-75">Trong 30 ngày tới</div>
+          <div className="mt-2 text-2xl font-semibold">{String(count)}</div><div className="text-xs opacity-75">{key === "EXPIRING" ? "Trong 7 ngày tới" : "Trong 30 ngày tới"}</div>
         </button>)}
       </div>
       <div className="flex flex-wrap gap-3">
@@ -473,9 +493,9 @@ export default function ServiceContractsPage() {
               </button>
             </div>
             <h3 className="col-span-2 font-semibold">Thông tin pháp lý</h3>
-            <label className="text-sm">Số hợp đồng pháp lý *<Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng đã/phải ký" /></label>
-            <label className="text-sm">Tên hợp đồng *<Input name="title" required placeholder="Tên hợp đồng" /></label>
-            <label className="text-sm">Tên đối tác *<Input name="counterpartyName" required placeholder="Tên pháp lý của đối tác" /></label>
+            <label className="text-sm">Số hợp đồng pháp lý <RequiredMark /><Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng đã/phải ký" /></label>
+            <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" required placeholder="Tên hợp đồng" /></label>
+            <label className="text-sm">Tên đối tác <RequiredMark /><Input name="counterpartyName" required placeholder="Tên pháp lý của đối tác" /></label>
             <label className="text-sm">Mã số thuế<Input name="counterpartyTax" placeholder="Mã số thuế" /></label>
             <label className="text-sm">Email<Input name="counterpartyEmail" type="email" placeholder="Email đối tác" /></label>
             <label className="text-sm">Điện thoại<Input name="counterpartyPhone" placeholder="Số điện thoại" /></label>
@@ -484,19 +504,19 @@ export default function ServiceContractsPage() {
             <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">Phân loại và giá trị</h3>
             <label className="text-sm">Loại hợp đồng<select name="type" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
             <label className="text-sm">Chiều thanh toán<select name="paymentDirection" value={createPaymentDirection} onChange={(e) => setCreatePaymentDirection(e.target.value)} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Hợp đồng phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option></select></label>
-            <label className="text-sm">Nhóm sản phẩm/dịch vụ *<select name="serviceCategory" required defaultValue="MAINTENANCE" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="text-sm">Nhóm sản phẩm/dịch vụ <RequiredMark /><select name="serviceCategory" required defaultValue="MAINTENANCE" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm">Mô tả chi tiết sản phẩm/dịch vụ<Input name="productName" placeholder="Thông tin chi tiết (không dùng để phân nhóm báo cáo)" /></label>
-            <label className="text-sm">Giá trị hợp đồng *<Input name="totalValue" type="number" min="0" required placeholder="Giá trị chưa/đã gồm VAT theo hợp đồng" /></label>
-            <label className="text-sm">Cơ sở giá trị *<select name="valueBasis" required defaultValue="ONE_TIME" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label className="text-sm">Giá trị hợp đồng <RequiredMark /><Input name="totalValue" type="number" min="0" required placeholder="Giá trị chưa/đã gồm VAT theo hợp đồng" /></label>
+            <label className="text-sm">Cơ sở giá trị <RequiredMark /><select name="valueBasis" required defaultValue="ONE_TIME" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm">Tiền tệ<select name="currency" defaultValue="VND" className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
             <label className="text-sm">Ngày ký<Input name="signedDate" type="date" /></label>
             <label className="text-sm">
-              Ngày bắt đầu
-              <Input name="startDate" type="date" />
+              Ngày bắt đầu <RequiredMark />
+              <Input name="startDate" type="date" required />
             </label>
             <label className="text-sm">
-              Ngày kết thúc
-              <Input name="endDate" type="date" />
+              Ngày kết thúc <RequiredMark />
+              <Input name="endDate" type="date" required />
             </label>
 
             {createPaymentDirection === "RECEIVABLE" && <>
@@ -547,7 +567,7 @@ export default function ServiceContractsPage() {
               </div>
               <div className="flex gap-2">
                 {canEdit && EDITABLE_STATUSES.includes(item.status) && <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}><Pencil size={14} className="mr-2" />Chỉnh sửa</Button>}
-                {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>}
+                {/* {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>} */}
                 <button onClick={() => setSelectedId(null)}><X /></button>
               </div>
             </div>
@@ -582,6 +602,9 @@ export default function ServiceContractsPage() {
                     ? new Date(item.endDate).toLocaleDateString("vi-VN")
                     : "—"}
                 </div>
+                <div className={`text-xs font-medium ${getServiceContractExpiryPresentation(item.endDate).className}`}>
+                  {getServiceContractExpiryPresentation(item.endDate).text}
+                </div>
               </div>
             </div>
             <div className="mt-5">
@@ -614,7 +637,7 @@ export default function ServiceContractsPage() {
                   <button
                     key={d.id}
                     type="button"
-                    onClick={() => openAuthenticatedFile(`/files/service-contract-documents/${d.id}`)}
+                    onClick={() => void openDocument(d)}
                     className="flex w-full justify-between p-3 text-left hover:bg-muted"
                   >
                     <span>{d.fileName}</span>
@@ -630,7 +653,7 @@ export default function ServiceContractsPage() {
                 )}
               </div>
             </div>
-            <ContractOperations item={item} onChanged={refresh} canEdit={canEdit} canTransferToBilling={canTransferToBilling} />
+            <ContractOperations item={item} onChanged={refresh} onOpenDocument={openDocument} canEdit={canEdit} canTransferToBilling={canTransferToBilling} />
             <div className="mt-6">
               <h3 className="mb-2 font-semibold">Lịch sử</h3>
               <div className="space-y-2">
@@ -654,9 +677,9 @@ export default function ServiceContractsPage() {
               <div><h2 className="text-xl font-semibold">Chỉnh sửa hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">{item.contractNumber}</p></div>
               <button type="button" onClick={() => setShowEdit(false)}><X /></button>
             </div>
-            <label className="text-sm">Số hợp đồng<Input name="contractNumber" defaultValue={item.contractNumber || ""} required /></label>
-            <label className="text-sm">Tên hợp đồng<Input name="title" defaultValue={item.title || ""} required /></label>
-            <label className="text-sm">Tên đối tác<Input name="counterpartyName" defaultValue={item.counterpartyName || ""} required /></label>
+            <label className="text-sm">Số hợp đồng <RequiredMark /><Input name="contractNumber" defaultValue={item.contractNumber || ""} required /></label>
+            <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" defaultValue={item.title || ""} required /></label>
+            <label className="text-sm">Tên đối tác <RequiredMark /><Input name="counterpartyName" defaultValue={item.counterpartyName || ""} required /></label>
             <label className="text-sm">Mã số thuế<Input name="counterpartyTax" defaultValue={item.counterpartyTax || ""} /></label>
             <label className="text-sm">Email<Input name="counterpartyEmail" type="email" defaultValue={item.counterpartyEmail || ""} /></label>
             <label className="text-sm">Điện thoại<Input name="counterpartyPhone" defaultValue={item.counterpartyPhone || ""} /></label>
@@ -668,8 +691,8 @@ export default function ServiceContractsPage() {
             <label className="text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
             <label className="text-sm">Cơ sở giá trị<select name="valueBasis" defaultValue={item.valueBasis || "ONE_TIME"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="text-sm">Ngày ký<Input name="signedDate" type="date" defaultValue={item.signedDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Ngày kết thúc<Input name="endDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày bắt đầu <RequiredMark /><Input name="startDate" type="date" required defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày kết thúc <RequiredMark /><Input name="endDate" type="date" required defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
             <label className="text-sm">Tiền tệ<select name="currency" defaultValue={item.currency || "VND"} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
             {item.paymentDirection === "RECEIVABLE" && <>
               <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={item.invoiceLeadDays ?? 7} /></label>
@@ -682,17 +705,17 @@ export default function ServiceContractsPage() {
           </form>
         </div>
       )}
-      {showRenew && item && (
+      {/* {showRenew && item && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <form onSubmit={submitRenew} className="grid w-full max-w-xl grid-cols-2 gap-4 rounded-xl bg-background p-6 shadow-xl">
             <div className="col-span-2 flex items-center justify-between">
               <div><h2 className="text-xl font-semibold">Gia hạn hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">Từ {item.contractNumber}</p></div>
               <button type="button" onClick={() => setShowRenew(false)}><X /></button>
             </div>
-            <label className="col-span-2 text-sm">Số hợp đồng pháp lý mới *<Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng gia hạn" /></label>
+            <label className="col-span-2 text-sm">Số hợp đồng pháp lý mới <RequiredMark /><Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng gia hạn" /></label>
             <label className="col-span-2 text-sm">Tên hợp đồng<Input name="title" defaultValue={item.title} /></label>
-            <label className="text-sm">Ngày bắt đầu<Input name="startDate" type="date" defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Ngày kết thúc mới *<Input name="endDate" type="date" required /></label>
+            <label className="text-sm">Ngày bắt đầu <RequiredMark /><Input name="startDate" type="date" required defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
+            <label className="text-sm">Ngày kết thúc mới <RequiredMark /><Input name="endDate" type="date" required /></label>
             <label className="col-span-2 text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
             <label className="col-span-2 text-sm">Ghi chú<textarea name="notes" className="mt-1 min-h-20 w-full rounded-md border bg-background p-3" /></label>
             <div className="col-span-2 flex justify-end gap-2">
@@ -701,7 +724,7 @@ export default function ServiceContractsPage() {
             </div>
           </form>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
@@ -730,7 +753,7 @@ function ContractLifecycle({
       <div>
         <h3 className="font-semibold">Vòng đời hợp đồng</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Theo dõi tiến trình và chọn bước chuyển tiếp phù hợp. Mọi thay đổi đều được lưu vào lịch sử hợp đồng.
+          Theo dõi tiến trình và chọn bước chuyển tiếp phù hợp. Sắp hết hạn và hết hạn được hệ thống tự động cập nhật theo ngày kết thúc.
         </p>
       </div>
       <div className="overflow-x-auto pb-1">
@@ -795,11 +818,13 @@ function ContractLifecycle({
 function ContractOperations({
   item,
   onChanged,
+  onOpenDocument,
   canEdit,
   canTransferToBilling,
 }: {
   item: any;
   onChanged: () => void;
+  onOpenDocument: (document: { id: string; fileName: string; mimeType?: string | null }) => Promise<void>;
   canEdit: boolean;
   canTransferToBilling: boolean;
 }) {
@@ -903,61 +928,88 @@ function ContractOperations({
             <summary className="cursor-pointer font-medium">
               Tạo thanh toán theo kỳ
             </summary>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <Input
-                type="number"
-                placeholder="Số tiền mỗi kỳ"
-                value={recurring.amount}
-                onChange={(e) =>
-                  setRecurring({ ...recurring, amount: e.target.value })
-                }
-              />
-              <Input
-                type="date"
-                value={recurring.startDate}
-                onChange={(e) =>
-                  setRecurring({ ...recurring, startDate: e.target.value })
-                }
-              />
-              <Input
-                type="number"
-                min="1"
-                placeholder="Số kỳ"
-                value={recurring.count}
-                onChange={(e) =>
-                  setRecurring({ ...recurring, count: e.target.value })
-                }
-              />
-              <select
-                className="rounded-md border bg-background px-2"
-                value={recurring.frequency}
-                onChange={(e) =>
-                  setRecurring({ ...recurring, frequency: e.target.value })
-                }
-              >
-                <option value="MONTHLY">Hàng tháng</option>
-                <option value="QUARTERLY">Hàng quý</option>
-                <option value="ANNUALLY">Hàng năm</option>
-              </select>
-              <Input
-                type="number"
-                min="0"
-                placeholder="Nhắc trước (ngày)"
-                value={recurring.reminderDays}
-                onChange={(e) =>
-                  setRecurring({ ...recurring, reminderDays: e.target.value })
-                }
-              />
-              <Input
-                placeholder="Tên kỳ"
-                value={recurring.milestonePrefix}
-                onChange={(e) =>
-                  setRecurring({
-                    ...recurring,
-                    milestonePrefix: e.target.value,
-                  })
-                }
-              />
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label htmlFor="recurring-amount" className="text-sm">Số tiền phải trả mỗi kỳ</label>
+                <Input
+                  id="recurring-amount"
+                  type="number"
+                  placeholder="Nhập số tiền"
+                  value={recurring.amount}
+                  onChange={(e) =>
+                    setRecurring({ ...recurring, amount: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="recurring-start-date" className="text-sm">Ngày bắt đầu</label>
+                <Input
+                  id="recurring-start-date"
+                  type="date"
+                  value={recurring.startDate}
+                  onChange={(e) =>
+                    setRecurring({ ...recurring, startDate: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="recurring-count" className="text-sm">Số kỳ</label>
+                <Input
+                  id="recurring-count"
+                  type="number"
+                  min="1"
+                  placeholder="Nhập tổng số kỳ"
+                  value={recurring.count}
+                  onChange={(e) =>
+                    setRecurring({ ...recurring, count: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="recurring-frequency" className="text-sm">Theo chu kỳ:</label>
+                <Select
+                  value={recurring.frequency}
+                  onValueChange={(value) =>
+                    setRecurring({ ...recurring, frequency: value })
+                  }
+                >
+                  <SelectTrigger id="recurring-frequency" aria-label="Theo chu kỳ:">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MONTHLY">Hàng tháng</SelectItem>
+                    <SelectItem value="QUARTERLY">Hàng quý</SelectItem>
+                    <SelectItem value="ANNUALLY">Hàng năm</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label htmlFor="recurring-reminder-days" className="text-sm">Nhắc trước:</label>
+                <Input
+                  id="recurring-reminder-days"
+                  type="number"
+                  min="0"
+                  placeholder="Số ngày"
+                  value={recurring.reminderDays}
+                  onChange={(e) =>
+                    setRecurring({ ...recurring, reminderDays: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label htmlFor="recurring-milestone-prefix" className="text-sm">Tên của mỗi kỳ</label>
+                <Input
+                  id="recurring-milestone-prefix"
+                  placeholder="Ví dụ: Tiền sữa"
+                  value={recurring.milestonePrefix}
+                  onChange={(e) =>
+                    setRecurring({
+                      ...recurring,
+                      milestonePrefix: e.target.value,
+                    })
+                  }
+                />
+              </div>
             </div>
             <Button
               className="mt-3"
@@ -1079,7 +1131,7 @@ function ContractOperations({
                     type="button"
                     className="px-2 py-1 text-xs text-primary underline"
                     key={d.id}
-                    onClick={() => openAuthenticatedFile(`/files/service-contract-documents/${d.id}`)}
+                    onClick={() => void onOpenDocument(d)}
                   >
                     {d.documentType}: {d.fileName}
                   </button>

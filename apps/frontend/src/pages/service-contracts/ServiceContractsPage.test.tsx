@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ServiceContractsPage from './ServiceContractsPage';
 import { serviceContractsApi } from '@/api';
+import { openOrDownloadAuthenticatedDocument } from '@/lib/authenticatedDocument';
 
 const mallContext = vi.hoisted(() => ({ selectedMallId: null as string | null }));
 
@@ -35,6 +36,10 @@ vi.mock('@/store/mall.store', () => ({
 
 vi.mock('@/hooks/usePermission', () => ({
   usePermission: () => ({ hasRole: () => true }),
+}));
+
+vi.mock('@/lib/authenticatedDocument', () => ({
+  openOrDownloadAuthenticatedDocument: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -78,9 +83,17 @@ describe('ServiceContractsPage all-mall view', () => {
       valueBasis: 'ANNUAL',
       paymentDirection: 'PAYABLE',
       status: 'DRAFT',
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-12-31T00:00:00.000Z',
       totalValue: 120000000,
       currency: 'VND',
-      documents: [], events: [], payments: [], checklist: [], milestones: [],
+      documents: [{
+        id: 'pdf-1', fileName: 'hop-dong.pdf', mimeType: 'application/pdf', fileSize: 100,
+        version: 1, documentType: 'CONTRACT',
+      }, {
+        id: 'docx-1', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', fileSize: 100,
+        version: 1, documentType: 'CONTRACT',
+      }], events: [], payments: [], checklist: [], milestones: [],
     } as never);
     vi.mocked(serviceContractsApi.updateStatus).mockResolvedValue({ id: 'contract-created', status: 'PROPOSAL' } as never);
   });
@@ -119,12 +132,20 @@ describe('ServiceContractsPage all-mall view', () => {
 
     render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
     fireEvent.click(screen.getByRole('button', { name: 'create' }));
-    fireEvent.change(screen.getByLabelText('Số hợp đồng pháp lý *'), { target: { value: 'PL-2026-001' } });
-    fireEvent.change(screen.getByLabelText('Tên hợp đồng *'), { target: { value: 'Hợp đồng bảo trì' } });
-    fireEvent.change(screen.getByLabelText('Tên đối tác *'), { target: { value: 'Đối tác' } });
-    fireEvent.change(screen.getByLabelText('Nhóm sản phẩm/dịch vụ *'), { target: { value: 'MAINTENANCE' } });
-    await user.type(screen.getByLabelText('Giá trị hợp đồng *'), '120000000');
-    fireEvent.change(screen.getByLabelText('Cơ sở giá trị *'), { target: { value: 'ANNUAL' } });
+    const createForm = screen.getByRole('heading', { name: 'Tạo hợp đồng dịch vụ' }).closest('form')!;
+    fireEvent.change(within(createForm).getByLabelText(/^Số hợp đồng pháp lý/), { target: { value: 'PL-2026-001' } });
+    fireEvent.change(within(createForm).getByLabelText(/^Tên hợp đồng/), { target: { value: 'Hợp đồng bảo trì' } });
+    fireEvent.change(within(createForm).getByLabelText(/^Tên đối tác/), { target: { value: 'Đối tác' } });
+    fireEvent.change(within(createForm).getByLabelText(/^Nhóm sản phẩm\/dịch vụ/), { target: { value: 'MAINTENANCE' } });
+    await user.type(within(createForm).getByLabelText(/^Giá trị hợp đồng/), '120000000');
+    fireEvent.change(within(createForm).getByLabelText(/^Cơ sở giá trị/), { target: { value: 'ANNUAL' } });
+    fireEvent.change(within(createForm).getByLabelText(/^Ngày bắt đầu/), { target: { value: '2026-01-01' } });
+    fireEvent.change(within(createForm).getByLabelText(/^Ngày kết thúc/), { target: { value: '2026-12-31' } });
+    expect(createForm.querySelectorAll('[required]')).toHaveLength(8);
+    expect(within(createForm).getAllByText('*', { exact: true })).toHaveLength(8);
+    within(createForm).getAllByText('*', { exact: true }).forEach((mark) => {
+      expect(mark).toHaveClass('text-red-600');
+    });
     const original = new File(['contract'], 'hop-dong-goc.pdf', { type: 'application/pdf' });
     const originalInput = screen.getByLabelText(/Hợp đồng bản gốc/) as HTMLInputElement;
     await user.upload(originalInput, original);
@@ -137,9 +158,86 @@ describe('ServiceContractsPage all-mall view', () => {
       valueBasis: 'ANNUAL',
       totalValue: 120000000,
       mallId: 'mall-1',
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
     })));
     await waitFor(() => expect(serviceContractsApi.upload).toHaveBeenCalledWith('contract-created', original, 'CONTRACT'));
     await waitFor(() => expect(serviceContractsApi.alerts).toHaveBeenCalledTimes(2));
+  });
+
+  it('requires both dates and shows red required marks in the edit form', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Chỉnh sửa' }));
+
+    const editForm = screen.getByRole('heading', { name: 'Chỉnh sửa hợp đồng' }).closest('form')!;
+    expect(within(editForm).getByLabelText(/^Ngày bắt đầu/)).toBeRequired();
+    expect(within(editForm).getByLabelText(/^Ngày kết thúc/)).toBeRequired();
+    expect(editForm.querySelectorAll('[required]')).toHaveLength(5);
+    within(editForm).getAllByText('*', { exact: true }).forEach((mark) => {
+      expect(mark).toHaveClass('text-red-600');
+    });
+  });
+
+  it('requires both dates and shows red required marks in the renew form', async () => {
+    vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      id: 'contract-created', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì',
+      counterpartyName: 'Đối tác', type: 'MAINTENANCE', serviceCategory: 'MAINTENANCE',
+      valueBasis: 'ANNUAL', paymentDirection: 'PAYABLE', status: 'EXPIRING', totalValue: 120000000,
+      currency: 'VND', startDate: '2026-01-01T00:00:00.000Z', endDate: '2026-12-31T00:00:00.000Z',
+      documents: [], events: [], payments: [], checklist: [], milestones: [],
+    } as never);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Gia hạn' }));
+
+    const renewForm = screen.getByRole('heading', { name: 'Gia hạn hợp đồng' }).closest('form')!;
+    expect(within(renewForm).getByLabelText(/^Ngày bắt đầu/)).toBeRequired();
+    expect(within(renewForm).getByLabelText(/^Ngày bắt đầu/)).toHaveValue('2026-12-31');
+    expect(within(renewForm).getByLabelText(/^Ngày kết thúc mới/)).toBeRequired();
+    expect(renewForm.querySelectorAll('[required]')).toHaveLength(3);
+    const marks = within(renewForm).getAllByText('*', { exact: true });
+    expect(marks).toHaveLength(3);
+    marks.forEach((mark) => expect(mark).toHaveClass('text-red-600'));
+  });
+
+  it('does not offer manual expiring or expired transitions for an active contract', async () => {
+    vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      id: 'contract-created', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì',
+      counterpartyName: 'Đối tác', type: 'MAINTENANCE', serviceCategory: 'MAINTENANCE',
+      valueBasis: 'ANNUAL', paymentDirection: 'PAYABLE', status: 'ACTIVE', totalValue: 120000000,
+      currency: 'VND', startDate: '2026-01-01T00:00:00.000Z', endDate: '2026-12-31T00:00:00.000Z',
+      documents: [], events: [], payments: [], checklist: [], milestones: [],
+    } as never);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+
+    expect(await screen.findByText(/Sắp hết hạn và hết hạn được hệ thống tự động cập nhật/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Chuyển sang “Sắp hết hạn”/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Chuyển sang “Hết hạn”/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Chuyển sang “Đã chấm dứt”/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gia hạn' })).not.toBeInTheDocument();
+  });
+
+  it('labels every recurring-payment field for the user', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    fireEvent.click(await screen.findByText('Tạo thanh toán theo kỳ'));
+
+    expect(screen.getByLabelText('Số tiền phải trả mỗi kỳ')).toHaveAttribute('placeholder', 'Nhập số tiền');
+    expect(screen.getByLabelText('Ngày bắt đầu')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('Số kỳ')).toHaveDisplayValue('12');
+    expect(screen.getByLabelText('Theo chu kỳ:')).toHaveTextContent('Hàng tháng');
+    expect(screen.getByLabelText('Nhắc trước:')).toHaveDisplayValue('7');
+    expect(screen.getByLabelText('Tên của mỗi kỳ')).toHaveValue('Kỳ thanh toán');
   });
 
   it('explains lifecycle choices and requires confirmation before changing status', async () => {
@@ -154,5 +252,19 @@ describe('ServiceContractsPage all-mall view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chuyển trạng thái' }));
 
     await waitFor(() => expect(serviceContractsApi.updateStatus).toHaveBeenCalledWith('contract-1', 'PROPOSAL'));
+  });
+
+  it('passes file metadata to the Service Contract open-or-download handler', async () => {
+    vi.mocked(openOrDownloadAuthenticatedDocument).mockResolvedValue('preview');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    fireEvent.click(await screen.findByText('hop-dong.pdf'));
+
+    await waitFor(() => expect(openOrDownloadAuthenticatedDocument).toHaveBeenCalledWith(
+      '/files/service-contract-documents/pdf-1',
+      expect.objectContaining({ fileName: 'hop-dong.pdf', mimeType: 'application/pdf' }),
+    ));
   });
 });
