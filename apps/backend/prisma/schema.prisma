@@ -3428,3 +3428,20 @@ model BrandingSettings {
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
 }
+
+// Cau hinh SMTP de gui email -- bang singleton, luon chi 1 dong, service tu tao
+// dong dau tien neu chua co. smtpPassEncrypted luu dang ma hoa (AES-256-GCM,
+// xem EncryptionService) -- khong bao gio tra ve plaintext qua API.
+model EmailSettings {
+  id                 String   @id @default(cuid())
+  isEnabled          Boolean  @default(false)
+  smtpHost           String?
+  smtpPort           Int      @default(587)
+  smtpSecure         Boolean  @default(false)
+  smtpUser           String?
+  smtpPassEncrypted  String?
+  emailFrom          String?
+  updatedById        String?
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
+}

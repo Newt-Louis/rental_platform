@@ -63,6 +63,7 @@ describe('HealthController', () => {
   it('returns status ok when DB is reachable', async () => {
     const prismaMock = {
       $queryRaw: jest.fn().mockResolvedValueOnce(1),
+      emailSettings: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -87,6 +88,7 @@ describe('HealthController', () => {
   it('returns status degraded when DB fails', async () => {
     const prismaMock = {
       $queryRaw: jest.fn().mockRejectedValueOnce(new Error('db down')),
+      emailSettings: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleRef = await Test.createTestingModule({

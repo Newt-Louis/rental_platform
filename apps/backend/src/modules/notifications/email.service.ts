@@ -1,53 +1,92 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { Transporter } from 'nodemailer';
+import { PrismaService } from '../../prisma/prisma.service';
+import { EncryptionService } from '../../common/services/encryption.service';
 
+interface ResolvedSmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+// Nguồn cấu hình SMTP ưu tiên: DB (EmailSettings, admin tự cấu hình qua UI) --
+// fallback env var (SMTP_HOST/...) nếu DB chưa bật/chưa cấu hình, để tương
+// thích ngược với deployment cũ chỉ dùng .env. Đọc lại mỗi lần gửi (không cache
+// transporter) để admin đổi cấu hình có hiệu lực ngay, không cần restart.
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: Transporter | null = null;
-  private enabled = false;
   private readonly maxAttempts = this.envNumber('EMAIL_MAX_ATTEMPTS', 3, 1);
   private readonly retryBaseMs = this.envNumber('EMAIL_RETRY_BASE_MS', 250, 0);
   private readonly timeoutMs = this.envNumber('EMAIL_TIMEOUT_MS', 15_000, 100);
 
-  constructor() {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly encryption: EncryptionService,
+  ) {}
+
+  private async resolveConfig(): Promise<ResolvedSmtpConfig | null> {
+    const dbSettings = await this.prisma.emailSettings.findFirst().catch(() => null);
+    if (dbSettings?.isEnabled && dbSettings.smtpHost && dbSettings.smtpUser && dbSettings.smtpPassEncrypted) {
+      if (!this.encryption.isConfigured) {
+        this.logger.warn('EmailSettings bật trong DB nhưng ENCRYPTION_KEY chưa cấu hình -- không thể giải mã mật khẩu SMTP');
+      } else {
+        return {
+          host: dbSettings.smtpHost,
+          port: dbSettings.smtpPort,
+          secure: dbSettings.smtpSecure,
+          user: dbSettings.smtpUser,
+          pass: this.encryption.decrypt(dbSettings.smtpPassEncrypted),
+          from: dbSettings.emailFrom ?? 'THISO Leasing <noreply@thiso.com.vn>',
+        };
+      }
+    }
+
     const host = process.env.SMTP_HOST;
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
-
     if (host && user && pass) {
-      this.transporter = nodemailer.createTransport({
+      return {
         host,
         port: Number(process.env.SMTP_PORT ?? 587),
         secure: process.env.SMTP_SECURE === 'true',
-        auth: { user, pass },
-        connectionTimeout: this.timeoutMs,
-        greetingTimeout: this.timeoutMs,
-        socketTimeout: this.timeoutMs,
-        tls: {
-          rejectUnauthorized:
-            process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
-        },
-      });
-      this.enabled = true;
-      this.logger.log(`Email service enabled (${host}:${process.env.SMTP_PORT ?? 587})`);
-    } else {
-      this.logger.warn('Email service disabled: SMTP_HOST/SMTP_USER/SMTP_PASS not configured');
+        user,
+        pass,
+        from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
+      };
     }
+
+    return null;
   }
 
   async sendMail(opts: { to: string | string[]; subject: string; html: string; cc?: string | string[] }) {
-    if (!this.enabled || !this.transporter) {
+    const config = await this.resolveConfig();
+    if (!config) {
       this.logger.warn(`[EMAIL DISABLED] Would send to ${Array.isArray(opts.to) ? opts.to.join(',') : opts.to}: ${opts.subject}`);
       return { skipped: true };
     }
 
+    const transporter = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: { user: config.user, pass: config.pass },
+      connectionTimeout: this.timeoutMs,
+      greetingTimeout: this.timeoutMs,
+      socketTimeout: this.timeoutMs,
+      tls: {
+        rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
+      },
+    });
+
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       try {
-        const info = await this.transporter.sendMail({
-          from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
+        const info = await transporter.sendMail({
+          from: config.from,
           to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
           cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc.join(',') : opts.cc) : undefined,
           subject: opts.subject,

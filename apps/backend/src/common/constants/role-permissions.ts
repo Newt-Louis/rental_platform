@@ -54,6 +54,7 @@ export const MODULE_ROLES = {
   admin: [Role.ADMIN],
   departments: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR],
   branding: [Role.ADMIN],
+  emailSettings: [Role.ADMIN],
   announcements: [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER, Role.TENANT],
   categories: [Role.ADMIN],
   categoriesRead: [

@@ -1,5 +1,6 @@
 export * from './auth';
 export * from './branding';
+export * from './email-settings';
 export * from './spaces';
 export * from './crm';
 export * from './bookings';

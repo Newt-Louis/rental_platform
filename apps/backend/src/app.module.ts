@@ -37,6 +37,7 @@ import { SlotsModule } from './modules/slots/slots.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { BrandingModule } from './modules/branding/branding.module';
+import { EmailSettingsModule } from './modules/email-settings/email-settings.module';
 import { HealthController } from './health/health.controller';
 import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -92,6 +93,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     CategoriesModule,
     AuditLogModule,
     BrandingModule,
+    EmailSettingsModule,
     ServiceContractsModule,
     InventoryModule,
     WorkOrdersModule,

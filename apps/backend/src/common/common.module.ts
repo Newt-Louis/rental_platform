@@ -6,11 +6,12 @@ import { SchedulerLockService } from './services/scheduler-lock.service';
 import { OperationalMetricsService } from './services/operational-metrics.service';
 import { OperationalController } from './operational.controller';
 import { OutboxService } from './services/outbox.service';
+import { EncryptionService } from './services/encryption.service';
 
 @Global()
 @Module({
   controllers: [OperationalController],
-  providers: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService],
-  exports: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService],
+  providers: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService],
+  exports: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService],
 })
 export class CommonModule {}
