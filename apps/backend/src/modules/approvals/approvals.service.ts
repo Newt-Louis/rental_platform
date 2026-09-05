@@ -166,6 +166,14 @@ export class ApprovalsService {
               include: {
                 unit: { select: { id: true, code: true, name: true, leaseTermType: true, floor: { select: { id: true, name: true } } } },
                 tenant: { select: { id: true, brandName: true } },
+                lead: { select: { id: true, brandName: true, company: true } },
+                booking: {
+                  select: {
+                    id: true,
+                    lead: { select: { id: true, brandName: true } },
+                    customer: { select: { id: true, brandName: true, companyName: true } },
+                  },
+                },
               },
             },
             fitoutSubmittal: {
@@ -665,6 +673,14 @@ export class ApprovalsService {
                 include: {
                   tenant: { select: { id: true, brandName: true } },
                   unit: { select: { id: true, code: true, leaseTermType: true, floor: { select: { name: true } } } },
+                  lead: { select: { id: true, brandName: true, company: true } },
+                  booking: {
+                    select: {
+                      id: true,
+                      lead: { select: { id: true, brandName: true } },
+                      customer: { select: { id: true, brandName: true, companyName: true } },
+                    },
+                  },
                 },
               },
             },

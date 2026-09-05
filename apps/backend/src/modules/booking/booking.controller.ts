@@ -128,7 +128,7 @@ export class BookingController {
   async update(@Param('id') id: string, @Body() dto: UpdateBookingDto, @CurrentUser() user: any) {
     await this.checkBooking(user, id);
     if (dto.unitId) await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: dto.unitId });
-    return this.bookingService.update(id, dto, user.id);
+    return this.bookingService.update(id, dto, user.id, user.role);
   }
 
   @Patch(':id/priority')

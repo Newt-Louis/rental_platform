@@ -22,10 +22,10 @@ import { ERPStatCard, ERPToolbar } from '@/components/erp';
 import {
   BookmarkCheck, Clock, BookmarkX, CalendarDays,
   Search, AlertTriangle, CheckSquare, Square, Trash2,
-  RotateCcw, Plus, Pencil, Ban, Loader2,
+  RotateCcw, Plus, Pencil, Ban, Loader2, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
-import { UNIT_STATUS_CONFIG, SLOT_STATUS_CONFIG, SLOT_TYPE_CONFIG, daysLeft, fmtDate, fmtDatetime, fmtMoney } from './bookings-constants';
+import { UNIT_STATUS_CONFIG, SLOT_STATUS_CONFIG, SLOT_TYPE_CONFIG, daysLeft, fmtDate, fmtDatetime, fmtDatetimeSec, fmtMoney } from './bookings-constants';
 import { BookingDetailSheet } from './BookingDetailSheet';
 import { SlotBookingDetailSheet } from './SlotBookingDetailSheet';
 import { CreateBookingDialog } from './CreateBookingDialog';
@@ -52,7 +52,12 @@ export function groupUnitBookings(bookings: UnitBooking[]) {
       group.bookings.push(booking);
     }
   }
-  return groups;
+
+  // Nhóm nào có booking vừa cập nhật gần đây nhất hiện lên trên cùng — thứ tự
+  // ưu tiên (queue) bên trong mỗi nhóm giữ nguyên như trên.
+  const latestUpdate = (group: { bookings: UnitBooking[] }) =>
+    Math.max(...group.bookings.map((b) => new Date(b.updatedAt).getTime()));
+  return groups.sort((a, b) => latestUpdate(b) - latestUpdate(a));
 }
 
 export function countUnitBookingStatuses(bookings: UnitBooking[]) {
@@ -225,6 +230,13 @@ export default function BookingsPage() {
   const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [createUnitOpen, setCreateUnitOpen] = useState(false);
+  const [expandedUnitGroups, setExpandedUnitGroups] = useState<Set<string>>(new Set());
+  const toggleUnitGroup = (unitId: string) =>
+    setExpandedUnitGroups((prev) => {
+      const next = new Set(prev);
+      next.has(unitId) ? next.delete(unitId) : next.add(unitId);
+      return next;
+    });
 
   const urlFilterKey = searchParams.toString();
   useEffect(() => {
@@ -599,6 +611,9 @@ export default function BookingsPage() {
                   {unitBookingGroups.map((group) => {
                     const firstBooking = group.bookings[0];
                     const counts = countUnitBookingStatuses(group.bookings);
+                    const isExpanded = expandedUnitGroups.has(group.unitId);
+                    const hasMore = group.bookings.length > 1;
+                    const visibleBookings = isExpanded ? group.bookings : group.bookings.slice(0, 1);
                     return (
                       <Fragment key={group.unitId}>
                         <tr className="border-y border-slate-200 bg-slate-50/90">
@@ -623,10 +638,23 @@ export default function BookingsPage() {
                                 <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
                                 {t('table.waitingCount', { count: counts.pending })}
                               </span>
+                              {hasMore && (
+                                <button
+                                  type="button"
+                                  className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                                  onClick={() => toggleUnitGroup(group.unitId)}
+                                >
+                                  {isExpanded ? (
+                                    <><ChevronUp size={13} /> {t('table.showLess')}</>
+                                  ) : (
+                                    <><ChevronDown size={13} /> {t('table.showMore', { count: group.bookings.length - 1 })}</>
+                                  )}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
-                        {group.bookings.map((b) => {
+                        {visibleBookings.map((b) => {
                     const cfg = UNIT_STATUS_CONFIG[b.status];
                     const dl = daysLeft(b.expiresAt);
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
@@ -668,20 +696,22 @@ export default function BookingsPage() {
                         <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${cfg?.color}`}>{cfg?.label}</Badge>
                         </td>
-                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
-                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDatetimeSec(b.createdAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDatetimeSec(b.updatedAt)}</td>
                         <td data-section="bs-assignee" className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
                         <td data-section="" className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
                             {['ACTIVE', 'PENDING'].includes(b.status) && (
                               <>
-                                <button
-                                  className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                                  title={t('edit')}
-                                  onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
-                                >
-                                  <Pencil size={13} />
-                                </button>
+                                {(isAdmin || (b as any).createdById === currentUser?.id) && (
+                                  <button
+                                    className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                    title={t('edit')}
+                                    onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
                                 <button
                                   className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                                   title={t('actions.cancel')}

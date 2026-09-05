@@ -123,7 +123,7 @@ describe('BookingService — category price-floor validation is VND-only', () =>
     it('skips the VND floor/ceiling check when the existing booking is USD-denominated', async () => {
       prisma.unitBooking.findUnique.mockResolvedValue({
         id: 'b1', unitId: 'unit-1', status: BookingStatus.ACTIVE, isActive: true,
-        currencyCode: 'USD', proposedRentPerSqm: 20, leadId: 'lead-1',
+        currencyCode: 'USD', proposedRentPerSqm: 20, leadId: 'lead-1', createdById: 'user-1',
       });
       prisma.unit.findUnique.mockResolvedValue({
         id: 'unit-1', mallId: 'mall-1', categoryId: 'cat-1', isActive: true,

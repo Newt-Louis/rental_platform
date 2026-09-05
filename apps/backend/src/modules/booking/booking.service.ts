@@ -208,7 +208,7 @@ export class BookingService {
           activatedAt: priority === 1 ? new Date() : null,
           notes: dto.notes,
           createdById,
-          assignedToId: dto.assignedToId,
+          assignedToId: dto.assignedToId ?? createdById,
         },
         include: this.defaultInclude(),
       });
@@ -492,8 +492,14 @@ export class BookingService {
    * count and every write now happen inside one Serializable transaction via the same
    * `runSerializable` retry helper.
    */
-  async update(id: string, dto: UpdateBookingDto, userId: string) {
+  async update(id: string, dto: UpdateBookingDto, userId: string, userRole?: string) {
     const booking = await this.requireBooking(id, [BookingStatus.ACTIVE, BookingStatus.PENDING]);
+
+    // Chỉ người tạo hoặc ADMIN được sửa — người khác dù có quyền truy cập mall
+    // cũng không được thao tác trên booking không phải của mình.
+    if (userRole !== 'ADMIN' && booking.createdById !== userId) {
+      throw new ForbiddenException('Chỉ người tạo booking hoặc Admin mới được chỉnh sửa');
+    }
 
     // ── Đổi lead ──────────────────────────────────────────────────────────────
     if (dto.leadId !== undefined && dto.leadId !== booking.leadId) {
@@ -712,10 +718,11 @@ export class BookingService {
     const l = Math.max(1, parseInt(String(query.limit)) || 20);
     const skip = (p - 1) * l;
 
+    // Duyệt giá độc lập với trạng thái booking — một booking đã bị hủy trong lúc
+    // giá đề xuất còn PENDING vẫn cần được duyệt/từ chối, nên không lọc theo status.
     const where: any = {
       isActive: true,
       priceApprovalStatus: PriceApprovalStatus.PENDING,
-      status: { in: [BookingStatus.PENDING, BookingStatus.ACTIVE] },
     };
     if (mallIds || query.leaseTermType) where.unit = {
       ...(mallIds ? { OR: [

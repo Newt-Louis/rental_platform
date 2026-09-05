@@ -288,7 +288,7 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
   describe('update() — unit-change path', () => {
     const existingBooking = {
       id: 'b1', unitId: 'unit-old', leadId: null, status: BookingStatus.ACTIVE, isActive: true,
-      proposedRentPerSqm: null,
+      proposedRentPerSqm: null, createdById: 'user-1',
     };
 
     beforeEach(() => {

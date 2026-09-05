@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { bookingApi, spacesApi, crmApi, usersApi } from '@/api';
+import { bookingApi, spacesApi, crmApi, usersApi, authApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -114,10 +114,15 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
     enabled: isEditing,
     staleTime: 60000,
   });
+  const { data: currentUser } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => authApi.me(),
+  });
+  const isAdmin = currentUser?.role === 'ADMIN';
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
-    enabled: isEditing,
+    queryFn: () => usersApi.listUsers({ limit: 100, isActive: 'true' }),
+    enabled: isEditing && isAdmin,
     staleTime: 60000,
   });
   const vacantUnits: any[] = Array.isArray(unitData) ? unitData : (unitData?.data ?? []);
@@ -208,6 +213,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const contactName = d?.lead?.contactName ?? d?.customer?.brandName ?? '';
   const activities: any[] = (detail?.data ?? detail)?.activities ?? (detail as any)?.activities ?? [];
   const canEdit = d ? ['ACTIVE', 'PENDING'].includes(d.status) : false;
+  // Chỉ người tạo booking hoặc Admin được sửa thông tin — khớp với ràng buộc
+  // ở BookingController.update (backend từ chối người khác dù có quyền mall).
+  const canEditInfo = canEdit && !!d && (isAdmin || (d as any).createdById === currentUser?.id);
   const canReinstate = d?.status === 'CANCELLED';
 
   return (
@@ -401,16 +409,22 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
               <Textarea value={ef.notes} onChange={setEfField('notes')} rows={3} placeholder="Ghi chú nội bộ..." />
             </div>
 
-            {/* Phụ trách */}
+            {/* Phụ trách — chỉ Admin được đổi; người khác chỉ xem */}
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Phụ trách (Sale)</label>
-              <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                value={ef.assignedToId} onChange={(e) => setEf((f) => ({ ...f, assignedToId: e.target.value }))}>
-                <option value="">-- Chưa phân công --</option>
-                {users.map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.fullName}</option>
-                ))}
-              </select>
+              {isAdmin ? (
+                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
+                  value={ef.assignedToId} onChange={(e) => setEf((f) => ({ ...f, assignedToId: e.target.value }))}>
+                  <option value="">-- Chưa phân công --</option>
+                  {users.map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.fullName}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-600 h-9 flex items-center px-2 rounded-md bg-gray-50 border border-gray-200">
+                  {d.assignedTo?.fullName ?? '-- Chưa phân công --'}
+                </p>
+              )}
             </div>
 
             {/* Save / Cancel */}
@@ -522,9 +536,11 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   </Button>
                 )}
                 <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1 gap-2" onClick={startEditing}>
-                    <Pencil size={14} /> Chỉnh sửa
-                  </Button>
+                  {canEditInfo && (
+                    <Button variant="outline" className="flex-1 gap-2" onClick={startEditing}>
+                      <Pencil size={14} /> Chỉnh sửa
+                    </Button>
+                  )}
                   <Button variant="outline" className="flex-1 gap-2" onClick={() => setExtendOpen(true)}>
                     <Clock size={14} /> Gia hạn
                   </Button>
@@ -559,7 +575,10 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                           {t(`bookings:activityTypes.${a.type}`, { defaultValue: t('common:unknownValue') })}
                         </span>
                         {' — '}<span className="text-gray-500">{a.note}</span>
-                        <div className="text-gray-400">{new Date(a.createdAt).toLocaleString('vi-VN')}</div>
+                        <div className="text-gray-400">
+                          {new Date(a.createdAt).toLocaleString('vi-VN')}
+                          {a.performedBy?.fullName && ` · ${a.performedBy.fullName}`}
+                        </div>
                       </div>
                     </div>
                   ))}

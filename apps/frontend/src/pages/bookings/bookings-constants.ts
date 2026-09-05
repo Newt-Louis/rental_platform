@@ -52,6 +52,14 @@ export function fmtDatetime(d?: string | null) {
   return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+export function fmtDatetimeSec(d?: string | null) {
+  if (!d) return '—';
+  return new Date(d).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
 export function toDatetimeLocal(iso?: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);

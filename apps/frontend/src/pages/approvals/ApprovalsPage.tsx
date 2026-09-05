@@ -894,6 +894,7 @@ export default function ApprovalsPage() {
                 <tbody className="divide-y divide-gray-50">
                   {historySteps.map((step: any) => {
                     const proposal = step.workflow?.proposal;
+                    const party = getProposalParty(proposal);
                     return (
                       <tr key={step.id} className="cursor-pointer hover:bg-gray-50/60 transition-colors" tabIndex={0} aria-label={t('approvals.actions.reviewFile', { number: proposal?.proposalNumber ?? '' })} onClick={() => { setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }} onKeyDown={(e) => { if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key)) return; e.preventDefault(); setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }}>
                         <td className="px-4 py-3">
@@ -902,7 +903,7 @@ export default function ApprovalsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-sm">{proposal?.tenant?.brandName ?? '—'}</div>
+                          <div className="font-medium text-sm">{party.name}</div>
                           {proposal?.unit && (
                             <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                               <Building2 size={11} />
