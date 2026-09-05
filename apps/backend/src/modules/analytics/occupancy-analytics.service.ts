@@ -27,6 +27,7 @@ export class OccupancyAnalyticsService {
         baseRentPerSqm: true,
         camPerSqm: true,
         category: true,
+        categoryId: true,
         leaseTermType: true,
         floor: { select: { id: true, name: true } },
         mall: { select: { id: true, name: true } },
@@ -81,7 +82,7 @@ export class OccupancyAnalyticsService {
       0,
     );
 
-    const byCategory = this.groupByField(units, 'category');
+    const byCategory = await this.groupByCategoryHierarchical(units);
     const byFloor = this.groupByFieldWithRent(units, 'floor');
     const byLeaseTerm = Object.values(occupancyByLeaseTerm).map((zone) => ({
       leaseTermType: zone.leaseTermType,
@@ -116,6 +117,86 @@ export class OccupancyAnalyticsService {
       byFloor,
       byLeaseTerm,
     };
+  }
+
+  // Groups occupancy by category the way the Admin > Ngành hàng tree structures
+  // them (parent immediately followed by its children, indented) instead of a
+  // flat alphabetical/insertion-order list -- units tagged at different levels
+  // of specificity (some "F&B", some the narrower "Coffee & Tea") previously
+  // showed as unrelated bars with no visual link between parent and child.
+  private async groupByCategoryHierarchical(units: any[]) {
+    const groups: Record<string, {
+      name: string; categoryId: string | null;
+      total: number; occupied: number; vacant: number; area: number; occupiedArea: number;
+    }> = {};
+
+    for (const unit of units) {
+      const key = unit.categoryId ?? unit.category ?? 'Unknown';
+      if (!groups[key]) {
+        groups[key] = { name: unit.category ?? 'Unknown', categoryId: unit.categoryId ?? null, total: 0, occupied: 0, vacant: 0, area: 0, occupiedArea: 0 };
+      }
+      groups[key].total++;
+      groups[key].area += unit.areaNLA ?? 0;
+      if (unit.status === UnitStatus.OCCUPIED) {
+        groups[key].occupied++;
+        groups[key].occupiedArea += unit.areaNLA ?? 0;
+      } else if (unit.status === UnitStatus.VACANT) {
+        groups[key].vacant++;
+      }
+    }
+
+    const categoryIds = Object.values(groups)
+      .map((g) => g.categoryId)
+      .filter((id): id is string => !!id);
+    const categoryMeta = categoryIds.length
+      ? await this.prisma.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, parentId: true, sortOrder: true } })
+      : [];
+    const metaById = new Map(categoryMeta.map((c) => [c.id, c]));
+
+    const entries = Object.values(groups).map((g) => ({
+      ...g,
+      occupancyRate: g.area > 0 ? Math.round((g.occupiedArea / g.area) * 1000) / 10 : 0,
+      parentId: (g.categoryId && metaById.get(g.categoryId)?.parentId) || null,
+      sortOrder: (g.categoryId && metaById.get(g.categoryId)?.sortOrder) || 0,
+    }));
+
+    const byParent = new Map<string, typeof entries>();
+    for (const e of entries) {
+      const key = e.parentId ?? '';
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key)!.push(e);
+    }
+    for (const list of byParent.values()) list.sort((a, b) => a.sortOrder - b.sortOrder);
+
+    const ordered: Array<Omit<(typeof entries)[number], 'parentId' | 'sortOrder' | 'categoryId'>> = [];
+    const visited = new Set<string>();
+    const visit = (parentKey: string, depth: number) => {
+      for (const e of byParent.get(parentKey) ?? []) {
+        const idKey = e.categoryId ?? e.name;
+        if (visited.has(idKey)) continue;
+        visited.add(idKey);
+        const { parentId: _parentId, sortOrder: _sortOrder, categoryId: _categoryId, name, ...rest } = e;
+        ordered.push({ name: depth > 0 ? `↳ ${name}` : name, ...rest });
+        // Only a real category can have children -- an entry with no categoryId
+        // (the "Unknown"/uncategorized bucket) must never recurse, or `?? ''`
+        // sends it right back into the ROOT bucket at depth+1 and mislabels every
+        // other not-yet-visited root sibling as if it were that bucket's child.
+        if (e.categoryId) visit(e.categoryId, depth + 1);
+      }
+    };
+    visit('', 0);
+    // A subcategory whose parent has zero units of its own never gets reached by
+    // the walk above (nothing to descend *from*) -- surface it anyway, flat,
+    // rather than silently dropping real occupancy data.
+    for (const e of entries) {
+      const idKey = e.categoryId ?? e.name;
+      if (!visited.has(idKey)) {
+        visited.add(idKey);
+        const { parentId: _parentId, sortOrder: _sortOrder, categoryId: _categoryId, ...rest } = e;
+        ordered.push(rest);
+      }
+    }
+    return ordered;
   }
 
   private groupByField(units: any[], field: string) {

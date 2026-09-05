@@ -179,7 +179,9 @@
     "unitSlot": "Unit / Slot",
     "slot": "Slot",
     "timeRange": "Thời gian",
-    "amount": "Thành tiền"
+    "amount": "Thành tiền",
+    "showMore": "Xem thêm {{count}}",
+    "showLess": "Thu gọn"
   },
   "unitStats": {
     "all": "Tất cả",

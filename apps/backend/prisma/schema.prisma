@@ -22,11 +22,13 @@ enum Role {
 
 enum UnitStatus {
   VACANT // Trng
+  OFFERING // Chao thue - dang marketing chu dong, chua co khach giu cho
   BOOKING // ang booking/gi ch
   NEGOTIATING // ang thng tho (proposal stage)
   CONTRACTED //  k hp ng, ch thi cng
   UNDER_FITOUT // ang thi cng
   OCCUPIED // ang thu
+  LIQUIDATED // Thanh ly - hop dong dang cham dut, cho ban giao xong moi ve Trong
   MERGED //  gp vo snh khc (n khi danh sch thng)
 }
 
@@ -184,7 +186,7 @@ model CategoryMallPricing {
   zoneId     String?
   zone       Zone?    @relation(fields: [zoneId], references: [id])
 
-  // Price range (VND/m2/month)
+  // Price range (per m2/month, in currencyCode)
   // Null on a floor/zone override means "inherit from the next applicable rule".
   // Mall-wide base rules are still required to provide min/max by service validation.
   minRentPerSqm Float? // Gi sn
@@ -193,6 +195,12 @@ model CategoryMallPricing {
 
   // CAM pricing
   camPerSqm Float? // Null = inherit; zero is an explicit free CAM value
+
+  // This master data previously had no currency at all (implicitly VND-only) --
+  // see the matching comment on Unit.currencyCode. A mall/category/floor/zone
+  // scope can now carry one rule per currency (part of the unique key below),
+  // e.g. a VND-quoted band alongside a USD-quoted one for the same category.
+  currencyCode CurrencyCode @default(VND)
 
   effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime? // Null = v thi hn
@@ -203,7 +211,7 @@ model CategoryMallPricing {
   createdById   String?
   createdBy     User?     @relation("CategoryPricingCreatedBy", fields: [createdById], references: [id])
 
-  @@unique([mallId, categoryId, floorId, zoneId, effectiveFrom])
+  @@unique([mallId, categoryId, floorId, zoneId, currencyCode, effectiveFrom], name: "CategoryMallPricing_scope_currency_effectiveFrom_key")
   @@index([mallId, categoryId, isActive])
   @@index([effectiveFrom, effectiveTo])
 }
@@ -1224,6 +1232,11 @@ model Unit {
   categoryRef    Category?  @relation(fields: [categoryId], references: [id])
   baseRentPerSqm Float      @default(0)
   camPerSqm      Float      @default(0)
+  // Currency for baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm --
+  // this master data previously had no currency at all (implicitly VND-only),
+  // unlike Proposal/Contract/Invoice which already carry a real currencyCode.
+  // See docs/program/MULTI_CURRENCY_ARCHITECTURE.md.
+  currencyCode   CurrencyCode @default(VND)
   status         UnitStatus @default(VACANT)
   tenantId       String?
   tenant         Tenant?    @relation("OccupiedUnit", fields: [tenantId], references: [id])
@@ -2973,6 +2986,10 @@ model ContractTermination {
   signageRemoved    Boolean   @default(false)
   keysReturned      Boolean   @default(false)
   status            String    @default("INITIATED") // INITIATED | IN_PROGRESS | COMPLETED | CANCELLED
+  // Unit.status captured at initiate() time, before the Unit is moved to LIQUIDATED - a live
+  // Contract can be terminated while the Unit is CONTRACTED, UNDER_FITOUT, or OCCUPIED (fit-out
+  // hasn't necessarily finished). cancel() restores exactly this instead of assuming OCCUPIED.
+  preTerminationUnitStatus UnitStatus?
   completedAt       DateTime?
   notes             String?
   createdById       String?
@@ -3421,4 +3438,21 @@ model BrandingSettings {
   updatedById   String?
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
+}
+
+// Cau hinh SMTP de gui email -- bang singleton, luon chi 1 dong, service tu tao
+// dong dau tien neu chua co. smtpPassEncrypted luu dang ma hoa (AES-256-GCM,
+// xem EncryptionService) -- khong bao gio tra ve plaintext qua API.
+model EmailSettings {
+  id                 String   @id @default(cuid())
+  isEnabled          Boolean  @default(false)
+  smtpHost           String?
+  smtpPort           Int      @default(587)
+  smtpSecure         Boolean  @default(false)
+  smtpUser           String?
+  smtpPassEncrypted  String?
+  emailFrom          String?
+  updatedById        String?
+  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now())
 }

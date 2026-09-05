@@ -20,6 +20,7 @@ import {
 import { CategoriesService } from '../categories/categories.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
 
 @Injectable()
 export class BookingService {
@@ -89,22 +90,21 @@ export class BookingService {
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
-    // currency field of their own (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a
-    // USD/MMK proposedRentPerSqm against a VND floor/ceiling produces a nonsensical deviation
-    // (e.g. a $25 proposal read as "99.99% below" a 500,000 VND floor), which then forces a
-    // bogus CEO-approval requirement and shows up as garbage in the Approvals price-review
-    // queue. Skip the floor/ceiling check entirely for a non-VND booking, same as the frontend
-    // create dialog already assumes (its "not checked for {currency}" disclaimer was previously
-    // cosmetic only -- the backend still ran the check regardless of currency).
-    const isVndPricing = (dto.currencyCode ?? 'VND') === 'VND';
-    if (dto.proposedRentPerSqm !== undefined && unit.categoryId && isVndPricing) {
+    // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
+    // Float with no currency field at all -- docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+    // validateProposedPrice() only matches a pricing rule in the SAME currency as the
+    // booking, so a USD/MMK booking is checked against a same-currency band where one
+    // exists, and otherwise falls through to the "no pricing rule configured" CEO-escalation
+    // path, same as a VND booking would. (The frontend's "not checked for {currency}"
+    // disclaimer predates this and should be dropped/updated to match.)
+    if (dto.proposedRentPerSqm !== undefined && unit.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: unit.mallId,
         categoryId: unit.categoryId,
         floorId: unit.floorId ?? undefined,
         zoneId: unit.zoneId ?? undefined,
         proposedRentPerSqm: dto.proposedRentPerSqm,
+        currencyCode: dto.currencyCode,
       });
 
       if (validation.requiresApproval) {
@@ -208,7 +208,7 @@ export class BookingService {
           activatedAt: priority === 1 ? new Date() : null,
           notes: dto.notes,
           createdById,
-          assignedToId: dto.assignedToId,
+          assignedToId: dto.assignedToId ?? createdById,
         },
         include: this.defaultInclude(),
       });
@@ -325,11 +325,14 @@ export class BookingService {
     return {
       data: units.map((unit) => {
         const locked = this.unitStatus.isLockedForBooking(unit.status);
+        // Mirrors UnitStatusService.isLockedForBooking's notion of "available": VACANT and
+        // OFFERING both have no active/live contract and no existing hold, so both go straight
+        // to IMMEDIATE — only BOOKING (already has a queue) is QUEUE.
         const mode = locked
           ? 'BLOCKED'
           : unit.status === UnitStatus.BOOKING
             ? 'QUEUE'
-            : unit.status === UnitStatus.VACANT
+            : unit.status === UnitStatus.VACANT || unit.status === UnitStatus.OFFERING
               ? 'IMMEDIATE'
               : 'BLOCKED';
         return {
@@ -489,8 +492,14 @@ export class BookingService {
    * count and every write now happen inside one Serializable transaction via the same
    * `runSerializable` retry helper.
    */
-  async update(id: string, dto: UpdateBookingDto, userId: string) {
+  async update(id: string, dto: UpdateBookingDto, userId: string, userRole?: string) {
     const booking = await this.requireBooking(id, [BookingStatus.ACTIVE, BookingStatus.PENDING]);
+
+    // Chỉ người tạo hoặc ADMIN được sửa — người khác dù có quyền truy cập mall
+    // cũng không được thao tác trên booking không phải của mình.
+    if (userRole !== 'ADMIN' && booking.createdById !== userId) {
+      throw new ForbiddenException('Chỉ người tạo booking hoặc Admin mới được chỉnh sửa');
+    }
 
     // ── Đổi lead ──────────────────────────────────────────────────────────────
     if (dto.leadId !== undefined && dto.leadId !== booking.leadId) {
@@ -543,11 +552,10 @@ export class BookingService {
     let pricingRuleId: string | null | undefined = undefined;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
 
-    // See the currency note on the same guard in create() above -- CategoryPricing's
-    // floor/ceiling is VND-only; UpdateBookingDto has no currencyCode of its own, so the
+    // See the currency note on the same guard in create() above -- CategoryPricing now has
+    // its own currencyCode; UpdateBookingDto has no currencyCode of its own, so the
     // booking's existing currency is authoritative here.
-    const isVndPricing = (booking.currencyCode ?? 'VND') === 'VND';
-    if (dto.proposedRentPerSqm !== undefined && unit?.categoryId && isVndPricing) {
+    if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
       if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
         const validation = await this.categoriesService.validateProposedPrice({
           mallId: unit.mallId,
@@ -555,6 +563,7 @@ export class BookingService {
           floorId: unit.floorId ?? undefined,
           zoneId: unit.zoneId ?? undefined,
           proposedRentPerSqm: dto.proposedRentPerSqm,
+          currencyCode: booking.currencyCode,
         });
 
         if (validation.requiresApproval) {
@@ -660,7 +669,7 @@ export class BookingService {
     });
 
     await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${booking.proposedRentPerSqm?.toLocaleString()} VND/m² được phê duyệt${dto.note ? '. ' + dto.note : ''}`,
+      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² được phê duyệt${dto.note ? '. ' + dto.note : ''}`,
     });
 
     return updated;
@@ -689,7 +698,7 @@ export class BookingService {
     });
 
     await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${booking.proposedRentPerSqm?.toLocaleString()} VND/m² bị từ chối. Lý do: ${dto.reason}`,
+      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² bị từ chối. Lý do: ${dto.reason}`,
     });
 
     return updated;
@@ -709,10 +718,11 @@ export class BookingService {
     const l = Math.max(1, parseInt(String(query.limit)) || 20);
     const skip = (p - 1) * l;
 
+    // Duyệt giá độc lập với trạng thái booking — một booking đã bị hủy trong lúc
+    // giá đề xuất còn PENDING vẫn cần được duyệt/từ chối, nên không lọc theo status.
     const where: any = {
       isActive: true,
       priceApprovalStatus: PriceApprovalStatus.PENDING,
-      status: { in: [BookingStatus.PENDING, BookingStatus.ACTIVE] },
     };
     if (mallIds || query.leaseTermType) where.unit = {
       ...(mallIds ? { OR: [
@@ -1336,6 +1346,9 @@ export class BookingService {
           category: true,
           baseRentPerSqm: true,
           camPerSqm: true,
+          // Without this the Unit's own rent figures reach the UI stripped of
+          // their currency, so a USD-quoted unit renders as VND.
+          currencyCode: true,
           askingRentPerSqm: true,
           escalationRate: true,
           minLeaseTerm: true,

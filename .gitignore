@@ -85,5 +85,12 @@ apps/backend/prisma/migrations/.DS_Store
 .agents/*
 .codex/
 .codex/*
+
+# ─── Playwright MCP debug artifacts ───────────────────────────────────────────
+.playwright-mcp/
 .claude/
 .claude/*
+
+# ─── Private local-only docs/keys, never committed ───────────────────────────
+docs-private/
+docs-private/*

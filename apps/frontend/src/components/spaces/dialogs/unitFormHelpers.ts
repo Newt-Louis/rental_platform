@@ -1,13 +1,14 @@
 export interface UnitFormValues {
   code: string;
   name: string;
-  category: string;
+  categoryId: string;
   floorId: string;
   zoneId: string;
   areaGFA: string;
   areaNLA: string;
   baseRentPerSqm: string;
   camPerSqm: string;
+  currencyCode: string;
   spaceType: string;
   leaseTermType: string;
   tier: string;
@@ -17,8 +18,8 @@ export interface UnitFormValues {
 }
 
 export const UNIT_FORM_DEFAULT_VALUES: UnitFormValues = {
-  code: '', name: '', category: '', floorId: '', zoneId: '',
-  areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
+  code: '', name: '', categoryId: '', floorId: '', zoneId: '',
+  areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', currencyCode: 'VND',
   spaceType: '', leaseTermType: 'LONG', tier: '', isFlexibleArea: false,
   minFlexArea: '', maxFlexArea: '',
 };
@@ -27,13 +28,14 @@ export function seedUnitFormValues(unit: any, defaultFloorId?: string): UnitForm
   return {
     code: unit?.code ?? '',
     name: unit?.name ?? '',
-    category: unit?.category ?? '',
+    categoryId: unit?.categoryId ?? '',
     floorId: unit?.floorId ?? defaultFloorId ?? '',
     zoneId: unit?.zoneId ?? '',
     areaGFA: unit?.areaGFA?.toString() ?? '',
     areaNLA: unit?.areaNLA?.toString() ?? '',
     baseRentPerSqm: unit?.baseRentPerSqm?.toString() ?? '',
     camPerSqm: unit?.camPerSqm?.toString() ?? '',
+    currencyCode: unit?.currencyCode ?? 'VND',
     spaceType: unit?.spaceType ?? '',
     leaseTermType: unit?.leaseTermType ?? 'LONG',
     tier: unit?.tier ?? '',
@@ -79,10 +81,11 @@ export function buildUnitFormPayload(data: Record<string, any>, mallId: string, 
     areaNLA: parseUnitNumber(data.areaNLA) ?? 0,
     baseRentPerSqm: parseUnitNumber(data.baseRentPerSqm) ?? 0,
     camPerSqm: parseUnitNumber(data.camPerSqm) ?? 0,
+    currencyCode: data.currencyCode || 'VND',
     floorId: optional(data.floorId),
     zoneId: optional(data.zoneId),
     name: optional(data.name),
-    category: optional(data.category),
+    categoryId: optional(data.categoryId),
     spaceType: optional(data.spaceType),
     leaseTermType: optional(data.leaseTermType),
     tier: optional(data.tier),

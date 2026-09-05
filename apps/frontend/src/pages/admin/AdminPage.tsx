@@ -1,7 +1,7 @@
 import { useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi, mallAccessApi, departmentsApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
@@ -708,6 +708,18 @@ interface ZoneInput { id: string; name: string; code: string; }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+// Vietnamese users commonly type area with "." as a thousands separator (vd.
+// "45.000"). `<input type="number">` parses that as the float 45, silently
+// truncating the value to a tiny wrong number instead of rejecting it -- the
+// edit then looks like it "didn't save" because the field reverts to ~0.
+// Strip any non-digit separators before parsing so "45.000" and "45,000" both
+// resolve to 45000.
+const parseAreaInput = (value: unknown): number | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const digits = String(value).replace(/[^\d]/g, '');
+  return digits ? Number(digits) : undefined;
+};
+
 function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -731,7 +743,7 @@ function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => voi
   });
 
   const onStep1Submit = (data: any) => {
-    setMallData({ ...data, totalArea: data.totalArea ? Number(data.totalArea) : undefined });
+    setMallData({ ...data, totalArea: parseAreaInput(data.totalArea) });
     setStep(2);
   };
 
@@ -822,7 +834,7 @@ function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
               <div>
                 <Label>Tổng diện tích (m²)</Label>
-                <Input {...register('totalArea')} type="number" placeholder="45000" className="mt-1" />
+                <Input {...register('totalArea')} type="text" inputMode="numeric" placeholder="45000" className="mt-1" />
               </div>
               <div className="col-span-2">
                 <Label>Mô tả</Label>
@@ -940,7 +952,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = { ...data, totalArea: data.totalArea ? Number(data.totalArea) : undefined };
+      const payload = { ...data, totalArea: parseAreaInput(data.totalArea) };
       return mall ? spacesApi.updateMall(mall.id, payload) : spacesApi.createMall(payload);
     },
     onSuccess: () => {
@@ -962,7 +974,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
             <div><Label>Mã Mall *</Label><Input {...register('code', { required: true })} placeholder="THISO-SALA" className="mt-1" /></div>
             <div className="col-span-2"><Label>Địa chỉ</Label><Input {...register('address')} placeholder="10 Mai Chi Tho..." className="mt-1" /></div>
             <div><Label>Thành phố</Label><Input {...register('city')} placeholder="Hồ Chí Minh" className="mt-1" /></div>
-            <div><Label>Tổng diện tích (m²)</Label><Input {...register('totalArea')} type="number" placeholder="45000" className="mt-1" /></div>
+            <div><Label>Tổng diện tích (m²)</Label><Input {...register('totalArea')} type="text" inputMode="numeric" placeholder="45000" className="mt-1" /></div>
             <div className="col-span-2"><Label>Mô tả</Label><Input {...register('description')} placeholder="Mô tả ngắn về mall..." className="mt-1" /></div>
           </div>
           <div className="flex justify-end gap-2">
@@ -1495,6 +1507,146 @@ function BrandingCard() {
   );
 }
 
+// ─── Email Settings: cấu hình SMTP để gửi email thông báo ─────────────────────
+
+function EmailSettingsCard() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    isEnabled: false,
+    smtpHost: '',
+    smtpPort: 587,
+    smtpSecure: false,
+    smtpUser: '',
+    smtpPass: '',
+    emailFrom: '',
+  });
+  const [testTo, setTestTo] = useState('');
+
+  const { data: settings } = useQuery({ queryKey: ['email-settings'], queryFn: emailSettingsApi.getSettings });
+
+  useEffect(() => {
+    if (!settings) return;
+    setForm((prev) => ({
+      ...prev,
+      isEnabled: settings.isEnabled,
+      smtpHost: settings.smtpHost ?? '',
+      smtpPort: settings.smtpPort,
+      smtpSecure: settings.smtpSecure,
+      smtpUser: settings.smtpUser ?? '',
+      emailFrom: settings.emailFrom ?? '',
+      smtpPass: '',
+    }));
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => emailSettingsApi.update({
+      isEnabled: form.isEnabled,
+      smtpHost: form.smtpHost,
+      smtpPort: form.smtpPort,
+      smtpSecure: form.smtpSecure,
+      smtpUser: form.smtpUser,
+      emailFrom: form.emailFrom,
+      // Không gửi field này nếu người dùng không gõ gì -- giữ nguyên password cũ.
+      ...(form.smtpPass ? { smtpPass: form.smtpPass } : {}),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['email-settings'] });
+      toast({ title: 'Đã lưu cấu hình SMTP' });
+    },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, 'Lỗi lưu cấu hình SMTP'), variant: 'destructive' }),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => emailSettingsApi.sendTest(testTo || undefined),
+    onSuccess: (res: any) => {
+      if (res?.skipped) {
+        toast({ title: 'Chưa gửi được', description: 'Cấu hình SMTP chưa bật hoặc chưa đủ thông tin — hãy Lưu trước khi gửi thử.', variant: 'destructive' });
+      } else {
+        toast({ title: `Đã gửi email thử tới ${res?.to ?? testTo}` });
+      }
+    },
+    onError: (e: any) => toast({ title: getApiErrorMessage(e, 'Gửi email thử thất bại'), variant: 'destructive' }),
+  });
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-semibold text-gray-900 text-sm">Cấu hình Email (SMTP)</h3>
+        <label className="flex items-center gap-2 text-xs text-gray-600">
+          <input
+            type="checkbox"
+            checked={form.isEnabled}
+            onChange={(e) => setForm((f) => ({ ...f, isEnabled: e.target.checked }))}
+          />
+          Bật gửi email
+        </label>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">Dùng để gửi thông báo hết hạn hợp đồng, phê duyệt, hoá đơn... Mật khẩu được mã hoá trước khi lưu.</p>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs">SMTP Host</Label>
+          <Input value={form.smtpHost} onChange={(e) => setForm((f) => ({ ...f, smtpHost: e.target.value }))} placeholder="smtp.gmail.com" />
+        </div>
+        <div>
+          <Label className="text-xs">Port</Label>
+          <Input
+            type="number"
+            value={form.smtpPort}
+            onChange={(e) => setForm((f) => ({ ...f, smtpPort: Number(e.target.value) || 587 }))}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">SMTP User</Label>
+          <Input value={form.smtpUser} onChange={(e) => setForm((f) => ({ ...f, smtpUser: e.target.value }))} />
+        </div>
+        <div>
+          <Label className="text-xs">
+            SMTP Password {settings?.hasPassword && <span className="text-gray-400">(đã đặt — để trống nếu không đổi)</span>}
+          </Label>
+          <Input
+            type="password"
+            value={form.smtpPass}
+            onChange={(e) => setForm((f) => ({ ...f, smtpPass: e.target.value }))}
+            placeholder={settings?.hasPassword ? '••••••••' : ''}
+          />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Email From (tên hiển thị)</Label>
+          <Input
+            value={form.emailFrom}
+            onChange={(e) => setForm((f) => ({ ...f, emailFrom: e.target.value }))}
+            placeholder="THISO Leasing <noreply@thiso.com.vn>"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Kết nối bảo mật (SSL/TLS)</Label>
+          <label className="flex items-center gap-2 h-9 text-sm text-gray-700">
+            <input type="checkbox" checked={form.smtpSecure} onChange={(e) => setForm((f) => ({ ...f, smtpSecure: e.target.checked }))} />
+            secure (port 465)
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mt-4">
+        <Button size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          Lưu cấu hình
+        </Button>
+        <Input
+          className="max-w-[220px]"
+          placeholder="Email nhận thử (mặc định: bạn)"
+          value={testTo}
+          onChange={(e) => setTestTo(e.target.value)}
+        />
+        <Button size="sm" variant="outline" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>
+          Gửi thử
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main AdminPage ────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -1602,7 +1754,7 @@ export default function AdminPage() {
             {activeTab === 'categories'  && <CategoriesTab />}
             {activeTab === 'permissions' && <PermissionsTab />}
             {activeTab === 'approval'    && <ApprovalPolicyTab />}
-            {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><OperationalSystemTab /></div>}
+            {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><EmailSettingsCard /><OperationalSystemTab /></div>}
           </div>
         </div>
       </div>

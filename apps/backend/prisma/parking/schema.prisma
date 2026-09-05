@@ -1,0 +1,98 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../node_modules/.prisma/parking-client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PARKING_DATABASE_URL")
+}
+
+model tenants {
+  tenant_id             Int                     @id @default(autoincrement())
+  tenant_code           String                  @unique
+  name                  String
+  description           String?
+  vehicle_type_mappings vehicle_type_mappings[]
+}
+
+model vehicle_type_mappings {
+  id                      Int           @id @default(autoincrement())
+  tenant_id               Int?
+  local_vehicle_type_id   Int           @db.SmallInt
+  foreign_vehicle_type_id String        @db.VarChar(50)
+  vehicle_types           vehicle_types @relation(fields: [local_vehicle_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenants                 tenants?      @relation(fields: [tenant_id], references: [tenant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenant_id, foreign_vehicle_type_id], map: "uq_vtm_tenant_foreign")
+  @@index([local_vehicle_type_id], map: "idx_vtm_local_vehicle_type_id")
+  @@index([tenant_id], map: "idx_vtm_tenant_id")
+}
+
+model vehicle_types {
+  id                    Int                     @id @default(autoincrement()) @db.SmallInt
+  name                  String                  @db.VarChar(255)
+  is_active             Boolean
+  vehicle_type_mappings vehicle_type_mappings[]
+}
+
+/// This table is a partition table and requires additional setup for migrations. Visit https://pris.ly/d/partition-tables for more info.
+model parking_transactions {
+  tenant_id                     Int
+  parking_session_id            Int
+  card_id                       Int?
+  card_number                   String?   @db.VarChar(50)
+  card_label                    String?   @db.VarChar(100)
+  card_type_id                  Int?
+  card_type_name                String?   @db.VarChar(50)
+  vehicle_type_id               Int?
+  vehicle_type_name             String?   @db.VarChar(50)
+  vehicle_type_category         String?   @db.VarChar(50)
+  vehicle_number                String?   @db.VarChar(50)
+  check_in_alpr_vehicle_number  String?   @db.VarChar(50)
+  check_in_operator_id          Int?
+  check_in_time                 DateTime? @db.Timestamp(6)
+  check_in_lane_id              Int?
+  check_in_images               Json?
+  check_out_alpr_vehicle_number String?   @db.VarChar(50)
+  check_out_operator_id         Int?
+  check_out_time                DateTime? @db.Timestamp(6)
+  check_out_lane_id             Int?
+  check_out_images              Json?
+  duration                      Int?
+  calculation_time              DateTime? @db.Timestamp(6)
+  payment_date                  DateTime? @db.Timestamp(6)
+  parking_fee                   Decimal?  @default(0.00) @db.Decimal(12, 2)
+  total_fee                     Decimal?  @default(0.00) @db.Decimal(12, 2)
+  cash_amount                   Decimal?  @default(0.00) @db.Decimal(12, 2)
+  bank_transfer_amount          Decimal?  @default(0.00) @db.Decimal(12, 2)
+  bank_transaction_code         String?   @db.VarChar(100)
+  bank_payment_method           String?   @db.VarChar(50)
+  online_payment_status         String?   @db.VarChar(50)
+  online_payment_type           String?   @db.VarChar(50)
+  promotion_raw_amount          Decimal?  @default(0.00) @db.Decimal(12, 2)
+  promotion_amount              Decimal?  @default(0.00) @db.Decimal(12, 2)
+  promotion_used                Int?      @default(0) @db.SmallInt
+  voucher_id                    Int?
+  voucher_type                  String?   @db.VarChar(50)
+  voucher_bill_id               Int?
+  voucher_bill_number           String?   @db.VarChar(50)
+  voucher_bill_amount           Decimal?  @default(0.00) @db.Decimal(12, 2)
+  voucher_bill_company          String?   @db.VarChar(150)
+  voucher_coupon_id             Int?
+  voucher_coupon_code           String?   @db.VarChar(50)
+  voucher_coupon_amount         Decimal?  @default(0.00) @db.Decimal(12, 2)
+  voucher_coupon_company        String?   @db.VarChar(150)
+  invoice_transaction_type      String?   @db.VarChar(50)
+  invoice_status                String?   @db.VarChar(50)
+  invoice_transaction_id        String?   @db.VarChar(100)
+  invoice_no                    String?   @db.VarChar(50)
+  reservation_code              String?   @db.VarChar(50)
+  code_of_tax                   String?   @db.VarChar(50)
+  year                          Int?
+  month                         Int?
+  synced_at                     DateTime  @default(now()) @db.Timestamp(6)
+
+  @@id([tenant_id, parking_session_id])
+}

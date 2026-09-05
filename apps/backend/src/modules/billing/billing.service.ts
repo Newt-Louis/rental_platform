@@ -70,6 +70,7 @@ export class BillingService {
         totalAmount: invoice.totalAmount,
         dueDate: invoice.dueDate.toLocaleDateString('vi-VN'),
         period: invoice.period,
+        currencyCode: full?.currencyCode,
       }),
     });
   }

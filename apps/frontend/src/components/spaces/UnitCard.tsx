@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { CheckSquare, Square, GitMerge } from 'lucide-react';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
-import { formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 import type { Unit, UnitSlotSummary } from '@/types';
 
 export function UnitCard({
@@ -24,6 +24,11 @@ export function UnitCard({
 }) {
   const { t } = useTranslation('spaces');
   const cfg = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.VACANT;
+  const isExpiringSoon = (() => {
+    if (unit.status !== 'OCCUPIED' || !unit.leaseEndDate) return false;
+    const daysLeft = (new Date(unit.leaseEndDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    return daysLeft >= 0 && daysLeft <= 90;
+  })();
   return (
     <Card
       className={`h-full cursor-pointer border-gray-200 shadow-none transition-colors hover:border-gray-400 hover:bg-gray-50/50 group ${
@@ -51,7 +56,14 @@ export function UnitCard({
               {unit.name && <div className="text-xs text-gray-400">{unit.name}</div>}
             </div>
           </div>
-          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.color}`}>{getUnitStatusLabel(t, unit.status)}</span>
+          <div className="flex flex-col items-end gap-1">
+            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${cfg.color}`}>{getUnitStatusLabel(t, unit.status)}</span>
+            {isExpiringSoon && (
+              <span className="text-xs px-2 py-0.5 rounded-full border font-medium bg-rose-100 text-rose-700 border-rose-200">
+                {t('status.EXPIRING_SOON')}
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-xs text-gray-500 space-y-0.5">
           <div className="flex items-center gap-1">
@@ -65,7 +77,7 @@ export function UnitCard({
           <div className="flex items-center gap-2">
             <span>{unit.areaNLA.toLocaleString()} m² NLA</span>
             {unit.baseRentPerSqm > 0 && (
-              <span className="text-green-700 tabular-nums">{formatVndRate(unit.baseRentPerSqm)}</span>
+              <span className="text-green-700 tabular-nums">{formatRatePerSqm(unit.baseRentPerSqm, unit.currencyCode)}</span>
             )}
           </div>
           {unit.category && <div className="text-gray-700">{unit.category}</div>}

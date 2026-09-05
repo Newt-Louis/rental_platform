@@ -6,6 +6,7 @@ import { EmailService } from '../notifications/email.service';
 import { daysOverdue, policiesToApply } from './ar-dunning.util';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
 
 @Injectable()
 export class ArDunningService {
@@ -91,7 +92,7 @@ export class ArDunningService {
             await this.notificationsService.create({
               userId: user.id,
               title: `[AR L${policy.level}] ${partyName}`,
-              body: `Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày — còn phải thu ${outstanding.toLocaleString('vi-VN')} VNĐ`,
+              body: `Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày — còn phải thu ${formatMoneyWithCode(outstanding, invoice.currencyCode)}`,
               type: 'AR_DUNNING',
               entityType: 'INVOICE',
               entityId: invoice.id,
@@ -111,6 +112,7 @@ export class ArDunningService {
                 dueDate: new Date(invoice.dueDate).toLocaleDateString('vi-VN'),
                 daysOverdue: overdueDays,
                 contactEmail: process.env.SMTP_USER ?? 'finance@thiso.com.vn',
+                currencyCode: invoice.currencyCode,
               }),
             });
         }

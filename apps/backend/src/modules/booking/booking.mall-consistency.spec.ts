@@ -30,6 +30,7 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
     isActive: true,
     currencyCode: 'VND',
     proposedRentPerSqm: null,
+    createdById: 'user-1',
   };
 
   const prisma = {

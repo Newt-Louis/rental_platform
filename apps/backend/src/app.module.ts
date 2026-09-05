@@ -9,7 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
-import { PrismaMssqlModule } from './prisma-mssql/prisma-mssql.module';
+import { PrismaParkingModule } from './prisma-parking/prisma-parking.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SpacesModule } from './modules/spaces/spaces.module';
@@ -37,6 +37,7 @@ import { SlotsModule } from './modules/slots/slots.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { BrandingModule } from './modules/branding/branding.module';
+import { EmailSettingsModule } from './modules/email-settings/email-settings.module';
 import { HealthController } from './health/health.controller';
 import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -63,7 +64,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
       ignoreUserAgents: [/googlebot/i, /bingbot/i],
     }),
     PrismaModule,
-    PrismaMssqlModule,
+    PrismaParkingModule,
     CommonModule,
     AuthModule,
     UsersModule,
@@ -92,6 +93,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     CategoriesModule,
     AuditLogModule,
     BrandingModule,
+    EmailSettingsModule,
     ServiceContractsModule,
     InventoryModule,
     WorkOrdersModule,

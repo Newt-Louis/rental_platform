@@ -9,7 +9,7 @@ import {
 const form = {
   code: ' A-01 ',
   name: '',
-  category: '',
+  categoryId: '',
   floorId: '',
   zoneId: '',
   areaGFA: '120',
@@ -44,7 +44,7 @@ describe('buildUnitFormPayload', () => {
     expect(payload).not.toHaveProperty('status');
     expect(payload.floorId).toBeNull();
     expect(payload.zoneId).toBeNull();
-    expect(payload.category).toBeNull();
+    expect(payload.categoryId).toBeNull();
   });
 
   it('returns a clear validation message before sending an invalid form', () => {

@@ -1,7 +1,7 @@
 import type { CurrencyCode } from '@/lib/currency';
 export type { CurrencyCode };
 export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
-export type UnitStatus = 'VACANT' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED';
+export type UnitStatus = 'VACANT' | 'OFFERING' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED' | 'LIQUIDATED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
 export type LeadPriority = 'HOT' | 'WARM' | 'COLD';
 export type CustomerStatus = 'PROSPECT' | 'NEGOTIATING' | 'ACTIVE' | 'INACTIVE' | 'BLACKLISTED';
@@ -113,6 +113,7 @@ export interface CategoryMallPricing {
   maxRentPerSqm: number | null;
   suggestedRent?: number | null;
   camPerSqm: number | null;
+  currencyCode: string;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -161,6 +162,7 @@ export interface Unit {
   categoryRef?: Category;
   baseRentPerSqm: number;
   camPerSqm: number;
+  currencyCode?: CurrencyCode;
   status: UnitStatus;
   spaceType?: string;
   tier?: string;

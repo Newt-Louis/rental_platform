@@ -179,7 +179,9 @@
     "unitSlot": "Unit / Slot",
     "slot": "Slot",
     "timeRange": "Time",
-    "amount": "Amount"
+    "amount": "Amount",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less"
   },
   "unitStats": {
     "all": "All",

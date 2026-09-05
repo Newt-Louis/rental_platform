@@ -160,14 +160,35 @@ export class SpacesService {
       },
       include: {
         _count: {
-          select: { units: true, buildings: true, floors: true },
+          select: {
+            units: { where: { isActive: true } },
+            buildings: { where: { isActive: true } },
+            floors: { where: { isActive: true } },
+          },
         },
       },
       orderBy: { name: 'asc' },
     });
   }
 
+  // A "deleted" Mall is soft-deleted (isActive: false) -- its row, and its
+  // unique `code`, stay in the table. Recreating a Mall with the same code
+  // must therefore reactivate that row instead of hitting Prisma's raw P2002
+  // (which previously surfaced as an opaque "Unique constraint failed" error
+  // and left the code permanently unusable).
+  private async resolveMallCodeConflict(code: string) {
+    const existing = await this.prisma.mall.findUnique({ where: { code } });
+    if (existing && existing.isActive) {
+      throw new ConflictException(`Mã Mall "${code}" đã tồn tại`);
+    }
+    return existing;
+  }
+
   async createMall(dto: CreateMallDto) {
+    const existing = await this.resolveMallCodeConflict(dto.code);
+    if (existing) {
+      return this.prisma.mall.update({ where: { id: existing.id }, data: { ...dto, isActive: true } });
+    }
     return this.prisma.mall.create({ data: dto });
   }
 
@@ -175,8 +196,11 @@ export class SpacesService {
     mall: CreateMallDto;
     floors?: Array<{ name: string; level: string; sortOrder?: number; zones?: Array<{ name: string; code?: string }> }>;
   }) {
+    const existing = await this.resolveMallCodeConflict(data.mall.code);
     return this.prisma.$transaction(async (tx) => {
-      const mall = await tx.mall.create({ data: data.mall });
+      const mall = existing
+        ? await tx.mall.update({ where: { id: existing.id }, data: { ...data.mall, isActive: true } })
+        : await tx.mall.create({ data: data.mall });
       for (const floorInput of data.floors ?? []) {
         const { zones, ...floorData } = floorInput;
         const floor = await tx.floor.create({
@@ -470,6 +494,29 @@ export class SpacesService {
     return unit;
   }
 
+  // Unit.category (legacy free text) and Unit.categoryId (FK to the Category
+  // master data managed in Admin > Ngành hàng) used to be set independently --
+  // the Spaces "Ngành hàng" select only ever wrote the free-text name, so
+  // categoryId stayed null for every Unit created through the app. That silently
+  // broke everything keyed on categoryId: CategoryMallPricing lookups (Admin's
+  // per-mall price bands) and the proposal price-deviation check in
+  // ProposalsService (`proposal.unit?.categoryId` gates the whole check) never
+  // matched a real Unit. categoryId is now the source of truth; `category` is
+  // derived from it here so existing string-based filters/exports/analytics
+  // keep working unchanged.
+  private async resolveUnitCategoryFields(
+    categoryId: string | null | undefined,
+  ): Promise<{ categoryId?: string | null; category?: string | null }> {
+    if (categoryId === undefined) return {};
+    if (!categoryId) return { categoryId: null, category: null };
+    const category = await this.prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: { name: true },
+    });
+    if (!category) throw new BadRequestException('Ngành hàng không tồn tại hoặc đã ngừng sử dụng');
+    return { categoryId, category: category.name };
+  }
+
   async createUnit(dto: CreateUnitDto) {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
@@ -481,8 +528,10 @@ export class SpacesService {
     });
     if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
 
+    const categoryFields = await this.resolveUnitCategoryFields(dto.categoryId);
+
     return this.prisma.unit.create({
-      data: { ...dto, mallId: dto.mallId } as Prisma.UnitUncheckedCreateInput,
+      data: { ...dto, mallId: dto.mallId, ...categoryFields } as Prisma.UnitUncheckedCreateInput,
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -505,9 +554,12 @@ export class SpacesService {
         throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
       }
     }
+    const categoryFields = Object.prototype.hasOwnProperty.call(dto, 'categoryId')
+      ? await this.resolveUnitCategoryFields(dto.categoryId)
+      : {};
     return this.prisma.unit.update({
       where: { id },
-      data: sanitizeUnitDto(dto),
+      data: sanitizeUnitDto({ ...dto, ...categoryFields }),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -517,6 +569,15 @@ export class SpacesService {
   }
 
   async updateUnitStatus(id: string, status: UnitStatus, userId?: string) {
+    // LIQUIDATED must stay paired with the linked Contract's TERMINATING state — setting it
+    // here would move the Unit without ever touching the Contract, leaving them desynced with
+    // no way back except another manual override. Only ContractTerminationService.initiate()
+    // (and its cancel/complete counterparts) may drive this transition.
+    if (status === UnitStatus.LIQUIDATED) {
+      throw new BadRequestException(
+        'LIQUIDATED chỉ được thiết lập tự động khi khởi tạo thanh lý hợp đồng (Contract Termination), không thể đổi thủ công.',
+      );
+    }
     await this.getUnit(id);
     return this.unitStatus.transition(id, status, { userId, reason: 'Manual status update' });
   }
@@ -566,15 +627,17 @@ export class SpacesService {
     if (mallId) where.mallId = mallId;
     else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
-    const [total, vacant, booking, negotiating, contracted, underFitout, occupied] =
+    const [total, vacant, offering, booking, negotiating, contracted, underFitout, occupied, liquidated] =
       await Promise.all([
         this.prisma.unit.count({ where }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.VACANT } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.OFFERING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.BOOKING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.NEGOTIATING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.CONTRACTED } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.UNDER_FITOUT } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.OCCUPIED } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.LIQUIDATED } }),
       ]);
 
     const units = await this.prisma.unit.findMany({
@@ -615,11 +678,13 @@ export class SpacesService {
     return {
       total,
       vacant,
+      offering,
       booking,
       negotiating,
       contracted,
       underFitout,
       occupied,
+      liquidated,
       occupancyRate: totalArea > 0 ? ((leasedArea / totalArea) * 100).toFixed(1) : '0',
       totalArea,
       vacantArea,
@@ -1299,6 +1364,7 @@ export class SpacesService {
     updates: {
       status?: UnitStatus;
       category?: string;
+      categoryId?: string;
       baseRentPerSqm?: number;
       camPerSqm?: number;
       condition?: string;
@@ -1357,7 +1423,11 @@ export class SpacesService {
     if (updates.status !== undefined) {
       throw new BadRequestException('Trạng thái mặt bằng được cập nhật tự động theo Booking, Hợp đồng và Fit-out; không thể đổi hàng loạt.');
     }
-    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.categoryId !== undefined) {
+      Object.assign(updateData, await this.resolveUnitCategoryFields(updates.categoryId));
+    } else if (updates.category !== undefined) {
+      updateData.category = updates.category;
+    }
     if (updates.baseRentPerSqm !== undefined) updateData.baseRentPerSqm = updates.baseRentPerSqm;
     if (updates.camPerSqm !== undefined) updateData.camPerSqm = updates.camPerSqm;
     if (updates.condition !== undefined) updateData.condition = updates.condition;
@@ -1390,8 +1460,8 @@ export class SpacesService {
       if (updates.camPerSqm !== undefined && updates.camPerSqm !== unit.camPerSqm) {
         changes.push({ field: 'camPerSqm', oldVal: unit.camPerSqm, newVal: updates.camPerSqm, type: UnitHistoryType.RENT_CHANGE });
       }
-      if (updates.category !== undefined && updates.category !== unit.category) {
-        changes.push({ field: 'category', oldVal: unit.category, newVal: updates.category, type: UnitHistoryType.INFO_UPDATE });
+      if (updateData.category !== undefined && updateData.category !== unit.category) {
+        changes.push({ field: 'category', oldVal: unit.category, newVal: updateData.category, type: UnitHistoryType.INFO_UPDATE });
       }
       if (updates.condition !== undefined && updates.condition !== unit.condition) {
         changes.push({ field: 'condition', oldVal: unit.condition, newVal: updates.condition, type: UnitHistoryType.CONDITION_CHANGE });

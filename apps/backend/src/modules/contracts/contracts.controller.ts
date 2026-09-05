@@ -263,7 +263,7 @@ export class ContractsController {
   @ApiOperation({ summary: 'Complete termination — sets contract to TERMINATED and unit to AVAILABLE' })
   async completeTermination(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateContract(user, id);
-    return this.terminationService.complete(id);
+    return this.terminationService.complete(id, user?.id);
   }
 
   @Post(':id/termination/cancel')
@@ -271,6 +271,6 @@ export class ContractsController {
   @ApiOperation({ summary: 'Cancel termination — restores contract to ACTIVE' })
   async cancelTermination(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateContract(user, id);
-    return this.terminationService.cancel(id);
+    return this.terminationService.cancel(id, user?.id);
   }
 }

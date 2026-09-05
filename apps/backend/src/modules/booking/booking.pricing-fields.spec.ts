@@ -68,7 +68,7 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     it('passes the new fields through to the update data', async () => {
       prisma.unitBooking.findUnique.mockResolvedValue({
         id: 'b1', unitId: 'unit-1', status: BookingStatus.ACTIVE, isActive: true,
-        currencyCode: 'USD', leadId: 'lead-1',
+        currencyCode: 'USD', leadId: 'lead-1', createdById: 'user-1',
       });
       prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', mallId: 'mall-1', categoryId: null, isActive: true });
 

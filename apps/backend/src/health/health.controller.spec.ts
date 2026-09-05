@@ -3,17 +3,12 @@ import { Test } from '@nestjs/testing';
 import { HealthController } from './health.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../common/services/redis.service';
-import { PrismaMssqlService } from '../prisma-mssql/prisma-mssql.service';
+import { PrismaParkingService } from '../prisma-parking/prisma-parking.service';
 
 const redisMock = { isConfigured: false, ping: jest.fn().mockResolvedValue(false) };
-// Test defect fix (docs/reliability/TEST_BASELINE_REMEDIATION.md): HealthController
-// gained a third constructor dependency (PrismaMssqlService, for the optional
-// legacy-ERP read-only integration) without this spec being updated to mock it —
-// every test here failed at module-compile time with "Nest can't resolve
-// dependencies," not because of any behavior regression. Defaults to
-// unconfigured/disabled, matching every existing test's assumption that MSSQL
-// isn't part of what's being exercised.
-const mssqlMock = { isConfigured: false, ping: jest.fn().mockResolvedValue(false) };
+// HealthController's 3rd dependency (PrismaParkingService) — mocked unconfigured/disabled,
+// matching every test's assumption that the parking DB isn't part of what's exercised.
+const parkingMock = { isConfigured: false, ping: jest.fn().mockResolvedValue(false) };
 
 describe('HealthController', () => {
   it('returns liveness without querying the database', async () => {
@@ -23,7 +18,7 @@ describe('HealthController', () => {
       providers: [
         { provide: PrismaService, useValue: prismaMock },
         { provide: RedisService, useValue: redisMock },
-        { provide: PrismaMssqlService, useValue: mssqlMock },
+        { provide: PrismaParkingService, useValue: parkingMock },
       ],
     }).compile();
 
@@ -39,7 +34,7 @@ describe('HealthController', () => {
       providers: [
         { provide: PrismaService, useValue: prismaMock },
         { provide: RedisService, useValue: redisMock },
-        { provide: PrismaMssqlService, useValue: mssqlMock },
+        { provide: PrismaParkingService, useValue: parkingMock },
       ],
     }).compile();
 
@@ -57,7 +52,7 @@ describe('HealthController', () => {
       providers: [
         { provide: PrismaService, useValue: prismaMock },
         { provide: RedisService, useValue: redisMock },
-        { provide: PrismaMssqlService, useValue: mssqlMock },
+        { provide: PrismaParkingService, useValue: parkingMock },
       ],
     }).compile();
 
@@ -68,6 +63,7 @@ describe('HealthController', () => {
   it('returns status ok when DB is reachable', async () => {
     const prismaMock = {
       $queryRaw: jest.fn().mockResolvedValueOnce(1),
+      emailSettings: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -75,7 +71,7 @@ describe('HealthController', () => {
       providers: [
         { provide: PrismaService, useValue: prismaMock },
         { provide: RedisService, useValue: redisMock },
-        { provide: PrismaMssqlService, useValue: mssqlMock },
+        { provide: PrismaParkingService, useValue: parkingMock },
       ],
     }).compile();
 
@@ -92,6 +88,7 @@ describe('HealthController', () => {
   it('returns status degraded when DB fails', async () => {
     const prismaMock = {
       $queryRaw: jest.fn().mockRejectedValueOnce(new Error('db down')),
+      emailSettings: { findFirst: jest.fn().mockResolvedValue(null) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -99,7 +96,7 @@ describe('HealthController', () => {
       providers: [
         { provide: PrismaService, useValue: prismaMock },
         { provide: RedisService, useValue: redisMock },
-        { provide: PrismaMssqlService, useValue: mssqlMock },
+        { provide: PrismaParkingService, useValue: parkingMock },
       ],
     }).compile();
 

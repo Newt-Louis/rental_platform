@@ -20,12 +20,13 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate dev && npm run parking:apply-indexes",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
     "prisma:seed:departments": "ts-node --transpile-only prisma/scripts/seed-departments.ts",
     "prisma:studio": "prisma studio",
-    "prisma:mssql:pull": "prisma db pull --schema=prisma/mssql/schema.prisma",
-    "prisma:mssql:generate": "prisma generate --schema=prisma/mssql/schema.prisma"
+    "prisma:parking:pull": "prisma db pull --schema=prisma/parking/schema.prisma",
+    "prisma:parking:generate": "prisma generate --schema=prisma/parking/schema.prisma",
+    "parking:apply-indexes": "ts-node prisma/scripts/run-parking-dashboard-indexes.ts"
   },
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"
@@ -55,6 +56,7 @@
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "pdfmake": "^0.2.10",
+    "pg": "^8.23.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "sharp": "^0.33.5",
@@ -76,6 +78,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/pdfmake": "^0.2.9",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",

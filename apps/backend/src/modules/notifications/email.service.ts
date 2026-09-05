@@ -1,53 +1,95 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { Transporter } from 'nodemailer';
+import { CurrencyCode } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { EncryptionService } from '../../common/services/encryption.service';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
+import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
 
+interface ResolvedSmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+// Nguồn cấu hình SMTP ưu tiên: DB (EmailSettings, admin tự cấu hình qua UI) --
+// fallback env var (SMTP_HOST/...) nếu DB chưa bật/chưa cấu hình, để tương
+// thích ngược với deployment cũ chỉ dùng .env. Đọc lại mỗi lần gửi (không cache
+// transporter) để admin đổi cấu hình có hiệu lực ngay, không cần restart.
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: Transporter | null = null;
-  private enabled = false;
   private readonly maxAttempts = this.envNumber('EMAIL_MAX_ATTEMPTS', 3, 1);
   private readonly retryBaseMs = this.envNumber('EMAIL_RETRY_BASE_MS', 250, 0);
   private readonly timeoutMs = this.envNumber('EMAIL_TIMEOUT_MS', 15_000, 100);
 
-  constructor() {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly encryption: EncryptionService,
+  ) {}
+
+  private async resolveConfig(): Promise<ResolvedSmtpConfig | null> {
+    const dbSettings = await this.prisma.emailSettings.findFirst().catch(() => null);
+    if (dbSettings?.isEnabled && dbSettings.smtpHost && dbSettings.smtpUser && dbSettings.smtpPassEncrypted) {
+      if (!this.encryption.isConfigured) {
+        this.logger.warn('EmailSettings bật trong DB nhưng ENCRYPTION_KEY chưa cấu hình -- không thể giải mã mật khẩu SMTP');
+      } else {
+        return {
+          host: dbSettings.smtpHost,
+          port: dbSettings.smtpPort,
+          secure: dbSettings.smtpSecure,
+          user: dbSettings.smtpUser,
+          pass: this.encryption.decrypt(dbSettings.smtpPassEncrypted),
+          from: dbSettings.emailFrom ?? 'THISO Leasing <noreply@thiso.com.vn>',
+        };
+      }
+    }
+
     const host = process.env.SMTP_HOST;
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASS;
-
     if (host && user && pass) {
-      this.transporter = nodemailer.createTransport({
+      return {
         host,
         port: Number(process.env.SMTP_PORT ?? 587),
         secure: process.env.SMTP_SECURE === 'true',
-        auth: { user, pass },
-        connectionTimeout: this.timeoutMs,
-        greetingTimeout: this.timeoutMs,
-        socketTimeout: this.timeoutMs,
-        tls: {
-          rejectUnauthorized:
-            process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
-        },
-      });
-      this.enabled = true;
-      this.logger.log(`Email service enabled (${host}:${process.env.SMTP_PORT ?? 587})`);
-    } else {
-      this.logger.warn('Email service disabled: SMTP_HOST/SMTP_USER/SMTP_PASS not configured');
+        user,
+        pass,
+        from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
+      };
     }
+
+    return null;
   }
 
   async sendMail(opts: { to: string | string[]; subject: string; html: string; cc?: string | string[] }) {
-    if (!this.enabled || !this.transporter) {
+    const config = await this.resolveConfig();
+    if (!config) {
       this.logger.warn(`[EMAIL DISABLED] Would send to ${Array.isArray(opts.to) ? opts.to.join(',') : opts.to}: ${opts.subject}`);
       return { skipped: true };
     }
 
+    const transporter = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      auth: { user: config.user, pass: config.pass },
+      connectionTimeout: this.timeoutMs,
+      greetingTimeout: this.timeoutMs,
+      socketTimeout: this.timeoutMs,
+      tls: {
+        rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false',
+      },
+    });
+
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       try {
-        const info = await this.transporter.sendMail({
-          from: process.env.EMAIL_FROM ?? 'THISO Leasing <noreply@thiso.com.vn>',
+        const info = await transporter.sendMail({
+          from: config.from,
           to: Array.isArray(opts.to) ? opts.to.join(',') : opts.to,
           cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc.join(',') : opts.cc) : undefined,
           subject: opts.subject,
@@ -153,7 +195,9 @@ export class EmailService {
     monthlyRent: number;
     discount: number;
     submittedBy: string;
+    currencyCode?: CurrencyCode;
   }): string {
+    const money = (value: number) => formatMoneyWithCode(value, data.currencyCode ?? DEFAULT_CURRENCY_CODE);
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
 <style>
@@ -183,8 +227,8 @@ export class EmailService {
       <div class="info-row"><span class="label">Số Proposal</span><span class="value">${data.proposalNumber}</span></div>
       <div class="info-row"><span class="label">Khách thuê</span><span class="value">${data.tenantName}</span></div>
       <div class="info-row"><span class="label">Mã lô</span><span class="value">${data.unitCode}</span></div>
-      <div class="info-row"><span class="label">Giá thuê/m²</span><span class="value">${data.rentPerSqm.toLocaleString('vi-VN')} VNĐ</span></div>
-      <div class="info-row"><span class="label">Tiền thuê/tháng</span><span class="value">${data.monthlyRent.toLocaleString('vi-VN')} VNĐ</span></div>
+      <div class="info-row"><span class="label">Giá thuê/m²</span><span class="value">${money(data.rentPerSqm)}</span></div>
+      <div class="info-row"><span class="label">Tiền thuê/tháng</span><span class="value">${money(data.monthlyRent)}</span></div>
       ${data.discount > 0 ? `<div class="info-row"><span class="label">Chiết khấu</span><span class="value" style="color:#dc2626">${data.discount}%</span></div>` : ''}
       <div class="info-row"><span class="label">Người lập</span><span class="value">${data.submittedBy}</span></div>
     </div>
@@ -203,6 +247,7 @@ export class EmailService {
     dueDate: string;
     daysOverdue: number;
     contactEmail: string;
+    currencyCode?: CurrencyCode;
   }): string {
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
@@ -219,7 +264,7 @@ export class EmailService {
   <div class="content">
     <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
     <p>Hóa đơn đã quá hạn <strong>${data.daysOverdue} ngày</strong>:</p>
-    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
     <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
     <p>Liên hệ Finance: <a href="mailto:${data.contactEmail}">${data.contactEmail}</a></p>
   </div>
@@ -233,6 +278,7 @@ export class EmailService {
     totalAmount: number;
     dueDate: string;
     period: string;
+    currencyCode?: CurrencyCode;
   }): string {
     return `
 <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
@@ -249,7 +295,7 @@ export class EmailService {
   <div class="content">
     <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
     <p>Hóa đơn kỳ <strong>${data.period}</strong> đã được phát hành:</p>
-    <div class="amount">${data.totalAmount.toLocaleString('vi-VN')} VNĐ</div>
+    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
     <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
   </div>
   <div class="footer">THISO Leasing Platform</div>

@@ -99,6 +99,39 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
       expect(result.status).toBe(BookingStatus.PENDING);
     });
 
+    it('resolves a lost concurrent-same-unit race the same way when the Unit starts OFFERING, not just VACANT', async () => {
+      // OFFERING (Chào thuê) was added alongside LIQUIDATED for the ERP status-pipeline work —
+      // this proves the pre-existing Serializable+P2034-retry concurrency guarantee covers it
+      // too, not only the two statuses this suite originally shipped with.
+      prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.OFFERING, isActive: true });
+      prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 1 } });
+      prisma.$transaction
+        .mockImplementationOnce(() => Promise.reject({ code: 'P2034' })) // lost the race
+        .mockImplementationOnce((fn: any) => fn(prisma)); // retry succeeds
+
+      const result = await service.create(dto, 'user-1');
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(result.priority).toBe(2); // correctly queued behind the winner, not erroring
+      expect(result.status).toBe(BookingStatus.PENDING);
+    });
+
+    it('rejects a concurrent booking attempt against a Unit a termination just moved to LIQUIDATED', async () => {
+      // Mirrors "rejects a Unit that becomes locked after discovery but before the transaction"
+      // (CONTRACTED) — same race, but for the newly-added LIQUIDATED state: a
+      // ContractTerminationService.initiate() call commits between this request's pre-check and
+      // its transaction, and the in-transaction re-read must still catch it.
+      prisma.unit.findUnique
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.OCCUPIED, isActive: true, leaseTermType: 'LONG' })
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.LIQUIDATED, isActive: true, leaseTermType: 'LONG' });
+      unitStatus.isLockedForBooking
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+
+      await expect(service.create(dto, 'user-1')).rejects.toThrow('không còn đủ điều kiện');
+      expect(prisma.unitBooking.create).not.toHaveBeenCalled();
+    });
+
     it('propagates a genuine (non-race) transaction failure without retrying', async () => {
       prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 0 } });
       prisma.$transaction.mockRejectedValueOnce(new Error('db unavailable'));
@@ -255,7 +288,7 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
   describe('update() — unit-change path', () => {
     const existingBooking = {
       id: 'b1', unitId: 'unit-old', leadId: null, status: BookingStatus.ACTIVE, isActive: true,
-      proposedRentPerSqm: null,
+      proposedRentPerSqm: null, createdById: 'user-1',
     };
 
     beforeEach(() => {
