@@ -142,12 +142,12 @@ describe('ProposalsService integration (mocked DB)', () => {
     expect(prisma.approvalWorkflow.findUnique).toHaveBeenCalledWith({ where: { proposalId: 'p1' } });
   });
 
-  // Regression found during a QC pass on the multi-currency work: CategoryPricing's
-  // minRentPerSqm/maxRentPerSqm are VND-only. submit() used to call validateProposedPrice()
-  // unconditionally, so a USD/MMK proposal's rentPerSqm got compared against a VND floor,
-  // producing a nonsensical deviation that then fed into PRICE_DEVIATION_PCT approval-rule
-  // matching -- silently forcing or skipping CEO/Director escalation for the wrong reason.
-  it('submit skips the VND floor/ceiling check for a non-VND proposal', async () => {
+  // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
+  // Float with no currency field at all). submit() used to skip validateProposedPrice()
+  // entirely for a non-VND proposal to avoid comparing e.g. a USD rentPerSqm against a VND
+  // floor. Now that validateProposedPrice() only matches a same-currency pricing rule, the
+  // check runs for every currency -- assert the proposal's own currency is passed through.
+  it('submit runs the floor/ceiling check for a non-VND proposal, passing its currencyCode through', async () => {
     const proposal = {
       id: 'p1',
       status: ProposalStatus.DRAFT,
@@ -186,7 +186,9 @@ describe('ProposalsService integration (mocked DB)', () => {
 
     await service.submit('p1');
 
-    expect(categories.validateProposedPrice).not.toHaveBeenCalled();
+    expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+      expect.objectContaining({ proposedRentPerSqm: 25, currencyCode: 'USD' }),
+    );
   });
 
   it('submit still runs the VND floor/ceiling check for a VND proposal', async () => {

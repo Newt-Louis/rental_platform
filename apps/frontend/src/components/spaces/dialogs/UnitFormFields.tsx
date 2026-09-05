@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SPACE_TYPE_OPTIONS, TIER_OPTIONS, LEASE_TERM_OPTIONS } from '@/pages/spaces/spaces.constants';
 import { flattenCategoryHierarchy, type CategoryOption } from '@/lib/categoryHierarchy';
+import { CURRENCY_CODES } from '@/lib/currency';
 
 export interface UnitFormFieldsProps {
   register: any;
@@ -121,9 +122,19 @@ export function UnitFormFields({
       </div>
 
       {/* Rents */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản (VND/m²)</label>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Đơn vị tiền tệ</label>
+          <Select value={watch('currencyCode') || 'VND'} onValueChange={(v) => setValue('currencyCode', v, { shouldDirty: true })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CURRENCY_CODES.map((code) => <SelectItem key={code} value={code}>{code}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <input type="hidden" {...register('currencyCode')} />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Giá thuê cơ bản ({watch('currencyCode') || 'VND'}/m²)</label>
           <Input
             {...register('baseRentPerSqm', { min: { value: 0, message: 'Giá thuê không được âm.' } })}
             value={watch('baseRentPerSqm')}
@@ -133,7 +144,7 @@ export function UnitFormFields({
           {errors.baseRentPerSqm?.message && <p className="mt-1 text-xs text-red-600">{String(errors.baseRentPerSqm.message)}</p>}
         </div>
         <div>
-          <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM (VND/m²)</label>
+          <label className="text-sm font-medium text-gray-700 mb-1 block">Phí CAM ({watch('currencyCode') || 'VND'}/m²)</label>
           <Input
             {...register('camPerSqm', { min: { value: 0, message: 'Phí CAM không được âm.' } })}
             value={watch('camPerSqm')}

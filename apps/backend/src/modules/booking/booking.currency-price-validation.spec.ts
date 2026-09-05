@@ -6,18 +6,17 @@ import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
 
 /**
- * Regression for a bug found during a QC pass on the multi-currency work (RC3, c61fdb9+):
- * CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
- * currency field. Booking.create()/update() used to call categoriesService.validateProposedPrice()
- * unconditionally regardless of the booking's currencyCode -- so a USD/MMK proposedRentPerSqm
- * got compared against a VND floor/ceiling, producing a nonsensical deviation (e.g. a $25
- * proposal read as ~100% below a 500,000 VND floor), forcing a bogus CEO price-approval
- * requirement and surfacing garbage numbers in the Approvals price-review queue. The frontend
- * create dialog already showed a "not checked for {currency}" disclaimer, but that was cosmetic
- * only -- the backend still ran the check. Fixed by skipping the floor/ceiling check entirely
- * for a non-VND booking.
+ * CategoryPricing now carries its own currencyCode (previously a plain
+ * VND-denominated Float with no currency field at all -- see
+ * docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Booking.create()/update()
+ * used to skip categoriesService.validateProposedPrice() entirely for a
+ * non-VND booking, to avoid comparing e.g. a USD proposedRentPerSqm against a
+ * VND floor/ceiling. Now that validateProposedPrice() itself only matches a
+ * pricing rule in the booking's own currency, the check runs for every
+ * currency -- these tests assert the booking's currencyCode is what actually
+ * gets passed through, not that non-VND bookings are skipped.
  */
-describe('BookingService — category price-floor validation is VND-only', () => {
+describe('BookingService — category price validation is currency-aware', () => {
   let service: BookingService;
 
   const prisma: any = {
@@ -92,7 +91,7 @@ describe('BookingService — category price-floor validation is VND-only', () =>
       prisma.lead.findUnique.mockResolvedValue({ id: 'lead-1', mallId: 'mall-1', isActive: true });
     });
 
-    it('skips the VND floor/ceiling check for a USD booking -- no bogus approval requirement', async () => {
+    it('runs the floor/ceiling check for a USD booking, passing its currencyCode through', async () => {
       const dto = {
         unitId: 'unit-1', leadId: 'lead-1', holdDays: 7,
         proposedRentPerSqm: 25, currencyCode: 'USD',
@@ -100,12 +99,14 @@ describe('BookingService — category price-floor validation is VND-only', () =>
 
       const booking = await service.create(dto, 'user-1');
 
-      expect(categories.validateProposedPrice).not.toHaveBeenCalled();
-      expect(booking.priceApprovalStatus).toBeNull();
-      expect(booking.priceDeviationPercent).toBeNull();
+      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+        expect.objectContaining({ proposedRentPerSqm: 25, currencyCode: 'USD' }),
+      );
+      expect(booking.priceApprovalStatus).toBe('PENDING');
+      expect(booking.priceDeviationPercent).toBe(99.995);
     });
 
-    it('still runs the VND floor/ceiling check for a VND booking (default currency)', async () => {
+    it('runs the floor/ceiling check for a VND booking (default currency)', async () => {
       const dto = {
         unitId: 'unit-1', leadId: 'lead-1', holdDays: 7,
         proposedRentPerSqm: 100000,
@@ -113,14 +114,16 @@ describe('BookingService — category price-floor validation is VND-only', () =>
 
       const booking = await service.create(dto, 'user-1');
 
-      expect(categories.validateProposedPrice).toHaveBeenCalled();
+      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+        expect.objectContaining({ proposedRentPerSqm: 100000, currencyCode: undefined }),
+      );
       expect(booking.priceApprovalStatus).toBe('PENDING');
       expect(booking.priceDeviationPercent).toBe(99.995);
     });
   });
 
   describe('update()', () => {
-    it('skips the VND floor/ceiling check when the existing booking is USD-denominated', async () => {
+    it('runs the floor/ceiling check using the existing booking currencyCode when the update omits one', async () => {
       prisma.unitBooking.findUnique.mockResolvedValue({
         id: 'b1', unitId: 'unit-1', status: BookingStatus.ACTIVE, isActive: true,
         currencyCode: 'USD', proposedRentPerSqm: 20, leadId: 'lead-1', createdById: 'user-1',
@@ -131,8 +134,10 @@ describe('BookingService — category price-floor validation is VND-only', () =>
 
       const updated = await service.update('b1', { proposedRentPerSqm: 25 } as any, 'user-1');
 
-      expect(categories.validateProposedPrice).not.toHaveBeenCalled();
-      expect(updated.priceApprovalStatus).toBeUndefined();
+      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+        expect.objectContaining({ proposedRentPerSqm: 25, currencyCode: 'USD' }),
+      );
+      expect(updated.priceApprovalStatus).toBe('PENDING');
     });
   });
 });

@@ -336,20 +336,21 @@ export class ProposalsService {
     let priceDeviationPct = 0;
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
-    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
-    // currency field (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a USD/MMK
-    // proposal.rentPerSqm against a VND floor/ceiling produces a nonsensical deviation (e.g. a
-    // $2,500/sqm proposal read as ~99.6% below a 700,000 VND floor), which then feeds straight
-    // into buildApprovalStepsFromRules()'s PRICE_DEVIATION_PCT rule matching -- silently forcing
-    // or skipping CEO/Director escalation based on a meaningless number. Skip the check for a
-    // non-VND proposal, same as the equivalent guard in BookingService.create()/update().
-    if (proposal.unit?.categoryId && proposal.rentCurrency === 'VND') {
+    // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
+    // Float with no currency field at all -- docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+    // validateProposedPrice() only matches a pricing rule in the SAME currency as the
+    // proposal, so a USD/MMK proposal is no longer silently skipped (which previously let
+    // large USD/MMK deviations bypass CEO/Director review entirely) -- it's now checked
+    // against a same-currency band where one exists, and otherwise falls through to the
+    // "no pricing rule configured" CEO-escalation path below, same as a VND proposal would.
+    if (proposal.unit?.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: proposal.unit.mallId,
         categoryId: proposal.unit.categoryId,
         floorId: proposal.unit.floorId ?? undefined,
         zoneId: proposal.unit.zoneId ?? undefined,
         proposedRentPerSqm: proposal.rentPerSqm,
+        currencyCode: proposal.rentCurrency,
       });
       priceDeviationPct = validation.deviationPercent;
       pricingRuleId = validation.categoryPricing?.id ?? null;

@@ -113,6 +113,7 @@ export interface CategoryMallPricing {
   maxRentPerSqm: number | null;
   suggestedRent?: number | null;
   camPerSqm: number | null;
+  currencyCode: string;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -161,6 +162,7 @@ export interface Unit {
   categoryRef?: Category;
   baseRentPerSqm: number;
   camPerSqm: number;
+  currencyCode?: string;
   status: UnitStatus;
   spaceType?: string;
   tier?: string;

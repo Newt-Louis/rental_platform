@@ -186,7 +186,7 @@ model CategoryMallPricing {
   zoneId     String?
   zone       Zone?    @relation(fields: [zoneId], references: [id])
 
-  // Price range (VND/m2/month)
+  // Price range (per m2/month, in currencyCode)
   // Null on a floor/zone override means "inherit from the next applicable rule".
   // Mall-wide base rules are still required to provide min/max by service validation.
   minRentPerSqm Float? // Gi sn
@@ -195,6 +195,12 @@ model CategoryMallPricing {
 
   // CAM pricing
   camPerSqm Float? // Null = inherit; zero is an explicit free CAM value
+
+  // This master data previously had no currency at all (implicitly VND-only) --
+  // see the matching comment on Unit.currencyCode. A mall/category/floor/zone
+  // scope can now carry one rule per currency (part of the unique key below),
+  // e.g. a VND-quoted band alongside a USD-quoted one for the same category.
+  currencyCode CurrencyCode @default(VND)
 
   effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime? // Null = v thi hn
@@ -205,7 +211,7 @@ model CategoryMallPricing {
   createdById   String?
   createdBy     User?     @relation("CategoryPricingCreatedBy", fields: [createdById], references: [id])
 
-  @@unique([mallId, categoryId, floorId, zoneId, effectiveFrom])
+  @@unique([mallId, categoryId, floorId, zoneId, currencyCode, effectiveFrom], name: "CategoryMallPricing_scope_currency_effectiveFrom_key")
   @@index([mallId, categoryId, isActive])
   @@index([effectiveFrom, effectiveTo])
 }
@@ -1226,6 +1232,11 @@ model Unit {
   categoryRef    Category?  @relation(fields: [categoryId], references: [id])
   baseRentPerSqm Float      @default(0)
   camPerSqm      Float      @default(0)
+  // Currency for baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm --
+  // this master data previously had no currency at all (implicitly VND-only),
+  // unlike Proposal/Contract/Invoice which already carry a real currencyCode.
+  // See docs/program/MULTI_CURRENCY_ARCHITECTURE.md.
+  currencyCode   CurrencyCode @default(VND)
   status         UnitStatus @default(VACANT)
   tenantId       String?
   tenant         Tenant?    @relation("OccupiedUnit", fields: [tenantId], references: [id])
