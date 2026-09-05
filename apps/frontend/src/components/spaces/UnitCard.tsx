@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { CheckSquare, Square, GitMerge } from 'lucide-react';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
-import { formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 import type { Unit, UnitSlotSummary } from '@/types';
 
 export function UnitCard({
@@ -77,7 +77,7 @@ export function UnitCard({
           <div className="flex items-center gap-2">
             <span>{unit.areaNLA.toLocaleString()} m² NLA</span>
             {unit.baseRentPerSqm > 0 && (
-              <span className="text-green-700 tabular-nums">{formatVndRate(unit.baseRentPerSqm)}</span>
+              <span className="text-green-700 tabular-nums">{formatRatePerSqm(unit.baseRentPerSqm, unit.currencyCode)}</span>
             )}
           </div>
           {unit.category && <div className="text-gray-700">{unit.category}</div>}

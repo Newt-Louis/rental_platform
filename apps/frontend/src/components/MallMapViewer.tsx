@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { FloorMapData, Unit, Floor } from '@/types';
 import { cn } from '@/lib/utils';
-import { formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -152,7 +152,7 @@ function UnitInfoPopup({
           {(unit.baseRentPerSqm > 0 || unit.askingRentPerSqm) && (
             <div className="flex justify-between">
               <span className="text-gray-400">{t('map.rent')}</span>
-              <span className="font-medium text-gray-800 tabular-nums">{formatVndRate(unit.askingRentPerSqm ?? unit.baseRentPerSqm)}</span>
+              <span className="font-medium text-gray-800 tabular-nums">{formatRatePerSqm(unit.askingRentPerSqm ?? unit.baseRentPerSqm, unit.currencyCode)}</span>
             </div>
           )}
           {unit.leaseEndDate && (
