@@ -180,7 +180,7 @@ export function SpacesGrid({
         open={bulkActionOpen === 'category'}
         count={selectedIds.size}
         onClose={() => setBulkActionOpen(null)}
-        onConfirm={(category) => bulkMutation.mutate({ unitIds: Array.from(selectedIds), updates: { category } })}
+        onConfirm={(categoryId) => bulkMutation.mutate({ unitIds: Array.from(selectedIds), updates: { categoryId } })}
         loading={bulkMutation.isPending}
       />
       <BulkRentDialog

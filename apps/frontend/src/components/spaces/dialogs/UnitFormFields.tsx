@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SPACE_TYPE_OPTIONS, TIER_OPTIONS, LEASE_TERM_OPTIONS } from '@/pages/spaces/spaces.constants';
+import { flattenCategoryHierarchy, type CategoryOption } from '@/lib/categoryHierarchy';
 
 export interface UnitFormFieldsProps {
   register: any;
@@ -10,12 +11,13 @@ export interface UnitFormFieldsProps {
   errors: any;
   floors: any[];
   zones: any[];
-  categoryNames: string[];
+  categoryOptions: CategoryOption[];
 }
 
 export function UnitFormFields({
-  register, watch, setValue, errors, floors, zones, categoryNames,
+  register, watch, setValue, errors, floors, zones, categoryOptions,
 }: UnitFormFieldsProps) {
+  const categoriesHierarchical = useMemo(() => flattenCategoryHierarchy(categoryOptions), [categoryOptions]);
   return (
     <div className="space-y-4">
       {/* Code + Name */}
@@ -72,18 +74,20 @@ export function UnitFormFields({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1 block">Ngành hàng</label>
-          <Select value={watch('category') || 'NONE'} onValueChange={(v) => setValue('category', v === 'NONE' ? '' : v, { shouldDirty: true })}>
+          <Select value={watch('categoryId') || 'NONE'} onValueChange={(v) => setValue('categoryId', v === 'NONE' ? '' : v, { shouldDirty: true })}>
             <SelectTrigger>
               <SelectValue placeholder="Chọn ngành hàng..." />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="NONE">— Không chọn —</SelectItem>
-              {categoryNames.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
+              {categoriesHierarchical.map((c) => (
+                <SelectItem key={c.id} value={c.id} className={c.depth > 0 ? 'pl-6 text-gray-600' : undefined}>
+                  {c.depth > 0 && '↳ '}{c.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <input type="hidden" {...register('category')} />
+          <input type="hidden" {...register('categoryId')} />
         </div>
       </div>
 

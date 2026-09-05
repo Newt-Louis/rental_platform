@@ -494,6 +494,29 @@ export class SpacesService {
     return unit;
   }
 
+  // Unit.category (legacy free text) and Unit.categoryId (FK to the Category
+  // master data managed in Admin > Ngành hàng) used to be set independently --
+  // the Spaces "Ngành hàng" select only ever wrote the free-text name, so
+  // categoryId stayed null for every Unit created through the app. That silently
+  // broke everything keyed on categoryId: CategoryMallPricing lookups (Admin's
+  // per-mall price bands) and the proposal price-deviation check in
+  // ProposalsService (`proposal.unit?.categoryId` gates the whole check) never
+  // matched a real Unit. categoryId is now the source of truth; `category` is
+  // derived from it here so existing string-based filters/exports/analytics
+  // keep working unchanged.
+  private async resolveUnitCategoryFields(
+    categoryId: string | null | undefined,
+  ): Promise<{ categoryId?: string | null; category?: string | null }> {
+    if (categoryId === undefined) return {};
+    if (!categoryId) return { categoryId: null, category: null };
+    const category = await this.prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: { name: true },
+    });
+    if (!category) throw new BadRequestException('Ngành hàng không tồn tại hoặc đã ngừng sử dụng');
+    return { categoryId, category: category.name };
+  }
+
   async createUnit(dto: CreateUnitDto) {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
@@ -505,8 +528,10 @@ export class SpacesService {
     });
     if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
 
+    const categoryFields = await this.resolveUnitCategoryFields(dto.categoryId);
+
     return this.prisma.unit.create({
-      data: { ...dto, mallId: dto.mallId } as Prisma.UnitUncheckedCreateInput,
+      data: { ...dto, mallId: dto.mallId, ...categoryFields } as Prisma.UnitUncheckedCreateInput,
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -529,9 +554,12 @@ export class SpacesService {
         throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
       }
     }
+    const categoryFields = Object.prototype.hasOwnProperty.call(dto, 'categoryId')
+      ? await this.resolveUnitCategoryFields(dto.categoryId)
+      : {};
     return this.prisma.unit.update({
       where: { id },
-      data: sanitizeUnitDto(dto),
+      data: sanitizeUnitDto({ ...dto, ...categoryFields }),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -1336,6 +1364,7 @@ export class SpacesService {
     updates: {
       status?: UnitStatus;
       category?: string;
+      categoryId?: string;
       baseRentPerSqm?: number;
       camPerSqm?: number;
       condition?: string;
@@ -1394,7 +1423,11 @@ export class SpacesService {
     if (updates.status !== undefined) {
       throw new BadRequestException('Trạng thái mặt bằng được cập nhật tự động theo Booking, Hợp đồng và Fit-out; không thể đổi hàng loạt.');
     }
-    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.categoryId !== undefined) {
+      Object.assign(updateData, await this.resolveUnitCategoryFields(updates.categoryId));
+    } else if (updates.category !== undefined) {
+      updateData.category = updates.category;
+    }
     if (updates.baseRentPerSqm !== undefined) updateData.baseRentPerSqm = updates.baseRentPerSqm;
     if (updates.camPerSqm !== undefined) updateData.camPerSqm = updates.camPerSqm;
     if (updates.condition !== undefined) updateData.condition = updates.condition;
@@ -1427,8 +1460,8 @@ export class SpacesService {
       if (updates.camPerSqm !== undefined && updates.camPerSqm !== unit.camPerSqm) {
         changes.push({ field: 'camPerSqm', oldVal: unit.camPerSqm, newVal: updates.camPerSqm, type: UnitHistoryType.RENT_CHANGE });
       }
-      if (updates.category !== undefined && updates.category !== unit.category) {
-        changes.push({ field: 'category', oldVal: unit.category, newVal: updates.category, type: UnitHistoryType.INFO_UPDATE });
+      if (updateData.category !== undefined && updateData.category !== unit.category) {
+        changes.push({ field: 'category', oldVal: unit.category, newVal: updateData.category, type: UnitHistoryType.INFO_UPDATE });
       }
       if (updates.condition !== undefined && updates.condition !== unit.condition) {
         changes.push({ field: 'condition', oldVal: unit.condition, newVal: updates.condition, type: UnitHistoryType.CONDITION_CHANGE });

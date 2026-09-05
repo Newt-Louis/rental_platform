@@ -1,7 +1,7 @@
 export interface UnitFormValues {
   code: string;
   name: string;
-  category: string;
+  categoryId: string;
   floorId: string;
   zoneId: string;
   areaGFA: string;
@@ -17,7 +17,7 @@ export interface UnitFormValues {
 }
 
 export const UNIT_FORM_DEFAULT_VALUES: UnitFormValues = {
-  code: '', name: '', category: '', floorId: '', zoneId: '',
+  code: '', name: '', categoryId: '', floorId: '', zoneId: '',
   areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
   spaceType: '', leaseTermType: 'LONG', tier: '', isFlexibleArea: false,
   minFlexArea: '', maxFlexArea: '',
@@ -27,7 +27,7 @@ export function seedUnitFormValues(unit: any, defaultFloorId?: string): UnitForm
   return {
     code: unit?.code ?? '',
     name: unit?.name ?? '',
-    category: unit?.category ?? '',
+    categoryId: unit?.categoryId ?? '',
     floorId: unit?.floorId ?? defaultFloorId ?? '',
     zoneId: unit?.zoneId ?? '',
     areaGFA: unit?.areaGFA?.toString() ?? '',
@@ -82,7 +82,7 @@ export function buildUnitFormPayload(data: Record<string, any>, mallId: string, 
     floorId: optional(data.floorId),
     zoneId: optional(data.zoneId),
     name: optional(data.name),
-    category: optional(data.category),
+    categoryId: optional(data.categoryId),
     spaceType: optional(data.spaceType),
     leaseTermType: optional(data.leaseTermType),
     tier: optional(data.tier),

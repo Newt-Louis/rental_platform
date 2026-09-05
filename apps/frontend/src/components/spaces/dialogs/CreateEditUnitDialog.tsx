@@ -6,8 +6,8 @@ import { spacesApi, categoriesApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { CATEGORIES } from '@/pages/spaces/spaces.constants';
 import { UnitFormFields } from './UnitFormFields';
+import type { CategoryOption } from '@/lib/categoryHierarchy';
 import {
   UNIT_FORM_DEFAULT_VALUES,
   seedUnitFormValues,
@@ -71,11 +71,11 @@ export function CreateEditUnitDialog({
   const allZones: any[] = zonesData?.data ?? zonesData ?? [];
   const zones = selectedFloorId ? allZones.filter((z: any) => z.floorId === selectedFloorId) : allZones;
 
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
+  const { data: categoryOptionsData } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
+  const categoryOptions: CategoryOption[] = useMemo(() => {
+    const opts = Array.isArray(categoryOptionsData) ? categoryOptionsData : (categoryOptionsData as any)?.data ?? [];
+    return opts.filter((c: any) => c?.id && c?.name);
+  }, [categoryOptionsData]);
 
   const handleClose = useCallback(() => {
     if (isDirty) {
@@ -187,7 +187,7 @@ export function CreateEditUnitDialog({
                 errors={errors}
                 floors={floors}
                 zones={zones}
-                categoryNames={categoryNames}
+                categoryOptions={categoryOptions}
               />
             </fieldset>
 

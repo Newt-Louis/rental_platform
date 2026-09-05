@@ -17,13 +17,14 @@ import {
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 import {
-  STATUS_CONFIG, STATUS_ICONS, CATEGORIES, mediaUrl, fmtDate,
+  STATUS_CONFIG, STATUS_ICONS, mediaUrl, fmtDate,
 } from '@/pages/spaces/spaces.constants';
 import { UnitMediaTab } from './tabs/UnitMediaTab';
 import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
 import { UnitFormFields } from './dialogs/UnitFormFields';
+import type { CategoryOption } from '@/lib/categoryHierarchy';
 import {
   UNIT_FORM_DEFAULT_VALUES,
   seedUnitFormValues,
@@ -135,7 +136,7 @@ export function UnitDetailSheet({
     queryFn: () => spacesApi.listZones({ mallId: unit!.mallId }),
     enabled: !!unit?.mallId,
   });
-  const { data: categoryOptions } = useQuery({
+  const { data: categoryOptionsData } = useQuery({
     queryKey: ['category-options'],
     queryFn: categoriesApi.getOptions,
     staleTime: 300_000,
@@ -197,10 +198,10 @@ export function UnitDetailSheet({
   const allZones: any[] = zonesData?.data ?? zonesData ?? [];
   const editFloorId = editWatch('floorId');
   const zones = editFloorId ? allZones.filter((z: any) => z.floorId === editFloorId) : allZones;
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
+  const categoryOptions: CategoryOption[] = useMemo(() => {
+    const opts = Array.isArray(categoryOptionsData) ? categoryOptionsData : (categoryOptionsData as any)?.data ?? [];
+    return opts.filter((c: any) => c?.id && c?.name);
+  }, [categoryOptionsData]);
 
   return (
     <Sheet
@@ -335,7 +336,7 @@ export function UnitDetailSheet({
                   errors={editErrors}
                   floors={floors}
                   zones={zones}
-                  categoryNames={categoryNames}
+                  categoryOptions={categoryOptions}
                 />
               </fieldset>
             </form>

@@ -118,7 +118,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },
@@ -361,7 +361,7 @@ export class CategoriesService {
       where,
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true } },
@@ -379,7 +379,7 @@ export class CategoriesService {
       where: { id },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true } },
@@ -469,7 +469,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },
@@ -563,7 +563,7 @@ export class CategoriesService {
           },
           include: {
             mall: { select: { id: true, name: true, code: true } },
-            category: { select: { id: true, code: true, name: true } },
+            category: { select: { id: true, code: true, name: true, parentId: true } },
             floor: { select: { id: true, name: true, level: true } },
             zone: { select: { id: true, name: true, code: true } },
           },
@@ -586,7 +586,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },

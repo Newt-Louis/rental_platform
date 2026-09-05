@@ -20,11 +20,13 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
     unit: { findMany: jest.fn() },
     slotBooking: { findMany: jest.fn() },
     occupancySnapshot: { findMany: jest.fn() },
+    category: { findMany: jest.fn() },
   } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.slotBooking.findMany.mockResolvedValue([]);
+    prisma.category.findMany.mockResolvedValue([]);
     service = new OccupancyAnalyticsService(prisma, {
       runExclusive: jest.fn((_name, _ttl, task) => task()),
     } as any);
@@ -108,6 +110,48 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       const result = await service.getOccupancyV2();
       expect(result.summary).toHaveProperty('totalMonthlyBillingRevenue');
+    });
+  });
+
+  // ─── byCategory hierarchical ordering ────────────────────────────────────
+  // Regression for a bug where an uncategorized ("Unknown") group's null
+  // categoryId, coerced via `?? ''`, sent the walk right back into the ROOT
+  // bucket at depth+1 -- mislabeling every other not-yet-visited root
+  // category as if it were a child of "Unknown".
+
+  describe('getOccupancyV2 — byCategory hierarchy', () => {
+    it('does not indent root categories just because an uncategorized unit exists', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ category: null, categoryId: null }), // the "Unknown" bucket
+        makeUnit({ category: 'F&B', categoryId: 'cat-fnb' }),
+        makeUnit({ category: 'Fashion', categoryId: 'cat-fashion' }),
+      ]);
+      prisma.category.findMany.mockResolvedValue([
+        { id: 'cat-fnb', parentId: null, sortOrder: 1 },
+        { id: 'cat-fashion', parentId: null, sortOrder: 2 },
+      ]);
+
+      const result = await service.getOccupancyV2();
+
+      expect(result.byCategory.find((c: any) => c.name === 'F&B')).toBeDefined();
+      expect(result.byCategory.find((c: any) => c.name === 'Fashion')).toBeDefined();
+      expect(result.byCategory.some((c: any) => c.name.includes('↳'))).toBe(false);
+    });
+
+    it('indents a subcategory under its parent', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ category: 'F&B', categoryId: 'cat-fnb' }),
+        makeUnit({ category: 'Coffee & Tea', categoryId: 'cat-coffee' }),
+      ]);
+      prisma.category.findMany.mockResolvedValue([
+        { id: 'cat-fnb', parentId: null, sortOrder: 1 },
+        { id: 'cat-coffee', parentId: 'cat-fnb', sortOrder: 1 },
+      ]);
+
+      const result = await service.getOccupancyV2();
+
+      expect(result.byCategory.find((c: any) => c.name === 'F&B')).toBeDefined();
+      expect(result.byCategory.find((c: any) => c.name === '↳ Coffee & Tea')).toBeDefined();
     });
   });
 

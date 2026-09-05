@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { categoriesApi, spacesApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ import {
   Building2, RefreshCw, AlertTriangle,
 } from 'lucide-react';
 import type { Category, CategoryMallPricing, Floor, Zone } from '@/types';
+import { flattenCategoryHierarchy, categoryIndentPrefix } from '@/lib/categoryHierarchy';
 
 function formatCurrency(value: number | undefined | null) {
   if (value == null) return 'Kế thừa';
@@ -44,8 +45,32 @@ function CategoryFormDialog({ open, category, onClose }: {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { register, handleSubmit, reset } = useForm();
-  const { data: categoriesData } = useQuery({ queryKey: ['categories'], queryFn: () => categoriesApi.list() });
+  // Distinct queryKey from the main tab's tree query below -- both used to share
+  // the key ['categories'] despite calling different endpoints (flat list here
+  // vs. getTree() there). React Query caches by key only, not by queryFn, so
+  // whichever one last resolved silently overwrote the other's cached shape --
+  // the main list would intermittently render the flat array (which also
+  // carries each row's own one-level `children`) as if every category, parent
+  // AND child alike, were a top-level row, with children rendered a second
+  // time nested underneath -- the exact "ad1 shows twice" bug this fixes.
+  const { data: categoriesData } = useQuery({ queryKey: ['categories', 'flat'], queryFn: () => categoriesApi.list() });
   const categories: Category[] = categoriesData ?? [];
+
+  // CategoryFormDialog stays mounted across opens (AdminPage always renders it,
+  // just toggling `open`) -- `defaultValue` on an uncontrolled input only applies
+  // at first mount, so without this the form kept showing whichever category (or
+  // blank "create" state) was active the very first time the dialog opened,
+  // regardless of which row's Pencil button was actually clicked afterwards.
+  useEffect(() => {
+    if (!open) return;
+    reset({
+      code: category?.code ?? '',
+      name: category?.name ?? '',
+      description: category?.description ?? '',
+      parentId: category?.parentId ?? '',
+      sortOrder: category?.sortOrder ?? 0,
+    });
+  }, [open, category, reset]);
 
   const mutation = useMutation({
     mutationFn: (data: any) => category
@@ -70,19 +95,19 @@ function CategoryFormDialog({ open, category, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Mã ngành hàng *</Label>
-              <Input {...register('code', { required: true })} defaultValue={category?.code} placeholder="FNB" className="mt-1 uppercase" />
+              <Input {...register('code', { required: true })} placeholder="FNB" className="mt-1 uppercase" />
             </div>
             <div>
               <Label>Tên hiển thị *</Label>
-              <Input {...register('name', { required: true })} defaultValue={category?.name} placeholder="F&B" className="mt-1" />
+              <Input {...register('name', { required: true })} placeholder="F&B" className="mt-1" />
             </div>
             <div className="col-span-2">
               <Label>Mô tả</Label>
-              <Input {...register('description')} defaultValue={category?.description ?? ''} placeholder="Food & Beverage" className="mt-1" />
+              <Input {...register('description')} placeholder="Food & Beverage" className="mt-1" />
             </div>
             <div>
               <Label>Ngành hàng cha</Label>
-              <select {...register('parentId')} defaultValue={category?.parentId ?? ''} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
+              <select {...register('parentId')} className="mt-1 w-full border rounded-md px-3 py-2 text-sm">
                 <option value="">— Không có —</option>
                 {categories.filter(c => c.id !== category?.id && !c.parentId).map(c => (
                   <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
@@ -91,7 +116,7 @@ function CategoryFormDialog({ open, category, onClose }: {
             </div>
             <div>
               <Label>Thứ tự sắp xếp</Label>
-              <Input {...register('sortOrder')} type="number" defaultValue={category?.sortOrder ?? 0} className="mt-1" />
+              <Input {...register('sortOrder')} type="number" className="mt-1" />
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -108,7 +133,7 @@ function CategoryFormDialog({ open, category, onClose }: {
 }
 
 function CategoryRow({ category, level = 0, onEdit, onDelete }: {
-  category: Category; level?: number; onEdit: () => void; onDelete: () => void;
+  category: Category; level?: number; onEdit: (category: Category) => void; onDelete: (category: Category) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = category.children && category.children.length > 0;
@@ -135,10 +160,10 @@ function CategoryRow({ category, level = 0, onEdit, onDelete }: {
           <span className="text-xs text-gray-400">{category._count.units} lô</span>
         )}
         <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onEdit}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onEdit(category)}>
             <Pencil size={12} className="text-gray-400" />
           </Button>
-          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onDelete}>
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => onDelete(category)}>
             <Trash2 size={12} className="text-red-400" />
           </Button>
         </div>
@@ -167,6 +192,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
 
   const { data: categoriesData } = useQuery({ queryKey: ['categories-options'], queryFn: () => categoriesApi.getOptions() });
   const categories: Category[] = categoriesData ?? [];
+  const categoriesHierarchical = useMemo(() => flattenCategoryHierarchy(categories), [categories]);
 
   const { data: floorsData } = useQuery({
     queryKey: ['floors', mallId],
@@ -264,8 +290,8 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               <Label>Ngành hàng *</Label>
               <select {...register('categoryId', { required: true })} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
                 <option value="">— Chọn ngành hàng —</option>
-                {categories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                {categoriesHierarchical.map(c => (
+                  <option key={c.id} value={c.id}>{categoryIndentPrefix(c.depth)}{c.name} ({c.code})</option>
                 ))}
               </select>
             </div>
@@ -383,7 +409,7 @@ export function CategoriesTab() {
 
   // Queries
   const { data: categoriesData, isLoading: loadingCategories } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ['categories', 'tree'],
     queryFn: () => categoriesApi.getTree(),
   });
   const categories: Category[] = categoriesData ?? [];
@@ -394,6 +420,24 @@ export function CategoriesTab() {
     enabled: !!selectedMallId && view === 'pricing',
   });
   const pricings: CategoryMallPricing[] = pricingData ?? [];
+
+  // Order rows the same way Admin's category tree does (parent immediately
+  // followed by its children, indented) instead of the API's alphabetical
+  // category-name sort, so e.g. F&B's price bands stay visually grouped with
+  // Coffee & Tea/Restaurant's overrides rather than scattered by name.
+  const categoryDepthById = useMemo(() => {
+    const seen = new Map<string, Category>();
+    for (const p of pricings) if (p.category && !seen.has(p.category.id)) seen.set(p.category.id, p.category);
+    const ordered = flattenCategoryHierarchy(Array.from(seen.values()));
+    return new Map(ordered.map((c, i) => [c.id, { depth: c.depth, order: i }]));
+  }, [pricings]);
+  const pricingsOrdered = useMemo(() => {
+    return [...pricings].sort((a, b) => {
+      const orderA = categoryDepthById.get(a.category?.id ?? '')?.order ?? 0;
+      const orderB = categoryDepthById.get(b.category?.id ?? '')?.order ?? 0;
+      return orderA - orderB;
+    });
+  }, [pricings, categoryDepthById]);
 
   // Mutations
   const deleteCategoryMutation = useMutation({
@@ -474,8 +518,8 @@ export function CategoriesTab() {
                   <CategoryRow
                     key={cat.id}
                     category={cat}
-                    onEdit={() => setEditCategory(cat)}
-                    onDelete={() => setConfirmDelete(cat)}
+                    onEdit={setEditCategory}
+                    onDelete={setConfirmDelete}
                   />
                 ))
               )}
@@ -505,9 +549,12 @@ export function CategoriesTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {pricings.map((p) => (
+                  {pricingsOrdered.map((p) => {
+                    const depth = categoryDepthById.get(p.category?.id ?? '')?.depth ?? 0;
+                    return (
                     <tr key={p.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" style={depth > 0 ? { paddingLeft: `${16 + depth * 20}px` } : undefined}>
+                        {depth > 0 && <span className="text-gray-300 mr-1">↳</span>}
                         <span className="font-medium">{p.category?.name}</span>
                         <span className="text-xs text-gray-400 ml-1">({p.category?.code})</span>
                       </td>
@@ -528,7 +575,8 @@ export function CategoriesTab() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               {pricings.length === 0 && (

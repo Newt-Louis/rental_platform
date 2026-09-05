@@ -65,10 +65,15 @@ export class CreateUnitDto {
   @Min(0, { message: 'Diện tích NLA không được âm' })
   areaNLA?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Legacy free-text category label. Ignored when categoryId is provided (derived from the Category master record instead).' })
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({ description: 'FK to Category master data (Admin > Ngành hàng). When set, `category` is derived from this record\'s name.' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
