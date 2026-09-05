@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { Category, CategoryMallPricing, Floor, Zone } from '@/types';
 import { flattenCategoryHierarchy, categoryIndentPrefix } from '@/lib/categoryHierarchy';
+import { CURRENCY_CODES } from '@/lib/currency';
 
 function formatCurrency(value: number | undefined | null) {
   if (value == null) return 'Kế thừa';
@@ -26,6 +27,7 @@ type PricingFormValues = {
   categoryId: string;
   floorId: string;
   zoneId: string;
+  currencyCode: string;
   minRentPerSqm: string;
   maxRentPerSqm: string;
   suggestedRent: string;
@@ -221,6 +223,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
       categoryId: pricing?.categoryId ?? '',
       floorId: pricing?.floorId ?? '',
       zoneId: pricing?.zoneId ?? '',
+      currencyCode: pricing?.currencyCode ?? 'VND',
       minRentPerSqm: pricing?.minRentPerSqm?.toString() ?? '',
       maxRentPerSqm: pricing?.maxRentPerSqm?.toString() ?? '',
       suggestedRent: pricing?.suggestedRent?.toString() ?? '',
@@ -263,6 +266,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
         categoryId: data.categoryId,
         floorId: data.floorId || undefined,
         zoneId: data.zoneId || undefined,
+        currencyCode: data.currencyCode || 'VND',
         effectiveFrom: data.effectiveFrom || undefined,
       };
       return pricing
@@ -296,6 +300,12 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               </select>
             </div>
             <div>
+              <Label>Đơn vị tiền tệ *</Label>
+              <select {...register('currencyCode', { required: true })} className="mt-1 w-full border rounded-md px-3 py-2 text-sm" disabled={!!pricing}>
+                {CURRENCY_CODES.map(code => <option key={code} value={code}>{code}</option>)}
+              </select>
+            </div>
+            <div>
               <Label>Tầng (tùy chọn)</Label>
               <select
                 {...register('floorId', {
@@ -320,7 +330,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               </select>
             </div>
             <div>
-              <Label>Giá sàn (VND/m²) {!isOverride && '*'}</Label>
+              <Label>Giá sàn ({watch('currencyCode') || 'VND'}/m²) {!isOverride && '*'}</Label>
               <Controller
                 name="minRentPerSqm"
                 control={control}
@@ -328,7 +338,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               />
             </div>
             <div>
-              <Label>Giá trần (VND/m²) {!isOverride && '*'}</Label>
+              <Label>Giá trần ({watch('currencyCode') || 'VND'}/m²) {!isOverride && '*'}</Label>
               <Controller
                 name="maxRentPerSqm"
                 control={control}
@@ -336,7 +346,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               />
             </div>
             <div>
-              <Label>Giá đề xuất (VND/m²)</Label>
+              <Label>Giá đề xuất ({watch('currencyCode') || 'VND'}/m²)</Label>
               <Controller
                 name="suggestedRent"
                 control={control}
@@ -344,7 +354,7 @@ function PricingFormDialog({ open, pricing, mallId, onClose }: {
               />
             </div>
             <div>
-              <Label>CAM (VND/m²)</Label>
+              <Label>CAM ({watch('currencyCode') || 'VND'}/m²)</Label>
               <Controller
                 name="camPerSqm"
                 control={control}
@@ -541,6 +551,7 @@ export function CategoriesTab() {
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Ngành hàng</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Tầng</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Zone</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Tiền tệ</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Giá sàn</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Giá trần</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Đề xuất</th>
@@ -560,6 +571,7 @@ export function CategoriesTab() {
                       </td>
                       <td className="px-4 py-3 text-gray-500">{p.floor?.name ?? 'Tất cả'}</td>
                       <td className="px-4 py-3 text-gray-500">{p.zone?.name ?? 'Tất cả'}</td>
+                      <td className="px-4 py-3 text-gray-500 font-mono text-xs">{p.currencyCode ?? 'VND'}</td>
                       <td className="px-4 py-3 text-right font-mono">{formatCurrency(p.minRentPerSqm)}</td>
                       <td className="px-4 py-3 text-right font-mono">{formatCurrency(p.maxRentPerSqm)}</td>
                       <td className="px-4 py-3 text-right font-mono text-gray-500">{formatCurrency(p.suggestedRent)}</td>

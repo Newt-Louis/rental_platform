@@ -2,7 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CreateCategoryPricingDto, UpdateCategoryPricingDto } from './dto/category-pricing.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, CurrencyCode } from '@prisma/client';
+import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
 
 export interface PriceValidationResult {
   isValid: boolean;
@@ -103,14 +104,17 @@ export class CategoriesService {
     categoryId: string;
     floorId?: string;
     zoneId?: string;
+    currencyCode?: CurrencyCode;
     excludeId?: string;
   }) {
     const now = new Date();
+    const currencyCode = params.currencyCode ?? DEFAULT_CURRENCY_CODE;
     const lineage = await this.getCategoryLineage(params.categoryId);
     const rules = await this.prisma.categoryMallPricing.findMany({
       where: {
         mallId: params.mallId,
         categoryId: { in: lineage },
+        currencyCode,
         isActive: true,
         ...(params.excludeId ? { id: { not: params.excludeId } } : {}),
         effectiveFrom: { lte: now },
@@ -166,6 +170,7 @@ export class CategoriesService {
     categoryId: string;
     floorId: string | null;
     zoneId: string | null;
+    currencyCode: CurrencyCode;
     effectiveFrom: Date;
     effectiveTo: Date | null;
     excludeId?: string;
@@ -176,6 +181,7 @@ export class CategoriesService {
         categoryId: params.categoryId,
         floorId: params.floorId,
         zoneId: params.zoneId,
+        currencyCode: params.currencyCode,
         isActive: true,
         ...(params.excludeId && { id: { not: params.excludeId } }),
         effectiveFrom: { lte: params.effectiveTo ?? new Date('9999-12-31T23:59:59.999Z') },
@@ -420,6 +426,7 @@ export class CategoriesService {
 
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
     const effectiveTo = dto.effectiveTo ? new Date(dto.effectiveTo) : null;
+    const currencyCode = dto.currencyCode ?? DEFAULT_CURRENCY_CODE;
     const isMallBase = !dto.floorId && !dto.zoneId;
     if (isMallBase && (dto.minRentPerSqm == null || dto.maxRentPerSqm == null)) {
       throw new BadRequestException('Mall-wide base pricing requires minimum and maximum rent');
@@ -434,6 +441,7 @@ export class CategoriesService {
           categoryId: dto.categoryId,
           floorId: dto.floorId,
           zoneId: dto.zoneId,
+          currencyCode,
         });
     this.validatePricingValues(
       dto.minRentPerSqm ?? inherited?.minRentPerSqm,
@@ -448,6 +456,7 @@ export class CategoriesService {
       categoryId: dto.categoryId,
       floorId: dto.floorId ?? null,
       zoneId: dto.zoneId ?? null,
+      currencyCode,
       effectiveFrom,
       effectiveTo,
     });
@@ -462,6 +471,7 @@ export class CategoriesService {
         maxRentPerSqm: dto.maxRentPerSqm,
         suggestedRent: dto.suggestedRent,
         camPerSqm: dto.camPerSqm ?? null,
+        currencyCode,
         effectiveFrom,
         effectiveTo,
         notes: dto.notes,
@@ -495,6 +505,7 @@ export class CategoriesService {
           categoryId: pricing.categoryId,
           floorId: pricing.floorId ?? undefined,
           zoneId: pricing.zoneId ?? undefined,
+          currencyCode: pricing.currencyCode,
           excludeId: id,
         });
     const newMin = rawMin ?? fallback?.minRentPerSqm;
@@ -521,6 +532,7 @@ export class CategoriesService {
         categoryId: pricing.categoryId,
         floorId: pricing.floorId,
         zoneId: pricing.zoneId,
+        currencyCode: pricing.currencyCode,
         effectiveFrom: pricing.effectiveFrom,
         effectiveTo: newEffectiveTo,
         excludeId: id,
@@ -618,13 +630,18 @@ export class CategoriesService {
     categoryId: string;
     floorId?: string;
     zoneId?: string;
+    currencyCode?: CurrencyCode;
   }) {
     return this.resolvePricing(params);
   }
 
   /**
    * Validate a proposed price against category pricing rules.
-   * Returns validation result including approval requirements.
+   * Returns validation result including approval requirements. Only a pricing
+   * rule in the SAME currency as proposedRentPerSqm is used -- comparing e.g.
+   * a USD proposal against a VND-denominated band produces a meaningless
+   * deviation, so a currency mismatch resolves the same way as "no rule
+   * configured" (below) rather than silently guessing.
    */
   async validateProposedPrice(params: {
     mallId: string;
@@ -632,6 +649,7 @@ export class CategoriesService {
     floorId?: string;
     zoneId?: string;
     proposedRentPerSqm: number;
+    currencyCode?: CurrencyCode;
   }): Promise<PriceValidationResult> {
     if (!Number.isFinite(params.proposedRentPerSqm) || params.proposedRentPerSqm < 0) {
       throw new BadRequestException('Proposed rent must be a finite, non-negative number');

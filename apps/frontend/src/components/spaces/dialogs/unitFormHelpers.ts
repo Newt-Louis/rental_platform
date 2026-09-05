@@ -8,6 +8,7 @@ export interface UnitFormValues {
   areaNLA: string;
   baseRentPerSqm: string;
   camPerSqm: string;
+  currencyCode: string;
   spaceType: string;
   leaseTermType: string;
   tier: string;
@@ -18,7 +19,7 @@ export interface UnitFormValues {
 
 export const UNIT_FORM_DEFAULT_VALUES: UnitFormValues = {
   code: '', name: '', categoryId: '', floorId: '', zoneId: '',
-  areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '',
+  areaGFA: '', areaNLA: '', baseRentPerSqm: '', camPerSqm: '', currencyCode: 'VND',
   spaceType: '', leaseTermType: 'LONG', tier: '', isFlexibleArea: false,
   minFlexArea: '', maxFlexArea: '',
 };
@@ -34,6 +35,7 @@ export function seedUnitFormValues(unit: any, defaultFloorId?: string): UnitForm
     areaNLA: unit?.areaNLA?.toString() ?? '',
     baseRentPerSqm: unit?.baseRentPerSqm?.toString() ?? '',
     camPerSqm: unit?.camPerSqm?.toString() ?? '',
+    currencyCode: unit?.currencyCode ?? 'VND',
     spaceType: unit?.spaceType ?? '',
     leaseTermType: unit?.leaseTermType ?? 'LONG',
     tier: unit?.tier ?? '',
@@ -79,6 +81,7 @@ export function buildUnitFormPayload(data: Record<string, any>, mallId: string, 
     areaNLA: parseUnitNumber(data.areaNLA) ?? 0,
     baseRentPerSqm: parseUnitNumber(data.baseRentPerSqm) ?? 0,
     camPerSqm: parseUnitNumber(data.camPerSqm) ?? 0,
+    currencyCode: data.currencyCode || 'VND',
     floorId: optional(data.floorId),
     zoneId: optional(data.zoneId),
     name: optional(data.name),

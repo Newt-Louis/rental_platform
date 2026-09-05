@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsNumber, IsEnum, IsBoolean, IsNotEmpty, Min } from 'class-validator';
-import { UnitStatus } from '@prisma/client';
+import { UnitStatus, CurrencyCode } from '@prisma/client';
 
 // Enums from schema — imported as string enums to avoid circular dependency before prisma client regeneration
 export enum UnitLeaseTermTypeDto {
@@ -86,6 +86,11 @@ export class CreateUnitDto {
   @IsNumber({}, { message: 'Phí CAM phải là một số hợp lệ' })
   @Min(0, { message: 'Phí CAM không được âm' })
   camPerSqm?: number;
+
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Currency for baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm. Defaults to VND.' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional({ enum: UnitStatus })
   @IsOptional()
