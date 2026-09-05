@@ -576,6 +576,18 @@ interface ZoneInput { id: string; name: string; code: string; }
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+// Vietnamese users commonly type area with "." as a thousands separator (vd.
+// "45.000"). `<input type="number">` parses that as the float 45, silently
+// truncating the value to a tiny wrong number instead of rejecting it -- the
+// edit then looks like it "didn't save" because the field reverts to ~0.
+// Strip any non-digit separators before parsing so "45.000" and "45,000" both
+// resolve to 45000.
+const parseAreaInput = (value: unknown): number | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const digits = String(value).replace(/[^\d]/g, '');
+  return digits ? Number(digits) : undefined;
+};
+
 function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -599,7 +611,7 @@ function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => voi
   });
 
   const onStep1Submit = (data: any) => {
-    setMallData({ ...data, totalArea: data.totalArea ? Number(data.totalArea) : undefined });
+    setMallData({ ...data, totalArea: parseAreaInput(data.totalArea) });
     setStep(2);
   };
 
@@ -690,7 +702,7 @@ function MallCreateWizard({ open, onClose }: { open: boolean; onClose: () => voi
               </div>
               <div>
                 <Label>Tổng diện tích (m²)</Label>
-                <Input {...register('totalArea')} type="number" placeholder="45000" className="mt-1" />
+                <Input {...register('totalArea')} type="text" inputMode="numeric" placeholder="45000" className="mt-1" />
               </div>
               <div className="col-span-2">
                 <Label>Mô tả</Label>
@@ -808,7 +820,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
 
   const mutation = useMutation({
     mutationFn: (data: any) => {
-      const payload = { ...data, totalArea: data.totalArea ? Number(data.totalArea) : undefined };
+      const payload = { ...data, totalArea: parseAreaInput(data.totalArea) };
       return mall ? spacesApi.updateMall(mall.id, payload) : spacesApi.createMall(payload);
     },
     onSuccess: () => {
@@ -830,7 +842,7 @@ function MallFormDialog({ open, mall, onClose }: { open: boolean; mall?: any; on
             <div><Label>Mã Mall *</Label><Input {...register('code', { required: true })} placeholder="THISO-SALA" className="mt-1" /></div>
             <div className="col-span-2"><Label>Địa chỉ</Label><Input {...register('address')} placeholder="10 Mai Chi Tho..." className="mt-1" /></div>
             <div><Label>Thành phố</Label><Input {...register('city')} placeholder="Hồ Chí Minh" className="mt-1" /></div>
-            <div><Label>Tổng diện tích (m²)</Label><Input {...register('totalArea')} type="number" placeholder="45000" className="mt-1" /></div>
+            <div><Label>Tổng diện tích (m²)</Label><Input {...register('totalArea')} type="text" inputMode="numeric" placeholder="45000" className="mt-1" /></div>
             <div className="col-span-2"><Label>Mô tả</Label><Input {...register('description')} placeholder="Mô tả ngắn về mall..." className="mt-1" /></div>
           </div>
           <div className="flex justify-end gap-2">

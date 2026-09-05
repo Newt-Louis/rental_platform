@@ -160,14 +160,35 @@ export class SpacesService {
       },
       include: {
         _count: {
-          select: { units: true, buildings: true, floors: true },
+          select: {
+            units: { where: { isActive: true } },
+            buildings: { where: { isActive: true } },
+            floors: { where: { isActive: true } },
+          },
         },
       },
       orderBy: { name: 'asc' },
     });
   }
 
+  // A "deleted" Mall is soft-deleted (isActive: false) -- its row, and its
+  // unique `code`, stay in the table. Recreating a Mall with the same code
+  // must therefore reactivate that row instead of hitting Prisma's raw P2002
+  // (which previously surfaced as an opaque "Unique constraint failed" error
+  // and left the code permanently unusable).
+  private async resolveMallCodeConflict(code: string) {
+    const existing = await this.prisma.mall.findUnique({ where: { code } });
+    if (existing && existing.isActive) {
+      throw new ConflictException(`Mã Mall "${code}" đã tồn tại`);
+    }
+    return existing;
+  }
+
   async createMall(dto: CreateMallDto) {
+    const existing = await this.resolveMallCodeConflict(dto.code);
+    if (existing) {
+      return this.prisma.mall.update({ where: { id: existing.id }, data: { ...dto, isActive: true } });
+    }
     return this.prisma.mall.create({ data: dto });
   }
 
@@ -175,8 +196,11 @@ export class SpacesService {
     mall: CreateMallDto;
     floors?: Array<{ name: string; level: string; sortOrder?: number; zones?: Array<{ name: string; code?: string }> }>;
   }) {
+    const existing = await this.resolveMallCodeConflict(data.mall.code);
     return this.prisma.$transaction(async (tx) => {
-      const mall = await tx.mall.create({ data: data.mall });
+      const mall = existing
+        ? await tx.mall.update({ where: { id: existing.id }, data: { ...data.mall, isActive: true } })
+        : await tx.mall.create({ data: data.mall });
       for (const floorInput of data.floors ?? []) {
         const { zones, ...floorData } = floorInput;
         const floor = await tx.floor.create({
