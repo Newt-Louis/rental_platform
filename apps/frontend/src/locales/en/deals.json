@@ -121,6 +121,7 @@
       "empty": "No scenarios yet",
       "select": "Mark",
       "days": "days",
+      "months": "months",
       "simulationNotice": "Scenarios are simulations for factual comparison only; they do not change authoritative Proposal values and are not approval evidence.",
       "deleteTitle": "Delete financial scenario?",
       "deleteDesc": "Scenario \"{{name}}\" will be removed from the proposal.",
@@ -134,7 +135,7 @@
         "camPerSqm": "CAM / m²",
         "term": "Term (months)",
         "deposit": "Deposit (months)",
-        "rentFree": "Rent free (days)",
+        "rentFree": "Rent free (months)",
         "discount": "Discount (%)",
         "escalation": "Annual escalation (%)"
       },
@@ -303,7 +304,7 @@
       "proposed": "Proposed (VND/m²)",
       "ceiling": "Ceiling (VND/m²)",
       "deviation": "Deviation %",
-      "rentFreeDays": "{{count}} rent-free days",
+      "rentFreeMonths": "{{count}} rent-free months",
       "policyReasonTitle": "Why this approval step applies"
     },
     "actions": {

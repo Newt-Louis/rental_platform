@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { computeContractValue } from '../../common/finance/rent-calculation.util';
 
 interface ScenarioTerms {
   area?: number;
@@ -89,13 +90,27 @@ export class ProposalScenarioService {
     const rentFree = raw.rentFree ?? 0;
     const escalation = raw.escalation ?? 0;
 
-    const baseRent = area * rentPerSqm;
+    // FIN-CALC-01 — canonical calculator. This used to compute
+    // `(baseRent + cam) * (1 - discount/100)` and then `monthlyRent * (term - rentFree)`,
+    // which discounted CAM (it must not be), waived CAM during rent-free (it must
+    // not be) and ignored escalation. Do not reintroduce a local formula.
     const cam = area * camPerSqm;
-    const monthlyRent = (baseRent + cam) * (1 - discount / 100);
+    const value = computeContractValue({
+      termMonths: term,
+      // SEM-001 — months, never days.
+      rentFreeMonths: rentFree,
+      monthlyBaseRent: area * rentPerSqm,
+      monthlyCAM: cam,
+      discountPercent: discount,
+      escalationPercent: escalation,
+    });
+    const monthlyRent = value.discountedMonthlyRent;
     const depositAmount = monthlyRent * deposit;
-    const totalValue = monthlyRent * (term - rentFree);
 
-    return { area, rentPerSqm, camPerSqm, discount, term, deposit, rentFree, escalation, monthlyRent, depositAmount, totalValue };
+    return {
+      area, rentPerSqm, camPerSqm, discount, term, deposit, rentFree, escalation,
+      monthlyRent, depositAmount, totalValue: value.totalContractValue,
+    };
   }
 
   private scoreScenario(terms: Record<string, number>): number {

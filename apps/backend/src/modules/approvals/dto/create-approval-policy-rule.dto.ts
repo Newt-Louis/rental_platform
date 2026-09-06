@@ -2,14 +2,26 @@ import { Role } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
+/**
+ * Condition types accepted when CREATING or UPDATING a rule.
+ *
+ * SEM-001: `RENT_FREE_DAYS` is deliberately absent. `Proposal.rentFree` is
+ * denominated in months, so a day-denominated threshold could never match
+ * correctly. Existing persisted rows with that conditionType are still
+ * evaluated — see the deprecation shim in `approval-policy.util.ts` — but no
+ * new one may be created.
+ */
 export enum ApprovalPolicyConditionType {
   DISCOUNT_PCT = 'DISCOUNT_PCT',
-  RENT_FREE_DAYS = 'RENT_FREE_DAYS',
+  RENT_FREE_MONTHS = 'RENT_FREE_MONTHS',
   INDUSTRY_TAG = 'INDUSTRY_TAG',
   HAS_AR_DEBT = 'HAS_AR_DEBT',
   PRICE_BELOW_MIN = 'PRICE_BELOW_MIN',
   PRICE_DEVIATION_PCT = 'PRICE_DEVIATION_PCT',
 }
+
+/** Recognised for evaluation of legacy persisted rows only. Not creatable. */
+export const DEPRECATED_CONDITION_TYPES = ['RENT_FREE_DAYS'] as const;
 
 export enum ApprovalPolicyOperator {
   GREATER_THAN = '>',

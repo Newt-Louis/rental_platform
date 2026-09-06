@@ -739,7 +739,7 @@ export class ApprovalsService {
 
     const numericConditions = new Set([
       ApprovalPolicyConditionType.DISCOUNT_PCT,
-      ApprovalPolicyConditionType.RENT_FREE_DAYS,
+      ApprovalPolicyConditionType.RENT_FREE_MONTHS,
       ApprovalPolicyConditionType.PRICE_DEVIATION_PCT,
     ]);
     const numericOperators = new Set(['>', '>=', '<', '<=', '=']);

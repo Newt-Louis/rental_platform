@@ -49,7 +49,7 @@ export class CreateProposalDto {
   @Min(0)
   deposit?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Số tháng miễn tiền thuê cơ bản (SEM-001: đơn vị THÁNG, không phải ngày)' })
   @IsOptional()
   @IsInt()
   @Min(0)

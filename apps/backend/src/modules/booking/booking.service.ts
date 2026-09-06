@@ -21,6 +21,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
 import { formatMoneyWithCode } from '../../common/utils/format-money';
+import { computeContractValue } from '../../common/finance/rent-calculation.util';
 
 @Injectable()
 export class BookingService {
@@ -1020,7 +1021,18 @@ export class BookingService {
     const monthlyCAM = camPerSqm * area;
     const depositMonths = dto.deposit ?? 3;
     const depositAmount = monthlyRent * depositMonths;
-    const totalContractValue = monthlyRent * dto.term;
+    // FIN-CALC-01 — canonical calculator. This used to be `monthlyRent * dto.term`,
+    // which ignored rentFree and CAM entirely, so the headline value of a proposal
+    // disagreed with both the scenario comparison screen and the invoices the
+    // contract would go on to produce. Do not reintroduce a local formula.
+    const totalContractValue = computeContractValue({
+      termMonths: dto.term,
+      // SEM-001 — months, never days.
+      rentFreeMonths: dto.rentFree ?? 0,
+      monthlyBaseRent: monthlyRent,
+      monthlyCAM,
+      escalationPercent: dto.escalationPercent ?? 0,
+    }).totalContractValue;
 
     const proposal = await this.prisma.$transaction(async (tx) => {
       const proposal = await tx.proposal.create({

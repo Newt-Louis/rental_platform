@@ -338,7 +338,7 @@
     "rentPerSqm": "Rent (₫/m²) *",
     "camPerSqm": "CAM fee (₫/m²)",
     "depositMonths": "Deposit (months)",
-    "rentFree": "Rent-free (days)",
+    "rentFree": "Rent-free (months)",
     "escalation": "Escalation (%/year)",
     "notes": "Notes",
     "estimatedMonthly": "Estimated/month: ",

@@ -268,7 +268,7 @@ function ApprovalDetailSheet({
               <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.rentCurrency && p.monthlyRent != null ? formatMoneyWithCode(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.rentCurrency && p.monthlyCAM != null ? formatMoneyWithCode(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.days')}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.months')}`} icon={CalendarDays} />
               <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.rentCurrency && p.totalContractValue != null ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
@@ -570,7 +570,7 @@ export default function ApprovalsPage() {
                             {proposal?.rentFree > 0 && (
                               <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-amber-600">
                                 <CalendarDays size={10} />
-                                {t('approvals.table.rentFreeDays', { count: proposal.rentFree })}
+                                {t('approvals.table.rentFreeMonths', { count: proposal.rentFree })}
                               </div>
                             )}
                           </td>

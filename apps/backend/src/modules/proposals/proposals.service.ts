@@ -6,6 +6,7 @@ import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStat
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
+import { computeContractValue } from '../../common/finance/rent-calculation.util';
 import type {
   ApprovalWorkflowCompletedEvent,
   ApprovalWorkflowStepAdvancedEvent,
@@ -68,31 +69,39 @@ export class ProposalsService {
     });
   }
 
+  /**
+   * FIN-CALC-01 — delegates to the single canonical calculator
+   * (`common/finance/rent-calculation.util.ts`). This method used to implement
+   * its own `discountedRent * (term - rentFree) + monthlyCAM * term`, which
+   * ignored escalation entirely and disagreed with both the billing schedule and
+   * `BookingService.convertToProposal`. Do not reintroduce a local formula here.
+   */
   private calcFinancials(dto: CreateProposalDto) {
     const area = dto.area;
-    const rentPerSqm = dto.rentPerSqm;
     const camPerSqm = dto.camPerSqm ?? 0;
-    const deposit = dto.deposit ?? 3;
     const term = dto.term;
-    const rentFree = dto.rentFree ?? 0;
-    const escalation = dto.escalationPercent ?? 0;
-    const discount = dto.discount ?? 0;
-
-    const baseMonthlyRent = area * rentPerSqm;
-    const discountedRent = baseMonthlyRent * (1 - discount / 100);
     const monthlyCAM = area * camPerSqm;
-    const depositAmount = discountedRent * deposit;
-    const billableMonths = term - rentFree;
-    const totalContractValue = discountedRent * billableMonths + monthlyCAM * term;
+
+    const value = computeContractValue({
+      termMonths: term,
+      // SEM-001 — months, never days.
+      rentFreeMonths: dto.rentFree ?? 0,
+      monthlyBaseRent: area * dto.rentPerSqm,
+      monthlyCAM,
+      discountPercent: dto.discount ?? 0,
+      escalationPercent: dto.escalationPercent ?? 0,
+    });
 
     const endDate = new Date(dto.startDate);
     endDate.setMonth(endDate.getMonth() + term);
 
     return {
-      monthlyRent: discountedRent,
+      monthlyRent: value.discountedMonthlyRent,
       monthlyCAM,
-      depositAmount,
-      totalContractValue,
+      // Deposit is a multiple of the discounted monthly rent and is NOT part of
+      // totalContractValue (confirmed business rule).
+      depositAmount: value.discountedMonthlyRent * (dto.deposit ?? 3),
+      totalContractValue: value.totalContractValue,
       endDate,
     };
   }
@@ -367,7 +376,7 @@ export class ProposalsService {
 
     const steps = buildApprovalStepsFromRules(rules, {
       discountPct: proposal.discount ?? 0,
-      rentFreeDays: proposal.rentFree ?? 0,
+      rentFreeMonths: proposal.rentFree ?? 0,
       industryTag: proposal.unit?.category ?? proposal.tenant?.category ?? null,
       hasArDebt,
       priceDeviationPct,

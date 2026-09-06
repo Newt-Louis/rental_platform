@@ -10,7 +10,7 @@ describe('deal-scoring.util', () => {
     const result = calculateDealScore(criteria, {
       customerRating: 5,
       discountPct: 5,
-      rentFreeDays: 30,
+      rentFreeMonths: 1,
     });
     expect(result.totalScore).toBeGreaterThan(0);
     expect(['A', 'B', 'C', 'D']).toContain(result.grade);
@@ -18,8 +18,8 @@ describe('deal-scoring.util', () => {
   });
 
   it('penalizes high discount', () => {
-    const low = calculateDealScore(criteria, { discountPct: 5, rentFreeDays: 0 });
-    const high = calculateDealScore(criteria, { discountPct: 20, rentFreeDays: 90 });
+    const low = calculateDealScore(criteria, { discountPct: 5, rentFreeMonths: 0 });
+    const high = calculateDealScore(criteria, { discountPct: 20, rentFreeMonths: 3 });
     expect(high.totalScore).toBeLessThan(low.totalScore);
   });
 });

@@ -1,8 +1,15 @@
+import { baseRentForMonthIndex } from '../../common/finance/rent-calculation.util';
+
 export type ContractBillingInput = {
   startDate: Date;
   endDate: Date;
   rent: number;
   cam: number;
+  /**
+   * SEM-001 — number of leading billing MONTHS with Base Rent waived. Never
+   * days. Shares `baseRentForMonthIndex` with proposal valuation so the two can
+   * never diverge. See docs/audit/RENT_FREE_DATA_RISK.md.
+   */
   rentFree: number;
   escalationPercent: number;
   paymentTerm: number;
@@ -34,12 +41,6 @@ function addMonths(date: Date, months: number): Date {
 
 function monthIndexFromStart(start: Date, current: Date): number {
   return (current.getFullYear() - start.getFullYear()) * 12 + (current.getMonth() - start.getMonth());
-}
-
-function applyEscalation(baseRent: number, escalationPercent: number, monthIndex: number): number {
-  const yearsElapsed = Math.floor(monthIndex / 12);
-  if (yearsElapsed <= 0 || escalationPercent <= 0) return baseRent;
-  return baseRent * Math.pow(1 + escalationPercent / 100, yearsElapsed);
 }
 
 function cycleMonths(cycle: ContractBillingInput['billingCycle']): number {
@@ -117,9 +118,17 @@ export function generateBillingPeriods(contract: ContractBillingInput): BillingP
 
       const proportion = inclusiveDays(overlapStart, overlapEnd) / daysInMonth(month);
       const monthIdx = monthIndexFromStart(contractStart, month);
-      const inRentFree = monthIdx < contract.rentFree;
-      const escalatedRent = applyEscalation(contract.rent, contract.escalationPercent, monthIdx);
-      if (!inRentFree) rentAmount += escalatedRent * proportion;
+      // Shared primitive with proposal valuation (FIN-CALC-01): returns 0 during
+      // the rent-free months and the escalated rent otherwise. Proration is
+      // applied here because it is a period concern, not a rent concern.
+      const monthRent = baseRentForMonthIndex(
+        contract.rent,
+        contract.escalationPercent,
+        monthIdx,
+        contract.rentFree,
+      );
+      rentAmount += monthRent * proportion;
+      // CAM stays chargeable during rent-free months — confirmed business rule.
       camAmount += contract.cam * proportion;
     }
 

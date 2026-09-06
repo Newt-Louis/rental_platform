@@ -28,15 +28,34 @@ type PolicyRule = {
 const ROLE_LABELS: Record<string, string> = {
   LEASING_MANAGER: 'Leasing Manager', MALL_DIRECTOR: 'Mall Director', CEO: 'CEO', FINANCE: 'Finance', LEGAL: 'Legal',
 };
+// Hiển thị — bao gồm cả loại điều kiện đã ngừng dùng, để quy tắc cũ đang lưu
+// trong DB vẫn đọc được tên thay vì hiện mã thô.
 export const CONDITION_LABELS: Record<string, string> = {
   DISCOUNT_PCT: 'Tỷ lệ chiết khấu',
-  RENT_FREE_DAYS: 'Thời gian miễn tiền thuê',
+  RENT_FREE_MONTHS: 'Thời gian miễn tiền thuê (tháng)',
+  // SEM-001 — không tạo mới được, chỉ để hiển thị bản ghi cũ.
+  RENT_FREE_DAYS: 'Thời gian miễn tiền thuê (ngày — đã ngừng dùng)',
   INDUSTRY_TAG: 'Ngành hàng',
   HAS_AR_DEBT: 'Có công nợ quá hạn',
   PRICE_BELOW_MIN: 'Giá thuê thấp hơn giá tối thiểu',
   PRICE_DEVIATION_PCT: 'Mức giá thấp hơn giá tối thiểu',
 };
-const NUMERIC_CONDITIONS = new Set(['DISCOUNT_PCT', 'RENT_FREE_DAYS', 'PRICE_DEVIATION_PCT']);
+
+/** SEM-001 — RENT_FREE_DAYS bị loại khỏi danh sách tạo mới. Backend cũng từ chối. */
+export const DEPRECATED_CONDITIONS = new Set(['RENT_FREE_DAYS']);
+const CREATABLE_CONDITION_LABELS = Object.fromEntries(
+  Object.entries(CONDITION_LABELS).filter(([value]) => !DEPRECATED_CONDITIONS.has(value)),
+);
+
+const NUMERIC_CONDITIONS = new Set([
+  'DISCOUNT_PCT', 'RENT_FREE_MONTHS', 'RENT_FREE_DAYS', 'PRICE_DEVIATION_PCT',
+]);
+/** Đơn vị hiển thị theo loại điều kiện. Quy tắc cũ vẫn hiện 'ngày' đúng như đã lưu. */
+function conditionUnit(conditionType: string): string {
+  if (conditionType === 'RENT_FREE_MONTHS') return ' tháng';
+  if (conditionType === 'RENT_FREE_DAYS') return ' ngày';
+  return '%';
+}
 const TEXT_CONDITIONS = new Set(['INDUSTRY_TAG']);
 const BOOLEAN_CONDITIONS = new Set(['HAS_AR_DEBT', 'PRICE_BELOW_MIN']);
 const OPERATORS = ['>', '>=', '<', '<=', '='];
@@ -52,7 +71,7 @@ export function ruleCondition(rule: PolicyRule) {
   if (rule.isRequired) return 'Áp dụng cho mọi hồ sơ';
   const condition = CONDITION_LABELS[rule.conditionType] ?? rule.conditionType;
   if (NUMERIC_CONDITIONS.has(rule.conditionType)) {
-    const unit = rule.conditionType === 'RENT_FREE_DAYS' ? ' ngày' : '%';
+    const unit = conditionUnit(rule.conditionType);
     return rule.operator === 'BETWEEN'
       ? `${condition}: từ ${rule.threshold ?? '—'}${unit} đến ${rule.matchValue ?? '—'}${unit}`
       : `${condition} ${OPERATOR_LABELS[rule.operator ?? '='] ?? rule.operator ?? '='} ${rule.threshold ?? '—'}${unit}`;
@@ -153,8 +172,8 @@ export function ApprovalPolicyTab() {
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="policy-code">Mã quy tắc</Label><Input id="policy-code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="DISCOUNT_MANAGER" /></div><div><Label htmlFor="policy-name">Tên quy tắc</Label><Input id="policy-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="step-name">Tên bước duyệt</Label><Input id="step-name" value={form.stepName} onChange={(e) => setForm({ ...form, stepName: e.target.value })} /></div><div><Label htmlFor="step-order">Thứ tự bước</Label><Input id="step-order" type="number" min={1} value={form.stepOrder} onChange={(e) => setForm({ ...form, stepOrder: Number(e.target.value) })} /></div></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="approver-role">Vai trò phê duyệt</Label><select id="approver-role" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.approverRole} onChange={(e) => setForm({ ...form, approverRole: e.target.value })}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><Label htmlFor="application-scope">Phạm vi áp dụng</Label><select id="application-scope" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.isRequired ? 'ALWAYS' : 'CONDITIONAL'} onChange={(e) => setForm({ ...form, isRequired: e.target.value === 'ALWAYS' })}><option value="CONDITIONAL">Khi thỏa điều kiện</option><option value="ALWAYS">Mọi hồ sơ (không điều kiện)</option></select></div></div>
-        {!form.isRequired && <div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value, operator: '>', threshold: 0, matchValue: '' })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>}
-        {!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && <div className={`grid gap-3 ${form.operator === 'BETWEEN' ? 'sm:grid-cols-3' : 'grid-cols-[220px_1fr]'}`}><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value, matchValue: e.target.value === 'BETWEEN' ? form.matchValue : '' })}>{[...OPERATORS, ...(form.conditionType === 'PRICE_DEVIATION_PCT' ? ['BETWEEN'] : [])].map((operator) => <option key={operator} value={operator}>{operator === 'BETWEEN' ? 'Trong khoảng' : OPERATOR_LABELS[operator]}</option>)}</select></div><div><Label htmlFor="threshold">{form.operator === 'BETWEEN' ? `Từ (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})` : `Ngưỡng (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})`}</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div>{form.operator === 'BETWEEN' && <div><Label htmlFor="range-maximum">Đến (%)</Label><Input id="range-maximum" type="number" min={0} value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}</div>}
+        {!form.isRequired && <div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value, operator: '>', threshold: 0, matchValue: '' })}>{Object.entries(CREATABLE_CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>}
+        {!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && <div className={`grid gap-3 ${form.operator === 'BETWEEN' ? 'sm:grid-cols-3' : 'grid-cols-[220px_1fr]'}`}><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value, matchValue: e.target.value === 'BETWEEN' ? form.matchValue : '' })}>{[...OPERATORS, ...(form.conditionType === 'PRICE_DEVIATION_PCT' ? ['BETWEEN'] : [])].map((operator) => <option key={operator} value={operator}>{operator === 'BETWEEN' ? 'Trong khoảng' : OPERATOR_LABELS[operator]}</option>)}</select></div><div><Label htmlFor="threshold">{form.operator === 'BETWEEN' ? `Từ (${conditionUnit(form.conditionType).trim()})` : `Ngưỡng (${conditionUnit(form.conditionType).trim()})`}</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div>{form.operator === 'BETWEEN' && <div><Label htmlFor="range-maximum">Đến (%)</Label><Input id="range-maximum" type="number" min={0} value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}</div>}
         {!form.isRequired && TEXT_CONDITIONS.has(form.conditionType) && <div><Label htmlFor="match-value">Giá trị điều kiện</Label><Input id="match-value" value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}
         {!form.isRequired && BOOLEAN_CONDITIONS.has(form.conditionType) && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">Điều kiện này tự động áp dụng khi hồ sơ thỏa trạng thái “{CONDITION_LABELS[form.conditionType]}”, không cần nhập thêm giá trị.</div>}
         <div className="rounded-lg border bg-muted/40 p-3 text-sm"><div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Hiển thị trên danh sách</div><div className="font-medium text-foreground">{conditionPreview}</div></div>

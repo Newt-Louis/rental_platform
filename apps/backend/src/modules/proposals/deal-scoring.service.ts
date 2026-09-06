@@ -64,7 +64,7 @@ export class DealScoringService {
         : 50,
       industryFit: proposal.unit?.category === customer?.preferredCategory ? 90 : 65,
       discountPct: proposal.discount ?? 0,
-      rentFreeDays: proposal.rentFree ?? 0,
+      rentFreeMonths: proposal.rentFree ?? 0,
     });
 
     return this.prisma.proposalDealScore.upsert({

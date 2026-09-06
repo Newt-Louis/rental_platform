@@ -223,7 +223,7 @@ export class ConvertToProposalDto {
   @IsNumber()
   deposit?: number;
 
-  @ApiPropertyOptional({ description: 'Số ngày miễn phí thuê' })
+  @ApiPropertyOptional({ description: 'Số tháng miễn phí thuê (SEM-001: đơn vị THÁNG, không phải ngày)' })
   @IsOptional()
   @IsInt()
   rentFree?: number;

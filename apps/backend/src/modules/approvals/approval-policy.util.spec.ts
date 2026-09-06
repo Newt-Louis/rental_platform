@@ -35,7 +35,7 @@ describe('approval-policy.util', () => {
 
     const steps = buildApprovalStepsFromRules(rules, {
       discountPct: 7,
-      rentFreeDays: 0,
+      rentFreeMonths: 0,
       industryTag: 'F&B',
       hasArDebt: false,
     });
@@ -72,7 +72,7 @@ describe('approval-policy.util', () => {
 
     const steps = buildApprovalStepsFromRules(rules, {
       discountPct: 3,
-      rentFreeDays: 0,
+      rentFreeMonths: 0,
       industryTag: 'F&B',
       hasArDebt: false,
     });
