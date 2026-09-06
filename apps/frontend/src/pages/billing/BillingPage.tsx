@@ -32,6 +32,7 @@ import { ERPStatusBadge, ERPToolbar, ERPAmount } from '@/components/erp';
 import type { ERPTone } from '@/lib/erp-tones';
 import { buildInvoiceExportParams, getAuthoritativeBalance, getExportNotice } from './billingPresentation';
 import { invoiceTypeTranslationKey } from '@/lib/erpEnumPresentation';
+import { usePaymentIntentKey } from '@/hooks/usePaymentIntentKey';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -100,7 +101,12 @@ function RecordPaymentDialog({ invoice, open, onClose }: {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState({ amount: '', method: 'BANK_TRANSFER', reference: '', paidAt: '', notes: '' });
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  // PAY-001 — this was `useState(() => crypto.randomUUID())`, which looked
+  // per-dialog but is per-MOUNT: the parent renders this component
+  // unconditionally and only toggles `open`, so one key served the whole page
+  // session. Recording a second payment then failed with a 409 because the key
+  // was already bound to the first invoice.
+  const idempotencyKey = usePaymentIntentKey(invoice?.id, open);
 
   // Backend-calculated balance is authoritative. The fallback only supports
   // older responses that did not expose balance yet.
