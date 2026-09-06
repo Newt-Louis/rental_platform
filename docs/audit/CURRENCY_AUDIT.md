@@ -209,3 +209,25 @@ New invariant established by this wave:
 | **MON-CUR-RPT-01** | A monetary field in a management API response either carries its currency, or declares that its currency is unknown/scoped | **HOLDS** for `/dashboard/cross-mall`, `/analytics/occupancy`, `/crm/pipeline/stats`; not yet asserted elsewhere |
 
 Still no FX engine, and none was added.
+
+---
+
+## Remediation Wave 2 — AI assistant financial context (2026-09-06)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §17.
+
+| ID | Status after Wave 2 |
+|---|---|
+| **RPT-CUR-001** | **CLOSED.** `ai.service.ts#buildContext` grouped turnover by `currencyCode`; growth is per currency; no mixed total remains; a NULL currency becomes an explicit UNKNOWN bucket, never VND; the context states the currency boundary and forbids FX. |
+| **RPT-CUR-004** | **Mitigated locally, not fixed.** The AI's AR block stays VND-filtered but now declares that scope in the prompt. Split by surface in `ISSUE_REGISTER.md`; still P1 on the single-mall dashboard, reports, compliance and occupancy revenue. |
+| **RPT-CUR-002** | Unchanged in code. Severity corrected to **P2** in the register because all `Unit` rows are currently VND, making it latent; still confirmed and reachable. |
+| RPT-CUR-005 / 006 / 007 / 008 / 009 | **UNCHANGED** — outside this wave. |
+
+`SalesTurnover.currencyCode` was left nullable with no default by CUR-001 so a
+pre-currency figure would never be given a fabricated unit. Wave 2 is where that
+decision pays off end to end: the NULL travels all the way into the AI prompt as
+"KHÔNG XÁC ĐỊNH" with a warning, instead of being silently rendered as VND.
+
+New invariants: **MON-CUR-AI-01/02/03** (see `BUSINESS_INVARIANTS.md`).
+
+Still no FX engine, and none was added.

@@ -1412,7 +1412,7 @@ output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §16.
 | ID | Before | After Wave 1 |
 |---|---|---|
 | RPT-CUR-003 | Three management APIs returned monetary keys and **zero** currency keys | **FIXED.** `/api/dashboard/cross-mall` → `revenueByCurrency` + `revenueScalarCurrency` at every money-bearing level. `/api/analytics/occupancy` → `billingRevenueByCurrency` + `billingRevenueScalarCurrency`. `/api/crm/pipeline/stats` → `proposalValueCurrency` + `pipelineValueCurrencyUnknown`. |
-| RPT-CUR-004 | Every executive revenue KPI silently excluded USD/MMK | **FIXED for the Cross-Mall CEO screen only.** The `currencyCode: 'VND'` filter is removed from `getCrossMallDashboard`; the screen renders one labelled line per currency and drops the "Doanh thu tháng tổng" framing. **Still open everywhere else** (single-mall dashboard, reports, AI, compliance). Downgraded to **P2** for the remaining surfaces only because the highest-visibility one is now correct — the underlying business question is still unanswered. |
+| RPT-CUR-004 | Every executive revenue KPI silently excluded USD/MMK | **FIXED for the Cross-Mall CEO screen only.** The `currencyCode: 'VND'` filter is removed from `getCrossMallDashboard`; the screen renders one labelled line per currency and drops the "Doanh thu tháng tổng" framing. **Still open everywhere else** (single-mall dashboard, reports, AI, compliance) and **still P1** on those surfaces — see the split in the Wave 2 section below. Fixing the highest-visibility screen does not reduce the severity of the ones still misreporting. |
 | RPT-CUR-002 | Cross-currency SUM *and* cross-currency AVERAGE | **SUM fixed** (`totalMonthlyBillingRevenue` grouped by `Unit.currencyCode`; no schema change needed — the column is NOT NULL). **AVERAGE deferred**: splitting `avgRentPerSqm` changes the field's meaning, a business decision the wave brief fenced off. Now disclosed via `avgRentCurrencies` / `avgRentCurrencyMixed`. Remains **P1** until the average is resolved. |
 | RPT-CUR-005 | Currency-less Lead values summed into pipeline value, silently | **DEFERRED** — needs `Lead.currencyCode`. Now **declared**: `pipelineValueCurrencyUnknown: true`. Severity unchanged (**P2**). |
 | RPT-CUR-006 | Currency-less `SlotBooking.totalAmount` shown as VND-looking revenue | **DEFERRED** — needs `SlotBooking.currencyCode`. Now **declared**: `revenueCurrencyUnknown: true`, empty `revenueByCurrency`, and the UI prints "Chưa xác định đơn vị tiền tệ". Severity unchanged (**P2**). |
@@ -1431,3 +1431,67 @@ behaviour and asserts it violates the contract.
 modified.** The two local-database mutations used for runtime verification
 (period-`2026-09` invoice copies, and two units temporarily set to USD/MMK) were
 both reverted and the reversal was verified.
+
+---
+
+## Remediation Wave 2 — AI assistant financial context (2026-09-06)
+
+Scope: **RPT-CUR-001 only.** Evidence and runtime output in
+`docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §17.
+
+### RPT-CUR-001 — CLOSED
+
+| | |
+|---|---|
+| Severity | was **P1** |
+| Status | **FIXED 2026-09-06** |
+| Invariant | RPT-CUR-02 now HOLDS for the AI path |
+
+`buildContext()` handed the model `SUM(grossSales)` across every `SalesTurnover`
+row and labelled it "VNĐ"; on live data that added VND, USD and MMK together.
+Growth was derived from two such mixed sums, so both numerator and denominator
+were meaningless.
+
+Now `groupBy({ by: ['currencyCode'] })` for both periods, with growth computed
+inside each currency. A NULL `currencyCode` becomes an explicit UNKNOWN bucket —
+never VND — and carries a warning naming CUR-001 as its origin.
+
+`CURRENCY_UNKNOWN_NOT_COMPARABLE` was added beyond the brief: two
+unknown-currency sums from different periods are not guaranteed to be the same
+unit, so the UNKNOWN bucket never produces a growth percentage either.
+
+Every monetary source reaching the AI was traced before the fix
+(§17.1). Only the turnover block was arithmetically unsafe, so remediation was
+not broadened. Contract value, rent and pipeline value never enter the AI
+context at all.
+
+### RPT-CUR-002 — severity corrected to P2 (documentation only)
+
+Runtime impact is **latent**: all 30 `Unit` rows currently carry
+`currencyCode = 'VND'`, so the cross-currency average cannot fire on today's
+data. The issue remains **CONFIRMED and reachable** — the Spaces UI can set a
+unit to USD/MMK, and Wave 1's runtime check demonstrated exactly that by
+producing `avgRentCurrencyMixed: true` on Ground Floor once two units were
+switched. P2 reflects current exposure, not correctness. No code changed.
+
+### RPT-CUR-004 — split, NOT downgraded
+
+The Wave 1 entry above previously suggested a P2 downgrade for the remaining
+surfaces. That was wrong and has been corrected: fixing the most visible screen
+does not make the others less severe. The issue is split instead.
+
+| Surface | Status | Severity |
+|---|---|---|
+| Cross-Mall CEO (`/dashboard/cross-mall`) | **FIXED** (Wave 1) | closed |
+| AI assistant AR block | **DECLARED** (Wave 2) — still VND-filtered, scope now stated in the prompt | **P2** — mitigated, not fixed |
+| Single-mall dashboard (`buildDashboard`) | open — VND-filtered, presented as total revenue | **P1** |
+| `reports.service.ts` revenue endpoints | open | **P1** |
+| `compliance.service.ts` subtotal | open | **P1** |
+| `occupancy-analytics.service.ts` `revenue` / `revenuePerSqm` | open — VND-scoped | **P1** |
+
+The blocking business question is unchanged and still unanswered: what should an
+executive "total revenue" mean when no FX rate is approved?
+
+No production data was mutated in this wave. The local dev-database rows created
+for runtime verification were deleted and the table verified back at its
+original 30 rows.

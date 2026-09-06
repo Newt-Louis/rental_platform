@@ -516,3 +516,105 @@ byLeaseTerm.LONG.pipelineValueCurrencyUnknown: true
 - The single-mall dashboard (`buildDashboard`), the AI assistant, and the
   reports/compliance surfaces are **unchanged** and still carry their original
   VND-scoping. Those are later waves.
+
+---
+
+## 17. Remediation Wave 2 — AI assistant financial context (2026-09-06)
+
+Scope: **RPT-CUR-001 only.** No FX was implemented; the AI mixed-currency
+aggregate was the target, and nothing outside `ai.service.ts#buildContext` was
+changed.
+
+### 17.1 Every monetary source in the AI context, traced and classified
+
+`buildContext()` is the only place the AI assistant receives business figures.
+`getSuggestions()` returns counts only; `mcp-server.service.ts` exposes code and
+schema metadata with no business data; `contract-expiry.scheduler.ts` (the "AI
+proactive insights" job) emits no monetary values. All were checked.
+
+| Block | Monetary fields | Classification (before) | After Wave 2 |
+|---|---|---|---|
+| Occupancy | none (counts, m²) | n/a | unchanged |
+| Contracts | none (counts, dates) | n/a | unchanged |
+| Invoice / AR | overdue sum, issued sum, top-5 debt | **VND_SCOPED_UNDECLARED** | **VND_SCOPED_AND_DECLARED** — queries still `currencyCode: 'VND'` (not widened in this wave), scope now stated in the context |
+| Sales turnover | `SUM(grossSales)`, `SUM(netSales)`, growth % | **CROSS_CURRENCY_UNSAFE** | **MULTI_CURRENCY_SAFE** |
+| Tickets | none | n/a | unchanged |
+| Tenants | none | n/a | unchanged |
+| Proposals | none (counts only) | n/a | unchanged |
+
+Contract value, rent and pipeline value are **not present** in the AI context at
+all, so RPT-CUR-005's currency-less Lead figures never reach the model.
+
+Only one arithmetic cross-currency defect existed in this path, so remediation
+was not broadened.
+
+### 17.2 The fix
+
+`aggregate({ _sum: { grossSales } })` → `groupBy({ by: ['currencyCode'] })` for
+both the current and the previous period. Prisma returns a NULL `currencyCode`
+as its own group, which is what carries CUR-001's "reported before currency was
+captured" rows into the prompt **without calling them VND**.
+
+Growth is computed inside `turnoverGrowthByCurrency`, per currency, with
+semantic states instead of fabricated percentages:
+
+| State | When |
+|---|---|
+| `PERCENT` | the currency reported in both periods and the prior total was > 0 |
+| `NEW_CURRENCY` | reported this period only |
+| `NO_CURRENT_VALUE` | reported last period only |
+| `NO_PRIOR_VALUE` | reported in both, prior total was 0 |
+| `CURRENCY_UNKNOWN_NOT_COMPARABLE` | the UNKNOWN bucket — see below |
+
+`CURRENCY_UNKNOWN_NOT_COMPARABLE` was added during implementation. Two
+unknown-currency sums from different periods are not guaranteed to be the same
+unit of account, so comparing them would commit precisely the error this wave
+exists to fix. The UNKNOWN bucket therefore never yields a percentage.
+
+The context also carries `NO_FX_INSTRUCTION`, appended whenever any monetary
+block ran, and one matching line was added to `SYSTEM_PROMPT` as a durable
+backstop. No fake consolidated number is produced and the model is never asked
+to perform FX.
+
+### 17.3 Runtime verification
+
+Run against real Postgres via the real Prisma `groupBy`. The seeded turnover
+data covers `2026-03..2026-05` while the AI block reads the current month, so
+rows were copied into `2026-09` / `2026-08` under a fully reversible edit that
+also produced one NULL-currency row and removed MMK from the current period, to
+exercise every branch. All 19 rows were deleted afterwards and the table was
+verified back at its original 30 rows across 3 periods with zero UNKNOWN. Local
+dev database only.
+
+```
+CURRENT  (2026-09): VND gross 2,761,270,223 net 2,485,143,200.7  (7 tenants)
+                    USD gross        13,114.87 net    11,803.38  (1 tenant)
+                    UNKNOWN gross 167,978,542 net 151,180,687.8  (1 tenant)
+PREVIOUS (2026-08): VND gross 3,062,540,018 | USD gross 12,796.87 | MMK gross 26,618,974.73
+
+OLD cross-currency SUM: 2,929,261,879.87  ← regression evidence only, NOT a KPI
+```
+
+Generated context:
+
+```
+Doanh thu tháng 2026-09 — tách theo đơn vị tiền tệ, KHÔNG quy đổi tỷ giá, không có số tổng gộp:
+  - VND: gross 2.761.270.223 VND | net 2.485.143.201 VND | 7 khách thuê báo cáo | tăng trưởng so với 2026-08: -9.8%
+  - USD: gross 13.114,87 USD | net 11.803,38 USD | 1 khách thuê báo cáo | tăng trưởng so với 2026-08: +2.5%
+  - KHÔNG XÁC ĐỊNH: gross 167.978.542 (đơn vị tiền tệ KHÔNG XÁC ĐỊNH) | ... | tăng trưởng: CURRENCY_UNKNOWN_NOT_COMPARABLE
+Đơn vị tiền tệ chỉ xuất hiện ở kỳ trước (2026-08):
+  - MMK: NO_CURRENT_VALUE (có báo cáo 2026-08 nhưng không có kỳ này)
+CẢNH BÁO: 1 dòng doanh thu được báo cáo trước khi đơn vị tiền tệ được ghi nhận (CUR-001)...
+```
+
+The old prose was a single line: `Doanh thu tháng 2026-09: 2.929.261.880 VNĐ`.
+
+### 17.4 RPT-CUR-001 — CLOSED
+
+All five closing conditions hold: turnover is grouped by currency, growth is per
+currency, no mixed total remains anywhere in the path, a NULL currency never
+becomes VND, and the context states the currency boundary explicitly.
+
+**This does not make all AI financial context multi-currency-complete.** The AR
+block is still VND-filtered by design; it is now declared rather than silent,
+which is a local RPT-CUR-004 mitigation, not a global fix.

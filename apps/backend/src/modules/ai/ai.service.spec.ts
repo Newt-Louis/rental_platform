@@ -12,7 +12,10 @@ describe('AiService — CR-101 Phase 3D Mall scoping', () => {
     unit: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
     contract: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
     invoice: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: {}, _count: 0 }), count: jest.fn().mockResolvedValue(0) },
-    salesTurnover: { aggregate: jest.fn().mockResolvedValue({ _sum: {}, _count: 0 }) },
+    // RPT-CUR-001 (Wave 2): the sales block now groups by currencyCode instead
+    // of issuing one flat aggregate. The Mall-scoping invariant below is
+    // unchanged and must still hold on the new query.
+    salesTurnover: { groupBy: jest.fn().mockResolvedValue([]) },
     ticket: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
     tenant: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
     proposal: { count: jest.fn().mockResolvedValue(0) },
@@ -68,9 +71,15 @@ describe('AiService — CR-101 Phase 3D Mall scoping', () => {
 
   it('sales block: scoped caller filters SalesTurnover via unit.mallId', async () => {
     await runBuildContext('doanh thu tháng này?', scoped);
-    expect(prisma.salesTurnover.aggregate).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ unit: { mallId: { in: ['mall-A'] } } }),
-    }));
+    // Both the current and previous period queries must carry the filter --
+    // grouping by currency must not become a way to widen Mall scope.
+    expect(prisma.salesTurnover.groupBy).toHaveBeenCalledTimes(2);
+    for (const call of prisma.salesTurnover.groupBy.mock.calls) {
+      expect(call[0]).toEqual(expect.objectContaining({
+        by: ['currencyCode'],
+        where: expect.objectContaining({ unit: { mallId: { in: ['mall-A'] } } }),
+      }));
+    }
   });
 
   it('ticket block: scoped caller filters Ticket via unit.mallId', async () => {

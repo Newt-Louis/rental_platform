@@ -128,3 +128,27 @@ currency for data that genuinely has none. Removing either flag without first
 adding the corresponding schema column re-violates MON-CUR-RPT-01.
 
 Still true: no FX conversion exists anywhere in the platform.
+
+### Wave 2 status (2026-09-06) — AI assistant financial context
+
+| ID | Status after Wave 2 |
+|---|---|
+| RPT-CUR-01 | **PARTIAL** — additionally HOLDS for the AI assistant context: every monetary figure now carries its currency, declares its scope, or declares the currency unknown. |
+| RPT-CUR-02 | **PARTIAL, one violation removed.** The confirmed cross-currency SUM in `ai.service.ts` is gone — turnover is grouped by `currencyCode` and growth is computed within a currency. The remaining violation is `avgRentPerSqm` (AVG), deferred by decision. |
+| RPT-CUR-06 | **HOLDS for the AI path** — a NULL `SalesTurnover.currencyCode` becomes an explicit UNKNOWN bucket that the prose refuses to label, and is never read as VND. Still violated by the shared frontend formatters, which are out of scope. |
+| RPT-CUR-08 | **PARTIAL** — the AI's VND-filtered AR block now declares its scope in the generated context. |
+
+New invariants introduced by Wave 2:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-AI-01** | Financial context handed to a language model is grouped by currency and never contains a total spanning currencies | PER-PATH + regression tests | **HOLDS** for `buildContext()` |
+| **MON-CUR-AI-02** | A period-over-period change is computed only between two amounts in the same unit of account; when one side is absent, a semantic state is emitted rather than a fabricated percentage | PER-PATH | **HOLDS** |
+| **MON-CUR-AI-03** | The generated context carries an explicit instruction that amounts in different currencies must not be summed, compared or converted | CHOKEPOINT | **HOLDS** — emitted whenever any monetary block ran, plus a matching line in `SYSTEM_PROMPT` |
+
+MON-CUR-AI-02 covers the UNKNOWN bucket specifically: two unknown-currency sums
+from different periods are not guaranteed to share a unit, so no percentage is
+produced for them at all (`CURRENCY_UNKNOWN_NOT_COMPARABLE`).
+
+Still true: no FX conversion exists anywhere in the platform, and the model is
+never asked to perform one.
