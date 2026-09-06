@@ -12,6 +12,13 @@ const businessModelFromSpaceType = (spaceType?: string) => {
   return '';
 };
 
+/** `null` for anything absent or non-finite; preserves a genuine 0. */
+const nullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
 export function buildProposalPrefill(booking: UnitBooking | null) {
   const unit = booking?.unit;
   const rentCurrency = booking?.currencyCode ?? 'VND';
@@ -33,30 +40,52 @@ export function buildProposalPrefill(booking: UnitBooking | null) {
     ?? (unitCurrencyMatches ? unit?.camPerSqm : undefined);
 
   return {
-    area: String(booking?.requestedArea ?? unit?.areaNLA ?? ''),
-    term: String(booking?.requestedTerm ?? unit?.minLeaseTerm ?? 36),
+    // ── Numeric fields hold NUMBERS, or `null` when genuinely empty ──────────
+    // The conversion form binds these through `NumericField`/`useController`, so
+    // form state is authoritative and the submitted payload carries numeric
+    // primitives. `null` (not supplied) stays distinguishable from `0` (a real
+    // commercial value the user chose), which a string-based `''`/`'0'` model
+    // blurred.
+    area: nullableNumber(booking?.requestedArea ?? unit?.areaNLA),
+    term: booking?.requestedTerm ?? unit?.minLeaseTerm ?? 36,
     startDate: localIsoDate(),
-    rentPerSqm: String(
+    rentPerSqm: nullableNumber(
       booking?.proposedRentPerSqm
       ?? booking?.expectedRent
-      ?? (unitCurrencyMatches ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined)
-      ?? '',
+      ?? (unitCurrencyMatches ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined),
     ),
-    camPerSqm: String(camPerSqm ?? ''),
-    deposit: '3',
-    rentFree: '0',
-    escalationPercent: String(unit?.escalationRate ?? 5),
+    camPerSqm: nullableNumber(camPerSqm),
+    // VISIBLE_BUSINESS_DEFAULT — the shared conversion form renders this
+    // pre-filled so the 3-month deposit is a value the user saw and accepted,
+    // not a backend `?? 3` they never knew about.
+    deposit: 3,
+    // SEM-001 — rentFree is denominated in MONTHS. Never days.
+    rentFree: 0,
+    escalationPercent: nullableNumber(unit?.escalationRate) ?? 5,
     notes: booking?.notes ?? '',
     businessModel: businessModelFromSpaceType(unit?.spaceType),
     rentCurrency,
-    exchangeRate: String(booking?.exchangeRate ?? ''),
+    exchangeRate: nullableNumber(booking?.exchangeRate),
     // Phí Dịch vụ/Phí HTKD đã đàm phán ở bước Booking (HĐT TTTM) — mang sang làm giá trị mặc định,
     // người dùng vẫn có thể sửa lại trước khi convert.
-    serviceFeeSqm: String(booking?.serviceFeeSqm ?? ''),
-    businessSupportFeeSqm: String(booking?.businessSupportFeeSqm ?? ''),
-    fitoutDays: '90',
+    serviceFeeSqm: nullableNumber(booking?.serviceFeeSqm),
+    businessSupportFeeSqm: nullableNumber(booking?.businessSupportFeeSqm),
+    // VISIBLE_BUSINESS_DEFAULT — rendered in section C of the shared form.
+    fitoutDays: 90,
     handoverDate: '',
     openingDate: '',
     specialConditions: booking?.notes ?? '',
+    // VISIBLE_BUSINESS_DEFAULT — rendered in section B.
+    paymentTermDays: 30,
+    // OPTIONAL_ZERO_ALLOWED — 0 is a legitimate commercial position (no such
+    // fee agreed), so these stay zero-prefilled and always submitted explicitly
+    // rather than relying on a backend `?? 0`.
+    utilityFee: 0,
+    afterHoursFee: 0,
+    depositFitout: 0,
+    fitoutFee: 0,
+    // DERIVED when blank — backend computes depositLease = deposit × monthlyRent.
+    depositLease: 0,
+    operatingHours: '',
   };
 }

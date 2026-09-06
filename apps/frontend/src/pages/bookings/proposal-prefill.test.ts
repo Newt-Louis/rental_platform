@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildProposalPrefill } from './proposal-prefill';
 
+/**
+ * NOTE ON REPRESENTATION — numeric fields are `number | null`, not strings.
+ * The conversion form binds them through `NumericField`/`useController`, which
+ * requires real numbers in form state (a controlled NumericFormat cannot be
+ * driven by `register()`). The currency-boundary fallback rules these tests
+ * protect are unchanged; only `'125'` → `125` and `''` → `null`.
+ */
 describe('buildProposalPrefill', () => {
   it('prioritizes approved sales pricing and inherits the booking terms', () => {
     const result = buildProposalPrefill({
@@ -25,8 +32,8 @@ describe('buildProposalPrefill', () => {
     });
 
     expect(result).toMatchObject({
-      area: '125', term: '48', rentPerSqm: '680000', camPerSqm: '85000',
-      escalationPercent: '6', notes: 'Điều kiện đã thống nhất tại booking',
+      area: 125, term: 48, rentPerSqm: 680000, camPerSqm: 85000,
+      escalationPercent: 6, notes: 'Điều kiện đã thống nhất tại booking',
     });
   });
 
@@ -42,7 +49,7 @@ describe('buildProposalPrefill', () => {
     });
 
     expect(result).toMatchObject({
-      area: '25', term: '12', rentPerSqm: '480000', camPerSqm: '50000', businessModel: 'KIOSK',
+      area: 25, term: 12, rentPerSqm: 480000, camPerSqm: 50000, businessModel: 'KIOSK',
     });
   });
 
@@ -77,8 +84,8 @@ describe('buildProposalPrefill', () => {
       },
     });
 
-    expect(result.rentPerSqm).toBe('323');
-    expect(result.camPerSqm).toBe('');
+    expect(result.rentPerSqm).toBe(323);
+    expect(result.camPerSqm).toBeNull();
   });
 
   it('still falls back to Unit.camPerSqm/baseRentPerSqm for a VND booking (unchanged behavior)', () => {
@@ -91,8 +98,8 @@ describe('buildProposalPrefill', () => {
       },
     });
 
-    expect(result.rentPerSqm).toBe('600000');
-    expect(result.camPerSqm).toBe('75000');
+    expect(result.rentPerSqm).toBe(600000);
+    expect(result.camPerSqm).toBe(75000);
   });
 
   // Units carry their own currencyCode now, so the fallback rule is "same currency as the
@@ -109,8 +116,8 @@ describe('buildProposalPrefill', () => {
       } as any,
     });
 
-    expect(result.rentPerSqm).toBe('25');
-    expect(result.camPerSqm).toBe('3');
+    expect(result.rentPerSqm).toBe(25);
+    expect(result.camPerSqm).toBe(3);
   });
 
   it('does not let a USD Unit prefill a VND booking', () => {
@@ -124,8 +131,8 @@ describe('buildProposalPrefill', () => {
       } as any,
     });
 
-    expect(result.rentPerSqm).toBe('');
-    expect(result.camPerSqm).toBe('');
+    expect(result.rentPerSqm).toBeNull();
+    expect(result.camPerSqm).toBeNull();
   });
 
   it('defaults to VND when the booking has no currencyCode', () => {
