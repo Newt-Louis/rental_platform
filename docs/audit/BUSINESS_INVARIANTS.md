@@ -53,7 +53,8 @@ funnel through · **PER-PATH** = each caller enforces it separately · **NONE**.
 | **MON-CUR-RS-03** | No FX conversion without an explicit policy | PER-PATH | no conversion code exists; mismatch fails closed | **HOLDS** |
 | **MON-CUR-RS-04** | The revenue-share Invoice carries the validated calculation currency | PER-PATH | `currencyCode` taken from the validated pair | **HOLDS** |
 | FIN-10 | One revenue-share invoice per contract/period | PER-PATH | `findFirst` then create, no transaction | **VIOLATED under concurrency** — BILL-002 |
-| FIN-11 | Amounts leaving the platform carry their currency | NONE | SAP payload has no currency field | **VIOLATED** — SAP-001 |
+| FIN-11 | Amounts leaving the platform carry their currency | CHOKEPOINT | `buildSapInvoicePayload` emits `currencyCode` from `Invoice.currencyCode`; missing or unsupported fails closed before any network call | **HOLDS** — SAP-001 fixed 2026-09-06 |
+| FIN-18 | No financial document leaves the platform without a resolved owning mall | CHOKEPOINT | `resolveSapInvoiceContext`: `Invoice.mallId` else `Contract → Unit`; unresolvable or inconsistent fails closed | **HOLDS** |
 | FIN-12 | `rentFree` has one unit platform-wide (RENTFREE-01) | CHOKEPOINT | `common/finance/rent-calculation.util.ts` — MONTHS | **HOLDS** — SEM-001 fixed |
 | FIN-13 | Billing, valuation, approval and UI use that same unit (RENTFREE-02) | CHOKEPOINT | billing and valuation share `baseRentForMonthIndex`; cross-layer test asserts it | **HOLDS** |
 | FIN-14 | No implicit days↔months conversion (RENTFREE-03) | PER-PATH | the only conversion is the explicit, logged legacy-rule shim | **HOLDS** |

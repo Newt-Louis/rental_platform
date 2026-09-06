@@ -14,7 +14,7 @@ Status of every currency invariant found during the audit. Companion to
 | **MON-CUR-RS-02** | Revenue-share operands share one currency | **HOLDS** — asserted before the calculation |
 | **MON-CUR-RS-03** | No FX conversion without an explicit policy | **HOLDS** — mismatch is rejected, never converted |
 | **MON-CUR-RS-04** | The revenue-share invoice carries the validated currency | **HOLDS** |
-| FIN-11 | Amounts leaving the platform carry their currency | **VIOLATED** — SAP-001 open |
+| FIN-11 | Amounts leaving the platform carry their currency | **HOLDS** — SAP-001 fixed 2026-09-06; downstream field NAME still unverified (SAP-002) |
 
 ---
 
@@ -127,9 +127,17 @@ longer overlaps. After re-seeding, both reconciliation scripts report
   `SapReconciliationRecord`, `OccupancySnapshot.revenuePerSqm` carry money with
   no currency.
 - **CUR-003** — every chain currency column is `@default(VND)`.
-- **SAP-001** — the SAP payload transmits no currency at all. **Do not describe
-  the currency chain as end-to-end**: it is verified as far as `Payment`, and
-  breaks at the outbound SAP boundary.
+- ~~**SAP-001**~~ — **FIXED 2026-09-06.** The payload now carries `currencyCode`
+  from `Invoice.currencyCode` and fails closed when it is missing, unsupported,
+  or when the owning mall cannot be resolved. The internal currency chain is now
+  continuous from `Unit` through to the SAP posting.
+  **Two caveats before calling this end-to-end:** the downstream field NAME is
+  unverified against a real SAP counterparty (SAP-002), and no organizational
+  finance dimensions are transmitted at all (SAP-003). See
+  `docs/audit/SAP_INTEGRATION_AUDIT.md`.
+- **SAP-004** *(new)* — `SapReconciliationRecord.ourAmount`/`sapAmount` still
+  carry no currency, so reconciliation compares two currency-less numbers. Part
+  of CUR-002, tracked separately because it is on the SAP boundary.
 - ~~**INT-002-SEED**~~ — **FIXED 2026-09-06.** Deterministic contract-in-force
   resolution by period + seed overlap removed. The residual point stands:
   "one live Contract per Unit" is still **application-enforced only**, so any

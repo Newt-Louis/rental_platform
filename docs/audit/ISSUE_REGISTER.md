@@ -1001,7 +1001,117 @@ single `runSerializable` call, as the sibling methods do.
 | Severity | **P1** |
 | Domain | Finance / SAP |
 | Backbone | 5 |
-| Status | **CONFIRMED** |
+| Status | **FIXED 2026-09-06 — regression tests passing** |
+| Invariants | **FIN-11**, **FIN-18** |
+
+**Resolution.** All SAP field mapping moved into one boundary,
+`src/modules/sap/sap-invoice-payload.ts`. The payload now carries `currencyCode`
+taken from `Invoice.currencyCode` — no VND default, no inference from amount
+scale, no locale, no FX conversion. Amounts are untouched; currency is added
+alongside them.
+
+**Mall ownership fixed in the same change.** The payload forwarded
+`mallId: invoice.mallId` verbatim, and that column is nullable. All six invoice
+sources were traced first (five set it from the contract/unit; the manual-create
+and revenue-share paths leave it null but always carry a `contractId`), which
+justifies the precedence: `Invoice.mallId`, else `Contract → Unit → mallId`. If
+both are present and disagree, or if neither resolves, the posting fails closed.
+`mallId: null` can no longer leave the platform.
+
+**Fail-closed conditions**, all evaluated before any network call and before any
+log row is written, so a rejected posting never leaves a misleading SUCCESS
+entry: `SAP_INVOICE_CURRENCY_MISSING`, `SAP_INVOICE_CURRENCY_UNSUPPORTED`,
+`SAP_INVOICE_MALL_UNRESOLVED`, `SAP_INVOICE_MALL_INCONSISTENT`. Each carries
+`invoiceId`, `contractId`, `tenantId`, `currencyCode`, `missingField` and every
+`mallResolutionInputs` value the decision used.
+
+**Stale queued payloads.** SAP is disabled, so every `syncInvoice` so far queued
+a PENDING log holding a payload built by the old currency-less mapper.
+`retryPending()` replayed those verbatim, which would have defeated this fix for
+every already-queued invoice the moment SAP was enabled. It now rebuilds the
+payload for INVOICE entities from current data, re-applying the fail-closed
+checks.
+
+**Idempotency unchanged** — `SapIntegrationLog.idempotencyKey`, the
+`Idempotency-Key` header, the SUCCESS short-circuit and the circuit breaker are
+untouched.
+
+**Regression test.** `sap-invoice-payload.spec.ts` — 24 tests covering VND/USD/
+MMK, missing and unsupported currency, mall derivation for both null-mallId
+sources, unresolvable and inconsistent mall, and that amounts are unchanged by
+currency mapping. Verified to catch the defect: reinstating the pre-fix payload
+fails 6 tests.
+
+**Full interface reconstruction:** `docs/audit/SAP_INTEGRATION_AUDIT.md`.
+
+---
+
+## SAP-002 — SAP currency field name is unverified
+
+| Field | Value |
+|---|---|
+| Severity | **P2** |
+| Domain | Finance / SAP |
+| Status | **OPEN — needs the SAP team** |
+
+There is no field-mapping specification, sample payload or fixture anywhere in
+the repository; `06-ERP-INTEGRATION-CATALOG.md` lists INT-001 (SAP) as an
+unfilled template, and CLAUDE.md calls the module a mock. The pre-existing SAP
+spec tests transport resilience only and never asserts payload content.
+
+`currencyCode` was chosen to match the existing bespoke envelope's camelCase
+convention and carries an ISO-4217 alphabetic code. A genuine S/4HANA OData
+service would more likely expect `TransactionCurrency`, and would distinguish
+document currency from company-code (local) currency. Also unverified: whether
+amount precision differs per currency (all amounts are `Float`, with no
+per-currency rounding rule).
+
+Confirm before go-live. Renaming is a one-line change in the mapper; the
+property this fix guarantees is that the currency is present and correct at
+source.
+
+---
+
+## SAP-003 — No organizational finance dimensions are transmitted
+
+| Field | Value |
+|---|---|
+| Severity | **P2** |
+| Domain | Finance / SAP |
+| Status | **OPEN — business/integration decision** |
+
+The posting carries no `companyCode`, `costCenter`, `profitCenter`,
+`glAccount`, `postingDate` or `documentDate`, and no `contractId`/`invoiceId` —
+only the human-readable `invoiceNumber`.
+
+`SapEntityMapping.sapCompanyCode` **does** exist (default `'1000'`, alongside
+`sapSystem: 'S4HANA'`) but is never read by the posting path. It was deliberately
+**not** wired in during the SAP-001 remediation: whether SAP requires these
+dimensions is an integration question, and defaulting a company code to `'1000'`
+would be inventing a finance dimension — exactly the class of error SAP-001
+exists to remove.
+
+---
+
+## SAP-004 — Reconciliation compares currency-less amounts
+
+| Field | Value |
+|---|---|
+| Severity | **P2** |
+| Domain | Finance / SAP |
+| Status | **OPEN** |
+
+`SapReconciliationRecord.ourAmount` and `sapAmount` have no currency column, so
+reconciliation compares two bare numbers. Part of CUR-002, tracked separately
+because it sits on the SAP boundary and was not in SAP-001's scope.
+
+---
+
+## SAP-001 — original defect description, retained
+
+| Field | Value |
+|---|---|
+| Status at discovery | CONFIRMED (Phase 3) |
 
 **Description.** The invoice posting payload (sap.service.ts:94-109) sends
 `amount`, `vatAmount`, `mallId`, `period`, `dueDate` and line items — and no

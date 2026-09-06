@@ -11,7 +11,7 @@ Invoice → Payment. "Derived" means the service reads it from the parent record
 | **mallId** | `Unit.mallId` | never copied onto Booking/Proposal/Contract | `expectedMallId` checked in `transition()`; `MallAccessGuard` + resolver registry | Invoice.mallId (some paths) | **lost** at manual invoice create and revenue-share create → NULL |
 | **unitId** | client (Booking create) | Booking→Proposal: client; Proposal→Contract: **derived** | unit exists + transition legal | Contract.unitId | direct-create path accepts client `unitId` alongside a client `proposalId` with no cross-check |
 | **tenantId** | Lead conversion / client | Proposal→Contract: **derived** from proposal | required NOT NULL; `createInvoice` verifies tenant belongs to contract | Contract, Invoice, Payment | direct-create path accepts client `tenantId` with no proposal cross-check |
-| **currency** | `Unit.currencyCode` | Booking `currencyCode` → Proposal `rentCurrency` → Contract `currencyCode` → schedule → Invoice → Payment | server-resolved at **every** hop; payment currency mismatch rejected outright | Payment.currencyCode | **dropped entirely at the SAP boundary** (SAP-001); absent on SalesTurnover (CUR-001) |
+| **currency** | `Unit.currencyCode` | Booking `currencyCode` → Proposal `rentCurrency` → Contract `currencyCode` → schedule → Invoice → Payment | server-resolved at **every** hop; payment currency mismatch rejected outright | Payment.currencyCode → SAP outbound payload | forwarded to SAP as `currencyCode` (SAP-001 fixed); downstream compatibility UNVERIFIED (SAP-002). `SalesTurnover` now carries its own currency (CUR-001 fixed); `SapReconciliationRecord` still does not (SAP-004) |
 | **rentPerSqm** | Unit.baseRentPerSqm | Booking.proposedRentPerSqm → Proposal.rentPerSqm | price-deviation approval routing vs CategoryMallPricing | Proposal | — |
 | **monthlyRent** | Proposal.monthlyRent | → `Contract.rent` (direct copy) | `rent < 0` rejected at activation | BillingScheduleEntry.rentAmount | — |
 | **cam** | Proposal.monthlyCAM | → `Contract.cam`, `?? 0` on direct create | `cam < 0` rejected at activation | BillingScheduleEntry.camAmount | `?? 0` default silently zeroes CAM on a direct create |
@@ -37,7 +37,7 @@ rather than assumed:
 | Schedule → Invoice | `currencyCode: row.contract.currencyCode` | billing.service.ts:413 |
 | Manual invoice | resolved from the contract server-side; `currencyCode` is **not in `CreateInvoiceDto`**, so the global `whitelist: true` ValidationPipe strips any client attempt before the service sees it | billing.service.ts:916-926, invoice.dto.ts:33-60 |
 | Invoice → Payment | `currencyCode: invoice.currencyCode`; an explicit mismatch is rejected, not coerced | billing.service.ts:1154-1156, 1205 |
-| **Invoice → SAP** | **currency is absent from the payload** | sap.service.ts:94-109 |
+| **Invoice → SAP** | `currencyCode` from `Invoice.currencyCode`; mall resolved via `Invoice.mallId` else `Contract → Unit`; both fail closed before transmission | sap-invoice-payload.ts (SAP-001, fixed 2026-09-06) |
 
 ## Revenue-share currency lineage (CUR-001, fixed 2026-09-06)
 
@@ -53,7 +53,7 @@ rather than assumed:
 | → revenue-share calculation | **VALIDATED** again | mismatch or NULL → **REJECTED**, no invoice, no FX conversion |
 | → Invoice.currencyCode | **COPIED** from the validated calculation currency | MON-CUR-RS-04 |
 | → Payment.currencyCode | **COPIED** from Invoice; mismatch rejected | unchanged |
-| → SAP | **LOST** | SAP-001 still open — the chain is verified only as far as Payment |
+| → SAP outbound payload | **FORWARDED** | `currencyCode` comes from `Invoice.currencyCode` through `buildSapInvoicePayload`; field presence is now enforced and fails closed, but downstream field-name/semantic compatibility remains **UNVERIFIED** (SAP-002) |
 
 The turnover row is the only place currency is *entered by a human*; every other
 hop derives or validates it. `NULL` on a legacy row is a distinct state meaning
@@ -76,8 +76,9 @@ and the invoices the contract goes on to issue are arithmetically the same
 number — asserted directly by the cross-layer regression test, including under
 compound escalation.
 
-The chain holds end to end inside the platform and breaks exactly once, at the
-outbound SAP boundary.
+The internal lineage is continuous from Unit through the outbound SAP payload.
+It is NOT yet end-to-end verified against a real SAP counterparty because
+SAP-002 and SAP-003 remain open.
 
 ## Where mallId is lost
 
@@ -100,5 +101,9 @@ every query that scopes on `Invoice.mallId` directly. That is a Phase 6 question
 and `ai.service.ts:203-207` shows at least one query already reasoning about it
 explicitly and failing closed.
 
-The SAP payload sends `mallId: invoice.mallId` verbatim (sap.service.ts:101), so
-an invoice from either path posts to SAP with `mallId: null`.
+The SAP payload used to send `mallId: invoice.mallId` verbatim, so an invoice
+from either path posted with `mallId: null`. Since SAP-001 the outbound mall is
+resolved (`Invoice.mallId`, else `Contract → Unit`) and an unresolvable or
+inconsistent mall fails closed before transmission, so a null mall can no longer
+leave the platform. The nullable column itself is unchanged and remains a
+Phase 6 query-scoping question.
