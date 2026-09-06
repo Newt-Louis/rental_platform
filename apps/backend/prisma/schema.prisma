@@ -2181,6 +2181,15 @@ model SalesTurnover {
   period       String
   grossSales   Float
   netSales     Float
+  // CUR-001: currency of grossSales/netSales. Deliberately NULLABLE with NO
+  // @default. Turnover reported before this column existed has an unprovable
+  // unit (the seed shipped VND-scale figures against USD and MMK contracts),
+  // so defaulting to VND would stamp a wrong currency onto real money.
+  // NULL means "reported before currency was captured; reconcile before
+  // billing". Every application write path supplies it explicitly, and
+  // revenue-share generation fails closed on NULL or on a mismatch with the
+  // Contract currency. See docs/audit/CURRENCY_AUDIT.md.
+  currencyCode CurrencyCode?
   transactions Int                 @default(0)
   status       SalesApprovalStatus @default(PENDING)
   recordedById String?

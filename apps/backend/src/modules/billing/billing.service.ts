@@ -6,7 +6,13 @@ import { StorageService } from '../../storage/storage.service';
 import { EmailService } from '../notifications/email.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
-import { formatMoney } from '../../common/utils/format-money';
+import { formatMoney, formatMoneyWithCode } from '../../common/utils/format-money';
+import {
+  CONTRACT_PERIOD_SELECT,
+  contractPeriodCandidateWhere,
+  isContractResolutionFailure,
+  resolveContractForPeriod,
+} from '../../common/finance/contract-period-resolver';
 import { CURRENCIES, SUPPORTED_CURRENCY_CODES } from '../../common/constants/currency.constants';
 
 // ServiceContract/ServiceContractPayment.currency are still free-text String columns
@@ -1135,31 +1141,10 @@ export class BillingService {
     idempotencyKey?: string;
     currencyCode?: CurrencyCode;
   }, currentUser?: CurrentUser) {
-    const invoice = await this.findOneInvoice(invoiceId, currentUser);
-    if (invoice.status === InvoiceStatus.CANCELLED) {
-      throw new BadRequestException('Hóa đơn đã bị hủy — không thể ghi nhận thanh toán');
-    }
-    const payableStatuses: InvoiceStatus[] = [
-      InvoiceStatus.ISSUED,
-      InvoiceStatus.PARTIALLY_PAID,
-      InvoiceStatus.OVERDUE,
-    ];
-    if (!payableStatuses.includes(invoice.status)) {
-      throw new BadRequestException('Chỉ có thể ghi nhận thanh toán cho hóa đơn đã phát hành');
-    }
-    // No FX settlement exists in this system (docs/program/MULTI_CURRENCY_ARCHITECTURE.md) —
-    // a payment's currency is always the invoice's. If a caller explicitly sends a
-    // different one, reject rather than silently coerce; the normal case (no
-    // currencyCode sent) inherits the invoice's currency automatically below.
-    if (dto.currencyCode && dto.currencyCode !== invoice.currencyCode) {
-      throw new BadRequestException(
-        `Đơn vị tiền tệ thanh toán (${dto.currencyCode}) không khớp với hóa đơn (${invoice.currencyCode}). Hệ thống chưa hỗ trợ thanh toán chuyển đổi ngoại tệ.`,
-      );
-    }
-    const { balance } = this.financials(invoice);
-    if (dto.amount > balance) {
-      throw new BadRequestException(`Số tiền thanh toán vượt quá dư nợ còn lại (${formatMoney(balance, invoice.currencyCode)})`);
-    }
+    // Authorization only. Every *business* precondition is re-evaluated inside
+    // the serializable transaction below — see TX-03 / BILL-001.
+    await this.findOneInvoice(invoiceId, currentUser);
+
     if (dto.paidAt && new Date(dto.paidAt).getTime() > Date.now() + 86_400_000) {
       throw new BadRequestException('Ngày thanh toán không được nằm trong tương lai');
     }
@@ -1194,16 +1179,68 @@ export class BillingService {
       }
     }
 
-    return this.runSerializableTransaction(async (tx) => {
+    try {
+      return await this.runSerializableTransaction(async (tx) => {
+      // ── BILL-001 / TX-03 ──────────────────────────────────────────────────
+      // Every precondition that decides whether this payment may be committed
+      // is evaluated HERE, against `tx`, so it is re-evaluated on every P2034
+      // retry. Previously the balance was computed from a pre-transaction read
+      // and never re-checked, so two concurrent payments that were each
+      // individually within the balance could both commit and overpay the
+      // invoice. Do not hoist any of these checks back out of the callback,
+      // and do not read them through `this.prisma` — a global read would not
+      // participate in this transaction's snapshot.
+      const current = await tx.invoice.findUnique({
+        where: { id: invoiceId },
+        include: { payments: { where: { reversedAt: null } } },
+      });
+      if (!current) throw new NotFoundException('Hóa đơn không tồn tại');
+
+      if (current.status === InvoiceStatus.CANCELLED) {
+        throw new BadRequestException('Hóa đơn đã bị hủy — không thể ghi nhận thanh toán');
+      }
+      const payableStatuses: InvoiceStatus[] = [
+        InvoiceStatus.ISSUED,
+        InvoiceStatus.PARTIALLY_PAID,
+        InvoiceStatus.OVERDUE,
+      ];
+      if (!payableStatuses.includes(current.status)) {
+        throw new BadRequestException('Chỉ có thể ghi nhận thanh toán cho hóa đơn đã phát hành');
+      }
+
+      // No FX settlement exists in this system (docs/program/MULTI_CURRENCY_ARCHITECTURE.md) —
+      // a payment's currency is always the invoice's. If a caller explicitly sends a
+      // different one, reject rather than silently coerce; the normal case (no
+      // currencyCode sent) inherits the invoice's currency automatically below.
+      if (dto.currencyCode && dto.currencyCode !== current.currencyCode) {
+        throw new BadRequestException(
+          `Đơn vị tiền tệ thanh toán (${dto.currencyCode}) không khớp với hóa đơn (${current.currencyCode}). Hệ thống chưa hỗ trợ thanh toán chuyển đổi ngoại tệ.`,
+        );
+      }
+
+      // PAY-02 — sum of non-reversed payments must never exceed the payable
+      // amount. `financials` excludes reversed payments, so a reversal frees
+      // the balance back up (reversal semantics unchanged).
+      const { balance } = this.financials(current);
+      if (dto.amount > balance) {
+        throw new BadRequestException({
+          code: 'PAYMENT_EXCEEDS_REMAINING_BALANCE',
+          message: `Số tiền thanh toán vượt quá dư nợ còn lại (${formatMoney(balance, current.currencyCode)})`,
+          invoiceId,
+          attemptedAmount: dto.amount,
+          remainingBalance: balance,
+        });
+      }
+
       let payment;
       try {
         payment = await tx.payment.create({
           data: {
             invoiceId,
-            tenantId: invoice.tenantId,
-            billingPartyId: invoice.billingPartyId,
+            tenantId: current.tenantId,
+            billingPartyId: current.billingPartyId,
             amount: dto.amount,
-            currencyCode: invoice.currencyCode,
+            currencyCode: current.currencyCode,
             method: dto.method ?? PaymentMethod.BANK_TRANSFER,
             reference: dto.reference,
             paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
@@ -1235,7 +1272,23 @@ export class BillingService {
 
       await this.recomputeInvoiceStatusFromPayments(invoiceId, tx);
       return payment;
-    });
+      });
+    } catch (error) {
+      // A caller must never see a raw serialization failure. If we lost the
+      // race on all attempts the honest answer is "another payment is being
+      // recorded against this invoice right now, retry" — not P2034.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        this.metrics.increment('payment_serialization_exhausted_total');
+        throw new ConflictException({
+          code: 'PAYMENT_CONCURRENT_MODIFICATION',
+          message:
+            'Hóa đơn đang được ghi nhận thanh toán bởi một yêu cầu khác. Vui lòng thử lại.',
+          invoiceId,
+          attemptedAmount: dto.amount,
+        });
+      }
+      throw error;
+    }
   }
 
   /** Tính lại trạng thái hóa đơn dựa trên tổng các bút toán CÒN HIỆU LỰC (chưa bị đảo). */
@@ -1505,29 +1558,150 @@ export class BillingService {
     });
 
     const created: any[] = [];
+    // CUR-001 — rows skipped because their currency could not be validated.
+    // Surfaced to the caller rather than swallowed, so an operator can see
+    // exactly which tenants were not billed and why.
+    const rejected: any[] = [];
+
+    // REVSHARE-02 — every turnover row the batch looks at must end in exactly
+    // one observable outcome. A financial batch that silently drops rows is
+    // indistinguishable from one that lost them.
+    const outcomes: any[] = [];
+    const identify = (sale: any) => ({
+      turnoverId: sale.id,
+      unitId: sale.unitId,
+      tenantId: sale.tenantId,
+      period,
+      tenant: sale.tenant?.brandName ?? null,
+      unit: sale.unit?.code ?? null,
+    });
+    // `rejected` stays an ACTION LIST — data problems an operator must fix.
+    // Ordinary non-billing outcomes (no contract on the unit, already invoiced)
+    // are observable in `skipped` and in the full `outcomes` ledger, but they
+    // are not alerts and must not dilute the alert list.
+    const skipped: any[] = [];
+    const record = (sale: any, outcome: string, detail: Record<string, unknown> = {}) => {
+      const entry = { ...identify(sale), outcome, ...detail };
+      outcomes.push(entry);
+      if (outcome === 'REJECTED') rejected.push(entry);
+      if (outcome === 'SKIPPED_WITH_REASON') skipped.push(entry);
+      return entry;
+    };
 
     for (const sale of sales) {
-      const contract = await this.prisma.contract.findFirst({
-        where: { tenantId: sale.tenantId, unitId: sale.unitId, isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] } },
-        include: { unit: true },
+      // ── REVSHARE-01 / CONTRACT-PERIOD-01 ──────────────────────────────────
+      // This used to be an unordered `findFirst` on (tenant, unit, ACTIVE|
+      // EXPIRING). With more than one live contract on a unit it picked
+      // arbitrarily, so the rent subtracted below and the currency stamped on
+      // the invoice were non-deterministic. Resolution is now by effective-date
+      // coverage of the whole period, and refuses to choose when 0 or >1 match.
+      const candidates = await this.prisma.contract.findMany({
+        where: contractPeriodCandidateWhere({ tenantId: sale.tenantId, unitId: sale.unitId }),
+        // proposalId is not part of the shared select (it is specific to
+        // revenue-share, which reads the percentage off the Proposal).
+        select: { ...CONTRACT_PERIOD_SELECT, proposalId: true },
       });
-      if (!contract) continue;
+      const resolution = resolveContractForPeriod(candidates, {
+        period,
+        tenantId: sale.tenantId,
+        unitId: sale.unitId,
+        turnoverId: sale.id,
+      });
+      if (isContractResolutionFailure(resolution)) {
+        // §7 — a unit with no contract is an ordinary case, not a data defect,
+        // but it must still be visible in the batch result rather than vanish.
+        // It is reported as SKIPPED_WITH_REASON; genuine data problems
+        // (ambiguity, split period, tenant mismatch) are REJECTED.
+        const { ok: _ok, ...failure } = resolution;
+        record(
+          sale,
+          resolution.code === 'NO_CONTRACT_FOR_TURNOVER_PERIOD' ? 'SKIPPED_WITH_REASON' : 'REJECTED',
+          failure,
+        );
+        continue;
+      }
+      const contract = resolution.contract;
 
       const proposal = contract.proposalId
         ? await this.prisma.proposal.findUnique({ where: { id: contract.proposalId }, select: { revenueSharePercent: true } })
         : null;
       const pct = proposal?.revenueSharePercent ?? 0;
-      if (!pct || pct <= 0) continue;
+      if (!pct || pct <= 0) {
+        record(sale, 'NO_AMOUNT_DUE', {
+          code: 'NO_REVENUE_SHARE_PERCENT',
+          contractId: contract.id,
+          message: 'Hợp đồng không có tỷ lệ chia sẻ doanh thu.',
+        });
+        continue;
+      }
 
-      // Revenue share = max(0, grossSales * pct% - monthlyRent)
+      // ── CUR-001 / MON-CUR-RS-02 ───────────────────────────────────────────
+      // The formula below subtracts a Contract-currency rent from a turnover
+      // figure. Those two operands MUST be the same unit. There is no FX engine
+      // in this platform (docs/program/MULTI_CURRENCY_ARCHITECTURE.md), so a
+      // mismatch cannot be converted and must never be silently computed — it
+      // previously produced an arithmetically meaningless amount that was then
+      // stamped with the Contract's currency and issued to the customer.
+      //
+      // Fails closed and skips the row rather than aborting the whole batch, so
+      // one bad tenant does not block every other tenant's revenue-share run.
+      // The rejection is reported back to the caller.
+      if (sale.currencyCode == null) {
+        record(sale, 'REJECTED', {
+          code: 'REVENUE_SHARE_CURRENCY_MISSING',
+          contractId: contract.id,
+          turnoverCurrency: null,
+          contractCurrency: contract.currencyCode,
+          message:
+            'Doanh thu chưa có đơn vị tiền tệ — không thể tính chia sẻ doanh thu. ' +
+            'Vui lòng khai báo lại đơn vị tiền tệ cho kỳ này.',
+        });
+        continue;
+      }
+      if (sale.currencyCode !== contract.currencyCode) {
+        record(sale, 'REJECTED', {
+          code: 'REVENUE_SHARE_CURRENCY_MISMATCH',
+          contractId: contract.id,
+          turnoverCurrency: sale.currencyCode,
+          contractCurrency: contract.currencyCode,
+          message:
+            `Doanh thu khai báo bằng ${sale.currencyCode} nhưng hợp đồng ` +
+            `${contract.contractNumber} dùng ${contract.currencyCode}. ` +
+            'Hệ thống không quy đổi ngoại tệ.',
+        });
+        continue;
+      }
+      const currencyCode = contract.currencyCode;
+
+      // Revenue share = max(0, grossSales * pct% - monthlyRent), both operands
+      // now proven to be in `currencyCode`.
       const shareAmount = Math.max(0, sale.grossSales * (pct / 100) - contract.rent);
-      if (shareAmount <= 0) continue;
+      if (shareAmount <= 0) {
+        // Turnover did not exceed the base rent — a legitimate nil outcome, but
+        // an operator asking "why was this tenant not invoiced" deserves an
+        // answer rather than absence.
+        record(sale, 'NO_AMOUNT_DUE', {
+          code: 'SHARE_BELOW_BASE_RENT',
+          contractId: contract.id,
+          currencyCode,
+          message: 'Doanh thu chia sẻ không vượt tiền thuê cơ bản — không phát sinh phải thu.',
+        });
+        continue;
+      }
 
-      // Skip if already exists
+      // Skip if already exists (BILL-002 tracks the concurrency gap here).
       const existing = await this.prisma.invoice.findFirst({
         where: { contractId: contract.id, period, type: 'REVENUE_SHARE' as any },
       });
-      if (existing) continue;
+      if (existing) {
+        record(sale, 'SKIPPED_WITH_REASON', {
+          code: 'ALREADY_BILLED',
+          contractId: contract.id,
+          invoiceNumber: existing.invoiceNumber,
+          message: 'Kỳ này đã có hóa đơn chia sẻ doanh thu.',
+        });
+        continue;
+      }
 
       const year = new Date().getFullYear();
       const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
@@ -1544,17 +1718,21 @@ export class BillingService {
           tenantId: sale.tenantId,
           period,
           type: 'REVENUE_SHARE' as any,
-          currencyCode: contract.currencyCode,
+          // MON-CUR-RS-04 — the validated calculation currency, which is now
+          // proven equal to both the turnover's and the Contract's.
+          currencyCode,
           subtotal: shareAmount,
           vatRate,
           vatAmount,
           totalAmount: shareAmount + vatAmount,
           dueDate,
-          notes: `Doanh thu chia sẻ ${pct}% từ doanh thu ${sale.grossSales.toLocaleString('vi-VN')} VNĐ kỳ ${period}`,
+          // CUR-001 — these strings hardcoded "VNĐ" regardless of the actual
+          // currency, so a USD invoice described its own basis as VND.
+          notes: `Doanh thu chia sẻ ${pct}% từ doanh thu ${formatMoneyWithCode(sale.grossSales, currencyCode)} kỳ ${period}`,
           lines: {
             create: [{
               type: 'REVENUE_SHARE',
-              description: `Revenue share ${pct}% — doanh thu ${period}: ${sale.grossSales.toLocaleString('vi-VN')} VNĐ`,
+              description: `Revenue share ${pct}% — doanh thu ${period}: ${formatMoneyWithCode(sale.grossSales, currencyCode)}`,
               qty: 1,
               unitPrice: shareAmount,
               amount: shareAmount,
@@ -1564,9 +1742,32 @@ export class BillingService {
         },
       });
       created.push(inv);
+      record(sale, 'INVOICE_CREATED', {
+        contractId: contract.id,
+        invoiceNumber: inv.invoiceNumber,
+        currencyCode,
+        subtotal: shareAmount,
+      });
     }
 
-    return { created: created.length, invoices: created.map((i) => i.invoiceNumber) };
+    // REVSHARE-02 — one outcome per row examined, no exceptions.
+    if (outcomes.length !== sales.length) {
+      this.logger.error(JSON.stringify({
+        event: 'revenue_share.outcome_ledger_mismatch',
+        period, examined: sales.length, recorded: outcomes.length,
+      }));
+    }
+
+    return {
+      created: created.length,
+      invoices: created.map((i) => i.invoiceNumber),
+      examined: sales.length,
+      outcomes,
+      rejected,
+      rejectedCount: rejected.length,
+      skipped,
+      skippedCount: skipped.length,
+    };
   }
 
   async exportInvoicesExcel(query: {

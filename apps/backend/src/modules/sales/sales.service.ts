@@ -1,5 +1,12 @@
-import { Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  CONTRACT_PERIOD_SELECT,
+  contractPeriodCandidateWhere,
+  isContractResolutionFailure,
+  resolveContractForPeriod,
+} from '../../common/finance/contract-period-resolver';
 
 interface CurrentUser {
   id: string;
@@ -15,11 +22,32 @@ export class SalesService {
     if (currentUser.role !== 'TENANT' || !currentUser.tenantId) {
       throw new ForbiddenException('Chỉ tài khoản khách thuê được sử dụng danh sách mặt bằng báo cáo');
     }
-    return this.prisma.unit.findMany({
+    const units = await this.prisma.unit.findMany({
       where: { tenantId: currentUser.tenantId },
       select: { id: true, code: true, name: true, areaNLA: true },
       orderBy: { code: 'asc' },
     });
+
+    // CUR-001 — turnover must be reported in the Contract's currency, so the
+    // submission form needs to know and display that currency per unit rather
+    // than leaving the tenant to guess (or the backend to assume VND).
+    const contracts = await this.prisma.contract.findMany({
+      where: {
+        tenantId: currentUser.tenantId,
+        unitId: { in: units.map((u) => u.id) },
+        isActive: true,
+        status: { in: ['ACTIVE', 'EXPIRING'] },
+      },
+      select: { unitId: true, currencyCode: true },
+    });
+    const currencyByUnit = new Map(contracts.map((c) => [c.unitId, c.currencyCode]));
+
+    return units.map((unit) => ({
+      ...unit,
+      // null when the unit has no live contract — the UI must then ask the user
+      // to choose explicitly instead of defaulting.
+      contractCurrencyCode: currencyByUnit.get(unit.id) ?? null,
+    }));
   }
 
   async findAll(query: { tenantId?: string; period?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
@@ -52,11 +80,62 @@ export class SalesService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async create(dto: { tenantId: string; unitId: string; date: string; period: string; grossSales: number; netSales: number; transactions?: number; notes?: string }, userId: string, currentUser?: CurrentUser) {
+  /**
+   * CUR-001 — turnover must be reported in the Contract's currency.
+   *
+   * Business policy (confirmed 2026-09-06): no FX conversion exists in this
+   * platform, so revenue-share cannot mix units. Rather than converting or
+   * assuming, a mismatch is rejected at the point of entry — the earliest place
+   * a human can still correct it — and again at billing time.
+   *
+   * When no live contract exists for the tenant/unit there is nothing to
+   * validate against; the turnover is still recorded with its explicit
+   * currency, and revenue-share generation will re-check before it bills.
+   */
+  private async assertTurnoverCurrencyMatchesContract(
+    tenantId: string,
+    unitId: string,
+    period: string,
+    currencyCode: CurrencyCode,
+  ) {
+    // REVSHARE-01 — resolve the SAME contract billing will resolve. Sales
+    // submission and revenue-share generation must never disagree about which
+    // contract governs a turnover row; both go through
+    // `resolveContractForPeriod` over `contractPeriodCandidateWhere`.
+    const candidates = await this.prisma.contract.findMany({
+      where: contractPeriodCandidateWhere({ tenantId, unitId }),
+      select: CONTRACT_PERIOD_SELECT,
+    });
+    const resolution = resolveContractForPeriod(candidates, { period, tenantId, unitId });
+
+    // No single governing contract (none, ambiguous, or a split period) means
+    // there is nothing to validate the currency against. The turnover is still
+    // recorded with its explicit currency; revenue-share generation fails
+    // closed on the same condition, so nothing is mis-billed in the meantime.
+    if (isContractResolutionFailure(resolution)) return;
+
+    const contract = resolution.contract;
+    if (contract.currencyCode !== currencyCode) {
+      throw new BadRequestException({
+        code: 'TURNOVER_CURRENCY_MISMATCH',
+        message:
+          `Doanh thu khai báo bằng ${currencyCode} nhưng hợp đồng ${contract.contractNumber} ` +
+          `dùng ${contract.currencyCode}. Hệ thống không quy đổi ngoại tệ — vui lòng khai báo ` +
+          `doanh thu theo đúng đơn vị tiền tệ của hợp đồng.`,
+        contractId: contract.id,
+        contractCurrency: contract.currencyCode,
+        turnoverCurrency: currencyCode,
+      });
+    }
+  }
+
+  async create(dto: { tenantId: string; unitId: string; date: string; period: string; grossSales: number; netSales: number; currencyCode: CurrencyCode; transactions?: number; notes?: string }, userId: string, currentUser?: CurrentUser) {
     if (currentUser?.role === 'TENANT') {
       if (!currentUser.tenantId) throw new ForbiddenException('Tài khoản của bạn chưa được liên kết với khách thuê nào');
       dto = { ...dto, tenantId: currentUser.tenantId };
     }
+
+    await this.assertTurnoverCurrencyMatchesContract(dto.tenantId, dto.unitId, dto.period, dto.currencyCode);
 
     const existing = await this.prisma.salesTurnover.findUnique({
       where: { tenantId_unitId_period: { tenantId: dto.tenantId, unitId: dto.unitId, period: dto.period } },
@@ -68,6 +147,7 @@ export class SalesService {
         data: {
           grossSales: dto.grossSales,
           netSales: dto.netSales,
+          currencyCode: dto.currencyCode,
           transactions: dto.transactions ?? 0,
           notes: dto.notes,
           recordedById: userId,
@@ -89,6 +169,7 @@ export class SalesService {
         period: dto.period,
         grossSales: dto.grossSales,
         netSales: dto.netSales,
+        currencyCode: dto.currencyCode,
         transactions: dto.transactions ?? 0,
         notes: dto.notes,
         recordedById: userId,

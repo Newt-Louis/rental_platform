@@ -101,13 +101,10 @@ export function computeAfterHoursCoolingCharge(
   };
 }
 
-export function periodBounds(period: string): { periodStart: Date; periodEnd: Date } {
-  const [year, month] = period.split('-').map(Number);
-  return {
-    periodStart: new Date(Date.UTC(year, month - 1, 1)),
-    periodEnd: new Date(Date.UTC(year, month, 0)),
-  };
-}
+// Canonical implementation now lives in common/finance/period.util so that
+// turnover-to-contract resolution and billing cannot drift onto different
+// definitions of a period boundary. Re-exported here for existing callers.
+export { periodBounds } from '../../common/finance/period.util';
 
 // Billing Add-in's own cron fires at a fixed wall-clock hour in Asia/Ho_Chi_Minh (UTC+7, no DST).
 // `asOf` is always a UTC instant (`new Date()`), so reading it with UTC getters directly is wrong

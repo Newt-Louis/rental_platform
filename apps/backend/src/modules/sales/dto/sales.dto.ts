@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
+import { CurrencyCode } from '@prisma/client';
 import {
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -29,6 +31,14 @@ export class CreateSalesDto {
 
   @Type(() => Number) @IsNumber() @Min(0)
   netSales!: number;
+
+  /**
+   * CUR-001 — REQUIRED. grossSales/netSales are meaningless without a unit, and
+   * revenue-share billing subtracts a Contract-currency rent from this figure.
+   * Must equal the Contract currency; the service validates that.
+   */
+  @IsEnum(CurrencyCode, { message: 'currencyCode phải là một trong: VND, USD, MMK' })
+  currencyCode!: CurrencyCode;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(0)
   transactions?: number;

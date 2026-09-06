@@ -5,9 +5,12 @@ describe('SalesService submission audit', () => {
     salesTurnover: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     salesAuditTrail: { create: jest.fn() },
     unit: { findMany: jest.fn() },
+    // CUR-001: create() now validates the turnover currency against the
+    // tenant's live contract before writing.
+    contract: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
   };
   const service = new SalesService(prisma);
-  const dto = { tenantId: 'tenant-1', unitId: 'unit-1', date: '2026-07-01', period: '2026-07', grossSales: 120, netSales: 100, transactions: 5 };
+  const dto = { tenantId: 'tenant-1', unitId: 'unit-1', date: '2026-07-01', period: '2026-07', grossSales: 120, netSales: 100, currencyCode: 'VND' as const, transactions: 5 };
 
   beforeEach(() => jest.clearAllMocks());
 

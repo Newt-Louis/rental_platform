@@ -47,9 +47,13 @@ describe('BillingService payment transaction safety', () => {
     tx.payment.create.mockResolvedValue({ id: 'payment-1', amount: 100 });
     tx.invoice.findUnique.mockResolvedValue({
       id: 'invoice-1',
+      tenantId: 'tenant-1',
       totalAmount: 100,
+      currencyCode: 'VND',
       status: InvoiceStatus.ISSUED,
       issuedAt: new Date(),
+      dueDate: new Date(),
+      payments: [],
     });
     tx.payment.findMany.mockResolvedValue([{ amount: 100 }]);
 
@@ -75,10 +79,19 @@ describe('BillingService payment transaction safety', () => {
     tx.payment.create.mockResolvedValue({ id: 'payment-parking', amount: 1_100 });
     tx.payment.findMany.mockResolvedValue([{ amount: 1_100, reversedAt: null }]);
     tx.invoice.findUnique
+      // 1st read — BILL-001 in-transaction precondition/balance decision.
       .mockResolvedValueOnce({
-        id: 'invoice-parking', totalAmount: 1_100, refundedAmount: 0,
-        status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+        id: 'invoice-parking', tenantId: 'tenant-1', totalAmount: 1_100, refundedAmount: 0,
+        currencyCode: 'VND', status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+        dueDate: new Date(), payments: [],
       })
+      // 2nd read — recomputeInvoiceStatusFromPayments.
+      .mockResolvedValueOnce({
+        id: 'invoice-parking', tenantId: 'tenant-1', totalAmount: 1_100, refundedAmount: 0,
+        currencyCode: 'VND', status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+        dueDate: new Date(), payments: [],
+      })
+      // 3rd read — syncSourceReceivable.
       .mockResolvedValueOnce({
         id: 'invoice-parking', sourceType: 'PARKING', sourceId: 'statement-1',
         status: InvoiceStatus.PAID, refundedAmount: 0,
@@ -151,9 +164,13 @@ describe('BillingService payment transaction safety', () => {
     tx.payment.create.mockResolvedValue({ id: 'payment-1' });
     tx.invoice.findUnique.mockResolvedValue({
       id: 'invoice-1',
+      tenantId: 'tenant-1',
       totalAmount: 100,
+      currencyCode: 'VND',
       status: InvoiceStatus.ISSUED,
       issuedAt: new Date(),
+      dueDate: new Date(),
+      payments: [],
     });
     tx.payment.findMany.mockResolvedValue([{ amount: 100 }]);
 
@@ -183,9 +200,13 @@ describe('BillingService payment transaction safety', () => {
     tx.payment.create.mockResolvedValue({ id: 'payment-1' });
     tx.invoice.findUnique.mockResolvedValue({
       id: 'invoice-1',
+      tenantId: 'tenant-1',
       totalAmount: 100,
+      currencyCode: 'VND',
       status: InvoiceStatus.ISSUED,
       issuedAt: new Date(),
+      dueDate: new Date(),
+      payments: [],
     });
     tx.payment.findMany.mockResolvedValue([{ amount: 100 }]);
 
@@ -208,8 +229,15 @@ describe('BillingService payment transaction safety', () => {
     );
     prisma.$transaction.mockRejectedValue(conflict);
 
+    // BILL-001 §9: a caller must never see a raw Prisma serialization failure.
+    // After the retry budget is exhausted the loser gets a deterministic
+    // business error naming the invoice and the amount it tried to record.
     await expect(service.recordPayment('invoice-1', { amount: 100 })).rejects.toMatchObject({
-      code: 'P2034',
+      response: {
+        code: 'PAYMENT_CONCURRENT_MODIFICATION',
+        invoiceId: 'invoice-1',
+        attemptedAmount: 100,
+      },
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(3);
   });

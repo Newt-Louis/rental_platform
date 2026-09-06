@@ -244,13 +244,16 @@ async function main() {
       },
       {
         code: 'MALL_DIRECTOR_LONG_RENT_FREE',
-        name: 'Mall Director on rent free > 60 days',
+        // SEM-001: was 'rent free > 60 days' against a value denominated in
+        // months, so it could never fire. Confirmed business rule: rent-free
+        // greater than 2 months requires Mall Director approval.
+        name: 'Mall Director on rent free > 2 months',
         stepName: 'Mall Director Approval',
         stepOrder: 40,
         approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'RENT_FREE_DAYS',
+        conditionType: 'RENT_FREE_MONTHS',
         operator: '>',
-        threshold: 60,
+        threshold: 2,
         isRequired: false,
         isActive: true,
       },
@@ -996,7 +999,10 @@ async function main() {
         rentPerSqm: rentPerSqm * currencyScale,
         camPerSqm: unit.camPerSqm * currencyScale,
         deposit: depositMonths,
-        rentFree: i % 3 === 0 ? 30 : 0,
+        // SEM-001 — MONTHS, never days. This used to seed 30, which billing
+        // reads as a 30-MONTH rent-free concession on a 36-month lease.
+        // 3 months also exercises the "> 2 months → Mall Director" policy rule.
+        rentFree: i % 3 === 0 ? 3 : 0,
         escalationPercent: 5,
         revenueSharePercent: 0,
         marketingFee: 0,
@@ -1029,7 +1035,15 @@ async function main() {
   const contracts = [];
   for (let i = 0; i < 15; i++) {
     const tenant = tenants[i % 10];
-    const unit = units[i < 10 ? i : i % 10];
+    // INT-002-SEED / CONTRACT-PERIOD-01: this used to be
+    // `units[i < 10 ? i : i % 10]`, which put contracts 10-14 back onto units
+    // 0-4 with overlapping effective periods — two live contracts on one unit,
+    // a state ContractsService.create() rejects but a direct seed write bypasses.
+    // Revenue-share then could not determine which contract (and which
+    // currency) governed a turnover row. Each contract now gets its own unit;
+    // there are 30 seeded units, so units 10-14 are free.
+    // A tenant legitimately holds several units, so `tenants[i % 10]` stays.
+    const unit = units[i];
     // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): contract #1
     // and #2 carry over the USD/MMK currency of proposals[0]/proposals[1] above -- the
     // Proposal.rentCurrency -> Contract.currencyCode invariant must hold in seed data too,
@@ -1332,9 +1346,22 @@ async function main() {
     for (let i = 0; i < 10; i++) {
       const tenant = tenants[i];
       const unit = units[i];
-      const grossSales = Math.floor(Math.random() * 500000000) + 100000000;
-      const netSales = grossSales * 0.9;
       const [year, month] = period.split('-');
+
+      // CUR-001: turnover must be reported in the Contract's currency. The seed
+      // used to plant VND-scale figures against every tenant, including the USD
+      // and MMK contracts -- exactly the mismatch revenue-share billing now
+      // refuses to bill. Scale the figure to the contract's currency and record
+      // that currency explicitly.
+      const turnoverContract = await prisma.contract.findFirst({
+        where: { tenantId: tenant.id, unitId: unit.id, isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] } },
+        select: { currencyCode: true },
+      });
+      const turnoverCurrency = turnoverContract?.currencyCode ?? 'VND';
+      const turnoverScale = turnoverCurrency === 'USD' ? 1 / 24000 : turnoverCurrency === 'MMK' ? 1 / 11 : 1;
+      const grossSalesVnd = Math.floor(Math.random() * 500000000) + 100000000;
+      const grossSales = Math.round(grossSalesVnd * turnoverScale * 100) / 100;
+      const netSales = Math.round(grossSales * 0.9 * 100) / 100;
 
       await prisma.salesTurnover.create({
         data: {
@@ -1344,6 +1371,7 @@ async function main() {
           period: period,
           grossSales: grossSales,
           netSales: netSales,
+          currencyCode: turnoverCurrency,
           transactions: Math.floor(Math.random() * 2000) + 500,
           recordedById: financeUser.id,
           notes: `Sales report for ${period}`,
@@ -1382,7 +1410,7 @@ async function main() {
 
       const steps = buildApprovalStepsFromRules(approvalRules, {
         discountPct: proposal.discount ?? 0,
-        rentFreeDays: proposal.rentFree ?? 0,
+        rentFreeMonths: proposal.rentFree ?? 0,
         industryTag: null,
         hasArDebt: false,
       });
