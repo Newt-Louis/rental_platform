@@ -80,3 +80,51 @@ funnel through · **PER-PATH** = each caller enforces it separately · **NONE**.
 | MALL-01 | A user only reads data from malls they can access | `MallAccessGuard` + `@Scope`; MALL-001/SCOPE-001 still open |
 | MALL-02 | An operation never spans two malls | bulk unit update and merge both reject multi-mall sets explicitly; `expectedMallId` enforced in `transition()` |
 | MALL-03 | Every core entity resolves to exactly one mall | holds structurally; `Invoice.mallId = NULL` rows resolve via contract instead — INT-001 |
+
+## Reporting currency (audited 2026-09-06 — proposed, NOT yet enforced)
+
+Established by `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md`. These are audit
+findings, not implemented guarantees.
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| RPT-CUR-01 | Every monetary KPI exposed by Dashboard/Reports/Analytics carries explicit currency context | NONE | **VIOLATED** — 3 APIs, 14 UI sites |
+| RPT-CUR-02 | Amounts in different currencies are never SUM/AVG together without an approved FX policy | PER-PATH | **VIOLATED** — `ai.service.ts:229` (SUM), `occupancy-analytics.service.ts:257` (AVG) |
+| RPT-CUR-03 | Management APIs preserve the currency dimension through grouping and aggregation | NONE | **VIOLATED** — `/dashboard/cross-mall`, `/crm/pipeline/stats`, `/analytics/occupancy` |
+| RPT-CUR-04 | Frontend presentation uses the currency supplied by the data source; never hardcodes VND for multi-currency data | NONE | **VIOLATED** — 4 of 14 sites sit over currency-less sources |
+| RPT-CUR-05 | Monetary ranking across currencies requires explicit FX; without it results stay separated | NONE | **PARTIAL** — SalesPage turnover ranking |
+| RPT-CUR-06 | A missing currency is never silently interpreted as VND | NONE | **VIOLATED** — `lib/currency.ts:26,43,56` default `'VND'` **and** `?? CURRENCIES.VND` |
+| RPT-CUR-07 | A monetary chart series never mixes incompatible currencies | PER-PATH | **HOLDS today** via upstream VND-scoping; risk inherited from the aggregates |
+| RPT-CUR-08 | A VND-scoped KPI must disclose that it is VND-scoped | NONE | **VIOLATED everywhere** — the systemic finding |
+
+Positive findings worth protecting: `reports.service.ts:101-116` groups proposal
+value by `(status, rentCurrency)`; `service-contracts.service.ts:277` groups by
+`currency`; `billing.service.ts:850-869` keeps per-currency AR buckets. No code
+anywhere attempts FX conversion — that restraint is correct and must be kept.
+
+### Wave 1 status (2026-09-06) — partially enforced
+
+The invariants above were audit findings. Wave 1 made three of them enforced on
+a bounded surface: the Cross-Mall CEO screen and the three management APIs.
+
+| ID | Status after Wave 1 |
+|---|---|
+| RPT-CUR-01 | **PARTIAL** — HOLDS for `/dashboard/cross-mall`, `/analytics/occupancy`, `/crm/pipeline/stats`. Still VIOLATED for the single-mall dashboard, reports, AI and compliance surfaces. |
+| RPT-CUR-02 | **PARTIAL** — the `totalMonthlyBillingRevenue` SUM is fixed. `ai.service.ts:229` (SUM) and `occupancy-analytics.service.ts` `avgRentPerSqm` (AVG) still VIOLATE it; the AVG is deferred by decision, not by oversight, and is now flagged with `avgRentCurrencyMixed`. |
+| RPT-CUR-03 | **HOLDS** for all three management APIs. Aggregation grouping now preserves currency end to end, including the cross-mall merge across malls. |
+| RPT-CUR-04 | **PARTIAL** — the Cross-Mall CEO screen now renders the currency supplied by the source. Other screens unchanged. |
+| RPT-CUR-06 | **VIOLATED still** — the shared formatters keep their `'VND'` default (out of scope). Mitigated locally: every Wave 1 call site passes the currency explicitly, so the default cannot fire on these screens. |
+| RPT-CUR-08 | **PARTIAL** — a VND-scoped scalar now declares its scope via `revenueScalarCurrency` / `billingRevenueScalarCurrency` / `proposalValueCurrency` on the three fixed APIs. |
+
+New enforced invariant introduced by Wave 1:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-RPT-01** | A monetary field in a management API response either carries its currency, or explicitly declares that its currency is unknown or scoped — it is never left for the consumer to assume | PER-PATH + regression tests | **HOLDS** for `/dashboard/cross-mall`, `/analytics/occupancy`, `/crm/pipeline/stats` |
+
+The "declares unknown" half matters: `pipelineValueCurrencyUnknown` (Lead) and
+`revenueCurrencyUnknown` (SlotBooking) satisfy the invariant without inventing a
+currency for data that genuinely has none. Removing either flag without first
+adding the corresponding schema column re-violates MON-CUR-RPT-01.
+
+Still true: no FX conversion exists anywhere in the platform.

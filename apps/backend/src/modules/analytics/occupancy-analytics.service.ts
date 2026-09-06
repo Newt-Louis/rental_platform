@@ -1,9 +1,50 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UnitStatus } from '@prisma/client';
+import { UnitStatus, CurrencyCode } from '@prisma/client';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
+
+/**
+ * RPT-CUR-002 — billing revenue per currency.
+ *
+ * `Unit.baseRentPerSqm` / `camPerSqm` are denominated in `Unit.currencyCode`.
+ * Adding them across currencies produces a number with no unit of account, so
+ * they are grouped instead. Buckets are emitted in a stable order and a
+ * currency with no occupied units simply does not appear.
+ */
+export type UnitBillingRevenueBucket = {
+  currencyCode: CurrencyCode;
+  totalMonthlyBillingRevenue: number;
+  occupiedUnits: number;
+};
+
+const UNIT_CURRENCY_ORDER: CurrencyCode[] = ['VND', 'USD', 'MMK'];
+
+export function groupUnitRevenueByCurrency(
+  units: { baseRentPerSqm: number; camPerSqm?: number | null; areaNLA: number; currencyCode: CurrencyCode }[],
+): UnitBillingRevenueBucket[] {
+  const byCurrency = new Map<CurrencyCode, { total: number; count: number }>();
+  for (const u of units) {
+    const acc = byCurrency.get(u.currencyCode) ?? { total: 0, count: 0 };
+    acc.total += (u.baseRentPerSqm + (u.camPerSqm ?? 0)) * u.areaNLA;
+    acc.count += 1;
+    byCurrency.set(u.currencyCode, acc);
+  }
+  return [...byCurrency.entries()]
+    .sort((a, b) => {
+      const rank = (c: CurrencyCode) => {
+        const i = UNIT_CURRENCY_ORDER.indexOf(c);
+        return i === -1 ? 99 : i;
+      };
+      return rank(a[0]) - rank(b[0]);
+    })
+    .map(([currencyCode, v]) => ({
+      currencyCode,
+      totalMonthlyBillingRevenue: Math.round(v.total),
+      occupiedUnits: v.count,
+    }));
+}
 
 @Injectable()
 export class OccupancyAnalyticsService {
@@ -26,6 +67,8 @@ export class OccupancyAnalyticsService {
         areaNLA: true,
         baseRentPerSqm: true,
         camPerSqm: true,
+        // RPT-CUR-002: needed to bucket rent by its actual unit of account.
+        currencyCode: true,
         category: true,
         categoryId: true,
         leaseTermType: true,
@@ -77,10 +120,16 @@ export class OccupancyAnalyticsService {
       : 0;
 
     // GAP #26 — avgRentPerSqm theo floor; GAP #29 — totalMonthlyBillingRevenue
-    const totalMonthlyBillingRevenue = occupied.reduce(
-      (s, u) => s + (u.baseRentPerSqm + (u.camPerSqm ?? 0)) * u.areaNLA,
-      0,
-    );
+    //
+    // RPT-CUR-002 (Wave 1): this reduce() used to add every occupied unit's
+    // rent together regardless of `Unit.currencyCode`, producing a VND + USD +
+    // MMK sum with no unit of account. There is no FX engine, so the amounts
+    // are GROUPED by currency instead. `Unit.currencyCode` is NOT NULL with a
+    // default, so every unit lands in exactly one bucket -- no schema change
+    // was needed for this.
+    const billingRevenueByCurrency = groupUnitRevenueByCurrency(occupied);
+    const vndBillingRevenue = billingRevenueByCurrency
+      .find((b) => b.currencyCode === 'VND')?.totalMonthlyBillingRevenue ?? 0;
 
     const byCategory = await this.groupByCategoryHierarchical(units);
     const byFloor = this.groupByFieldWithRent(units, 'floor');
@@ -111,7 +160,16 @@ export class OccupancyAnalyticsService {
         occupancyRate,
         effectiveOccupancy,
         // GAP #29 — doanh thu tiền thuê (billing) phân biệt với doanh thu tenant (sales)
-        totalMonthlyBillingRevenue: Math.round(totalMonthlyBillingRevenue),
+        //
+        // RPT-CUR-002 — the authoritative monetary contract: one entry per
+        // currency, never a combined total.
+        billingRevenueByCurrency,
+        // Legacy scalar, retained for backward compatibility. It is VND-ONLY
+        // and `billingRevenueScalarCurrency` says so, so a consumer cannot
+        // mistake it for a system-wide total. Previously this was a
+        // cross-currency sum.
+        billingRevenueScalarCurrency: 'VND' as CurrencyCode,
+        totalMonthlyBillingRevenue: Math.round(vndBillingRevenue),
       },
       byCategory,
       byFloor,
@@ -231,7 +289,10 @@ export class OccupancyAnalyticsService {
     for (const unit of units) {
       const key = field === 'floor' ? unit.floor?.name ?? 'Unknown' : unit[field] ?? 'Unknown';
       if (!groups[key]) {
-        groups[key] = { total: 0, occupied: 0, vacant: 0, area: 0, occupiedArea: 0, rentSum: 0, occupiedCount: 0 };
+        groups[key] = {
+          total: 0, occupied: 0, vacant: 0, area: 0, occupiedArea: 0, rentSum: 0, occupiedCount: 0,
+          currencies: new Set<CurrencyCode>(),
+        };
       }
       const g = groups[key];
       g.total++;
@@ -241,6 +302,7 @@ export class OccupancyAnalyticsService {
         g.occupiedArea += unit.areaNLA ?? 0;
         g.rentSum += unit.baseRentPerSqm ?? 0;
         g.occupiedCount++;
+        g.currencies.add(unit.currencyCode as CurrencyCode);
       } else if (unit.status === UnitStatus.VACANT) {
         g.vacant++;
       }
@@ -254,7 +316,21 @@ export class OccupancyAnalyticsService {
       area: data.area,
       occupiedArea: data.occupiedArea,
       // GAP #26 — giá thuê trung bình/m² của các unit OCCUPIED
+      //
+      // RPT-CUR-002 — KNOWN DEFECT, DEFERRED (Wave 1 scope fence). This averages
+      // `Unit.baseRentPerSqm` across whatever currencies the group's occupied
+      // units carry, so once a floor mixes VND and USD the number has no unit
+      // of account. It is NOT corrected here because splitting it per currency
+      // changes what `avgRentPerSqm` MEANS (one figure becomes a set), which is
+      // a reporting-policy decision the business has not made.
+      //
+      // What IS done: the currency mix is disclosed, so a consumer can tell a
+      // trustworthy average from an untrustworthy one instead of having to
+      // assume. Do not remove these two fields while avgRentPerSqm is still a
+      // single scalar.
       avgRentPerSqm: data.occupiedCount > 0 ? Math.round(data.rentSum / data.occupiedCount) : 0,
+      avgRentCurrencies: [...(data.currencies as Set<CurrencyCode>)],
+      avgRentCurrencyMixed: (data.currencies as Set<CurrencyCode>).size > 1,
       occupancyRate: data.area > 0 ? Math.round((data.occupiedArea / data.area) * 1000) / 10 : 0,
     }));
   }

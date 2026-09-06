@@ -1358,3 +1358,76 @@ tests are not lost and so the audit can verify no sibling instances remain.
 CUR-F05 is the pattern this audit must generalise: a frontend fix alone was
 insufficient because the API had already stripped the field. Every currency
 finding must be checked at **both** layers.
+
+---
+
+# MULTI-CURRENCY REPORTING AUDIT — 2026-09-06
+
+Read-only audit. **No code, schema, migration, seed or production data changed.**
+Full evidence: `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md`.
+
+Context: the transactional chain is currency-correct after CUR-001/SAP-001. The
+reporting layer is a separate problem, and it fails less by miscalculating than
+by *omitting* — a dozen queries are explicitly scoped to `currencyCode: 'VND'`,
+which is arithmetically safe but makes USD/MMK business invisible to management
+with no disclosure on screen.
+
+| ID | Title | Class | Severity | Evidence |
+|---|---|---|---|---|
+| RPT-CUR-001 | AI assistant sums VND+USD+MMK turnover and labels it "VNĐ" | AGG-CUR + UI-HC | **P1** | `ai.service.ts:229-234`; live data 2,287,113,472 VND + 5,488.01 USD + 24,995,784.55 MMK summed to 2,312,114,744 |
+| RPT-CUR-002 | `avgRentPerSqm` averages `Unit.baseRentPerSqm` across currencies | AGG-CUR (AVG) | **P1** | `occupancy-analytics.service.ts:243,257`; latent today (all units VND) but reachable via the Spaces currency selector |
+| RPT-CUR-003 | Three management APIs return money with no currency dimension | API-CUR | **P1** | runtime-verified: `/api/dashboard/cross-mall`, `/api/crm/pipeline/stats`, `/api/analytics/occupancy` each return monetary keys and **zero** currency keys |
+| RPT-CUR-004 | VND-scoped KPIs presented as total revenue without disclosure | reporting completeness | **P1** | `dashboard.service.ts:203,217`, `reports.service.ts:152,230`, `occupancy-analytics.service.ts:368`, `ai.service.ts:209-215`, `billing.service.ts:385` |
+| RPT-CUR-005 | `Lead.expectedRent`/`estimatedValue` have no currency; summed into pipeline value | MODEL-CUR | **P2** | `crm.service.ts:621-623,669-671`; 20 leads, 15,800,000 total, no currency column |
+| RPT-CUR-006 | `SlotBooking.totalAmount` has no currency; feeds Dashboard SHORT revenue | MODEL-CUR | **P2** | `dashboard.service.ts:283,348-349,472` |
+| RPT-CUR-007 | Shared formatters silently default a missing currency to VND | FMT-CUR | **P2** | `lib/currency.ts:26,43,56` — default parameter **and** `?? CURRENCIES.VND` |
+| RPT-CUR-008 | `estimatedLoss` uses a hardcoded `500000` VND/m²/month rate | HARDCODED_VND | **P3** | `occupancy-analytics.service.ts:447,452` |
+| RPT-CUR-009 | Sales turnover ranking orders rows across currencies | COMPARE-CUR | **P3** | `SalesPage.tsx` — each row is labelled correctly; only the ordering is meaningless |
+
+**RPT-CUR-004 is P1 despite involving no arithmetic error.** It is the finding
+most likely to mislead a decision-maker: every executive revenue KPI silently
+excludes non-VND business while presenting itself as complete.
+
+**CUR-002 update — reachability now proven.** `Lead` and `SlotBooking` were
+previously listed as currency-less models of unproven impact. Both are now
+confirmed to feed live management KPIs (RPT-CUR-005, RPT-CUR-006).
+`Customer.budgetMin/Max` and `OccupancySnapshot.revenuePerSqm` are reachable but
+not aggregated into any KPI — low.
+
+**No previously closed issue regressed.** SEM-001, FORM-001, BILL-001, PAY-001,
+CUR-001, INT-002-SEED, RS-TERMINATED, SAP-001 and BILL-002 were all re-checked
+against the reporting layer and none was found to have been undone.
+
+**Remediation is NOT started.** Recommended order and the two business questions
+that must be answered first are in §15 of the audit document.
+
+---
+
+## Remediation Wave 1 — reporting currency contract (2026-09-06)
+
+Scope: **Cross-Mall CEO screen + the three management API response contracts.**
+Nothing else in the reporting layer was touched. Full evidence and runtime
+output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §16.
+
+| ID | Before | After Wave 1 |
+|---|---|---|
+| RPT-CUR-003 | Three management APIs returned monetary keys and **zero** currency keys | **FIXED.** `/api/dashboard/cross-mall` → `revenueByCurrency` + `revenueScalarCurrency` at every money-bearing level. `/api/analytics/occupancy` → `billingRevenueByCurrency` + `billingRevenueScalarCurrency`. `/api/crm/pipeline/stats` → `proposalValueCurrency` + `pipelineValueCurrencyUnknown`. |
+| RPT-CUR-004 | Every executive revenue KPI silently excluded USD/MMK | **FIXED for the Cross-Mall CEO screen only.** The `currencyCode: 'VND'` filter is removed from `getCrossMallDashboard`; the screen renders one labelled line per currency and drops the "Doanh thu tháng tổng" framing. **Still open everywhere else** (single-mall dashboard, reports, AI, compliance). Downgraded to **P2** for the remaining surfaces only because the highest-visibility one is now correct — the underlying business question is still unanswered. |
+| RPT-CUR-002 | Cross-currency SUM *and* cross-currency AVERAGE | **SUM fixed** (`totalMonthlyBillingRevenue` grouped by `Unit.currencyCode`; no schema change needed — the column is NOT NULL). **AVERAGE deferred**: splitting `avgRentPerSqm` changes the field's meaning, a business decision the wave brief fenced off. Now disclosed via `avgRentCurrencies` / `avgRentCurrencyMixed`. Remains **P1** until the average is resolved. |
+| RPT-CUR-005 | Currency-less Lead values summed into pipeline value, silently | **DEFERRED** — needs `Lead.currencyCode`. Now **declared**: `pipelineValueCurrencyUnknown: true`. Severity unchanged (**P2**). |
+| RPT-CUR-006 | Currency-less `SlotBooking.totalAmount` shown as VND-looking revenue | **DEFERRED** — needs `SlotBooking.currencyCode`. Now **declared**: `revenueCurrencyUnknown: true`, empty `revenueByCurrency`, and the UI prints "Chưa xác định đơn vị tiền tệ". Severity unchanged (**P2**). |
+| RPT-CUR-001, 007, 008, 009 | — | **UNCHANGED.** Out of scope for this wave. |
+
+Files changed: `dashboard.service.ts`, `occupancy-analytics.service.ts`,
+`crm.service.ts`, `CrossMallDashboard.tsx`, new
+`components/dashboard/RevenueByCurrency.tsx`.
+
+Tests added: `dashboard.cross-mall-currency.spec.ts` (T1–T10),
+`occupancy-analytics.currency.spec.ts`, `CrossMallDashboard.currency.test.tsx`.
+Each suite contains an explicit regression proof that reconstructs the pre-fix
+behaviour and asserts it violates the contract.
+
+**No FX was implemented. No schema was changed. No production data was
+modified.** The two local-database mutations used for runtime verification
+(period-`2026-09` invoice copies, and two units temporarily set to USD/MMK) were
+both reverted and the reversal was verified.

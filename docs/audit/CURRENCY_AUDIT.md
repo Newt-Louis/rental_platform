@@ -154,3 +154,58 @@ longer overlaps. After re-seeding, both reconciliation scripts report
   Serializable transaction that commits the invoice, backed by a partial unique
   index on `(contractId, period) WHERE type = REVENUE_SHARE AND isActive AND
   status <> CANCELLED`.
+
+---
+
+## Reporting layer (audited 2026-09-06)
+
+The transactional chain is currency-correct; **management reporting is not**.
+Full evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md`.
+
+Summary of what that audit established:
+
+- Roughly a dozen reporting queries carry an explicit `currencyCode: 'VND'`
+  filter. The arithmetic is therefore **safe** — but USD/MMK revenue is silently
+  excluded from every executive KPI, with nothing on screen disclosing it
+  (RPT-CUR-004).
+- One confirmed cross-currency SUM: the AI assistant adds VND + USD + MMK
+  turnover and labels the result "VNĐ" (RPT-CUR-001).
+- One unsafe AVERAGE: `avgRentPerSqm` averages `Unit.baseRentPerSqm` across
+  currencies (RPT-CUR-002). Latent today, reachable through the Spaces UI.
+- Three management APIs return money with **no currency dimension at all**,
+  runtime-verified (RPT-CUR-003).
+- The shared frontend formatters silently default a missing currency to VND,
+  which converts every API currency-loss into a confident wrong label
+  (RPT-CUR-007).
+
+`Lead` and `SlotBooking` are now **proven reachable** CUR-002 consumers — they
+feed the CRM pipeline value and the Dashboard SHORT revenue card respectively
+(RPT-CUR-005, RPT-CUR-006).
+
+Positive findings worth preserving: `reports.service.ts` already groups proposal
+value by `(status, rentCurrency)`; `service-contracts.service.ts` groups by
+`currency`; billing AR keeps per-currency buckets. No code anywhere attempts FX
+conversion.
+
+---
+
+## Remediation Wave 1 — Cross-Mall CEO + management API contract (2026-09-06)
+
+The reporting layer is no longer uniformly VND-blind. Full evidence in
+`docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §16.
+
+| ID | Status after Wave 1 |
+|---|---|
+| **RPT-CUR-003** | **FIXED** for all three management APIs — each now returns an explicit currency dimension or an explicit "unknown" declaration. |
+| **RPT-CUR-004** | **FIXED for the Cross-Mall CEO screen only.** The VND filter is gone, USD/MMK revenue is visible, and the consolidated "Doanh thu tháng tổng" framing is removed. Every other VND-scoped KPI still carries the defect. |
+| **RPT-CUR-002** | **PARTIALLY FIXED** — the cross-currency SUM (`totalMonthlyBillingRevenue`) is grouped by `Unit.currencyCode`. The cross-currency AVERAGE (`avgRentPerSqm`) is **deferred**: correcting it changes the field's meaning, which is a business decision. It now reports `avgRentCurrencyMixed` so the ambiguity is visible. |
+| **RPT-CUR-005 / 006** | **DEFERRED** (need `Lead.currencyCode` / `SlotBooking.currencyCode`). Both are now DECLARED at the API boundary: `pipelineValueCurrencyUnknown` and `revenueCurrencyUnknown`. |
+| **RPT-CUR-001 / 007 / 008 / 009** | **UNCHANGED** — outside this wave. |
+
+New invariant established by this wave:
+
+| ID | Invariant | Status |
+|---|---|---|
+| **MON-CUR-RPT-01** | A monetary field in a management API response either carries its currency, or declares that its currency is unknown/scoped | **HOLDS** for `/dashboard/cross-mall`, `/analytics/occupancy`, `/crm/pipeline/stats`; not yet asserted elsewhere |
+
+Still no FX engine, and none was added.

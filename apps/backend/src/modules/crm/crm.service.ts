@@ -673,6 +673,8 @@ export class CrmService {
           lostThisMonth: segment.filter((lead) => lead.status === 'LOST' && new Date(lead.updatedAt) >= startOfMonth).length,
           newThisMonth: segment.filter((lead) => new Date(lead.createdAt) >= startOfMonth).length,
         },
+        // RPT-CUR-005 — same currency-less Lead values as the top-level block.
+        pipelineValueCurrencyUnknown: true,
         byStatus,
         valueByStatus,
         byPriority,
@@ -692,11 +694,28 @@ export class CrmService {
         newThisMonth,
         avgDaysToWin: Math.round(avgDaysToWin),
       },
+      // RPT-CUR-005 — KNOWN DEFECT, DEFERRED (Wave 1 scope fence).
+      //
+      // `totalPipelineValue`, `valueByStatus` and the byLeaseTerm equivalents
+      // are built from `Lead.estimatedValue` / `expectedRent × expectedArea`.
+      // `Lead` carries NO currency column (CUR-002), so those figures have no
+      // unit of account and cannot be grouped. Fixing it requires adding
+      // `Lead.currencyCode` plus a rule for existing rows -- a schema and data
+      // decision outside this wave.
+      //
+      // Until then the omission is DECLARED rather than left for a consumer to
+      // assume VND. Do not remove this flag without adding the column.
+      pipelineValueCurrencyUnknown: true,
       byStatus: statusCounts,
       valueByStatus: statusValues,
       byPriority,
       proposalByStatus,
       proposalValueByStatus,
+      // Proposal value sums are scoped to `rentCurrency: 'VND'` in the query
+      // above, so they are arithmetically safe but silently exclude USD/MMK
+      // proposals. Declaring the scope is what stops a consumer presenting
+      // them as an all-currency total (RPT-CUR-004).
+      proposalValueCurrency: 'VND' as const,
       conversionRates,
       winLossBySource,
       winLossByCategory,
