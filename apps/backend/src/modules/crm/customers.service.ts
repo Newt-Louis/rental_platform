@@ -1,6 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CustomerStatus, ActivityType, LeadSource } from '@prisma/client';
+import { CustomerStatus, ActivityType, LeadSource, CurrencyCode } from '@prisma/client';
 
 export interface CreateCustomerDto {
   leadId?: string;
@@ -19,6 +19,8 @@ export interface CreateCustomerDto {
   expectedArea?: number;
   budgetMin?: number;
   budgetMax?: number;
+  // CUR-002-CUSTOMER: required whenever a budget figure is supplied.
+  currencyCode?: CurrencyCode;
   rating?: number;
   assignedToId?: string;
   notes?: string;
@@ -163,6 +165,61 @@ export class CustomersService {
     return customer;
   }
 
+  /**
+   * MON-CUR-CUST-03 — a Customer is never persisted with a budget and no unit of
+   * account on a direct write. Checked against the MERGED state, so a legacy row
+   * stays editable and only a write that introduces or changes a budget figure
+   * is blocked.
+   */
+  private assertCustomerBudgetCurrency(
+    incoming: { budgetMin?: number | null; budgetMax?: number | null; currencyCode?: CurrencyCode | null },
+    existing?: { budgetMin?: number | null; budgetMax?: number | null; currencyCode?: CurrencyCode | null },
+  ) {
+    const writesMoney =
+      (incoming.budgetMin !== undefined && incoming.budgetMin !== null) ||
+      (incoming.budgetMax !== undefined && incoming.budgetMax !== null);
+    if (!writesMoney) return;
+
+    const resulting = incoming.currencyCode ?? existing?.currencyCode ?? null;
+    if (!resulting) {
+      throw new BadRequestException(
+        'Vui lòng chọn đơn vị tiền tệ cho ngân sách thuê (budgetMin/budgetMax). ' +
+          'Hệ thống không mặc định VND và không quy đổi tỷ giá.',
+      );
+    }
+  }
+
+  /**
+   * MON-CUR-CUST-02 — a budget currency copied from a Lead must equal the source
+   * Lead's currency. Fails closed rather than converting or overwriting.
+   *
+   * Two ways this trips:
+   *   - both sides carry an explicit currency and they differ;
+   *   - the Lead's currency is UNKNOWN while the Customer has an explicit one,
+   *     which would stamp a unit of account onto an amount that has none.
+   */
+  private assertLeadCustomerCurrencyCompatible(lead: any, customer: any) {
+    const copiesMoney = lead?.expectedRent !== undefined && lead?.expectedRent !== null;
+    if (!copiesMoney) return;
+
+    const leadCurrency: CurrencyCode | null = lead.currencyCode ?? null;
+    const customerCurrency: CurrencyCode | null = customer?.currencyCode ?? null;
+    if (!customerCurrency) return;
+    if (leadCurrency === customerCurrency) return;
+
+    throw new ConflictException({
+      code: 'CUSTOMER_CURRENCY_CONFLICT',
+      message:
+        'Không thể đồng bộ ngân sách: đơn vị tiền tệ của Lead và của hồ sơ khách hàng khác nhau. ' +
+        'Hệ thống không quy đổi tỷ giá — vui lòng thống nhất đơn vị tiền tệ trước khi đồng bộ.',
+      leadId: lead.id,
+      customerId: customer?.id ?? null,
+      leadCurrency,
+      customerCurrency,
+      field: 'budgetMin',
+    });
+  }
+
   async create(dto: CreateCustomerDto, userId: string) {
     const { leadId, ...customerDto } = dto;
     let lead: any = null;
@@ -175,6 +232,8 @@ export class CustomersService {
         throw new ConflictException('Lead đã được liên kết với một hồ sơ khách hàng khác.');
       }
     }
+    this.assertCustomerBudgetCurrency(customerDto as any);
+
     const customerCode = await this.generateCustomerCode();
     return this.prisma.customer.create({
       data: {
@@ -192,6 +251,7 @@ export class CustomersService {
 
   async update(id: string, dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string }) {
     const existing = await this.findOne(id);
+    this.assertCustomerBudgetCurrency(dto as any, existing as any);
     const data: any = { ...dto };
     if (dto.status === CustomerStatus.ACTIVE && !data.wonAt) data.wonAt = new Date();
     if (dto.status === CustomerStatus.INACTIVE && !data.lostAt) data.lostAt = new Date();
@@ -264,6 +324,20 @@ export class CustomersService {
     return CustomerStatus.PROSPECT;
   }
 
+  /**
+   * MON-CUR-CUST-01 — a monetary value copied from a Lead keeps its unit of
+   * account.
+   *
+   * `budgetMin <- lead.expectedRent` used to travel alone. Once Wave 3 gave
+   * `Lead` an explicit currency, that copy started DROPPING a currency that
+   * existed (CUR-002-CUSTOMER). The currency now moves with the amount.
+   *
+   * A NULL `lead.currencyCode` is copied as NULL, not as VND: the destination
+   * then explicitly means UNKNOWN. Rejecting instead would block a legacy lead
+   * from ever being marked WON, since `createFromLead` runs on that transition
+   * -- a business regression, not a safety gain. This is the "legacy
+   * synchronisation" carve-out, and it is surfaced, never silent.
+   */
   private customerDataFromLead(lead: any) {
     const data: any = {};
     const mappedFields: Array<[string, unknown]> = [
@@ -275,6 +349,7 @@ export class CustomersService {
       ['preferredCategory', lead.preferredCategory || lead.category],
       ['expectedArea', lead.expectedArea],
       ['budgetMin', lead.expectedRent],
+      ['currencyCode', lead.currencyCode],
       ['source', lead.source],
       ['notes', lead.notes],
       ['assignedToId', lead.assignedToId],
@@ -329,7 +404,7 @@ export class CustomersService {
   }
 
   async syncFromLead(customerId: string, leadId: string) {
-    await this.findOne(customerId);
+    const existingCustomer = await this.findOne(customerId);
     const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead || !lead.isActive || lead.deletedAt) {
       throw new NotFoundException('Không tìm thấy Lead để đồng bộ.');
@@ -337,6 +412,9 @@ export class CustomersService {
     if (lead.customerId && lead.customerId !== customerId) {
       throw new ConflictException('Lead này đã liên kết với một hồ sơ khách hàng khác.');
     }
+
+    // MON-CUR-CUST-02 — refuse to move money across a currency boundary.
+    this.assertLeadCustomerCurrencyCompatible(lead, existingCustomer);
 
     await this.prisma.$transaction([
       this.prisma.customer.update({

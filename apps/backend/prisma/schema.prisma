@@ -2712,6 +2712,20 @@ model Customer {
   expectedArea         Float?
   budgetMin            Float?
   budgetMax            Float?
+  // CUR-002-CUSTOMER: currency of budgetMin/budgetMax. Deliberately NULLABLE
+  // with NO @default.
+  //
+  // One currency covers both fields because they are the two ends of a single
+  // range for one quantity (expected rent per m2) -- a range cannot span two
+  // units of account.
+  //
+  // Nullable because reconciliation proved no backfill rule exists: all 10
+  // existing customers hold a budget, and for every one of them budgetMin
+  // differs from the linked Lead's expectedRent, so the budget was never copied
+  // from that Lead and the Lead's currency describes a different number. NULL
+  // means "recorded before currency was captured" and is surfaced as UNKNOWN,
+  // never as VND.
+  currencyCode         CurrencyCode?
   rating               Int?           @default(3)
   assignedToId         String?
   assignedTo           User?          @relation("AssignedCustomers", fields: [assignedToId], references: [id])

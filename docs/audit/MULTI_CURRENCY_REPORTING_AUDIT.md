@@ -758,3 +758,156 @@ boundary.
 **CUR-002 is NOT globally fixed.** Only the Lead subset moved.
 `SlotBooking`, `Customer.budgetMin/Max`, `SapReconciliationRecord` and
 `OccupancySnapshot.revenuePerSqm` are unchanged.
+
+---
+
+## 19. Remediation Wave 4 — Customer budget currency integrity (2026-09-06)
+
+Scope: **CUR-002-CUSTOMER**, plus closing RPT-CUR-005 if the downstream loss it
+was blocked on is eliminated. SlotBooking, the shared formatter defaults,
+`avgRentPerSqm`, the VND-only dashboard/report KPIs, SAP and FX policy were all
+left untouched.
+
+### 19.1 Customer money, audited before any schema change
+
+`Customer` has exactly **two** monetary fields, and they are the two ends of one
+range for one quantity (expected rent per m²):
+
+| Field | Meaning | Create | Update | Lead-copy | Import/bulk | Seed | UI input | API output | Reporting | Downstream |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `budgetMin` | lower bound of the tenant's rent budget, per m² | `CustomersService.create` (`POST /crm/customers`) | `CustomersService.update` | **yes** — `customerDataFromLead` maps `budgetMin ← lead.expectedRent` | none | `seed.ts:704-713`, written **directly** | CRM add dialog + `LeadEditDialog` profile tab | `findAll`, `findOne`, and `crm.service.ts:203` on the lead sheet | none | none |
+| `budgetMax` | upper bound | same | same | **no** — never copied from a Lead | none | same | same | same | none | `DealScoringService.scoreProposal` → `financialCapacity` |
+
+`expectedArea` is m², `rating` is 1–5; neither is money. There is no import path,
+no bulk path and no background job that writes a Customer budget.
+
+**`budgetMin` is not always from a Lead.** The seed and `CustomersService.create`
+both write budgets directly — this matters for §19.3.
+
+### 19.2 Canonical currency — one per Customer
+
+`budgetMin` and `budgetMax` bound a single quantity. A range cannot span two
+units of account ("between 700,000 VND and 900 USD" is not a budget), and every
+write path sets them together. One `Customer.currencyCode` covers both. No
+business decision was required and none was guessed.
+
+### 19.3 Existing data classification (read-only, pre-migration)
+
+`prisma/scripts/customer-budget-currency-reconciliation.sql`, 10 active
+customers, all 10 holding a budget:
+
+| Classification | Customers |
+|---|---|
+| SAFE_TO_INFER | **0** |
+| CURRENCY_UNKNOWN | **10** |
+| CONFLICT | 0 |
+| AMBIGUOUS | 0 |
+| NO_MONETARY_VALUE | 0 |
+
+**Provenance is a precondition of inference, not a footnote.** A linked Lead does
+not prove the budget came from it: `budgetMin` is written directly by
+`CustomersService.create` and by the seed, and only `customerDataFromLead` copies
+it from `Lead.expectedRent`. The script's `budget_equals_lead_rent` column is
+**false for all 10** rows:
+
+```
+CUST-001  budgetMin   800,000   KFC Vietnam       expectedRent   900,000   VND   f
+CUST-002  budgetMin   700,000   Zara Vietnam      expectedRent   800,000   VND   f
+CUST-007  budgetMin   350,000   Vincom Retail     expectedRent   500,000   VND   f
+...  (10 of 10 mismatched)
+```
+
+So the linked Lead's currency describes a **different monetary value** and cannot
+be carried across. A Lead now only supplies a currency when
+`lead.expectedRent = customer.budgetMin`, i.e. when the exact value being
+inferred is demonstrably the same business value; `matched_leads` is 0 for every
+current row, hence 10 × CURRENCY_UNKNOWN.
+
+> **Correction.** An earlier revision of this script classified on the link alone
+> and reported **10 SAFE_TO_INFER** for this same dataset. That label promised
+> something the data did not support and has been fixed in the SQL itself. The
+> diagnostic columns `linked_lead_currency` and `budget_equals_lead_rent` are
+> retained so the distinction stays visible.
+
+**No backfill was performed** — and on this dataset none is even a candidate.
+
+### 19.4 Schema and migration
+
+```prisma
+currencyCode CurrencyCode?   // nullable, NO @default
+```
+
+`20260906190000_add_currency_to_customer` — one `ADD COLUMN`, no rows touched,
+no table rewrite (nullable, no default, no constraint), brief `ACCESS EXCLUSIVE`
+lock only. Rollback: `ALTER TABLE "Customer" DROP COLUMN "currencyCode"`.
+
+### 19.5 Lead → Customer rule
+
+`customerDataFromLead` now maps `currencyCode ← lead.currencyCode` alongside
+`budgetMin ← lead.expectedRent`.
+
+**A NULL Lead currency is copied as NULL, not as VND.** The alternative —
+rejecting the copy — would block a legacy lead from ever being marked WON, since
+`createFromLead` runs on that transition. That is a business regression, not a
+safety gain. This is the brief's "legacy synchronisation" carve-out: the
+destination explicitly means UNKNOWN and is rendered as such.
+
+`syncFromLead` additionally fails closed with **`CUSTOMER_CURRENCY_CONFLICT`**
+(carrying `leadId`, `customerId`, `leadCurrency`, `customerCurrency`, `field`)
+when the Customer already holds a different explicit currency, **or** when the
+Lead's currency is UNKNOWN and the Customer has an explicit one — the latter
+would stamp a unit of account onto an amount that has none. Nothing is converted
+and nothing is silently overwritten.
+
+### 19.6 A second defect found in scope — deal scoring
+
+`DealScoringService` computed `financialCapacity` as
+`min(100, budgetMax / 1,000,000,000 × 100)`. That divisor is a **VND-scale
+constant**. A 40,000 USD budget — a large one — scored **0.004**; an MMK budget
+skewed the other way.
+
+The scale is only defined for VND and there is no approved rate to define it
+elsewhere, so `scoreFinancialCapacity` now returns the same neutral 50 already
+used when a customer has no budget, for any non-VND or unknown currency.
+Declining to compare across units is the fix; inventing a per-currency scale
+would be FX under another name.
+
+### 19.7 Presentation
+
+Both budget surfaces rendered `"${min}–${max} tr/m²"`. **"tr" is triệu đồng** — a
+VND unit word printed over values the model could not prove were VND.
+`formatBudgetRange` now takes the Customer currency and renders
+`"800.000–1.000.000 VND/m²"`, or `"800.000–1.000.000/m² (chưa rõ ĐVT)"` when it
+is unknown. Both edit forms gained a required currency selector.
+
+### 19.8 Runtime verification
+
+```
+POST /crm/customers  {budgetMin:800000, budgetMax:1000000}   -> 400 "không mặc định VND"
+POST /crm/customers  {budgetMin:30, budgetMax:45, ccy:USD}   -> 201, currencyCode USD
+POST /crm/customers  {budgetMin:1, ccy:EUR}                  -> 400 "must be one of VND, USD, MMK"
+
+POST /crm/leads/<Nike, USD>/customer-profile   -> KH-2026-00002  ccy=USD  budgetMin=34
+POST /crm/leads/<Aeon, MMK>/customer-profile   -> KH-2026-00003  ccy=MMK  budgetMin=29000
+POST /crm/leads/<ALDO, VND>/sync-customer  into an MMK customer
+    -> 409 CUSTOMER_CURRENCY_CONFLICT
+```
+
+All probe rows were deleted afterwards and the table verified back at 10
+customers / 10 leads linked.
+
+### 19.9 Status
+
+**CUR-002-CUSTOMER — CLOSED.** The copy carries its currency, direct writes fail
+closed, the conflict case is refused with diagnostics, and the UI no longer
+prints a VND unit word over unknown values.
+
+**RPT-CUR-005 — CLOSED.** All six of the Wave 3 closing conditions now hold; the
+sixth ("downstream copy does not lose it") was the only one outstanding and this
+wave removed it. Every confirmed downstream monetary copy out of `Lead` — the
+deal-pipeline view and the Customer budget — preserves the currency, and an
+UNKNOWN source stays UNKNOWN throughout.
+
+**CUR-002 — remains open globally.** Only the `Lead` and `Customer` subsets are
+done. `UnitSlot`/`SlotBooking` (RPT-CUR-006), `SapReconciliationRecord`
+(SAP-004) and `OccupancySnapshot.revenuePerSqm` are unchanged.

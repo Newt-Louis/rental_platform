@@ -233,20 +233,36 @@ must not silently produce an invoice from a VND-scale turnover figure.
 | Domain | Cross-cutting |
 | Backbone | 1, 4, 5 |
 | Invariant violated | MON-CUR-01 |
-| Status | CONFIRMED (schema); downstream impact UNVERIFIED per model |
+| Status | **PARTIALLY FIXED** — `Lead` (Wave 3) and `Customer` (Wave 4) resolved; the rest still CONFIRMED |
 
-**Description.** Beyond CUR-001, these models hold monetary values with no
-currency column and no currency-bearing parent:
-`Lead.expectedRent/estimatedValue`, `Customer.budgetMin/budgetMax`,
+**Description (original finding, retained for history).** Beyond CUR-001, these
+models held monetary values with no currency column and no currency-bearing
+parent: `Lead.expectedRent/estimatedValue`, `Customer.budgetMin/budgetMax`,
 `UnitSlot.pricePerDaySqm/pricePerHour/pricePerSqmMonth`,
 `SlotBooking.baseAmount/totalAmount`, `ParkingShift.cashRevenue/nonCashRevenue`,
 `SapReconciliationRecord.ourAmount/sapAmount`,
 `OccupancySnapshot.revenuePerSqm`, `InventoryItem.averageCost`,
 `InventoryTransaction.unitCost`.
 
-`Lead.expectedRent` is the entry point of Backbone 1 and feeds booking prefill;
-`SlotBooking` is an entire short-term revenue stream; `SapReconciliationRecord`
-compares `ourAmount` against `sapAmount` with no currency on either side.
+`Lead.expectedRent` is the entry point of Backbone 1; `SlotBooking` is an entire
+short-term revenue stream; `SapReconciliationRecord` compares `ourAmount`
+against `sapAmount` with no currency on either side.
+
+**Current state per model — do NOT read the list above as today's status.**
+
+| Model | Status |
+|---|---|
+| `Lead.expectedRent` / `estimatedValue` | **FIXED 2026-09-06 (Wave 3)** — `Lead.currencyCode` (nullable, no default), enforced on every write path, CRM aggregates grouped by currency, UNKNOWN never rendered as VND |
+| `Customer.budgetMin` / `budgetMax` | **FIXED 2026-09-06 (Wave 4)** — `Customer.currencyCode` (nullable, no default), Lead→Customer copy carries the currency, `CUSTOMER_CURRENCY_CONFLICT` on a cross-currency sync |
+| `UnitSlot.pricePerDaySqm` / `pricePerHour` / `pricePerSqmMonth` | **OPEN** |
+| `SlotBooking.baseAmount` / `totalAmount` | **OPEN** — RPT-CUR-006; declared as `revenueCurrencyUnknown` on the Cross-Mall API since Wave 1, but the schema is unchanged |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | **OPEN** — tracked as SAP-004 |
+| `OccupancySnapshot.revenuePerSqm` | **OPEN** |
+| `ParkingShift.cashRevenue` / `nonCashRevenue` | **OPEN** — parking module, outside the audited scope |
+| `InventoryItem.averageCost`, `InventoryTransaction.unitCost` | **OPEN** — inventory module, excluded from this audit by instruction |
+
+`Lead` and `Customer` are no longer currency-less and must not be described as
+such. The aggregate issue stays open until the remaining models are resolved.
 
 **Evidence.** `apps/backend/prisma/schema.prisma` — model definitions; full table
 in `docs/audit/MODULE_INVENTORY.md` §9.
@@ -1570,3 +1586,111 @@ No production data was mutated. The local dev-database changes used for runtime
 verification (one lead temporarily set to NULL currency, three probe leads via
 the API) were removed and the table verified back at 20 leads / 18 VND / 1 USD /
 1 MMK.
+
+---
+
+## Remediation Wave 4 — Customer budget currency integrity (2026-09-06)
+
+Evidence and runtime output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §19.
+
+### CUR-002-CUSTOMER — CLOSED
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Status | **FIXED 2026-09-06** |
+| Invariants | **MON-CUR-CUST-01/02/03/04** |
+
+`Customer.currencyCode CurrencyCode?` added — nullable, **no `@default`**.
+`customerDataFromLead` now maps `currencyCode ← lead.currencyCode` alongside
+`budgetMin ← lead.expectedRent`, so the copy no longer drops a currency that
+exists. Direct writes fail closed on budget-without-currency (merged-state check,
+so legacy rows stay editable). `syncFromLead` refuses a cross-currency move with
+`CUSTOMER_CURRENCY_CONFLICT` carrying `leadId`, `customerId`, `leadCurrency`,
+`customerCurrency` and `field` — including the case where the Lead's currency is
+UNKNOWN and the Customer has an explicit one.
+
+A NULL Lead currency is copied as NULL, never as VND. Rejecting instead would
+block a legacy lead from being marked WON (`createFromLead` runs on that
+transition), so the "legacy synchronisation" carve-out applies and the
+destination explicitly means UNKNOWN.
+
+Reconciliation before migration (10 active customers, all with a budget):
+**0 SAFE_TO_INFER · 10 CURRENCY_UNKNOWN · 0 CONFLICT · 0 AMBIGUOUS ·
+0 NO_MONETARY_VALUE.**
+
+A linked Lead only supplies a currency when `lead.expectedRent = budgetMin` —
+i.e. when the exact value being inferred is demonstrably the same business value.
+`budget_equals_lead_rent` is false for all 10 rows: the budgets were written
+directly by the seed and by `CustomersService.create`, not copied from those
+Leads, so the Lead's currency describes a different number. **Nothing was
+backfilled** and the column is nullable.
+
+> **Correction.** The reconciliation SQL originally classified on the link alone
+> and reported 10 SAFE_TO_INFER for this dataset. That label promised something
+> the data did not support; the classification has been fixed in the script, with
+> `linked_lead_currency` and `budget_equals_lead_rent` retained as diagnostics.
+
+### CRM-SCORE-CUR-001 — NEW; arithmetic FIXED, scoring policy PENDING
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Domain | CRM / Proposals |
+| Status | **MITIGATED — BUSINESS POLICY PENDING** |
+| Arithmetic cross-currency defect | **FIXED 2026-09-06** |
+| Foreign-currency financial-capacity scoring policy | **BUSINESS DECISION REQUIRED** |
+
+`DealScoringService.scoreProposal` computed
+`financialCapacity = min(100, budgetMax / 1_000_000_000 × 100)`. The divisor is a
+VND-scale constant, so a 40,000 USD budget — a large one — scored **0.004** and
+dragged the deal grade down.
+
+**What is fixed.** `scoreFinancialCapacity` refuses to apply the VND scale to a
+USD, MMK or unknown-currency budget. The cross-currency arithmetic is gone.
+
+**What is NOT fixed.** The neutral value returned instead means
+**"financial capacity was not evaluated for this currency"** — it does **not**
+mean "medium financial capacity, proven". A USD or MMK customer therefore
+contributes nothing informative to this criterion, and any deal grade leaning on
+it is weaker than its number suggests. Treating 50 as a real score would be a
+second, quieter version of the original defect.
+
+**What the business must decide.** A per-currency reference scale — what USD
+budget, and what MMK budget, constitute full financial capacity. This is a
+scale/threshold question, **not** an FX question: it must not be resolved by
+converting foreign budgets to VND at a rate. No USD/MMK threshold was invented
+here.
+
+This issue stays **open** until that policy exists. Only the arithmetic half is
+closed.
+
+Raised and fixed in the same wave because it is a direct consumer of
+`Customer.budgetMax`, which §9 of the wave brief put in scope.
+
+### RPT-CUR-005 — CLOSED
+
+The single blocking condition from Wave 3 ("downstream copy does not lose it")
+is gone. Every confirmed monetary copy out of `Lead` now preserves its currency:
+
+| Downstream | Behaviour |
+|---|---|
+| `/crm/deals` deal view | `resolveDealCurrency` — Lead currency when the Lead supplied the amount, Proposal currency when it fell back, `null` when neither can prove one |
+| `Customer.budgetMin` | `currencyCode` travels with the amount; conflict fails closed |
+| Booking / Proposal / Contract | no Lead money prefill exists — verified, not assumed |
+
+An UNKNOWN Lead currency stays UNKNOWN through every hop.
+
+### CUR-002 — still open globally
+
+| Model | Status |
+|---|---|
+| `Lead.expectedRent` / `estimatedValue` | **FIXED** (Wave 3) |
+| `Customer.budgetMin` / `budgetMax` | **FIXED** (Wave 4) |
+| `SlotBooking.totalAmount` | open — RPT-CUR-006 |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | open — SAP-004 |
+| `OccupancySnapshot.revenuePerSqm` | open |
+
+No production data was mutated. The local dev-database probe rows (3 customers
+created via the API, 2 lead links) were removed and the table verified back at 10
+customers / 10 linked leads.

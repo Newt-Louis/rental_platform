@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEmail, IsNumber, IsEnum, IsUrl } from 'class-validator';
-import { LeadSource } from '@prisma/client';
+import { LeadSource, CurrencyCode } from '@prisma/client';
 
 export class CreateCustomerDto {
   @ApiPropertyOptional({ description: 'Lead to link to this new customer profile' })
@@ -80,6 +80,16 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsNumber()
   budgetMax?: number;
+
+  // CUR-002-CUSTOMER: the budget range has no meaning without this. No default,
+  // no FX conversion.
+  @ApiPropertyOptional({
+    enum: CurrencyCode,
+    description: 'Currency of budgetMin/budgetMax. REQUIRED whenever either is supplied.',
+  })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional()
   @IsOptional()
