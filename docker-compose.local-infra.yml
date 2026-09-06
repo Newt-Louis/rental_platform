@@ -1,0 +1,59 @@
+# Local stand-in for the "shared machine-wide" Postgres/Redis that
+# docker-compose.yml assumes already exist on the host (see the comment at
+# the top of that file — it points at a different machine's infra compose +
+# native Postgres install). This host has neither.
+#
+# Joins the same `leasing-network` that backend/frontend use (defined in
+# docker-compose.yml) and re-points DATABASE_URL/REDIS_URL at the container
+# names instead of host.docker.internal — on this host's Docker Desktop
+# (WSL2 backend), host.docker.internal resolves to an IPv6-only
+# host-gateway address that isn't routable from leasing-network, so the
+# backend gets "Can't reach database server" / "Network unreachable" even
+# though the containers are healthy. Reaching Postgres/Redis by container
+# name over the shared bridge network sidesteps that entirely.
+#
+# Usage (always combine with the other two, in this order):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.local-infra.yml up -d --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: leasing-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leasing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-leasing_platform}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - leasing-network
+    volumes:
+      - leasing_local_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leasing}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: leasing-local-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - leasing-network
+
+  backend:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leasing}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-leasing_platform}
+      REDIS_URL: redis://redis:6379
+    networks:
+      - leasing-network
+
+volumes:
+  leasing_local_pg_data:
+    name: leasing-local-pg-data
