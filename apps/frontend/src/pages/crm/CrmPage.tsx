@@ -20,6 +20,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
 import { useAuthStore } from '@/store/auth.store';
 import { formatMoney, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
+import { formatBudgetRange } from '@/lib/customer-currency';
 import {
   formatLeadMoney,
   formatLeadMoneyCompact,
@@ -214,9 +215,16 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
     brandName: '', companyName: '', contactName: '', contactTitle: '',
     phone: '', email: '', category: '', expectedArea: '',
     source: 'WALK_IN', notes: '', website: '',
-    budgetMin: '', budgetMax: '', rating: '3',
+    budgetMin: '', budgetMax: '', currencyCode: '', rating: '3',
     leaseTermType: 'LONG',
   });
+  // CUR-002-CUSTOMER — the API rejects a budget with no currency; surface it in
+  // the form rather than letting the user hit a 400.
+  const budgetEntered = Boolean(
+    (form.budgetMin && form.budgetMin.trim()) || (form.budgetMax && form.budgetMax.trim()),
+  );
+  const budgetCurrencyMissing = budgetEntered && !form.currencyCode;
+
   const { data: usersData } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.listUsers({ limit: 100 }) });
   const users: any[] = usersData?.data ?? usersData ?? [];
   const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000 });
@@ -297,6 +305,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       assignedToId: assignedToId || undefined,
       website: form.website || undefined,
       budgetMin: form.budgetMin ? +form.budgetMin : undefined,
+      currencyCode: form.currencyCode || undefined,
       budgetMax: form.budgetMax ? +form.budgetMax : undefined,
       rating: form.rating ? +form.rating : undefined,
     }),
@@ -451,6 +460,21 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
               <div>
                 <Label className="text-xs">{t('addDialog.fieldBudgetMax')}</Label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" className="mt-1 h-9" />
+              </div>
+              {/* CUR-002-CUSTOMER: the budget range above is meaningless
+                  without this; the API rejects money with no currency. */}
+              <div>
+                <Label className="text-xs">Đơn vị tiền tệ{budgetEntered && <span className="text-red-500"> *</span>}</Label>
+                <select
+                  aria-label="Đơn vị tiền tệ ngân sách"
+                  className={`mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground ${budgetCurrencyMissing ? 'border-red-400' : 'border-input'}`}
+                  value={form.currencyCode}
+                  onChange={(e) => set('currencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {budgetCurrencyMissing && <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập ngân sách.</p>}
               </div>
               <div>
                 <Label className="text-xs">{t('addDialog.fieldRating')}</Label>
@@ -713,8 +737,11 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                     {customer.address && <SheetRow label={t('leadSheet.fieldAddress')} value={customer.address} icon={MapPin} />}
                     {customer.website && <SheetRow label={t('leadSheet.fieldWebsite')} value={customer.website} icon={Globe} />}
                     {customer.contactTitle && <SheetRow label={t('leadSheet.fieldTitle')} value={customer.contactTitle} icon={UserCheck} />}
+                    {/* CUR-002-CUSTOMER: 'tr' (triệu đồng) is a VND unit word
+                        that was printed over a currency-less budget. The
+                        currency now comes from the Customer. */}
                     {(customer.budgetMin || customer.budgetMax) && (
-                      <SheetRow label={t('leadSheet.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />
+                      <SheetRow label={t('leadSheet.fieldBudget')} value={formatBudgetRange(customer.budgetMin, customer.budgetMax, customer.currencyCode)} icon={TrendingUp} />
                     )}
                   </SheetSection>
                 )}
@@ -2416,7 +2443,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                 <SheetSection label={t('customerDetail.colRent')} className="bg-purple-50">
                   {customer.preferredCategory && <SheetRow label={t('customerDetail.fieldCategory')} value={customer.preferredCategory} icon={Tag} />}
                   {customer.expectedArea && <SheetRow label={t('customerDetail.fieldArea')} value={`${customer.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />}
+                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={formatBudgetRange(customer.budgetMin, customer.budgetMax, customer.currencyCode)} icon={TrendingUp} />}
                 </SheetSection>
 
                 {customer.assignedTo && (

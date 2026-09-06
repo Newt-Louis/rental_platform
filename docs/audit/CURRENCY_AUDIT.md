@@ -7,7 +7,7 @@ Status of every currency invariant found during the audit. Companion to
 
 | ID | Invariant | Status |
 |---|---|---|
-| MON-CUR-01 | Every monetary amount has an explicit currency | **PARTIAL** — the leasing chain holds; `Lead`, `Customer`, `UnitSlot`/`SlotBooking`, `SapReconciliationRecord` still carry bare amounts (CUR-002) |
+| MON-CUR-01 | Every monetary amount has an explicit currency | **PARTIAL** — the leasing chain holds; `Lead` and `Customer` fixed in Waves 3/4; `UnitSlot`/`SlotBooking`, `SapReconciliationRecord` and `OccupancySnapshot.revenuePerSqm` still carry bare amounts (CUR-002) |
 | MON-CUR-02 | Arithmetic operands share one currency | **HOLDS** for revenue-share (CUR-001 fixed) and payments |
 | MON-CUR-04 | No silent default currency on a write path | **PARTIAL** — every chain column is `@default(VND)` (CUR-003); `SalesTurnover` deliberately has none |
 | **MON-CUR-RS-01** | Every SalesTurnover amount has an explicit currency | **HOLDS** — required by DTO on every write path |
@@ -123,9 +123,12 @@ longer overlaps. After re-seeding, both reconciliation scripts report
 
 ## Still open
 
-- **CUR-002** — `Lead`, `Customer`, `UnitSlot`/`SlotBooking`,
-  `SapReconciliationRecord`, `OccupancySnapshot.revenuePerSqm` carry money with
-  no currency.
+- **CUR-002** — **still open globally, but narrowed.** As of Wave 3/4,
+  `Lead.currencyCode` and `Customer.currencyCode` both exist (nullable, no
+  default) and are enforced on every write path, so those two models no longer
+  carry bare amounts. Still outstanding: `UnitSlot`/`SlotBooking`
+  (RPT-CUR-006), `SapReconciliationRecord` (SAP-004) and
+  `OccupancySnapshot.revenuePerSqm`.
 - **CUR-003** — every chain currency column is `@default(VND)`.
 - ~~**SAP-001**~~ — **FIXED 2026-09-06.** The payload now carries `currencyCode`
   from `Invoice.currencyCode` and fails closed when it is missing, unsupported,
@@ -249,5 +252,25 @@ Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §18.
 leads found 10 with money and no deterministic source at all, and 1 whose linked
 Proposal (MMK) and UnitBooking (VND) disagree outright — so no inference rule
 was implemented, and none should be.
+
+Still no FX engine, and none was added.
+
+---
+
+## Remediation Wave 4 — Customer budget currency integrity (2026-09-06)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §19.
+
+| ID | Status after Wave 4 |
+|---|---|
+| **CUR-002-CUSTOMER** | **CLOSED.** `Customer.currencyCode` added (nullable, no default). The `Lead.expectedRent → Customer.budgetMin` copy carries the currency; direct writes fail closed; `syncFromLead` refuses a cross-currency move with `CUSTOMER_CURRENCY_CONFLICT`; the UI no longer prints "tr/m²" (a VND unit word) over currency-less budgets. |
+| **RPT-CUR-005** | **CLOSED.** The last outstanding condition — downstream copies losing the currency — is resolved. |
+| **CRM-SCORE-CUR-001** | **NEW — MITIGATED, BUSINESS POLICY PENDING.** Deal-scoring `financialCapacity` divided `budgetMax` by a VND-scale constant; a 40,000 USD budget scored 0.004. The **arithmetic defect is FIXED** (the VND scale is applied only to VND). The **foreign-currency scoring policy is a BUSINESS DECISION still required**: the neutral value returned for USD/MMK/unknown means *"not evaluated for this currency"*, not *"medium capacity proven"*, so those customers contribute nothing informative to the criterion. Must be resolved with a per-currency scale, never with FX. |
+| **CUR-002** | **STILL OPEN globally.** `Lead` and `Customer` done; `SlotBooking`, `SapReconciliationRecord`, `OccupancySnapshot.revenuePerSqm` unchanged. |
+
+Reconciliation caveat worth preserving: all 10 existing customers classified
+SAFE_TO_INFER, yet `budget_equals_lead_rent` was false for every one of them —
+the budgets were never copied from those Leads. A classification label is not
+provenance, and the script reports both.
 
 Still no FX engine, and none was added.

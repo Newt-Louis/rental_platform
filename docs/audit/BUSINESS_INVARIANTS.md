@@ -177,3 +177,27 @@ stable", and no such parent exists on `Lead`. The reference data confirms it —
 one lead links to an MMK Proposal and a VND UnitBooking at once.
 
 Still true: no FX conversion exists anywhere in the platform.
+
+### Wave 4 status (2026-09-06) — Customer budget currency
+
+| ID | Status after Wave 4 |
+|---|---|
+| MON-CUR-01 | **PARTIAL, improved again** — `Customer.budgetMin/Max` now carry a currency. `SlotBooking`, `SapReconciliationRecord` and `OccupancySnapshot.revenuePerSqm` still do not. |
+| MON-CUR-04 | **HOLDS for `Customer`** — no `@default` on the new column. |
+| MON-CUR-LEAD-04 | **NOW HOLDS.** The one invariant Wave 3 introduced and could not satisfy: money copied out of a Lead carries its currency. |
+
+New invariants introduced by Wave 4:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-CUST-01** | A monetary value copied from Lead to Customer preserves its unit of account | CHOKEPOINT (`customerDataFromLead`) | **HOLDS** |
+| **MON-CUR-CUST-02** | A Customer budget currency copied from a Lead equals the source Lead's currency; a mismatch fails closed and is never converted | CHOKEPOINT (`assertLeadCustomerCurrencyCompatible`, `CUSTOMER_CURRENCY_CONFLICT`) | **HOLDS** for `syncFromLead` |
+| **MON-CUR-CUST-03** | A Customer with budget values never silently defaults to VND | CHOKEPOINT (`assertCustomerBudgetCurrency`) + DTO `@IsEnum(CurrencyCode)` | **HOLDS** for every production write path |
+| **MON-CUR-CUST-04** | Customer monetary aggregates never combine currencies without FX | PER-PATH | **HOLDS vacuously** — no Customer budget aggregate exists in the product; `groupCustomerBudgetByCurrency` provides the safe shape so the next one cannot be written as a bare sum |
+| **MON-CUR-SCORE-01** | A score derived from a monetary amount is computed only on a scale defined for that amount's currency | CHOKEPOINT (`scoreFinancialCapacity`) | **HOLDS** — VND only. The value returned for any other currency means "not evaluated", not "medium capacity"; a scale for USD/MMK is a pending business decision (CRM-SCORE-CUR-001), not an FX conversion |
+
+MON-CUR-CUST-02 deliberately does **not** require `Customer.currencyCode` to
+equal every related Proposal's currency. A customer's budget is its own monetary
+context and may legitimately differ from what a specific deal was quoted in.
+
+Still true: no FX conversion exists anywhere in the platform.

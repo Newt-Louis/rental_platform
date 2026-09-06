@@ -413,6 +413,9 @@ export interface Customer {
   expectedArea?: number;
   budgetMin?: number;
   budgetMax?: number;
+  // CUR-002-CUSTOMER: currency of the budget range. Optional because legacy
+  // rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   rating?: number;
   assignedTo?: User;
   tenant?: { id: string; brandName: string; companyName: string };

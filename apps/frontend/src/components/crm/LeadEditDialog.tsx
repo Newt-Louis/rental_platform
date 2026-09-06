@@ -55,6 +55,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     website: lead?.customer?.website ?? '',
     budgetMin: lead?.customer?.budgetMin?.toString() ?? '',
     budgetMax: lead?.customer?.budgetMax?.toString() ?? '',
+    budgetCurrencyCode: lead?.customer?.currencyCode ?? '',
     rating: lead?.customer?.rating?.toString() ?? '',
   });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -63,6 +64,12 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
   // form surfaces it rather than letting the user hit a 400.
   const moneyEntered = Boolean(form.expectedRent && form.expectedRent.trim());
   const currencyMissing = moneyEntered && !form.currencyCode;
+
+  // CUR-002-CUSTOMER — same rule for the Customer budget range.
+  const budgetEntered = Boolean(
+    (form.budgetMin && form.budgetMin.trim()) || (form.budgetMax && form.budgetMax.trim()),
+  );
+  const budgetCurrencyMissing = budgetEntered && !form.budgetCurrencyCode;
 
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
@@ -93,6 +100,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         website: lead.customer?.website ?? '',
         budgetMin: lead.customer?.budgetMin?.toString() ?? '',
         budgetMax: lead.customer?.budgetMax?.toString() ?? '',
+        budgetCurrencyCode: lead.customer?.currencyCode ?? '',
         rating: lead.customer?.rating?.toString() ?? '',
       };
       setForm(newForm);
@@ -140,6 +148,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
           contactTitle: form.contactTitle || undefined,
           website: form.website || undefined,
           budgetMin: form.budgetMin ? +form.budgetMin : undefined,
+          currencyCode: form.budgetCurrencyCode || undefined,
           budgetMax: form.budgetMax ? +form.budgetMax : undefined,
           rating: form.rating ? +form.rating : undefined,
         });
@@ -366,6 +375,20 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.budgetMax')}</label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" />
+              </div>
+              {/* CUR-002-CUSTOMER: budget range needs an explicit unit. */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Đơn vị tiền tệ ngân sách{budgetEntered && <span className="text-red-500"> *</span>}</label>
+                <select
+                  aria-label="Đơn vị tiền tệ ngân sách"
+                  className={`w-full border rounded-md h-9 px-2 text-sm bg-white ${budgetCurrencyMissing ? 'border-red-400' : 'border-gray-300'}`}
+                  value={form.budgetCurrencyCode}
+                  onChange={(e) => set('budgetCurrencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {budgetCurrencyMissing && <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập ngân sách.</p>}
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.potential')}</label>
