@@ -52,7 +52,8 @@ funnel through · **PER-PATH** = each caller enforces it separately · **NONE**.
 | **MON-CUR-RS-01** | Every SalesTurnover amount has an explicit currency | DTO + PER-PATH | `currencyCode` required on every write path; validated against the Contract | **HOLDS** |
 | **MON-CUR-RS-03** | No FX conversion without an explicit policy | PER-PATH | no conversion code exists; mismatch fails closed | **HOLDS** |
 | **MON-CUR-RS-04** | The revenue-share Invoice carries the validated calculation currency | PER-PATH | `currencyCode` taken from the validated pair | **HOLDS** |
-| FIN-10 | One revenue-share invoice per contract/period | PER-PATH | `findFirst` then create, no transaction | **VIOLATED under concurrency** — BILL-002 |
+| FIN-10 | At most one LIVE revenue-share invoice per `(contractId, period)` | **DB + CHOKEPOINT** | partial unique index `Invoice_revenue_share_contract_period_live_key` (WHERE type=REVENUE_SHARE AND isActive AND status<>CANCELLED) + in-transaction existence check | **HOLDS** — BILL-002 fixed 2026-09-06 |
+| **TX-04** | The decision that a revenue-share invoice may be created is evaluated inside the same retryable Serializable transaction that commits it | CHOKEPOINT | existence check moved into `runSerializableTransaction`; P2002 on the partial index resolves to ALREADY_BILLED | **HOLDS** |
 | FIN-11 | Amounts leaving the platform carry their currency | CHOKEPOINT | `buildSapInvoicePayload` emits `currencyCode` from `Invoice.currencyCode`; missing or unsupported fails closed before any network call | **HOLDS** — SAP-001 fixed 2026-09-06 |
 | FIN-18 | No financial document leaves the platform without a resolved owning mall | CHOKEPOINT | `resolveSapInvoiceContext`: `Invoice.mallId` else `Contract → Unit`; unresolvable or inconsistent fails closed | **HOLDS** |
 | FIN-12 | `rentFree` has one unit platform-wide (RENTFREE-01) | CHOKEPOINT | `common/finance/rent-calculation.util.ts` — MONTHS | **HOLDS** — SEM-001 fixed |

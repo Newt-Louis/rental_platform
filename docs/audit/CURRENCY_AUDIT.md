@@ -149,6 +149,8 @@ longer overlaps. After re-seeding, both reconciliation scripts report
   terminated contract bills the months it fully governed; the month the
   termination fell inside is `AMBIGUOUS_OR_SPLIT_PERIOD_REQUIRED`; months after
   it resolve to no contract. A `CANCELLED` termination shortens nothing.
-- **BILL-002** — revenue-share invoice generation is still non-atomic
-  (`findFirst` then `create`, no transaction, no unique constraint). Deliberately
-  **not** addressed here; CUR-001 is currency integrity only.
+- ~~**BILL-002**~~ — **FIXED 2026-09-06**, separately from CUR-001 (which was
+  currency integrity only). The existence check now runs inside the same
+  Serializable transaction that commits the invoice, backed by a partial unique
+  index on `(contractId, period) WHERE type = REVENUE_SHARE AND isActive AND
+  status <> CANCELLED`.

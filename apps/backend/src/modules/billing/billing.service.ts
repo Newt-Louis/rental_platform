@@ -1689,20 +1689,6 @@ export class BillingService {
         continue;
       }
 
-      // Skip if already exists (BILL-002 tracks the concurrency gap here).
-      const existing = await this.prisma.invoice.findFirst({
-        where: { contractId: contract.id, period, type: 'REVENUE_SHARE' as any },
-      });
-      if (existing) {
-        record(sale, 'SKIPPED_WITH_REASON', {
-          code: 'ALREADY_BILLED',
-          contractId: contract.id,
-          invoiceNumber: existing.invoiceNumber,
-          message: 'Kỳ này đã có hóa đơn chia sẻ doanh thu.',
-        });
-        continue;
-      }
-
       const year = new Date().getFullYear();
       const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
       const invoiceNumber = `RS-${year}-${rand}`;
@@ -1711,8 +1697,43 @@ export class BillingService {
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 15);
 
-      const inv = await this.prisma.invoice.create({
-        data: {
+      // ── BILL-002 / TX-04 / FIN-10 ─────────────────────────────────────────
+      // The existence check used to run OUTSIDE any transaction, immediately
+      // before an equally unwrapped create, so two concurrent runs could both
+      // observe "no invoice" and both commit one. It is now re-evaluated inside
+      // the SAME retryable Serializable transaction that commits the invoice,
+      // so a P2034 retry re-decides against freshly committed data instead of
+      // reusing a stale answer.
+      //
+      // Business key: (contractId, period) for type REVENUE_SHARE, restricted to
+      // LIVE invoices. `voidInvoice()` keeps the row and only sets
+      // status = CANCELLED, so a voided period must remain re-billable —
+      // hence the liveness predicate here and in the partial unique index.
+      // tenantId is deliberately NOT part of the key: Contract.tenantId is NOT
+      // NULL, so the tenant is functionally determined by the contract.
+      //
+      // Scoped per invoice, never around the whole batch (§9): one tenant's
+      // serialization conflict must not roll back another tenant's invoice.
+      let alreadyBilled: string | null = null;
+      const inv = await this.runSerializableTransaction(async (tx) => {
+        const existing = await tx.invoice.findFirst({
+          where: {
+            contractId: contract.id,
+            period,
+            type: 'REVENUE_SHARE' as any,
+            isActive: true,
+            status: { not: InvoiceStatus.CANCELLED },
+          },
+          select: { invoiceNumber: true },
+        });
+        if (existing) {
+          alreadyBilled = existing.invoiceNumber;
+          return null;
+        }
+
+        try {
+          return await tx.invoice.create({
+            data: {
           invoiceNumber,
           contractId: contract.id,
           tenantId: sale.tenantId,
@@ -1739,8 +1760,45 @@ export class BillingService {
               order: 1,
             }],
           },
-        },
+            },
+          });
+        } catch (error) {
+          // The partial unique index is the last line of defence: if the other
+          // racer committed between our read and our insert, convert the raw
+          // P2002 into the same idempotent business outcome rather than
+          // surfacing a database error to the operator.
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002' &&
+            !String((error.meta as any)?.target ?? '').includes('invoiceNumber')
+          ) {
+            const winner = await tx.invoice.findFirst({
+              where: {
+                contractId: contract.id,
+                period,
+                type: 'REVENUE_SHARE' as any,
+                isActive: true,
+                status: { not: InvoiceStatus.CANCELLED },
+              },
+              select: { invoiceNumber: true },
+            });
+            alreadyBilled = winner?.invoiceNumber ?? 'unknown';
+            return null;
+          }
+          throw error;
+        }
       });
+
+      if (!inv) {
+        record(sale, 'SKIPPED_WITH_REASON', {
+          code: 'ALREADY_BILLED',
+          contractId: contract.id,
+          invoiceNumber: alreadyBilled,
+          message: 'Kỳ này đã có hóa đơn chia sẻ doanh thu.',
+        });
+        continue;
+      }
+
       created.push(inv);
       record(sale, 'INVOICE_CREATED', {
         contractId: contract.id,

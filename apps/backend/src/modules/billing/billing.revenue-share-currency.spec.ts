@@ -62,6 +62,9 @@ function buildBilling(opts: { turnover: any; contract: any | null }) {
         return row;
       }),
     },
+    // BILL-002: creation runs inside runSerializableTransaction, so the mock
+    // must hand the callback a tx client carrying the invoice methods.
+    $transaction: jest.fn(async (callback: any) => callback(prisma)),
   };
   const service = new BillingService(
     prisma as unknown as PrismaService,
@@ -184,6 +187,9 @@ describe('CUR-001 — mismatched or missing currency fails closed', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(async ({ data }: any) => ({ id: 'inv-1', ...data })),
       },
+    // BILL-002: creation runs inside runSerializableTransaction, so the mock
+    // must hand the callback a tx client carrying the invoice methods.
+    $transaction: jest.fn(async (callback: any) => callback(prisma)),
     };
     const service = new BillingService(
       prisma as unknown as PrismaService, undefined,
@@ -297,6 +303,9 @@ describe('REVSHARE-01 — revenue-share resolves exactly one contract by period'
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(async ({ data }: any) => ({ id: 'inv-1', ...data })),
       },
+    // BILL-002: creation runs inside runSerializableTransaction, so the mock
+    // must hand the callback a tx client carrying the invoice methods.
+    $transaction: jest.fn(async (callback: any) => callback(prisma)),
     };
     const service = new BillingService(
       prisma as unknown as PrismaService, undefined,

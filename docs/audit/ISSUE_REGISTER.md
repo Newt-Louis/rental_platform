@@ -1141,7 +1141,73 @@ SAP side. Requires coordination, not a one-line change.
 |---|---|
 | Severity | **P2** |
 | Domain | Finance |
-| Status | **CONFIRMED** |
+| Status | **FIXED 2026-09-06 — concurrency proven; DB constraint verified on real Postgres** |
+| Invariants | **FIN-10** (now DB + CHOKEPOINT), **TX-04** |
+
+**Business key, reconstructed rather than assumed.** Tracing the generator and
+every predicate that reads it gives `(contractId, period)` for
+`type = REVENUE_SHARE`, restricted to **live** invoices
+(`isActive = true AND status <> 'CANCELLED'`).
+
+Two decisions worth recording:
+- **`tenantId` is excluded.** `Contract.tenantId` is NOT NULL, so the tenant is
+  functionally determined by the contract. Including it would be redundant and
+  would open a loophole — the same contract+period under a different tenantId
+  would slip past.
+- **Liveness is part of the key.** `voidInvoice()` sets `status = CANCELLED` and
+  **keeps the row** (`isActive` stays true). A constraint over the bare triple
+  would permanently block re-issuing a revenue-share invoice for a voided
+  period — a regression, not a fix. The old application predicate also omitted
+  this filter, so a voided period was already un-billable; that is fixed too.
+
+**Transaction boundary (TX-04).** The existence check moved inside the same
+`runSerializableTransaction` that commits the invoice, so a P2034 retry
+re-decides against freshly committed data instead of reusing a stale answer.
+Scoped per invoice, never around the batch: one tenant's conflict cannot roll
+back another tenant's invoice.
+
+**DB constraint.** Prisma's schema language cannot express a partial unique
+index, so migration `20260906160000_revenue_share_unique_per_contract_period`
+adds it as raw SQL:
+
+```sql
+CREATE UNIQUE INDEX "Invoice_revenue_share_contract_period_live_key"
+  ON "Invoice" ("contractId", "period")
+  WHERE "type" = 'REVENUE_SHARE' AND "isActive" = true AND "status" <> 'CANCELLED';
+```
+
+A plain `@@unique([contractId, period, type])` was deliberately **not** used —
+it is broader than the business key and would block legitimate re-billing.
+
+**Verified against real Postgres** (not only mocks): the index rejects a second
+live revenue-share invoice for the same contract+period, while still allowing
+re-issue after a void and allowing a `MONTHLY_RENT` invoice on the same
+contract+period.
+
+**Concurrency result.** Exactly one invoice commits. The loser observes the
+committed invoice after the serialization retry, or hits the index and has its
+P2002 converted into the same idempotent outcome — `SKIPPED_WITH_REASON /
+ALREADY_BILLED`. A raw P2002/P2034 never reaches the operator. The P2002 handler
+checks `meta.target` so a random `invoiceNumber` collision is rethrown rather
+than mistaken for a duplicate key.
+
+**Invoice + lines atomicity — positive finding.** The lines were always created
+through Prisma's nested `lines: { create: [...] }`, which runs in the same
+transaction as the header. An invoice could never commit without its line. That
+property is preserved, now inside an explicit Serializable transaction.
+
+**Existing data.** Not mutated. `prisma/scripts/revenue-share-duplicate-reconciliation.sql`
+classifies rows OK / DUPLICATE_KEY / MISSING_CONTRACT / MISSING_PERIOD /
+UNCLASSIFIABLE and must be run before applying the migration — the index build
+fails loudly (without corrupting anything) if duplicates exist. Local dataset:
+**0 revenue-share invoices**, so this is *not* production evidence.
+
+**Regression tests.** `billing.revenue-share-duplicate.spec.ts` — 15 tests
+covering T1–T12. The honest regression proof is the last pair: with the index
+disabled in the harness, the fixed flow still commits exactly one invoice, while
+the pre-fix flow (read outside, create outside) commits **two**.
+
+**Original description, retained:**
 
 Duplicate prevention for revenue-share invoices is a `findFirst` check followed by
 a `prisma.invoice.create` with no transaction and no unique constraint on

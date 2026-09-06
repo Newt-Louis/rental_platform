@@ -26,7 +26,7 @@ concurrency hardening · **PARTIAL** = some writes outside the transaction ·
 | Billing schedule generation | inherits caller's txn | **ATOMIC** | upsert on `@@unique([contractId, period])`; invoiced entries never overwritten or deleted | — | none found |
 | Invoice creation (schedule / periodic / slot / parking) | Serializable | STRONG_ATOMIC | deterministic invoiceNumber per source (`INV-SCHEDULE-{id}` etc.) + unique constraint | yes | none found |
 | Invoice creation (manual) | none (single write) | ATOMIC | `invoiceNumber @unique` only | no | random 5-digit number → collision surfaces as an error, not a duplicate |
-| **Revenue-share invoice generation** | none | **NON_ATOMIC** | `findFirst` check-then-create | no | **BILL-002** — duplicate revenue-share invoices under concurrency; also carries CUR-001's wrong amount |
+| **Revenue-share invoice generation** | Serializable | **STRONG_ATOMIC** *(fixed 2026-09-06)* | existence check re-evaluated inside every retry; P2002 → ALREADY_BILLED | P2034 ×3 | BILL-002 closed — DB partial unique index backs the app check |
 | **Payment creation** | Serializable | **STRONG_ATOMIC** *(fixed 2026-09-06)* | **yes** — per-intent idempotency key from both UIs + in-transaction balance invariant | P2034 ×3, then a deterministic 409 | BILL-001 and PAY-001 closed — see below |
 | Payment reversal | Serializable | STRONG_ATOMIC | `reversedAt` guard | yes | none found |
 | SAP posting | none needed | ATOMIC | `SapIntegrationLog.idempotencyKey` upsert | no | manual-trigger only; see SAP-001 for the currency gap |

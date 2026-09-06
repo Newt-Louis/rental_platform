@@ -61,6 +61,9 @@ function build(opts: {
       findFirst: jest.fn().mockResolvedValue(opts.existingInvoice ?? null),
       create: jest.fn(async ({ data }: any) => ({ id: 'inv-1', ...data })),
     },
+    // BILL-002: creation runs inside runSerializableTransaction, so the mock
+    // must hand the callback a tx client carrying the invoice methods.
+    $transaction: jest.fn(async (callback: any) => callback(prisma)),
   };
   const service = new BillingService(
     prisma as unknown as PrismaService, undefined,
