@@ -2,7 +2,13 @@ import { BadRequestException, Injectable, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { LeadStatus, Role, UnitLeaseTermType } from '@prisma/client';
+import { LeadStatus, Role, UnitLeaseTermType, CurrencyCode } from '@prisma/client';
+import {
+  groupPipelineValueByCurrency,
+  groupValueByStatusAndCurrency,
+  resolveDealCurrency,
+  leadValue,
+} from './lead-pipeline-currency';
 import { CustomersService } from './customers.service';
 
 @Injectable()
@@ -240,7 +246,39 @@ export class CrmService {
     return lead;
   }
 
+  /**
+   * RPT-CUR-005 — a Lead may not be written with money but no unit of account.
+   *
+   * `Lead` has no mandatory monetary parent: `mallId` is optional, there is no
+   * Unit relation, and Proposal/UnitBooking are one-to-many and only appear
+   * AFTER the lead's figures are entered. Reconciliation confirmed inference is
+   * unsafe in practice — one seeded lead links to an MMK Proposal and a VND
+   * UnitBooking at once. So there is no deterministic inheritance rule to fall
+   * back on and the currency must be supplied explicitly.
+   *
+   * Legacy rows (money, currency NULL) stay editable: this only fires when a
+   * write actually introduces or changes an amount.
+   */
+  private assertLeadCurrency(
+    incoming: { expectedRent?: number | null; estimatedValue?: number | null; currencyCode?: CurrencyCode | null },
+    existing?: { expectedRent?: number | null; estimatedValue?: number | null; currencyCode?: CurrencyCode | null },
+  ) {
+    const writesMoney =
+      (incoming.expectedRent !== undefined && incoming.expectedRent !== null) ||
+      (incoming.estimatedValue !== undefined && incoming.estimatedValue !== null);
+    if (!writesMoney) return;
+
+    const resultingCurrency = incoming.currencyCode ?? existing?.currencyCode ?? null;
+    if (!resultingCurrency) {
+      throw new BadRequestException(
+        'Vui lòng chọn đơn vị tiền tệ cho giá thuê kỳ vọng / giá trị ước tính. ' +
+          'Hệ thống không mặc định VND và không quy đổi tỷ giá.',
+      );
+    }
+  }
+
   async create(dto: CreateLeadDto & { customerId?: string }) {
+    this.assertLeadCurrency(dto);
     return this.prisma.lead.create({
       data: dto,
       include: {
@@ -302,7 +340,14 @@ export class CrmService {
     if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
     if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
     if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
+    if ((dto as any).currencyCode !== undefined) updateData.currencyCode = (dto as any).currencyCode;
     if ((dto as any).customerId !== undefined) updateData.customerId = (dto as any).customerId;
+
+    // RPT-CUR-005 — checked against the MERGED state, so setting a new amount on
+    // a legacy currency-less lead is rejected while editing its other fields is
+    // still allowed.
+    this.assertLeadCurrency(dto as any, existing as any);
+
     const updated = await this.prisma.lead.update({
       where: { id },
       data: updateData,
@@ -542,6 +587,8 @@ export class CrmService {
         estimatedValue: true,
         expectedRent: true,
         expectedArea: true,
+        // RPT-CUR-005: needed to bucket pipeline value by its actual unit.
+        currencyCode: true,
         leaseTermType: true,
       },
     });
@@ -551,9 +598,13 @@ export class CrmService {
     const statusValues: Record<string, number> = {};
     leads.forEach((l) => {
       statusCounts[l.status] = (statusCounts[l.status] || 0) + 1;
-      const value = l.estimatedValue ?? ((l.expectedRent ?? 0) * (l.expectedArea ?? 0));
-      statusValues[l.status] = (statusValues[l.status] || 0) + value;
+      statusValues[l.status] = (statusValues[l.status] || 0) + leadValue(l);
     });
+    // RPT-CUR-005 — the authoritative monetary contract. `statusValues` above
+    // is retained for backward compatibility but is a cross-currency sum and
+    // must never be presented as money; `valueByStatusAndCurrency` is what a
+    // consumer should read.
+    const valueByStatusAndCurrency = groupValueByStatusAndCurrency(leads);
 
     // Calculate conversion rates
     const totalNew = statusCounts['NEW'] || 0;
@@ -618,9 +669,12 @@ export class CrmService {
     });
 
     // Pipeline value
-    const totalPipelineValue = leads
-      .filter(l => !['WON', 'LOST'].includes(l.status))
-      .reduce((sum, l) => sum + (l.estimatedValue ?? ((l.expectedRent ?? 0) * (l.expectedArea ?? 0))), 0);
+    const openLeads = leads.filter((l) => !['WON', 'LOST'].includes(l.status));
+    // RPT-CUR-005 — one bucket per currency, plus UNKNOWN for legacy rows whose
+    // unit of account was never captured. There is no combined total: producing
+    // one would require FX the platform does not have.
+    const pipelineValueByCurrency = groupPipelineValueByCurrency(openLeads);
+    const totalPipelineValue = openLeads.reduce((sum, l) => sum + leadValue(l), 0);
 
     const proposalWhere: any = { isActive: true };
     if (mallFilter) proposalWhere.unit = { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] };
@@ -654,27 +708,30 @@ export class CrmService {
       const byPriority: Record<string, number> = {};
       segment.forEach((lead) => {
         byStatus[lead.status] = (byStatus[lead.status] || 0) + 1;
-        valueByStatus[lead.status] = (valueByStatus[lead.status] || 0)
-          + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0)));
+        valueByStatus[lead.status] = (valueByStatus[lead.status] || 0) + leadValue(lead);
         byPriority[lead.priority] = (byPriority[lead.priority] || 0) + 1;
       });
       const won = byStatus.WON || 0;
       const lost = byStatus.LOST || 0;
+      const segmentOpen = segment.filter((lead) => !['WON', 'LOST'].includes(lead.status));
       return {
         summary: {
           total: segment.length,
           totalActive: segment.length - won - lost,
           totalWon: won,
           totalLost: lost,
-          totalPipelineValue: segment
-            .filter((lead) => !['WON', 'LOST'].includes(lead.status))
-            .reduce((sum, lead) => sum + (lead.estimatedValue ?? ((lead.expectedRent ?? 0) * (lead.expectedArea ?? 0))), 0),
+          // RPT-CUR-005 — the authoritative figure for this segment.
+          pipelineValueByCurrency: groupPipelineValueByCurrency(segmentOpen),
+          totalPipelineValue: segmentOpen.reduce((sum, lead) => sum + leadValue(lead), 0),
           wonThisMonth: segment.filter((lead) => lead.status === 'WON' && new Date(lead.updatedAt) >= startOfMonth).length,
           lostThisMonth: segment.filter((lead) => lead.status === 'LOST' && new Date(lead.updatedAt) >= startOfMonth).length,
           newThisMonth: segment.filter((lead) => new Date(lead.createdAt) >= startOfMonth).length,
         },
-        // RPT-CUR-005 — same currency-less Lead values as the top-level block.
+        // RPT-CUR-005 — `totalPipelineValue` and `valueByStatus` here remain
+        // cross-currency sums kept only for backward compatibility. This flag
+        // says so; read the *ByCurrency fields instead.
         pipelineValueCurrencyUnknown: true,
+        valueByStatusAndCurrency: groupValueByStatusAndCurrency(segment),
         byStatus,
         valueByStatus,
         byPriority,
@@ -694,19 +751,20 @@ export class CrmService {
         newThisMonth,
         avgDaysToWin: Math.round(avgDaysToWin),
       },
-      // RPT-CUR-005 — KNOWN DEFECT, DEFERRED (Wave 1 scope fence).
+      // RPT-CUR-005 — FIXED in Wave 3. `Lead.currencyCode` now exists, so the
+      // pipeline value is GROUPED by currency instead of being a currency-less
+      // scalar. There is no combined total: no FX engine exists.
       //
-      // `totalPipelineValue`, `valueByStatus` and the byLeaseTerm equivalents
-      // are built from `Lead.estimatedValue` / `expectedRent × expectedArea`.
-      // `Lead` carries NO currency column (CUR-002), so those figures have no
-      // unit of account and cannot be grouped. Fixing it requires adding
-      // `Lead.currencyCode` plus a rule for existing rows -- a schema and data
-      // decision outside this wave.
-      //
-      // Until then the omission is DECLARED rather than left for a consumer to
-      // assume VND. Do not remove this flag without adding the column.
-      pipelineValueCurrencyUnknown: true,
+      // A lead whose currency was never captured lands in the `UNKNOWN` bucket
+      // and is NEVER counted as VND. `pipelineValueCurrencyUnknown` is kept and
+      // now means "at least one lead still has money with no unit of account",
+      // so a consumer can tell an incomplete pipeline from a complete one.
+      pipelineValueByCurrency,
+      pipelineValueCurrencyUnknown: pipelineValueByCurrency.some((b) => b.currencyCode === 'UNKNOWN'),
+      valueByStatusAndCurrency,
       byStatus: statusCounts,
+      // Legacy cross-currency sums, retained for backward compatibility only.
+      // Never present these as money — read the *ByCurrency fields.
       valueByStatus: statusValues,
       byPriority,
       proposalByStatus,
@@ -930,10 +988,14 @@ export class CrmService {
           priority: lead.priority,
           assignedTo: lead.assignedTo,
           estimatedValue: lead.estimatedValue ?? proposal?.totalContractValue ?? null,
-          // Lead.estimatedValue/expectedRent have no currency field (always VND); once a deal
-          // reaches PROPOSAL+ and estimatedValue falls back to totalContractValue, it must carry
-          // that proposal's actual currency instead of silently assuming VND.
-          currencyCode: lead.estimatedValue == null && proposal ? proposal.rentCurrency : 'VND',
+          // RPT-CUR-005 — this used to emit a hardcoded 'VND' whenever the Lead
+          // supplied the amount, which asserted a unit of account the model
+          // could not prove. The currency now travels with whichever amount was
+          // actually chosen above: the Lead's own currency when the Lead value
+          // is used, the Proposal's when it falls back to the proposal. A Lead
+          // with money but no captured currency yields `null` -- rendered as
+          // unknown, never as VND.
+          currencyCode: resolveDealCurrency(lead, proposal),
           stage: dealStage,
           nextAction,
           mall,

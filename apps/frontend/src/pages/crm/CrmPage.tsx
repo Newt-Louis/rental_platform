@@ -19,7 +19,13 @@ import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
 import { useAuthStore } from '@/store/auth.store';
-import { formatMoney, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
+import {
+  formatLeadMoney,
+  formatLeadMoneyCompact,
+  formatLeadBucket,
+  groupLeadValueByCurrency,
+} from '@/lib/lead-currency';
 import {
   DndContext,
   DragOverlay,
@@ -717,7 +723,9 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 <SheetSection label={t('leadSheet.rentRequirements')} className="bg-gray-50">
                   {displayLead.category && <SheetRow label={t('leadSheet.fieldCategory')} value={displayLead.category} icon={Tag} />}
                   {displayLead.expectedArea && <SheetRow label={t('leadSheet.fieldArea')} value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatMoney(displayLead.expectedRent, 'VND')}/m²`} icon={TrendingUp} />}
+                  {/* RPT-CUR-005: was hardcoded 'VND'. The currency now comes
+                      from the Lead; a legacy row with none says so. */}
+                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatLeadMoney(displayLead.expectedRent, displayLead.currencyCode)}/m²`} icon={TrendingUp} />}
                   <SheetRow label={t('leadSheet.fieldCreated')} value={fmtDate(displayLead.createdAt)} icon={Calendar} />
                 </SheetSection>
 
@@ -1107,7 +1115,7 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
             {dealValue && (
               <span className="text-[10px] text-green-600 font-medium">
                 <DollarSign size={9} className="inline" />
-                {formatCompactValue(dealValue)}
+                {formatLeadMoneyCompact(dealValue, lead.currencyCode)}
               </span>
             )}
           </div>
@@ -1442,8 +1450,11 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
     [allLeads, listPage, LIST_PAGE_SIZE],
   );
 
-  const totalValue = allLeads.filter((l) => l.expectedRent && l.expectedArea)
-    .reduce((s, l) => s + (l.expectedRent ?? 0) * (l.expectedArea ?? 0), 0);
+  // RPT-CUR-005: this was one cross-currency sum rendered as VND. Grouped now;
+  // there is no combined total because no FX rate exists.
+  const pipelineBuckets = groupLeadValueByCurrency(
+    allLeads.filter((l) => l.expectedRent && l.expectedArea),
+  );
   const allUnfilteredLeads = useMemo(() => Object.values(pipelineData).flatMap(v => v.leads), [pipelineData]);
   const discoveryStats = {
     mine: allUnfilteredLeads.filter((lead) => lead.assignedTo?.id === currentUserId).length,
@@ -1602,9 +1613,17 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
             <Users size={13} /> {t('toolbar.customerProfiles')}
           </button>
         </div>
-        {totalValue > 0 && (
-          <div className="text-xs text-gray-500 ml-auto">
-            {t('toolbar.pipelineValue')} <span className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>{formatMoney(totalValue, 'VND')}</span>
+        {pipelineBuckets.length > 0 && (
+          <div className="text-xs text-gray-500 ml-auto flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span>{t('toolbar.pipelineValue')}</span>
+            {pipelineBuckets.map((b) => (
+              <span key={b.currencyCode} className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>
+                {formatLeadBucket(b)}
+              </span>
+            ))}
+            {pipelineBuckets.length > 1 && (
+              <span className="text-[11px] text-gray-400">Không quy đổi tỷ giá</span>
+            )}
           </div>
         )}
       </ERPToolbar>

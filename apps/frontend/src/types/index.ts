@@ -371,6 +371,9 @@ export interface Lead {
   expectedArea?: number;
   expectedRent?: number;
   estimatedValue?: number;
+  // RPT-CUR-005: currency of expectedRent/estimatedValue. Optional because
+  // legacy rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   expectedCloseDate?: string;
   position?: number;
   lastActivityAt?: string;

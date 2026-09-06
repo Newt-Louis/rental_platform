@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { CURRENCY_CODES } from '@/lib/currency';
 import {
   CATEGORY_OPTS,
   LEAD_SOURCE_OPTS,
@@ -46,6 +47,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     leaseTermType: lead?.leaseTermType ?? 'LONG',
     expectedArea: lead?.expectedArea?.toString() ?? '',
     expectedRent: lead?.expectedRent?.toString() ?? '',
+    currencyCode: lead?.currencyCode ?? '',
     notes: lead?.notes ?? '',
     assignedToId: lead?.assignedToId ?? '',
     company: lead?.customer?.companyName ?? lead?.company ?? '',
@@ -56,6 +58,11 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     rating: lead?.customer?.rating?.toString() ?? '',
   });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // RPT-CUR-005 — money present + currency absent is refused by the API, so the
+  // form surfaces it rather than letting the user hit a 400.
+  const moneyEntered = Boolean(form.expectedRent && form.expectedRent.trim());
+  const currencyMissing = moneyEntered && !form.currencyCode;
 
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
@@ -78,6 +85,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         leaseTermType: lead.leaseTermType ?? 'LONG',
         expectedArea: lead.expectedArea?.toString() ?? '',
         expectedRent: lead.expectedRent?.toString() ?? '',
+        currencyCode: lead.currencyCode ?? '',
         notes: lead.notes ?? '',
         assignedToId: lead.assignedToId ?? '',
         company: lead.customer?.companyName ?? lead.company ?? '',
@@ -115,6 +123,9 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         leaseTermType: form.leaseTermType,
         expectedArea: form.expectedArea && form.expectedArea.trim() ? +form.expectedArea : undefined,
         expectedRent: form.expectedRent && form.expectedRent.trim() ? +form.expectedRent : undefined,
+        // RPT-CUR-005: the backend rejects money without a currency, so it is
+        // sent whenever the user has chosen one.
+        currencyCode: form.currencyCode || undefined,
         notes: form.notes.trim() || undefined,
         assignedToId: form.assignedToId || undefined,
       };
@@ -305,6 +316,27 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.expectedRent')}</label>
                 <Input type="number" value={form.expectedRent} onChange={(e) => set('expectedRent', e.target.value)} placeholder="680000" />
+              </div>
+              {/* RPT-CUR-005: the amount above has no meaning without this. The
+                  currency is never hidden and never defaulted to VND. */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">
+                  Đơn vị tiền tệ{moneyEntered && <span className="text-red-500"> *</span>}
+                </label>
+                <select
+                  aria-label="Đơn vị tiền tệ"
+                  className={`w-full border rounded-md h-9 px-2 text-sm bg-white ${currencyMissing ? 'border-red-400' : 'border-gray-300'}`}
+                  value={form.currencyCode}
+                  onChange={(e) => set('currencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                {currencyMissing && (
+                  <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập số tiền — hệ thống không mặc định VND.</p>
+                )}
               </div>
             </div>
             <div>

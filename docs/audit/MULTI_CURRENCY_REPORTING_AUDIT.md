@@ -618,3 +618,143 @@ becomes VND, and the context states the currency boundary explicitly.
 **This does not make all AI financial context multi-currency-complete.** The AR
 block is still VND-filtered by design; it is now declared rather than silent,
 which is a local RPT-CUR-004 mitigation, not a global fix.
+
+---
+
+## 18. Remediation Wave 3 — Lead monetary currency model (2026-09-06)
+
+Scope: **RPT-CUR-005 and the reachable Lead subset of CUR-002.** SlotBooking,
+the shared frontend formatter defaults, `avgRentPerSqm`, the single-mall
+dashboard, reports, compliance, AI aggregation and SAP were all left untouched.
+No FX was implemented.
+
+### 18.1 Write paths, reconstructed before any schema change
+
+| Path | Controller | DTO | Service | Money written | Currency before | UI input | Bulk | Seed | Job |
+|---|---|---|---|---|---|---|---|---|---|
+| `POST /crm/leads` | `crm.controller.ts:100` | `CreateLeadDto` | `CrmService.create` | `expectedRent`, `expectedArea`, `estimatedValue` — spread straight from the DTO (`data: dto`) | none; DTO only *documented* "in VND" | `LeadEditDialog` | no | no | no |
+| `PUT /crm/leads/:id` | `crm.controller.ts:108` | `UpdateLeadDto` | `CrmService.update` | `expectedRent`, `expectedArea` only — `estimatedValue` is **not** updatable (pre-existing) | none | `LeadEditDialog` | no | no | no |
+| `POST /crm/leads/bulk` | `crm.controller.ts:189` | untyped | `CrmService.bulkAction` | none (assign / status / priority / soft-delete) | n/a | CRM list | yes | no | no |
+| `prisma/seed.ts:819` | — | — | direct `prisma.lead.create` | all three | none | — | no | yes | no |
+| `CustomersService.createFromLead` / `syncFromLead` | via `POST /crm/leads/:id/customer-profile` | — | copies `lead.expectedRent` → `Customer.budgetMin` | reads Lead money, writes Customer money | none on either side | CRM | no | no | no |
+| `ProposalsService` (`:274`, `:868`) | — | — | `prisma.lead.update` | **status only** | n/a | — | no | no | no |
+
+No import path, no background job and no other module writes Lead money.
+`estimatedValue` has exactly one writer: lead creation.
+
+### 18.2 Canonical currency — decided from evidence, not assumed
+
+**One currency per Lead: yes.** The aggregation treats `estimatedValue` and
+`expectedRent × expectedArea` as substitutable for the same quantity
+(`estimatedValue ?? expectedRent * expectedArea`, used in four places). Two
+different currencies across those fields would make that expression incoherent,
+so the platform already assumes one currency per Lead — this makes it explicit.
+
+**Inheritance: none, and this is a finding, not a shortcut.** `Lead` has no
+mandatory monetary parent. `mallId` is optional, there is no Unit relation, and
+`Proposal`/`UnitBooking` are one-to-many and only come into existence *after*
+the lead's figures are entered. The brief's condition — "a proven business
+parent … mandatory and stable" — is not satisfied by anything on the model, so
+the currency must be supplied explicitly.
+
+The data proves the point rather than merely allowing it: seeded lead **Zara
+Vietnam** links to an **MMK** Proposal and a **VND** UnitBooking at the same
+time, and **KFC Vietnam** carries a VND-magnitude `expectedRent` of 900,000
+against a **USD** Proposal. Inheriting from either relation would have produced
+a wrong answer on real rows.
+
+### 18.3 Existing data classification (read-only, pre-migration)
+
+`prisma/scripts/lead-currency-reconciliation.sql`, run against the original
+dataset of 20 active leads — every one of which had money:
+
+| Classification | Leads |
+|---|---|
+| SAFE_TO_INFER | 9 |
+| CURRENCY_UNKNOWN | 10 |
+| CONFLICT | 1 |
+| AMBIGUOUS | 0 |
+| NO_MONETARY_VALUE | 0 |
+
+7 of the 9 SAFE_TO_INFER rows would infer **VND**, and the script flags them
+with `inference_is_vnd_default_risk`: both source columns
+(`Proposal.rentCurrency`, `UnitBooking.currencyCode`) are `@default(VND)`, so a
+VND reading there may be an untouched default rather than a decision. A backfill
+built on that would reproduce the exact assumption being removed.
+
+**Conclusion: no backfill rule exists.** A NOT NULL migration is unsafe.
+
+### 18.4 Schema and migration
+
+```prisma
+currencyCode CurrencyCode?   // nullable, NO @default
+```
+
+Migration `20260906180000_add_currency_to_lead` is a single `ADD COLUMN` and
+touches no rows: nullable, no default, no constraint, so no table rewrite and
+only a brief `ACCESS EXCLUSIVE` lock. Rollback is
+`ALTER TABLE "Lead" DROP COLUMN "currencyCode"`.
+
+### 18.5 Enforcement, aggregation, presentation
+
+`assertLeadCurrency` refuses **money present + currency absent** on create and
+on update. It is evaluated against the *merged* state, so a legacy row can still
+be edited — only a write that actually introduces or changes an amount is
+blocked.
+
+`pipelineValueByCurrency` and `valueByStatusAndCurrency` replace the
+currency-less scalars as the authoritative figures; the scalars remain for
+backward compatibility and `pipelineValueCurrencyUnknown` now means "at least
+one lead still has money with no unit of account".
+
+Frontend: a currency selector on the lead form (required once an amount is
+entered), per-currency pipeline totals in the CRM toolbar and overview KPI, and
+`formatLeadMoney` which renders a missing currency as **"(chưa rõ ĐVT)"** — the
+hardcoded `formatMoney(..., 'VND')` calls are gone.
+
+### 18.6 Runtime verification
+
+Against the live stack and real Postgres.
+
+```
+POST /crm/leads {estimatedValue: 500000000}            -> 400 "không mặc định VND"
+POST /crm/leads {estimatedValue: 25000, ccy: USD}      -> 201, currencyCode USD
+POST /crm/leads {estimatedValue: 1, ccy: EUR}          -> 400 "must be one of VND, USD, MMK"
+
+GET /crm/pipeline/stats
+  pipelineValueByCurrency: VND 3,238,500,000 (15 leads)
+                           MMK    87,000,000 (1)
+                           UNKNOWN 140,000,000 (1)
+  pipelineValueCurrencyUnknown: true
+  legacy scalar (compat only): 3,465,500,000   <- the cross-currency sum
+
+GET /crm/deals
+  Aeon MaxValu  87,000,000  ccy=MMK
+  Miniso       140,000,000  ccy=null      <- legacy row, NOT fabricated as VND
+  Tous Les Jours 90,000,000 ccy=VND
+```
+
+The seed now gives every lead an explicit currency (18 VND, 1 USD, 1 MMK) so it
+stops planting currency-less money. The UNKNOWN path was exercised by nulling
+one row temporarily; that row and the probe leads were removed afterwards and
+the table verified back at 20 leads with 18/1/1.
+
+### 18.7 RPT-CUR-005 — NOT closed, one condition outstanding
+
+Five of the brief's six closing conditions hold. The sixth does not:
+
+> *downstream copy does not lose it*
+
+`CustomersService.customerDataFromLead` maps `budgetMin ← lead.expectedRent`,
+and `Customer` has **no currency column at all**. Before this wave the copy lost
+nothing, because neither side had a currency; now it drops one that exists.
+Fixing it requires a `Customer` schema change, which §10 of the brief explicitly
+puts behind "open a separate issue and STOP".
+
+Opened as **CUR-002-CUSTOMER**. RPT-CUR-005 is therefore **FIXED for the Lead
+model, the CRM aggregation and every CRM surface**, and stays open pending that
+boundary.
+
+**CUR-002 is NOT globally fixed.** Only the Lead subset moved.
+`SlotBooking`, `Customer.budgetMin/Max`, `SapReconciliationRecord` and
+`OccupancySnapshot.revenuePerSqm` are unchanged.

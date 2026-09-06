@@ -1373,6 +1373,20 @@ model Lead {
   expectedRent      Float?
   expectedArea      Float?
   estimatedValue    Float?
+  // RPT-CUR-005 / CUR-002 (Lead subset): currency of expectedRent and
+  // estimatedValue. Deliberately NULLABLE with NO @default.
+  //
+  // Nullable because reconciliation proved a backfill cannot be derived: of 20
+  // active leads, 10 have money and no linked Proposal/UnitBooking at all, and
+  // 1 (Zara) links to an MMK Proposal and a VND UnitBooking simultaneously. A
+  // @default(VND) would stamp a fabricated unit onto figures that feed the CRM
+  // pipeline value, which is the exact defect being fixed.
+  //
+  // One currency per Lead: the aggregation treats estimatedValue and
+  // expectedRent*expectedArea as substitutable for the same quantity, so they
+  // cannot be in different currencies. NULL means "recorded before currency was
+  // captured" and is surfaced as UNKNOWN, never as VND.
+  currencyCode      CurrencyCode?
   expectedCloseDate DateTime?
   preferredCategory String?
   position          Int               @default(0)

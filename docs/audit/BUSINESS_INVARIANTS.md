@@ -152,3 +152,28 @@ produced for them at all (`CURRENCY_UNKNOWN_NOT_COMPARABLE`).
 
 Still true: no FX conversion exists anywhere in the platform, and the model is
 never asked to perform one.
+
+### Wave 3 status (2026-09-06) — Lead monetary currency model
+
+| ID | Status after Wave 3 |
+|---|---|
+| MON-CUR-01 | **PARTIAL, improved** — `Lead` monetary fields now carry a currency. `Customer.budgetMin/Max`, `SlotBooking`, `SapReconciliationRecord` and `OccupancySnapshot.revenuePerSqm` still do not. |
+| MON-CUR-04 | **HOLDS for `Lead`** — the new column has no `@default`, matching the `SalesTurnover` precedent. |
+| RPT-CUR-01 | **PARTIAL** — additionally HOLDS for the CRM pipeline surfaces. |
+| RPT-CUR-06 | **HOLDS for the Lead path** — a NULL `Lead.currencyCode` becomes an UNKNOWN bucket and renders as "chưa rõ ĐVT", never VND. |
+
+New invariants introduced by Wave 3:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-LEAD-01** | A Lead may not be persisted with a monetary amount and no unit of account | CHOKEPOINT (`assertLeadCurrency` on create and update) + DTO `@IsEnum(CurrencyCode)` | **HOLDS** for every production write path |
+| **MON-CUR-LEAD-02** | A Lead currency is supplied explicitly; it is never inherited, defaulted or inferred | PER-PATH | **HOLDS** — no inheritance rule exists, because `Lead` has no mandatory monetary parent |
+| **MON-CUR-LEAD-03** | CRM monetary aggregates are grouped by currency and never produce a total spanning currencies | PER-PATH + regression tests | **HOLDS** for `/crm/pipeline/stats` and the CRM UI |
+| **MON-CUR-LEAD-04** | A monetary value copied out of a Lead carries its currency, or the destination is treated as currency-unknown | CHOKEPOINT | **VIOLATED** at `Customer.budgetMin` — see CUR-002-CUSTOMER. This is the one invariant this wave introduced and could not satisfy. |
+
+MON-CUR-LEAD-02 is a deliberate non-implementation: the wave brief permitted
+deterministic inheritance from "a proven business parent … mandatory and
+stable", and no such parent exists on `Lead`. The reference data confirms it —
+one lead links to an MMK Proposal and a VND UnitBooking at once.
+
+Still true: no FX conversion exists anywhere in the platform.

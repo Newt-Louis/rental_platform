@@ -1495,3 +1495,78 @@ executive "total revenue" mean when no FX rate is approved?
 No production data was mutated in this wave. The local dev-database rows created
 for runtime verification were deleted and the table verified back at its
 original 30 rows.
+
+---
+
+## Remediation Wave 3 — Lead monetary currency model (2026-09-06)
+
+Scope: **RPT-CUR-005 + the reachable Lead subset of CUR-002.** Evidence and
+runtime output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §18.
+
+### RPT-CUR-005 — fixed at the Lead surface, NOT closed
+
+| | |
+|---|---|
+| Severity | **P2** (unchanged) |
+| Status | **FIXED for the Lead model and every CRM surface; one closing condition outstanding** |
+| Blocker | **CUR-002-CUSTOMER** (below) |
+
+`Lead.currencyCode CurrencyCode?` added — nullable, **no `@default`**. All six
+write paths were reconstructed first (§18.1); `assertLeadCurrency` now refuses
+money-without-currency on create and update, evaluated against the merged state
+so legacy rows stay editable. `pipelineValueByCurrency` /
+`valueByStatusAndCurrency` replace the currency-less scalars. The CRM form has a
+required currency selector; the toolbar, overview KPI, kanban card and lead
+sheet all render the supplied currency, and a missing one shows as
+**"(chưa rõ ĐVT)"** rather than VND.
+
+**No inheritance rule was implemented, deliberately.** `Lead` has no mandatory
+monetary parent, and the data disproves the tempting shortcuts: seeded lead
+*Zara Vietnam* links to an MMK Proposal and a VND UnitBooking simultaneously,
+and *KFC Vietnam* carries a VND-magnitude `expectedRent` against a USD Proposal.
+
+Reconciliation before migration (20 active leads, all with money):
+**9 SAFE_TO_INFER · 10 CURRENCY_UNKNOWN · 1 CONFLICT · 0 AMBIGUOUS ·
+0 NO_MONETARY_VALUE.** 7 of the 9 would infer VND from a `@default(VND)` column
+and are flagged `inference_is_vnd_default_risk`. No backfill rule exists, so the
+column is nullable and **nothing was auto-backfilled**.
+
+### CUR-002-CUSTOMER — NEW, opened by this wave
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Domain | CRM |
+| Status | **CONFIRMED, not fixed — out of Wave 3 scope by instruction** |
+
+`CustomersService.customerDataFromLead` maps `budgetMin ← lead.expectedRent`
+(`customers.service.ts:277`), and `Customer` has no currency column
+(`budgetMin`, `budgetMax`). Before Wave 3 this copy lost nothing because neither
+side carried a currency; now it **drops a currency that exists**. Reachable
+through `POST /crm/leads/:id/customer-profile` and the WON transition, which
+calls `createFromLead`. 11 Customer rows in the reference dataset already hold
+copied budget figures.
+
+Fixing it requires a `Customer` schema change plus the same
+nullable/no-default/reconciliation treatment used here. The Wave 3 brief
+directed that such a discovery be raised as a separate issue rather than
+remediated inline, so no `Customer` code or schema was touched.
+
+This is the single reason RPT-CUR-005 is not marked closed.
+
+### CUR-002 — Lead subset only
+
+| Model | Status |
+|---|---|
+| `Lead.expectedRent` / `estimatedValue` | **FIXED** — `currencyCode` added, enforced, aggregated and displayed |
+| `Customer.budgetMin` / `budgetMax` | open — **CUR-002-CUSTOMER** |
+| `SlotBooking.totalAmount` | open — RPT-CUR-006, declared in Wave 1, unchanged |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | open — SAP-004 |
+| `OccupancySnapshot.revenuePerSqm` | open |
+
+**CUR-002 is not globally fixed.**
+
+No production data was mutated. The local dev-database changes used for runtime
+verification (one lead temporarily set to NULL currency, three probe leads via
+the API) were removed and the table verified back at 20 leads / 18 VND / 1 USD /
+1 MMK.

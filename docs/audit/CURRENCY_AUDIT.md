@@ -231,3 +231,23 @@ decision pays off end to end: the NULL travels all the way into the AI prompt as
 New invariants: **MON-CUR-AI-01/02/03** (see `BUSINESS_INVARIANTS.md`).
 
 Still no FX engine, and none was added.
+
+---
+
+## Remediation Wave 3 — Lead monetary currency model (2026-09-06)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §18.
+
+| ID | Status after Wave 3 |
+|---|---|
+| **RPT-CUR-005** | **FIXED at the Lead surface, NOT closed.** `Lead.currencyCode` added (nullable, no default); write paths fail closed on money-without-currency; CRM aggregation grouped by currency; frontend shows the supplied currency and labels a missing one "chưa rõ ĐVT". Held open by **CUR-002-CUSTOMER**. |
+| **CUR-002-CUSTOMER** | **NEW, CONFIRMED, not fixed.** `Customer.budgetMin ← Lead.expectedRent` drops the currency because `Customer` has no such column. Raised rather than remediated, per the wave's own instruction. |
+| **CUR-002** | **Lead subset only.** `Customer`, `SlotBooking`, `SapReconciliationRecord` and `OccupancySnapshot` unchanged — NOT globally fixed. |
+
+`Lead.currencyCode` follows the same design as `SalesTurnover.currencyCode`
+(CUR-001): nullable, no default, never backfilled. Reconciliation of 20 active
+leads found 10 with money and no deterministic source at all, and 1 whose linked
+Proposal (MMK) and UnitBooking (VND) disagree outright — so no inference rule
+was implemented, and none should be.
+
+Still no FX engine, and none was added.

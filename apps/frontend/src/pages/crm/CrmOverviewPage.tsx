@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
 import { AlertTriangle, ArrowRight, Bell, Clock, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
-import { formatMoney } from '@/lib/currency';
+import { formatLeadBucket, type LeadCurrencyBucket } from '@/lib/lead-currency';
 
 const PRIORITY_CONFIG: Record<string, { className: string }> = {
   HOT: { className: 'bg-red-100 text-red-700' },
@@ -20,12 +20,13 @@ const PRIORITY_CONFIG: Record<string, { className: string }> = {
   COLD: { className: 'bg-gray-100 text-gray-600' },
 };
 
-// Money Domain Consolidation: totalPipelineValue is derived from Lead.expectedRent,
-// which has no currency field on the schema at all (currency-less by design, not
-// a mixing bug) -- VND is the platform's implicit unit for this field, made
-// explicit here per the KPI-tile disclosure rule.
-function formatFullVnd(value: number) {
-  return formatMoney(value, 'VND');
+// RPT-CUR-005: the note that used to sit here said Lead.expectedRent was
+// "currency-less by design" and that VND was the platform's implicit unit. That
+// is no longer true and was never safe -- Lead.currencyCode now exists, so the
+// pipeline value is rendered per currency with no combined total.
+function formatPipelineBuckets(buckets: LeadCurrencyBucket[]): string {
+  if (buckets.length === 0) return '—';
+  return buckets.map(formatLeadBucket).join('  ·  ');
 }
 
 function daysSince(value?: string | null) {
@@ -59,10 +60,12 @@ export default function CrmOverviewPage() {
   const tomorrow = new Date(today.getTime() + 86_400_000);
   const overdue = followUps.filter((item) => new Date(item.dueDate) < today);
   const dueToday = followUps.filter((item) => new Date(item.dueDate) >= today && new Date(item.dueDate) < tomorrow);
+  // RPT-CUR-005 — the authoritative pipeline figure from the API.
+  const pipelineBuckets: LeadCurrencyBucket[] = stats.pipelineValueByCurrency ?? [];
   const kpis = [
     { label: t('overview.kpi.activeLeads'), value: summary.totalActive ?? 0, icon: Target, tone: 'text-blue-700 bg-blue-50' },
     { label: t('overview.kpi.newThisMonth'), value: summary.newThisMonth ?? 0, icon: TrendingUp, tone: 'text-violet-700 bg-violet-50' },
-    { label: t('overview.kpi.pipelineValue'), value: formatFullVnd(summary.totalPipelineValue ?? 0), valueTitle: formatFullVnd(summary.totalPipelineValue ?? 0), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
+    { label: t('overview.kpi.pipelineValue'), value: formatPipelineBuckets(pipelineBuckets), valueTitle: pipelineBuckets.length > 1 ? 'Mỗi đơn vị tiền tệ tách riêng — không quy đổi tỷ giá' : formatPipelineBuckets(pipelineBuckets), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
     { label: t('overview.kpi.winRate'), value: `${(stats.conversionRates?.overallWinRate ?? 0).toFixed(1)}%`, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
     { label: t('overview.kpi.todayTasks'), value: overdue.length + dueToday.length, icon: Bell, tone: 'text-red-700 bg-red-50' },
   ];
