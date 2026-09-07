@@ -308,3 +308,73 @@ Still no FX engine, and none was added.
 | **MON-CUR-SLOT-06** added | `confirmBooking` was a blind status update, so a legacy positive-value booking with no currency could reach CONFIRMED — the revenue-recognised and invoice-eligible state. It now fails closed, and the currency may be supplied during the transition. |
 | Zero-value rule documented | A 0-amount booking may confirm with no currency: it recognises no revenue and can be invoiced for no amount. Stated and tested, not implied. |
 | Calculation structure test | MON-CUR-SLOT-03 holds structurally, not by a check. A test now scans `calculatePrice` (comments stripped) and fails if a fee/deposit/tax/surcharge/fixed-discount operand enters the formula. |
+
+---
+
+## Remediation Wave 6 — OccupancySnapshot monetary semantics (2026-09-07)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.
+
+| ID | Status after Wave 6 |
+|---|---|
+| **CUR-002 (OccupancySnapshot subset)** | **CLOSED.** `revenuePerSqmCurrency` added, nullable with no default. The arithmetic was never unsafe — the source aggregate is explicitly VND-filtered — so the scope was recorded, not widened. SHORT records null because its ratio is 0 from no monetary source at all. |
+| **OCC-CRON-001** | **NEW, P1, pre-existing, NOT fixed.** `takeMonthlySnapshot` passes null into a compound-unique `where`; Prisma rejects it, so the monthly job has never written a row. Every snapshot came from the seed. The Wave 6 currency fix is correct but inert until this is resolved. |
+| **ANLY-CUR-001** | **NEW, P2, NOT fixed.** `AnalyticsDashboard.tsx:350` hardcodes VND over `compliance.service.ts`'s own `revenuePerSqm` — same class of defect, different producer, outside this wave's fence. |
+| **CUR-002** | Still open globally: `SapReconciliationRecord` (SAP-004), `ParkingShift`, inventory. |
+
+A ratio is not currency-neutral because it is divided by m²: VND/m² and USD/m²
+remain different units. That is why the fix is a persisted currency rather than a
+comment.
+
+Backfill was refused on two independent grounds: two writers produce
+indistinguishable rows, and reading the current writer's filter back onto
+historical rows is precisely the inference MON-CUR-OCC-01 forbids.
+
+Still no FX engine, and none was added.
+
+### Wave 6.1 (2026-09-07) — the snapshot writer now runs
+
+**OCC-CRON-001 CLOSED.** Wave 6's currency fix was correct but inert: the monthly
+writer had never persisted a row, because it passed `null` into a
+compound-unique `where` that Prisma refuses — and because that constraint would
+not have enforced uniqueness for mall-level rows anyway (Postgres NULLS
+DISTINCT). Both are fixed: a partial unique index carrying the writer's own
+predicate, and `findFirst` → `create`/`update` with a P2002 branch.
+
+Consequence for this audit: `revenuePerSqmCurrency` now actually reaches the
+table. Verified end to end — the first real run wrote a LONG snapshot with
+`revenuePerSqmCurrency = VND`. The 6 pre-existing rows remain CURRENCY_UNKNOWN;
+nothing fabricates their unit.
+
+---
+
+## Master remediation run — Waves 7-9 (2026-09-07)
+
+| ID | Status |
+|---|---|
+| **SAP-004** | **PARTIAL.** `ourCurrencyCode` added and populated from the invoice; `sapCurrencyCode` added but **never populated** — the external response carries no verified currency field or meaning. The comparison now refuses to MATCH anything that is not provably same-currency, so 100 VND no longer reconciles against 100 USD. Blocked on **SAP-004-EXT**. |
+| **SAP-REC-TOL-001** | **NEW, BUSINESS DECISION REQUIRED.** The `< 1` tolerance is not currency-neutral. Named, not guessed. |
+| **RPT-CUR-007** | **CLOSED.** Both silent VND defaults removed from the shared formatters. No caller relied on either — verified before changing, and the unchanged typecheck is the proof. |
+| **RPT-CUR-002** | **CLOSED.** `avgRentPerSqmByCurrency` added alongside the scalar; the cross-currency average is no longer the only figure available. |
+
+Still no FX engine, and none was added.
+
+### RPT-CUR-002 — Wave 9 closure (2026-09-07)
+
+The first pass was closed prematurely: it added per-currency buckets but kept
+emitting the cross-currency scalar as a KPI (613,172 against VND 912,500 / USD 30
+/ MMK 29,000). It also fixed only one of **three** producers, missing the only
+one with frontend consumers.
+
+`avgRentPerSqm` is now non-null only when exactly one KNOWN currency contributes
+and it names that currency; `avgRentPerSqmByCurrency` is authoritative. Applied
+to `/analytics/occupancy`, `/spaces/analytics/rent` and the unit-compare summary,
+and to the five `formatVndRate` renderers that were labelling mixed averages as
+dong. `rentVsAvg`, `minRent` and `maxRent` are null across currencies.
+
+Found while verifying: `/spaces/analytics/rent` never selected `currencyCode`, so
+every unit arrived currency-less. The old code hid that by averaging anyway;
+surfacing UNKNOWN exposed it. **RPT-CUR-002 CLOSED.**
+
+New: **ANLY-CUR-002** — `summary.totalMonthlyRevenue` in the same payload is a
+cross-currency SUM rendered as VND. RPT-CUR-004 family, not fixed here.

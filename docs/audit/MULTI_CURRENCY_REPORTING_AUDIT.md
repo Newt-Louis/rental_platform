@@ -1104,3 +1104,231 @@ byLeaseTerm.SHORT
 PATCH /slots/bookings/:id/confirm  {}                 -> 400 (positive amount, NULL currency)
 PATCH /slots/bookings/:id/confirm  {currencyCode:MMK} -> CONFIRMED, ccy MMK
 ```
+
+---
+
+## 21. Remediation Wave 6 — OccupancySnapshot monetary semantics (2026-09-07)
+
+Scope: **the `OccupancySnapshot.revenuePerSqm` subset of CUR-002.** SAP
+reconciliation, the shared formatter defaults, `avgRentPerSqm`, pricing
+assumptions, parking and inventory were all left untouched. No FX.
+
+### 21.1 Field classification
+
+| Field | Class |
+|---|---|
+| `mallId`, `floorId`, `category`, `leaseTermType`, `period`, `snapshotDate` | NON_MONETARY (scope / identity) |
+| `totalUnits`, `occupiedUnits`, `vacantUnits`, `underFitout` | COUNT |
+| `totalAreaSqm`, `occupiedAreaSqm` | AREA |
+| `occupancyRate` | PERCENTAGE |
+| **`revenuePerSqm`** | **DERIVED_MONETARY** — a money/area ratio |
+
+`revenuePerSqm` is the only monetary field. Dividing by m² does **not** make it
+currency-neutral: VND/m² and USD/m² are different units.
+
+### 21.2 Lifecycle and writers
+
+`OccupancySnapshot` is a **historical monthly series**: `@@unique([mallId,
+floorId, category, leaseTermType, period])` with an `upsert`, so it appends one
+row per period and overwrites only within the same period. Mall-scoped and
+period-scoped.
+
+| Writer | Trigger | Source tables | Source money | Source currency | Aggregation | Period | Mall scope | Overwrite/append | Consumers |
+|---|---|---|---|---|---|---|---|---|---|
+| `OccupancyAnalyticsService.takeMonthlySnapshot` | `@Cron('0 1 1 * *')`, scheduler-locked | `Mall`, `Unit`, `SlotBooking`, `Invoice` | `Invoice.subtotal` | **explicit `currencyCode: 'VND'` filter** | SUM then ÷ occupiedArea | current month | per mall | upsert (overwrite within period, append across) | `/analytics/occupancy/trend` |
+| `prisma/seed.ts:1592` | seeding | — | none — writes `400000 + random()` | **none** | none | last 6 months | one mall | create | same |
+
+Consumers: `OccupancyAnalyticsService.getOccupancyTrend` returns it;
+`SpacesService.getOccupancyTrend` reads the table but **does not expose**
+`revenuePerSqm` at all. No frontend component renders it.
+
+### 21.3 The formula
+
+```
+numerator   = SUM(Invoice.subtotal) WHERE currencyCode = 'VND'
+                AND status IN (ISSUED, PAID, PARTIALLY_PAID)
+                AND period = <snapshot period>
+                AND contract.unit.mallId = <mall>
+denominator = occupiedAreaSqm (m²)
+aggregation before division = SUM over VND invoices only
+```
+
+For `leaseTermType = SHORT` the numerator is a hardcoded `0` — SHORT revenue is
+not computed here at all.
+
+### 21.4 Classification: A — EXPLICIT_SINGLE_CURRENCY
+
+Proven from the query, not assumed. **The arithmetic was never unsafe**: the
+`currencyCode: 'VND'` filter means no cross-currency SUM ever occurred. The
+defect is the one §3 of the brief anticipated — *currency context missing / VND
+scope undisclosed*. The scope was therefore **not widened**; doing so would
+change what the KPI means, which §14 makes a business decision.
+
+Section 3 of the reconciliation quantifies what the scope excludes: real USD
+(5,625) and MMK (15,954,545) invoices exist in each of 2026-03/04/05 for
+THISO-SALA and are correctly outside the figure.
+
+### 21.5 Model contract: C — intentionally VND-only, with the scope persisted
+
+`revenuePerSqmCurrency CurrencyCode?` on `OccupancySnapshot` — nullable, **no
+`@default`**. The writer records `VND` for LONG because that is the currency its
+source was filtered to; the two are the same named constant
+(`OCCUPANCY_REVENUE_SCALE_CURRENCY`) so the filter and the label cannot drift
+apart.
+
+**SHORT records `null`, not VND.** Its `revenuePerSqm` is 0 because no monetary
+source was consulted, not because it earned zero dong; a zero has no unit of
+account to claim.
+
+### 21.6 Historical immutability — MON-CUR-OCC-01
+
+Snapshot history exists, so the invariant is promoted rather than proposed. The
+currency is persisted on the row and the read path returns it verbatim; nothing
+consults current `Mall`/`Unit` configuration to answer what a past snapshot was
+denominated in.
+
+### 21.7 Existing data
+
+6 snapshots, all **CURRENCY_UNKNOWN**, and no backfill is possible:
+
+- **Two writers produce identical-looking rows.** The cron computes from
+  VND-scoped invoices; the seed writes a fabricated `400000 + random()`. Nothing
+  persisted distinguishes them.
+- **Even for cron rows, asserting VND today** means reading the *current*
+  writer's filter back onto rows written by whatever the code did then — exactly
+  the "derive historical currency from current configuration" that
+  MON-CUR-OCC-01 forbids.
+
+So `SAFE_TO_INFER_FROM_PROVEN_SOURCE` is **unreachable by construction** in this
+script, and `MIXED_SOURCE` is too: one snapshot row comes from one writer and one
+aggregate, so there is no second source to mix with. Both classes are still
+emitted so the reasoning is visible.
+
+### 21.8 Dependencies checked and found absent
+
+- **`avgRentPerSqm` (RPT-CUR-002): no dependency.** `avgRentPerSqm` is computed
+  in `groupByFieldWithRent` from `Unit.baseRentPerSqm`; the snapshot's ratio
+  comes from `Invoice.subtotal`. The unsafe cross-currency average is **not**
+  promoted into a "fixed" snapshot. RPT-CUR-002 remains a separate P2.
+- **`estimatedLoss` / `totalEstimatedLoss`: no dependency.** They compute
+  `areaNLA × 500000 × days/30` from a hardcoded constant, never from
+  `revenuePerSqm`. RPT-CUR-008 stays out of scope, as §11 requires.
+
+### 21.9 Runtime verification
+
+The monthly writer **cannot currently persist anything** — see OCC-CRON-001
+below — so its output was captured by intercepting the upsert, computed from real
+data, without touching the table.
+
+```
+what the writer would persist (real data)
+  2026-09 LONG  | revenuePerSqm = 0 | revenuePerSqmCurrency = "VND" | occupiedArea = 1632
+  2026-09 SHORT | revenuePerSqm = 0 | revenuePerSqmCurrency = null  | occupiedArea = 0
+
+API contract on the real (legacy) rows — /analytics/occupancy/trend
+  2026-04..2026-09 LONG | revenuePerSqm = 425320..478994 | revenuePerSqmCurrency = null
+```
+
+Legacy rows return `null`, i.e. UNKNOWN — never VND. The table was verified
+unchanged afterwards (6 rows, all currency NULL).
+
+### 21.10 OCC-CRON-001 — NEW, pre-existing, NOT fixed here
+
+`takeMonthlySnapshot` passes `floorId: null` and `category: null` inside the
+compound-unique `where` of its `upsert`. Prisma rejects that
+(`Argument 'floorId' must not be null`), so **the monthly occupancy snapshot job
+has never successfully written a row**. Every snapshot in the database came from
+the seed.
+
+Confirmed pre-existing and untouched by this wave (`git show HEAD` carries the
+same `floorId: null as any`). It is a functional defect, not a currency one, and
+fixing it means deciding how the compound unique should treat a mall-level
+snapshot — a design question with its own consequences. Raised rather than
+remediated inline.
+
+It does mean the Wave 6 write-path fix is **correct but currently inert**: the
+currency it records cannot reach the table until OCC-CRON-001 is resolved.
+
+### 21.11 Status
+
+The OccupancySnapshot subset of CUR-002 is **CLOSED** against the six conditions:
+semantics known and proven from the query, writer currency proven and persisted,
+no cross-currency arithmetic (there never was any), the persisted and API values
+carry their scope, the frontend infers nothing (there is no renderer on this
+path), and historical unknown data is left unknown.
+
+**CUR-002 is NOT closed globally.** `SapReconciliationRecord.ourAmount/sapAmount`
+(SAP-004), `ParkingShift` and the inventory models remain.
+
+### 21.12 Wave 6.1 — OCC-CRON-001 fixed: the snapshot job actually writes (2026-09-07)
+
+Wave 6 recorded the currency correctly but the value could not reach the table,
+because the writer had never worked. That is now fixed.
+
+**Two defects, not one.**
+
+1. **Prisma rejected the lookup.** The writer upserted on
+   `@@unique([mallId, floorId, category, leaseTermType, period])` while passing
+   `floorId: null` and `category: null`. Prisma refuses null inside a
+   compound-unique `where` (`Argument 'floorId' must not be null`), so the call
+   threw on the first mall of every run.
+2. **The constraint would not have held anyway.** Postgres treats NULLs as
+   DISTINCT in a standard unique index, so
+   `(mallId, NULL, NULL, leaseTermType, period)` never collides with itself.
+   Swapping the upsert for `findFirst` would have produced a working job with an
+   application-level check and nothing behind it — the BILL-002 shape.
+
+Proven, not asserted. With the new index dropped inside a rolled-back
+transaction, inserting a second `(mall, LONG, 2026-04)` row **succeeded**:
+
+```
+OLD CONSTRAINT ALLOWED THE DUPLICATE | rows_for_key = 2
+```
+
+With the index in place the same insert is refused:
+
+```
+ERROR: duplicate key value violates unique constraint
+       "OccupancySnapshot_mall_scope_period_key"
+DETAIL: Key ("mallId","leaseTermType",period)=(..., LONG, 2026-04) already exists
+```
+
+**The fix**
+
+- `20260907140000_occupancy_snapshot_mall_scope_unique` — a PARTIAL unique index
+  on `(mallId, leaseTermType, period) WHERE floorId IS NULL AND category IS NULL`,
+  carrying exactly the predicate the writer uses. Prisma cannot express a partial
+  unique index, hence raw SQL. The original `@@unique` is left in place: it still
+  covers any future per-floor or per-category snapshot, where the columns are NOT
+  NULL and its semantics do hold. Verified 0 duplicates before creating it.
+- The upsert becomes `findFirst` → `update` or `create`, with a **P2002 branch**
+  that adopts the winner's row when a concurrent run wins the race. That branch
+  is what makes the application check and the database constraint agree rather
+  than merely coexist.
+- Per-mall, per-segment `try/catch`, matching the sibling monthly schedulers, so
+  one mall cannot take the whole month's run down.
+- The summary log said *"Occupancy snapshot taken for N malls"* — computed from
+  the mall count alone, so it reported success on every run while every write was
+  throwing. **That is what let the defect sit unnoticed.** It now returns and
+  logs `{ created, updated, failed, malls }`.
+
+**Runtime verification** — the writer ran against real Postgres for the first
+time:
+
+```
+BEFORE       6 rows, every revenuePerSqmCurrency = null   (all seed-written)
+RUN 1     => { created: 1, updated: 1, failed: 0, malls: 1 }
+             2026-09 LONG  0  | ccy = VND    <- Wave 6's currency finally lands
+             2026-09 SHORT 0  | ccy = null
+RUN 2     => { created: 0, updated: 2, failed: 0 }   idempotent
+             duplicate mall-level keys after 2 runs: 0
+RESTORED     6 rows, unchanged
+```
+
+The 2026-09 LONG ratio is 0 because that period holds no invoices, which is
+correct rather than a failure.
+
+**Consequence for the occupancy trend chart:** it has been showing seeded data
+for its entire life. Once this reaches an environment where the cron runs, the
+first real snapshot lands on the 1st of the following month; the 6 seeded rows
+remain and stay CURRENCY_UNKNOWN, since nothing may fabricate their unit.

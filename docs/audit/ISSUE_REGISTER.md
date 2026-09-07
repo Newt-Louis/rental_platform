@@ -1806,3 +1806,334 @@ SHORT has no mixed scalar" and "billable state requires currency".
 
 No production data was mutated; the verification rows were removed and the tables
 verified back at 0 slots / 0 bookings / 0 SHORT units / 30 units.
+
+---
+
+## Remediation Wave 6 — OccupancySnapshot monetary semantics (2026-09-07)
+
+Evidence and runtime output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.
+
+### CUR-002 (OccupancySnapshot subset) — CLOSED
+
+| | |
+|---|---|
+| Severity | **P3** |
+| Status | **FIXED 2026-09-07** |
+| Invariant | **MON-CUR-OCC-01** |
+
+`OccupancySnapshot.revenuePerSqm` is a money/area ratio, and dividing by m² does
+not make it currency-neutral. The column carried no currency, so the figure was
+persisted and returned with nothing saying what unit it was in.
+
+**The arithmetic was never unsafe.** The monthly writer aggregates
+`Invoice.subtotal` under an explicit `currencyCode: 'VND'` filter, so no
+cross-currency SUM ever occurred. The defect was the **undisclosed scope**, and
+the fix records the scope rather than widening it — widening would change what
+the KPI means, which is a business decision this wave did not take.
+
+`revenuePerSqmCurrency CurrencyCode?` added, nullable with **no `@default`**. The
+writer records VND for LONG from the same named constant its source is filtered
+to, so filter and label cannot drift apart. SHORT records `null`: its ratio is 0
+because no monetary source was consulted, not because it earned zero dong.
+
+Reconciliation: **6 snapshots, all CURRENCY_UNKNOWN, no backfill possible.** Two
+writers produce identical-looking rows (the cron from VND-scoped invoices, the
+seed from a fabricated `400000 + random()`), and even for cron rows, asserting
+VND today would read the *current* filter back onto history — which
+MON-CUR-OCC-01 forbids. `SAFE_TO_INFER_FROM_PROVEN_SOURCE` and `MIXED_SOURCE` are
+unreachable by construction and the script says so.
+
+Dependencies checked and **absent**: `avgRentPerSqm` (RPT-CUR-002) does not feed
+this ratio, so an unsafe cross-currency average is not promoted into a "fixed"
+snapshot; `estimatedLoss` uses a hardcoded 500000 constant, not `revenuePerSqm`,
+so RPT-CUR-008 stays out of scope.
+
+### OCC-CRON-001 — NEW, pre-existing, NOT fixed
+
+| | |
+|---|---|
+| Severity | **P1** |
+| Domain | Analytics |
+| Status | **CONFIRMED, not fixed — outside the currency fence** |
+
+`takeMonthlySnapshot` passes `floorId: null` and `category: null` inside the
+compound-unique `where` of its `upsert`. Prisma rejects that with
+`Argument 'floorId' must not be null`, so **the monthly occupancy snapshot job
+has never successfully written a row** — every snapshot in the database came from
+the seed, and the occupancy trend chart has been showing seeded data only.
+
+Confirmed pre-existing and untouched by this wave: `git show HEAD` carries the
+same `floorId: null as any`. Fixing it requires deciding how the compound unique
+should represent a mall-level snapshot, which is a design question with its own
+consequences, so it is raised rather than remediated inline.
+
+Consequence for Wave 6: the currency the writer now records is **correct but
+inert** until OCC-CRON-001 is resolved. It was verified by intercepting the
+upsert and capturing the payload against real data.
+
+### ANLY-CUR-001 — NEW, adjacent, NOT fixed
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Domain | Analytics |
+| Status | **CONFIRMED, not fixed — different producer, out of this wave's fence** |
+
+`AnalyticsDashboard.tsx:350` renders `formatMoneyAmount(m.revenuePerSqm, 'VND')`.
+That value comes from `getMultiMallComparison` (`compliance.service.ts:251`), a
+**different** `revenuePerSqm` that happens to share the name — not the snapshot.
+Its source is also VND-scoped-but-undeclared, and the frontend hardcodes the
+label, so it is the same class of defect on a different path. §9 of the wave
+brief fenced remediation to the snapshot path only.
+
+### CUR-002 — still open globally
+
+| Model | Status |
+|---|---|
+| `Lead`, `Customer`, `UnitSlot`, `SlotBooking` | **FIXED** (Waves 3-5) |
+| `OccupancySnapshot.revenuePerSqm` | **FIXED** (Wave 6) |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | open — SAP-004 |
+| `ParkingShift.cashRevenue` / `nonCashRevenue` | open — parking module |
+| `InventoryItem.averageCost`, `InventoryTransaction.unitCost` | open — inventory, excluded by instruction |
+
+No production data was mutated. The runtime check intercepted the writer's upsert
+rather than executing it; the table was verified unchanged at 6 rows.
+
+---
+
+## Remediation Wave 6.1 — OCC-CRON-001 (2026-09-07)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.12.
+
+### OCC-CRON-001 — CLOSED
+
+| | |
+|---|---|
+| Severity | **P1** |
+| Domain | Analytics |
+| Status | **FIXED 2026-09-07** |
+| Invariants | **OCC-SNAP-01**, **OCC-SNAP-02** |
+
+Raised during Wave 6 and fixed here. **Two defects, not one.**
+
+1. `takeMonthlySnapshot` upserted on the compound unique while passing
+   `floorId: null` / `category: null`. Prisma refuses null there, so the call
+   threw on the first mall and **the job never wrote a row** — every snapshot in
+   the database came from the seed, and the occupancy trend chart has shown
+   seeded data for its entire life.
+2. The constraint would not have held anyway: Postgres treats NULLs as DISTINCT
+   in a standard unique index, so mall-level rows never collided with themselves.
+   Fixing only the first defect would have left an application check with nothing
+   behind it — the BILL-002 shape.
+
+Proven rather than argued: with the new index dropped inside a rolled-back
+transaction, a duplicate `(mall, LONG, 2026-04)` row **inserted successfully**;
+with the index present the same insert is refused by
+`OccupancySnapshot_mall_scope_period_key`.
+
+Fix: a partial unique index carrying the writer's own predicate
+(`WHERE floorId IS NULL AND category IS NULL`), the upsert replaced by
+`findFirst` → `create`/`update` with a **P2002 branch** that adopts the winner of
+a concurrent race, per-mall failure isolation matching the sibling monthly
+schedulers, and a summary that reports what reached the table.
+
+That last point is not cosmetic. The old log read *"Occupancy snapshot taken for
+N malls"*, derived from the mall count alone, so it reported success on every run
+while every write was throwing. A test now pins that `created + updated` cannot
+be inferred from `malls`.
+
+Verified against real Postgres: run 1 created 1 and updated 1 (the seeded 2026-09
+row), the LONG snapshot landed with `revenuePerSqmCurrency = VND` — Wave 6's
+currency reaching the table for the first time — run 2 was idempotent with 0
+duplicates, and the table was restored to its original 6 rows.
+
+### CUR-002 (OccupancySnapshot subset) — no longer inert
+
+Wave 6 was reported as "correct but inert" because of OCC-CRON-001. With that
+closed, the currency the writer records now actually reaches the table. The 6
+pre-existing rows stay CURRENCY_UNKNOWN: nothing may fabricate their unit.
+
+No production data was mutated. The runtime rows created by the verification run
+were deleted and the table verified back at its original 6 rows.
+
+---
+
+# MASTER REMEDIATION RUN — Waves 7-9 (2026-09-07)
+
+## SAP-004 — PARTIAL (harmful half closed, external contract still required)
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Status | **PARTIAL — comparison fixed; SAP-side currency BLOCKED** |
+
+**Grain, proven:** one record per SUCCESS `SapIntegrationLog`, keyed by
+`idempotencyKey = log.idempotencyKey ?? entityType:entityId:endpoint`. Not per
+invoice, not per SAP document — per outbound posting attempt.
+
+**Our side, provable:** `Invoice.totalAmount` / `Invoice.currencyCode` for
+`entityType = 'INVOICE'`. Now recorded as `ourCurrencyCode`.
+
+**SAP side, NOT provable → BLOCKED.** `log.response` is the raw text of whatever
+the external endpoint returned. No verified field carries a currency, and no
+verified meaning exists for one — document / transaction / local / company-code /
+group currency are different things in SAP. `sapCurrencyCode` was added and is
+**deliberately never populated**; copying `Invoice.currencyCode` into it would
+assert SAP answered in our currency, which is the exact unproven assumption
+SAP-004 exists to remove. Tracked as **SAP-004-EXT**.
+
+**What was closed.** The comparison was
+`Math.abs(sapAmount - ourAmount) < 1 ? MATCHED : MISMATCH` on two bare numbers,
+so **100 VND and 100 USD reconciled as equal** and the record was stamped
+`reconciledAt`. `assessComparability` now requires both sides to carry a unit and
+those units to be equal; anything else is `NEEDS_REVIEW` carrying the reason
+(`OUR_AMOUNT_NOT_SOURCED` / `SAP_AMOUNT_MISSING` / `OUR_CURRENCY_UNKNOWN` /
+`SAP_CURRENCY_UNKNOWN` / `CURRENCY_MISMATCH`). **UNKNOWN can never become
+MATCHED.** Consequence, stated plainly: until SAP-004-EXT is answered, the batch
+auto-matches nothing.
+
+**Second defect found and fixed:** `ourAmount` defaulted to `0` for any
+non-INVOICE entity type, so a SAP zero could MATCH a fabricated zero. `ourAmount`
+is now nullable and an unsourced side is NULL.
+
+Runtime (real Postgres, reversible): a USD invoice of 6187.5 against a SAP
+response of 6187.5 → `NEEDS_REVIEW / SAP_CURRENCY_UNKNOWN`, `reconciledAt` null.
+The old code would have marked it MATCHED. A TENANT log → `ourAmount: null`,
+`NEEDS_REVIEW / OUR_AMOUNT_NOT_SOURCED`. Both rows and their logs were removed.
+
+## SAP-REC-TOL-001 — NEW, BUSINESS DECISION REQUIRED
+
+The reconciliation tolerance is a bare `1`. That is not a currency-neutral
+quantity: 1 VND is a rounding speck, 1 USD is ~25,000 VND. It is named
+(`SAP_RECONCILIATION_TOLERANCE`) and documented rather than guessed per currency,
+because an acceptable tolerance per currency is a finance policy nobody has
+stated. Currently unreachable: nothing is comparable.
+
+## RPT-CUR-007 — CLOSED (Wave 8)
+
+The shared formatters defaulted `currencyCode` to `'VND'` **and** fell back to
+`CURRENCIES.VND` for an unrecognised code. Either turns "we do not know what this
+money is" into a confident wrong label.
+
+Audited every call site first: **no single-argument call exists anywhere** in
+backend or frontend — Waves 1-6 had already given every site an explicit
+currency. Removing the parameter default is therefore structural, not
+behavioural, and the frontend typecheck passing unchanged is the proof.
+
+The unknown-code fallback now renders the amount with its raw code attached
+(`1.000 EUR`) instead of silently formatting as dong.
+
+## RPT-CUR-002 — Wave 9 first pass (SUPERSEDED — see the closure below)
+
+`avgRentPerSqm` averaged `Unit.baseRentPerSqm` across whatever currencies a
+group's occupied units carried. Dividing by a unit count no more removes the
+currency than dividing by m² does.
+
+`avgRentPerSqmByCurrency` added **alongside** the scalar, not replacing it: the
+scalar keeps its exact previous value and `avgRentCurrencyMixed` still says when
+it cannot be trusted, so no existing KPI moved. Changing what `avgRentPerSqm`
+means remains a reporting-policy decision.
+
+Runtime (two units temporarily switched to USD/MMK, then restored): Ground Floor
+scalar `613,172` — a number in no currency — against
+`VND 912,500 (4 units) · USD 30 (1) · MMK 29,000 (1)`. Level 1, single-currency,
+scalar and bucket agree exactly at 900,000.
+
+---
+
+## RPT-CUR-002 — Wave 9 CLOSURE (2026-09-07)
+
+**The first pass was closed too early, and the runtime output said so.** It
+reported `avgRentPerSqm = 613172` next to buckets of VND 912,500 / USD 30 /
+MMK 29,000. 613,172 matches none of them and belongs to no currency. Adding a
+correct figure beside an invalid one does not remove the invalid one, and the
+invalid one was still the field every consumer read.
+
+### The surface, fully traced this time
+
+The first pass fixed one producer and missed two — including the only one with
+frontend consumers.
+
+| Producer | API | Consumers |
+|---|---|---|
+| `occupancy-analytics.service.ts` `groupByFieldWithRent` | `/analytics/occupancy` → `byFloor[].avgRentPerSqm` | **none** |
+| `spaces.service.ts` `getRentAnalytics` | `/spaces/analytics/rent` → `summary.avgRentPerSqm`, `byFloor[].avgRent`, `byCategory[].avgRent` | `AnalyticsView.tsx` ×3, all via `formatVndRate` |
+| `spaces.service.ts` unit compare | `summary.avgRent`, per-unit `rentVsAvg`, `minRent`, `maxRent` | `CompareModal.tsx` ×1, via `formatVndRate` |
+
+`formatVndRate` appends "VND/m²" to whatever number it is handed, so every one of
+those five renderers displayed a cross-currency average as dong.
+
+### Contract
+
+`avgRentByCurrency` (`common/utils/avg-rent-currency.ts`), shared by all three:
+
+```
+avgRentPerSqmByCurrency        authoritative, one entry per contributing currency
+avgRentPerSqm                  non-null ONLY when exactly one KNOWN currency contributes
+avgRentPerSqmCurrency          names that currency, else null
+avgRentPerSqmCurrencyMixed     more than one currency contributed
+avgRentPerSqmCurrencyUnknown   at least one unit had no currency
+```
+
+The single currency is never *chosen*: not the first, not the most common, not
+the mall default, never VND. A test asserts exactly that against four VND units
+and one USD unit — VND is first, most common and the platform default, and there
+is still no scalar.
+
+`rentVsAvg` is null unless the unit's own currency equals the average's; a
+percentage against a currency-less mean is not a smaller error than the mean.
+`minRent`/`maxRent` are null when currencies differ — a min across currencies is
+a comparison, not an aggregate.
+
+### A real bug the UNKNOWN branch exposed
+
+On the first runtime run, `/spaces/analytics/rent` returned **one UNKNOWN bucket
+of 10 units**: its `select` never fetched `currencyCode`, so every unit arrived
+currency-less. The old code hid this by averaging anyway and labelling it VND.
+Fixed by adding the column to the select — found only because UNKNOWN is
+surfaced rather than defaulted.
+
+### Runtime proof
+
+Mixed (GF-A01→USD, GF-A02→MMK, then restored):
+
+```
+/analytics/occupancy  Ground Floor  avgRentPerSqm=null  mixed=true
+    VND 912,500 (4) · USD 30 (1) · MMK 29,000 (1)
+                      Level 1       avgRentPerSqm=900,000  currency=VND
+/spaces/analytics/rent  summary     avgRentPerSqm=null  mixed=true
+    VND 906,250 (8) · USD 30 (1) · MMK 29,000 (1)
+```
+
+Single currency (restored, all VND):
+
+```
+/spaces/analytics/rent  summary  avgRentPerSqm=965,000  currency=VND  mixed=false  unknown=false
+/analytics/occupancy    floor    avgRentPerSqm=1,008,333  currency=VND
+```
+
+UNKNOWN is structurally unreachable from the database — `Unit.currencyCode` is
+NOT NULL — so it is proven at the function level (T6, T7, T10) rather than
+manufactured in the DB. The branch still earns its place: it caught the missing
+`select` above.
+
+### Two pre-existing tests updated, not relaxed
+
+`occupancy-analytics.breakdown.spec.ts` asserted the old contract. Its fixture
+predated `Unit.currencyCode`, so units now state one and the single-currency
+assertions stand unchanged, plus a new mixed-currency case. Its second test
+asserted `avgRentPerSqm = 0` for a floor with no occupied units — that claimed
+"the average rent here is zero" in an unstated currency. It is null now.
+
+**RPT-CUR-002 — CLOSED**, against all five conditions: unlike currencies are
+never averaged, the mixed scalar is no longer emitted as a KPI, a present scalar
+carries its currency, the frontend renders buckets for mixed data, and UNKNOWN
+never defaults to VND.
+
+### ANLY-CUR-002 — NEW, NOT fixed (out of this wave's fence)
+
+`spaces.service.ts:1219` `summary.totalMonthlyRevenue` sums
+`(baseRentPerSqm + camPerSqm) × areaNLA` across currencies, and `AnalyticsView`
+renders it through `formatVndAmount` (hardcoded VND). Same defect class as
+RPT-CUR-002 but a different metric — a SUM, not an average — so it belongs to the
+RPT-CUR-004 family rather than here. Reachable and confirmed.

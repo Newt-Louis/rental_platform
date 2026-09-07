@@ -1,3 +1,4 @@
+import { formatAvgRent } from '@/lib/avg-rent-currency';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -137,7 +138,7 @@ export function AnalyticsView({ mallId }: { mallId?: string | null }) {
             <div className="text-xs text-gray-500">{t('analytics.occupiedUnits')}</div>
         </div>
         <div className="border-l border-t border-gray-100 px-3 py-3 md:border-t-0">
-            <div className="truncate text-lg font-bold tabular-nums text-gray-700" title={formatVndRate(Number(summary?.avgRentPerSqm ?? 0))}>{formatVndRate(Number(summary?.avgRentPerSqm ?? 0))}</div>
+            <div className="truncate text-lg font-bold tabular-nums text-gray-700" title={formatAvgRent(summary)}>{formatAvgRent(summary)}</div>
             <div className="text-xs text-gray-500">{t('analytics.avgRent')}</div>
         </div>
         <div className="border-l border-t border-gray-100 px-3 py-3 md:border-t-0">
@@ -162,7 +163,7 @@ export function AnalyticsView({ mallId }: { mallId?: string | null }) {
                     <span className="text-xs text-gray-400">({f.unitCount} units)</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold tabular-nums">{formatVndRate(Number(f.avgRent))}</span>
+                    <span className="text-sm font-semibold tabular-nums">{formatAvgRent(f)}</span>
                     <span className="text-xs text-green-600">{f.occupancyRate}%</span>
                   </div>
                 </div>
@@ -186,7 +187,7 @@ export function AnalyticsView({ mallId }: { mallId?: string | null }) {
                     <span className="text-xs text-gray-400">({c.unitCount} units)</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold tabular-nums">{formatVndRate(Number(c.avgRent))}</span>
+                    <span className="text-sm font-semibold tabular-nums">{formatAvgRent(c)}</span>
                     <span className="text-xs text-green-600">{c.occupancyRate}%</span>
                   </div>
                 </div>

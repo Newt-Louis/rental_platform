@@ -2583,8 +2583,27 @@ model SapReconciliationRecord {
   entityType     String
   entityId       String
   sapRef         String?
-  ourAmount      Float
+  // SAP-004: our side of the comparison. NULLABLE because only entityType
+  // 'INVOICE' has a sourced amount; every other entity type used to persist a
+  // fabricated 0, which could then MATCH a SAP zero on two meaningless numbers.
+  ourAmount      Float?
+  // Currency of ourAmount. Provable: it is Invoice.currencyCode for the invoice
+  // the log points at. Nullable with NO default -- an unsourced side has no unit.
+  ourCurrencyCode CurrencyCode?
   sapAmount      Float?
+  // Currency of sapAmount. DELIBERATELY NEVER POPULATED.
+  //
+  // log.response is the raw text of whatever the external SAP endpoint returned.
+  // There is no verified field carrying a currency, and no verified meaning for
+  // it either (document / transaction / local / company-code / group currency
+  // are different things in SAP). Copying Invoice.currencyCode here would assert
+  // that SAP answered in our currency, which is exactly the unproven assumption
+  // SAP-004 exists to remove.
+  //
+  // The column exists so the gap is visible in the data rather than implicit,
+  // and so the external contract has somewhere to land. Until SAP-004-EXT is
+  // answered it stays NULL and no record can be MATCHED.
+  sapCurrencyCode CurrencyCode?
   status         String    @default("PENDING")
   idempotencyKey String    @unique
   notes          String?
@@ -2901,6 +2920,23 @@ model OccupancySnapshot {
   occupiedAreaSqm Float
   occupancyRate   Float
   revenuePerSqm   Float?
+  // MON-CUR-OCC-01 (CUR-002, OccupancySnapshot subset): the unit of account that
+  // governed revenuePerSqm WHEN THE SNAPSHOT WAS TAKEN.
+  //
+  // OccupancySnapshot is a historical monthly series (one row per
+  // mall/floor/category/leaseTerm/period, appended each month), so the currency
+  // must be persisted rather than re-derived from current Mall/Unit
+  // configuration: a later configuration change must not relabel history.
+  //
+  // Deliberately NULLABLE with NO @default. The writer's source query is
+  // explicitly `currencyCode: 'VND'`-scoped, so rows it writes from now on carry
+  // VND; existing rows cannot be told apart from the seed's fabricated ones, so
+  // they stay NULL and are surfaced as UNKNOWN, never as VND.
+  //
+  // A SHORT-term snapshot has revenuePerSqm = 0 because SHORT revenue is not
+  // computed here at all, not because it earned zero VND. A zero has no unit of
+  // account, so it is left NULL.
+  revenuePerSqmCurrency CurrencyCode?
   createdAt       DateTime          @default(now())
 
   @@unique([mallId, floorId, category, leaseTermType, period])

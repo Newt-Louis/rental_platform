@@ -1,4 +1,4 @@
-import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
+import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType, CurrencyCode } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from './approval-policy-seed.util';
 import { generateBillingPeriods } from '../src/modules/billing/billing-schedule.util';
@@ -1602,6 +1602,10 @@ async function main() {
         occupiedAreaSqm: occupiedArea,
         occupancyRate: baseOccupancy,
         revenuePerSqm: 400000 + Math.random() * 100000,
+        // MON-CUR-OCC-01: the seed authors these figures at VND magnitude, so it
+        // states the unit rather than planting currency-less money the way it
+        // did before.
+        revenuePerSqmCurrency: CurrencyCode.VND,
       },
     });
   }
