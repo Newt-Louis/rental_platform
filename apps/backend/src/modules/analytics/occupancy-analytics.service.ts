@@ -2,6 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatus, CurrencyCode } from '@prisma/client';
+
+/**
+ * MON-CUR-OCC-01 — the single currency the occupancy snapshot's revenue figures
+ * are scoped to. The monthly writer filters its source invoices to exactly this
+ * currency, so the persisted ratio is <this>/m2. Named rather than repeated as a
+ * literal so the scope and the filter cannot drift apart.
+ */
+export const OCCUPANCY_REVENUE_SCALE_CURRENCY: CurrencyCode = 'VND';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
@@ -401,6 +409,10 @@ export class OccupancyAnalyticsService {
       occupiedUnits: s.occupiedUnits,
       vacantUnits: s.vacantUnits,
       revenuePerSqm: s.revenuePerSqm,
+      // MON-CUR-OCC-01: a monetary figure never leaves this API without its
+      // unit of account. NULL means the snapshot predates the column and is
+      // genuinely unknown -- consumers must render it as unknown, not as VND.
+      revenuePerSqmCurrency: s.revenuePerSqmCurrency,
       leaseTermType: s.leaseTermType,
     }));
   }
@@ -434,8 +446,17 @@ export class OccupancyAnalyticsService {
         },
       });
       const occupancy = summarizeOccupancyByLeaseTerm(units, shortBookings, now);
-      // Multi-currency: revenue/revenuePerSqm are single VND-denominated figures -- scope to
-      // VND, same convention as the dashboard's revenue KPIs.
+      // MON-CUR-OCC-01 — this query is deliberately VND-scoped, the same
+      // convention as the dashboard's revenue KPIs. That makes the arithmetic
+      // SAFE (no cross-currency SUM) but it also means the KPI is VND-only, and
+      // that scope was previously undisclosed: the number was persisted and
+      // returned with nothing saying what unit it was in.
+      //
+      // The scope is NOT widened here. Turning this into a multi-currency figure
+      // would change what the KPI means, which is a business decision. What
+      // changes is that the unit of account is now recorded WITH the snapshot.
+      // Do not remove the currencyCode filter without also revisiting
+      // revenuePerSqmCurrency below.
       const monthInvoices = await this.prisma.invoice.aggregate({
         where: {
           contract: { unit: { mallId: mall.id } },
@@ -452,6 +473,12 @@ export class OccupancyAnalyticsService {
         const underFitout = units.filter((unit) => unit.leaseTermType === leaseTermType && unit.status === UnitStatus.UNDER_FITOUT).length;
         const revenue = leaseTermType === 'LONG' ? longRevenue : 0;
         const revenuePerSqm = segment.occupiedArea > 0 ? revenue / segment.occupiedArea : 0;
+        // LONG revenue comes from the VND-scoped aggregate above, so the ratio
+        // is VND/m2 and says so. SHORT revenue is hardcoded 0 -- it is not
+        // computed from any monetary source at all -- so that zero has no unit
+        // of account and is deliberately left NULL rather than labelled VND.
+        const revenuePerSqmCurrency: CurrencyCode | null =
+          leaseTermType === 'LONG' ? OCCUPANCY_REVENUE_SCALE_CURRENCY : null;
         await this.prisma.occupancySnapshot.upsert({
         where: {
           mallId_floorId_category_leaseTermType_period: {
@@ -475,6 +502,7 @@ export class OccupancyAnalyticsService {
           occupiedAreaSqm: segment.occupiedArea,
           occupancyRate: segment.occupancyRate,
           revenuePerSqm,
+          revenuePerSqmCurrency,
         },
         update: {
           snapshotDate: now,
@@ -486,6 +514,7 @@ export class OccupancyAnalyticsService {
           occupiedAreaSqm: segment.occupiedArea,
           occupancyRate: segment.occupancyRate,
           revenuePerSqm,
+          revenuePerSqmCurrency,
         },
       });
       }

@@ -251,3 +251,33 @@ MON-CUR-SLOT-03 now has a structure test guarding it. The invariant is not
 enforced by a runtime check — it holds because `calculatePrice` has exactly one
 monetary operand — so the test scans that method for money-shaped vocabulary and
 fails when a second one appears.
+
+### Wave 6 status (2026-09-07) — OccupancySnapshot monetary semantics
+
+| ID | Status after Wave 6 |
+|---|---|
+| MON-CUR-01 | **PARTIAL, improved again** — `OccupancySnapshot.revenuePerSqm` now carries a currency. `SapReconciliationRecord`, `ParkingShift` and inventory still do not. |
+| MON-CUR-04 | **HOLDS for the new column** — no `@default`. |
+| MON-CUR-02 | Unchanged and never violated on this path: the snapshot's source aggregate has always been single-currency. |
+
+New invariant introduced by Wave 6:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-OCC-01** | A historical monetary snapshot carries the unit of account that governed its calculation when the snapshot was created, and that unit is never re-derived from current configuration | CHOKEPOINT (writer records the same named constant its source is filtered to; the read path returns the persisted value verbatim) | **HOLDS** |
+
+Promoted from candidate to proven because snapshot history genuinely exists:
+`OccupancySnapshot` is a monthly series keyed by
+`(mallId, floorId, category, leaseTermType, period)`, appended each period.
+
+Two deliberate non-decisions recorded here so they are not mistaken for
+oversights:
+
+- **The VND scope was not widened.** The source query has always filtered to VND,
+  which is why the arithmetic was safe. Making the KPI multi-currency changes its
+  business meaning and is a business decision, not a remediation.
+- **SHORT records no currency.** Its `revenuePerSqm` is 0 because SHORT revenue
+  is not computed in this writer at all, not because it earned zero dong. A zero
+  has no unit of account to claim.
+
+Still true: no FX conversion exists anywhere in the platform.

@@ -2901,6 +2901,23 @@ model OccupancySnapshot {
   occupiedAreaSqm Float
   occupancyRate   Float
   revenuePerSqm   Float?
+  // MON-CUR-OCC-01 (CUR-002, OccupancySnapshot subset): the unit of account that
+  // governed revenuePerSqm WHEN THE SNAPSHOT WAS TAKEN.
+  //
+  // OccupancySnapshot is a historical monthly series (one row per
+  // mall/floor/category/leaseTerm/period, appended each month), so the currency
+  // must be persisted rather than re-derived from current Mall/Unit
+  // configuration: a later configuration change must not relabel history.
+  //
+  // Deliberately NULLABLE with NO @default. The writer's source query is
+  // explicitly `currencyCode: 'VND'`-scoped, so rows it writes from now on carry
+  // VND; existing rows cannot be told apart from the seed's fabricated ones, so
+  // they stay NULL and are surfaced as UNKNOWN, never as VND.
+  //
+  // A SHORT-term snapshot has revenuePerSqm = 0 because SHORT revenue is not
+  // computed here at all, not because it earned zero VND. A zero has no unit of
+  // account, so it is left NULL.
+  revenuePerSqmCurrency CurrencyCode?
   createdAt       DateTime          @default(now())
 
   @@unique([mallId, floorId, category, leaseTermType, period])

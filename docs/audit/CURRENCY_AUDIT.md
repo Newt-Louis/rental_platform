@@ -308,3 +308,26 @@ Still no FX engine, and none was added.
 | **MON-CUR-SLOT-06** added | `confirmBooking` was a blind status update, so a legacy positive-value booking with no currency could reach CONFIRMED — the revenue-recognised and invoice-eligible state. It now fails closed, and the currency may be supplied during the transition. |
 | Zero-value rule documented | A 0-amount booking may confirm with no currency: it recognises no revenue and can be invoiced for no amount. Stated and tested, not implied. |
 | Calculation structure test | MON-CUR-SLOT-03 holds structurally, not by a check. A test now scans `calculatePrice` (comments stripped) and fails if a fee/deposit/tax/surcharge/fixed-discount operand enters the formula. |
+
+---
+
+## Remediation Wave 6 — OccupancySnapshot monetary semantics (2026-09-07)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.
+
+| ID | Status after Wave 6 |
+|---|---|
+| **CUR-002 (OccupancySnapshot subset)** | **CLOSED.** `revenuePerSqmCurrency` added, nullable with no default. The arithmetic was never unsafe — the source aggregate is explicitly VND-filtered — so the scope was recorded, not widened. SHORT records null because its ratio is 0 from no monetary source at all. |
+| **OCC-CRON-001** | **NEW, P1, pre-existing, NOT fixed.** `takeMonthlySnapshot` passes null into a compound-unique `where`; Prisma rejects it, so the monthly job has never written a row. Every snapshot came from the seed. The Wave 6 currency fix is correct but inert until this is resolved. |
+| **ANLY-CUR-001** | **NEW, P2, NOT fixed.** `AnalyticsDashboard.tsx:350` hardcodes VND over `compliance.service.ts`'s own `revenuePerSqm` — same class of defect, different producer, outside this wave's fence. |
+| **CUR-002** | Still open globally: `SapReconciliationRecord` (SAP-004), `ParkingShift`, inventory. |
+
+A ratio is not currency-neutral because it is divided by m²: VND/m² and USD/m²
+remain different units. That is why the fix is a persisted currency rather than a
+comment.
+
+Backfill was refused on two independent grounds: two writers produce
+indistinguishable rows, and reading the current writer's filter back onto
+historical rows is precisely the inference MON-CUR-OCC-01 forbids.
+
+Still no FX engine, and none was added.

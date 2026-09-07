@@ -1806,3 +1806,95 @@ SHORT has no mixed scalar" and "billable state requires currency".
 
 No production data was mutated; the verification rows were removed and the tables
 verified back at 0 slots / 0 bookings / 0 SHORT units / 30 units.
+
+---
+
+## Remediation Wave 6 — OccupancySnapshot monetary semantics (2026-09-07)
+
+Evidence and runtime output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.
+
+### CUR-002 (OccupancySnapshot subset) — CLOSED
+
+| | |
+|---|---|
+| Severity | **P3** |
+| Status | **FIXED 2026-09-07** |
+| Invariant | **MON-CUR-OCC-01** |
+
+`OccupancySnapshot.revenuePerSqm` is a money/area ratio, and dividing by m² does
+not make it currency-neutral. The column carried no currency, so the figure was
+persisted and returned with nothing saying what unit it was in.
+
+**The arithmetic was never unsafe.** The monthly writer aggregates
+`Invoice.subtotal` under an explicit `currencyCode: 'VND'` filter, so no
+cross-currency SUM ever occurred. The defect was the **undisclosed scope**, and
+the fix records the scope rather than widening it — widening would change what
+the KPI means, which is a business decision this wave did not take.
+
+`revenuePerSqmCurrency CurrencyCode?` added, nullable with **no `@default`**. The
+writer records VND for LONG from the same named constant its source is filtered
+to, so filter and label cannot drift apart. SHORT records `null`: its ratio is 0
+because no monetary source was consulted, not because it earned zero dong.
+
+Reconciliation: **6 snapshots, all CURRENCY_UNKNOWN, no backfill possible.** Two
+writers produce identical-looking rows (the cron from VND-scoped invoices, the
+seed from a fabricated `400000 + random()`), and even for cron rows, asserting
+VND today would read the *current* filter back onto history — which
+MON-CUR-OCC-01 forbids. `SAFE_TO_INFER_FROM_PROVEN_SOURCE` and `MIXED_SOURCE` are
+unreachable by construction and the script says so.
+
+Dependencies checked and **absent**: `avgRentPerSqm` (RPT-CUR-002) does not feed
+this ratio, so an unsafe cross-currency average is not promoted into a "fixed"
+snapshot; `estimatedLoss` uses a hardcoded 500000 constant, not `revenuePerSqm`,
+so RPT-CUR-008 stays out of scope.
+
+### OCC-CRON-001 — NEW, pre-existing, NOT fixed
+
+| | |
+|---|---|
+| Severity | **P1** |
+| Domain | Analytics |
+| Status | **CONFIRMED, not fixed — outside the currency fence** |
+
+`takeMonthlySnapshot` passes `floorId: null` and `category: null` inside the
+compound-unique `where` of its `upsert`. Prisma rejects that with
+`Argument 'floorId' must not be null`, so **the monthly occupancy snapshot job
+has never successfully written a row** — every snapshot in the database came from
+the seed, and the occupancy trend chart has been showing seeded data only.
+
+Confirmed pre-existing and untouched by this wave: `git show HEAD` carries the
+same `floorId: null as any`. Fixing it requires deciding how the compound unique
+should represent a mall-level snapshot, which is a design question with its own
+consequences, so it is raised rather than remediated inline.
+
+Consequence for Wave 6: the currency the writer now records is **correct but
+inert** until OCC-CRON-001 is resolved. It was verified by intercepting the
+upsert and capturing the payload against real data.
+
+### ANLY-CUR-001 — NEW, adjacent, NOT fixed
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Domain | Analytics |
+| Status | **CONFIRMED, not fixed — different producer, out of this wave's fence** |
+
+`AnalyticsDashboard.tsx:350` renders `formatMoneyAmount(m.revenuePerSqm, 'VND')`.
+That value comes from `getMultiMallComparison` (`compliance.service.ts:251`), a
+**different** `revenuePerSqm` that happens to share the name — not the snapshot.
+Its source is also VND-scoped-but-undeclared, and the frontend hardcodes the
+label, so it is the same class of defect on a different path. §9 of the wave
+brief fenced remediation to the snapshot path only.
+
+### CUR-002 — still open globally
+
+| Model | Status |
+|---|---|
+| `Lead`, `Customer`, `UnitSlot`, `SlotBooking` | **FIXED** (Waves 3-5) |
+| `OccupancySnapshot.revenuePerSqm` | **FIXED** (Wave 6) |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | open — SAP-004 |
+| `ParkingShift.cashRevenue` / `nonCashRevenue` | open — parking module |
+| `InventoryItem.averageCost`, `InventoryTransaction.unitCost` | open — inventory, excluded by instruction |
+
+No production data was mutated. The runtime check intercepted the writer's upsert
+rather than executing it; the table was verified unchanged at 6 rows.
