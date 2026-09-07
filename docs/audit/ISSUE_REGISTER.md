@@ -1955,3 +1955,57 @@ pre-existing rows stay CURRENCY_UNKNOWN: nothing may fabricate their unit.
 
 No production data was mutated. The runtime rows created by the verification run
 were deleted and the table verified back at its original 6 rows.
+
+---
+
+# MASTER REMEDIATION RUN — Waves 7-9 (2026-09-07)
+
+## SAP-004 — PARTIAL (harmful half closed, external contract still required)
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Status | **PARTIAL — comparison fixed; SAP-side currency BLOCKED** |
+
+**Grain, proven:** one record per SUCCESS `SapIntegrationLog`, keyed by
+`idempotencyKey = log.idempotencyKey ?? entityType:entityId:endpoint`. Not per
+invoice, not per SAP document — per outbound posting attempt.
+
+**Our side, provable:** `Invoice.totalAmount` / `Invoice.currencyCode` for
+`entityType = 'INVOICE'`. Now recorded as `ourCurrencyCode`.
+
+**SAP side, NOT provable → BLOCKED.** `log.response` is the raw text of whatever
+the external endpoint returned. No verified field carries a currency, and no
+verified meaning exists for one — document / transaction / local / company-code /
+group currency are different things in SAP. `sapCurrencyCode` was added and is
+**deliberately never populated**; copying `Invoice.currencyCode` into it would
+assert SAP answered in our currency, which is the exact unproven assumption
+SAP-004 exists to remove. Tracked as **SAP-004-EXT**.
+
+**What was closed.** The comparison was
+`Math.abs(sapAmount - ourAmount) < 1 ? MATCHED : MISMATCH` on two bare numbers,
+so **100 VND and 100 USD reconciled as equal** and the record was stamped
+`reconciledAt`. `assessComparability` now requires both sides to carry a unit and
+those units to be equal; anything else is `NEEDS_REVIEW` carrying the reason
+(`OUR_AMOUNT_NOT_SOURCED` / `SAP_AMOUNT_MISSING` / `OUR_CURRENCY_UNKNOWN` /
+`SAP_CURRENCY_UNKNOWN` / `CURRENCY_MISMATCH`). **UNKNOWN can never become
+MATCHED.** Consequence, stated plainly: until SAP-004-EXT is answered, the batch
+auto-matches nothing.
+
+**Second defect found and fixed:** `ourAmount` defaulted to `0` for any
+non-INVOICE entity type, so a SAP zero could MATCH a fabricated zero. `ourAmount`
+is now nullable and an unsourced side is NULL.
+
+Runtime (real Postgres, reversible): a USD invoice of 6187.5 against a SAP
+response of 6187.5 → `NEEDS_REVIEW / SAP_CURRENCY_UNKNOWN`, `reconciledAt` null.
+The old code would have marked it MATCHED. A TENANT log → `ourAmount: null`,
+`NEEDS_REVIEW / OUR_AMOUNT_NOT_SOURCED`. Both rows and their logs were removed.
+
+## SAP-REC-TOL-001 — NEW, BUSINESS DECISION REQUIRED
+
+The reconciliation tolerance is a bare `1`. That is not a currency-neutral
+quantity: 1 VND is a rounding speck, 1 USD is ~25,000 VND. It is named
+(`SAP_RECONCILIATION_TOLERANCE`) and documented rather than guessed per currency,
+because an acceptable tolerance per currency is a finance policy nobody has
+stated. Currently unreachable: nothing is comparable.
+
