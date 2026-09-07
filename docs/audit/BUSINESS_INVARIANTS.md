@@ -300,3 +300,17 @@ where those columns are NOT NULL.
 MON-CUR-OCC-01 was correct after Wave 6 but unreachable in practice, because the
 writer could not persist anything. With OCC-SNAP-01 in place it is enforced on a
 path that actually runs.
+
+### Master remediation run — Waves 7-9 (2026-09-07)
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-SAP-01** | Two amounts are compared only when both carry a unit of account and those units are equal; UNKNOWN never becomes MATCHED | CHOKEPOINT (`assessComparability`) | **HOLDS** |
+| **MON-CUR-SAP-02** | The SAP side's currency is never sourced from our own data | CHOKEPOINT + structure test | **HOLDS** — and it is consequently always UNKNOWN, so nothing auto-matches until SAP-004-EXT is answered |
+| **MON-CUR-FMT-01** | A shared money formatter never supplies a currency the caller did not give it | COMPILE-TIME (required parameter) + runtime fallback that shows the raw code | **HOLDS** |
+| **MON-CUR-AVG-01** | An average of monetary values is computed within one unit of account | PER-PATH (`averageRentByCurrency`) | **HOLDS** for `avgRentPerSqmByCurrency`; the legacy scalar remains as a declared, flagged cross-currency figure |
+
+MON-CUR-FMT-01 is enforced by the type system rather than a runtime check: the
+`= 'VND'` parameter default is gone, so a call that omits the currency no longer
+compiles. That is stronger than a test, and it was safe to do only because every
+call site was audited first and none relied on the default.

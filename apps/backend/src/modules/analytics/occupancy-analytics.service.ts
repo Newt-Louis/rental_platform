@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, UnitStatus, CurrencyCode } from '@prisma/client';
+import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
+import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
+import { avgRentByCurrency, type RentBearingUnit } from '../../common/utils/avg-rent-currency';
 
 /**
  * MON-CUR-OCC-01 — the single currency the occupancy snapshot's revenue figures
@@ -10,8 +13,6 @@ import { Prisma, UnitStatus, CurrencyCode } from '@prisma/client';
  * literal so the scope and the filter cannot drift apart.
  */
 export const OCCUPANCY_REVENUE_SCALE_CURRENCY: CurrencyCode = 'VND';
-import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
-import { summarizeOccupancyByLeaseTerm } from '../../common/utils/lease-term-analytics';
 
 /**
  * RPT-CUR-002 — billing revenue per currency.
@@ -300,6 +301,9 @@ export class OccupancyAnalyticsService {
         groups[key] = {
           total: 0, occupied: 0, vacant: 0, area: 0, occupiedArea: 0, rentSum: 0, occupiedCount: 0,
           currencies: new Set<CurrencyCode>(),
+          // RPT-CUR-002: the occupied units themselves, so the shared contract
+          // can group them by their own currency.
+          rentUnits: [] as RentBearingUnit[],
         };
       }
       const g = groups[key];
@@ -311,6 +315,7 @@ export class OccupancyAnalyticsService {
         g.rentSum += unit.baseRentPerSqm ?? 0;
         g.occupiedCount++;
         g.currencies.add(unit.currencyCode as CurrencyCode);
+        g.rentUnits.push({ baseRentPerSqm: unit.baseRentPerSqm, currencyCode: unit.currencyCode });
       } else if (unit.status === UnitStatus.VACANT) {
         g.vacant++;
       }
@@ -325,18 +330,16 @@ export class OccupancyAnalyticsService {
       occupiedArea: data.occupiedArea,
       // GAP #26 — giá thuê trung bình/m² của các unit OCCUPIED
       //
-      // RPT-CUR-002 — KNOWN DEFECT, DEFERRED (Wave 1 scope fence). This averages
-      // `Unit.baseRentPerSqm` across whatever currencies the group's occupied
-      // units carry, so once a floor mixes VND and USD the number has no unit
-      // of account. It is NOT corrected here because splitting it per currency
-      // changes what `avgRentPerSqm` MEANS (one figure becomes a set), which is
-      // a reporting-policy decision the business has not made.
+      // RPT-CUR-002 — the scalar used to be a plain average across whatever
+      // currencies the group held, which on real data produced 613,172: a figure
+      // matching none of the per-currency averages and belonging to no currency.
+      // Wave 9 added the buckets but kept emitting it, which only placed a
+      // correct number beside a wrong one.
       //
-      // What IS done: the currency mix is disclosed, so a consumer can tell a
-      // trustworthy average from an untrustworthy one instead of having to
-      // assume. Do not remove these two fields while avgRentPerSqm is still a
-      // single scalar.
-      avgRentPerSqm: data.occupiedCount > 0 ? Math.round(data.rentSum / data.occupiedCount) : 0,
+      // It is now non-null ONLY when exactly one known currency contributes, and
+      // it names that currency. `avgRentPerSqmByCurrency` is authoritative.
+      ...avgRentByCurrency(data.rentUnits as RentBearingUnit[]),
+      // Retained for consumers that already read them; unchanged meaning.
       avgRentCurrencies: [...(data.currencies as Set<CurrencyCode>)],
       avgRentCurrencyMixed: (data.currencies as Set<CurrencyCode>).size > 1,
       occupancyRate: data.area > 0 ? Math.round((data.occupiedArea / data.area) * 1000) / 10 : 0,

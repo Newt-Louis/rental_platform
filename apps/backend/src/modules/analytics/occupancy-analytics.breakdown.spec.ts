@@ -36,11 +36,15 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
   describe('getOccupancyV2 — avgRentPerSqm by floor', () => {
     it('calculates avgRentPerSqm for occupied units per floor', async () => {
+      // RPT-CUR-002: the fixture predates Unit.currencyCode. The scalar now
+      // exists only when exactly one KNOWN currency contributes, so the units
+      // must state theirs -- otherwise they group as UNKNOWN and there is
+      // correctly no scalar at all.
       prisma.unit.findMany.mockResolvedValue([
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100 }),
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100 }),
-        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, areaNLA: 50 }),
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f2', name: 'T2' }, baseRentPerSqm: 900, areaNLA: 200 }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, areaNLA: 50, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f2', name: 'T2' }, baseRentPerSqm: 900, areaNLA: 200, currencyCode: 'VND' }),
       ]);
 
       const result = await service.getOccupancyV2();
@@ -50,16 +54,39 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       expect(t1).toBeDefined();
       expect(t1.avgRentPerSqm).toBe(600); // (500+700)/2
+      expect(t1.avgRentPerSqmCurrency).toBe('VND');
       expect(t2.avgRentPerSqm).toBe(900);
+      expect(t2.avgRentPerSqmCurrency).toBe('VND');
     });
 
-    it('returns avgRentPerSqm = 0 for floor with no occupied units', async () => {
+    // RPT-CUR-002: the same floor, once its units stop sharing a currency.
+    it('emits NO scalar when a floor mixes currencies', async () => {
       prisma.unit.findMany.mockResolvedValue([
-        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0 }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100, currencyCode: 'USD' }),
+      ]);
+
+      const t1 = (await service.getOccupancyV2()).byFloor.find((f: any) => f.name === 'T1');
+
+      expect(t1.avgRentPerSqm).toBeNull();
+      expect(t1.avgRentPerSqmCurrency).toBeNull();
+      expect(t1.avgRentPerSqmCurrencyMixed).toBe(true);
+      // The old average would have been 600 -- a figure in no currency.
+      expect(t1.avgRentPerSqmByCurrency.some((b: any) => b.avgRentPerSqm === 600)).toBe(false);
+    });
+
+    // RPT-CUR-002: this asserted 0, which claimed "the average rent here is
+    // zero". A floor with no occupied unit has no average at all, and 0 was a
+    // fabricated figure in an unstated currency. It is null now.
+    it('returns avgRentPerSqm = null for floor with no occupied units', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, currencyCode: 'VND' }),
       ]);
 
       const result = await service.getOccupancyV2();
-      expect(result.byFloor.find((floor: any) => floor.name === 'T1')?.avgRentPerSqm).toBe(0);
+      const t1 = result.byFloor.find((floor: any) => floor.name === 'T1');
+      expect(t1?.avgRentPerSqm).toBeNull();
+      expect(t1?.avgRentPerSqmByCurrency).toEqual([]);
     });
   });
 

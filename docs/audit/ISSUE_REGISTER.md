@@ -2023,3 +2023,117 @@ behavioural, and the frontend typecheck passing unchanged is the proof.
 The unknown-code fallback now renders the amount with its raw code attached
 (`1.000 EUR`) instead of silently formatting as dong.
 
+## RPT-CUR-002 — Wave 9 first pass (SUPERSEDED — see the closure below)
+
+`avgRentPerSqm` averaged `Unit.baseRentPerSqm` across whatever currencies a
+group's occupied units carried. Dividing by a unit count no more removes the
+currency than dividing by m² does.
+
+`avgRentPerSqmByCurrency` added **alongside** the scalar, not replacing it: the
+scalar keeps its exact previous value and `avgRentCurrencyMixed` still says when
+it cannot be trusted, so no existing KPI moved. Changing what `avgRentPerSqm`
+means remains a reporting-policy decision.
+
+Runtime (two units temporarily switched to USD/MMK, then restored): Ground Floor
+scalar `613,172` — a number in no currency — against
+`VND 912,500 (4 units) · USD 30 (1) · MMK 29,000 (1)`. Level 1, single-currency,
+scalar and bucket agree exactly at 900,000.
+
+---
+
+## RPT-CUR-002 — Wave 9 CLOSURE (2026-09-07)
+
+**The first pass was closed too early, and the runtime output said so.** It
+reported `avgRentPerSqm = 613172` next to buckets of VND 912,500 / USD 30 /
+MMK 29,000. 613,172 matches none of them and belongs to no currency. Adding a
+correct figure beside an invalid one does not remove the invalid one, and the
+invalid one was still the field every consumer read.
+
+### The surface, fully traced this time
+
+The first pass fixed one producer and missed two — including the only one with
+frontend consumers.
+
+| Producer | API | Consumers |
+|---|---|---|
+| `occupancy-analytics.service.ts` `groupByFieldWithRent` | `/analytics/occupancy` → `byFloor[].avgRentPerSqm` | **none** |
+| `spaces.service.ts` `getRentAnalytics` | `/spaces/analytics/rent` → `summary.avgRentPerSqm`, `byFloor[].avgRent`, `byCategory[].avgRent` | `AnalyticsView.tsx` ×3, all via `formatVndRate` |
+| `spaces.service.ts` unit compare | `summary.avgRent`, per-unit `rentVsAvg`, `minRent`, `maxRent` | `CompareModal.tsx` ×1, via `formatVndRate` |
+
+`formatVndRate` appends "VND/m²" to whatever number it is handed, so every one of
+those five renderers displayed a cross-currency average as dong.
+
+### Contract
+
+`avgRentByCurrency` (`common/utils/avg-rent-currency.ts`), shared by all three:
+
+```
+avgRentPerSqmByCurrency        authoritative, one entry per contributing currency
+avgRentPerSqm                  non-null ONLY when exactly one KNOWN currency contributes
+avgRentPerSqmCurrency          names that currency, else null
+avgRentPerSqmCurrencyMixed     more than one currency contributed
+avgRentPerSqmCurrencyUnknown   at least one unit had no currency
+```
+
+The single currency is never *chosen*: not the first, not the most common, not
+the mall default, never VND. A test asserts exactly that against four VND units
+and one USD unit — VND is first, most common and the platform default, and there
+is still no scalar.
+
+`rentVsAvg` is null unless the unit's own currency equals the average's; a
+percentage against a currency-less mean is not a smaller error than the mean.
+`minRent`/`maxRent` are null when currencies differ — a min across currencies is
+a comparison, not an aggregate.
+
+### A real bug the UNKNOWN branch exposed
+
+On the first runtime run, `/spaces/analytics/rent` returned **one UNKNOWN bucket
+of 10 units**: its `select` never fetched `currencyCode`, so every unit arrived
+currency-less. The old code hid this by averaging anyway and labelling it VND.
+Fixed by adding the column to the select — found only because UNKNOWN is
+surfaced rather than defaulted.
+
+### Runtime proof
+
+Mixed (GF-A01→USD, GF-A02→MMK, then restored):
+
+```
+/analytics/occupancy  Ground Floor  avgRentPerSqm=null  mixed=true
+    VND 912,500 (4) · USD 30 (1) · MMK 29,000 (1)
+                      Level 1       avgRentPerSqm=900,000  currency=VND
+/spaces/analytics/rent  summary     avgRentPerSqm=null  mixed=true
+    VND 906,250 (8) · USD 30 (1) · MMK 29,000 (1)
+```
+
+Single currency (restored, all VND):
+
+```
+/spaces/analytics/rent  summary  avgRentPerSqm=965,000  currency=VND  mixed=false  unknown=false
+/analytics/occupancy    floor    avgRentPerSqm=1,008,333  currency=VND
+```
+
+UNKNOWN is structurally unreachable from the database — `Unit.currencyCode` is
+NOT NULL — so it is proven at the function level (T6, T7, T10) rather than
+manufactured in the DB. The branch still earns its place: it caught the missing
+`select` above.
+
+### Two pre-existing tests updated, not relaxed
+
+`occupancy-analytics.breakdown.spec.ts` asserted the old contract. Its fixture
+predated `Unit.currencyCode`, so units now state one and the single-currency
+assertions stand unchanged, plus a new mixed-currency case. Its second test
+asserted `avgRentPerSqm = 0` for a floor with no occupied units — that claimed
+"the average rent here is zero" in an unstated currency. It is null now.
+
+**RPT-CUR-002 — CLOSED**, against all five conditions: unlike currencies are
+never averaged, the mixed scalar is no longer emitted as a KPI, a present scalar
+carries its currency, the frontend renders buckets for mixed data, and UNKNOWN
+never defaults to VND.
+
+### ANLY-CUR-002 — NEW, NOT fixed (out of this wave's fence)
+
+`spaces.service.ts:1219` `summary.totalMonthlyRevenue` sums
+`(baseRentPerSqm + camPerSqm) × areaNLA` across currencies, and `AnalyticsView`
+renders it through `formatVndAmount` (hardcoded VND). Same defect class as
+RPT-CUR-002 but a different metric — a SUM, not an average — so it belongs to the
+RPT-CUR-004 family rather than here. Reachable and confirmed.

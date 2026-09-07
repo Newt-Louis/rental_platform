@@ -345,3 +345,36 @@ Consequence for this audit: `revenuePerSqmCurrency` now actually reaches the
 table. Verified end to end — the first real run wrote a LONG snapshot with
 `revenuePerSqmCurrency = VND`. The 6 pre-existing rows remain CURRENCY_UNKNOWN;
 nothing fabricates their unit.
+
+---
+
+## Master remediation run — Waves 7-9 (2026-09-07)
+
+| ID | Status |
+|---|---|
+| **SAP-004** | **PARTIAL.** `ourCurrencyCode` added and populated from the invoice; `sapCurrencyCode` added but **never populated** — the external response carries no verified currency field or meaning. The comparison now refuses to MATCH anything that is not provably same-currency, so 100 VND no longer reconciles against 100 USD. Blocked on **SAP-004-EXT**. |
+| **SAP-REC-TOL-001** | **NEW, BUSINESS DECISION REQUIRED.** The `< 1` tolerance is not currency-neutral. Named, not guessed. |
+| **RPT-CUR-007** | **CLOSED.** Both silent VND defaults removed from the shared formatters. No caller relied on either — verified before changing, and the unchanged typecheck is the proof. |
+| **RPT-CUR-002** | **CLOSED.** `avgRentPerSqmByCurrency` added alongside the scalar; the cross-currency average is no longer the only figure available. |
+
+Still no FX engine, and none was added.
+
+### RPT-CUR-002 — Wave 9 closure (2026-09-07)
+
+The first pass was closed prematurely: it added per-currency buckets but kept
+emitting the cross-currency scalar as a KPI (613,172 against VND 912,500 / USD 30
+/ MMK 29,000). It also fixed only one of **three** producers, missing the only
+one with frontend consumers.
+
+`avgRentPerSqm` is now non-null only when exactly one KNOWN currency contributes
+and it names that currency; `avgRentPerSqmByCurrency` is authoritative. Applied
+to `/analytics/occupancy`, `/spaces/analytics/rent` and the unit-compare summary,
+and to the five `formatVndRate` renderers that were labelling mixed averages as
+dong. `rentVsAvg`, `minRent` and `maxRent` are null across currencies.
+
+Found while verifying: `/spaces/analytics/rent` never selected `currencyCode`, so
+every unit arrived currency-less. The old code hid that by averaging anyway;
+surfacing UNKNOWN exposed it. **RPT-CUR-002 CLOSED.**
+
+New: **ANLY-CUR-002** — `summary.totalMonthlyRevenue` in the same payload is a
+cross-currency SUM rendered as VND. RPT-CUR-004 family, not fixed here.

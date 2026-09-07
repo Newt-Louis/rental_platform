@@ -1,3 +1,4 @@
+import { formatAvgRent } from '@/lib/avg-rent-currency';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -48,7 +49,7 @@ export function CompareModal({
               <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
                 <div className="text-center">
                   <div className="text-xs text-gray-500">{t('spaces:compare.avgRent')}</div>
-                  <div className="font-semibold tabular-nums">{formatVndRate(Number(summary.avgRent))}</div>
+                  <div className="font-semibold tabular-nums">{formatAvgRent(summary)}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-xs text-gray-500">{t('spaces:compare.avgArea')}</div>

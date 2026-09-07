@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { avgRentByCurrency } from '../../common/utils/avg-rent-currency';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UnitStatus, UnitHistoryType, Prisma } from '@prisma/client';
@@ -872,21 +873,34 @@ export class SpacesService {
     }
 
     // Calculate comparison metrics
-    const avgRent = units.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / units.length;
+    // RPT-CUR-002: comparing units whose rents are in different currencies has
+    // no answer without FX. The average exists only when one known currency
+    // contributes, and `rentVsAvg` below is null whenever it does not -- a
+    // percentage against a currency-less mean is not a smaller error than the
+    // mean itself.
+    const compareRent = avgRentByCurrency(units);
+    const avgRent = compareRent.avgRentPerSqm;
     const avgArea = units.reduce((sum, u) => sum + u.areaNLA, 0) / units.length;
 
     return {
       units: units.map((u) => ({
         ...u,
         totalMonthlyRent: (u.baseRentPerSqm + u.camPerSqm) * u.areaNLA,
-        rentVsAvg: avgRent > 0 ? ((u.baseRentPerSqm - avgRent) / avgRent * 100).toFixed(1) : '0',
+        rentVsAvg:
+          avgRent !== null && avgRent > 0 && u.currencyCode === compareRent.avgRentPerSqmCurrency
+            ? ((u.baseRentPerSqm - avgRent) / avgRent * 100).toFixed(1)
+            : null,
         areaVsAvg: avgArea > 0 ? ((u.areaNLA - avgArea) / avgArea * 100).toFixed(1) : '0',
       })),
       summary: {
-        avgRent: avgRent.toFixed(0),
+        ...compareRent,
+        avgRent,
         avgArea: avgArea.toFixed(1),
-        minRent: Math.min(...units.map((u) => u.baseRentPerSqm)),
-        maxRent: Math.max(...units.map((u) => u.baseRentPerSqm)),
+        // RPT-CUR-002: min/max across currencies is a comparison, not an
+        // aggregate, and is equally meaningless without FX. Emitted only under
+        // a single known currency.
+        minRent: compareRent.avgRentPerSqmCurrency ? Math.min(...units.map((u) => u.baseRentPerSqm)) : null,
+        maxRent: compareRent.avgRentPerSqmCurrency ? Math.max(...units.map((u) => u.baseRentPerSqm)) : null,
         minArea: Math.min(...units.map((u) => u.areaNLA)),
         maxArea: Math.max(...units.map((u) => u.areaNLA)),
       },
@@ -1134,6 +1148,10 @@ export class SpacesService {
         id: true,
         areaNLA: true,
         baseRentPerSqm: true,
+        // RPT-CUR-002: without this the rent analytics grouped every unit as
+        // UNKNOWN, because the select never fetched the currency the rents are
+        // denominated in.
+        currencyCode: true,
         marketRentPerSqm: true,
         askingRentPerSqm: true,
         camPerSqm: true,
@@ -1146,9 +1164,10 @@ export class SpacesService {
 
     // Calculate overall stats
     const occupiedUnits = units.filter((u) => u.status === UnitStatus.OCCUPIED);
-    const avgRent = occupiedUnits.length > 0
-      ? occupiedUnits.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupiedUnits.length
-      : 0;
+    // RPT-CUR-002: this averaged baseRentPerSqm across whatever currencies the
+    // occupied units carried and the UI rendered the result as VND. The scalar
+    // now exists only when exactly one known currency contributes.
+    const overallRent = avgRentByCurrency(occupiedUnits);
 
     // Group by floor
     const byFloor = new Map<string, { name: string; units: typeof units; totalArea: number; totalRent: number }>();
@@ -1185,9 +1204,12 @@ export class SpacesService {
         unitCount: data.units.length,
         occupiedCount: occupied.length,
         totalArea: data.totalArea,
-        avgRent: occupied.length > 0
-          ? occupied.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupied.length
-          : 0,
+        // RPT-CUR-002: same rule per category. `avgRent` is null unless one
+        // known currency contributes; `avgRentPerSqmByCurrency` is authoritative.
+        ...(() => {
+          const c = avgRentByCurrency(occupied);
+          return { avgRent: c.avgRentPerSqm, ...c };
+        })(),
         occupancyRate: ((occupied.length / data.units.length) * 100).toFixed(1),
       };
     }).sort((a, b) => b.totalArea - a.totalArea);
@@ -1201,9 +1223,11 @@ export class SpacesService {
         unitCount: data.units.length,
         occupiedCount: occupied.length,
         totalArea: data.totalArea,
-        avgRent: occupied.length > 0
-          ? occupied.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupied.length
-          : 0,
+        // RPT-CUR-002: same rule per floor.
+        ...(() => {
+          const c = avgRentByCurrency(occupied);
+          return { avgRent: c.avgRentPerSqm, ...c };
+        })(),
         totalMonthlyRevenue: data.totalRent,
         occupancyRate: ((occupied.length / data.units.length) * 100).toFixed(1),
       };
@@ -1213,7 +1237,7 @@ export class SpacesService {
       summary: {
         totalUnits: units.length,
         occupiedUnits: occupiedUnits.length,
-        avgRentPerSqm: avgRent.toFixed(0),
+        ...overallRent,
         totalArea: units.reduce((sum, u) => sum + u.areaNLA, 0),
         leasedArea: occupiedUnits.reduce((sum, u) => sum + u.areaNLA, 0),
         totalMonthlyRevenue: occupiedUnits.reduce((sum, u) => sum + (u.baseRentPerSqm + u.camPerSqm) * u.areaNLA, 0),
