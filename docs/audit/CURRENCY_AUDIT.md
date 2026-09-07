@@ -331,3 +331,17 @@ indistinguishable rows, and reading the current writer's filter back onto
 historical rows is precisely the inference MON-CUR-OCC-01 forbids.
 
 Still no FX engine, and none was added.
+
+### Wave 6.1 (2026-09-07) — the snapshot writer now runs
+
+**OCC-CRON-001 CLOSED.** Wave 6's currency fix was correct but inert: the monthly
+writer had never persisted a row, because it passed `null` into a
+compound-unique `where` that Prisma refuses — and because that constraint would
+not have enforced uniqueness for mall-level rows anyway (Postgres NULLS
+DISTINCT). Both are fixed: a partial unique index carrying the writer's own
+predicate, and `findFirst` → `create`/`update` with a P2002 branch.
+
+Consequence for this audit: `revenuePerSqmCurrency` now actually reaches the
+table. Verified end to end — the first real run wrote a LONG snapshot with
+`revenuePerSqmCurrency = VND`. The 6 pre-existing rows remain CURRENCY_UNKNOWN;
+nothing fabricates their unit.

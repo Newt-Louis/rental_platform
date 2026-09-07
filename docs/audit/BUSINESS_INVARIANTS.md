@@ -281,3 +281,22 @@ oversights:
   has no unit of account to claim.
 
 Still true: no FX conversion exists anywhere in the platform.
+
+#### Wave 6.1 (2026-09-07) — OCC-CRON-001
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **OCC-SNAP-01** | At most one mall-level OccupancySnapshot exists per `(mallId, leaseTermType, period)` | **DB + CHOKEPOINT** | **HOLDS** — partial unique index `OccupancySnapshot_mall_scope_period_key WHERE floorId IS NULL AND category IS NULL`, plus an in-writer existence check whose P2002 branch adopts the winner of a race |
+| **OCC-SNAP-02** | Re-running the monthly snapshot for a period rewrites its measures and never its identity | CHOKEPOINT | **HOLDS** — `update` is keyed by row id and carries measures only; `mallId`, `period` and `leaseTermType` are never in the update payload |
+
+The `@@unique([mallId, floorId, category, leaseTermType, period])` declared on the
+model does **not** enforce OCC-SNAP-01 and never did: Postgres treats NULLs as
+DISTINCT, so mall-level rows (floorId and category both NULL) never collided.
+That was demonstrated by dropping the partial index inside a rolled-back
+transaction and successfully inserting a duplicate. The model-level unique is
+retained because it does hold for a future per-floor or per-category snapshot,
+where those columns are NOT NULL.
+
+MON-CUR-OCC-01 was correct after Wave 6 but unreachable in practice, because the
+writer could not persist anything. With OCC-SNAP-01 in place it is enforced on a
+path that actually runs.

@@ -33,7 +33,11 @@ function buildService(overrides: any = {}) {
     slotBooking: { findMany: jest.fn().mockResolvedValue([]) },
     invoice: { aggregate: jest.fn().mockResolvedValue({ _sum: { subtotal: 50_000_000 } }) },
     occupancySnapshot: {
-      upsert: jest.fn().mockResolvedValue({}),
+      // OCC-CRON-001: the writer no longer upserts on a compound unique
+      // containing nulls -- it looks the row up, then creates or updates.
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn(async ({ data }: any) => ({ id: 'snap-1', ...data })),
+      update: jest.fn(async ({ data }: any) => ({ id: 'snap-1', ...data })),
       findMany: jest.fn().mockResolvedValue([]),
     },
     ...overrides,
@@ -44,20 +48,30 @@ function buildService(overrides: any = {}) {
   return { service, prisma };
 }
 
+/** What the writer persisted for one lease term, whether it created or updated. */
+function writtenFor(prisma: any, leaseTermType: 'LONG' | 'SHORT') {
+  const created = prisma.occupancySnapshot.create.mock.calls
+    .map((c: any[]) => c[0].data)
+    .find((d: any) => d.leaseTermType === leaseTermType);
+  if (created) return created;
+  const lookups = prisma.occupancySnapshot.findFirst.mock.calls
+    .map((c: any[], i: number) => ({ i, where: c[0].where }));
+  const idx = lookups.find((l: any) => l.where.leaseTermType === leaseTermType)?.i;
+  return idx === undefined ? undefined : prisma.occupancySnapshot.update.mock.calls[idx]?.[0]?.data;
+}
+
 describe('OccupancySnapshot writer (T1, T6, MON-CUR-OCC-01)', () => {
   // T1 / T9
   it('T1: persists the unit of account alongside the LONG revenue ratio', async () => {
     const { service, prisma } = buildService();
     await service.takeMonthlySnapshot();
 
-    const longCall = prisma.occupancySnapshot.upsert.mock.calls
-      .find((c: any[]) => c[0].where.mallId_floorId_category_leaseTermType_period.leaseTermType === 'LONG');
+    const written = writtenFor(prisma, 'LONG');
 
-    expect(longCall).toBeDefined();
-    expect(longCall[0].create.revenuePerSqmCurrency).toBe('VND');
-    expect(longCall[0].update.revenuePerSqmCurrency).toBe('VND');
+    expect(written).toBeDefined();
+    expect(written.revenuePerSqmCurrency).toBe('VND');
     // 50,000,000 VND over 100 m² occupied.
-    expect(longCall[0].create.revenuePerSqm).toBe(500_000);
+    expect(written.revenuePerSqm).toBe(500_000);
   });
 
   // T5 — a zero has no unit of account to be missing, and must not be labelled.
@@ -65,13 +79,12 @@ describe('OccupancySnapshot writer (T1, T6, MON-CUR-OCC-01)', () => {
     const { service, prisma } = buildService();
     await service.takeMonthlySnapshot();
 
-    const shortCall = prisma.occupancySnapshot.upsert.mock.calls
-      .find((c: any[]) => c[0].where.mallId_floorId_category_leaseTermType_period.leaseTermType === 'SHORT');
+    const written = writtenFor(prisma, 'SHORT');
 
-    expect(shortCall).toBeDefined();
-    expect(shortCall[0].create.revenuePerSqm).toBe(0);
-    expect(shortCall[0].create.revenuePerSqmCurrency).toBeNull();
-    expect(shortCall[0].create.revenuePerSqmCurrency).not.toBe('VND');
+    expect(written).toBeDefined();
+    expect(written.revenuePerSqm).toBe(0);
+    expect(written.revenuePerSqmCurrency).toBeNull();
+    expect(written.revenuePerSqmCurrency).not.toBe('VND');
   });
 
   // T6 — the source aggregate must stay single-currency. This is what makes the
@@ -90,11 +103,9 @@ describe('OccupancySnapshot writer (T1, T6, MON-CUR-OCC-01)', () => {
     await service.takeMonthlySnapshot();
 
     const filtered = prisma.invoice.aggregate.mock.calls[0][0].where.currencyCode;
-    const longCall = prisma.occupancySnapshot.upsert.mock.calls
-      .find((c: any[]) => c[0].where.mallId_floorId_category_leaseTermType_period.leaseTermType === 'LONG');
 
     // Scope and label cannot drift apart: they are the same constant.
-    expect(longCall[0].create.revenuePerSqmCurrency).toBe(filtered);
+    expect(writtenFor(prisma, 'LONG').revenuePerSqmCurrency).toBe(filtered);
   });
 
   it('a mall with no occupied area records a zero ratio and no currency claim', async () => {
@@ -104,9 +115,7 @@ describe('OccupancySnapshot writer (T1, T6, MON-CUR-OCC-01)', () => {
     });
     await service.takeMonthlySnapshot();
 
-    const longCall = prisma.occupancySnapshot.upsert.mock.calls
-      .find((c: any[]) => c[0].where.mallId_floorId_category_leaseTermType_period.leaseTermType === 'LONG');
-    expect(longCall[0].create.revenuePerSqm).toBe(0);
+    expect(writtenFor(prisma, 'LONG').revenuePerSqm).toBe(0);
   });
 });
 
@@ -125,7 +134,7 @@ describe('OccupancySnapshot API contract (T7, T9, T5)', () => {
   // T9
   it('T9: every monetary figure leaves the API with its unit of account', async () => {
     const { service } = buildService({
-      occupancySnapshot: { findMany: jest.fn().mockResolvedValue([snapshot(500_000, 'VND')]), upsert: jest.fn() },
+      occupancySnapshot: { findMany: jest.fn().mockResolvedValue([snapshot(500_000, 'VND')]), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     });
 
     const trend: any[] = await service.getOccupancyTrend('mall-1');
@@ -136,7 +145,7 @@ describe('OccupancySnapshot API contract (T7, T9, T5)', () => {
   // T5
   it('T5: a legacy snapshot with no captured currency stays UNKNOWN, never VND', async () => {
     const { service } = buildService({
-      occupancySnapshot: { findMany: jest.fn().mockResolvedValue([snapshot(450_000, null)]), upsert: jest.fn() },
+      occupancySnapshot: { findMany: jest.fn().mockResolvedValue([snapshot(450_000, null)]), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     });
 
     const trend: any[] = await service.getOccupancyTrend('mall-1');
@@ -156,7 +165,9 @@ describe('OccupancySnapshot API contract (T7, T9, T5)', () => {
           snapshot(450_000, null),        // recorded before the column existed
           snapshot(500_000, 'VND'),       // recorded after
         ]),
-        upsert: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
       },
       // Current configuration says every unit is USD now.
       unit: { findMany: jest.fn().mockResolvedValue([{ id: 'u1', currencyCode: 'USD' }]) },

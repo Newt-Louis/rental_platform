@@ -1259,3 +1259,76 @@ path), and historical unknown data is left unknown.
 
 **CUR-002 is NOT closed globally.** `SapReconciliationRecord.ourAmount/sapAmount`
 (SAP-004), `ParkingShift` and the inventory models remain.
+
+### 21.12 Wave 6.1 — OCC-CRON-001 fixed: the snapshot job actually writes (2026-09-07)
+
+Wave 6 recorded the currency correctly but the value could not reach the table,
+because the writer had never worked. That is now fixed.
+
+**Two defects, not one.**
+
+1. **Prisma rejected the lookup.** The writer upserted on
+   `@@unique([mallId, floorId, category, leaseTermType, period])` while passing
+   `floorId: null` and `category: null`. Prisma refuses null inside a
+   compound-unique `where` (`Argument 'floorId' must not be null`), so the call
+   threw on the first mall of every run.
+2. **The constraint would not have held anyway.** Postgres treats NULLs as
+   DISTINCT in a standard unique index, so
+   `(mallId, NULL, NULL, leaseTermType, period)` never collides with itself.
+   Swapping the upsert for `findFirst` would have produced a working job with an
+   application-level check and nothing behind it — the BILL-002 shape.
+
+Proven, not asserted. With the new index dropped inside a rolled-back
+transaction, inserting a second `(mall, LONG, 2026-04)` row **succeeded**:
+
+```
+OLD CONSTRAINT ALLOWED THE DUPLICATE | rows_for_key = 2
+```
+
+With the index in place the same insert is refused:
+
+```
+ERROR: duplicate key value violates unique constraint
+       "OccupancySnapshot_mall_scope_period_key"
+DETAIL: Key ("mallId","leaseTermType",period)=(..., LONG, 2026-04) already exists
+```
+
+**The fix**
+
+- `20260907140000_occupancy_snapshot_mall_scope_unique` — a PARTIAL unique index
+  on `(mallId, leaseTermType, period) WHERE floorId IS NULL AND category IS NULL`,
+  carrying exactly the predicate the writer uses. Prisma cannot express a partial
+  unique index, hence raw SQL. The original `@@unique` is left in place: it still
+  covers any future per-floor or per-category snapshot, where the columns are NOT
+  NULL and its semantics do hold. Verified 0 duplicates before creating it.
+- The upsert becomes `findFirst` → `update` or `create`, with a **P2002 branch**
+  that adopts the winner's row when a concurrent run wins the race. That branch
+  is what makes the application check and the database constraint agree rather
+  than merely coexist.
+- Per-mall, per-segment `try/catch`, matching the sibling monthly schedulers, so
+  one mall cannot take the whole month's run down.
+- The summary log said *"Occupancy snapshot taken for N malls"* — computed from
+  the mall count alone, so it reported success on every run while every write was
+  throwing. **That is what let the defect sit unnoticed.** It now returns and
+  logs `{ created, updated, failed, malls }`.
+
+**Runtime verification** — the writer ran against real Postgres for the first
+time:
+
+```
+BEFORE       6 rows, every revenuePerSqmCurrency = null   (all seed-written)
+RUN 1     => { created: 1, updated: 1, failed: 0, malls: 1 }
+             2026-09 LONG  0  | ccy = VND    <- Wave 6's currency finally lands
+             2026-09 SHORT 0  | ccy = null
+RUN 2     => { created: 0, updated: 2, failed: 0 }   idempotent
+             duplicate mall-level keys after 2 runs: 0
+RESTORED     6 rows, unchanged
+```
+
+The 2026-09 LONG ratio is 0 because that period holds no invoices, which is
+correct rather than a failure.
+
+**Consequence for the occupancy trend chart:** it has been showing seeded data
+for its entire life. Once this reaches an environment where the cron runs, the
+first real snapshot lands on the 1st of the following month; the 6 seeded rows
+remain and stay CURRENCY_UNKNOWN, since nothing may fabricate their unit.

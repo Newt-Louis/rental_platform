@@ -1898,3 +1898,60 @@ brief fenced remediation to the snapshot path only.
 
 No production data was mutated. The runtime check intercepted the writer's upsert
 rather than executing it; the table was verified unchanged at 6 rows.
+
+---
+
+## Remediation Wave 6.1 — OCC-CRON-001 (2026-09-07)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §21.12.
+
+### OCC-CRON-001 — CLOSED
+
+| | |
+|---|---|
+| Severity | **P1** |
+| Domain | Analytics |
+| Status | **FIXED 2026-09-07** |
+| Invariants | **OCC-SNAP-01**, **OCC-SNAP-02** |
+
+Raised during Wave 6 and fixed here. **Two defects, not one.**
+
+1. `takeMonthlySnapshot` upserted on the compound unique while passing
+   `floorId: null` / `category: null`. Prisma refuses null there, so the call
+   threw on the first mall and **the job never wrote a row** — every snapshot in
+   the database came from the seed, and the occupancy trend chart has shown
+   seeded data for its entire life.
+2. The constraint would not have held anyway: Postgres treats NULLs as DISTINCT
+   in a standard unique index, so mall-level rows never collided with themselves.
+   Fixing only the first defect would have left an application check with nothing
+   behind it — the BILL-002 shape.
+
+Proven rather than argued: with the new index dropped inside a rolled-back
+transaction, a duplicate `(mall, LONG, 2026-04)` row **inserted successfully**;
+with the index present the same insert is refused by
+`OccupancySnapshot_mall_scope_period_key`.
+
+Fix: a partial unique index carrying the writer's own predicate
+(`WHERE floorId IS NULL AND category IS NULL`), the upsert replaced by
+`findFirst` → `create`/`update` with a **P2002 branch** that adopts the winner of
+a concurrent race, per-mall failure isolation matching the sibling monthly
+schedulers, and a summary that reports what reached the table.
+
+That last point is not cosmetic. The old log read *"Occupancy snapshot taken for
+N malls"*, derived from the mall count alone, so it reported success on every run
+while every write was throwing. A test now pins that `created + updated` cannot
+be inferred from `malls`.
+
+Verified against real Postgres: run 1 created 1 and updated 1 (the seeded 2026-09
+row), the LONG snapshot landed with `revenuePerSqmCurrency = VND` — Wave 6's
+currency reaching the table for the first time — run 2 was idempotent with 0
+duplicates, and the table was restored to its original 6 rows.
+
+### CUR-002 (OccupancySnapshot subset) — no longer inert
+
+Wave 6 was reported as "correct but inert" because of OCC-CRON-001. With that
+closed, the currency the writer records now actually reaches the table. The 6
+pre-existing rows stay CURRENCY_UNKNOWN: nothing may fabricate their unit.
+
+No production data was mutated. The runtime rows created by the verification run
+were deleted and the table verified back at its original 6 rows.

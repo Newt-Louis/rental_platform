@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UnitStatus, CurrencyCode } from '@prisma/client';
+import { Prisma, UnitStatus, CurrencyCode } from '@prisma/client';
 
 /**
  * MON-CUR-OCC-01 — the single currency the occupancy snapshot's revenue figures
@@ -428,6 +428,9 @@ export class OccupancyAnalyticsService {
     const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     const malls = await this.prisma.mall.findMany({ where: { isActive: true } });
+    let created = 0;
+    let updated = 0;
+    let failed = 0;
 
     for (const mall of malls) {
       const units = await this.prisma.unit.findMany({
@@ -479,20 +482,7 @@ export class OccupancyAnalyticsService {
         // of account and is deliberately left NULL rather than labelled VND.
         const revenuePerSqmCurrency: CurrencyCode | null =
           leaseTermType === 'LONG' ? OCCUPANCY_REVENUE_SCALE_CURRENCY : null;
-        await this.prisma.occupancySnapshot.upsert({
-        where: {
-          mallId_floorId_category_leaseTermType_period: {
-            mallId: mall.id,
-            floorId: null as any,
-            category: null as any,
-            leaseTermType,
-            period,
-          },
-        },
-        create: {
-          mallId: mall.id,
-          leaseTermType,
-          period,
+        const measures = {
           snapshotDate: now,
           totalUnits: segment.total,
           occupiedUnits: segment.occupied,
@@ -503,24 +493,74 @@ export class OccupancyAnalyticsService {
           occupancyRate: segment.occupancyRate,
           revenuePerSqm,
           revenuePerSqmCurrency,
-        },
-        update: {
-          snapshotDate: now,
-          totalUnits: segment.total,
-          occupiedUnits: segment.occupied,
-          vacantUnits: segment.vacant,
-          underFitout,
-          totalAreaSqm: segment.totalArea,
-          occupiedAreaSqm: segment.occupiedArea,
-          occupancyRate: segment.occupancyRate,
-          revenuePerSqm,
-          revenuePerSqmCurrency,
-        },
-      });
+        };
+
+        // OCC-CRON-001 -- this was an upsert keyed on
+        // @@unique([mallId, floorId, category, leaseTermType, period]) with
+        // floorId and category passed as null. Prisma refuses null inside a
+        // compound-unique `where`, so the call threw on the first mall and the
+        // job never wrote a row: every snapshot in the database came from the
+        // seed.
+        //
+        // Swapping in findFirst alone would not be enough. Postgres treats NULLs
+        // as DISTINCT in a standard unique index, so that constraint never
+        // prevented duplicate mall-level rows either -- an application check
+        // with nothing behind it. The migration adds a PARTIAL unique index
+        // carrying this exact predicate, and the P2002 branch below is what
+        // makes the check and the constraint agree instead of merely coexisting.
+        try {
+          const existing = await this.prisma.occupancySnapshot.findFirst({
+            where: { mallId: mall.id, floorId: null, category: null, leaseTermType, period },
+            select: { id: true },
+          });
+
+          if (existing) {
+            await this.prisma.occupancySnapshot.update({ where: { id: existing.id }, data: measures });
+            updated++;
+          } else {
+            try {
+              await this.prisma.occupancySnapshot.create({
+                data: { mallId: mall.id, leaseTermType, period, ...measures },
+              });
+              created++;
+            } catch (error) {
+              // A concurrent run won the race between findFirst and create. The
+              // snapshot is idempotent, so adopt its row and write the same
+              // measures rather than failing the month.
+              if (
+                error instanceof Prisma.PrismaClientKnownRequestError &&
+                error.code === 'P2002'
+              ) {
+                const winner = await this.prisma.occupancySnapshot.findFirst({
+                  where: { mallId: mall.id, floorId: null, category: null, leaseTermType, period },
+                  select: { id: true },
+                });
+                if (!winner) throw error;
+                await this.prisma.occupancySnapshot.update({ where: { id: winner.id }, data: measures });
+                updated++;
+              } else {
+                throw error;
+              }
+            }
+          }
+        } catch (error: any) {
+          // One mall must not take the whole month's run down with it -- the
+          // same isolation the sibling monthly schedulers use.
+          failed++;
+          this.logger.error(
+            `Occupancy snapshot failed for mall ${mall.id} (${leaseTermType}, ${period}): ${error?.message}`,
+          );
+        }
       }
     }
 
-    this.logger.log(`Occupancy snapshot taken for ${malls.length} malls`);
+    // The old log said "taken for N malls" from the mall count alone, so it
+    // would have reported success even while every write threw. It now reports
+    // what actually reached the table.
+    this.logger.log(
+      `Occupancy snapshot ${period}: ${created} created, ${updated} updated, ${failed} failed across ${malls.length} mall(s)`,
+    );
+    return { period, created, updated, failed, malls: malls.length };
   }
 
   async getVacancyAnalysis(mallId?: string, mallIds?: string[] | null) {
