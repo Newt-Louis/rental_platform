@@ -31,7 +31,7 @@ export default function ProfilePage() {
     if (!user) return;
     setInfoLoading(true);
     try {
-      const updated = await usersApi.updateUser(user.id, {
+      const updated = await usersApi.updateOwnProfile({
         fullName: infoForm.fullName,
         phone: infoForm.phone,
       });
@@ -57,7 +57,7 @@ export default function ProfilePage() {
     }
     setPwLoading(true);
     try {
-      await usersApi.resetPassword(user.id, pwForm.newPassword);
+      await usersApi.changeOwnPassword(pwForm.newPassword);
       setPwForm({ newPassword: '', confirmPassword: '' });
       toast({ title: t('changePassword.success') });
     } catch {

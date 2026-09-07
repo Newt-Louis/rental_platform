@@ -1,5 +1,5 @@
-import { ConflictException } from '@nestjs/common';
-import { CustomerStatus } from '@prisma/client';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { CustomerStatus, Role } from '@prisma/client';
 import { CustomersService } from './customers.service';
 
 describe('CustomersService Lead linking', () => {
@@ -84,5 +84,67 @@ describe('CustomersService Lead linking', () => {
 
     await expect(service.syncFromLead('customer-1', 'lead-1')).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+// Bug #34 — Leasing Executive could see and operate on every Customer, not
+// just their own (CustomersController had no assignee-based scoping, unlike
+// CrmService.leadScope() for Lead).
+describe('CustomersService — Leasing Executive scoping', () => {
+  const prisma: any = {
+    customer: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  };
+  let service: CustomersService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new CustomersService(prisma);
+  });
+
+  it('findAll injects an assignedToId filter for LEASING_EXECUTIVE', async () => {
+    prisma.customer.findMany.mockResolvedValue([]);
+    prisma.customer.count.mockResolvedValue(0);
+
+    await service.findAll({}, { userId: 'user-1', role: Role.LEASING_EXECUTIVE });
+
+    expect(prisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ assignedToId: 'user-1' }),
+    }));
+  });
+
+  it('findAll does not restrict other roles', async () => {
+    prisma.customer.findMany.mockResolvedValue([]);
+    prisma.customer.count.mockResolvedValue(0);
+
+    await service.findAll({}, { userId: 'user-1', role: Role.LEASING_MANAGER });
+
+    expect(prisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.not.objectContaining({ assignedToId: expect.anything() }),
+    }));
+  });
+
+  it('findOne 404s a Leasing Executive requesting a customer assigned to someone else', async () => {
+    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'other-user' });
+
+    await expect(
+      service.findOne('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('findOne succeeds for a Leasing Executive requesting their own customer', async () => {
+    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'user-1' });
+
+    const result = await service.findOne('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE });
+
+    expect(result).toEqual(expect.objectContaining({ id: 'customer-1' }));
+  });
+
+  it('remove() rejects a Leasing Executive deleting a customer assigned to someone else', async () => {
+    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'other-user' });
+
+    await expect(
+      service.remove('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.customer.update).not.toHaveBeenCalled();
   });
 });

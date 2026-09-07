@@ -1,6 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CustomerStatus, ActivityType, LeadSource, CurrencyCode } from '@prisma/client';
+import { CustomerStatus, ActivityType, LeadSource, CurrencyCode, Role } from '@prisma/client';
+
+export interface CustomerScope {
+  userId: string;
+  role: Role;
+}
 
 export interface CreateCustomerDto {
   leadId?: string;
@@ -50,17 +55,28 @@ export class CustomersService {
     return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
+  // Bug #34 — Leasing Executive was seeing and operating on every Customer,
+  // not just their own. Mirrors CrmService.leadScope()'s assignee-based
+  // restriction for the same role; unrelated to BC-016 (Mall-scoping), which
+  // stays unresolved since Customer still has no mallId.
+  private customerScope(scope?: CustomerScope) {
+    if (scope?.role === Role.LEASING_EXECUTIVE) {
+      return { assignedToId: scope.userId };
+    }
+    return {};
+  }
+
   async findAll(query: {
     status?: CustomerStatus;
     search?: string;
     assignedToId?: string;
     page?: number;
     limit?: number;
-  }) {
+  }, scope?: CustomerScope) {
     const { page = 1, limit = 20, search, status, assignedToId } = query;
     const skip = (page - 1) * +limit;
 
-    const where: any = { isActive: true, deletedAt: null };
+    const where: any = { isActive: true, deletedAt: null, ...this.customerScope(scope) };
     if (status) where.status = status;
     if (assignedToId) where.assignedToId = assignedToId;
     if (search) {
@@ -105,7 +121,7 @@ export class CustomersService {
     return { total, byStatus };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, scope?: CustomerScope) {
     const customer = await this.prisma.customer.findUnique({
       where: { id },
       include: {
@@ -162,6 +178,9 @@ export class CustomersService {
       },
     });
     if (!customer) throw new NotFoundException('Customer not found');
+    if (scope?.role === Role.LEASING_EXECUTIVE && customer.assignedToId !== scope.userId) {
+      throw new NotFoundException('Customer not found');
+    }
     return customer;
   }
 
@@ -249,8 +268,8 @@ export class CustomersService {
     });
   }
 
-  async update(id: string, dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string }) {
-    const existing = await this.findOne(id);
+  async update(id: string, dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string }, scope?: CustomerScope) {
+    const existing = await this.findOne(id, scope);
     this.assertCustomerBudgetCurrency(dto as any, existing as any);
     const data: any = { ...dto };
     if (dto.status === CustomerStatus.ACTIVE && !data.wonAt) data.wonAt = new Date();
@@ -292,8 +311,8 @@ export class CustomersService {
     return updated;
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, scope?: CustomerScope) {
+    await this.findOne(id, scope);
     await this.prisma.customer.update({
       where: { id },
       data: { isActive: false, deletedAt: new Date() },
@@ -301,8 +320,8 @@ export class CustomersService {
     return { message: 'Customer deleted' };
   }
 
-  async addActivity(customerId: string, dto: CreateCustomerActivityDto, userId: string) {
-    await this.findOne(customerId);
+  async addActivity(customerId: string, dto: CreateCustomerActivityDto, userId: string, scope?: CustomerScope) {
+    await this.findOne(customerId, scope);
     return this.prisma.customerActivity.create({
       data: {
         customerId,
@@ -429,8 +448,8 @@ export class CustomersService {
     return this.findOne(customerId);
   }
 
-  async linkTenant(customerId: string, tenantId: string) {
-    await this.findOne(customerId);
+  async linkTenant(customerId: string, tenantId: string, scope?: CustomerScope) {
+    await this.findOne(customerId, scope);
     return this.prisma.customer.update({
       where: { id: customerId },
       data: { tenantId, status: CustomerStatus.ACTIVE, wonAt: new Date() },

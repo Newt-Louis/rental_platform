@@ -11,4 +11,9 @@ export const usersApi = {
   resetPassword: (id: string, newPassword: string) =>
     api.post(`/users/${id}/reset-password`, { newPassword }).then((r) => r.data),
   deleteUser: (id: string) => api.delete(`/users/${id}`).then((r) => r.data),
+  // Self-service — any authenticated role, scoped to the caller's own account.
+  updateOwnProfile: (data: { fullName?: string; phone?: string }) =>
+    api.patch('/users/me', data).then((r) => r.data),
+  changeOwnPassword: (newPassword: string) =>
+    api.post('/users/me/change-password', { newPassword }).then((r) => r.data),
 };

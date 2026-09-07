@@ -31,8 +31,8 @@ export class CustomersController {
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any) {
-    return this.customersService.findAll(query);
+  findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.customersService.findAll(query, { userId: user.id, role: user.role });
   }
 
   @Get('stats')
@@ -43,8 +43,8 @@ export class CustomersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get customer detail with activities and leads' })
-  findOne(@Param('id') id: string) {
-    return this.customersService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.customersService.findOne(id, { userId: user.id, role: user.role });
   }
 
   @Post()
@@ -55,14 +55,14 @@ export class CustomersController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update customer info or status' })
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.customersService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
+    return this.customersService.update(id, dto, { userId: user.id, role: user.role });
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft delete customer' })
-  remove(@Param('id') id: string) {
-    return this.customersService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.customersService.remove(id, { userId: user.id, role: user.role });
   }
 
   @Post(':id/activities')
@@ -72,12 +72,12 @@ export class CustomersController {
     @Body() dto: CreateCustomerActivityDto,
     @CurrentUser() user: any,
   ) {
-    return this.customersService.addActivity(id, dto as any, user.id);
+    return this.customersService.addActivity(id, dto as any, user.id, { userId: user.id, role: user.role });
   }
 
   @Patch(':id/link-tenant')
   @ApiOperation({ summary: 'Link customer to a tenant (mark as ACTIVE)' })
-  linkTenant(@Param('id') id: string, @Body('tenantId') tenantId: string) {
-    return this.customersService.linkTenant(id, tenantId);
+  linkTenant(@Param('id') id: string, @Body('tenantId') tenantId: string, @CurrentUser() user: any) {
+    return this.customersService.linkTenant(id, tenantId, { userId: user.id, role: user.role });
   }
 }
