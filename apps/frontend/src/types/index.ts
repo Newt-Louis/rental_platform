@@ -305,6 +305,9 @@ export interface UnitSlot {
   pricePerDaySqm?: number;
   pricePerHour?: number;
   pricePerSqmMonth?: number;
+  // RPT-CUR-006: currency of the three price fields. Optional because legacy
+  // rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   fillColor?: string;
   posX: number;
   posY: number;
@@ -329,7 +332,10 @@ export interface SlotBooking {
   startDatetime: string;
   endDatetime?: string;
   totalPrice?: number;
+  baseAmount?: number;
   totalAmount?: number;
+  // MON-CUR-SLOT-01: booking-time currency snapshot. Never read from the slot.
+  currencyCode?: CurrencyCode | null;
   leadId?: string;
   lead?: Lead;
   customerId?: string;

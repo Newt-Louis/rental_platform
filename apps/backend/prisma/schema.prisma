@@ -3399,6 +3399,17 @@ model UnitSlot {
   pricePerDaySqm   Float?
   pricePerHour     Float?
   pricePerSqmMonth Float?
+  // RPT-CUR-006 / CUR-002 (slot subset): currency of the three price fields
+  // above. Deliberately NULLABLE with NO @default.
+  //
+  // NOT derived from Unit.currencyCode. That column's own comment scopes it to
+  // baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm -- the Unit's
+  // long-term rent -- and nothing in code ties slot pricing to it, so an
+  // inheritance rule would be an assumption rather than a proven invariant.
+  //
+  // NULL means "priced before currency was captured" and is surfaced as
+  // UNKNOWN, never as VND.
+  currencyCode     CurrencyCode?
   posX             Float?    @default(10)
   posY             Float?    @default(10)
   posW             Float?    @default(20)
@@ -3453,6 +3464,15 @@ model SlotBooking {
   baseAmount                Float?
   discountPct               Float?            @default(0)
   totalAmount               Float // Final amount after discount
+  // MON-CUR-SLOT-01: the currency that governed this booking's amount AT
+  // BOOKING TIME. A snapshot, not a lookup.
+  //
+  // It cannot be read from the slot at query time: updateSlot edits prices
+  // freely and deleteSlot is a soft delete that deliberately keeps booking
+  // history, so a later pricing change would silently relabel every historical
+  // booking. Deliberately NULLABLE with NO @default -- pre-existing rows were
+  // recorded before the currency was captured and stay UNKNOWN.
+  currencyCode              CurrencyCode?
   status                    SlotBookingStatus @default(PENDING)
   notes                     String?
   cancelReason              String?

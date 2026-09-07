@@ -201,3 +201,53 @@ equal every related Proposal's currency. A customer's budget is its own monetary
 context and may legitimately differ from what a specific deal was quoted in.
 
 Still true: no FX conversion exists anywhere in the platform.
+
+### Wave 5 status (2026-09-07) — UnitSlot / SlotBooking currency
+
+| ID | Status after Wave 5 |
+|---|---|
+| MON-CUR-01 | **PARTIAL, improved again** — `UnitSlot` and `SlotBooking` now carry a currency. `SapReconciliationRecord`, `OccupancySnapshot.revenuePerSqm`, `ParkingShift` and inventory still do not. |
+| MON-CUR-04 | **HOLDS for both new columns** — neither has a `@default`. |
+| RPT-CUR-01 | **PARTIAL** — additionally HOLDS for the Dashboard SHORT card on `/dashboard` and `/dashboard/cross-mall`. |
+| RPT-CUR-06 | **HOLDS for the slot path** — a NULL slot-booking currency becomes an explicit UNKNOWN bucket, never VND. |
+
+New invariants introduced by Wave 5:
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-SLOT-01** | A SlotBooking persists the currency that governed its amount at booking time, and that snapshot is never re-derived from the slot | CHOKEPOINT (`createBooking` writes it with the amount; `updateSlotBooking` refuses a re-price that would change it, `SLOT_BOOKING_CURRENCY_CONFLICT`) | **HOLDS** |
+| **MON-CUR-SLOT-02** | UnitSlot monetary pricing carries explicit currency context | CHOKEPOINT (`assertSlotPricingCurrency` on create and update) + DTO `@IsEnum(CurrencyCode)` | **HOLDS** |
+| **MON-CUR-SLOT-03** | All operands in a SlotBooking amount calculation share one currency | PER-PATH, structural | **HOLDS** — `calculatePrice` has exactly one monetary operand; everything else (area, duration, multiplier, discount %) is dimensionless |
+| **MON-CUR-SLOT-04** | Dashboard SHORT revenue aggregates by currency only | PER-PATH + regression tests | **HOLDS** for `/dashboard` and `/dashboard/cross-mall` |
+| **MON-CUR-SLOT-05** | A SlotBooking to Invoice crossing preserves the booking currency | CHOKEPOINT (`createDueInvoiceFromSource`) | **HOLDS** — and refuses to invoice a booking with no currency |
+
+MON-CUR-SLOT-03 is stated as *structural* deliberately: it holds because no
+second monetary operand exists in the formula, not because a check enforces it.
+Adding a tax, fee or deposit term to slot pricing would break it, and that is the
+change to watch for.
+
+There is deliberately **no** invariant requiring `UnitSlot.currencyCode` to equal
+`Unit.currencyCode`. The codebase does not state that rule, so asserting it here
+would be inventing one.
+
+Still true: no FX conversion exists anywhere in the platform.
+
+#### Wave 5 closure cleanup (2026-09-07)
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MON-CUR-SLOT-06** | A positive-value SlotBooking cannot enter a revenue-recognised or invoice-eligible state without an explicit currency | CHOKEPOINT (`confirmBooking`) | **HOLDS** — CONFIRMED is that boundary; the currency may be supplied during the transition so legacy rows are not stranded |
+
+MON-CUR-SLOT-04 strengthened: Dashboard SHORT no longer emits a mixed-currency
+scalar at all. `monthlyRevenue` is null unless exactly one known currency governs
+the period, and the cross-mall `totals` merges per-currency buckets rather than
+summing scalars across malls.
+
+Zero-value exception, recorded deliberately: a SlotBooking with `totalAmount = 0`
+may be confirmed with no currency. It recognises no revenue and can be invoiced
+for no amount, so it has no unit of account to be missing.
+
+MON-CUR-SLOT-03 now has a structure test guarding it. The invariant is not
+enforced by a runtime check — it holds because `calculatePrice` has exactly one
+monetary operand — so the test scans that method for money-shaped vocabulary and
+fails when a second one appears.

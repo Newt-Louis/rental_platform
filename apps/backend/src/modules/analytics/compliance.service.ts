@@ -263,10 +263,19 @@ export class ComplianceService {
           SHORT: {
             ...occupancyByLeaseTerm.SHORT,
             activeContracts: 0,
-            monthlyRevenue: shortPipeline.revenue,
-            revenuePerSqm: occupancyByLeaseTerm.SHORT.occupiedArea > 0
-              ? shortPipeline.revenue / occupancyByLeaseTerm.SHORT.occupiedArea
-              : 0,
+            // RPT-CUR-006: this read a scalar that was VND + USD + UNKNOWN added
+            // together, then divided it by m² to produce a revenue-per-m² with
+            // no unit of account. Both are null unless exactly one known
+            // currency governs the period; `revenueByCurrency` is authoritative.
+            revenueByCurrency: shortPipeline.revenueByCurrency,
+            revenueCurrencyMixed: shortPipeline.revenueCurrencyMixed,
+            revenueCurrencyUnknown: shortPipeline.revenueCurrencyUnknown,
+            revenueScalarCurrency: shortPipeline.revenueScalarCurrency,
+            monthlyRevenue: shortPipeline.revenueScalar,
+            revenuePerSqm:
+              shortPipeline.revenueScalar !== null && occupancyByLeaseTerm.SHORT.occupiedArea > 0
+                ? shortPipeline.revenueScalar / occupancyByLeaseTerm.SHORT.occupiedArea
+                : null,
             bookingStats: shortPipeline,
           },
         },

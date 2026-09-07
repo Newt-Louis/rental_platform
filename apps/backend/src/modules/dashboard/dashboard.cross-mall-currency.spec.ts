@@ -25,6 +25,22 @@ type InvoiceRow = {
 
 const long = (leaseTermType = 'LONG') => ({ unit: { leaseTermType } });
 
+/** RPT-CUR-006: a SHORT booking now carries a booking-time currency snapshot. */
+const shortBooking = (
+  status: string,
+  totalAmount: number,
+  currencyCode: 'VND' | 'USD' | 'MMK' | null,
+) => ({
+  status,
+  totalAmount,
+  currencyCode,
+  installationStartDatetime: null,
+  dismantlingEndDatetime: null,
+  startDatetime: new Date('2026-09-01'),
+  endDatetime: new Date('2026-09-05'),
+  slot: { id: 's1', unitId: 'u1', area: 10 },
+});
+
 function invoice(
   totalAmount: number,
   currencyCode: InvoiceRow['currencyCode'],
@@ -214,15 +230,37 @@ describe('getCrossMallDashboard currency contract', () => {
     expect(mall.monthlyRevenue).not.toBe(naive);
   });
 
-  // RPT-CUR-006 is deferred, not silently defaulted: SlotBooking has no
-  // currency column, so the SHORT segment declares the unit unknown rather
-  // than placing the amount in a VND bucket.
-  it('T9b: SHORT revenue is flagged currency-unknown, not bucketed as VND', async () => {
+  // RPT-CUR-006 was DEFERRED in Wave 1 -- SlotBooking had no currency column, so
+  // the SHORT segment declared the whole amount unknown. Wave 5 added
+  // `SlotBooking.currencyCode` as a booking-time snapshot, so SHORT now groups
+  // by it. This assertion moved with the contract; it did not weaken.
+  it('T9b: SHORT revenue is grouped by the booking currency snapshot', async () => {
+    prisma.slotBooking.findMany.mockResolvedValue([
+      shortBooking('CONFIRMED', 45_000_000, 'VND'),
+      shortBooking('COMPLETED', 3_000, 'USD'),
+    ]);
+
     const result: any = await service.getCrossMallDashboard();
     const short = result.malls[0].byLeaseTerm.SHORT;
 
+    expect(short.revenueByCurrency.map((b: any) => b.currencyCode)).toEqual(['VND', 'USD']);
+    expect(short.revenueCurrencyUnknown).toBe(false);
+    // Still no combined total.
+    expect(short.revenueByCurrency.some((b: any) => b.amount === 45_003_000)).toBe(false);
+  });
+
+  it('T9c: a SHORT booking with no captured currency is UNKNOWN, never VND', async () => {
+    prisma.slotBooking.findMany.mockResolvedValue([
+      shortBooking('CONFIRMED', 45_000_000, 'VND'),
+      shortBooking('CONFIRMED', 9_000_000, null),
+    ]);
+
+    const result: any = await service.getCrossMallDashboard();
+    const short = result.malls[0].byLeaseTerm.SHORT;
+
+    expect(short.revenueByCurrency.map((b: any) => b.currencyCode)).toEqual(['VND', 'UNKNOWN']);
     expect(short.revenueCurrencyUnknown).toBe(true);
-    expect(short.revenueByCurrency).toEqual([]);
+    expect(short.revenueByCurrency.find((b: any) => b.currencyCode === 'UNKNOWN').amount).toBe(9_000_000);
   });
 
   // T10 — REGRESSION PROOF. Reconstruct the pre-fix implementation exactly and

@@ -1,3 +1,4 @@
+import { formatSlotMoney } from '@/lib/slot-currency';
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { slotsApi } from '@/api';
@@ -197,11 +198,11 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
             </SheetSection>
 
             <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">
-              <SheetRow label="Giá gốc"     value={fmtMoney(d.baseAmount)}   icon={DollarSign} />
+              <SheetRow label="Giá gốc"     value={formatSlotMoney(d.baseAmount, d.currencyCode)}   icon={DollarSign} />
               {d.discountPct > 0 && (
                 <SheetRow label="Chiết khấu" value={`${d.discountPct}%`} icon={DollarSign} />
               )}
-              <SheetRow label="Thành tiền"  value={fmtMoney(d.totalAmount)}  icon={DollarSign} />
+              <SheetRow label="Thành tiền"  value={formatSlotMoney(d.totalAmount, d.currencyCode)}  icon={DollarSign} />
             </SheetSection>
 
             {d.notes && (

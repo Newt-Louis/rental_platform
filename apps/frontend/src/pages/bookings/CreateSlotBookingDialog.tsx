@@ -1,3 +1,4 @@
+import { formatSlotMoney } from '@/lib/slot-currency';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { slotsApi, crmApi, customersApi, spacesApi } from '@/api';
@@ -129,7 +130,9 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     && !mutation.isPending;
 
   const selectedSlot = slots.find((s) => s.id === form.slotId);
-  const fmtM = (n?: number) => n != null ? new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫' : '—';
+  // RPT-CUR-006: the '₫' here was printed over a price the model could not
+  // prove was VND. The currency now comes from the slot.
+  const fmtM = (n?: number) => formatSlotMoney(n, selectedSlot?.currencyCode);
 
   const priceHints = selectedSlot ? [
     form.type === 'DAILY' && selectedSlot.pricePerDaySqm && `${fmtM(selectedSlot.pricePerDaySqm)}/m²/ngày`,

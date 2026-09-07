@@ -1,3 +1,4 @@
+import { CurrencyCode } from '@prisma/client';
 import { IsString, IsNumber, IsOptional, IsEnum, IsBoolean, IsDateString, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -20,6 +21,7 @@ export class CreateUnitSlotDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerDaySqm?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerHour?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerSqmMonth?: number;
+  @ApiPropertyOptional({ enum: CurrencyCode, description: "Currency of the slot price fields. REQUIRED whenever any price is supplied; no default, no FX." }) @IsEnum(CurrencyCode) @IsOptional() currencyCode?: CurrencyCode;
 }
 
 export class UpdateUnitSlotDto {
@@ -35,6 +37,7 @@ export class UpdateUnitSlotDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerDaySqm?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerHour?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerSqmMonth?: number;
+  @ApiPropertyOptional({ enum: CurrencyCode, description: "Currency of the slot price fields. REQUIRED whenever any price is supplied; no default, no FX." }) @IsEnum(CurrencyCode) @IsOptional() currencyCode?: CurrencyCode;
   @ApiPropertyOptional() @IsBoolean() @IsOptional() isActive?: boolean;
 }
 
@@ -81,4 +84,22 @@ export class CreateSlotGridDto {
   @IsEnum(SlotType)
   @IsOptional()
   slotType?: SlotType;
+}
+
+/**
+ * MON-CUR-SLOT-06 — CONFIRMED is the revenue-recognised / invoice-eligible
+ * boundary, so a positive-value booking needs a currency to cross it. A legacy
+ * booking recorded before `SlotBooking.currencyCode` existed may supply one here
+ * instead of being permanently stuck in PENDING.
+ */
+export class ConfirmSlotBookingDto {
+  @ApiPropertyOptional({
+    enum: CurrencyCode,
+    description:
+      'Currency to attach while confirming. Required only when the booking has a ' +
+      'positive amount and no currency yet. No default, no FX.',
+  })
+  @IsEnum(CurrencyCode)
+  @IsOptional()
+  currencyCode?: CurrencyCode;
 }

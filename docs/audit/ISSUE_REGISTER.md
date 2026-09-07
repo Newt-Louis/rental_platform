@@ -1694,3 +1694,115 @@ An UNKNOWN Lead currency stays UNKNOWN through every hop.
 No production data was mutated. The local dev-database probe rows (3 customers
 created via the API, 2 lead links) were removed and the table verified back at 10
 customers / 10 linked leads.
+
+---
+
+## Remediation Wave 5 — UnitSlot / SlotBooking currency lifecycle (2026-09-07)
+
+Evidence and runtime output in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §20.
+
+### RPT-CUR-006 — CLOSED
+
+| | |
+|---|---|
+| Severity | **P2** |
+| Status | **FIXED 2026-09-07** |
+| Invariants | **MON-CUR-SLOT-01 … 05** |
+
+`UnitSlot.currencyCode` (pricing) and `SlotBooking.currencyCode` (an immutable
+booking-time snapshot) added — both nullable, **no `@default`**. Both write paths
+fail closed on money-without-currency, evaluated against the merged state so
+existing rows stay editable. Dashboard SHORT revenue is grouped by the booking
+snapshot on `/api/dashboard` and `/api/dashboard/cross-mall`; the legacy scalar
+survives only as a declared cross-currency sum alongside
+`revenueCurrencyUnknown`.
+
+**Ownership is BOTH, and the snapshot is required rather than preferred.**
+`updateSlot` edits prices without restriction and `deleteSlot` is a soft delete
+whose comment says "keep booking history", so a booking amount outlives the price
+that produced it. Reading currency from the slot at query time would relabel
+every historical booking the moment a slot was re-denominated.
+
+**No inheritance from `Unit.currencyCode`.** That column's own schema comment
+scopes it to the Unit long-term rent fields; nothing ties slot pricing to it, and
+`updateSlot` never reads the Unit. A slot priced differently from its Unit is
+therefore accepted, not rejected — enforcing equality would have invented a
+business rule the codebase does not state.
+
+Reference dataset: the seed creates **no** SHORT unit, slot or booking, so every
+classification is 0 and the defect was latent. The reconciliation script was
+still written and exercised against purpose-built rows.
+
+### SLOT-INV-CUR-001 — NEW, found and fixed inside Wave 5 scope
+
+| | |
+|---|---|
+| Severity | **P1** |
+| Domain | Billing / Slots |
+| Status | **FIXED 2026-09-07** |
+
+`BillingService.createDueInvoiceFromSource('SHORT_TERM_BOOKING')` created an
+Invoice from a slot booking and **never set `currencyCode`**, so the invoice took
+`Invoice.currencyCode`'s `@default(VND)` whatever the booking was priced in. Once
+raised, that label travels into payments and on to SAP — real money carrying a
+wrong currency, not just a mislabelled report. Rated P1 for that reason.
+
+The invoice now carries `booking.currencyCode`, and a booking with no currency
+cannot produce an invoice at all. Fixed in this wave rather than deferred because
+it is a direct consequence of the SlotBooking currency loss, which §11 of the
+wave brief put in scope.
+
+### CUR-002 — still open globally
+
+| Model | Status |
+|---|---|
+| `Lead.expectedRent` / `estimatedValue` | **FIXED** (Wave 3) |
+| `Customer.budgetMin` / `budgetMax` | **FIXED** (Wave 4) |
+| `UnitSlot` price fields | **FIXED** (Wave 5) |
+| `SlotBooking.baseAmount` / `totalAmount` | **FIXED** (Wave 5) |
+| `SapReconciliationRecord.ourAmount` / `sapAmount` | open — SAP-004 |
+| `OccupancySnapshot.revenuePerSqm` | open |
+| `ParkingShift.cashRevenue` / `nonCashRevenue` | open — parking module |
+| `InventoryItem.averageCost`, `InventoryTransaction.unitCost` | open — inventory, excluded by instruction |
+
+Two existing specs were updated rather than relaxed:
+`dashboard.cross-mall-currency.spec.ts` T9b asserted the Wave 1 *deferred*
+contract (SHORT always currency-unknown) and now asserts the Wave 5 grouped
+contract; `slots.service.concurrency.spec.ts` gained a currency on its slot
+fixture so it keeps exercising the Serializable path instead of tripping the new
+guard.
+
+No production data was mutated. The local dev-database rows created for runtime
+verification were deleted and the tables verified back at 0 slots / 0 bookings /
+0 SHORT units / 30 units.
+
+### Wave 5 closure cleanup (2026-09-07)
+
+RPT-CUR-006 was reported CLOSED after the first Wave 5 pass while Dashboard SHORT
+still emitted `revenue = VND + USD + UNKNOWN` as a compatibility scalar. That was
+premature: a mixed monetary scalar violates MON-CUR-02 whatever it is labelled,
+and "kept for compatibility" is not a reason to keep a meaningless number. Three
+corrections closed the gap.
+
+1. **Mixed scalar removed.** `monthlyRevenue` / `collectedRevenue` on
+   `byLeaseTerm.SHORT` are null unless exactly one known currency governs the
+   period; `revenueScalarCurrency` names it and `revenueCurrencyMixed` explains a
+   null. `revenueByCurrency` is authoritative. Cross-mall `totals` merges buckets
+   instead of summing scalars; `compliance.service.ts` was carrying the same
+   scalar into a `revenuePerSqm` division and is null on the same condition.
+   Regression test: VND 15,000,000 + USD 750 + UNKNOWN 9,000,000 must never
+   produce 24,000,750.
+2. **MON-CUR-SLOT-06.** `confirmBooking` was a blind status update — a legacy
+   PENDING booking with a positive amount and NULL currency could reach
+   CONFIRMED, which is both revenue-recognised and invoice-eligible. Now refused;
+   the currency may be supplied during the transition. Zero-value bookings may
+   still confirm without one, documented and tested (T18).
+3. **Calculation structure test.** MON-CUR-SLOT-03 holds structurally, so a test
+   scans `calculatePrice` for a second monetary operand and fails when one
+   appears.
+
+**RPT-CUR-006 — CLOSED**, now against all seven conditions including "Dashboard
+SHORT has no mixed scalar" and "billable state requires currency".
+
+No production data was mutated; the verification rows were removed and the tables
+verified back at 0 slots / 0 bookings / 0 SHORT units / 30 units.

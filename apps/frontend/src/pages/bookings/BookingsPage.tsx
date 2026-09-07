@@ -1,3 +1,4 @@
+import { formatSlotMoney, groupSlotRevenueByCurrency, formatSlotBucket } from '@/lib/slot-currency';
 import { Fragment, useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -351,7 +352,9 @@ export default function BookingsPage() {
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
     cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
-    revenue: allSlotBookings.filter((b) => b.status === 'COMPLETED').reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
+    // RPT-CUR-006: was one cross-currency sum. Grouped now; there is no
+    // combined total because no FX rate exists.
+    revenueByCurrency: groupSlotRevenueByCurrency(allSlotBookings.filter((b: any) => b.status === 'COMPLETED')),
   };
 
   const floorOptions = Array.from(
@@ -772,7 +775,12 @@ export default function BookingsPage() {
               { label: t('slotStats.pending'), value: slotStats.pending, status: 'PENDING' },
               { label: t('slotStats.confirmed'), value: slotStats.confirmed, status: 'CONFIRMED' },
               { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
-              { label: t('slotStats.revenue'), value: fmtMoney(slotStats.revenue), status: '' },
+              // RPT-CUR-006: one card per currency, never a combined total.
+              ...slotStats.revenueByCurrency.map((b) => ({
+                label: `${t('slotStats.revenue')} ${b.currencyCode}`,
+                value: formatSlotBucket(b),
+                status: '',
+              })),
             ].map((item) => (
               <ERPStatCard
                 key={item.label}
@@ -984,7 +992,7 @@ export default function BookingsPage() {
                           <div className="text-gray-400">→ {fmtDatetime(b.endDatetime)}</div>
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-800">
-                          {fmtMoney(b.totalAmount)}
+                          {formatSlotMoney(b.totalAmount, b.currencyCode)}
                         </td>
                         <td className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>

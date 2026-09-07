@@ -28,6 +28,10 @@ describe('SlotsService allocation concurrency', () => {
     pricePerDaySqm: 10,
     pricePerHour: null,
     pricePerSqmMonth: null,
+    // RPT-CUR-006: a priced slot must carry a currency; createBooking refuses
+    // otherwise. This fixture exists to exercise the Serializable path, so it
+    // supplies one rather than tripping that guard.
+    currencyCode: 'VND',
     pricingRules: [],
   };
   const dto: any = {

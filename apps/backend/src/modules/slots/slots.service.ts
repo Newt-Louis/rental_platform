@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, SlotBookingType } from './dto/slots.dto';
@@ -24,9 +24,39 @@ export class SlotsService {
     });
   }
 
+  /**
+   * MON-CUR-SLOT-02 -- slot pricing may not be persisted without a unit of
+   * account. Checked against the MERGED state, so an existing slot stays
+   * editable and only a write that introduces or changes a price is blocked.
+   *
+   * The currency is NOT inherited from Unit.currencyCode: that column is scoped
+   * by its own schema comment to the Unit's long-term rent fields, and nothing
+   * ties slot pricing to it. Inheriting would be an assumption, not a rule.
+   */
+  private assertSlotPricingCurrency(
+    incoming: { pricePerDaySqm?: number | null; pricePerHour?: number | null; pricePerSqmMonth?: number | null; currencyCode?: CurrencyCode | null },
+    existing?: { currencyCode?: CurrencyCode | null },
+  ) {
+    const writesPrice =
+      (incoming.pricePerDaySqm !== undefined && incoming.pricePerDaySqm !== null) ||
+      (incoming.pricePerHour !== undefined && incoming.pricePerHour !== null) ||
+      (incoming.pricePerSqmMonth !== undefined && incoming.pricePerSqmMonth !== null);
+    if (!writesPrice) return;
+
+    const resulting = incoming.currencyCode ?? existing?.currencyCode ?? null;
+    if (!resulting) {
+      throw new BadRequestException(
+        'Vui lòng chọn đơn vị tiền tệ cho giá thuê ô nhỏ. ' +
+          'Hệ thống không mặc định VND và không quy đổi tỷ giá.',
+      );
+    }
+  }
+
   async createSlot(unitId: string, dto: CreateUnitSlotDto) {
     const unit = await this.prisma.unit.findUnique({ where: { id: unitId } });
     if (!unit) throw new NotFoundException('Unit not found');
+
+    this.assertSlotPricingCurrency(dto as any);
 
     return this.prisma.unitSlot.create({
       data: { ...dto, unitId },
@@ -34,7 +64,8 @@ export class SlotsService {
   }
 
   async updateSlot(id: string, dto: UpdateUnitSlotDto) {
-    await this.findSlot(id);
+    const existing = await this.findSlot(id);
+    this.assertSlotPricingCurrency(dto as any, existing as any);
     return this.prisma.unitSlot.update({ where: { id }, data: dto });
   }
 
@@ -192,7 +223,12 @@ export class SlotsService {
     }
 
     const totalAmount = baseAmount * (1 - discountPct / 100);
-    return { baseAmount, discountPct, totalAmount };
+    // MON-CUR-SLOT-03: every operand above is either the ONE slot price field
+    // for this booking type (monetary) or dimensionless -- area in m2, a day/
+    // hour/month count, a multiplier, a discount percentage. There is no second
+    // monetary operand anywhere in this formula (no tax, fee or deposit), so the
+    // result is denominated in exactly the slot's pricing currency.
+    return { baseAmount, discountPct, totalAmount, currencyCode: slot.currencyCode ?? null };
   }
 
   private countWeekendDays(start: Date, end: Date): number {
@@ -322,7 +358,7 @@ export class SlotsService {
     });
 
     // Calculate price
-    const { baseAmount, discountPct, totalAmount } = await this.calculatePrice(
+    const { baseAmount, discountPct, currencyCode } = await this.calculatePrice(
       slotId,
       dto.type as SlotBookingType,
       start,
@@ -331,6 +367,21 @@ export class SlotsService {
 
     const finalDiscount = dto.discountPct ?? discountPct;
     const finalTotal = baseAmount * (1 - finalDiscount / 100);
+
+    // MON-CUR-SLOT-01 -- the booking SNAPSHOTS the currency that governed its
+    // amount. It is never read back from the slot: updateSlot edits prices
+    // freely and deleteSlot is a soft delete that keeps booking history, so a
+    // later pricing change would otherwise relabel every historical booking.
+    //
+    // A zero amount has no unit of account to lose, so only a priced booking
+    // requires one.
+    if (finalTotal !== 0 && !currencyCode) {
+      throw new BadRequestException(
+        'Ô nhỏ này chưa có đơn vị tiền tệ cho giá thuê. ' +
+          'Vui lòng bổ sung đơn vị tiền tệ cho ô nhỏ trước khi tạo booking — ' +
+          'hệ thống không mặc định VND.',
+      );
+    }
 
     return this.serializable(async (tx) => {
       const conflict = await this.findBookingConflict(
@@ -362,6 +413,7 @@ export class SlotsService {
           baseAmount,
           discountPct: finalDiscount,
           totalAmount: finalTotal,
+          currencyCode,
           notes: dto.notes,
           createdById: userId,
           status: 'PENDING',
@@ -391,10 +443,41 @@ export class SlotsService {
     });
   }
 
-  async confirmBooking(id: string) {
+  /**
+   * MON-CUR-SLOT-06 — a positive-value booking may not enter a
+   * revenue-recognised or invoice-eligible state without an explicit currency.
+   *
+   * CONFIRMED is exactly that boundary: `summarizeShortBookingPipeline` counts
+   * CONFIRMED and COMPLETED into Dashboard SHORT revenue, and
+   * `createDueInvoiceFromSource` only accepts those two statuses. Before this
+   * gate a legacy PENDING booking with a positive amount and a NULL currency
+   * could be confirmed by a blind status update and become billable.
+   *
+   * Legacy rows stay readable and editable — only the transition is blocked, and
+   * the currency may be supplied as part of it.
+   */
+  async confirmBooking(id: string, currencyCode?: CurrencyCode) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+
+    const resulting = currencyCode ?? booking.currencyCode ?? null;
+    // A zero-value booking recognises no revenue and cannot be invoiced for an
+    // amount, so it has no unit of account to be missing. Documented rule, not
+    // an oversight: see T18.
+    if (booking.totalAmount !== 0 && !resulting) {
+      throw new BadRequestException(
+        'Booking này chưa có đơn vị tiền tệ nên không thể xác nhận: ' +
+          'trạng thái CONFIRMED được tính vào doanh thu và cho phép xuất hóa đơn. ' +
+          'Vui lòng bổ sung đơn vị tiền tệ — hệ thống không mặc định VND.',
+      );
+    }
+
     return this.prisma.slotBooking.update({
       where: { id },
-      data: { status: 'CONFIRMED' },
+      data: {
+        status: 'CONFIRMED',
+        ...(currencyCode ? { currencyCode } : {}),
+      },
     });
   }
 
@@ -628,9 +711,42 @@ export class SlotsService {
     if (dto.startDatetime || dto.endDatetime) {
       const priceData = await this.calculatePrice(booking.slotId, booking.type as SlotBookingType, start, end);
       const disc = dto.discountPct ?? (booking.discountPct ?? 0);
+      const recalculatedTotal = priceData.baseAmount * (1 - disc / 100);
+
+      // MON-CUR-SLOT-01 -- the amount and the currency are ONE snapshot. A
+      // re-price from the slot's current price is governed by that slot's
+      // current currency, so the two move together; refreshing the amount while
+      // leaving a stale currency label is exactly the mislabelling this wave
+      // exists to prevent.
+      if (recalculatedTotal !== 0 && !priceData.currencyCode) {
+        throw new BadRequestException(
+          'Ô nhỏ này chưa có đơn vị tiền tệ cho giá thuê, không thể tính lại số tiền booking. ' +
+            'Hệ thống không mặc định VND.',
+        );
+      }
+      // A re-price that would move an existing booking to a different unit of
+      // account is refused rather than performed silently.
+      if (
+        booking.currencyCode &&
+        priceData.currencyCode &&
+        booking.currencyCode !== priceData.currencyCode
+      ) {
+        throw new ConflictException({
+          code: 'SLOT_BOOKING_CURRENCY_CONFLICT',
+          message:
+            'Không thể tính lại: đơn vị tiền tệ của ô nhỏ đã thay đổi so với thời điểm đặt booking. ' +
+            'Hệ thống không quy đổi tỷ giá — vui lòng tạo booking mới thay vì đổi đơn vị tiền tệ của booking cũ.',
+          bookingId: id,
+          slotId: booking.slotId,
+          bookingCurrency: booking.currencyCode,
+          slotCurrency: priceData.currencyCode,
+        });
+      }
+
       data.baseAmount = priceData.baseAmount;
       data.discountPct = disc;
-      data.totalAmount = priceData.baseAmount * (1 - disc / 100);
+      data.totalAmount = recalculatedTotal;
+      data.currencyCode = priceData.currencyCode;
     } else if (dto.discountPct !== undefined) {
       data.discountPct = dto.discountPct;
       data.totalAmount = (booking.baseAmount ?? 0) * (1 - dto.discountPct / 100);

@@ -911,3 +911,196 @@ UNKNOWN source stays UNKNOWN throughout.
 **CUR-002 — remains open globally.** Only the `Lead` and `Customer` subsets are
 done. `UnitSlot`/`SlotBooking` (RPT-CUR-006), `SapReconciliationRecord`
 (SAP-004) and `OccupancySnapshot.revenuePerSqm` are unchanged.
+
+---
+
+## 20. Remediation Wave 5 — UnitSlot / SlotBooking currency lifecycle (2026-09-07)
+
+Scope: **RPT-CUR-006 and the UnitSlot/SlotBooking subset of CUR-002.** SAP,
+`OccupancySnapshot`, the shared formatter defaults, `avgRentPerSqm`, the
+single-mall LONG revenue, parking internals and inventory were all left
+untouched. No FX.
+
+### 20.1 The lifecycle, traced before any schema change
+
+```
+Unit ── UnitSlot (price/day/m², price/hour, price/m²/month)
+          └── SlotBooking  baseAmount → discount% → totalAmount
+                 ├── Dashboard SHORT KPI  (summarizeShortBookingPipeline)
+                 └── Invoice              (SHORT_TERM_BOOKING → payments → SAP)
+```
+
+| Model | Field | Writer | DTO | Service | Source value | Currency source (before) | UI input | Seed | Import/bulk | Job | Downstream |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| UnitSlot | `pricePerDaySqm` / `pricePerHour` / `pricePerSqmMonth` | `POST /slots/units/:unitId`, `PATCH /slots/:id`, `POST /slots/units/:unitId/grid` | `CreateUnitSlotDto` / `UpdateUnitSlotDto` | `SlotsService.createSlot` / `updateSlot` / grid `createMany` | typed by a user | **none** | `FloorPlanEditor` slot dialog | none — the seed creates no slots | none | none | `calculatePrice` |
+| SlotBooking | `baseAmount` | `POST /slots/:id/bookings`, `PATCH /slots/bookings/:id` | `CreateSlotBookingDto` | `createBooking` / `updateSlotBooking` | `calculatePrice` | **none** | `CreateSlotBookingDialog` | none | none | none | Dashboard SHORT, Invoice |
+| SlotBooking | `totalAmount` | same | same | same | `baseAmount × (1 − discount%)` | **none** | same | none | none | none | same |
+
+`SlotPricingRule` holds `multiplier` and `discountPct` only — both dimensionless,
+so it is not a monetary model and needs no currency.
+
+### 20.2 Currency ownership — BOTH, and the second one is not a preference
+
+**`UnitSlot.currencyCode`** = the pricing currency.
+**`SlotBooking.currencyCode`** = an immutable booking-time snapshot.
+
+The snapshot is required, not chosen for symmetry. Two pieces of code prove it:
+`updateSlot` edits prices with no restriction, and `deleteSlot` is a **soft**
+delete whose own comment says *"keep booking history"*. A booking's amount
+therefore outlives the price that produced it, so reading the currency from the
+slot at query time would silently relabel every historical booking the moment a
+slot was re-priced or re-denominated.
+
+### 20.3 Unit → UnitSlot: no inheritance, by evidence
+
+`Unit.currencyCode` exists — but its own schema comment scopes it to
+`baseRentPerSqm / camPerSqm / marketRentPerSqm / askingRentPerSqm`, the Unit's
+**long-term** rent. Slot prices are not in that list, nothing in code derives one
+from the other, and `updateSlot` never reads the Unit. The brief's condition for
+enforcing a derived relation ("always derived from Unit by business rule") is not
+met, so **UnitSlot carries its own explicit currency** and a slot priced
+differently from its Unit is accepted rather than rejected. Inheriting would have
+been an assumption wearing the word "inherit".
+
+### 20.4 Existing data
+
+The seed creates **no** `Unit` with `leaseTermType = SHORT`, no `UnitSlot` and no
+`SlotBooking`, so the defect is latent in the reference dataset and every
+classification is 0. `prisma/scripts/slot-currency-reconciliation.sql` was still
+written and exercised against purpose-built rows (§20.7).
+
+Its two structural findings are worth keeping:
+
+- **`SAFE_TO_INFER_FROM_UNIT` is unreachable by construction**, for the reason in
+  §20.3. The class is still emitted so the reasoning is visible.
+- **`CONFLICT` is unreachable for a booking**: it has exactly one slot, so there
+  is no second source to disagree with. A booking whose currency differs from its
+  slot's *current* currency is the snapshot working as designed — reported as the
+  diagnostic `booking_vs_slot_currency_differs`, not as an error.
+
+A booking may only inherit from its slot when `baseAmount` still **reproduces**
+from that slot's current price. The script replays the simple formula only;
+WEEKEND / PEAK multipliers and VOLUME_DISCOUNT rules cannot be replayed, so an
+affected booking reports CURRENCY_UNKNOWN. Failing to prove provenance is never
+read as proving it.
+
+### 20.5 Amount calculation — single-currency by construction
+
+`calculatePrice` was traced in full. Every operand is either **the one slot price
+field for that booking type** (monetary) or dimensionless: area in m², a day /
+hour / month count, a weekend or peak multiplier, a volume or manual discount
+percentage. There is **no second monetary operand anywhere** — no tax, no fee, no
+deposit, no adjustment. So the result is denominated in exactly the slot's
+pricing currency, and `baseAmount` and `totalAmount` cannot diverge.
+
+### 20.6 Invoice crossing — a real defect, fixed here
+
+`createDueInvoiceFromSource('SHORT_TERM_BOOKING')` creates an Invoice from a
+booking and **never set `currencyCode`**, so every such invoice took
+`Invoice.currencyCode`'s `@default(VND)` regardless of what the booking was
+priced in. That label then travels into payments and SAP.
+
+This is a direct consequence of SlotBooking currency loss, so it is fixed in this
+wave rather than deferred: the invoice now carries `booking.currencyCode`, and a
+booking with no currency **cannot produce an invoice at all**.
+
+### 20.7 Runtime verification
+
+The reference dataset has no short-term data, so a SHORT unit, three slots
+(VND / USD / no-currency) and three bookings were created for the check and
+removed afterwards. Local dev database only; the table was verified back at 0
+slots / 0 bookings / 0 SHORT units / 30 units.
+
+```
+POST /slots/units/:id {pricePerDaySqm: 400000}              -> 400 "không mặc định VND"
+POST /slots/units/:id {pricePerDaySqm: 60000, ccy: MMK}     -> 201, currencyCode MMK
+POST /slots/units/:id {pricePerDaySqm: 1, ccy: EUR}         -> 400 "must be one of VND, USD, MMK"
+
+GET /api/dashboard          byLeaseTerm.SHORT
+GET /api/dashboard/cross-mall  malls[0].byLeaseTerm.SHORT
+  revenueByCurrency: VND 15,000,000 (1) | USD 750 (1) | UNKNOWN 9,000,000 (1)
+  revenueCurrencyUnknown: true
+  legacy scalar: 24,000,750   <- the meaningless cross-currency sum, retained
+                                 for compatibility and flagged
+
+POST .../SHORT_TERM_BOOKING/<unknown-currency booking>/create-invoice -> 400
+POST .../SHORT_TERM_BOOKING/<USD booking>/create-invoice
+  -> ST-BOOKING-w5-bk-2  currencyCode USD  total 825
+```
+
+Both reconciliation branches were exercised inside a rolled-back transaction: a
+booking whose `baseAmount` reproduces from a currency-bearing slot classifies
+**SAFE_TO_INFER_FROM_SLOT**; re-price that slot and the same booking classifies
+**CURRENCY_UNKNOWN**.
+
+### 20.8 RPT-CUR-006 — CLOSED
+
+| Closing condition | Status |
+|---|---|
+| pricing currency source is explicit | `UnitSlot.currencyCode`, enforced on create and update |
+| booking snapshots currency | `SlotBooking.currencyCode`, written with the amount, refused if absent |
+| amount calculation is single-currency | proven in §20.5 — no second monetary operand exists |
+| Dashboard SHORT grouped by currency | `revenueByCurrency` on both `/dashboard` and `/dashboard/cross-mall` |
+| downstream invoice preserves it | `SHORT_TERM_BOOKING` invoice carries the booking currency; fails closed without one |
+| legacy unknown data not fabricated | UNKNOWN bucket, no backfill, reconciliation refuses unproven inference |
+
+**CUR-002 remains open globally.** `SapReconciliationRecord` (SAP-004),
+`OccupancySnapshot.revenuePerSqm`, `ParkingShift` and the inventory models are
+unchanged.
+
+### 20.9 Wave 5 closure cleanup (2026-09-07)
+
+Three corrections applied after the first Wave 5 pass, before commit.
+
+**1. The mixed-currency legacy scalar is gone.** Dashboard SHORT still emitted
+`revenue = VND + USD + UNKNOWN` "for compatibility" — 24,000,750 on the
+verification dataset. That number has no unit of account and breaks MON-CUR-02,
+so keeping it for compatibility was keeping the defect. The contract is now:
+
+```
+revenueByCurrency      authoritative, one bucket per currency
+monthlyRevenue         null unless exactly ONE known currency governs the period
+revenueScalarCurrency  names that currency, or null
+revenueCurrencyMixed   true when more than one currency is present
+revenueCurrencyUnknown true when any counted booking has no captured currency
+```
+
+A single UNKNOWN currency also yields a null scalar: unknown is not a currency.
+The cross-mall `totals` no longer sums SHORT scalars across malls either — that
+would have rebuilt the same mixed number one level up — and merges the buckets
+instead. `compliance.service.ts` carried the same scalar into a
+`revenuePerSqm` division; it is null on the same condition.
+
+**2. MON-CUR-SLOT-06 — the billable-state gate.** `confirmBooking` was a blind
+status update, so a legacy PENDING booking with a positive amount and a NULL
+currency could become CONFIRMED — which is exactly the revenue-recognised state
+(`summarizeShortBookingPipeline` counts CONFIRMED and COMPLETED) and the
+invoice-eligible one (`createDueInvoiceFromSource` accepts only those two). It
+now refuses, and the currency may be supplied as part of the transition so a
+legacy booking is not permanently stuck.
+
+**Zero-value rule, stated rather than implied:** a booking whose `totalAmount`
+is 0 may be confirmed with no currency. It recognises no revenue and can be
+invoiced for no amount, so there is no unit of account to be missing. Tested
+explicitly (T18) rather than left as an accident of the `!== 0` check.
+
+**3. Structure regression for MON-CUR-SLOT-03.** That invariant holds because
+`calculatePrice` has exactly one monetary operand — not because anything checks
+it. Every other test would still pass if a fee, deposit, tax or fixed discount
+amount were added to the formula, and the result would silently become a
+cross-currency sum again. A test now reads the method's source (comments
+stripped, so it scans code rather than the comment that names those words while
+denying them) and fails when money-shaped vocabulary enters the calculation
+path, forcing a deliberate decision about the new operand's currency.
+
+Runtime after cleanup:
+
+```
+byLeaseTerm.SHORT
+  revenueByCurrency: VND 15,000,000 | USD 750 | MMK 9,000,000
+  monthlyRevenue: null   revenueScalarCurrency: null   revenueCurrencyMixed: true
+  old scalar 24,000,750 -> emitted? false
+
+PATCH /slots/bookings/:id/confirm  {}                 -> 400 (positive amount, NULL currency)
+PATCH /slots/bookings/:id/confirm  {currencyCode:MMK} -> CONFIRMED, ccy MMK
+```

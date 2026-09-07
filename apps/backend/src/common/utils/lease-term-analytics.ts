@@ -1,4 +1,4 @@
-import { UnitLeaseTermType, UnitStatus } from '@prisma/client';
+import { UnitLeaseTermType, UnitStatus, CurrencyCode } from '@prisma/client';
 
 export type LeaseTermUnit = {
   id: string;
@@ -14,6 +14,9 @@ export type ShortTermBookingWindow = {
   startDatetime: Date;
   endDatetime: Date;
   totalAmount?: number | null;
+  // RPT-CUR-006: the booking-time currency snapshot. Optional because legacy
+  // rows predate the column -- null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   slot: { id: string; unitId: string; area: number };
 };
 
@@ -71,8 +74,94 @@ export function summarizeShortBookingPipeline(bookings: ShortTermBookingWindow[]
     confirmed: count('CONFIRMED'),
     completed: count('COMPLETED'),
     cancelled: count('CANCELLED'),
-    revenue: bookings
-      .filter((booking) => ['CONFIRMED', 'COMPLETED'].includes(booking.status))
-      .reduce((sum, booking) => sum + (booking.totalAmount ?? 0), 0),
+    // RPT-CUR-006 — the authoritative monetary contract: one bucket per
+    // currency, plus an explicit UNKNOWN for bookings recorded before
+    // SlotBooking carried a currency. No combined total: there is no FX engine.
+    revenueByCurrency: groupSlotRevenueByCurrency(
+      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED'].includes(booking.status)),
+    ),
+    ...scalarRevenue(
+      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED'].includes(booking.status)),
+    ),
   };
+}
+
+/**
+ * RPT-CUR-006 — the scalar that used to sit here was
+ * `VND + USD + UNKNOWN` added together. A number like that has no unit of
+ * account, cannot be labelled, and violates MON-CUR-02, so it is not emitted as
+ * money at all.
+ *
+ * `revenueScalar` is a real figure ONLY when exactly one known currency governs
+ * every counted booking; then `revenueScalarCurrency` names it. In every other
+ * case — more than one currency, or any booking whose currency was never
+ * captured — it is `null` and `revenueCurrencyMixed` says why. Consumers read
+ * `revenueByCurrency`, which is authoritative.
+ */
+function scalarRevenue(counted: { totalAmount?: number | null; currencyCode?: CurrencyCode | null }[]) {
+  const currencies = new Set(counted.map((b) => b.currencyCode ?? UNKNOWN_SLOT_CURRENCY));
+  const hasUnknown = currencies.has(UNKNOWN_SLOT_CURRENCY);
+  const single = currencies.size === 1 && !hasUnknown
+    ? ([...currencies][0] as CurrencyCode)
+    : null;
+
+  return {
+    revenueScalar: single
+      ? counted.reduce((sum, b) => sum + (b.totalAmount ?? 0), 0)
+      : null,
+    revenueScalarCurrency: single,
+    revenueCurrencyMixed: currencies.size > 1,
+    revenueCurrencyUnknown: hasUnknown,
+  };
+}
+
+/** Merge SHORT revenue buckets across malls, still never mixing currencies. */
+export function mergeSlotRevenueBuckets(lists: SlotRevenueBucket[][]): SlotRevenueBucket[] {
+  const merged = new Map<SlotCurrencyKey, { amount: number; bookingCount: number }>();
+  for (const bucket of lists.flat()) {
+    const acc = merged.get(bucket.currencyCode) ?? { amount: 0, bookingCount: 0 };
+    acc.amount += bucket.amount;
+    acc.bookingCount += bucket.bookingCount;
+    merged.set(bucket.currencyCode, acc);
+  }
+  return [...merged.entries()]
+    .map(([currencyCode, v]) => ({ currencyCode, ...v }))
+    .sort((a, b) => slotCurrencyRank(a.currencyCode) - slotCurrencyRank(b.currencyCode));
+}
+
+export const UNKNOWN_SLOT_CURRENCY = 'UNKNOWN' as const;
+export type SlotCurrencyKey = CurrencyCode | typeof UNKNOWN_SLOT_CURRENCY;
+
+export interface SlotRevenueBucket {
+  currencyCode: SlotCurrencyKey;
+  amount: number;
+  bookingCount: number;
+}
+
+const SLOT_CURRENCY_ORDER: SlotCurrencyKey[] = ['VND', 'USD', 'MMK', UNKNOWN_SLOT_CURRENCY];
+
+/**
+ * RPT-CUR-006 — group short-term booking revenue by the currency each booking
+ * snapshotted. NOT `?? 'VND'`: a booking with no captured currency is unknown,
+ * and saying so is the entire point.
+ */
+export function groupSlotRevenueByCurrency(
+  bookings: { totalAmount?: number | null; currencyCode?: CurrencyCode | null }[],
+): SlotRevenueBucket[] {
+  const map = new Map<SlotCurrencyKey, { amount: number; bookingCount: number }>();
+  for (const booking of bookings) {
+    const key: SlotCurrencyKey = booking.currencyCode ?? UNKNOWN_SLOT_CURRENCY;
+    const acc = map.get(key) ?? { amount: 0, bookingCount: 0 };
+    acc.amount += booking.totalAmount ?? 0;
+    acc.bookingCount += 1;
+    map.set(key, acc);
+  }
+  return [...map.entries()]
+    .map(([currencyCode, v]) => ({ currencyCode, ...v }))
+    .sort((a, b) => slotCurrencyRank(a.currencyCode) - slotCurrencyRank(b.currencyCode));
+}
+
+function slotCurrencyRank(k: SlotCurrencyKey): number {
+  const i = SLOT_CURRENCY_ORDER.indexOf(k);
+  return i === -1 ? 98 : i;
 }

@@ -10,7 +10,7 @@ import { SlotsService } from './slots.service';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import {
   CreateUnitSlotDto, UpdateUnitSlotDto,
-  CreateSlotBookingDto, CreateSlotPricingRuleDto, CreateSlotGridDto,
+  CreateSlotBookingDto, CreateSlotPricingRuleDto, CreateSlotGridDto, ConfirmSlotBookingDto,
   SlotBookingType,
 } from './dto/slots.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -135,9 +135,15 @@ export class SlotsController {
   }
 
   @Patch('bookings/:bookingId/confirm')
-  async confirmBooking(@Param('bookingId') bookingId: string, @CurrentUser() user: any) {
+  async confirmBooking(
+    @Param('bookingId') bookingId: string,
+    // MON-CUR-SLOT-06: a legacy booking with no captured currency may supply one
+    // as part of the transition rather than being permanently unconfirmable.
+    @Body() body: ConfirmSlotBookingDto,
+    @CurrentUser() user: any,
+  ) {
     await this.check(user, { slotBookingId: bookingId });
-    return this.slotsService.confirmBooking(bookingId);
+    return this.slotsService.confirmBooking(bookingId, body?.currencyCode);
   }
 
   @Patch('bookings/:bookingId/cancel')

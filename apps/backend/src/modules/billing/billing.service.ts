@@ -634,6 +634,19 @@ export class BillingService {
       });
       if (existing) return existing;
 
+      // MON-CUR-SLOT-05 — this path never set `currencyCode`, so every
+      // short-term-booking invoice took `Invoice.currencyCode`'s @default(VND)
+      // regardless of what the booking was actually priced in. Once the invoice
+      // exists that label travels into payments and SAP, so it fails closed
+      // rather than guessing.
+      if (!booking.currencyCode) {
+        throw new BadRequestException(
+          'Booking thuê ngắn hạn này chưa có đơn vị tiền tệ, không thể xuất hóa đơn. ' +
+            'Vui lòng bổ sung đơn vị tiền tệ cho ô nhỏ và tạo lại booking — ' +
+            'hệ thống không mặc định VND và không quy đổi tỷ giá.',
+        );
+      }
+
       const subtotal = booking.totalAmount;
       const vatRate = 10;
       const vatAmount = subtotal * vatRate / 100;
@@ -651,6 +664,9 @@ export class BillingService {
         sourceId: booking.id,
         period,
         type: 'MONTHLY_RENT',
+        // MON-CUR-SLOT-05: the invoice carries the booking's snapshotted
+        // currency, never the column default.
+        currencyCode: booking.currencyCode,
         subtotal,
         vatRate,
         vatAmount,

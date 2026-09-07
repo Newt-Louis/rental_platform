@@ -274,3 +274,37 @@ the budgets were never copied from those Leads. A classification label is not
 provenance, and the script reports both.
 
 Still no FX engine, and none was added.
+
+---
+
+## Remediation Wave 5 — UnitSlot / SlotBooking currency lifecycle (2026-09-07)
+
+Evidence in `docs/audit/MULTI_CURRENCY_REPORTING_AUDIT.md` §20.
+
+| ID | Status after Wave 5 |
+|---|---|
+| **RPT-CUR-006** | **CLOSED.** `UnitSlot.currencyCode` (pricing) and `SlotBooking.currencyCode` (immutable booking-time snapshot) added, nullable with no default. Write paths fail closed; Dashboard SHORT groups by the snapshot; the `SHORT_TERM_BOOKING` invoice carries it. |
+| **SLOT-INV-CUR-001** | **NEW and FIXED (P1).** The `SHORT_TERM_BOOKING` invoice path never set `currencyCode`, so every such invoice took `@default(VND)` regardless of the booking. That label reached payments and SAP. |
+| **CUR-002** | **Lead, Customer, UnitSlot and SlotBooking now done.** Still open: `SapReconciliationRecord` (SAP-004), `OccupancySnapshot.revenuePerSqm`, `ParkingShift`, inventory. |
+
+Two structural findings from the reconciliation worth preserving:
+
+- Inheriting slot pricing currency from `Unit.currencyCode` is **not** available:
+  that column is scoped by its own comment to the Unit long-term rent fields, and
+  nothing ties slot pricing to it. `SAFE_TO_INFER_FROM_UNIT` is therefore
+  unreachable by construction, and the script says so rather than omitting it.
+- A booking may inherit from its slot only when `baseAmount` still **reproduces**
+  from that slot current price. `updateSlot` re-prices freely and `deleteSlot`
+  keeps booking history, so today price is routinely not the price a historical
+  booking was calculated from.
+
+Still no FX engine, and none was added.
+
+### Wave 5 closure cleanup (2026-09-07)
+
+| Change | Why |
+|---|---|
+| Dashboard SHORT scalar removed | It was `VND + USD + UNKNOWN` added together. `monthlyRevenue` is now null unless exactly one known currency governs the period, with `revenueScalarCurrency` naming it and `revenueCurrencyMixed` explaining a null. `revenueByCurrency` is authoritative. The cross-mall `totals` merges buckets instead of summing scalars. |
+| **MON-CUR-SLOT-06** added | `confirmBooking` was a blind status update, so a legacy positive-value booking with no currency could reach CONFIRMED — the revenue-recognised and invoice-eligible state. It now fails closed, and the currency may be supplied during the transition. |
+| Zero-value rule documented | A 0-amount booking may confirm with no currency: it recognises no revenue and can be invoiced for no amount. Stated and tested, not implied. |
+| Calculation structure test | MON-CUR-SLOT-03 holds structurally, not by a check. A test now scans `calculatePrice` (comments stripped) and fails if a fee/deposit/tax/surcharge/fixed-discount operand enters the formula. |
