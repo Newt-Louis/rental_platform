@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomerStatus, ActivityType, LeadSource, CurrencyCode, Role } from '@prisma/client';
 
@@ -55,15 +55,16 @@ export class CustomersService {
     return `${prefix}${String(seq).padStart(5, '0')}`;
   }
 
-  // Bug #34 — Leasing Executive was seeing and operating on every Customer,
-  // not just their own. Mirrors CrmService.leadScope()'s assignee-based
-  // restriction for the same role; unrelated to BC-016 (Mall-scoping), which
-  // stays unresolved since Customer still has no mallId.
-  private customerScope(scope?: CustomerScope) {
-    if (scope?.role === Role.LEASING_EXECUTIVE) {
-      return { assignedToId: scope.userId };
+  // A LEASING_EXECUTIVE can view every Customer (same as other CRM roles) but
+  // may only mutate (update/delete/log activity/link tenant) ones assigned to
+  // themselves — see assertCustomerEditAccess(). Unrelated to BC-016
+  // (Mall-scoping), which stays unresolved since Customer still has no mallId.
+  private async assertCustomerEditAccess(id: string, scope?: CustomerScope) {
+    if (scope?.role !== Role.LEASING_EXECUTIVE) return;
+    const customer = await this.prisma.customer.findUnique({ where: { id }, select: { assignedToId: true } });
+    if (customer?.assignedToId !== scope.userId) {
+      throw new ForbiddenException('Bạn chỉ có thể chỉnh sửa khách hàng do mình phụ trách');
     }
-    return {};
   }
 
   async findAll(query: {
@@ -72,11 +73,11 @@ export class CustomersService {
     assignedToId?: string;
     page?: number;
     limit?: number;
-  }, scope?: CustomerScope) {
+  }) {
     const { page = 1, limit = 20, search, status, assignedToId } = query;
     const skip = (page - 1) * +limit;
 
-    const where: any = { isActive: true, deletedAt: null, ...this.customerScope(scope) };
+    const where: any = { isActive: true, deletedAt: null };
     if (status) where.status = status;
     if (assignedToId) where.assignedToId = assignedToId;
     if (search) {
@@ -121,7 +122,7 @@ export class CustomersService {
     return { total, byStatus };
   }
 
-  async findOne(id: string, scope?: CustomerScope) {
+  async findOne(id: string) {
     const customer = await this.prisma.customer.findUnique({
       where: { id },
       include: {
@@ -178,9 +179,6 @@ export class CustomersService {
       },
     });
     if (!customer) throw new NotFoundException('Customer not found');
-    if (scope?.role === Role.LEASING_EXECUTIVE && customer.assignedToId !== scope.userId) {
-      throw new NotFoundException('Customer not found');
-    }
     return customer;
   }
 
@@ -269,7 +267,8 @@ export class CustomersService {
   }
 
   async update(id: string, dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string }, scope?: CustomerScope) {
-    const existing = await this.findOne(id, scope);
+    const existing = await this.findOne(id);
+    await this.assertCustomerEditAccess(id, scope);
     this.assertCustomerBudgetCurrency(dto as any, existing as any);
     const data: any = { ...dto };
     if (dto.status === CustomerStatus.ACTIVE && !data.wonAt) data.wonAt = new Date();
@@ -312,7 +311,8 @@ export class CustomersService {
   }
 
   async remove(id: string, scope?: CustomerScope) {
-    await this.findOne(id, scope);
+    await this.findOne(id);
+    await this.assertCustomerEditAccess(id, scope);
     await this.prisma.customer.update({
       where: { id },
       data: { isActive: false, deletedAt: new Date() },
@@ -321,7 +321,8 @@ export class CustomersService {
   }
 
   async addActivity(customerId: string, dto: CreateCustomerActivityDto, userId: string, scope?: CustomerScope) {
-    await this.findOne(customerId, scope);
+    await this.findOne(customerId);
+    await this.assertCustomerEditAccess(customerId, scope);
     return this.prisma.customerActivity.create({
       data: {
         customerId,
@@ -449,7 +450,8 @@ export class CustomersService {
   }
 
   async linkTenant(customerId: string, tenantId: string, scope?: CustomerScope) {
-    await this.findOne(customerId, scope);
+    await this.findOne(customerId);
+    await this.assertCustomerEditAccess(customerId, scope);
     return this.prisma.customer.update({
       where: { id: customerId },
       data: { tenantId, status: CustomerStatus.ACTIVE, wonAt: new Date() },

@@ -51,6 +51,7 @@
     "PENDING": "Awaiting confirmation",
     "CONFIRMED": "Confirmed",
     "COMPLETED": "Completed",
+    "CONVERTED": "Converted to proposal",
     "CANCELLED": "Cancelled"
   },
   "fields": {
@@ -221,7 +222,7 @@
     "editing": "Editing",
     "customer": "CUSTOMER",
     "unit": "SPACE",
-    "customerRequest": "CUSTOMER REQUEST",
+    "customerRequest": "BOOKING DETAILS",
     "timeline": "TIMELINE",
     "assignee": "ASSIGNED TO",
     "history": "HISTORY",

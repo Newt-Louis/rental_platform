@@ -1014,12 +1014,29 @@ async function main() {
     },
   });
 
-  // PENDING — demo nút "Xác nhận" (chưa gắn khách hàng cụ thể, chỉ có lead ALDO)
+  // Lead ngắn hạn dành riêng cho demo/test luồng Booking ngắn hạn — SlotsService.createBooking
+  // chỉ chấp nhận Lead có leaseTermType SHORT (Lead dài hạn bị từ chối), nên các Lead trong
+  // leadsData ở trên (mặc định LONG) không dùng gắn vào slot booking được.
+  const shortTermLead = await prisma.lead.create({
+    data: {
+      brandName: 'Mini Mart Express',
+      contactName: 'Đặng Thảo Vy',
+      phone: '0909111222',
+      email: 'vy@minimartexpress.vn',
+      category: 'F&B',
+      source: LeadSource.WALK_IN,
+      status: LeadStatus.NEW,
+      leaseTermType: 'SHORT',
+      notes: 'Lead demo cho booking ngắn hạn (pop-up)',
+    },
+  });
+
+  // PENDING — demo nút "Xác nhận" (lead ngắn hạn, chưa gắn Customer)
   await prisma.slotBooking.create({
     data: {
       bookingRef: 'SB-2026-00001',
       slotId: popupSlot1.id,
-      leadId: leads[10].id, // ALDO
+      leadId: shortTermLead.id,
       type: 'DAILY',
       installationStartDatetime: new Date('2026-09-19T06:00:00Z'),
       installationEndDatetime: new Date('2026-09-19T08:00:00Z'),
@@ -1033,7 +1050,7 @@ async function main() {
       totalAmount: 3_000_000,
       currencyCode: 'VND',
       status: 'PENDING',
-      notes: 'ALDO — pop-up thử 2 ngày, đang chờ xác nhận',
+      notes: 'Mini Mart Express — pop-up thử 2 ngày, đang chờ xác nhận',
       createdById: leasingExec.id,
     },
   });
@@ -1044,7 +1061,7 @@ async function main() {
     data: {
       bookingRef: 'SB-2026-00002',
       slotId: popupSlot2.id,
-      leadId: leads[9].id, // Phúc Long Coffee
+      leadId: shortTermLead.id,
       customerId: customers[8].id, // Phúc Long Coffee (CUST-009)
       type: 'HOURLY',
       installationStartDatetime: new Date('2026-09-24T06:00:00Z'),

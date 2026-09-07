@@ -31,8 +31,8 @@ export class CustomersController {
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.customersService.findAll(query, { userId: user.id, role: user.role });
+  findAll(@Query() query: any) {
+    return this.customersService.findAll(query);
   }
 
   @Get('stats')
@@ -43,8 +43,8 @@ export class CustomersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get customer detail with activities and leads' })
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.customersService.findOne(id, { userId: user.id, role: user.role });
+  findOne(@Param('id') id: string) {
+    return this.customersService.findOne(id);
   }
 
   @Post()

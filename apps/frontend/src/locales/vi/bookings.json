@@ -51,6 +51,7 @@
     "PENDING": "Chờ xác nhận",
     "CONFIRMED": "Đã xác nhận",
     "COMPLETED": "Hoàn thành",
+    "CONVERTED": "Đã lập đề xuất",
     "CANCELLED": "Đã hủy"
   },
   "fields": {
@@ -221,7 +222,7 @@
     "editing": "Đang chỉnh sửa",
     "customer": "KHÁCH HÀNG",
     "unit": "MẶT BẰNG",
-    "customerRequest": "YÊU CẦU KHÁCH",
+    "customerRequest": "CHI TIẾT BOOKING",
     "timeline": "THỜI GIAN",
     "assignee": "PHỤ TRÁCH",
     "history": "LỊCH SỬ",

@@ -691,7 +691,10 @@ function SlotBookingDialog({
 
   const { data: leadsData } = useQuery({
     queryKey: ['leads-for-slot-booking'],
-    queryFn: () => crmApi.listLeads({ limit: 100 }),
+    // Booking ngắn hạn chỉ nhận Lead có leaseTermType SHORT — backend từ chối
+    // Lead dài hạn (xem SlotsService.createBooking). Lọc sẵn ở đây để tránh hiện
+    // Lead sẽ luôn báo lỗi khi bấm Tạo Booking.
+    queryFn: () => crmApi.listLeads({ limit: 100, leaseTermType: 'SHORT' }),
     enabled: open && !!slot && clientType === 'lead',
   });
   const leadOptions: any[] = leadsData?.data ?? leadsData ?? [];

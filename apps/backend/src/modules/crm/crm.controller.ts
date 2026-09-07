@@ -73,7 +73,7 @@ export class CrmController {
     @Body() body: { status: LeadStatus; position: number },
     @CurrentUser() user: any,
   ) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.moveLead(id, body.status, body.position, user?.id);
   }
 
@@ -108,7 +108,7 @@ export class CrmController {
   @Put('leads/:id')
   @ApiOperation({ summary: 'Update lead' })
   async update(@Param('id') id: string, @Body() dto: UpdateLeadDto, @CurrentUser() user: any) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.update(id, dto, user?.id);
   }
 
@@ -116,7 +116,7 @@ export class CrmController {
   @Roles(Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
   @ApiOperation({ summary: 'Delete lead' })
   async remove(@Param('id') id: string, @CurrentUser() user: any) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.remove(id);
   }
 
@@ -127,14 +127,14 @@ export class CrmController {
     @Body() dto: CreateActivityDto,
     @CurrentUser() user: any,
   ) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.addActivity(id, dto, user.id);
   }
 
   @Post('leads/:id/customer-profile')
   @ApiOperation({ summary: 'Create a customer profile from a lead, or return the linked profile' })
   async createCustomerProfile(@Param('id') id: string, @CurrentUser() user: any) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.createCustomerProfile(id, user.id);
   }
 
@@ -145,7 +145,7 @@ export class CrmController {
     @Body('customerId') customerId: string,
     @CurrentUser() user: any,
   ) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.syncLeadToCustomer(id, customerId);
   }
 
@@ -206,7 +206,7 @@ export class CrmController {
   })
   async bulkAction(@Body() dto: any, @CurrentUser() user: any) {
     const scope = await this.scope(user);
-    await Promise.all((dto.leadIds ?? []).map((id: string) => this.crmService.assertLeadAccess(id, scope)));
+    await Promise.all((dto.leadIds ?? []).map((id: string) => this.crmService.assertLeadEditAccess(id, scope)));
     if (['assign', 'delete'].includes(dto.action) && ![Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR].includes(user.role)) {
       throw new ForbiddenException('Only CRM managers can assign or delete leads in bulk');
     }

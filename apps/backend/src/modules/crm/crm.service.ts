@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
@@ -19,6 +19,10 @@ export class CrmService {
     private customersService: CustomersService,
   ) {}
 
+  // Read access is mall-scoped for every role, LEASING_EXECUTIVE included — they
+  // can see all leads related to their malls, not just their own assignments.
+  // Editing a lead someone else owns is a separate, stricter check: see
+  // assertLeadEditAccess().
   private leadScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     if (!scope?.mallIds) return {};
     const mallIds = scope.mallIds;
@@ -29,16 +33,23 @@ export class CrmService {
       { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
       { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } } },
     ];
-    return { AND: [{
-      OR: scope.role === Role.LEASING_EXECUTIVE
-        ? [{ assignedToId: scope.userId }]
-        : relatedToMall,
-    }] };
+    return { AND: [{ OR: relatedToMall }] };
   }
 
   async assertLeadAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const lead = await this.prisma.lead.findFirst({ where: { id, isActive: true, ...this.leadScope(scope) }, select: { id: true } });
     if (!lead) throw new NotFoundException('Lead not found or outside your mall access');
+  }
+
+  // A LEASING_EXECUTIVE can view every lead in their malls but may only
+  // mutate (update/move/delete/log activity/link customer) leads assigned to
+  // themselves.
+  async assertLeadEditAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    await this.assertLeadAccess(id, scope);
+    if (scope?.role === Role.LEASING_EXECUTIVE) {
+      const lead = await this.prisma.lead.findFirst({ where: { id, assignedToId: scope.userId }, select: { id: true } });
+      if (!lead) throw new ForbiddenException('Bạn chỉ có thể thao tác trên lead do mình phụ trách');
+    }
   }
 
   async findAll(query: {

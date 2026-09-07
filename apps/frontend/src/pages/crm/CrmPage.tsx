@@ -545,6 +545,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'profile' | 'pipeline' | 'activities'>('profile');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -571,6 +572,9 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   }, [lead?.id]);
 
   const displayLead: any = fullLead ?? lead;
+  // Leasing Executive can see every lead in their malls but may only edit
+  // (contact info, pipeline stage, activities, customer profile) their own.
+  const canEdit = user?.role !== 'LEASING_EXECUTIVE' || displayLead?.assignedTo?.id === user?.id;
   const customer: any = fullLead?.customer ?? null;
   const stage = LEAD_STAGES.find((s) => s.key === displayLead?.status);
   const nextStageKey = displayLead?.status ? NEXT_STAGE[displayLead.status] : null;
@@ -710,12 +714,14 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   label={t('leadSheet.contact')}
                   className="bg-gray-50"
                   action={
-                    <button
-                      onClick={() => setLeadEditOpen(true)}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      <Pencil size={11} /> {t('leadSheet.edit')}
-                    </button>
+                    canEdit ? (
+                      <button
+                        onClick={() => setLeadEditOpen(true)}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil size={11} /> {t('leadSheet.edit')}
+                      </button>
+                    ) : undefined
                   }
                 >
                   <SheetRow label={t('leadSheet.fieldBrand')} value={displayLead.brandName} icon={Building2} />
@@ -777,7 +783,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   </div>
                 )}
 
-                {!customer && (
+                {!customer && canEdit && (
                   <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
                     <div className="text-sm font-semibold text-blue-900">{t('leadSheet.noLinkedCustomer')}</div>
                     <p className="text-xs text-blue-700">{t('leadSheet.createCustomerProfileHint')}</p>
@@ -788,7 +794,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 )}
 
                 {/* Pipeline advance actions */}
-                {!['WON', 'LOST'].includes(displayLead.status) && (
+                {!['WON', 'LOST'].includes(displayLead.status) && canEdit && (
                   <div className="space-y-2 pt-1">
                     {nextStage && (() => {
                       const needsApprovedProposal = nextStage.key === 'WON'
@@ -2318,6 +2324,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [detailTab, setDetailTab] = useState<'overview' | 'activities' | 'leads'>('overview');
   const [showActivity, setShowActivity] = useState(false);
   const [showInactiveReason, setShowInactiveReason] = useState(false);
@@ -2333,6 +2340,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   });
 
   const customer: Customer | undefined = raw;
+  // Leasing Executive can view every customer but may only edit (status, activities) their own.
+  const canEdit = user?.role !== 'LEASING_EXECUTIVE' || customer?.assignedTo?.id === user?.id;
   const statusInfo = CUSTOMER_STATUSES.find((s) => s.key === customer?.status);
   const nextStatusKey = customer?.status === 'PROSPECT' ? 'NEGOTIATING' : customer?.status === 'NEGOTIATING' ? 'ACTIVE' : null;
   const nextStatusInfo = nextStatusKey ? CUSTOMER_STATUSES.find((s) => s.key === nextStatusKey) : null;
@@ -2482,7 +2491,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                   </div>
                 )}
 
-                {!['INACTIVE', 'BLACKLISTED'].includes(customer.status) && (
+                {!['INACTIVE', 'BLACKLISTED'].includes(customer.status) && canEdit && (
                   <div className="space-y-2">
                     {nextStatusInfo && (() => {
                       const leadsCount = (customer.leads ?? []).length;

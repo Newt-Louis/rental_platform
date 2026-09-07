@@ -262,6 +262,13 @@ export default function BookingsPage() {
     setUnitApplied(next);
     setPage(1);
   }
+  // Đổi trạng thái từ dropdown trong thanh filter — áp dụng ngay (giống tab cũ), nhưng
+  // giữ nguyên các filter khác (search/tầng/ngày...) đang nhập, không reset như filterUnit().
+  function setUnitStatusFilter(status: string) {
+    setUnitDraft((f) => ({ ...f, status }));
+    setUnitApplied((f) => ({ ...f, status }));
+    setPage(1);
+  }
 
   // ── SlotBooking state ──
   const SLOT_EMPTY = { search: '', status: '', type: '', floorId: '', slotId: '' };
@@ -282,6 +289,12 @@ export default function BookingsPage() {
     const next = { ...SLOT_EMPTY, status };
     setSlotDraft(next);
     setSlotApplied(next);
+  }
+  // Đổi trạng thái từ dropdown — áp dụng ngay như tab, nhưng giữ nguyên các filter khác
+  // (search/loại/tầng/slot...) đang nhập, không reset như filterSlot().
+  function setSlotStatusFilter(status: string) {
+    setSlotDraft((f) => ({ ...f, status }));
+    setSlotApplied((f) => ({ ...f, status }));
   }
 
   useEffect(() => setSelectedUnitIds(new Set()), [unitApplied, page]);
@@ -351,6 +364,7 @@ export default function BookingsPage() {
     pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
+    converted: allSlotBookings.filter((b) => b.status === 'CONVERTED').length,
     cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
     // RPT-CUR-006: was one cross-currency sum. Grouped now; there is no
     // combined total because no FX rate exists.
@@ -429,24 +443,6 @@ export default function BookingsPage() {
               <Button variant="outline" size="sm" onClick={() => refetchStats()}>{t('actions.retry')}</Button>
             </div>
           )}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label={t('unitStats.all')}>
-            {[
-              { label: t('unitStats.all'), value: stats?.total ?? 0, status: '', urgent: false },
-              { label: t('unitStats.active'), value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
-              { label: t('unitStats.pending'), value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
-              { label: t('unitStats.expiringSoon'), value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
-              { label: t('unitStats.converted'), value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
-            ].map((item) => (
-              <ERPStatCard
-                key={item.label}
-                size="compact"
-                label={item.label}
-                value={item.value}
-                tone={item.urgent && item.value > 0 ? 'danger' : 'neutral'}
-                onClick={() => filterUnit(item.status, !!item.expiring)}
-              />
-            ))}
-          </div>
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
@@ -454,28 +450,36 @@ export default function BookingsPage() {
               className="inline-flex min-w-max items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 p-1 dark:border-amber-900/40 dark:bg-amber-950/20"
             >
               {[
-                { status: '', label: t('filterLabels.all'), count: stats?.total },
-                { status: 'ACTIVE', label: t('status.ACTIVE'), count: stats?.active },
-                { status: 'PENDING', label: t('status.PENDING'), count: stats?.pending },
-                { status: 'CONVERTED', label: t('status.CONVERTED'), count: stats?.converted },
-                { status: 'EXPIRED', label: t('status.EXPIRED') },
-                { status: 'CANCELLED', label: t('status.CANCELLED') },
+                { status: '', expiring: false, label: t('filterLabels.all'), count: stats?.total },
+                { status: 'ACTIVE', expiring: false, label: t('status.ACTIVE'), count: stats?.active },
+                { status: 'PENDING', expiring: false, label: t('status.PENDING'), count: stats?.pending },
+                // Sắp hết hạn — trước đây chỉ có ở card thống kê (ERPStatCard), gộp vào đây để
+                // bỏ card thống kê mà không mất khả năng lọc nhanh theo trạng thái này.
+                { status: '', expiring: true, label: t('unitStats.expiringSoon'), count: stats?.expiringSoon, urgent: true },
+                { status: 'CONVERTED', expiring: false, label: t('status.CONVERTED'), count: stats?.converted },
+                { status: 'EXPIRED', expiring: false, label: t('status.EXPIRED') },
+                { status: 'CANCELLED', expiring: false, label: t('status.CANCELLED') },
               ].map((item) => {
-                const selected = unitApplied.status === item.status && !unitApplied.expiringSoon;
+                const selected = unitApplied.status === item.status && !!unitApplied.expiringSoon === item.expiring;
+                const isUrgent = item.urgent && !!item.count;
                 return (
                   <button
-                    key={item.status || 'ALL'}
+                    key={`${item.status || 'ALL'}-${item.expiring}`}
                     type="button"
                     role="tab"
                     aria-selected={selected}
-                    onClick={() => filterUnit(item.status)}
+                    onClick={() => filterUnit(item.status, item.expiring)}
                     className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
-                      selected ? 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                      selected
+                        ? isUrgent ? 'bg-red-50 text-red-700 shadow-sm ring-1 ring-red-200' : 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200'
+                        : isUrgent ? 'text-red-600 hover:bg-white/70' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
                     }`}
                   >
                     {item.label}
                     {item.count !== undefined && (
-                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-amber-100 text-amber-800' : 'bg-white text-gray-500'}`}>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                        selected ? (isUrgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800') : (isUrgent ? 'bg-red-50 text-red-600' : 'bg-white text-gray-500')
+                      }`}>
                         {item.count}
                       </span>
                     )}
@@ -494,7 +498,7 @@ export default function BookingsPage() {
                 onKeyDown={(e) => e.key === 'Enter' && applyUnit()}
               />
             </div>
-            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitField('status', v === 'ALL' ? '' : v)}>
+            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitStatusFilter(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
                 <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
@@ -770,28 +774,21 @@ export default function BookingsPage() {
       {/* ══════════ SLOT BOOKING ══════════ */}
       {typeFilter === 'slot' && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
-            {[
-              { label: t('slotStats.pending'), value: slotStats.pending, status: 'PENDING' },
-              { label: t('slotStats.confirmed'), value: slotStats.confirmed, status: 'CONFIRMED' },
-              { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
-              // RPT-CUR-006: one card per currency, never a combined total.
-              ...slotStats.revenueByCurrency.map((b) => ({
-                label: `${t('slotStats.revenue')} ${b.currencyCode}`,
-                value: formatSlotBucket(b),
-                status: '',
-              })),
-            ].map((item) => (
-              <ERPStatCard
-                key={item.label}
-                size="compact"
-                label={item.label}
-                value={item.value}
-                tone="neutral"
-                onClick={() => filterSlot(item.status)}
-              />
-            ))}
-          </div>
+          {/* RPT-CUR-006: doanh thu tách riêng theo từng loại tiền tệ, không gộp thành 1 tổng — card này
+              không trùng với tab trạng thái bên dưới nên vẫn giữ lại. */}
+          {slotStats.revenueByCurrency.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
+              {slotStats.revenueByCurrency.map((b) => (
+                <ERPStatCard
+                  key={b.currencyCode}
+                  size="compact"
+                  label={`${t('slotStats.revenue')} ${b.currencyCode}`}
+                  value={formatSlotBucket(b)}
+                  tone="neutral"
+                />
+              ))}
+            </div>
+          )}
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
@@ -803,6 +800,9 @@ export default function BookingsPage() {
                 { status: 'PENDING', label: t('slotStatus.PENDING'), count: slotStats.pending },
                 { status: 'CONFIRMED', label: t('slotStatus.CONFIRMED'), count: slotStats.confirmed },
                 { status: 'COMPLETED', label: t('slotStatus.COMPLETED'), count: slotStats.completed },
+                // Đã lập đề xuất — trước đây thiếu ở cả tab và card thống kê (bổ sung khi thêm luồng
+                // booking ngắn hạn → Proposal, xem SlotsService.convertToProposal()).
+                { status: 'CONVERTED', label: t('slotStatus.CONVERTED'), count: slotStats.converted },
                 { status: 'CANCELLED', label: t('slotStatus.CANCELLED'), count: slotStats.cancelled },
               ].map((item) => {
                 const selected = slotApplied.status === item.status;
@@ -836,7 +836,7 @@ export default function BookingsPage() {
                 onKeyDown={(e) => e.key === 'Enter' && applySlot()}
               />
             </div>
-            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotField('status', v === 'ALL' ? '' : v)}>
+            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotStatusFilter(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-44">
                 <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>

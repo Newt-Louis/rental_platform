@@ -66,8 +66,11 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
   const slots: any[] = Array.isArray(slotsData) ? slotsData : (slotsData?.data ?? []);
 
   const { data: leadsData } = useQuery({
-    queryKey: ['leads-for-booking'],
-    queryFn: () => crmApi.listLeads({ limit: 100 }),
+    queryKey: ['leads-for-slot-booking-dialog'],
+    // Booking ngắn hạn chỉ nhận Lead có leaseTermType SHORT — backend từ chối
+    // Lead dài hạn (xem SlotsService.createBooking). Lọc sẵn ở đây để tránh hiện
+    // Lead sẽ luôn báo lỗi khi bấm Tạo Booking.
+    queryFn: () => crmApi.listLeads({ limit: 100, leaseTermType: 'SHORT' }),
     enabled: open && form.clientType === 'lead',
   });
   const leads: any[] = leadsData?.data ?? leadsData ?? [];

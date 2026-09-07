@@ -1367,6 +1367,7 @@ export class BookingService {
           maxLeaseTerm: true,
           spaceType: true,
           floor: { select: { id: true, name: true, level: true } },
+          zone: { select: { id: true, name: true } },
           mall: { select: { id: true, name: true, code: true, leaseCategory: true } },
         },
       },

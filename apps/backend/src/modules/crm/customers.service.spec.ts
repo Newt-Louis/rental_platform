@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CustomerStatus, Role } from '@prisma/client';
 import { CustomersService } from './customers.service';
 
@@ -87,9 +87,8 @@ describe('CustomersService Lead linking', () => {
   });
 });
 
-// Bug #34 — Leasing Executive could see and operate on every Customer, not
-// just their own (CustomersController had no assignee-based scoping, unlike
-// CrmService.leadScope() for Lead).
+// A LEASING_EXECUTIVE can see every Customer like other CRM roles, but may
+// only mutate (update/delete/...) ones assigned to themselves.
 describe('CustomersService — Leasing Executive scoping', () => {
   const prisma: any = {
     customer: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
@@ -101,40 +100,21 @@ describe('CustomersService — Leasing Executive scoping', () => {
     service = new CustomersService(prisma);
   });
 
-  it('findAll injects an assignedToId filter for LEASING_EXECUTIVE', async () => {
+  it('findAll does not restrict LEASING_EXECUTIVE to their own customers', async () => {
     prisma.customer.findMany.mockResolvedValue([]);
     prisma.customer.count.mockResolvedValue(0);
 
-    await service.findAll({}, { userId: 'user-1', role: Role.LEASING_EXECUTIVE });
-
-    expect(prisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ assignedToId: 'user-1' }),
-    }));
-  });
-
-  it('findAll does not restrict other roles', async () => {
-    prisma.customer.findMany.mockResolvedValue([]);
-    prisma.customer.count.mockResolvedValue(0);
-
-    await service.findAll({}, { userId: 'user-1', role: Role.LEASING_MANAGER });
+    await service.findAll({});
 
     expect(prisma.customer.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.not.objectContaining({ assignedToId: expect.anything() }),
     }));
   });
 
-  it('findOne 404s a Leasing Executive requesting a customer assigned to someone else', async () => {
+  it('findOne returns a customer assigned to someone else for a Leasing Executive', async () => {
     prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'other-user' });
 
-    await expect(
-      service.findOne('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE }),
-    ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('findOne succeeds for a Leasing Executive requesting their own customer', async () => {
-    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'user-1' });
-
-    const result = await service.findOne('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE });
+    const result = await service.findOne('customer-1');
 
     expect(result).toEqual(expect.objectContaining({ id: 'customer-1' }));
   });
@@ -144,7 +124,25 @@ describe('CustomersService — Leasing Executive scoping', () => {
 
     await expect(
       service.remove('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('remove() succeeds for a Leasing Executive deleting their own customer', async () => {
+    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'user-1' });
+    prisma.customer.update.mockResolvedValue({ id: 'customer-1' });
+
+    await service.remove('customer-1', { userId: 'user-1', role: Role.LEASING_EXECUTIVE });
+
+    expect(prisma.customer.update).toHaveBeenCalled();
+  });
+
+  it('remove() does not restrict other roles', async () => {
+    prisma.customer.findUnique.mockResolvedValue({ id: 'customer-1', assignedToId: 'other-user' });
+    prisma.customer.update.mockResolvedValue({ id: 'customer-1' });
+
+    await service.remove('customer-1', { userId: 'user-1', role: Role.LEASING_MANAGER });
+
+    expect(prisma.customer.update).toHaveBeenCalled();
   });
 });
