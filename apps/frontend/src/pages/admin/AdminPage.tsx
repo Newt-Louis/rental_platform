@@ -533,7 +533,7 @@ function UsersTab() {
   useEffect(() => setPage(1), [deferredSearch, roleFilter, statusFilter]);
   const queryParams = {
     page,
-    limit: 20,
+    limit: 10,
     ...(deferredSearch ? { search: deferredSearch } : {}),
     ...(roleFilter ? { role: roleFilter } : {}),
     ...(statusFilter ? { isActive: statusFilter === 'active' } : {}),

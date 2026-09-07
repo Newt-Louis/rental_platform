@@ -644,7 +644,7 @@ export default function BookingsPage() {
                               {hasMore && (
                                 <button
                                   type="button"
-                                  className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors"
+                                  className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                                   onClick={() => toggleUnitGroup(group.unitId)}
                                 >
                                   {isExpanded ? (

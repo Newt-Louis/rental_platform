@@ -472,6 +472,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
             <SheetSection label="YÊU CẦU KHÁCH" className="bg-amber-50" id="bs-request">
               <SheetRow label="DT mong muốn" value={d.requestedArea ? `${d.requestedArea.toLocaleString()} m²` : '—'} icon={Building2} />
               <SheetRow label="Thời hạn"     value={d.requestedTerm ? `${d.requestedTerm} tháng` : '—'} icon={Calendar} />
+              <SheetRow label="Giữ chỗ"      value={(d as any).holdDays ? `${(d as any).holdDays} ngày` : '—'} icon={Calendar} />
               {(d.budgetRentMin || d.budgetRentMax) ? (
                 <SheetRow label="Giá ngân sách" value={`${d.budgetRentMin ? formatMoney(d.budgetRentMin, d.currencyCode ?? 'VND') : '?'} ~ ${d.budgetRentMax ? formatMoney(d.budgetRentMax, d.currencyCode ?? 'VND') : '?'}/m²`} icon={DollarSign} />
               ) : null}

@@ -2,7 +2,7 @@ import { formatSlotMoney } from '@/lib/slot-currency';
 import { CURRENCY_CODES } from '@/lib/currency';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { slotsApi, spacesApi } from '@/api';
+import { slotsApi, spacesApi, crmApi, customersApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -671,6 +671,8 @@ function SlotBookingDialog({
   const [endHour, setEndHour] = useState('17');
   const [months, setMonths] = useState('1');
   const [notes, setNotes] = useState('');
+  const [clientType, setClientType] = useState<'lead' | 'customer'>('lead');
+  const [clientId, setClientId] = useState('');
   const [pricePreview, setPricePreview] = useState<{
     baseAmount: number;
     discountPct: number;
@@ -682,8 +684,24 @@ function SlotBookingDialog({
   useEffect(() => {
     if (open) {
       setSelectedSlot(initialSlot);
+      setClientType('lead');
+      setClientId('');
     }
   }, [open, initialSlot]);
+
+  const { data: leadsData } = useQuery({
+    queryKey: ['leads-for-slot-booking'],
+    queryFn: () => crmApi.listLeads({ limit: 100 }),
+    enabled: open && !!slot && clientType === 'lead',
+  });
+  const leadOptions: any[] = leadsData?.data ?? leadsData ?? [];
+
+  const { data: customersData } = useQuery({
+    queryKey: ['customers-for-slot-booking'],
+    queryFn: () => customersApi.listCustomers({ limit: 100 }),
+    enabled: open && !!slot && clientType === 'customer',
+  });
+  const customerOptions: any[] = customersData?.data ?? customersData ?? [];
 
   const getStartEnd = () => {
     if (!startDate) return { start: '', end: '' };
@@ -723,6 +741,8 @@ function SlotBookingDialog({
     mutationFn: () => {
       const { start, end } = getStartEnd();
       return slotsApi.createBooking(slot!.id, {
+        leadId: clientType === 'lead' ? clientId || undefined : undefined,
+        customerId: clientType === 'customer' ? clientId || undefined : undefined,
         type,
         startDatetime: start,
         endDatetime: end,
@@ -771,6 +791,44 @@ function SlotBookingDialog({
 
           {slot && (
           <>
+          {/* Khách hàng */}
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-2 block">Khách hàng</label>
+            <div className="flex gap-2 mb-2">
+              {(['lead', 'customer'] as const).map((t) => (
+                <button key={t} type="button"
+                  onClick={() => { setClientType(t); setClientId(''); }}
+                  className={`flex-1 py-1.5 text-sm rounded-lg border font-medium transition-colors ${
+                    clientType === t
+                      ? 'border-gray-900 bg-gray-50 text-gray-900'
+                      : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {t === 'lead' ? 'Lead (CRM)' : 'Customer profile'}
+                </button>
+              ))}
+            </div>
+            <Select value={clientId || '__none__'} onValueChange={(v) => setClientId(v === '__none__' ? '' : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder={clientType === 'lead' ? 'Chọn Lead (tuỳ chọn)' : 'Chọn Khách hàng (tuỳ chọn)'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— Không chọn / Ẩn danh —</SelectItem>
+                {clientType === 'lead'
+                  ? leadOptions.map((l: any) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.brandName ?? l.companyName} {l.contactName ? `(${l.contactName})` : ''}
+                      </SelectItem>
+                    ))
+                  : customerOptions.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.companyName ?? c.brandName}
+                      </SelectItem>
+                    ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Type selector */}
           <div>
             <label className="text-xs font-medium text-gray-700 mb-2 block">Loại booking</label>
