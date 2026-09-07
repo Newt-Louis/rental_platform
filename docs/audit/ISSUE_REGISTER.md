@@ -2009,3 +2009,17 @@ quantity: 1 VND is a rounding speck, 1 USD is ~25,000 VND. It is named
 because an acceptable tolerance per currency is a finance policy nobody has
 stated. Currently unreachable: nothing is comparable.
 
+## RPT-CUR-007 — CLOSED (Wave 8)
+
+The shared formatters defaulted `currencyCode` to `'VND'` **and** fell back to
+`CURRENCIES.VND` for an unrecognised code. Either turns "we do not know what this
+money is" into a confident wrong label.
+
+Audited every call site first: **no single-argument call exists anywhere** in
+backend or frontend — Waves 1-6 had already given every site an explicit
+currency. Removing the parameter default is therefore structural, not
+behavioural, and the frontend typecheck passing unchanged is the proof.
+
+The unknown-code fallback now renders the amount with its raw code attached
+(`1.000 EUR`) instead of silently formatting as dong.
+

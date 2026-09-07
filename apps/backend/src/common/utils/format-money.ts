@@ -26,7 +26,11 @@ export function formatMoney(amount: number, currencyCode: CurrencyCode, locale =
  * USD or MMK.
  */
 export function formatMoneyWithCode(amount: number, currencyCode: CurrencyCode, locale = 'vi-VN'): string {
-  const meta = CURRENCIES[currencyCode] ?? CURRENCIES.VND;
+  // RPT-CUR-007: an unrecognised code is NOT silently formatted as VND. The
+  // amount is shown with the raw code attached, so an unknown unit stays
+  // visibly unknown instead of becoming a confident wrong label.
+  const meta = CURRENCIES[currencyCode];
+  if (!meta) return `${new Intl.NumberFormat(locale).format(amount)} ${currencyCode ?? '(?)'}`;
   const formatted = new Intl.NumberFormat(locale, {
     minimumFractionDigits: meta.decimalPlaces,
     maximumFractionDigits: meta.decimalPlaces,
