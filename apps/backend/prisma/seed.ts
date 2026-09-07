@@ -856,6 +856,7 @@ async function main() {
     const lead = await prisma.lead.create({
       data: {
         ...leadsData[i],
+        mallId: mall.id,
         assignedToId: i % 2 === 0 ? leasingExec.id : leasingManager.id,
         // Link first 10 leads to matching Customer profiles in CRM
         customerId: i < 10 ? customers[i % 10].id : null,
@@ -963,6 +964,107 @@ async function main() {
   }
 
   console.log('Unit bookings created');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHORT-TERM SLOT BOOKINGS — demo data for the "booking ngắn hạn" pipeline:
+  // Customer/Lead → SlotBooking → (xác nhận) → Proposal → Approval → Contract.
+  // A SHORT-lease-term unit hosts several independently-booked slots (kiosk/
+  // pop-up), each convertible to its own Proposal/Contract without locking the
+  // whole unit — see SlotsService.convertToProposal() and the
+  // leaseTermType === 'SHORT' branches in ProposalsService/ContractsService.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const popupUnit = await prisma.unit.create({
+    data: {
+      mallId: mall.id,
+      buildingId: building.id,
+      floorId: floors[0].id,
+      code: 'GF-POPUP',
+      name: 'Khu vực Pop-up Tầng trệt',
+      areaGFA: 40,
+      areaNLA: 35,
+      category: 'F&B',
+      leaseTermType: 'SHORT',
+      status: UnitStatus.VACANT,
+      isActive: true,
+    },
+  });
+
+  const popupSlot1 = await prisma.unitSlot.create({
+    data: {
+      unitId: popupUnit.id,
+      code: 'P1',
+      name: 'Quầy Pop-up góc A',
+      area: 10,
+      slotType: 'FLEXIBLE',
+      pricePerDaySqm: 150000,
+      currencyCode: 'VND',
+      posX: 10, posY: 10, posW: 25, posH: 25,
+    },
+  });
+  const popupSlot2 = await prisma.unitSlot.create({
+    data: {
+      unitId: popupUnit.id,
+      code: 'P2',
+      name: 'Quầy Pop-up góc B',
+      area: 15,
+      slotType: 'FLEXIBLE',
+      pricePerHour: 200000,
+      currencyCode: 'VND',
+      posX: 45, posY: 10, posW: 25, posH: 25,
+    },
+  });
+
+  // PENDING — demo nút "Xác nhận" (chưa gắn khách hàng cụ thể, chỉ có lead ALDO)
+  await prisma.slotBooking.create({
+    data: {
+      bookingRef: 'SB-2026-00001',
+      slotId: popupSlot1.id,
+      leadId: leads[10].id, // ALDO
+      type: 'DAILY',
+      installationStartDatetime: new Date('2026-09-19T06:00:00Z'),
+      installationEndDatetime: new Date('2026-09-19T08:00:00Z'),
+      startDatetime: new Date('2026-09-19T08:00:00Z'),
+      endDatetime: new Date('2026-09-21T18:00:00Z'),
+      dismantlingStartDatetime: new Date('2026-09-21T18:00:00Z'),
+      dismantlingEndDatetime: new Date('2026-09-21T20:00:00Z'),
+      totalArea: 10,
+      baseAmount: 3_000_000,
+      discountPct: 0,
+      totalAmount: 3_000_000,
+      currencyCode: 'VND',
+      status: 'PENDING',
+      notes: 'ALDO — pop-up thử 2 ngày, đang chờ xác nhận',
+      createdById: leasingExec.id,
+    },
+  });
+
+  // CONFIRMED — demo nút "Lập Đề xuất (Proposal)": có sẵn lead + customer nên
+  // Proposal tạo ra có tenantId, đủ điều kiện tự tạo Hợp đồng khi duyệt xong.
+  await prisma.slotBooking.create({
+    data: {
+      bookingRef: 'SB-2026-00002',
+      slotId: popupSlot2.id,
+      leadId: leads[9].id, // Phúc Long Coffee
+      customerId: customers[8].id, // Phúc Long Coffee (CUST-009)
+      type: 'HOURLY',
+      installationStartDatetime: new Date('2026-09-24T06:00:00Z'),
+      installationEndDatetime: new Date('2026-09-24T07:00:00Z'),
+      startDatetime: new Date('2026-09-24T07:00:00Z'),
+      endDatetime: new Date('2026-09-24T15:00:00Z'),
+      dismantlingStartDatetime: new Date('2026-09-24T15:00:00Z'),
+      dismantlingEndDatetime: new Date('2026-09-24T16:00:00Z'),
+      totalArea: 15,
+      baseAmount: 1_600_000,
+      discountPct: 0,
+      totalAmount: 1_600_000,
+      currencyCode: 'VND',
+      status: 'CONFIRMED',
+      notes: 'Phúc Long Coffee — pop-up 1 ngày, đã xác nhận, sẵn sàng Lập Đề xuất',
+      createdById: leasingExec.id,
+    },
+  });
+
+  console.log('Slot bookings (short-term) created');
 
   // Create Proposals (for qualified/proposal/negotiation leads)
   const proposals = [];

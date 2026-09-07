@@ -11,6 +11,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 import {
   CreateUnitSlotDto, UpdateUnitSlotDto,
   CreateSlotBookingDto, CreateSlotPricingRuleDto, CreateSlotGridDto, ConfirmSlotBookingDto,
+  ConvertSlotBookingToProposalDto,
   SlotBookingType,
 } from './dto/slots.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -144,6 +145,16 @@ export class SlotsController {
   ) {
     await this.check(user, { slotBookingId: bookingId });
     return this.slotsService.confirmBooking(bookingId, body?.currencyCode);
+  }
+
+  @Post('bookings/:bookingId/convert-to-proposal')
+  async convertToProposal(
+    @Param('bookingId') bookingId: string,
+    @Body() dto: ConvertSlotBookingToProposalDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.convertToProposal(bookingId, dto, user.id);
   }
 
   @Patch('bookings/:bookingId/cancel')

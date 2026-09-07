@@ -14,6 +14,7 @@ export const SLOT_STATUS_CONFIG: Record<string, { label: string; color: string; 
   CONFIRMED: { label: 'Đã xác nhận',  color: 'bg-violet-100 text-violet-700 border-violet-200', icon: CheckCircle2 },
   CANCELLED: { label: 'Đã hủy',       color: 'bg-red-100 text-red-600 border-red-200',          icon: Ban },
   COMPLETED: { label: 'Hoàn thành',   color: 'bg-green-100 text-green-700 border-green-200',    icon: CheckCircle2 },
+  CONVERTED: { label: 'Đã lập đề xuất', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
 };
 
 export const SLOT_TYPE_CONFIG: Record<string, { label: string; icon: ElementType; color: string }> = {
@@ -47,17 +48,24 @@ export function fmtDate(d?: string | null) {
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// `Date#toLocaleString('vi-VN', {...})` puts the time BEFORE the date
+// ("09:37:20 05/09/2026") — backwards from the Vietnamese convention
+// (ngày trước giờ). Build the string by hand instead of trusting the
+// locale's default field ordering.
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+
 export function fmtDatetime(d?: string | null) {
   if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const date = new Date(d);
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 export function fmtDatetimeSec(d?: string | null) {
   if (!d) return '—';
-  return new Date(d).toLocaleString('vi-VN', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
+  const date = new Date(d);
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
 export function toDatetimeLocal(iso?: string | null): string {

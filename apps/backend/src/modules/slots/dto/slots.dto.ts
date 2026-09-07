@@ -1,4 +1,4 @@
-import { CurrencyCode } from '@prisma/client';
+import { CurrencyCode, BusinessModelEnum } from '@prisma/client';
 import { IsString, IsNumber, IsOptional, IsEnum, IsBoolean, IsDateString, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -102,4 +102,21 @@ export class ConfirmSlotBookingDto {
   @IsEnum(CurrencyCode)
   @IsOptional()
   currencyCode?: CurrencyCode;
+}
+
+/**
+ * Booking ngắn hạn (SlotBooking) → Proposal. Chỉ dùng cho các trường không thể
+ * suy ra từ chính booking (thời gian, diện tích, giá, tiền tệ đều lấy từ
+ * SlotBooking) — xem SlotsService.convertToProposal().
+ */
+export class ConvertSlotBookingToProposalDto {
+  @ApiPropertyOptional({ enum: BusinessModelEnum })
+  @IsEnum(BusinessModelEnum)
+  @IsOptional()
+  businessModel?: BusinessModelEnum;
+
+  @ApiPropertyOptional({ description: 'Ghi đè ghi chú của booking khi tạo Proposal' })
+  @IsString()
+  @IsOptional()
+  notes?: string;
 }

@@ -691,20 +691,24 @@ export class ProposalsService {
         const alreadyExists = await tx.contract.findFirst({ where: { proposalId: id } });
         if (alreadyExists) return alreadyExists;
 
-        // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal khác
-        // nhau cho cùng unit đều được duyệt và cùng cố tạo hợp đồng.
-        const existingUnitContract = await tx.contract.findFirst({
-          where: {
-            unitId: proposal.unitId,
-            isActive: true,
-            deletedAt: null,
-            status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
-          },
-        });
-        if (existingUnitContract) {
-          throw new BadRequestException(
-            `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
-          );
+        // Một mặt bằng dài hạn chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal
+        // khác nhau cho cùng unit đều được duyệt và cùng cố tạo hợp đồng. Không áp dụng cho unit
+        // SHORT (cho thuê ngắn hạn theo ô nhỏ/slot): một unit dạng này chủ ý host nhiều hợp đồng
+        // đồng thời, mỗi hợp đồng ứng với một slot booking khác nhau trong cùng mặt bằng.
+        if (proposal.unit?.leaseTermType !== 'SHORT') {
+          const existingUnitContract = await tx.contract.findFirst({
+            where: {
+              unitId: proposal.unitId,
+              isActive: true,
+              deletedAt: null,
+              status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+            },
+          });
+          if (existingUnitContract) {
+            throw new BadRequestException(
+              `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
+            );
+          }
         }
 
         const year = new Date().getFullYear();
@@ -744,13 +748,18 @@ export class ProposalsService {
           },
         });
 
-        await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
-          userId: options?.userId,
-          reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
-          tenantId: proposal.tenantId,
-          leaseStartDate: proposal.startDate,
-          leaseEndDate: proposal.endDate ?? undefined,
-        }, tx);
+        // Unit SHORT host nhiều slot/hợp đồng đồng thời — không khóa toàn bộ mặt bằng về
+        // CONTRACTED chỉ vì một slot trong đó vừa có hợp đồng (xem điều kiện tương tự ở
+        // existingUnitContract phía trên).
+        if (proposal.unit?.leaseTermType !== 'SHORT') {
+          await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
+            userId: options?.userId,
+            reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
+            tenantId: proposal.tenantId,
+            leaseStartDate: proposal.startDate,
+            leaseEndDate: proposal.endDate ?? undefined,
+          }, tx);
+        }
 
         // Mặt bằng đã có hợp đồng chính thức — mọi booking khác còn xếp hàng (queue) cho unit này
         // không còn ý nghĩa, huỷ để tránh tồn đọng booking "ma" trỏ vào unit đã ký hợp đồng.

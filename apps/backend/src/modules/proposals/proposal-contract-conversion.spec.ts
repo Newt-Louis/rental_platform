@@ -163,4 +163,27 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     await expect(service.createContractFromProposal('p1')).rejects.toThrow('Proposal must be approved');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  // A SHORT-lease-term unit (short-term slot/ô nhỏ leasing) hosts many concurrent slot
+  // bookings within the same Unit, each of which can independently convert into its own
+  // Proposal → Contract. Locking the whole Unit to CONTRACTED or enforcing "one active
+  // contract per unit" on the first slot's contract would silently block every other slot
+  // in that unit — see the SHORT-unit branches added to createContractFromProposal.
+  it('does not lock the unit or enforce the one-contract-per-unit rule for a SHORT-lease-term unit', async () => {
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...APPROVED_PROPOSAL, unit: { leaseTermType: 'SHORT' }, tenant: {}, lead: { id: 'l1' }, approvalWorkflow: null, contract: null,
+    });
+    prisma.contract.findFirst
+      .mockResolvedValueOnce(null) // outer pre-check
+      .mockResolvedValueOnce(null); // inner re-check inside the transaction
+    prisma.contract.create.mockResolvedValue({ id: 'c1', contractNumber: 'CTR-2026-00001', proposalId: 'p1' });
+
+    const result = await service.createContractFromProposal('p1', { userId: 'user-1' });
+
+    expect(result).toMatchObject({ id: 'c1' });
+    // Only the two idempotency pre-checks ran — the existingUnitContract exclusivity
+    // check never fired, so a conflicting contract elsewhere on the unit would not block this.
+    expect(prisma.contract.findFirst).toHaveBeenCalledTimes(2);
+    expect(unitStatus.transition).not.toHaveBeenCalled();
+  });
 });

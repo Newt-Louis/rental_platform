@@ -1486,6 +1486,8 @@ model Proposal {
 
   bookingId        String?            @unique
   booking          UnitBooking?       @relation(fields: [bookingId], references: [id])
+  slotBookingId    String?            @unique
+  slotBooking      SlotBooking?       @relation(fields: [slotBookingId], references: [id])
   approvalWorkflow ApprovalWorkflow?
   contract         Contract?
   versions         ProposalVersion[]
@@ -3421,6 +3423,7 @@ enum SlotBookingStatus {
   CONFIRMED
   CANCELLED
   COMPLETED
+  CONVERTED
 }
 
 model UnitSlot {
@@ -3516,6 +3519,8 @@ model SlotBooking {
   createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
+
+  proposal                  Proposal?
 
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])

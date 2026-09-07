@@ -119,6 +119,28 @@ describe('ContractsService direct-write atomicity', () => {
     );
   });
 
+  // A SHORT-lease-term unit (short-term slot/ô nhỏ leasing) is meant to host many
+  // concurrent contracts — one per slot booking — within the same Unit. The
+  // "one active contract per unit" exclusivity check and the Unit -> CONTRACTED
+  // status lock only make sense for a LONG unit with a single tenant.
+  describe('SHORT-lease-term unit — skips the unit lock and one-contract-per-unit rule', () => {
+    beforeEach(() => {
+      prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', status: UnitStatus.VACANT, leaseTermType: 'SHORT' });
+      tx.unit.findUnique.mockResolvedValue({ id: 'unit-1', status: UnitStatus.VACANT, leaseTermType: 'SHORT' });
+    });
+
+    it('creates the contract even when another active contract already exists on the unit', async () => {
+      prisma.contract.findFirst.mockResolvedValue({ id: 'other-contract', contractNumber: 'CTR-2026-00000' });
+      tx.contract.findFirst.mockResolvedValue({ id: 'other-contract', contractNumber: 'CTR-2026-00000' });
+      unitStatus.canTransition.mockReturnValue(false); // would normally block VACANT/whatever -> CONTRACTED
+
+      await service.create(dto, 'user-1');
+
+      expect(tx.contract.create).toHaveBeenCalledTimes(1);
+      expect(unitStatus.transition).not.toHaveBeenCalled();
+    });
+  });
+
   // Billing Add-in: Phụ thu Phí Quản Lý (MANAGEMENT_FEE_SURCHARGE) chỉ hợp lệ cho hợp đồng
   // thuộc Mall Văn phòng (leaseCategory = OFFICE) — chặn sớm khi bật periodicChargeTypes.
   describe('periodicChargeTypes MANAGEMENT_FEE_SURCHARGE — OFFICE-only guard', () => {

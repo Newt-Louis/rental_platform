@@ -238,9 +238,14 @@ export class ContractsService {
     const unit = await this.prisma.unit.findUnique({ where: { id: dto.unitId } });
     if (!unit) throw new NotFoundException('Unit không tồn tại');
 
+    // Unit SHORT (cho thuê ngắn hạn theo slot/ô nhỏ) chủ ý host nhiều hợp đồng đồng thời —
+    // mỗi hợp đồng ứng với một slot booking khác nhau trong cùng mặt bằng — nên bỏ qua ràng
+    // buộc "một hợp đồng hiệu lực / một unit" và không khóa unit về CONTRACTED bên dưới.
+    const isShortTermUnit = unit.leaseTermType === 'SHORT';
+
     // Chặn sớm trước khi ghi dữ liệu — tránh tạo Contract rồi mới phát hiện transition trạng thái
     // unit không hợp lệ (cùng lớp bug đã sửa ở BookingService.create/SlotsService.createBooking).
-    if (!this.unitStatus.canTransition(unit.status, UnitStatus.CONTRACTED)) {
+    if (!isShortTermUnit && !this.unitStatus.canTransition(unit.status, UnitStatus.CONTRACTED)) {
       throw new BadRequestException(
         `Không thể tạo hợp đồng: mặt bằng đang ở trạng thái ${unit.status}, không thể chuyển sang CONTRACTED.`,
       );
@@ -249,18 +254,20 @@ export class ContractsService {
     // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực tại một thời điểm — tránh 2 hợp đồng
     // sống song song trên cùng unit (dẫn đến ghi đè tenantId/lease dates âm thầm khi transition
     // tới cùng trạng thái CONTRACTED lần thứ hai).
-    const existingActiveContract = await this.prisma.contract.findFirst({
-      where: {
-        unitId: dto.unitId,
-        isActive: true,
-        deletedAt: null,
-        status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
-      },
-    });
-    if (existingActiveContract) {
-      throw new BadRequestException(
-        `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingActiveContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
-      );
+    if (!isShortTermUnit) {
+      const existingActiveContract = await this.prisma.contract.findFirst({
+        where: {
+          unitId: dto.unitId,
+          isActive: true,
+          deletedAt: null,
+          status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+        },
+      });
+      if (existingActiveContract) {
+        throw new BadRequestException(
+          `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingActiveContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
+        );
+      }
     }
 
     // Currency propagation invariant (docs/program/MULTI_CURRENCY_ARCHITECTURE.md):
@@ -285,23 +292,26 @@ export class ContractsService {
     return this.serializable(async (tx) => {
       const currentUnit = await tx.unit.findUnique({ where: { id: dto.unitId } });
       if (!currentUnit) throw new NotFoundException('Unit không tồn tại');
-      if (!this.unitStatus.canTransition(currentUnit.status, UnitStatus.CONTRACTED)) {
+      const currentIsShortTermUnit = currentUnit.leaseTermType === 'SHORT';
+      if (!currentIsShortTermUnit && !this.unitStatus.canTransition(currentUnit.status, UnitStatus.CONTRACTED)) {
         throw new BadRequestException(
           `Không thể tạo hợp đồng: mặt bằng đang ở trạng thái ${currentUnit.status}, không thể chuyển sang CONTRACTED.`,
         );
       }
-      const concurrentContract = await tx.contract.findFirst({
-        where: {
-          unitId: dto.unitId,
-          isActive: true,
-          deletedAt: null,
-          status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
-        },
-      });
-      if (concurrentContract) {
-        throw new BadRequestException(
-          `Mặt bằng này đã có hợp đồng đang hiệu lực (${concurrentContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
-        );
+      if (!currentIsShortTermUnit) {
+        const concurrentContract = await tx.contract.findFirst({
+          where: {
+            unitId: dto.unitId,
+            isActive: true,
+            deletedAt: null,
+            status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+          },
+        });
+        if (concurrentContract) {
+          throw new BadRequestException(
+            `Mặt bằng này đã có hợp đồng đang hiệu lực (${concurrentContract.contractNumber}). Cần chấm dứt hợp đồng cũ trước khi tạo hợp đồng mới.`,
+          );
+        }
       }
 
       const contract = await tx.contract.create({
@@ -323,13 +333,15 @@ export class ContractsService {
         },
       });
 
-      await this.unitStatus.transition(dto.unitId, UnitStatus.CONTRACTED, {
-        userId,
-        reason: `Contract ${contractNumber} created`,
-        tenantId: dto.tenantId,
-        leaseStartDate: new Date(dto.startDate),
-        leaseEndDate: new Date(dto.endDate),
-      }, tx);
+      if (!currentIsShortTermUnit) {
+        await this.unitStatus.transition(dto.unitId, UnitStatus.CONTRACTED, {
+          userId,
+          reason: `Contract ${contractNumber} created`,
+          tenantId: dto.tenantId,
+          leaseStartDate: new Date(dto.startDate),
+          leaseEndDate: new Date(dto.endDate),
+        }, tx);
+      }
 
       await this.events.logEvent({
         contractId: contract.id,

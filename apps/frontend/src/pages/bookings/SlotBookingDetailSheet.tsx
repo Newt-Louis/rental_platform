@@ -1,6 +1,7 @@
 import { formatSlotMoney } from '@/lib/slot-currency';
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { slotsApi } from '@/api';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -8,8 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { Building2, User, Calendar, DollarSign, CheckCircle2, X, Pencil } from 'lucide-react';
+import { Building2, User, Calendar, DollarSign, CheckCircle2, X, Pencil, ArrowRight, FileText } from 'lucide-react';
 import { SLOT_TYPE_CONFIG, SLOT_STATUS_CONFIG, fmtDatetime, fmtMoney, toDatetimeLocal } from './bookings-constants';
+import { ConvertSlotBookingToProposalDialog } from './ConvertSlotBookingToProposalDialog';
 
 type SlotEditForm = {
   installationStartDatetime: string;
@@ -27,8 +29,10 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [lastBooking, setLastBooking] = useState<any | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [ef, setEf] = useState<SlotEditForm>({
     installationStartDatetime: '', installationEndDatetime: '',
     startDatetime: '', endDatetime: '',
@@ -209,12 +213,34 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
               <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-100 rounded-xl p-3">{d.notes}</div>
             )}
 
+            {d.proposal && (
+              <button
+                className="flex items-center justify-between w-full p-3 bg-green-50 border border-green-100 rounded-xl hover:bg-green-100 transition-colors"
+                onClick={() => { onClose(); navigate(`/proposals?id=${d.proposal.id}`); }}
+              >
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText size={14} className="text-green-600" />
+                  <span className="font-medium">{d.proposal.proposalNumber}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">{d.proposal.status}</Badge>
+                  <ArrowRight size={12} className="text-green-500" />
+                </div>
+              </button>
+            )}
+
             {canEdit && (
               <div className="space-y-2 pt-2 border-t border-gray-100">
                 {d.status === 'PENDING' && (
                   <Button className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
                     onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
                     <CheckCircle2 size={14} /> Xác nhận
+                  </Button>
+                )}
+                {d.status === 'CONFIRMED' && !d.proposal && (
+                  <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => setConvertOpen(true)}>
+                    <ArrowRight size={15} /> Lập Đề xuất (Proposal)
                   </Button>
                 )}
                 <div className="flex gap-2">
@@ -231,6 +257,7 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
           </>
         )}
       </div>}
+      {d && <ConvertSlotBookingToProposalDialog booking={d} open={convertOpen} onClose={() => setConvertOpen(false)} />}
     </Sheet>
   );
 }

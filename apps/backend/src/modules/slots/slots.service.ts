@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { Prisma, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
-import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, SlotBookingType } from './dto/slots.dto';
+import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, ConvertSlotBookingToProposalDto, SlotBookingType } from './dto/slots.dto';
 
 @Injectable()
 export class SlotsService {
@@ -438,6 +438,7 @@ export class SlotsService {
         lead: { select: { id: true, brandName: true, contactName: true } },
         customer: { select: { id: true, companyName: true, brandName: true } },
         createdBy: { select: { id: true, fullName: true } },
+        proposal: { select: { id: true, proposalNumber: true, status: true } },
       },
       orderBy: { startDatetime: 'asc' },
     });
@@ -488,6 +489,113 @@ export class SlotsService {
     });
   }
 
+  // ─── Chuyển đổi booking ngắn hạn → Proposal ────────────────────────────────
+  //
+  // Trước đây quy trình booking ngắn hạn dừng lại ở CONFIRMED — không đi qua
+  // phê duyệt Proposal và không có hợp đồng lưu trữ. Method này mở phễu
+  // CONFIRMED → Proposal (rồi Proposal tự đi tiếp qua ApprovalWorkflow và
+  // Contract như một Proposal bình thường, xem ProposalsController#submit).
+  //
+  // Proposal được thiết kế cho thuê dài hạn (rentPerSqm/tháng, escalation,
+  // cọc theo tháng...) trong khi SlotBooking là một khoản phí trọn gói cho một
+  // khoảng thời gian ngắn (giờ/ngày). Mapping dưới đây là gần đúng có chủ đích:
+  // term=1 và rentPerSqm chỉ mang tính tham khảo — totalContractValue mới là
+  // giá trị thật (= totalAmount của booking, KHÔNG chạy qua computeContractValue
+  // vì đó là công thức cho thuê tháng lặp lại). Nguồn gốc booking được lưu lại
+  // trong pricingSnapshot để tra soát.
+  async convertToProposal(id: string, dto: ConvertSlotBookingToProposalDto, userId: string) {
+    const booking = await this.prisma.slotBooking.findUnique({
+      where: { id },
+      include: { slot: { include: { unit: true } }, lead: true, customer: true, proposal: true },
+    });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (booking.status !== 'CONFIRMED') {
+      throw new BadRequestException('Chỉ booking đã CONFIRMED mới có thể chuyển thành Proposal');
+    }
+    if (booking.proposal) {
+      throw new ConflictException('Booking này đã được chuyển thành Proposal');
+    }
+
+    let resolvedTenantId: string | undefined;
+    if (booking.leadId) {
+      const lead = await this.prisma.lead.findUnique({ where: { id: booking.leadId }, select: { tenantId: true } });
+      resolvedTenantId = lead?.tenantId ?? undefined;
+    } else if (booking.customerId) {
+      const customer = await this.prisma.customer.findUnique({ where: { id: booking.customerId }, select: { tenantId: true } });
+      resolvedTenantId = customer?.tenantId ?? undefined;
+    }
+
+    const year = new Date().getFullYear();
+    const count = await this.prisma.proposal.count({
+      where: { proposalNumber: { startsWith: `PROP-${year}-` } },
+    });
+    const proposalNumber = `PROP-${year}-${String(count + 1).padStart(5, '0')}`;
+
+    const area = booking.totalArea ?? booking.slot.area;
+    const totalAmount = booking.totalAmount;
+
+    const proposal = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.proposal.create({
+        data: {
+          proposalNumber,
+          slotBookingId: id,
+          unitId: booking.slot.unitId,
+          leadId: booking.leadId ?? undefined,
+          tenantId: resolvedTenantId,
+          area,
+          term: 1,
+          startDate: booking.startDatetime,
+          endDate: booking.endDatetime,
+          rentPerSqm: area > 0 ? totalAmount / area : totalAmount,
+          camPerSqm: 0,
+          deposit: 0,
+          depositAmount: 0,
+          rentFree: 0,
+          escalationPercent: 0,
+          monthlyRent: totalAmount,
+          monthlyCAM: 0,
+          totalContractValue: totalAmount,
+          discount: booking.discountPct ?? 0,
+          rentCurrency: booking.currencyCode ?? 'VND',
+          notes: dto.notes ?? booking.notes ?? undefined,
+          businessModel: dto.businessModel,
+          pricingSnapshot: {
+            sourceType: 'SLOT_BOOKING',
+            slotBookingId: id,
+            bookingRef: booking.bookingRef,
+            slotId: booking.slotId,
+            slotCode: booking.slot.code,
+            baseAmount: booking.baseAmount,
+            discountPct: booking.discountPct,
+            installationStartDatetime: booking.installationStartDatetime,
+            dismantlingEndDatetime: booking.dismantlingEndDatetime,
+          },
+          createdById: userId,
+        },
+      });
+
+      await tx.slotBooking.update({
+        where: { id },
+        data: { status: 'CONVERTED' },
+      });
+
+      return created;
+    });
+
+    return {
+      booking: await this.prisma.slotBooking.findUnique({
+        where: { id },
+        include: {
+          slot: { select: { id: true, code: true, name: true, area: true, unit: { select: { id: true, code: true } } } },
+          lead: { select: { id: true, brandName: true, contactName: true } },
+          customer: { select: { id: true, companyName: true, brandName: true } },
+          proposal: { select: { id: true, proposalNumber: true, status: true } },
+        },
+      }),
+      proposal,
+    };
+  }
+
   async listAllBookings(params: {
     unitId?: string;
     mallIds?: string[];
@@ -532,6 +640,7 @@ export class SlotsService {
         },
         lead: { select: { id: true, brandName: true } },
         customer: { select: { id: true, companyName: true } },
+        proposal: { select: { id: true, proposalNumber: true, status: true } },
       },
       orderBy: [
         { slot: { unit: { code: 'asc' } } },
