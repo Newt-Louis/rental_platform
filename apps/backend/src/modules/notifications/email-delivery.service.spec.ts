@@ -33,7 +33,10 @@ describe('EmailDeliveryService', () => {
     expect(prisma.emailDelivery.upsert).toHaveBeenLastCalledWith({
       where: { eventKey: request.eventKey },
       update: {},
-      create: expect.objectContaining({ eventKey: request.eventKey }),
+      create: expect.objectContaining({
+        eventKey: request.eventKey,
+        payload: expect.objectContaining({ text: 'Expiry' }),
+      }),
     });
   });
 
@@ -55,6 +58,7 @@ describe('EmailDeliveryService', () => {
       cc: undefined,
       subject: 'Dunning',
       html: '<p>Dunning</p>',
+      text: undefined,
     });
     expect(prisma.emailDelivery.update).toHaveBeenCalledWith({
       where: { id: 'delivery-1' },

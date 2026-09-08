@@ -19,6 +19,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "email:previews": "ts-node --transpile-only scripts/generate-email-previews.ts",
+    "email:previews:serve": "ts-node --transpile-only scripts/serve-email-previews.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev && npm run parking:apply-indexes",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",

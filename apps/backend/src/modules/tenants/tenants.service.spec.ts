@@ -21,7 +21,10 @@ describe('TenantsService portal account lifecycle', () => {
       user: { findUnique: jest.fn(), update: jest.fn() },
       $transaction: jest.fn((callback) => callback(tx)),
     };
-    const email: any = { sendMail: jest.fn().mockResolvedValue({ messageId: 'mail-1' }) };
+    const email: any = {
+      portalInvitationHtml: jest.fn().mockReturnValue('<p>Portal invitation</p>'),
+      sendMail: jest.fn().mockResolvedValue({ messageId: 'mail-1' }),
+    };
     return { service: new TenantsService(prisma, email), prisma, email, tx };
   }
 

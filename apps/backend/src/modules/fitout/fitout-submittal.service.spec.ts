@@ -20,7 +20,7 @@ describe('FitoutSubmittalService attachment revision policy', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new FitoutSubmittalService(
-      prisma as any, storage as any, {} as any, {} as any, {} as any,
+      prisma as any, storage as any, {} as any, {} as any, {} as any, {} as any,
     );
     storage.saveFile.mockResolvedValue({ fileName: 'drawing.pdf', filePath: 'fitout/sub-1/drawing.pdf' });
     storage.deleteFile.mockResolvedValue(true);
@@ -124,7 +124,7 @@ describe('FitoutSubmittalService.list() — attachments merged in (no direct Pri
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new FitoutSubmittalService(prisma, {} as any, {} as any, {} as any, {} as any);
+    service = new FitoutSubmittalService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
   });
 
   it('attaches each submittal its own UnifiedDocument rows, grouped by entityId', async () => {
@@ -166,7 +166,7 @@ describe('FitoutSubmittalService — required attachment before entering the app
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((cb: any) => cb(prisma));
-    service = new FitoutSubmittalService(prisma, {} as any, { create: jest.fn() } as any, {} as any, {} as any);
+    service = new FitoutSubmittalService(prisma, {} as any, { create: jest.fn() } as any, {} as any, {} as any, {} as any);
   });
 
   it('create() produces a draft with no ApprovalWorkflow and never notifies approvers', async () => {
