@@ -3,8 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FitoutDailyReportService } from './fitout-daily-report.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateDailyReportDto } from './dto/fitout-operations.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -17,7 +16,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 @ApiTags('Fitout Daily Reports')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Controller('fitout-daily-reports')
 export class FitoutDailyReportController {
   constructor(

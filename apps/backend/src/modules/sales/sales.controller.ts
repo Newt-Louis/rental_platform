@@ -4,6 +4,7 @@ import { Role } from '@prisma/client';
 import { SalesService } from './sales.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateSalesDto, DisputeSalesDto } from './dto/sales.dto';
@@ -31,7 +32,7 @@ const SALES_CREATE_ROLES = MODULE_ROLES.sales.filter((r) => r !== Role.CEO);
 @ApiTags('Sales Turnover')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.sales)
+@ModuleRoles('sales')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'MALL-001 -- runtime-proven and closed 2026-09-07; was BC-007 / CONTRA-008' })
 @Controller('sales')
 export class SalesController {

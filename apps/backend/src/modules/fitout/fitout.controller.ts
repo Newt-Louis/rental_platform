@@ -13,6 +13,7 @@ import { FitoutDashboardService } from './fitout-dashboard.service';
 import { StorageService } from '../../storage/storage.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
@@ -27,7 +28,7 @@ import { ReplaceFitoutApprovalLevelsDto } from './dto/fitout-form-approval.dto';
 @ApiTags('Fitout')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED })
 @Controller('fitouts')
 export class FitoutController {

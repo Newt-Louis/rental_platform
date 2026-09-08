@@ -1923,6 +1923,81 @@ async function main() {
   });
   console.log('MaintenanceSchedule created');
 
+  // ModulePermission -- default matrix for /admin?section=permissions. Uses
+  // additive createMany({ skipDuplicates: true }) so re-running `db seed`
+  // never overwrites an Admin's live edits; it only fills rows that don't
+  // exist yet. Keys use the frontend RouteModule naming
+  // (apps/frontend/src/lib/permissions.ts) since that's what the admin UI and
+  // ModuleRoles() decorator both key off. For the 22 modules with a real
+  // backend enforcement point (MODULE_ROLES in
+  // common/constants/role-permissions.ts), the backend list is the ground
+  // truth here (a couple of modules -- 'admin', 'contracts', 'fitout' --
+  // are actually narrower on the backend than the frontend nav currently
+  // shows; seeding from backend preserves today's real API behavior rather
+  // than the more permissive, already-stale frontend list). The remaining
+  // 11 modules have no backend MODULE_ROLES counterpart (gated by local
+  // per-controller role consts instead) so the dynamic matrix only affects
+  // their frontend nav/route visibility -- their seed values mirror the
+  // frontend ROUTE_PERMISSIONS list directly. ADMIN is never stored: the
+  // guard bypasses it unconditionally.
+  const GLOBAL_MALL_KEY = 'GLOBAL';
+  const MODULE_PERMISSION_DEFAULTS: Array<{ module: string; roles: Role[] }> = [
+    { module: 'dashboard', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.FINANCE, Role.LEGAL, Role.OPERATION] },
+    { module: 'spaces', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.FINANCE, Role.LEGAL, Role.OPERATION] },
+    { module: 'crm', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR] },
+    { module: 'bookings', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR] },
+    { module: 'proposals', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO] },
+    { module: 'approvals', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.CEO, Role.OPERATION] },
+    { module: 'contracts', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
+    { module: 'tenants', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
+    { module: 'fitout', roles: [Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
+    { module: 'tickets', roles: [Role.OPERATION, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.TENANT] },
+    { module: 'sales', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.TENANT] },
+    { module: 'billing', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.TENANT] },
+    { module: 'billing-addin', roles: [Role.OPERATION, Role.MALL_DIRECTOR, Role.FINANCE] },
+    { module: 'sap', roles: [Role.FINANCE] },
+    { module: 'reports', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER] },
+    { module: 'analytics', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.LEASING_MANAGER] },
+    { module: 'ai', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO] },
+    { module: 'admin', roles: [] },
+    { module: 'announcements', roles: [Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER, Role.TENANT] },
+    { module: 'cross-mall', roles: [Role.CEO] },
+    { module: 'audit-log', roles: [Role.CEO] },
+    { module: 'parking', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION] },
+    // Frontend-only: no MODULE_ROLES counterpart -- these only gate nav/route
+    // visibility until a future phase unifies the local per-controller consts.
+    { module: 'crm-overview', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR] },
+    { module: 'deal-pipeline', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO] },
+    { module: 'pipeline-stats', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO] },
+    { module: 'fitout-approvals', roles: [Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
+    { module: 'service-contracts', roles: [Role.CEO, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.OPERATION] },
+    { module: 'inventory', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION] },
+    { module: 'work-orders', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER] },
+    { module: 'patrol', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.OPERATION] },
+    { module: 'parking-report', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION] },
+    { module: 'parking-transaction', roles: [Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION] },
+    { module: 'tenant-portal', roles: [Role.TENANT, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.OPERATION] },
+  ];
+  await prisma.modulePermission.createMany({
+    data: MODULE_PERMISSION_DEFAULTS.flatMap(({ module, roles }) =>
+      roles.map((role) => ({ module, role, mallId: GLOBAL_MALL_KEY, allowed: true })),
+    ),
+    skipDuplicates: true,
+  });
+  // Every existing Mall gets its own editable copy of the Global defaults
+  // (same as the auto-seed hook on Mall creation in SpacesService) instead of
+  // silently relying on Global fallback -- skipDuplicates keeps this safe to
+  // re-run without clobbering any per-Mall customization made via the admin UI.
+  const allMalls = await prisma.mall.findMany({ select: { id: true } });
+  for (const { id: mallId } of allMalls) {
+    const globalRows = await prisma.modulePermission.findMany({ where: { mallId: GLOBAL_MALL_KEY } });
+    await prisma.modulePermission.createMany({
+      data: globalRows.map((row) => ({ module: row.module, role: row.role, mallId, allowed: row.allowed })),
+      skipDuplicates: true,
+    });
+  }
+  console.log(`ModulePermission seeded (Global defaults + ${allMalls.length} Mall(s))`);
+
   console.log('Wave 4-5 seed data completed');
   console.log('Seed completed successfully!');
   console.log('');

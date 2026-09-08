@@ -6,6 +6,7 @@ import { TicketSlaService } from './ticket-sla.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TicketStatus, TicketPriority, TicketType, Role } from '@prisma/client';
@@ -29,7 +30,7 @@ const TICKET_STAFF_ROLES = MODULE_ROLES.tickets.filter((role) => role !== Role.T
 @ApiTags('Tickets')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.tickets)
+@ModuleRoles('tickets')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.ENFORCED })
 @Controller('tickets')
 export class TicketsController {

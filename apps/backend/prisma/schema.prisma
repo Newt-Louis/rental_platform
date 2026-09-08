@@ -1586,6 +1586,29 @@ model ApprovalStep {
   updatedAt    DateTime         @updatedAt
 }
 
+// Ma tran quyen module dong -- Admin bat/tat qua UI (/admin?section=permissions),
+// co hieu luc ngay khong can deploy lai. Seed ban dau lay tu MODULE_ROLES
+// (common/constants/role-permissions.ts) de khong doi hanh vi luc ra mat.
+// allowed=true la 1 dong "cap quyen"; thieu dong = chua cau hinh (RolesGuard se
+// fallback ve rule tinh cu trong truong hop nay).
+// mallId dung sentinel "GLOBAL" thay vi NULL cho dong mac dinh -- Postgres coi
+// nhieu NULL la "khac nhau" trong unique index nen se khong chan duoc nhieu
+// dong mac dinh trung nhau cho cung (module, role). Mall moi tao duoc copy
+// nguyen mot ban tu cac dong "GLOBAL" (xem PermissionsService.seedDefaultsForMall).
+model ModulePermission {
+  id          String   @id @default(cuid())
+  module      String
+  role        Role
+  mallId      String   @default("GLOBAL")
+  allowed     Boolean  @default(true)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([module, role, mallId])
+  @@index([module, mallId])
+}
+
 // Quy tac sinh buoc duyet cho Proposal. Khai bao RIENG CHO TUNG MALL va chi dinh DICH DANH
 // nguoi duyet: truoc day quy tac chi co approverRole va khong co mallId, nen
 // buildApprovalStepsFromRules() sinh ApprovalStep voi approverId = null (ai cung role cung bam

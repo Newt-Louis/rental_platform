@@ -66,6 +66,13 @@ describe('CR-119 email design system', () => {
     expect(() => appUrl('/contracts')).toThrow('must use HTTPS');
   });
 
+  it('allows a plain-HTTP frontend origin on UAT (NODE_ENV=production, APP_ENV=uat)', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.APP_ENV = 'uat';
+    process.env.FRONTEND_URL = 'http://125.234.136.72:58080';
+    expect(() => appUrl('/contracts')).not.toThrow();
+  });
+
   it('escapes HTML and attribute injection across business fields and CTA URLs', () => {
     const attack = '<script>alert(1)</script>\"><img src=x onerror=alert(1)>';
     const html = contract(25, { tenantName: attack, contractId: attack });

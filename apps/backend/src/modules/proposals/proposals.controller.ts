@@ -9,7 +9,7 @@ import { ProposalScenarioService } from './proposal-scenario.service';
 import { CreateProposalDto, RejectProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ProposalStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -24,7 +24,7 @@ const PROPOSAL_CONVERT_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRE
 @ApiTags('Proposals')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.proposals)
+@ModuleRoles('proposals')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'proposal' }, status: EnforcementStatus.ENFORCED })
 @Controller('proposals')
 export class ProposalsController {

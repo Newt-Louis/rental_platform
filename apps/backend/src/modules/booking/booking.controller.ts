@@ -16,7 +16,7 @@ import {
 } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BookingStatus, UnitStatus } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -29,7 +29,7 @@ import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
 @ApiTags('Bookings')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.booking)
+@ModuleRoles('bookings')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'booking' }, status: EnforcementStatus.ENFORCED })
 @Controller('bookings')
 export class BookingController {

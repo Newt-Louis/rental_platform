@@ -4,7 +4,7 @@
   "systemConfigDesc": "Quản trị tập trung danh tính, dữ liệu nền và quy trình kiểm soát.",
   "erpControlCenter": "ERP Control Center",
   "superAdmin": "Super Admin · Toàn quyền",
-  "readOnlyNote": "Bảng này chỉ để xem — phản ánh đúng cấu hình phân quyền đang chạy thật (không phải bản sao rời rạc). Để thay đổi quyền của một vai trò, cần sửa cấu hình trong code và triển khai lại.",
+  "permissionsEditNote": "Bấm vào một ô để bật/tắt quyền truy cập ngay lập tức — có hiệu lực thật trên hệ thống, không cần triển khai lại. Cột Super Admin luôn được phép và không thể tắt.",
   "selectConfigArea": "Chọn khu vực cấu hình",
   "commonError": "Không thể hoàn tất thao tác",
   "tabs": {
@@ -252,7 +252,13 @@
   },
   "permissions": {
     "title": "Phân quyền",
-    "feature": "Chức năng"
+    "feature": "Chức năng",
+    "scopeGlobal": "Mặc định toàn hệ thống (Global)",
+    "selectScope": "Chọn mall để xem/sửa riêng",
+    "inherited": "Kế thừa Global",
+    "frontendOnly": "Chỉ áp dụng cho giao diện — chưa khoá được API cho module này",
+    "toastUpdated": "Đã cập nhật quyền",
+    "toastError": "Không thể cập nhật quyền"
   },
   "branding": {
     "title": "Thương hiệu",

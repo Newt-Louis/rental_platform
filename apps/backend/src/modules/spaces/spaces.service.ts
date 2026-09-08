@@ -6,6 +6,7 @@ import { CreateUnitDto } from './dto/create-unit.dto';
 import { UnitStatus, UnitHistoryType, Prisma } from '@prisma/client';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { PermissionsService } from '../../common/services/permissions.service';
 import * as path from 'path';
 import * as fs from 'fs';
 import sharp from 'sharp';
@@ -97,6 +98,7 @@ export class SpacesService {
     private prisma: PrismaService,
     private unitStatus: UnitStatusService,
     private mallAccess: MallAccessService,
+    private permissions: PermissionsService,
   ) {}
 
   private assertVacantForModification(unit: { code?: string; status: UnitStatus }) {
@@ -185,12 +187,19 @@ export class SpacesService {
     return existing;
   }
 
+  // Mall + its default permission matrix are one unit of work, same reasoning
+  // as User + UserMallAccess in UsersService.create: a Mall with no
+  // ModulePermission rows would silently fall back to the Global template
+  // forever instead of getting its own editable copy.
   async createMall(dto: CreateMallDto) {
     const existing = await this.resolveMallCodeConflict(dto.code);
-    if (existing) {
-      return this.prisma.mall.update({ where: { id: existing.id }, data: { ...dto, isActive: true } });
-    }
-    return this.prisma.mall.create({ data: dto });
+    return this.prisma.$transaction(async (tx) => {
+      const mall = existing
+        ? await tx.mall.update({ where: { id: existing.id }, data: { ...dto, isActive: true } })
+        : await tx.mall.create({ data: dto });
+      await this.permissions.seedDefaultsForMall(mall.id, tx);
+      return mall;
+    });
   }
 
   async setupMall(data: {
@@ -202,6 +211,7 @@ export class SpacesService {
       const mall = existing
         ? await tx.mall.update({ where: { id: existing.id }, data: { ...data.mall, isActive: true } })
         : await tx.mall.create({ data: data.mall });
+      await this.permissions.seedDefaultsForMall(mall.id, tx);
       for (const floorInput of data.floors ?? []) {
         const { zones, ...floorData } = floorInput;
         const floor = await tx.floor.create({

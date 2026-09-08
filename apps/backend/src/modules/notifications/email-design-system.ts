@@ -162,7 +162,12 @@ export function appUrl(path: string): string {
   if (!['http:', 'https:'].includes(origin.protocol)) {
     throw new Error('FRONTEND_URL must be an absolute HTTP(S) URL');
   }
-  if (process.env.NODE_ENV === 'production' && origin.protocol !== 'https:') {
+  // Gated on APP_ENV (via environmentTag()), not just NODE_ENV: UAT also runs
+  // the production build (NODE_ENV=production) but is plain-HTTP-only, and
+  // APP_ENV=uat is already how this file distinguishes UAT from real
+  // production for the `[UAT]` subject prefix — reusing it here instead of a
+  // second, redundant flag.
+  if (process.env.NODE_ENV === 'production' && environmentTag() === null && origin.protocol !== 'https:') {
     throw new Error('FRONTEND_URL must use HTTPS in production email');
   }
   return new URL(path.startsWith('/') ? path : `/${path}`, `${base}/`).toString();

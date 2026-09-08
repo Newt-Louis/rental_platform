@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { AnnouncementsService } from './announcements.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -22,7 +22,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 @ApiTags('Announcements')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.announcements)
+@ModuleRoles('announcements')
 @Controller('announcements')
 export class AnnouncementsController {
   constructor(

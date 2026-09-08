@@ -47,6 +47,7 @@ import { ParkingModule } from "./modules/parking/parking.module";
 import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
 import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -102,6 +103,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     ParkingModule,
     TelemetryModule,
     DepartmentsModule,
+    PermissionsModule,
   ],
   controllers: [HealthController],
   providers: [

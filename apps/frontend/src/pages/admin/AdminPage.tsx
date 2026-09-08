@@ -1,7 +1,7 @@
 import { useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi, permissionsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +57,15 @@ const PERMISSIONS: { module: string; label: string; roles: string[] }[] = Object
 );
 
 const ROLE_KEYS = Object.keys(ROLE_MAP);
+
+// Modules with no MODULE_ROLES counterpart on the backend (gated by local
+// per-controller role consts instead) -- toggling them here only changes
+// frontend nav/route visibility, not what the API actually accepts.
+const FRONTEND_ONLY_MODULES = new Set([
+  'crm-overview', 'deal-pipeline', 'pipeline-stats', 'fitout-approvals',
+  'service-contracts', 'inventory', 'work-orders', 'patrol',
+  'parking-report', 'parking-transaction', 'tenant-portal',
+]);
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -1333,13 +1342,51 @@ function SpaceStructureTab() {
 
 function PermissionsTab() {
   const { t } = useTranslation('admin');
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const roles = ROLE_KEYS;
+  const [scope, setScope] = useState<string>('GLOBAL');
+  const mallId = scope === 'GLOBAL' ? undefined : scope;
+
+  const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
+  const malls: any[] = mallsData?.data ?? mallsData ?? [];
+
+  const { data: matrix, isLoading } = useQuery({
+    queryKey: ['permissions-matrix', scope],
+    queryFn: () => permissionsApi.getMatrix(mallId),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (vars: { module: string; role: string; allowed: boolean }) =>
+      permissionsApi.updateCell({ module: vars.module, role: vars.role as any, allowed: vars.allowed, mallId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['permissions-matrix', scope] });
+      toast({ title: t('permissions.toastUpdated') });
+    },
+    onError: () => toast({ title: t('permissions.toastError'), variant: 'destructive' }),
+  });
+
   return (
     <div>
       <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <Info size={14} className="shrink-0" />
-        {t('readOnlyNote')}
+        {t('permissionsEditNote')}
       </div>
+
+      <div className="mb-3">
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          className="h-9 rounded-md border bg-white px-3 text-sm"
+          aria-label={t('permissions.selectScope')}
+        >
+          <option value="GLOBAL">{t('permissions.scopeGlobal')}</option>
+          {malls.map((m: any) => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead>
@@ -1356,22 +1403,49 @@ function PermissionsTab() {
             </tr>
           </thead>
           <tbody>
-            {PERMISSIONS.map((perm, i) => (
-              <tr key={perm.module} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                <td className="px-3 py-2 border-b border-r font-medium text-gray-700 sticky left-0 bg-inherit">{perm.label}</td>
-                {roles.map((role) => {
-                  const hasAccess = perm.roles.includes(role);
-                  return (
-                    <td key={role} className="px-2 py-2 border-b border-r text-center">
-                      {hasAccess
-                        ? <CheckCircle size={15} className="text-green-500 mx-auto" />
-                        : <XCircle size={15} className="text-gray-200 mx-auto" />
-                      }
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {PERMISSIONS.map((perm, i) => {
+              const cell = matrix?.[perm.module];
+              const cellRoles: string[] = cell?.roles ?? (isLoading ? perm.roles : []);
+              const isInherited = scope !== 'GLOBAL' && cell?.source === 'global';
+              return (
+                <tr key={perm.module} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                  <td className="px-3 py-2 border-b border-r font-medium text-gray-700 sticky left-0 bg-inherit">
+                    <div className="flex items-center gap-1">
+                      {perm.label}
+                      {FRONTEND_ONLY_MODULES.has(perm.module) && (
+                        <span className="text-amber-500" title={t('permissions.frontendOnly')}>●</span>
+                      )}
+                    </div>
+                    {isInherited && <div className="text-[10px] font-normal text-gray-400">{t('permissions.inherited')}</div>}
+                  </td>
+                  {roles.map((role) => {
+                    if (role === 'ADMIN') {
+                      return (
+                        <td key={role} className="px-2 py-2 border-b border-r text-center">
+                          <CheckCircle size={15} className="text-green-500 mx-auto" />
+                        </td>
+                      );
+                    }
+                    const hasAccess = cellRoles.includes(role);
+                    return (
+                      <td key={role} className="px-2 py-2 border-b border-r text-center">
+                        <button
+                          type="button"
+                          disabled={isLoading || updateMutation.isPending}
+                          onClick={() => updateMutation.mutate({ module: perm.module, role, allowed: !hasAccess })}
+                          className="mx-auto flex w-full items-center justify-center disabled:opacity-40"
+                        >
+                          {hasAccess
+                            ? <CheckCircle size={15} className="text-green-500" />
+                            : <XCircle size={15} className="text-gray-200" />
+                          }
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

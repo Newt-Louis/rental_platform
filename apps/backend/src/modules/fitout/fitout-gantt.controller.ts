@@ -2,8 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } f
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { FitoutGanttService } from './fitout-gantt.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CreateGanttTaskDto, UpdateGanttTaskDto } from './dto/fitout-operations.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
@@ -16,7 +15,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @ApiTags('Fitout Gantt')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Controller('fitout-tasks')
 export class FitoutGanttController {
   constructor(

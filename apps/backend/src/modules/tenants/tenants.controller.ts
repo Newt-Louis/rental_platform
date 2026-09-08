@@ -4,7 +4,7 @@ import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -20,7 +20,7 @@ const TENANT_MANAGE_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTO
 @ApiTags('Tenants')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.tenants)
+@ModuleRoles('tenants')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'tenant' }, status: EnforcementStatus.ENFORCED })
 @Controller('tenants')
 export class TenantsController {
