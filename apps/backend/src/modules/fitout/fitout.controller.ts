@@ -7,6 +7,7 @@ import { FitoutSlaService } from './fitout-sla.service';
 import { FitoutContractorService } from './fitout-contractor.service';
 import { FitoutStageConfigService } from './fitout-stage-config.service';
 import { FitoutFormTypeService } from './fitout-form-type.service';
+import { FitoutFormApprovalService } from './fitout-form-approval.service';
 import { FitoutIssueService } from './fitout-issue.service';
 import { FitoutDashboardService } from './fitout-dashboard.service';
 import { StorageService } from '../../storage/storage.service';
@@ -19,6 +20,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
+import { ReplaceFitoutApprovalLevelsDto } from './dto/fitout-form-approval.dto';
 
 // CR-101 Phase 1: descriptive only.
 
@@ -36,6 +38,7 @@ export class FitoutController {
     private readonly contractorService: FitoutContractorService,
     private readonly stageConfigService: FitoutStageConfigService,
     private readonly formTypeService: FitoutFormTypeService,
+    private readonly formApprovalService: FitoutFormApprovalService,
     private readonly issueService: FitoutIssueService,
     private readonly dashboardService: FitoutDashboardService,
     private readonly storageService: StorageService,
@@ -153,6 +156,41 @@ export class FitoutController {
   @Roles(Role.ADMIN)
   deactivateFormType(@Param('code') code: string) {
     return this.formTypeService.deactivate(code);
+  }
+
+  // ── Cấu hình cấp duyệt hồ sơ fitout (ai duyệt) ─────────────────────────────
+  // Khai báo riêng cho từng mall, mỗi cấp gắn đúng một tài khoản. MallAccessGuard đọc `mallId`
+  // trên query/body nên mọi route dưới đây đã được chặn theo quyền truy cập mall sẵn.
+
+  @Get('form-types/approver-candidates')
+  @ApiOperation({ summary: 'List accounts eligible to approve fitout dossiers at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  listApproverCandidates(@Query('mallId') mallId: string) {
+    return this.formApprovalService.listEligibleApprovers(mallId);
+  }
+
+  @Get('form-types/approval-levels')
+  @ApiOperation({ summary: 'Count configured approval levels per form type for a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  countApprovalLevels(@Query('mallId') mallId: string) {
+    return this.formApprovalService.countByFormType(mallId);
+  }
+
+  @Get('form-types/:code/approval-levels')
+  @ApiOperation({ summary: 'List the configured approval chain of a form type at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  listApprovalLevels(@Param('code') code: string, @Query('mallId') mallId: string) {
+    return this.formApprovalService.listLevels(code, mallId);
+  }
+
+  @Put('form-types/:code/approval-levels')
+  @ApiOperation({ summary: 'Replace the approval chain of a form type at a Mall' })
+  @Roles(Role.ADMIN)
+  replaceApprovalLevels(@Param('code') code: string, @Body() body: ReplaceFitoutApprovalLevelsDto) {
+    return this.formApprovalService.replaceLevels(code, body.mallId, body.levels);
   }
 
   @Get('dashboard/overview')

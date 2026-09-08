@@ -165,7 +165,6 @@
   "submittal": {
     "newTitle": "New submittal",
     "selectFormType": "Select document type (Form)",
-    "approvalLevels": "{{count}} approval levels",
     "titlePlaceholder": "Submittal title",
     "submit": "Submit",
     "empty": "No submittals yet",
@@ -378,7 +377,7 @@
       "meeting": "Meeting",
       "category": "Category",
       "stage": "Stage",
-      "approvalLevels": "Approval levels"
+      "approvalLevels": "Approvers"
     },
     "stageDialog": {
       "addTitle": "Add new stage",
@@ -407,6 +406,32 @@
         "deactivated": "Stage deactivated"
       }
     },
+    "approvalChain": {
+      "title": "Dossier approval chain",
+      "subtitle": "Name the exact approver of each level, configured per Mall",
+      "mallLabel": "Mall",
+      "mallPlaceholder": "— Select a Mall —",
+      "mallHint": "Approval levels are configured per Mall, because each approver is a specific account of that Mall.",
+      "formTypeLabel": "Document type",
+      "notConfigured": "Not configured",
+      "notConfiguredWarning": "This document type has no approver at the selected Mall — tenants will not be able to submit it.",
+      "levelsCount": "{{count}} levels",
+      "level": "Level {{level}}",
+      "approverLabel": "Approver",
+      "approverPlaceholder": "— Select an account —",
+      "stepNameLabel": "Step name (optional)",
+      "stepNamePlaceholder": "E.g. Operations review",
+      "addLevel": "Add approval level",
+      "removeLevel": "Remove level {{level}}",
+      "empty": "No approval level yet. Add at least one so this document type can be submitted.",
+      "noCandidates": "This Mall has no account eligible to approve fitout dossiers. Grant Mall access to an Operations / Mall Director account under User administration first.",
+      "duplicateApprover": "One account cannot hold two approval levels.",
+      "incomplete": "Some approval level has no account selected.",
+      "save": "Save approval chain",
+      "saved": "Approval chain saved",
+      "inactiveApprover": "This account is locked",
+      "affectsNewOnly": "Changes apply to dossiers submitted afterwards; dossiers already awaiting approval keep their existing chain."
+    },
     "formTypeDialog": {
       "addTitle": "Add new document type",
       "editTitle": "Edit document type — {{code}}",
@@ -417,7 +442,6 @@
       "namePlaceholder": "E.g. Form 6A - Site access document checklist",
       "categoryLabel": "Category",
       "categoryPlaceholder": "E.g. SITE_ACCESS",
-      "approvalLevelsLabel": "Number of approval levels",
       "stageCodeLabel": "Linked stage (code)",
       "stageCodePlaceholder": "E.g. CONSTRUCTION_PERMIT",
       "cancel": "Cancel",

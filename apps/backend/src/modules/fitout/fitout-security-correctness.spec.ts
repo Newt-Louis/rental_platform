@@ -60,7 +60,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
       const dashboard = { getOverview: jest.fn().mockResolvedValue({ totalActive: 0 }) };
       const controller = new FitoutController(
         {} as any, {} as any, sla as any, {} as any, {} as any, {} as any,
-        {} as any, dashboard as any, {} as any, mallAccess as any,
+        {} as any, {} as any, dashboard as any, {} as any, mallAccess as any,
         {} as any,
       );
       const user = { id: 'director-a', role: 'MALL_DIRECTOR' };
@@ -140,7 +140,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
       };
       const controller = new FitoutController(
         {} as any, {} as any, {} as any, contractor as any, {} as any, {} as any,
-        {} as any, {} as any, {} as any, mallAccess as any, {} as any,
+        {} as any, {} as any, {} as any, {} as any, mallAccess as any, {} as any,
       );
       const user = { id: 'operation-a', role: 'OPERATION' };
 
