@@ -45,6 +45,7 @@ export type RouteModule =
   | "tenant-portal"
   | "cross-mall"
   | "audit-log"
+  | "email-deliveries"
   | "parking-report"
   | "parking-transaction";
 
@@ -173,6 +174,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   ],
   "cross-mall": ["ADMIN", "CEO"],
   "audit-log": ["ADMIN", "CEO"],
+  "email-deliveries": ["ADMIN", "CEO", "MALL_DIRECTOR", "OPERATION"],
   "parking-report": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
   "parking-transaction": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
 };
@@ -210,6 +212,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   "tenant-portal": "tenant-portal",
   "cross-mall": "cross-mall",
   "audit-log": "audit-log",
+  "email-deliveries": "email-deliveries",
   "parking-report": "parking-report",
   "parking-transaction": "parking-transaction",
 };
@@ -453,6 +456,11 @@ export const NAV_GROUPS = [
         label: "Nhật ký hệ thống",
         path: "/audit-log",
         module: "audit-log" as RouteModule,
+      },
+      {
+        label: "Email Delivery",
+        path: "/email-deliveries",
+        module: "email-deliveries" as RouteModule,
       },
       { label: "Quản trị", path: "/admin", module: "admin" as RouteModule },
     ],

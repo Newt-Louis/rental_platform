@@ -57,6 +57,7 @@ export const CrossMallDashboard = lazy(
 );
 export const TenantsPage = lazy(() => import("@/pages/tenants/TenantsPage"));
 export const AuditLogPage = lazy(() => import("@/pages/audit-log/AuditLogPage"));
+export const EmailDeliveriesPage = lazy(() => import("@/pages/email-deliveries/EmailDeliveriesPage"));
 export const DealPipelinePage = lazy(() => import("@/pages/deals/DealPipelinePage"));
 export const BookingsPage = lazy(() => import("@/pages/bookings/BookingsPage"));
 export const SalesPipelineStatsPage = lazy(

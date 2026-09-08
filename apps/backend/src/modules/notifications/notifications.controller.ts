@@ -23,6 +23,24 @@ const EMAIL_OPERATIONS_ROLES = [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.O
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService, private readonly emailDelivery: EmailDeliveryService, private readonly tenants: TenantsService) {}
 
+  @Get('email-deliveries')
+  @Roles(...EMAIL_OPERATIONS_ROLES)
+  getEmailDeliveries(@Query() query: any, @CurrentUser() user: any) {
+    return this.emailDelivery.list(query, user);
+  }
+
+  @Get('email-deliveries/:id')
+  @Roles(...EMAIL_OPERATIONS_ROLES)
+  getEmailDelivery(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.emailDelivery.get(id, user);
+  }
+
+  @Get('email-deliveries/:id/preview')
+  @Roles(...EMAIL_OPERATIONS_ROLES)
+  previewEmailDelivery(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.emailDelivery.preview(id, user);
+  }
+
   @Post('email-deliveries/:id/retry')
   @Roles(...EMAIL_OPERATIONS_ROLES)
   retryEmailDelivery(

@@ -45,6 +45,7 @@ import {
   CrossMallDashboard,
   TenantsPage,
   AuditLogPage,
+  EmailDeliveriesPage,
   DealPipelinePage,
   BookingsPage,
   SalesPipelineStatsPage,
@@ -374,6 +375,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <AuditLogPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="email-deliveries"
+                    element={
+                      <RoleRoute>
+                        <EmailDeliveriesPage />
                       </RoleRoute>
                     }
                   />

@@ -51,6 +51,7 @@ import {
   ScanLine,
   ShieldCheck,
   Car,
+  Mail,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   "/announcements": Megaphone,
   "/tenant-portal": ShoppingBag,
   "/audit-log": FileText,
+  "/email-deliveries": Mail,
   "/admin": Settings,
   "/parking-report": ParkingCircle,
   "/parking-transaction": ScanLine,
