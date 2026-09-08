@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException, 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
-import { EmailService } from '../notifications/email.service';
+import { EmailService, TrackedEmailOptions } from '../notifications/email.service';
 import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -138,7 +138,7 @@ export class TenantsService {
     const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
     const tenantData = { ...dto, contactEmail: email, isPortalUser: true };
 
-    const tenant = await this.prisma.$transaction(async (tx) => {
+    const prepared = await this.prisma.$transaction(async (tx) => {
       const created = await tx.tenant.create({ data: tenantData });
       const portalUserData = {
         fullName: dto.contactName?.trim() || dto.brandName,
@@ -158,11 +158,20 @@ export class TenantsService {
       } else {
         await tx.user.create({ data: { email, ...portalUserData } });
       }
-      return created;
+      const mail = this.portalInvitationMail(
+        email,
+        invitation.rawToken,
+        dto.contactName || dto.brandName,
+        false,
+        created.id,
+        `portal-activation:${created.id}:${Date.now()}`,
+      );
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      return { tenant: created, mail, deliveryId: delivery.id };
     });
 
-    const emailSent = await this.sendPortalInvitation(email, invitation.rawToken, dto.contactName || dto.brandName);
-    return { ...tenant, portalAccount: { email, emailSent, activationExpiresAt: invitation.expiresAt } };
+    const emailSent = (await this.sendPreparedPortalInvitation(prepared.mail, prepared.deliveryId)).sent;
+    return { ...prepared.tenant, portalAccount: { email, emailSent, activationExpiresAt: invitation.expiresAt } };
   }
 
   async update(id: string, dto: Partial<CreateTenantDto>) {
@@ -176,17 +185,29 @@ export class TenantsService {
     const invitation = this.createInvitation();
     const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
 
-    await this.prisma.user.update({
-      where: { id: portalUser.id },
-      data: {
-        password: randomPassword,
-        inviteTokenHash: invitation.tokenHash,
-        inviteExpiresAt: invitation.expiresAt,
-        mustChangePassword: true,
-        isActive: true,
-      },
+    const mail = this.portalInvitationMail(
+      portalUser.email,
+      invitation.rawToken,
+      tenant.contactName || tenant.brandName,
+      true,
+      tenant.id,
+      `portal-reset:${tenant.id}:${Date.now()}`,
+    );
+    const deliveryId = await this.prisma.$transaction(async (tx) => {
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      await tx.user.update({
+        where: { id: portalUser.id },
+        data: {
+          password: randomPassword,
+          inviteTokenHash: invitation.tokenHash,
+          inviteExpiresAt: invitation.expiresAt,
+          mustChangePassword: true,
+          isActive: true,
+        },
+      });
+      return delivery.id;
     });
-    const emailSent = await this.sendPortalInvitation(portalUser.email, invitation.rawToken, tenant.contactName || tenant.brandName, true);
+    const emailSent = (await this.sendPreparedPortalInvitation(mail, deliveryId)).sent;
     return { email: portalUser.email, emailSent, activationExpiresAt: invitation.expiresAt };
   }
 
@@ -220,12 +241,22 @@ export class TenantsService {
       mustChangePassword: true,
     };
 
-    await this.prisma.$transaction(async (tx) => {
+    const prepared = await this.prisma.$transaction(async (tx) => {
       await tx.tenant.update({ where: { id }, data: { isPortalUser: true, contactEmail: email } });
       if (existingUser) await tx.user.update({ where: { id: existingUser.id }, data: portalUserData });
       else await tx.user.create({ data: { email, ...portalUserData } });
+      const mail = this.portalInvitationMail(
+        email,
+        invitation.rawToken,
+        tenant.contactName || tenant.brandName,
+        false,
+        tenant.id,
+        `portal-activation:${tenant.id}:${Date.now()}`,
+      );
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      return { mail, deliveryId: delivery.id };
     });
-    const emailSent = await this.sendPortalInvitation(email, invitation.rawToken, tenant.contactName || tenant.brandName);
+    const emailSent = (await this.sendPreparedPortalInvitation(prepared.mail, prepared.deliveryId)).sent;
     return { email, emailSent, activationExpiresAt: invitation.expiresAt };
   }
 
@@ -277,20 +308,83 @@ export class TenantsService {
     return { tenant, portalUser };
   }
 
-  private async sendPortalInvitation(email: string, token: string, contactName: string, isReset = false) {
-    const portalUrl = appUrl(`/activate?token=${encodeURIComponent(token)}`);
+  async reissuePortalActivation(
+    tenantId: string,
+    originalDeliveryId: string,
+    operationId: string,
+    mallId?: string,
+  ) {
+    const { tenant, portalUser } = await this.getPortalAccount(tenantId);
+    if (!portalUser.mustChangePassword) {
+      throw new BadRequestException('TÃ i khoáº£n Tenant Portal Ä‘Ã£ Ä‘Æ°á»£c kÃ­ch hoáº¡t');
+    }
+    const normalizedOperationId = operationId?.trim();
+    if (!normalizedOperationId || normalizedOperationId.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(normalizedOperationId)) {
+      throw new BadRequestException('A valid Idempotency-Key is required');
+    }
+    const invitation = this.createInvitation();
+    const eventKey = `portal-activation:${tenant.id}:reissue:${normalizedOperationId}`;
+    const mail = this.portalInvitationMail(
+      portalUser.email,
+      invitation.rawToken,
+      tenant.contactName || tenant.brandName,
+      false,
+      tenant.id,
+      eventKey,
+      originalDeliveryId,
+      mallId,
+    );
+    let deliveryId: string;
     try {
-      const result = await this.emailService.sendMail({
+      deliveryId = await this.prisma.$transaction(async (tx) => {
+        const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+        await tx.user.update({
+          where: { id: portalUser.id },
+          data: { inviteTokenHash: invitation.tokenHash, inviteExpiresAt: invitation.expiresAt },
+        });
+        return delivery.id;
+      });
+    } catch (error: any) {
+      if (error?.code !== 'P2002') throw error;
+      const existing = await this.prisma.emailDelivery.findUnique({ where: { eventKey } });
+      if (!existing) throw error;
+      return { sent: existing.status === 'SENT', deliveryId: existing.id, created: false, duplicate: true };
+    }
+    return { ...(await this.sendPreparedPortalInvitation(mail, deliveryId)), created: true };
+  }
+
+  private portalInvitationMail(
+    email: string,
+    token: string,
+    contactName: string,
+    isReset: boolean,
+    tenantId: string,
+    eventKey: string,
+    originalDeliveryId?: string,
+    mallId?: string,
+  ): TrackedEmailOptions {
+    const portalUrl = appUrl(`/activate?token=${encodeURIComponent(token)}`);
+    return {
         to: email,
+        delivery: { eventKey, eventType: isReset ? 'PASSWORD_RESET' : 'TENANT_ACTIVATION', entityType: 'Tenant', entityId: tenantId, mallId, originalDeliveryId, resendOfId: originalDeliveryId },
         subject: emailSubject(
           isReset ? 'Đặt lại mật khẩu Tenant Portal' : 'Kích hoạt tài khoản Tenant Portal',
         ),
         html: this.emailService.portalInvitationHtml({ contactName, portalUrl, isReset }),
-      });
-      return !('skipped' in result);
+      };
+  }
+
+  private async sendPreparedPortalInvitation(mail: TrackedEmailOptions, deliveryId: string) {
+    const email = Array.isArray(mail.to) ? mail.to.join(',') : mail.to;
+    try {
+      const result = await this.emailService.sendMail({ ...mail, preparedDeliveryId: deliveryId });
+      return {
+        sent: 'messageId' in result && Boolean(result.messageId),
+        deliveryId: result.deliveryId ?? deliveryId,
+      };
     } catch (error) {
       this.logger.warn(`Không thể gửi email Tenant Portal đến ${email}: ${error instanceof Error ? error.message : error}`);
-      return false;
+      return { sent: false, deliveryId: (error as Error & { deliveryId?: string }).deliveryId ?? deliveryId };
     }
   }
 }

@@ -21,7 +21,7 @@ import { CustomersService } from '../crm/customers.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../notifications/email.service';
+import { EmailService, TrackedEmailOptions } from '../notifications/email.service';
 import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
@@ -857,7 +857,7 @@ export class ProposalsService {
     if (proposal.status !== ProposalStatus.APPROVED) {
       throw new BadRequestException('Only APPROVED proposals can be converted');
     }
-    let invitation: { email: string; token: string; contactName: string } | null = null;
+    let invitation: { email: string; token: string; contactName: string; mail: TrackedEmailOptions; deliveryId: string } | null = null;
     if (!proposal.tenantId) {
       const lead = proposal.lead;
       const companyName = tenantData?.companyName?.trim() || lead?.company?.trim();
@@ -870,15 +870,29 @@ export class ProposalsService {
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
       const inviteExpiresAt = new Date(Date.now() + 72 * 3600000);
-      const tenant = await this.prisma.$transaction(async tx => {
+      const prepared = await this.prisma.$transaction(async tx => {
         const created = await tx.tenant.create({ data: { companyName, brandName, taxCode: tenantData?.taxCode || undefined, contactName, contactEmail, contactPhone: tenantData?.contactPhone || lead?.phone || undefined, address: tenantData?.address || undefined, category: tenantData?.category || lead?.category || undefined, isPortalUser: true } });
         await tx.proposal.update({ where: { id }, data: { tenantId: created.id } });
         if (proposal.leadId) await tx.lead.update({ where: { id: proposal.leadId }, data: { tenantId: created.id } });
         if (existingUser) await tx.user.update({ where: { id: existingUser.id }, data: { tenantId: created.id, inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
         else await tx.user.create({ data: { email: contactEmail, fullName: contactName, phone: tenantData?.contactPhone || lead?.phone || undefined, role: 'TENANT', tenantId: created.id, password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10), inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
-        return created;
+        const portalUrl = appUrl(`/activate?token=${encodeURIComponent(rawToken)}`);
+        const mail: TrackedEmailOptions = {
+          to: contactEmail,
+          delivery: {
+            eventKey: `portal-activation:tenant:${created.id}:${Date.now()}`,
+            eventType: 'TENANT_ACTIVATION',
+            entityType: 'Tenant',
+            entityId: created.id,
+            mallId: proposal.unit.mallId,
+          },
+          subject: emailSubject('KÃ­ch hoáº¡t tÃ i khoáº£n Tenant Portal'),
+          html: this.emailService.portalInvitationHtml({ contactName, portalUrl, isReset: false }),
+        };
+        const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+        return { tenant: created, mail, deliveryId: delivery.id };
       });
-      invitation = { email: contactEmail, token: rawToken, contactName };
+      invitation = { email: contactEmail, token: rawToken, contactName, mail: prepared.mail, deliveryId: prepared.deliveryId };
       proposal = await this.findOne(id);
     }
     const contract = await this.createContractFromProposal(id, { userId, markConverted: true });
@@ -886,7 +900,8 @@ export class ProposalsService {
       const portalUrl = appUrl(`/activate?token=${encodeURIComponent(invitation.token)}`);
       try {
         await this.emailService.sendMail({
-          to: invitation.email,
+          ...invitation.mail,
+          preparedDeliveryId: invitation.deliveryId,
           subject: emailSubject('Kích hoạt tài khoản Tenant Portal'),
           html: this.emailService.portalInvitationHtml({
             contactName: invitation.contactName ?? 'Quý khách',
