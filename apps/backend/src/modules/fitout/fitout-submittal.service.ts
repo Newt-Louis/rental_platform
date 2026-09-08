@@ -377,7 +377,7 @@ export class FitoutSubmittalService {
 
     const submittal = await this.prisma.fitoutSubmittal.findUnique({
       where: { workflowId },
-      include: { formType: true, project: { include: { tenant: true, unit: { select: { code: true } } } } },
+      include: { formType: true, project: { include: { tenant: true, unit: { select: { code: true, mallId: true } } } } },
     });
     if (!submittal) return;
 
@@ -410,6 +410,7 @@ export class FitoutSubmittalService {
         // safely rather than sending a duplicate.
         await this.emailDelivery.enqueue(this.prisma, {
           eventKey: `fitout-submittal:${submittal.id}:step:${stepOrder}:approver:${approver.id}`,
+          eventType: 'FITOUT_SUBMITTAL_APPROVAL', entityType: 'FitoutSubmittal', entityId: submittal.id, mallId: submittal.project.unit.mallId,
           to: approver.email,
           subject: emailSubject(`Hồ sơ fitout chờ duyệt — ${submittal.formType.name}`),
           html: this.emailService.fitoutSubmittalApprovalHtml({

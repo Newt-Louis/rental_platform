@@ -104,7 +104,7 @@ export class FitoutSlaService {
         project: {
           include: {
             tenant: true,
-            unit: { select: { code: true } },
+            unit: { select: { code: true, mallId: true } },
             operationManager: true,
           },
         },
@@ -152,6 +152,7 @@ export class FitoutSlaService {
         if (milestone.project.operationManager.email) {
           await this.emailDelivery.enqueue(this.prisma, {
             eventKey: `fitout-sla:${milestone.id}:manager:${milestone.project.operationManagerId}`,
+            eventType: 'FITOUT_SLA', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
             to: milestone.project.operationManager.email,
             subject: emailSubject(`Fitout trễ SLA — ${milestone.project.tenant.brandName}`),
             html: this.emailService.fitoutSlaHtml({
@@ -185,6 +186,7 @@ export class FitoutSlaService {
           if (mgr.email) {
             await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `fitout-sla:${milestone.id}:escalation:${mgr.id}`,
+              eventType: 'FITOUT_SLA_ESCALATION', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
               to: mgr.email,
               subject: emailSubject(`Fitout leo thang SLA — ${milestone.project.tenant.brandName}`),
               html: this.emailService.fitoutSlaHtml({

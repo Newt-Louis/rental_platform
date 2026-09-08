@@ -2775,11 +2775,18 @@ model EmailDelivery {
   sentAt            DateTime?
   lastError         String?
   originalDeliveryId String?
+  originalDelivery   EmailDelivery?  @relation("EmailDeliveryOriginal", fields: [originalDeliveryId], references: [id], onDelete: SetNull)
+  derivedDeliveries  EmailDelivery[] @relation("EmailDeliveryOriginal")
   resendOfId        String?
+  resendOf          EmailDelivery?  @relation("EmailDeliveryResend", fields: [resendOfId], references: [id], onDelete: SetNull)
+  resends           EmailDelivery[] @relation("EmailDeliveryResend")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([status, nextAttemptAt, createdAt])
+  @@index([mallId, createdAt])
+  @@index([originalDeliveryId])
+  @@index([resendOfId])
 }
 
 model Customer {

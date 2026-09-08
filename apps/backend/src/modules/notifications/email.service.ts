@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { CurrencyCode } from '@prisma/client';
+import { CurrencyCode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EncryptionService } from '../../common/services/encryption.service';
 import {
@@ -19,6 +19,24 @@ interface ResolvedSmtpConfig {
   user: string;
   pass: string;
   from: string;
+}
+
+export interface TrackedEmailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  cc?: string | string[];
+  delivery?: {
+    eventKey: string;
+    eventType?: string;
+    entityType?: string;
+    entityId?: string;
+    mallId?: string;
+    originalDeliveryId?: string;
+    resendOfId?: string;
+  };
+  preparedDeliveryId?: string;
 }
 
 // Nguồn cấu hình SMTP ưu tiên: DB (EmailSettings, admin tự cấu hình qua UI) --
@@ -71,17 +89,76 @@ export class EmailService {
     return null;
   }
 
-  async sendMail(opts: {
-    to: string | string[];
-    subject: string;
-    html: string;
-    text?: string;
-    cc?: string | string[];
-  }) {
+  private deliveryData(opts: TrackedEmailOptions, status: 'PENDING' | 'SENDING') {
+    if (!opts.delivery) throw new Error('Tracked delivery metadata is required');
+    return {
+      eventKey: opts.delivery.eventKey,
+      eventType: opts.delivery.eventType,
+      entityType: opts.delivery.entityType,
+      entityId: opts.delivery.entityId,
+      mallId: opts.delivery.mallId,
+      originalDeliveryId: opts.delivery.originalDeliveryId,
+      resendOfId: opts.delivery.resendOfId,
+      recipient: { to: opts.to, cc: opts.cc ?? null },
+      payload: {
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text ?? toPlainText(opts.html),
+      },
+      status,
+    };
+  }
+
+  prepareTrackedDelivery(
+    db: Prisma.TransactionClient | PrismaService,
+    opts: TrackedEmailOptions,
+  ) {
+    return db.emailDelivery.create({ data: this.deliveryData(opts, 'PENDING') });
+  }
+
+  async sendMail(opts: TrackedEmailOptions) {
+    let ledger: any = null;
+    if (opts.delivery) {
+      if (opts.preparedDeliveryId) {
+        const claim = await this.prisma.emailDelivery.updateMany({
+          where: { id: opts.preparedDeliveryId, status: 'PENDING' },
+          data: { status: 'SENDING' },
+        });
+        if (claim.count !== 1) {
+          const existing = await this.prisma.emailDelivery.findUnique({
+            where: { id: opts.preparedDeliveryId },
+          });
+          return {
+            duplicate: true,
+            deliveryId: existing?.id ?? opts.preparedDeliveryId,
+            messageId: existing?.providerMessageId ?? undefined,
+          };
+        }
+        ledger = { id: opts.preparedDeliveryId };
+      } else {
+        try {
+          ledger = await this.prisma.emailDelivery.create({
+            data: this.deliveryData(opts, 'SENDING'),
+          });
+        } catch (error: any) {
+          if (error?.code !== 'P2002') throw error;
+          const existing = await this.prisma.emailDelivery.findUnique({
+            where: { eventKey: opts.delivery.eventKey },
+          });
+          if (!existing) throw error;
+          return {
+            duplicate: true,
+            deliveryId: existing.id,
+            messageId: existing.providerMessageId ?? undefined,
+          };
+        }
+      }
+    }
     const config = await this.resolveConfig();
     if (!config) {
       this.logger.warn(`[EMAIL DISABLED] Would send to ${Array.isArray(opts.to) ? opts.to.join(',') : opts.to}: ${opts.subject}`);
-      return { skipped: true };
+      if (ledger) await this.prisma.emailDelivery.update({ where: { id: ledger.id }, data: { status: 'SKIPPED', lastAttemptAt: new Date(), attempts: { increment: 1 } } });
+      return { skipped: true, deliveryId: ledger?.id };
     }
 
     const transporter = nodemailer.createTransport({
@@ -98,7 +175,10 @@ export class EmailService {
     });
 
     let lastError: unknown;
+    let accepted: { messageId: string } | null = null;
+    let attemptsMade = 0;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      attemptsMade = attempt;
       try {
         const info = await transporter.sendMail({
           from: config.from,
@@ -108,8 +188,8 @@ export class EmailService {
           html: opts.html,
           text: opts.text ?? toPlainText(opts.html),
         });
-        this.logger.log(`Email sent to ${opts.to}: ${info.messageId}`);
-        return { messageId: info.messageId };
+        accepted = { messageId: info.messageId };
+        break;
       } catch (error) {
         lastError = error;
         if (!this.isTransient(error) || attempt === this.maxAttempts) break;
@@ -117,8 +197,18 @@ export class EmailService {
       }
     }
 
+    if (accepted) {
+      this.logger.log(`Email sent to ${opts.to}: ${accepted.messageId}`);
+      // Persistence is deliberately outside the SMTP retry block. Once the
+      // provider accepts the message, a ledger failure must not send it again.
+      if (ledger) await this.prisma.emailDelivery.update({ where: { id: ledger.id }, data: { status: 'SENT', attempts: { increment: attemptsMade }, providerMessageId: accepted.messageId, sentAt: new Date(), deliveredAt: new Date(), lastAttemptAt: new Date(), lastError: null } });
+      return { messageId: accepted.messageId, deliveryId: ledger?.id };
+    }
+
     const error = lastError instanceof Error ? lastError : new Error('Email delivery failed');
     this.logger.error(`Failed to send email to ${opts.to}: ${error.message}`);
+    if (ledger) await this.prisma.emailDelivery.update({ where: { id: ledger.id }, data: { status: 'FAILED', attempts: { increment: attemptsMade }, lastAttemptAt: new Date(), lastError: error.message.replace(/\b((?:pass(?:word)?|token|secret|auth(?:orization)?|username|user)[A-Za-z0-9_-]*)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]').slice(0, 1000) } });
+    if (ledger) Object.assign(error, { deliveryId: ledger.id });
     throw error;
   }
 

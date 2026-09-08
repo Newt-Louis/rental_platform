@@ -69,6 +69,7 @@ export class BillingService {
 
     await this.emailDelivery.enqueue(tx, {
       eventKey: `invoice-issued:${invoice.id}`,
+      eventType: 'INVOICE_ISSUED', entityType: 'Invoice', entityId: invoice.id, mallId: full?.mallId ?? undefined,
       to: partyEmail,
       subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} đã phát hành`),
       html: this.emailService.invoiceIssuedHtml({

@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailService } from './email.service';
 import { toPlainText } from './email-design-system';
+import { MallAccessService } from '../../common/services/mall-access.service';
 
 export interface EmailDeliveryRequest {
   eventKey: string;
@@ -13,6 +14,10 @@ export interface EmailDeliveryRequest {
   html: string;
   text?: string;
   cc?: string | string[];
+  eventType?: string;
+  entityType?: string;
+  entityId?: string;
+  mallId?: string;
 }
 
 @Injectable()
@@ -23,6 +28,7 @@ export class EmailDeliveryService {
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly schedulerLock: SchedulerLockService,
+    private readonly mallAccess?: MallAccessService,
   ) {}
 
   enqueue(
@@ -34,6 +40,10 @@ export class EmailDeliveryService {
       update: {},
       create: {
         eventKey: request.eventKey,
+        eventType: request.eventType,
+        entityType: request.entityType,
+        entityId: request.entityId,
+        mallId: request.mallId,
         recipient: { to: request.to, cc: request.cc ?? null },
         payload: {
           subject: request.subject,
@@ -78,10 +88,12 @@ export class EmailDeliveryService {
         await this.prisma.emailDelivery.update({
           where: { id: delivery.id },
           data: {
-            status: result.skipped ? 'SKIPPED' : 'DELIVERED',
+            status: result.skipped ? 'SKIPPED' : 'SENT',
             attempts: { increment: 1 },
             providerMessageId: 'messageId' in result ? result.messageId : null,
             deliveredAt: result.skipped ? null : new Date(),
+            sentAt: result.skipped ? null : new Date(),
+            lastAttemptAt: new Date(),
             lastError: null,
           },
         });

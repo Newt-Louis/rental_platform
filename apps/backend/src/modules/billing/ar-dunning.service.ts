@@ -104,6 +104,7 @@ export class ArDunningService {
         if (policy.notifyTenant && partyEmail) {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
+              eventType: 'INVOICE_OVERDUE', entityType: 'Invoice', entityId: invoice.id, mallId: invoice.mallId,
               to: partyEmail,
               subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày`),
               html: this.emailService.invoiceOverdueHtml({

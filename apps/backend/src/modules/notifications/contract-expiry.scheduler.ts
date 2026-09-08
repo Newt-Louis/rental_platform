@@ -49,7 +49,7 @@ export class ContractExpiryScheduler {
         },
         include: {
           tenant: { select: { id: true, brandName: true, companyName: true, contactEmail: true, contactName: true } },
-          unit: { select: { id: true, code: true, mall: { select: { name: true } } } },
+          unit: { select: { id: true, code: true, mallId: true, mall: { select: { name: true } } } },
           managedBy: { select: { id: true, fullName: true, email: true } },
         },
       });
@@ -79,6 +79,7 @@ export class ContractExpiryScheduler {
         if (contract.managedBy?.email) {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `contract-expiry:${contract.id}:${daysLeft}:manager`,
+              eventType: 'CONTRACT_EXPIRY', entityType: 'Contract', entityId: contract.id, mallId: contract.unit.mallId,
               to: contract.managedBy.email,
               subject: emailSubject(`Hợp đồng ${contract.contractNumber} sắp hết hạn trong ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({
@@ -99,6 +100,7 @@ export class ContractExpiryScheduler {
         if (contract.tenant.contactEmail && daysLeft <= 60) {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `contract-expiry:${contract.id}:${daysLeft}:tenant`,
+              eventType: 'CONTRACT_EXPIRY', entityType: 'Contract', entityId: contract.id, mallId: contract.unit.mallId,
               to: contract.tenant.contactEmail,
               subject: emailSubject(`Hợp đồng thuê mặt bằng của ${contract.tenant.brandName} còn ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({

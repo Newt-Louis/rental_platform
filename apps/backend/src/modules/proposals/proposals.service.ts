@@ -550,6 +550,13 @@ export class ProposalsService {
         try {
           await this.emailService.sendMail({
             to: approver.email,
+            delivery: {
+              eventKey: `proposal-approval:${proposal.id}:${step.id}:${approver.id}`,
+              eventType: 'PROPOSAL_APPROVAL',
+              entityType: 'Proposal',
+              entityId: proposal.id,
+              mallId: proposal.unit.mallId,
+            },
             subject: emailSubject(`Đề xuất ${proposal.proposalNumber} chờ phê duyệt`),
             html: this.emailService.proposalApprovalHtml({
               approverName: approver.fullName,

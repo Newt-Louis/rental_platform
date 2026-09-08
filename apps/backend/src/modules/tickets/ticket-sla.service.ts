@@ -78,6 +78,7 @@ export class TicketSlaService {
       include: {
         tenant: { select: { brandName: true } },
         assignedTo: { select: { id: true, fullName: true } },
+        unit: { select: { mallId: true } },
         escalations: { orderBy: { level: 'desc' }, take: 1 },
       },
     });
@@ -132,6 +133,13 @@ export class TicketSlaService {
           try {
             await this.emailService.sendMail({
               to: mgr.email,
+              delivery: {
+                eventKey: `ticket-sla:${ticket.id}:level:${nextLevel}:manager:${mgr.id}`,
+                eventType: 'TICKET_SLA',
+                entityType: 'Ticket',
+                entityId: ticket.id,
+                mallId: ticket.unit.mallId,
+              },
               subject: emailSubject(`Ticket ${ticket.ticketNumber} vượt SLA (L${nextLevel})`),
               html: this.emailService.ticketSlaHtml({
                 managerName: mgr.fullName,
