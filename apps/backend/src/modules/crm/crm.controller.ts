@@ -168,20 +168,20 @@ export class CrmController {
 
   @Post('follow-ups')
   @ApiOperation({ summary: 'Create follow-up reminder' })
-  createFollowUp(@Body() dto: any, @CurrentUser() user: any) {
-    return this.crmService.createFollowUp(dto, user.id);
+  async createFollowUp(@Body() dto: any, @CurrentUser() user: any) {
+    return this.crmService.createFollowUp(dto, user.id, await this.scope(user));
   }
 
   @Put('follow-ups/:id/complete')
   @ApiOperation({ summary: 'Mark follow-up as done' })
-  completeFollowUp(@Param('id') id: string) {
-    return this.crmService.completeFollowUp(id);
+  async completeFollowUp(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.crmService.completeFollowUp(id, await this.scope(user));
   }
 
   @Delete('follow-ups/:id')
   @ApiOperation({ summary: 'Delete follow-up' })
-  deleteFollowUp(@Param('id') id: string) {
-    return this.crmService.deleteFollowUp(id);
+  async deleteFollowUp(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.crmService.deleteFollowUp(id, await this.scope(user));
   }
 
   // ── Bulk Actions ───────────────────────────────────────────────────────────────
@@ -240,8 +240,8 @@ export class CrmController {
   @Roles(Role.ADMIN, Role.LEASING_MANAGER)
   @ApiOperation({ summary: 'Auto-move stale leads to LOST status' })
   @ApiQuery({ name: 'days', required: false, description: 'Days threshold (default 60)' })
-  autoMoveStaleToLost(@Query('days') days?: string) {
-    return this.crmService.autoMoveStaleToLost(days ? +days : 60);
+  async autoMoveStaleToLost(@Query('days') days: string | undefined, @CurrentUser() user: any) {
+    return this.crmService.autoMoveStaleToLost(days ? +days : 60, await this.scope(user));
   }
 
   @Get('auto-assign-rules')
@@ -252,18 +252,22 @@ export class CrmController {
 
   @Post('leads/:id/auto-assign')
   @ApiOperation({ summary: 'Auto-assign lead based on category rules' })
-  autoAssignLead(@Param('id') id: string) {
-    return this.crmService.autoAssignLead(id);
+  async autoAssignLead(@Param('id') id: string, @CurrentUser() user: any) {
+    const scope = await this.scope(user);
+    await this.crmService.assertLeadEditAccess(id, scope);
+    return this.crmService.autoAssignLead(id, scope);
   }
 
   @Post('leads/:id/auto-followup')
   @ApiOperation({ summary: 'Create auto follow-up reminder for lead' })
   @ApiQuery({ name: 'daysFromNow', required: false, description: 'Days from now (default 7)' })
-  createAutoFollowUp(
+  async createAutoFollowUp(
     @Param('id') id: string,
     @Query('daysFromNow') daysFromNow?: string,
     @Body() body?: { note?: string },
+    @CurrentUser() user?: any,
   ) {
+    await this.crmService.assertLeadEditAccess(id, await this.scope(user));
     return this.crmService.createAutoFollowUp(id, daysFromNow ? +daysFromNow : 7, body?.note);
   }
 }

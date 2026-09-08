@@ -449,6 +449,7 @@ model User {
 
   assignedLeads              Lead[]                     @relation("AssignedLeads")
   approvalSteps              ApprovalStep[]
+  fitoutFormApprovalLevels   FitoutFormApprovalLevel[]  @relation("FitoutFormApprover")
   ticketsAssigned            Ticket[]                   @relation("AssignedTickets")
   auditLogs                  AuditLog[]
   notifications              Notification[]
@@ -556,6 +557,7 @@ model Mall {
   workOrders            WorkOrder[]
   workOrderTemplates    WorkOrderTemplate[]
   patrolRoutes          PatrolRoute[]
+  fitoutFormApprovalLevels FitoutFormApprovalLevel[]
   patrolShifts          PatrolShift[]
   patrolSchedules       PatrolSchedule[]
   parkingZones          ParkingZone[]
@@ -2003,16 +2005,40 @@ model FitoutFormType {
   name             String
   category         String   @default("OTHER")
   defaultStageCode String?
-  approvalLevels   Int      @default(1)
-  approverRoles    Json? // mng Role theo th t cp duyt, vd ["OPERATION","MALL_DIRECTOR"] --  di phi khp approvalLevels
   order            Int      @default(0)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  submittals FitoutSubmittal[]
+  submittals     FitoutSubmittal[]
+  approvalLevels FitoutFormApprovalLevel[]
 
   @@index([isActive, order])
+}
+
+// Cap duyet cua mot loai ho so fitout, khai bao RIENG CHO TUNG MALL (man hinh fitout/settings).
+// Thay cho FitoutFormType.approverRoles + approvalLevels cu: approverRoles la Json khong co
+// duong ghi nao tu API/UI nen luon null, khien moi cap duyet roi ve fallback OPERATION va
+// nguoi dung khong biet ai se duyet. Moi cap gan dung MOT tai khoan (approverId) -- duoc copy
+// thang sang ApprovalStep.approverId khi gui duyet, nen quyen bam duyet va hop thu cho duyet
+// dung nguyen logic san co cua approvals module.
+model FitoutFormApprovalLevel {
+  id           String         @id @default(cuid())
+  formTypeId   String
+  formType     FitoutFormType @relation(fields: [formTypeId], references: [id], onDelete: Cascade)
+  mallId       String
+  mall         Mall           @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  level        Int // 1..n theo thu tu duyet
+  stepName     String
+  approverRole Role // phai trung User.role cua approver -- ApprovalStep gate theo ca hai
+  approverId   String
+  approver     User           @relation("FitoutFormApprover", fields: [approverId], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([formTypeId, mallId, level])
+  @@index([mallId, formTypeId])
+  @@index([approverId])
 }
 
 //  trnh (Submittal) -- Form 1-16 theo flowchart, a cp duyt (ti dng ApprovalWorkflow/ApprovalStep).

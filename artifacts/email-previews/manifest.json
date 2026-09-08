@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-09-08T01:13:54.931Z",
+  "smtpSent": false,
+  "frontendOrigin": "http://127.0.0.1:4173",
+  "previews": [
+    {
+      "id": "01-contract-expiry",
+      "title": "Contract expiry — long content and missing optional owner"
+    },
+    {
+      "id": "02-proposal-approval-usd",
+      "title": "Proposal approval — USD"
+    },
+    {
+      "id": "03-invoice-issued-mmk",
+      "title": "Invoice issued — MMK and long number"
+    },
+    {
+      "id": "04-invoice-overdue-vnd",
+      "title": "Invoice overdue — VND, no invented Finance contact"
+    },
+    {
+      "id": "05-fitout-sla",
+      "title": "Fitout SLA escalation"
+    },
+    {
+      "id": "06-ticket-sla-injection",
+      "title": "Ticket SLA — escaped injection fixture"
+    },
+    {
+      "id": "07-tenant-portal-activation",
+      "title": "Tenant Portal activation"
+    }
+  ]
+}

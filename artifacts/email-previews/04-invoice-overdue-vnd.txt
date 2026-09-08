@@ -1,0 +1,37 @@
+Hóa đơn quá hạn thanh toán
+
+Leasing Platform
+
+Hóa đơn
+
+Hóa đơn quá hạn thanh toán
+
+QUÁ HẠN
+
+Kính gửi Công ty TNHH Bán lẻ Việt, hóa đơn INV-2026-08-0099 đã quá hạn thanh toán 12 ngày.
+
+128.500.000 VND
+
+số tiền còn phải trả
+
+Thông tin hóa đơn
+
+Số hóa đơn
+INV-2026-08-0099
+
+Hạn thanh toán
+05/09/2026
+
+Số ngày quá hạn
+12 ngày
+
+Xem hóa đơn
+
+http://127.0.0.1:4173/billing?invoiceId=invoice-preview-2
+
+Vui lòng thanh toán hoặc liên hệ bộ phận Tài chính nếu đã thanh toán.
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

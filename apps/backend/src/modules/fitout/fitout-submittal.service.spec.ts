@@ -20,7 +20,7 @@ describe('FitoutSubmittalService attachment revision policy', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new FitoutSubmittalService(
-      prisma as any, storage as any, {} as any, {} as any, {} as any, {} as any,
+      prisma as any, storage as any, {} as any, {} as any, {} as any, {} as any, {} as any,
     );
     storage.saveFile.mockResolvedValue({ fileName: 'drawing.pdf', filePath: 'fitout/sub-1/drawing.pdf' });
     storage.deleteFile.mockResolvedValue(true);
@@ -124,7 +124,7 @@ describe('FitoutSubmittalService.list() — attachments merged in (no direct Pri
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new FitoutSubmittalService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
+    service = new FitoutSubmittalService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
   });
 
   it('attaches each submittal its own UnifiedDocument rows, grouped by entityId', async () => {
@@ -162,16 +162,27 @@ describe('FitoutSubmittalService — required attachment before entering the app
     $transaction: jest.fn((cb: any) => cb(prisma)),
   };
   let service: FitoutSubmittalService;
+  // Cấp duyệt fitout khai báo theo từng mall (FitoutFormApprovalService), nên submitForReview()
+  // phải resolve mall của dự án rồi mới dựng được bước duyệt.
+  const accessPolicy = { getProjectContext: jest.fn() };
+  const formApproval = { buildApprovalSteps: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.$transaction.mockImplementation((cb: any) => cb(prisma));
-    service = new FitoutSubmittalService(prisma, {} as any, { create: jest.fn() } as any, {} as any, {} as any, {} as any);
+    accessPolicy.getProjectContext.mockResolvedValue({ id: 'project-1', mallId: 'mall-1' });
+    formApproval.buildApprovalSteps.mockResolvedValue([
+      { stepName: 'Bản vẽ thiết kế — Cấp 1', stepOrder: 1, approverRole: 'OPERATION', approverId: 'user-op' },
+    ]);
+    service = new FitoutSubmittalService(
+      prisma, {} as any, { create: jest.fn() } as any, {} as any, {} as any,
+      accessPolicy as any, formApproval as any,
+    );
   });
 
   it('create() produces a draft with no ApprovalWorkflow and never notifies approvers', async () => {
     prisma.fitoutProject.findUnique.mockResolvedValue({ id: 'project-1', status: 'IN_PROGRESS' });
-    prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', isActive: true, approvalLevels: 1, approverRoles: [] });
+    prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', name: 'Bản vẽ thiết kế', isActive: true });
     prisma.fitoutSubmittal.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'sub-1', workflowId: null, ...data }));
 
     const result = await service.create('project-1', { formTypeId: 'form-1', title: 'Bản vẽ thiết kế' }, 'user-1');
@@ -183,7 +194,7 @@ describe('FitoutSubmittalService — required attachment before entering the app
 
   describe('submitForReview()', () => {
     const draft = {
-      id: 'sub-1', status: 'SUBMITTED', workflowId: null, formTypeId: 'form-1',
+      id: 'sub-1', status: 'SUBMITTED', workflowId: null, projectId: 'project-1', formTypeId: 'form-1',
       formType: { code: 'DESIGN_DRAWING' },
     };
 
@@ -205,7 +216,7 @@ describe('FitoutSubmittalService — required attachment before entering the app
     it('creates the ApprovalWorkflow and transitions to IN_PROGRESS when at least one attachment exists', async () => {
       jest.spyOn(service, 'getOne').mockResolvedValue(draft as any);
       prisma.unifiedDocument.count.mockResolvedValue(1);
-      prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', approvalLevels: 1, approverRoles: [] });
+      prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', name: 'Bản vẽ thiết kế' });
       prisma.approvalWorkflow.create.mockResolvedValue({ id: 'workflow-1' });
       prisma.fitoutSubmittal.update.mockResolvedValue({ id: 'sub-1', status: 'IN_PROGRESS', workflowId: 'workflow-1' });
 
@@ -213,6 +224,33 @@ describe('FitoutSubmittalService — required attachment before entering the app
 
       expect(prisma.approvalWorkflow.create).toHaveBeenCalledTimes(1);
       expect(result).toMatchObject({ status: 'IN_PROGRESS', workflowId: 'workflow-1' });
+    });
+
+    it('stamps the configured approver of the project Mall onto each ApprovalStep', async () => {
+      jest.spyOn(service, 'getOne').mockResolvedValue(draft as any);
+      prisma.unifiedDocument.count.mockResolvedValue(1);
+      prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', name: 'Bản vẽ thiết kế' });
+      prisma.approvalWorkflow.create.mockResolvedValue({ id: 'workflow-1' });
+      prisma.fitoutSubmittal.update.mockResolvedValue({ id: 'sub-1', status: 'IN_PROGRESS', workflowId: 'workflow-1' });
+
+      await service.submitForReview('sub-1');
+
+      expect(formApproval.buildApprovalSteps).toHaveBeenCalledWith('form-1', 'mall-1', 'Bản vẽ thiết kế');
+      expect(prisma.approvalWorkflow.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          steps: { create: [expect.objectContaining({ stepOrder: 1, approverId: 'user-op' })] },
+        }),
+      }));
+    });
+
+    it('refuses to submit when the Mall has no approval chain configured for the form type', async () => {
+      jest.spyOn(service, 'getOne').mockResolvedValue(draft as any);
+      prisma.unifiedDocument.count.mockResolvedValue(1);
+      prisma.fitoutFormType.findUnique.mockResolvedValue({ id: 'form-1', name: 'Bản vẽ thiết kế' });
+      formApproval.buildApprovalSteps.mockRejectedValue(new BadRequestException('chưa được cấu hình cấp duyệt'));
+
+      await expect(service.submitForReview('sub-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.approvalWorkflow.create).not.toHaveBeenCalled();
     });
   });
 });
