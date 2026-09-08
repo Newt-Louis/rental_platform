@@ -165,7 +165,6 @@
   "submittal": {
     "newTitle": "Nộp đệ trình mới",
     "selectFormType": "Chọn loại hồ sơ (Form)",
-    "approvalLevels": "{{count}} cấp duyệt",
     "titlePlaceholder": "Tiêu đề đệ trình",
     "submit": "Nộp",
     "empty": "Chưa có đệ trình nào",
@@ -378,7 +377,7 @@
       "meeting": "Họp",
       "category": "Danh mục",
       "stage": "Giai đoạn",
-      "approvalLevels": "Cấp duyệt"
+      "approvalLevels": "Người duyệt"
     },
     "stageDialog": {
       "addTitle": "Thêm giai đoạn mới",
@@ -407,6 +406,32 @@
         "deactivated": "Đã vô hiệu hoá giai đoạn"
       }
     },
+    "approvalChain": {
+      "title": "Quy trình duyệt hồ sơ",
+      "subtitle": "Chỉ định đích danh người duyệt từng cấp, khai báo riêng cho mỗi mall",
+      "mallLabel": "Mall áp dụng",
+      "mallPlaceholder": "— Chọn mall —",
+      "mallHint": "Cấp duyệt khai báo riêng theo từng mall, vì người duyệt là tài khoản cụ thể của mall đó.",
+      "formTypeLabel": "Loại hồ sơ",
+      "notConfigured": "Chưa cấu hình",
+      "notConfiguredWarning": "Loại hồ sơ này chưa có người duyệt tại mall đang chọn — khách thuê sẽ không gửi duyệt được.",
+      "levelsCount": "{{count}} cấp",
+      "level": "Cấp {{level}}",
+      "approverLabel": "Người duyệt",
+      "approverPlaceholder": "— Chọn tài khoản —",
+      "stepNameLabel": "Tên bước (tùy chọn)",
+      "stepNamePlaceholder": "VD: Vận hành xem xét",
+      "addLevel": "Thêm cấp duyệt",
+      "removeLevel": "Xoá cấp {{level}}",
+      "empty": "Chưa có cấp duyệt nào. Thêm ít nhất một cấp để hồ sơ loại này gửi duyệt được.",
+      "noCandidates": "Mall này chưa có tài khoản nào đủ quyền duyệt hồ sơ fitout. Cấp quyền truy cập mall cho tài khoản Vận hành / Giám đốc TTTM trong phần Quản trị người dùng trước.",
+      "duplicateApprover": "Một tài khoản không thể đứng tên ở hai cấp duyệt.",
+      "incomplete": "Còn cấp duyệt chưa chọn tài khoản.",
+      "save": "Lưu quy trình duyệt",
+      "saved": "Đã lưu quy trình duyệt",
+      "inactiveApprover": "Tài khoản này đã bị khoá",
+      "affectsNewOnly": "Thay đổi chỉ áp dụng cho hồ sơ gửi duyệt sau đó; hồ sơ đang chờ duyệt giữ nguyên chuỗi duyệt cũ."
+    },
     "formTypeDialog": {
       "addTitle": "Thêm loại hồ sơ mới",
       "editTitle": "Sửa loại hồ sơ — {{code}}",
@@ -417,7 +442,6 @@
       "namePlaceholder": "VD: Form 6A - Danh mục hồ sơ đăng ký vào công trường",
       "categoryLabel": "Danh mục",
       "categoryPlaceholder": "VD: SITE_ACCESS",
-      "approvalLevelsLabel": "Số cấp duyệt",
       "stageCodeLabel": "Gắn với giai đoạn (mã)",
       "stageCodePlaceholder": "VD: CONSTRUCTION_PERMIT",
       "cancel": "Hủy",

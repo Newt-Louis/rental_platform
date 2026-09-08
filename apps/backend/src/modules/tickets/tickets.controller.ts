@@ -16,11 +16,17 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 
 const TICKET_STAFF_ROLES = MODULE_ROLES.tickets.filter((role) => role !== Role.TENANT);
 
-// CR-101 Phase 1: descriptive only. Core CRUD is correctly Mall+Tenant scoped
-// (class default). escalations/rate/rating and the SLA-policy admin routes are
-// the confirmed CONTRA-003 gap -- none of those service methods receive
-// currentUser at all, so they skip the same ownership check every other
-// method in this service applies.
+// CONTRA-003 -- resolved. The gap this comment recorded ("none of those service
+// methods receive currentUser at all") no longer describes the code:
+// escalations/rate/rating each call validateTicket() for the Mall boundary and
+// pass currentUser into findOne() for the Tenant boundary.
+//
+// Verified at runtime 2026-09-07 on a two-Mall database, rather than by reading:
+//   MALL_DIRECTOR holding Mall A, against a Mall B ticket  -> 403 on all three
+//   TENANT CircleK, against a Highlands ticket             -> 403 on all three
+//   TENANT Highlands, against its own ticket               -> 200
+//   no TicketRating row was written by any denied request
+// The three annotations below are corrected from GAP to ENFORCED on that basis.
 @ApiTags('Tickets')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
@@ -179,7 +185,7 @@ export class TicketsController {
 
   @Get(':id/escalations')
   @ApiOperation({ summary: 'Get ticket escalation history' })
-  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CONTRA-003 -- PROVEN SAFE at runtime 2026-09-07; annotation was stale' })
   async getEscalations(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateTicket(user, id);
     return this.ticketsService.getEscalations(id, user);
@@ -187,7 +193,7 @@ export class TicketsController {
 
   @Post(':id/rate')
   @ApiOperation({ summary: 'Submit CSAT rating for closed ticket' })
-  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CONTRA-003 -- PROVEN SAFE at runtime 2026-09-07; annotation was stale' })
   async rateTicket(@Param('id') id: string, @Body() body: { rating: number; comment?: string }, @CurrentUser() user: any) {
     await this.validateTicket(user, id);
     return this.ticketsService.rateTicket(id, body.rating, body.comment, user);
@@ -195,7 +201,7 @@ export class TicketsController {
 
   @Get(':id/rating')
   @ApiOperation({ summary: 'Get ticket rating' })
-  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-003' })
+  @Scope({ type: ScopeType.TENANT_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'ticket' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CONTRA-003 -- PROVEN SAFE at runtime 2026-09-07; annotation was stale' })
   async getTicketRating(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateTicket(user, id);
     return this.ticketsService.getTicketRating(id, user);

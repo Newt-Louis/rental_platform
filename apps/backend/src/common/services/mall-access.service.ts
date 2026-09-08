@@ -136,6 +136,12 @@ export class MallAccessService {
       // ai.controller.ts's getAnalysis/pollStatus/applySuggestions routes had
       // zero Mall check, keyed only on the analysis's own id.
       floorPlanAnalysisId?: string;
+      // MALL-001 / BC-007 -- SalesTurnover has no mallId of its own; its Mall is
+      // the one owning the Unit the turnover was reported for (Unit.mallId is
+      // NOT NULL, verified against schema.prisma). Added here rather than as an
+      // ad-hoc check in sales.service so the :id-keyed sales routes resolve
+      // ownership through the same registry as every other entity.
+      salesTurnoverId?: string;
     },
     opts?: MallAccessOptions,
   ): Promise<void> {
@@ -394,6 +400,21 @@ export class MallAccessService {
         select: { shift: { select: { mallId: true } } },
       });
       mallId = check?.shift?.mallId;
+    }
+
+    if (!mallId && sources.salesTurnoverId) {
+      const turnover = await this.prisma.salesTurnover.findUnique({
+        where: { id: sources.salesTurnoverId },
+        select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } },
+      });
+      mallId = turnover?.unit?.mallId ?? turnover?.unit?.floor?.mallId;
+      // A turnover row that exists but resolves to no Mall must not fall through
+      // to the `if (mallId)` check below and silently pass, the way an
+      // unresolvable id does. Financial approval state is mutated on these
+      // routes; an unknown owner fails closed.
+      if (turnover && !mallId) {
+        throw new ForbiddenException('Sales record is not assigned to an accessible mall');
+      }
     }
 
     if (!mallId && sources.floorPlanAnalysisId) {

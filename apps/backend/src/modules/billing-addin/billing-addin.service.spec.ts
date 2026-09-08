@@ -187,6 +187,20 @@ describe('BillingAddInService', () => {
   });
 
   describe('rate config CRUD (admin configuration surface)', () => {
+    it('scopes an omitted-mall rate list to the caller accessible Mall set', async () => {
+      await service.listRates(undefined, undefined, ['mall-a']);
+      expect(prisma.periodicChargeRateConfig.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { mallId: { in: ['mall-a'] } } }),
+      );
+    });
+
+    it('treats an empty accessible Mall set as matching no rate configs', async () => {
+      await service.listRates(undefined, undefined, []);
+      expect(prisma.periodicChargeRateConfig.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { mallId: { in: [] } } }),
+      );
+    });
+
     it('creates a rate config when its required keys are present and no active overlap exists', async () => {
       prisma.periodicChargeRateConfig.findFirst.mockResolvedValue(null); // no overlap
       const result = await service.createRate({

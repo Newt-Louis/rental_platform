@@ -633,7 +633,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                 >
                   <option value="">{t('submittal.selectFormType')}</option>
                   {(formTypes as any[]).map((ft: any) => (
-                    <option key={ft.id} value={ft.id}>{ft.name} — {t('submittal.approvalLevels', { count: ft.approvalLevels })}</option>
+                    <option key={ft.id} value={ft.id}>{ft.name}</option>
                   ))}
                 </select>
                 <Input

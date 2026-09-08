@@ -10,11 +10,15 @@ import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 import { MallAccessService } from '../../common/services/mall-access.service';
 
-// CR-101 Phase 1: descriptive only. Tenant-viewer path (findAll/findOne) is
-// correctly Mall-scoped via the service (restricted to malls where the tenant
-// has an active Unit). The staff-admin CRUD path (findAllAdmin/create/update/
-// remove) has NO Mall validation -- newly-found gap this session, see
-// docs/architecture-review/15-CR-101-ROUTE-COVERAGE.md.
+// MALL-001 -- the tenant-viewer path was correctly Mall-scoped, but the STAFF
+// path was not: findAllAdmin took no user at all, and findAll/findOne only ever
+// checked TENANT. Proven at runtime 2026-09-07 -- a MALL_DIRECTOR holding Mall A
+// read Mall B's announcements from all three. create/update/remove were already
+// enforced (CR-101 Phase 3A) and are unchanged.
+//
+// All three read paths now derive the caller's Mall set server-side. A supplied
+// `mallId` is validated by MallAccessGuard before the handler runs, so it can
+// only narrow within that set.
 @ApiTags('Announcements')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
@@ -26,6 +30,11 @@ export class AnnouncementsController {
     private readonly mallAccess: MallAccessService,
   ) {}
 
+  /** The caller's own Mall set. `null` only for bypass roles; `[]` reaches nothing. */
+  private scope(user: { id: string; role: string }) {
+    return this.mallAccess.getAccessibleMallIds(user.id, user.role);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List published announcements (tenant view)' })
   @ApiQuery({ name: 'mallId', required: false })
@@ -34,8 +43,8 @@ export class AnnouncementsController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
-  findAll(@Query() query: any, @CurrentUser() user: any) {
-    return this.service.findAll(query, user);
+  async findAll(@Query() query: any, @CurrentUser() user: any) {
+    return this.service.findAll(query, user, await this.scope(user));
   }
 
   @Get('admin')
@@ -44,16 +53,16 @@ export class AnnouncementsController {
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.GAP, trackedAs: 'CONTRA-008 / AUTH-01 (new finding, CR-101 phase)' })
-  findAllAdmin(@Query() query: any) {
-    return this.service.findAllAdmin(query);
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'MALL-001 -- runtime-proven and closed 2026-09-07; was CONTRA-008 / AUTH-01' })
+  async findAllAdmin(@Query() query: any, @CurrentUser() user: any) {
+    return this.service.findAllAdmin(query, await this.scope(user));
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get announcement details' })
   @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.service.findOneForUser(id, user);
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.service.findOneForUser(id, user, await this.scope(user));
   }
 
   @Post()

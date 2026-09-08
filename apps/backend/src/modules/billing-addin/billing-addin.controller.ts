@@ -7,6 +7,8 @@ import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { GlobalScope, Scope } from '../../common/decorators/scope.decorator';
+import { EnforcementStatus, ScopeType } from '../../common/constants/scope.types';
 import { BillingAddInService } from './billing-addin.service';
 import { CreateRateConfigDto, ListPeriodicChargesDto, ListRateConfigsDto, SaveDraftDto } from './dto/billing-addin.dto';
 
@@ -28,6 +30,7 @@ export class BillingAddInController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'period', required: false })
   @ApiQuery({ name: 'search', required: false })
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async list(@Query() query: ListPeriodicChargesDto, @CurrentUser() user: any) {
     if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
     const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
@@ -39,14 +42,17 @@ export class BillingAddInController {
   @ApiOperation({ summary: 'Danh sách đơn giá Billing Add-in đã cấu hình theo mall/loại phí' })
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'chargeType', required: false })
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'SEC-MALL-004 / CR-120' })
   async listRates(@Query() query: ListRateConfigsDto, @CurrentUser() user: any) {
     if (query.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, query.mallId);
-    return this.service.listRates(query.mallId, query.chargeType);
+    const mallIds = query.mallId ? [query.mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.service.listRates(query.mallId, query.chargeType, mallIds ?? undefined);
   }
 
   @Post('rates')
   @ApiOperation({ summary: 'Thiết lập đơn giá mới cho 1 mall + loại phí (ADMIN)' })
   @Roles(Role.ADMIN)
+  @GlobalScope('ADMIN-only creation of Mall rate configuration; ADMIN is the platform-wide bypass role')
   async createRate(@Body() body: CreateRateConfigDto, @CurrentUser() user: any) {
     await this.mallAccess.assertMallAccess(user.id, user.role, body.mallId);
     return this.service.createRate(body);
@@ -55,12 +61,14 @@ export class BillingAddInController {
   @Post('rates/:id/deactivate')
   @ApiOperation({ summary: 'Vô hiệu hoá một đơn giá đã cấu hình (ADMIN)' })
   @Roles(Role.ADMIN)
+  @GlobalScope('ADMIN-only deactivation of Mall rate configuration; ADMIN is the platform-wide bypass role')
   async deactivateRate(@Param('id') id: string) {
     return this.service.deactivateRate(id);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Chi tiết một kỳ add-in' })
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async getOne(@Param('id') id: string, @CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.getOne(id, mallIds ?? undefined);
@@ -69,6 +77,7 @@ export class BillingAddInController {
   @Post(':id/draft')
   @ApiOperation({ summary: 'Vận hành nhập/lưu nháp số liệu kỳ này' })
   @Roles(...MODULE_ROLES.billingAddInWrite)
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async saveDraft(@Param('id') id: string, @Body() body: SaveDraftDto, @CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.saveDraft(id, body.inputData, body.notes, user.id, mallIds ?? undefined);
@@ -77,6 +86,7 @@ export class BillingAddInController {
   @Post(':id/no-charge')
   @ApiOperation({ summary: 'Vận hành xác nhận kỳ này không phát sinh phí' })
   @Roles(...MODULE_ROLES.billingAddInWrite)
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async confirmNoCharge(@Param('id') id: string, @CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.confirmNoCharge(id, user.id, mallIds ?? undefined);
@@ -85,6 +95,7 @@ export class BillingAddInController {
   @Post(':id/confirm')
   @ApiOperation({ summary: 'Vận hành chốt số liệu kỳ — khoá sửa, sẵn sàng cho Kế toán lập hoá đơn' })
   @Roles(...MODULE_ROLES.billingAddInWrite)
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async confirm(@Param('id') id: string, @CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.confirm(id, user.id, mallIds ?? undefined);
@@ -93,6 +104,7 @@ export class BillingAddInController {
   @Post(':id/reopen')
   @ApiOperation({ summary: 'Mở lại kỳ đã chốt để sửa (trước khi lập hoá đơn) — giới hạn Admin/Giám đốc Mall' })
   @Roles(Role.ADMIN, Role.MALL_DIRECTOR)
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED })
   async reopen(@Param('id') id: string, @CurrentUser() user: any) {
     const mallIds = await this.mallAccess.getAccessibleMallIds(user.id, user.role);
     return this.service.reopen(id, user.id, mallIds ?? undefined);
