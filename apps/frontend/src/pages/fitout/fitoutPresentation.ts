@@ -42,6 +42,20 @@ export function canUploadToFitoutSubmittal(status?: string | null) {
   return status === 'SUBMITTED' || status === 'IN_PROGRESS';
 }
 
+export function getFitoutSubmittalAttachmentPath(attachmentId: string) {
+  return `/files/documents/${encodeURIComponent(attachmentId)}`;
+}
+
+export function needsFitoutSubmittalStatusSync(submittals: Array<{
+  status?: string | null;
+  workflow?: { status?: string | null } | null;
+}>) {
+  return submittals.some((submittal) => {
+    if (!['SUBMITTED', 'IN_PROGRESS'].includes(submittal.status ?? '')) return false;
+    return submittal.workflow?.status === 'APPROVED' || submittal.workflow?.status === 'REJECTED';
+  });
+}
+
 export function humanizeFitoutCode(value?: string | null) {
   if (!value) return '—';
   return value

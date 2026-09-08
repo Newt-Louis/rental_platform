@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ReasonActionDialog } from '@/components/ui/reason-action-dialog';
 import { Paperclip, Check, X } from 'lucide-react';
 import { FitoutCommentThread } from './FitoutCommentThread';
+import { getFitoutSubmittalAttachmentPath } from './fitoutPresentation';
 
 /**
  * Hàng chờ duyệt Fitout riêng — dưới menu Fitout, không phải trang Phê duyệt chung.
@@ -106,7 +107,7 @@ export default function FitoutApprovalsPage() {
                       <button
                         key={a.id}
                         className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded-md px-2 py-1 hover:bg-gray-50"
-                        onClick={() => openAuthenticatedFile(`/files/fitout-documents/${a.id}`, { download: a.fileName })}
+                        onClick={() => openAuthenticatedFile(getFitoutSubmittalAttachmentPath(a.id))}
                       >
                         <Paperclip size={11} className="text-gray-400" />
                         {a.fileName}

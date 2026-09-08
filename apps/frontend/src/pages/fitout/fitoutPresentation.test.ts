@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, formatDecimalAmountWithoutCurrency, formatDecimalMoneyPreservingCode, formatDecimalMoneyWithCode, getFitoutPresentationLabel, getFitoutRoleCapabilities, groupChangeOrderAmountsByCurrency, humanizeFitoutCode } from './fitoutPresentation';
+import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, formatDecimalAmountWithoutCurrency, formatDecimalMoneyPreservingCode, formatDecimalMoneyWithCode, getFitoutPresentationLabel, getFitoutRoleCapabilities, getFitoutSubmittalAttachmentPath, groupChangeOrderAmountsByCurrency, humanizeFitoutCode, needsFitoutSubmittalStatusSync } from './fitoutPresentation';
 import en from '@/locales/en/fitout.json';
 import vi from '@/locales/vi/fitout.json';
 
@@ -138,5 +138,24 @@ describe('Fitout presentation helpers', () => {
     expect(canUploadToFitoutSubmittal('APPROVED')).toBe(false);
     expect(canUploadToFitoutSubmittal('PUBLISHED')).toBe(false);
     expect(canUploadToFitoutSubmittal('OBSOLETED')).toBe(false);
+  });
+
+  it('opens submittal attachments through the authenticated UnifiedDocument route', () => {
+    expect(getFitoutSubmittalAttachmentPath('document/id')).toBe('/files/documents/document%2Fid');
+  });
+
+  it('polls only while a terminal approval decision is waiting for submittal status synchronization', () => {
+    expect(needsFitoutSubmittalStatusSync([
+      { status: 'IN_PROGRESS', workflow: { status: 'APPROVED' } },
+    ])).toBe(true);
+    expect(needsFitoutSubmittalStatusSync([
+      { status: 'SUBMITTED', workflow: { status: 'REJECTED' } },
+    ])).toBe(true);
+    expect(needsFitoutSubmittalStatusSync([
+      { status: 'IN_PROGRESS', workflow: { status: 'IN_PROGRESS' } },
+      { status: 'APPROVED', workflow: { status: 'APPROVED' } },
+      { status: 'PUBLISHED', workflow: { status: 'APPROVED' } },
+      { status: 'OBSOLETED', workflow: { status: 'REJECTED' } },
+    ])).toBe(false);
   });
 });

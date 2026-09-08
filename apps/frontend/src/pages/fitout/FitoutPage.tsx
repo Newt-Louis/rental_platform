@@ -22,7 +22,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
 import { FitoutCommentThread } from './FitoutCommentThread';
-import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, getFitoutPresentationLabel, getFitoutRoleCapabilities, type FitoutAttentionFilter } from './fitoutPresentation';
+import { canModifyFitoutSubmittal, canUploadToFitoutSubmittal, filterFitoutProjects, getFitoutPresentationLabel, getFitoutRoleCapabilities, getFitoutSubmittalAttachmentPath, needsFitoutSubmittalStatusSync, type FitoutAttentionFilter } from './fitoutPresentation';
 import {
   Hammer, CheckCircle2, Circle, ChevronRight, User, Calendar, Search,
   ClipboardList, ArrowRight, AlertTriangle, Clock, Upload,
@@ -99,6 +99,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
     queryKey: ['fitout-submittals', projectId],
     queryFn: () => fitoutSubmittalApi.list(projectId!),
     enabled: !!projectId && capabilities.workspaces.includes('documents'),
+    refetchInterval: (query) => needsFitoutSubmittalStatusSync((query.state.data ?? []) as any[]) ? 2_000 : false,
   });
 
   const { data: formTypes = [] } = useQuery({
@@ -708,7 +709,7 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
                               <button
                                 key={a.id}
                                 className="inline-flex items-center gap-1 text-xs border border-gray-200 rounded-md px-1.5 py-0.5 hover:bg-gray-100 bg-white"
-                                onClick={() => openAuthenticatedFile(`/files/fitout-documents/${a.id}`, { download: a.fileName })}
+                                onClick={() => openAuthenticatedFile(getFitoutSubmittalAttachmentPath(a.id))}
                               >
                                 <Paperclip size={10} className="text-gray-400" /> {a.fileName}
                               </button>
