@@ -258,7 +258,11 @@
     "inherited": "Kế thừa Global",
     "frontendOnly": "Chỉ áp dụng cho giao diện — chưa khoá được API cho module này",
     "toastUpdated": "Đã cập nhật quyền",
-    "toastError": "Không thể cập nhật quyền"
+    "toastError": "Không thể cập nhật quyền",
+    "resetToDefault": "Khôi phục mặc định",
+    "resetToDefaultMessage": "Khôi phục toàn bộ phân quyền của \"{{scope}}\" về mặc định ban đầu? Mọi tuỳ chỉnh trước đó cho phạm vi này sẽ bị xoá và không thể hoàn tác.",
+    "toastReset": "Đã khôi phục quyền mặc định",
+    "toastResetError": "Không thể khôi phục quyền mặc định"
   },
   "branding": {
     "title": "Thương hiệu",

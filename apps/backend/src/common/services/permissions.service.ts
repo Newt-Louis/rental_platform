@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MODULE_PERMISSION_DEFAULTS } from '../constants/module-permission-defaults';
 
 const CACHE_TTL_MS = 30_000;
 export const GLOBAL_MALL_KEY = 'GLOBAL';
@@ -130,6 +131,28 @@ export class PermissionsService {
    * on a Mall that already has rows (including admin-customized ones) never
    * overwrites them.
    */
+  /**
+   * Wipes every ModulePermission row for one scope (a Mall, or the Global
+   * template when mallId is omitted) and recreates it from
+   * MODULE_PERMISSION_DEFAULTS, undoing whatever an admin customized there --
+   * "Reset to default" in the admin UI. Scoped strictly to the target mallId:
+   * resetting a Mall never touches Global, and resetting Global never touches
+   * any Mall's own overrides (each Mall keeps its customizations even if they
+   * were only ever copied from Global at creation time).
+   */
+  async resetToDefault(mallId?: string | null): Promise<void> {
+    const targetMallId = mallId ?? GLOBAL_MALL_KEY;
+    await this.prisma.$transaction([
+      this.prisma.modulePermission.deleteMany({ where: { mallId: targetMallId } }),
+      this.prisma.modulePermission.createMany({
+        data: MODULE_PERMISSION_DEFAULTS.flatMap(({ module, roles }) =>
+          roles.map((role) => ({ module, role, mallId: targetMallId, allowed: true })),
+        ),
+      }),
+    ]);
+    this.invalidate();
+  }
+
   async seedDefaultsForMall(mallId: string, tx?: Tx): Promise<void> {
     const client = tx ?? this.prisma;
     const globalRows = await client.modulePermission.findMany({ where: { mallId: GLOBAL_MALL_KEY } });

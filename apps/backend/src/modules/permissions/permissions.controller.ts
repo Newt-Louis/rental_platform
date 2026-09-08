@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -6,6 +6,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PermissionsService } from '../../common/services/permissions.service';
 import { UpdateModulePermissionDto } from './dto/update-module-permission.dto';
+import { ResetModulePermissionsDto } from './dto/reset-module-permissions.dto';
 
 @ApiTags('Permissions')
 @ApiBearerAuth('JWT-auth')
@@ -35,6 +36,14 @@ export class PermissionsController {
   @ApiOperation({ summary: 'Allow/deny one role for one module, optionally scoped to a Mall (omit mallId to edit the Global template)' })
   async updateMatrix(@Body() dto: UpdateModulePermissionDto, @CurrentUser() user: any) {
     await this.permissions.setAllowed(dto.module, dto.role, dto.allowed, user.id, dto.mallId);
+    return { success: true };
+  }
+
+  @Post('matrix/reset')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Reset one scope (a Mall, or Global when mallId is omitted) back to the shipped default permissions, discarding any admin customization there' })
+  async resetMatrix(@Body() dto: ResetModulePermissionsDto) {
+    await this.permissions.resetToDefault(dto.mallId);
     return { success: true };
   }
 }

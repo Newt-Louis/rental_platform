@@ -254,7 +254,11 @@
     "inherited": "Inherited from Global",
     "frontendOnly": "UI-only — this module's API isn't gated by this setting yet",
     "toastUpdated": "Permission updated",
-    "toastError": "Could not update permission"
+    "toastError": "Could not update permission",
+    "resetToDefault": "Reset to default",
+    "resetToDefaultMessage": "Reset all permissions for \"{{scope}}\" back to the original defaults? Any customization made to this scope will be discarded and cannot be undone.",
+    "toastReset": "Permissions reset to default",
+    "toastResetError": "Could not reset permissions"
   },
   "branding": {
     "title": "Branding",
