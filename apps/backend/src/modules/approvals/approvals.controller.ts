@@ -91,8 +91,17 @@ export class ApprovalsController {
   @Get('policy/rules')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List approval policy rules' })
-  getPolicyRules() {
-    return this.approvalsService.listPolicyRules();
+  @ApiQuery({ name: 'mallId', required: false, description: 'Lọc theo mall; bỏ trống = mọi mall' })
+  getPolicyRules(@Query('mallId') mallId?: string) {
+    return this.approvalsService.listPolicyRules(mallId);
+  }
+
+  @Get('policy/approver-candidates')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'List accounts eligible to approve proposals at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  getPolicyApproverCandidates(@Query('mallId') mallId: string) {
+    return this.approvalsService.listPolicyApproverCandidates(mallId);
   }
 
   @Post('policy/rules')

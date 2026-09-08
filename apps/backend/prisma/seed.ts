@@ -73,6 +73,8 @@ async function main() {
   await prisma.approvalStep.deleteMany();
   await prisma.approvalWorkflow.deleteMany();
   await prisma.approvalPolicyRule.deleteMany();
+  // Cấp duyệt hồ sơ fitout tham chiếu User.id, phải xoá trước khi xoá user.
+  await prisma.fitoutFormApprovalLevel.deleteMany();
   await prisma.contract.deleteMany();
   await prisma.proposal.deleteMany();
   await prisma.leadActivity.deleteMany();
@@ -203,135 +205,6 @@ async function main() {
 
   console.log('Users created');
 
-  // Create approval policy rules (config-driven, no hardcoded workflow in runtime)
-  await prisma.approvalPolicyRule.createMany({
-    data: [
-      {
-        code: 'BASE_LEASING_MANAGER',
-        name: 'Base Leasing Manager Approval',
-        stepName: 'Leasing Manager Approval',
-        stepOrder: 10,
-        approverRole: Role.LEASING_MANAGER,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'MALL_DIRECTOR_HIGH_DISCOUNT',
-        name: 'Mall Director on discount > 5%',
-        stepName: 'Mall Director Approval',
-        stepOrder: 20,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>',
-        threshold: 5,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'CEO_VERY_HIGH_DISCOUNT',
-        name: 'CEO on discount > 10%',
-        stepName: 'CEO Approval',
-        stepOrder: 30,
-        approverRole: Role.CEO,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>',
-        threshold: 10,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'MALL_DIRECTOR_LONG_RENT_FREE',
-        // SEM-001: was 'rent free > 60 days' against a value denominated in
-        // months, so it could never fire. Confirmed business rule: rent-free
-        // greater than 2 months requires Mall Director approval.
-        name: 'Mall Director on rent free > 2 months',
-        stepName: 'Mall Director Approval',
-        stepOrder: 40,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'RENT_FREE_MONTHS',
-        operator: '>',
-        threshold: 2,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'FINANCE_REQUIRED',
-        name: 'Finance Review Mandatory',
-        stepName: 'Finance Review',
-        stepOrder: 50,
-        approverRole: Role.FINANCE,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'LEGAL_REQUIRED',
-        name: 'Legal Review Mandatory',
-        stepName: 'Legal Review',
-        stepOrder: 60,
-        approverRole: Role.LEGAL,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'FINANCE_AR_DEBT',
-        name: 'Finance Review if tenant has overdue AR',
-        stepName: 'Finance Risk Review',
-        stepOrder: 55,
-        approverRole: Role.FINANCE,
-        conditionType: 'HAS_AR_DEBT',
-        isRequired: false,
-        isActive: true,
-      },
-      // Price Deviation Rules
-      {
-        code: 'PRICE_BELOW_MIN_5',
-        name: 'Giá thấp hơn sàn 0-5%',
-        stepName: 'Leasing Manager Price Review',
-        stepOrder: 15,
-        approverRole: Role.LEASING_MANAGER,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: 'BETWEEN',
-        threshold: 0,
-        matchValue: '5',
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'PRICE_BELOW_MIN_10',
-        name: 'Giá thấp hơn sàn 5-10%',
-        stepName: 'Mall Director Price Review',
-        stepOrder: 25,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: 'BETWEEN',
-        threshold: 5,
-        matchValue: '10',
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'PRICE_BELOW_MIN_OVER_10',
-        name: 'Giá thấp hơn sàn >10%',
-        stepName: 'CEO Price Review',
-        stepOrder: 35,
-        approverRole: Role.CEO,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: '>',
-        threshold: 10,
-        isRequired: false,
-        isActive: true,
-      },
-    ],
-  });
 
   await prisma.dealScoreCriterion.createMany({
     data: [
@@ -419,6 +292,175 @@ async function main() {
       description: 'A premium shopping mall in the heart of Sala urban area',
       isActive: true,
     },
+  });
+
+  // UserMallAccess — grant admin and CEO access to all malls
+  await prisma.userMallAccess.createMany({
+    data: [
+      { userId: adminUser.id, mallId: mall.id, role: Role.ADMIN, grantedById: adminUser.id },
+      { userId: ceoUser.id, mallId: mall.id, role: Role.CEO, grantedById: adminUser.id },
+      { userId: mallDirector.id, mallId: mall.id, role: Role.MALL_DIRECTOR, grantedById: adminUser.id },
+      // Các role đứng tên duyệt phải có quyền truy cập mall, nếu không ApprovalsController
+      // trả 403 khi họ bấm duyệt và danh sách chờ duyệt của họ luôn rỗng.
+      { userId: leasingManager.id, mallId: mall.id, role: Role.LEASING_MANAGER, grantedById: adminUser.id },
+      { userId: financeUser.id, mallId: mall.id, role: Role.FINANCE, grantedById: adminUser.id },
+      { userId: legalUser.id, mallId: mall.id, role: Role.LEGAL, grantedById: adminUser.id },
+      { userId: operationUser.id, mallId: mall.id, role: Role.OPERATION, grantedById: adminUser.id },
+    ],
+    skipDuplicates: true,
+  });
+  console.log('UserMallAccess created');
+
+  // Quy tắc duyệt đề xuất — khai báo riêng cho từng mall và chỉ định đích danh người duyệt.
+  // Phải seed SAU mall và UserMallAccess: mallId/approverId là bắt buộc, và người duyệt phải
+  // có quyền truy cập mall thì mới bấm duyệt được (ApprovalsController kiểm tra quyền mall).
+  await prisma.approvalPolicyRule.createMany({
+    data: [
+      {
+        code: 'BASE_LEASING_MANAGER',
+        name: 'Base Leasing Manager Approval',
+        stepName: 'Leasing Manager Approval',
+        stepOrder: 10,
+        mallId: mall.id,
+        approverRole: Role.LEASING_MANAGER,
+        approverId: leasingManager.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'MALL_DIRECTOR_HIGH_DISCOUNT',
+        name: 'Mall Director on discount > 5%',
+        stepName: 'Mall Director Approval',
+        stepOrder: 20,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>',
+        threshold: 5,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'CEO_VERY_HIGH_DISCOUNT',
+        name: 'CEO on discount > 10%',
+        stepName: 'CEO Approval',
+        stepOrder: 30,
+        mallId: mall.id,
+        approverRole: Role.CEO,
+        approverId: ceoUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>',
+        threshold: 10,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'MALL_DIRECTOR_LONG_RENT_FREE',
+        // SEM-001: was 'rent free > 60 days' against a value denominated in
+        // months, so it could never fire. Confirmed business rule: rent-free
+        // greater than 2 months requires Mall Director approval.
+        name: 'Mall Director on rent free > 2 months',
+        stepName: 'Mall Director Approval',
+        stepOrder: 40,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'RENT_FREE_MONTHS',
+        operator: '>',
+        threshold: 2,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'FINANCE_REQUIRED',
+        name: 'Finance Review Mandatory',
+        stepName: 'Finance Review',
+        stepOrder: 50,
+        mallId: mall.id,
+        approverRole: Role.FINANCE,
+        approverId: financeUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'LEGAL_REQUIRED',
+        name: 'Legal Review Mandatory',
+        stepName: 'Legal Review',
+        stepOrder: 60,
+        mallId: mall.id,
+        approverRole: Role.LEGAL,
+        approverId: legalUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'FINANCE_AR_DEBT',
+        name: 'Finance Review if tenant has overdue AR',
+        stepName: 'Finance Risk Review',
+        stepOrder: 55,
+        mallId: mall.id,
+        approverRole: Role.FINANCE,
+        approverId: financeUser.id,
+        conditionType: 'HAS_AR_DEBT',
+        isRequired: false,
+        isActive: true,
+      },
+      // Price Deviation Rules
+      {
+        code: 'PRICE_BELOW_MIN_5',
+        name: 'Giá thấp hơn sàn 0-5%',
+        stepName: 'Leasing Manager Price Review',
+        stepOrder: 15,
+        mallId: mall.id,
+        approverRole: Role.LEASING_MANAGER,
+        approverId: leasingManager.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: 'BETWEEN',
+        threshold: 0,
+        matchValue: '5',
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'PRICE_BELOW_MIN_10',
+        name: 'Giá thấp hơn sàn 5-10%',
+        stepName: 'Mall Director Price Review',
+        stepOrder: 25,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: 'BETWEEN',
+        threshold: 5,
+        matchValue: '10',
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'PRICE_BELOW_MIN_OVER_10',
+        name: 'Giá thấp hơn sàn >10%',
+        stepName: 'CEO Price Review',
+        stepOrder: 35,
+        mallId: mall.id,
+        approverRole: Role.CEO,
+        approverId: ceoUser.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: '>',
+        threshold: 10,
+        isRequired: false,
+        isActive: true,
+      },
+    ],
   });
 
   // Create Building
@@ -1502,7 +1544,7 @@ async function main() {
   console.log('Sales turnover created');
 
   const approvalRules = await prisma.approvalPolicyRule.findMany({
-    where: { isActive: true },
+    where: { isActive: true, mallId: mall.id },
     orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
   });
 
@@ -1541,7 +1583,8 @@ async function main() {
             stepOrder: step.stepOrder,
             stepName: step.stepName,
             approverRole: step.approverRole,
-            approverId: roleUserMap[step.approverRole] ?? leasingManager.id,
+            // Người duyệt lấy thẳng từ quy tắc (ApprovalPolicyRule.approverId) thay vì tra theo role.
+            approverId: step.approverId,
             status: proposal.status === ProposalStatus.APPROVED ? 'APPROVED' : 'PENDING',
             comment: proposal.status === ProposalStatus.APPROVED ? 'Approved' : null,
             decidedAt: proposal.status === ProposalStatus.APPROVED ? new Date() : null,
@@ -1732,16 +1775,6 @@ async function main() {
 
   // ── Wave 6-7: New model seed data ──────────────────────────────────────────
 
-  // UserMallAccess — grant admin and CEO access to all malls
-  await prisma.userMallAccess.createMany({
-    data: [
-      { userId: adminUser.id, mallId: mall.id, role: Role.ADMIN, grantedById: adminUser.id },
-      { userId: ceoUser.id, mallId: mall.id, role: Role.CEO, grantedById: adminUser.id },
-      { userId: mallDirector.id, mallId: mall.id, role: Role.MALL_DIRECTOR, grantedById: adminUser.id },
-    ],
-    skipDuplicates: true,
-  });
-  console.log('UserMallAccess created');
 
   // MallAnnouncement — sample announcements
   await prisma.mallAnnouncement.createMany({
