@@ -3,8 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
-import { Pencil, Trash2, Plus } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Plus } from 'lucide-react';
 import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface FloorMeta {
   id?: string;
@@ -118,26 +125,37 @@ export function FloorPlan({
                 <span className="ml-1 text-xs opacity-50">({count})</span>
               </button>
               {isAdmin && f.id && (onEditFloor || onDeleteFloor) && (
-                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
-                  {onEditFloor && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onEditFloor(f); }}
-                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title={t('floor.edit')}
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 opacity-100 transition-opacity hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
+                      title={`${t('floor.edit')} / ${t('floor.delete')}`}
+                      aria-label={`${t('floor.edit')} / ${t('floor.delete')}`}
                     >
-                      <Pencil size={11} />
+                      <MoreHorizontal size={16} />
                     </button>
-                  )}
-                  {onDeleteFloor && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteFloor(f); }}
-                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title={t('floor.delete')}
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
-                </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    {onEditFloor && (
+                      <DropdownMenuItem onSelect={() => onEditFloor(f)} className="gap-2 cursor-pointer">
+                        <Pencil size={14} />
+                        {t('floor.edit')}
+                      </DropdownMenuItem>
+                    )}
+                    {onEditFloor && onDeleteFloor && <DropdownMenuSeparator />}
+                    {onDeleteFloor && (
+                      <DropdownMenuItem
+                        onSelect={() => onDeleteFloor(f)}
+                        className="gap-2 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+                      >
+                        <Trash2 size={14} />
+                        {t('floor.delete')}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           );
