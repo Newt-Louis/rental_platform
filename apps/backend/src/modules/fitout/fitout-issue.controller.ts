@@ -3,8 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FitoutIssueService } from './fitout-issue.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateFitoutIssueDto, UpdateFitoutIssueDto } from './dto/fitout-operations.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -25,7 +24,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 @ApiTags('Fitout Issues')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'fitoutIssue' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3C (C4-02) -- now explicitly enforced per-route, not merely via path-substring coincidence' })
 @Controller('fitout-issues')
 export class FitoutIssueController {

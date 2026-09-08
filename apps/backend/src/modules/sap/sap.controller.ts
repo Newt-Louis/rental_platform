@@ -4,8 +4,7 @@ import { SapService } from './sap.service';
 import { SapReconciliationService } from './sap-reconciliation.service';
 import { SapEntityMappingService } from './sap-entity-mapping.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { SapStatus } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -23,7 +22,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('SAP Integration')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.sap)
+@ModuleRoles('sap')
 @Controller('sap')
 export class SapController {
   constructor(

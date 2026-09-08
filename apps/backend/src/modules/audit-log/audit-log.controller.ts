@@ -2,8 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AuditLogService } from './audit-log.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { GlobalScope } from '../../common/decorators/scope.decorator';
 
 // CR-101 Phase 1: descriptive only. Restricted to ADMIN/CEO (both mall-scoping
@@ -11,7 +10,7 @@ import { GlobalScope } from '../../common/decorators/scope.decorator';
 @ApiTags('Audit Log')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.auditLog)
+@ModuleRoles('audit-log')
 @GlobalScope('ADMIN/CEO-only, both Mall-scoping bypass roles -- no Mall boundary needed')
 @Controller('audit-logs')
 export class AuditLogController {

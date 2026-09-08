@@ -34,3 +34,4 @@ export * from './work-orders';
 export * from "./patrol";
 export * from "./parking";
 export * from './parking-dashboard';
+export * from './permissions';

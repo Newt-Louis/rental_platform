@@ -11,6 +11,7 @@ import { ContractTerminationService } from './contract-termination.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AmendmentType, ContractStatus, Role } from '@prisma/client';
@@ -26,7 +27,7 @@ const CONTRACT_STATUS_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIREC
 @ApiTags('Contracts')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.contracts)
+@ModuleRoles('contracts')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'contract' }, status: EnforcementStatus.ENFORCED })
 @Controller('contracts')
 export class ContractsController {

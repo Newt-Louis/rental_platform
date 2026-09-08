@@ -2,8 +2,7 @@ import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DealScoringService } from './deal-scoring.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { Scope, GlobalScope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -14,7 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @ApiTags('Deal Scoring')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.proposals)
+@ModuleRoles('proposals')
 @Controller('deal-scoring')
 export class DealScoringController {
   constructor(

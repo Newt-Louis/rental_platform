@@ -1,8 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CreateFitoutChangeOrderDto,
@@ -20,7 +19,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 @ApiTags('Fitout Controls')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'projectId', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3A' })
 @Controller('fitouts/:projectId/controls')
 export class FitoutControlsController {

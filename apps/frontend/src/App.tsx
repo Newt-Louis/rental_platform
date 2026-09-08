@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/store/auth.store";
+import { usePermissionsSync } from "@/hooks/usePermissionsSync";
 import Layout from "@/components/Layout";
 import { RoleRoute, HomeRedirect } from "@/components/RoleRoute";
 import { Navigate } from "react-router-dom";
@@ -64,6 +65,7 @@ function AppHydrator({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     hydrate();
   }, []);
+  usePermissionsSync();
   if (!isHydrated) return <ContentLoading />;
   return <>{children}</>;
 }

@@ -17,7 +17,8 @@ describe('SpacesService unit CRUD safeguards', () => {
   };
   const unitStatus: any = { transition: jest.fn() };
   const mallAccess: any = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
-  const service = new SpacesService(prisma, unitStatus, mallAccess);
+  const permissions: any = { seedDefaultsForMall: jest.fn() };
+  const service = new SpacesService(prisma, unitStatus, mallAccess, permissions);
   const unit = {
     id: 'unit-1', code: 'A-01', mallId: 'mall-1', floorId: null, zoneId: null,
     status: UnitStatus.VACANT, isActive: true,

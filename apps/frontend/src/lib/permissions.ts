@@ -1,5 +1,7 @@
 /** Ma trận quyền — đồng bộ với backend `common/constants/role-permissions.ts` */
 
+import { usePermissionsStore } from "@/store/permissions.store";
+
 export type AppRole =
   | "ADMIN"
   | "CEO"
@@ -218,6 +220,11 @@ export function canAccessModule(
 ): boolean {
   if (!role) return false;
   if (role === "ADMIN") return true;
+  // Dynamic matrix (DB-backed, /admin?section=permissions) wins when it has
+  // loaded; null means "not fetched yet or the request failed", in which case
+  // we fall back to the static table below rather than deny everything.
+  const dynamic = usePermissionsStore.getState().allowedModules;
+  if (dynamic) return dynamic.has(module);
   return ROUTE_PERMISSIONS[module]?.includes(role as AppRole) ?? false;
 }
 

@@ -17,7 +17,8 @@ describe('SpacesService.saveMapPositions — unit/floor/mall integrity (CR-101 P
   };
   const unitStatus: any = { transition: jest.fn() };
   const mallAccess: any = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
-  const service = new SpacesService(prisma, unitStatus, mallAccess);
+  const permissions: any = { seedDefaultsForMall: jest.fn() };
+  const service = new SpacesService(prisma, unitStatus, mallAccess, permissions);
 
   const floorA = { id: 'floor-A', mallId: 'mall-A' };
   const floorB = { id: 'floor-B', mallId: 'mall-B' };
