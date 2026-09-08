@@ -28,6 +28,8 @@ Live register. Consolidated from all 5 research streams, 2026-08-21.
 | BC-022 | How should free-text `User.department` migrate to Mall-scoped Department records? | CR-114 | P0 — incorrect mapping can corrupt staff organisation assignments | **ANSWERED 2026-08-27 — retain string; new values are Department IDs; unmatched legacy values resolve null** |
 | BC-023 | What happens to children and user assignments on hard delete of a Department? | CR-114 | P0 — incorrect referential action can destroy or orphan organisation data | **ANSWERED 2026-08-27 — reject parent deletion; leaf delete clears matching User values** |
 | BC-024 | Which Mall context is fixed for a multi-Mall Department operator? | CR-114 | P0 — incorrect selection can breach Mall isolation | **ANSWERED 2026-08-27 — one Department per User; administer in active Mall** |
+| BC-025 | Which logo source is authoritative for transactional email when runtime branding is configured? | CR-119 | P2 — determines whether email uses the stable repository logo or mutable BrandingSettings | **ANSWERED 2026-09-07 — always use repository `logo.png`** |
+| BC-026 | What approved, monitored Finance contact may appear in overdue invoice email? | CR-119 | P2 — prevents an invented or unmonitored address from reaching tenants | **ANSWERED 2026-09-07 — omit contact; never use `SMTP_USER` or a guessed address** |
 
 ## Correction record — BC-018 (2026-08-21, Architecture Review phase)
 
