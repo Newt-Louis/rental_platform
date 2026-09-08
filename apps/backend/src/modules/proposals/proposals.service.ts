@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
-import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus, Prisma } from '@prisma/client';
+import { BookingStatus, ContractStatus, ProposalStatus, Role, UnitStatus, WorkflowStatus, Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
@@ -329,14 +329,20 @@ export class ProposalsService {
         })) > 0
       : false;
 
+    // Quy tắc duyệt khai báo riêng cho từng mall (admin?section=approval): trước đây truy vấn này
+    // nạp toàn bộ quy tắc active bất kể mall, nên một bộ ngưỡng chiết khấu duy nhất áp cho mọi mall.
+    const proposalMallId = proposal.unit?.mallId;
+    if (!proposalMallId) {
+      throw new BadRequestException('Không xác định được mall của đề xuất để áp quy tắc duyệt');
+    }
     const rules = await this.prisma.approvalPolicyRule.findMany({
-      where: { isActive: true },
+      where: { isActive: true, mallId: proposalMallId },
       orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
     });
 
     if (!rules.length) {
       throw new BadRequestException(
-        'Approval policy is not configured. Please create active approval rules before submitting proposal.',
+        'Approval policy is not configured for this Mall. Please create active approval rules before submitting proposal.',
       );
     }
 
@@ -489,7 +495,7 @@ export class ProposalsService {
           include: {
             proposal: {
               include: {
-                unit: { select: { code: true } },
+                unit: { select: { code: true, mallId: true } },
                 tenant: { select: { brandName: true } },
               },
             },
@@ -501,11 +507,29 @@ export class ProposalsService {
     if (!step?.workflow.proposal) return;
 
     const proposal = step.workflow.proposal;
-    const approvers = await this.prisma.user.findMany({
-      where: { role: step.approverRole, isActive: true, deletedAt: null },
-      select: { id: true, email: true, fullName: true },
-      take: 5,
-    });
+    // Bước duyệt giờ gắn đích danh một tài khoản (ApprovalPolicyRule.approverId), nên báo thẳng
+    // người được giao. Truy vấn cũ lấy MỌI user mang role đó ở MỌI mall -- gửi tên khách thuê, mã
+    // mặt bằng và số đề xuất cho người không có quyền duyệt hồ sơ đó -- rồi `take: 5` không kèm
+    // orderBy nên khi một role có từ 6 người trở lên thì ai được báo là ngẫu nhiên.
+    // Workflow cũ (tạo trước khi quy tắc có approverId) không có approverId nên vẫn lọc theo role,
+    // nhưng giới hạn trong mall của đề xuất thay vì toàn hệ thống.
+    const approvers = step.approverId
+      ? await this.prisma.user.findMany({
+          where: { id: step.approverId, isActive: true, deletedAt: null },
+          select: { id: true, email: true, fullName: true },
+        })
+      : await this.prisma.user.findMany({
+          where: {
+            role: step.approverRole,
+            isActive: true,
+            deletedAt: null,
+            OR: [
+              { role: Role.ADMIN },
+              { mallAccess: { some: { mallId: proposal.unit.mallId, isActive: true } } },
+            ],
+          },
+          select: { id: true, email: true, fullName: true },
+        });
 
     const creator = await this.prisma.user.findUnique({
       where: { id: proposal.createdById },

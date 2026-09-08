@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, StepStatus, WorkflowStatus } from '@prisma/client';
+import { Prisma, Role, StepStatus, WorkflowStatus } from '@prisma/client';
 import {
   ApprovalPolicyConditionType,
   ApprovalPolicyOperator,
@@ -696,14 +696,44 @@ export class ApprovalsService {
     return { data, total, page: +page, limit: +limit, totalPages: Math.ceil(total / +limit) };
   }
 
-  async listPolicyRules() {
+  /** Các role được phép đứng tên duyệt đề xuất — khớp MODULE_ROLES.approvals. */
+  static readonly ELIGIBLE_APPROVER_ROLES: Role[] = [
+    Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO, Role.FINANCE, Role.LEGAL,
+  ];
+
+  async listPolicyRules(mallId?: string) {
     return this.prisma.approvalPolicyRule.findMany({
+      where: mallId ? { mallId } : undefined,
       orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        approver: { select: { id: true, fullName: true, email: true, role: true, isActive: true } },
+        mall: { select: { id: true, name: true, code: true } },
+      },
+    });
+  }
+
+  /**
+   * Tài khoản có thể chọn làm người duyệt tại một mall — nguồn cho dropdown ở admin?section=approval.
+   * Chỉ user còn hoạt động, có role duyệt được đề xuất, và (trừ ADMIN) có quyền truy cập mall đó.
+   */
+  async listPolicyApproverCandidates(mallId: string) {
+    const mall = await this.prisma.mall.findUnique({ where: { id: mallId }, select: { id: true } });
+    if (!mall) throw new NotFoundException('Mall not found');
+    return this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        role: { in: ApprovalsService.ELIGIBLE_APPROVER_ROLES },
+        OR: [{ role: Role.ADMIN }, { mallAccess: { some: { mallId, isActive: true } } }],
+      },
+      select: { id: true, fullName: true, email: true, role: true },
+      orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
     });
   }
 
   async createPolicyRule(dto: CreateApprovalPolicyRuleDto) {
     const data = this.normalizeAndValidatePolicyRule(dto);
+    data.approverRole = await this.resolvePolicyApproverRole(data.mallId, data.approverId);
     await this.assertPolicyRuleUnique(data);
     return this.prisma.approvalPolicyRule.create({
       data,
@@ -715,6 +745,7 @@ export class ApprovalsService {
     if (!existing) throw new NotFoundException('Approval policy rule not found');
 
     const data = this.normalizeAndValidatePolicyRule({ ...existing, ...dto });
+    data.approverRole = await this.resolvePolicyApproverRole(data.mallId, data.approverId);
     await this.assertPolicyRuleUnique(data, id);
     return this.prisma.approvalPolicyRule.update({
       where: { id },
@@ -722,6 +753,33 @@ export class ApprovalsService {
     });
   }
 
+  /**
+   * Quy tắc duyệt gắn đích danh một tài khoản, nên approverRole không còn là dữ liệu người dùng
+   * nhập mà suy ra từ chính người được chọn — giữ hai trường độc lập chỉ tạo cơ hội lệch nhau,
+   * mà ApprovalStep lại gate theo CẢ approverRole lẫn approverId.
+   */
+  private async resolvePolicyApproverRole(mallId: string, approverId: string): Promise<Role> {
+    const mall = await this.prisma.mall.findUnique({ where: { id: mallId }, select: { id: true } });
+    if (!mall) throw new BadRequestException('Mall áp dụng không tồn tại');
+
+    const approver = await this.prisma.user.findUnique({
+      where: { id: approverId },
+      select: {
+        id: true, fullName: true, role: true, isActive: true, deletedAt: true,
+        mallAccess: { where: { mallId, isActive: true }, select: { id: true }, take: 1 },
+      },
+    });
+    if (!approver || approver.deletedAt) throw new BadRequestException('Tài khoản người duyệt không tồn tại');
+    if (!approver.isActive) throw new BadRequestException(`Tài khoản "${approver.fullName}" đang bị khoá`);
+    if (!ApprovalsService.ELIGIBLE_APPROVER_ROLES.includes(approver.role)) {
+      throw new BadRequestException(`Tài khoản "${approver.fullName}" (${approver.role}) không có quyền duyệt đề xuất`);
+    }
+    // Không có quyền mall thì controller chặn 403 lúc bấm duyệt — bước duyệt sinh ra sẽ tắc.
+    if (approver.role !== Role.ADMIN && approver.mallAccess.length === 0) {
+      throw new BadRequestException(`Tài khoản "${approver.fullName}" không có quyền truy cập mall này`);
+    }
+    return approver.role;
+  }
   private normalizeAndValidatePolicyRule(rule: any) {
     const code = rule.code?.trim().toUpperCase();
     const name = rule.name?.trim();
@@ -730,6 +788,11 @@ export class ApprovalsService {
     let operator = rule.operator || null;
     let matchValue = typeof rule.matchValue === 'string' ? rule.matchValue.trim() || null : null;
     let threshold = rule.threshold ?? null;
+
+    const mallId = rule.mallId?.trim();
+    const approverId = rule.approverId?.trim();
+    if (!mallId) throw new BadRequestException('Quy tắc duyệt phải chọn mall áp dụng');
+    if (!approverId) throw new BadRequestException('Quy tắc duyệt phải chỉ định người duyệt');
 
     if (!code || !name || !stepName) {
       throw new BadRequestException('Code, name and step name must not be empty');
@@ -777,18 +840,20 @@ export class ApprovalsService {
     }
 
     return {
-      code, name, stepName, stepOrder: rule.stepOrder, approverRole: rule.approverRole,
+      code, mallId, approverId, name, stepName, stepOrder: rule.stepOrder,
+      approverRole: rule.approverRole as Role,
       conditionType, operator, threshold, matchValue,
       isRequired, isActive: rule.isActive ?? true,
     };
   }
 
   private async assertPolicyRuleUnique(rule: any, excludeId?: string) {
+    // code chỉ còn duy nhất trong phạm vi một mall, nên mọi so trùng đều giới hạn theo mall.
     const rules = await this.prisma.approvalPolicyRule.findMany({
-      where: excludeId ? { id: { not: excludeId } } : undefined,
+      where: excludeId ? { mallId: rule.mallId, id: { not: excludeId } } : { mallId: rule.mallId },
     });
     if (rules.some((item: any) => item.code.toLowerCase() === rule.code.toLowerCase())) {
-      throw new BadRequestException(`Approval policy code ${rule.code} already exists`);
+      throw new BadRequestException(`Approval policy code ${rule.code} already exists in this Mall`);
     }
     if (!rule.isActive) return;
     const activeRules = rules.filter((item: any) => item.isActive);

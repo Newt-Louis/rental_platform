@@ -450,6 +450,7 @@ model User {
   assignedLeads              Lead[]                     @relation("AssignedLeads")
   approvalSteps              ApprovalStep[]
   fitoutFormApprovalLevels   FitoutFormApprovalLevel[]  @relation("FitoutFormApprover")
+  approvalPolicyRules        ApprovalPolicyRule[]       @relation("ApprovalPolicyApprover")
   ticketsAssigned            Ticket[]                   @relation("AssignedTickets")
   auditLogs                  AuditLog[]
   notifications              Notification[]
@@ -558,6 +559,7 @@ model Mall {
   workOrderTemplates    WorkOrderTemplate[]
   patrolRoutes          PatrolRoute[]
   fitoutFormApprovalLevels FitoutFormApprovalLevel[]
+  approvalPolicyRules   ApprovalPolicyRule[]
   patrolShifts          PatrolShift[]
   patrolSchedules       PatrolSchedule[]
   parkingZones          ParkingZone[]
@@ -1584,13 +1586,22 @@ model ApprovalStep {
   updatedAt    DateTime         @updatedAt
 }
 
+// Quy tac sinh buoc duyet cho Proposal. Khai bao RIENG CHO TUNG MALL va chi dinh DICH DANH
+// nguoi duyet: truoc day quy tac chi co approverRole va khong co mallId, nen
+// buildApprovalStepsFromRules() sinh ApprovalStep voi approverId = null (ai cung role cung bam
+// duyet duoc) va mot bo nguong chiet khau duy nhat ap cho moi mall. approverId duoc copy thang
+// sang ApprovalStep.approverId khi submit, nen quyen bam duyet dung nguyen logic san co.
 model ApprovalPolicyRule {
   id            String   @id @default(cuid())
-  code          String   @unique
+  code          String
+  mallId        String
+  mall          Mall     @relation(fields: [mallId], references: [id], onDelete: Cascade)
   name          String
   stepName      String
   stepOrder     Int
-  approverRole  Role
+  approverRole  Role // phai trung User.role cua approver -- ApprovalStep gate theo ca hai
+  approverId    String
+  approver      User     @relation("ApprovalPolicyApprover", fields: [approverId], references: [id])
   conditionType String
   operator      String?
   threshold     Float?
@@ -1600,7 +1611,9 @@ model ApprovalPolicyRule {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([isActive, stepOrder])
+  @@unique([mallId, code])
+  @@index([mallId, isActive, stepOrder])
+  @@index([approverId])
 }
 
 model Contract {
@@ -2724,6 +2737,10 @@ model OutboxEvent {
 model EmailDelivery {
   id                String    @id @default(cuid())
   eventKey          String    @unique
+  eventType         String?
+  entityType        String?
+  entityId          String?
+  mallId            String?
   recipient         Json
   payload           Json
   status            String    @default("PENDING")
@@ -2731,7 +2748,11 @@ model EmailDelivery {
   nextAttemptAt     DateTime  @default(now())
   providerMessageId String?
   deliveredAt       DateTime?
+  lastAttemptAt     DateTime?
+  sentAt            DateTime?
   lastError         String?
+  originalDeliveryId String?
+  resendOfId        String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

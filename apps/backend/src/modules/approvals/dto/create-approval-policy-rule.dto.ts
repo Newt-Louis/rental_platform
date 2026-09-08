@@ -1,4 +1,3 @@
-import { Role } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
@@ -37,6 +36,14 @@ export class CreateApprovalPolicyRuleDto {
   @IsString()
   code: string;
 
+  @ApiProperty({ description: 'Mall áp dụng — quy tắc duyệt khai báo riêng cho từng mall' })
+  @IsString()
+  mallId: string;
+
+  @ApiProperty({ description: 'Tài khoản đích danh đứng tên duyệt bước này' })
+  @IsString()
+  approverId: string;
+
   @ApiProperty()
   @IsString()
   name: string;
@@ -50,9 +57,6 @@ export class CreateApprovalPolicyRuleDto {
   @Min(1)
   stepOrder: number;
 
-  @ApiProperty({ enum: Role })
-  @IsEnum(Role)
-  approverRole: Role;
 
   @ApiProperty({ enum: ApprovalPolicyConditionType })
   @IsEnum(ApprovalPolicyConditionType)

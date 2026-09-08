@@ -65,7 +65,7 @@ describe('ProposalsService integration (mocked DB)', () => {
       term: 36,
       rentPerSqm: 500000,
       camPerSqm: 50000,
-      unit: { category: 'F&B' },
+      unit: { category: 'F&B', mallId: 'mall-1' },
       tenant: { category: 'F&B' },
     };
 
@@ -120,7 +120,7 @@ describe('ProposalsService integration (mocked DB)', () => {
       term: 36,
       rentPerSqm: 500000,
       camPerSqm: 50000,
-      unit: { category: 'F&B' },
+      unit: { category: 'F&B', mallId: 'mall-1' },
       tenant: { category: 'F&B' },
     };
     prisma.proposal.findUnique.mockResolvedValue({
@@ -160,7 +160,7 @@ describe('ProposalsService integration (mocked DB)', () => {
       rentPerSqm: 25,
       camPerSqm: 3,
       rentCurrency: 'USD',
-      unit: { category: 'F&B', categoryId: 'cat-1' },
+      unit: { category: 'F&B', categoryId: 'cat-1', mallId: 'mall-1' },
       tenant: { category: 'F&B' },
     };
     prisma.proposal.findUnique.mockResolvedValue({
@@ -204,7 +204,7 @@ describe('ProposalsService integration (mocked DB)', () => {
       rentPerSqm: 500000,
       camPerSqm: 50000,
       rentCurrency: 'VND',
-      unit: { category: 'F&B', categoryId: 'cat-1' },
+      unit: { category: 'F&B', categoryId: 'cat-1', mallId: 'mall-1' },
       tenant: { category: 'F&B' },
     };
     prisma.proposal.findUnique.mockResolvedValue({
@@ -242,7 +242,7 @@ describe('ProposalsService integration (mocked DB)', () => {
       discount: 0,
       rentFree: 0,
       tenantId: null,
-      unit: {},
+      unit: { mallId: 'mall-1' },
       tenant: null,
       approvalWorkflow: null,
       contract: null,

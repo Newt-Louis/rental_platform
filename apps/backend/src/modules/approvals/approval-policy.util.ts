@@ -13,6 +13,8 @@ export type PolicyRuleLike = {
   stepName: string;
   stepOrder: number;
   approverRole: Role;
+  /** Tài khoản đích danh của quy tắc — được mang thẳng sang ApprovalStep.approverId. */
+  approverId: string;
   conditionType: string;
   operator?: string | null;
   threshold?: number | null;
@@ -110,15 +112,18 @@ function matchesRule(rule: PolicyRuleLike, ctx: PolicyContext): boolean {
 
 export function buildApprovalStepsFromRules(rules: PolicyRuleLike[], ctx: PolicyContext) {
   const selected = rules.filter((rule) => matchesRule(rule, ctx));
-  const unique = new Map<string, { stepName: string; stepOrder: number; approverRole: Role }>();
+  const unique = new Map<string, { stepName: string; stepOrder: number; approverRole: Role; approverId: string }>();
 
   for (const rule of selected) {
-    const key = `${rule.stepOrder}-${rule.stepName}-${rule.approverRole}`;
+    // approverId nằm trong khóa khử trùng lặp: hai quy tắc cùng tên bước nhưng chỉ định hai người
+    // khác nhau là hai bước duyệt thật sự khác nhau, không được gộp làm một.
+    const key = `${rule.stepOrder}-${rule.stepName}-${rule.approverRole}-${rule.approverId}`;
     if (!unique.has(key)) {
       unique.set(key, {
         stepName: rule.stepName,
         stepOrder: rule.stepOrder,
         approverRole: rule.approverRole,
+        approverId: rule.approverId,
       });
     }
   }
