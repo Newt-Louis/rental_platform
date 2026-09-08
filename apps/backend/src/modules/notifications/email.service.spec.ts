@@ -13,7 +13,15 @@ describe('EmailService resilience', () => {
   };
 
   // DB-backed EmailSettings vắng mặt -> EmailService fallback về env var (xem resolveConfig()).
-  const prismaStub = { emailSettings: { findFirst: jest.fn().mockResolvedValue(null) } } as any;
+  const prismaStub = {
+    emailSettings: { findFirst: jest.fn().mockResolvedValue(null) },
+    emailDelivery: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+  } as any;
   const encryptionStub = { isConfigured: false, decrypt: jest.fn(), encrypt: jest.fn() } as any;
 
   beforeEach(() => {
@@ -23,6 +31,10 @@ describe('EmailService resilience', () => {
     process.env.EMAIL_MAX_ATTEMPTS = '3';
     process.env.EMAIL_RETRY_BASE_MS = '0';
     (nodemailer.createTransport as jest.Mock).mockReset();
+    prismaStub.emailDelivery.create.mockReset();
+    prismaStub.emailDelivery.findUnique.mockReset();
+    prismaStub.emailDelivery.update.mockReset();
+    prismaStub.emailDelivery.updateMany.mockReset();
   });
 
   afterAll(() => {
@@ -77,6 +89,53 @@ describe('EmailService resilience', () => {
     })).resolves.toEqual({ skipped: true });
 
     expect(nodemailer.createTransport).not.toHaveBeenCalled();
+  });
+
+  it('EMAIL-OPS-020 keeps SMTP fully mocked in the automated suite', () => {
+    expect(jest.isMockFunction(nodemailer.createTransport)).toBe(true);
+  });
+
+  it('suppresses concurrent direct producer calls with the same eventKey', async () => {
+    const service = new EmailService(prismaStub, encryptionStub);
+    const duplicate = Object.assign(new Error('duplicate'), { code: 'P2002' });
+    prismaStub.emailDelivery.create
+      .mockResolvedValueOnce({ id: 'delivery-1', status: 'SENDING' })
+      .mockRejectedValueOnce(duplicate);
+    prismaStub.emailDelivery.findUnique.mockResolvedValue({
+      id: 'delivery-1', status: 'SENT', providerMessageId: 'message-1',
+    });
+    prismaStub.emailDelivery.update.mockResolvedValue({});
+    const smtpSend = jest.fn().mockResolvedValue({ messageId: 'message-1' });
+    (nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail: smtpSend });
+    const request = {
+      to: 'tenant@example.test', subject: 'Invoice', html: '<p>Invoice</p>',
+      delivery: { eventKey: 'invoice-issued:invoice-1:tenant' },
+    };
+
+    const [first, duplicateResult] = await Promise.all([
+      service.sendMail(request),
+      service.sendMail(request),
+    ]);
+
+    expect(first).toEqual(expect.objectContaining({ messageId: 'message-1', deliveryId: 'delivery-1' }));
+    expect(duplicateResult).toEqual(expect.objectContaining({ duplicate: true, deliveryId: 'delivery-1' }));
+
+    expect(smtpSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry SMTP when persistence fails after provider acceptance', async () => {
+    const service = new EmailService(prismaStub, encryptionStub);
+    prismaStub.emailDelivery.create.mockResolvedValue({ id: 'delivery-1', status: 'SENDING' });
+    prismaStub.emailDelivery.update.mockRejectedValue(new Error('ledger update unavailable'));
+    const smtpSend = jest.fn().mockResolvedValue({ messageId: 'accepted-message' });
+    (nodemailer.createTransport as jest.Mock).mockReturnValue({ sendMail: smtpSend });
+
+    await expect(service.sendMail({
+      to: 'tenant@example.test', subject: 'Invoice', html: '<p>Invoice</p>',
+      delivery: { eventKey: 'invoice-issued:invoice-1:tenant' },
+    })).rejects.toThrow('ledger update unavailable');
+
+    expect(smtpSend).toHaveBeenCalledTimes(1);
   });
 
   // Regression: every money figure in these templates used to be rendered as
