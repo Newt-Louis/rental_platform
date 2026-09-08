@@ -13,4 +13,6 @@ export const permissionsApi = {
     api.get('/permissions/matrix', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
   updateCell: (data: { module: string; role: AppRole; allowed: boolean; mallId?: string | null }) =>
     api.patch('/permissions/matrix', data).then((r) => r.data),
+  resetToDefault: (mallId?: string | null) =>
+    api.post('/permissions/matrix/reset', mallId ? { mallId } : {}).then((r) => r.data),
 };

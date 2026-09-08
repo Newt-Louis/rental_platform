@@ -33,6 +33,13 @@ pipeline {
     UAT_HOST  = "125.234.136.72"
     UAT_PATH  = "/home/leasing-platform"
     PROD_PATH = "/home/leasing-platform"
+    // BuildKit lưu build cache (layer npm ci, apt/apk...) tách biệt khỏi
+    // image store, nên KHÔNG bị post-step "docker image prune -f" bên dưới
+    // xoá mất -- builder cũ (legacy) để lại các layer trung gian multi-stage
+    // dưới dạng image <none> (dangling), chính là thứ "docker image prune -f"
+    // dọn sau mỗi build, khiến npm ci (bcrypt/sharp build native) phải chạy
+    // lại từ đầu mỗi lần dù package-lock.json không đổi.
+    DOCKER_BUILDKIT = "1"
   }
 
   options {
@@ -107,7 +114,10 @@ pipeline {
     success { echo "✓ Deploy ${params.DEPLOY_ENV} thành công — tag: ${env.IMAGE_TAG}" }
     failure { echo "✗ Deploy ${params.DEPLOY_ENV} thất bại — xem log ở trên" }
     always {
-      sh "docker image prune -f --filter 'label!=keep' || true"
+      // "until=24h" thay vì xoá mọi dangling image ngay sau build -- tránh
+      // dọn nhầm layer cache của build vừa chạy xong (xem giải thích ở
+      // DOCKER_BUILDKIT phía trên).
+      sh "docker image prune -f --filter 'label!=keep' --filter 'until=24h' || true"
     }
   }
 }

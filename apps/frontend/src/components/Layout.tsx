@@ -42,8 +42,6 @@ import {
   GitBranch,
   UserCircle,
   ChevronDown,
-  Sun,
-  Moon,
   Menu,
   X,
   Warehouse,
@@ -53,7 +51,6 @@ import {
   Car,
   Mail,
 } from "lucide-react";
-import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -162,7 +159,6 @@ function SidebarNavLink({
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const { t } = useTranslation("nav");
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -277,19 +273,6 @@ export default function Layout() {
           )}
 
           <LanguageSwitcher />
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={toggleTheme}
-            title={theme === "light" ? t("ui.darkMode") : t("ui.lightMode")}
-            aria-label={
-              theme === "light" ? t("ui.enableDark") : t("ui.enableLight")
-            }
-          >
-            {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
-          </Button>
 
           <Button
             variant="ghost"

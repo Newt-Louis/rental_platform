@@ -18,7 +18,7 @@ import {
   Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
   KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, X,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
-  SquareStack, Info, GitBranch, ExternalLink,
+  SquareStack, Info, GitBranch, ExternalLink, RotateCcw,
 } from 'lucide-react';
 import { ApprovalPolicyTab } from './ApprovalPolicyTab';
 import { CategoriesTab } from './CategoriesTab';
@@ -1346,10 +1346,12 @@ function PermissionsTab() {
   const qc = useQueryClient();
   const roles = ROLE_KEYS;
   const [scope, setScope] = useState<string>('GLOBAL');
+  const [confirmReset, setConfirmReset] = useState(false);
   const mallId = scope === 'GLOBAL' ? undefined : scope;
 
   const { data: mallsData } = useQuery({ queryKey: ['malls'], queryFn: spacesApi.listMalls });
   const malls: any[] = mallsData?.data ?? mallsData ?? [];
+  const scopeLabel = scope === 'GLOBAL' ? t('permissions.scopeGlobal') : malls.find((m: any) => m.id === scope)?.name ?? scope;
 
   const { data: matrix, isLoading } = useQuery({
     queryKey: ['permissions-matrix', scope],
@@ -1366,6 +1368,16 @@ function PermissionsTab() {
     onError: () => toast({ title: t('permissions.toastError'), variant: 'destructive' }),
   });
 
+  const resetMutation = useMutation({
+    mutationFn: () => permissionsApi.resetToDefault(mallId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['permissions-matrix', scope] });
+      toast({ title: t('permissions.toastReset') });
+      setConfirmReset(false);
+    },
+    onError: () => toast({ title: t('permissions.toastResetError'), variant: 'destructive' }),
+  });
+
   return (
     <div>
       <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
@@ -1373,7 +1385,7 @@ function PermissionsTab() {
         {t('permissionsEditNote')}
       </div>
 
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <select
           value={scope}
           onChange={(e) => setScope(e.target.value)}
@@ -1385,7 +1397,26 @@ function PermissionsTab() {
             <option key={m.id} value={m.id}>{m.name}</option>
           ))}
         </select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setConfirmReset(true)}
+          disabled={isLoading || resetMutation.isPending}
+        >
+          <RotateCcw size={14} className="mr-1.5" />
+          {t('permissions.resetToDefault')}
+        </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title={t('permissions.resetToDefault')}
+        message={t('permissions.resetToDefaultMessage', { scope: scopeLabel })}
+        onConfirm={() => resetMutation.mutate()}
+        onCancel={() => setConfirmReset(false)}
+        loading={resetMutation.isPending}
+      />
 
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-separate border-spacing-0">
