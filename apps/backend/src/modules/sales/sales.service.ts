@@ -14,6 +14,23 @@ interface CurrentUser {
   tenantId?: string | null;
 }
 
+/**
+ * MALL-001 / BC-007 -- how a Mall scope is applied to SalesTurnover.
+ *
+ * `null` means "no Mall restriction" and is reachable ONLY for the roles
+ * MallAccessService lets bypass the check (ADMIN, and TENANT which is bounded by
+ * tenantId instead). `[]` means "this user reaches no Mall", and must return
+ * nothing rather than everything -- so it is applied as a filter like any other
+ * list, never treated as an absent filter.
+ *
+ * SalesTurnover has no mallId of its own; the owning Mall is the Unit's, and
+ * `Unit.mallId` is NOT NULL (verified against schema.prisma), so no row can
+ * escape the filter by having a null Mall.
+ */
+function unitMallScope(mallIds?: string[] | null) {
+  return mallIds ? { unit: { mallId: { in: mallIds } } } : {};
+}
+
 @Injectable()
 export class SalesService {
   constructor(private prisma: PrismaService) {}
@@ -50,11 +67,15 @@ export class SalesService {
     }));
   }
 
-  async findAll(query: { tenantId?: string; period?: string; page?: number; limit?: number }, currentUser?: CurrentUser) {
+  async findAll(
+    query: { tenantId?: string; period?: string; page?: number; limit?: number },
+    currentUser?: CurrentUser,
+    mallIds?: string[] | null,
+  ) {
     const { page = 1, limit = 20, tenantId, period } = query;
     const skip = (page - 1) * +limit;
 
-    const where: any = {};
+    const where: any = { ...unitMallScope(mallIds) };
     if (currentUser?.role === 'TENANT') {
       // Không tin tưởng tenantId client gửi lên — luôn ép theo tenant của người đăng nhập.
       where.tenantId = currentUser.tenantId ?? '__none__';
@@ -181,8 +202,8 @@ export class SalesService {
     return submitted;
   }
 
-  async getSummary(period: string, currentUser?: CurrentUser) {
-    const where: any = { period };
+  async getSummary(period: string, currentUser?: CurrentUser, mallIds?: string[] | null) {
+    const where: any = { period, ...unitMallScope(mallIds) };
     if (currentUser?.role === 'TENANT') {
       where.tenantId = currentUser.tenantId ?? '__none__';
     }
@@ -202,9 +223,9 @@ export class SalesService {
     return { period, totalGross, totalNet, totalTxn, count: data.length, records: data };
   }
 
-  async getTopTenants(period: string, limit = 10) {
+  async getTopTenants(period: string, limit = 10, mallIds?: string[] | null) {
     const data = await this.prisma.salesTurnover.findMany({
-      where: { period },
+      where: { period, ...unitMallScope(mallIds) },
       include: {
         tenant: { select: { id: true, brandName: true } },
         unit: { select: { id: true, code: true, areaNLA: true } },
@@ -228,6 +249,8 @@ export class SalesService {
   // ── Audit Trail ─────────────────────────────────────────────────────────────
 
   async getAuditTrail(salesId: string) {
+    // Mall ownership of `salesId` is validated by the caller through
+    // MallAccessService's `salesTurnoverId` resolver before this runs.
     return this.prisma.salesAuditTrail.findMany({
       where: { salesId },
       include: { performedBy: { select: { id: true, fullName: true, role: true } } },
@@ -272,7 +295,7 @@ export class SalesService {
 
   // ── Deadline Enforcement ─────────────────────────────────────────────────────
 
-  async getDeadlineStatus(period: string) {
+  async getDeadlineStatus(period: string, mallIds?: string[] | null) {
     // Deadline: 10th of the month following the period
     const [year, month] = period.split('-').map(Number);
     const deadlineMonth = month === 12 ? 1 : month + 1;
@@ -284,6 +307,7 @@ export class SalesService {
     // Find active contracts for this period
     const activeContracts = await this.prisma.contract.findMany({
       where: {
+        ...unitMallScope(mallIds),
         isActive: true,
         status: { in: ['ACTIVE', 'EXPIRING'] },
         startDate: { lte: new Date(`${period}-28`) },
@@ -298,7 +322,7 @@ export class SalesService {
 
     // Find submitted records for this period
     const submitted = await this.prisma.salesTurnover.findMany({
-      where: { period },
+      where: { period, ...unitMallScope(mallIds) },
       select: { tenantId: true, unitId: true, grossSales: true, createdAt: true },
     });
 

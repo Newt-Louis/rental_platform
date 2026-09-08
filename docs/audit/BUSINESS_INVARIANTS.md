@@ -77,9 +77,42 @@ funnel through · **PER-PATH** = each caller enforces it separately · **NONE**.
 
 | ID | Invariant | Phase 3 observation |
 |---|---|---|
-| MALL-01 | A user only reads data from malls they can access | `MallAccessGuard` + `@Scope`; MALL-001/SCOPE-001 still open |
+| MALL-01 | A user only reads data from malls they can access | `MallAccessGuard` + `@Scope`; MALL-001/SCOPE-001 proven, fixed and closed 2026-09-07 — see the Security Batch A section below |
 | MALL-02 | An operation never spans two malls | bulk unit update and merge both reject multi-mall sets explicitly; `expectedMallId` enforced in `transition()` |
 | MALL-03 | Every core entity resolves to exactly one mall | holds structurally; `Invoice.mallId = NULL` rows resolve via contract instead — INT-001 |
+
+### Security Batch A (2026-09-07) - MALL-001 / SCOPE-001 enforcement
+
+Runtime-proven on a two-Mall Postgres database as MALL_DIRECTOR holding one mall,
+then re-run after the fix. Full evidence in `ISSUE_REGISTER.md`.
+
+| ID | Invariant | Enforcement | Status |
+|---|---|---|---|
+| **MALL-01** | A user reads only from malls they are authorized for | Scope derived server-side via `MallAccessService.getAccessibleMallIds`, applied as a Prisma filter | **ENFORCED.** `sales` and `announcements` read paths leaked before the fix; both now return 0 foreign-mall rows. |
+| **MALL-02** | A user mutates only inside authorized malls | `extractAndValidateMallAccess` before the write | **ENFORCED.** `POST /sales/:id/approve` and `/dispute` moved another mall's turnover through PENDING to APPROVED to DISPUTED before the fix; both now 403 with the row unchanged. |
+| **MALL-03** | Omitted mall context fails closed, never "all malls" | Every list route derives a scope; there is no path left that reaches these services with `undefined` | **ENFORCED.** This was the actual defect: `?mallId=<foreign>` was always rejected, but *omitting* it lifted the filter. |
+| **MALL-04** | A requested mall never expands authorization | `MallAccessGuard` validates any supplied `mallId`; the derived set is the ceiling and a supplied value only narrows | **ENFORCED, and held before the fix too** - proven by a 403 on an explicit foreign `mallId`. |
+| **MALL-05** | Derived ownership resolves to an authorized mall before read or write | Central resolver registry in `mall-access.service.ts`; `salesTurnoverId` added (`SalesTurnover` to `unit` to `mallId`) | **ENFORCED.** Object-by-id routes no longer trust possession of the id. |
+
+**Empty vs undefined - the platform's proven semantics.** `mallIds` is applied as
+`mallIds ? { ... } : {}`, a truthiness check, so:
+
+| Value | Meaning | Behaviour |
+|---|---|---|
+| `null` | no restriction | reachable **only** through `MallAccessService` for bypass roles (ADMIN; TENANT, which is bounded by `tenantId` instead) |
+| `[]` | user reaches no mall | `{ mallId: { in: [] } }` - matches nothing. **Fail-closed**, verified at runtime with a FINANCE account holding zero `UserMallAccess` rows |
+| `['A']` | mall A only | filtered to A |
+
+`[]` is truthy in JavaScript, which is what makes this correct; a `.length` guard
+would silently turn "no accessible malls" into "every mall". A repo-wide scan
+found no such guard on a mall filter, and the two `mallIds.length === 0` sites in
+`work-orders.service.ts` return `[]` early, which is the same fail-closed answer.
+
+**Not changed:** ADMIN's super-admin bypass, and CEO's cross-mall read. CEO is
+granted unrestricted read only where a call site opts in with
+`{ crossMallRead: true }` (Dashboard, Reports, Analytics, AI, Approvals-action).
+Sales and announcements are outside that approved set, so CEO scopes there like
+any other role - the documented default, not a new restriction.
 
 ## Reporting currency (audited 2026-09-06 — proposed, NOT yet enforced)
 

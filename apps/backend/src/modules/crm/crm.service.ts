@@ -26,14 +26,19 @@ export class CrmService {
   private leadScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     if (!scope?.mallIds) return {};
     const mallIds = scope.mallIds;
-    const relatedToMall = [
-      { mallId: { in: mallIds } },
+    const inferredForLegacyLead = [
       { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: mallIds } } } } },
       { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
       { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
       { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } } },
     ];
-    return { AND: [{ OR: relatedToMall }] };
+    // A direct Lead.mallId is authoritative. Assignment or downstream records
+    // may infer scope only for legacy leads whose mallId is null; otherwise a
+    // Mall-B lead assigned to a Mall-A user becomes a cross-Mall bypass.
+    return { AND: [{ OR: [
+      { mallId: { in: mallIds } },
+      { mallId: null, OR: inferredForLegacyLead },
+    ] }] };
   }
 
   async assertLeadAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
@@ -462,12 +467,7 @@ export class CrmService {
       future.setDate(future.getDate() + +query.daysAhead);
       where.dueDate = { lte: future };
     }
-    if (query.scope?.mallIds && !query.assignedToId) {
-      where.AND = [{ OR: [
-        { lead: { is: this.leadScope(query.scope) } },
-        { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: query.scope.mallIds } } } } },
-      ] }];
-    }
+    Object.assign(where, this.followUpScope(query.scope));
     return this.prisma.leadFollowUp.findMany({
       where,
       include: {
@@ -479,12 +479,25 @@ export class CrmService {
     });
   }
 
-  async createFollowUp(dto: { leadId?: string; customerId?: string; assignedToId: string; dueDate: string; note?: string }, createdById: string) {
+  async createFollowUp(
+    dto: { leadId?: string; customerId?: string; assignedToId: string; dueDate: string; note?: string },
+    createdById: string,
+    scope?: { userId: string; role: Role; mallIds?: string[] },
+  ) {
+    if (dto.leadId) await this.assertLeadEditAccess(dto.leadId, scope);
+    const assignedToId = dto.assignedToId ?? createdById;
+    if (scope?.mallIds) {
+      const assignee = await this.prisma.user.findFirst({
+        where: { id: assignedToId, mallAccess: { some: { isActive: true, mallId: { in: scope.mallIds } } } },
+        select: { id: true },
+      });
+      if (!assignee) throw new ForbiddenException('Follow-up assignee is outside your mall access');
+    }
     return this.prisma.leadFollowUp.create({
       data: {
         leadId: dto.leadId,
         customerId: dto.customerId,
-        assignedToId: dto.assignedToId ?? createdById,
+        assignedToId,
         dueDate: new Date(dto.dueDate),
         note: dto.note,
       },
@@ -496,15 +509,42 @@ export class CrmService {
     });
   }
 
-  async completeFollowUp(id: string) {
+  async completeFollowUp(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    await this.assertFollowUpAccess(id, scope);
     return this.prisma.leadFollowUp.update({
       where: { id },
       data: { isDone: true, completedAt: new Date() },
     });
   }
 
-  async deleteFollowUp(id: string) {
+  async deleteFollowUp(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    await this.assertFollowUpAccess(id, scope);
     return this.prisma.leadFollowUp.delete({ where: { id } });
+  }
+
+  /**
+   * A Lead is the authoritative Mall owner when present. A personal/customer
+   * follow-up has no Mall-bearing Customer relation (BC-016), so its assigned
+   * user's active Mall membership is the only existing authoritative boundary.
+   * Keeping the fallback behind `leadId: null` prevents a Mall-B Lead from being
+   * smuggled through a Mall-A assignee.
+   */
+  private followUpScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    if (!scope?.mallIds) return {};
+    return {
+      AND: [{ OR: [
+        { lead: { is: this.leadScope(scope) } },
+        { leadId: null, assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: scope.mallIds } } } } },
+      ] }],
+    };
+  }
+
+  private async assertFollowUpAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const followUp = await this.prisma.leadFollowUp.findFirst({
+      where: { id, ...this.followUpScope(scope) },
+      select: { id: true },
+    });
+    if (!followUp) throw new NotFoundException('Follow-up not found or outside your mall access');
   }
 
   // ─── Bulk Actions ───────────────────────────────────────────────────────────────
@@ -571,17 +611,11 @@ export class CrmService {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const mallFilter = scope?.mallIds;
-    const assetScope = mallFilter ? [
-      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
-      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } },
-      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallFilter } }, { floor: { mallId: { in: mallFilter } } }] } } } } },
-    ] : [];
-    const leadWhere: any = { isActive: true };
-    if (mallFilter) {
-      leadWhere.OR = scope?.role === Role.LEASING_EXECUTIVE
-        ? [{ assignedToId: scope.userId }]
-        : assetScope;
-    }
+    // Reuse the canonical Lead scope. The prior analytics-only predicate let a
+    // LEASING_EXECUTIVE see any directly assigned Lead even when Lead.mallId
+    // explicitly belonged to another Mall, and omitted direct Mall ownership
+    // for other roles. Aggregates must have the same boundary as record lists.
+    const leadWhere: any = { isActive: true, ...this.leadScope(scope) };
 
     // Get all leads for calculations
     const leads = await this.prisma.lead.findMany({
@@ -824,13 +858,14 @@ export class CrmService {
 
   // ─── Auto Actions ───────────────────────────────────────────────────────────────
 
-  async autoMoveStaleToLost(days: number = 60) {
+  async autoMoveStaleToLost(days: number = 60, scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
     const result = await this.prisma.lead.updateMany({
       where: {
         isActive: true,
+        ...this.leadScope(scope),
         status: { notIn: ['WON', 'LOST'] },
         OR: [
           { lastActivityAt: { lt: cutoffDate } },
@@ -856,8 +891,11 @@ export class CrmService {
     ];
   }
 
-  async autoAssignLead(leadId: string) {
-    const lead = await this.findOne(leadId);
+  async autoAssignLead(leadId: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, isActive: true, ...this.leadScope(scope) },
+    });
+    if (!lead) throw new NotFoundException('Lead not found or outside your mall access');
     if (!lead.category || lead.assignedToId) {
       return { assigned: false, message: 'Lead already assigned or no category' };
     }
@@ -871,7 +909,11 @@ export class CrmService {
 
     // Find user with matching role
     const user = await this.prisma.user.findFirst({
-      where: { role: rule.assignToRole as any, isActive: true },
+      where: {
+        role: rule.assignToRole as any,
+        isActive: true,
+        ...(scope?.mallIds ? { mallAccess: { some: { isActive: true, mallId: { in: scope.mallIds } } } } : {}),
+      },
       orderBy: { createdAt: 'asc' }, // Simple round-robin: oldest user
     });
 

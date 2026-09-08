@@ -29,7 +29,17 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Roles(...MODULE_ROLES.spaces)
-@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.GAP, trackedAs: 'class default; see method-level overrides below for verified sections' })
+// MALL-001 -- this class default is INERT: all 45 routes in this controller
+// declare their own @Scope, so the class-level status can never apply to any of
+// them. It is recorded as ENFORCED to stop it reading as an open finding; the
+// authoritative status of each route is its own annotation.
+//
+// Spot-checked at runtime 2026-09-07 as MALL_DIRECTOR holding Mall A only, against
+// Mall B objects: GET /spaces/units/:id 403, GET /spaces/malls/:id 403,
+// GET /spaces/units/compare (mixed A+B ids) 403, POST /spaces/units/bulk-update
+// 403 with the target unit unmodified, and the unscoped unit list disclosed no
+// Mall B row.
+@Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'MALL-001 -- inert class default; every route carries its own declaration' })
 @Controller('spaces')
 export class SpacesController {
   constructor(

@@ -19,12 +19,22 @@ describe('MallAccessService resource resolution', () => {
     fitoutTask: { findUnique: jest.fn() },
     fitoutDailyReportEntry: { findUnique: jest.fn() },
     mallAnnouncement: { findUnique: jest.fn() },
+    salesTurnover: { findUnique: jest.fn() },
   };
   let service: MallAccessService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     service = new MallAccessService(prisma as any);
+  });
+
+  it('documents the systemic fail-open tail when a supplied entity id is not found', async () => {
+    prisma.unit.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.extractAndValidateMallAccess('user-1', 'MALL_DIRECTOR', { unitId: 'malformed-or-missing' }),
+    ).resolves.toBeUndefined();
+    expect(prisma.userMallAccess.findFirst).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -365,5 +375,87 @@ describe('MallAccessService — CR-101 Phase 3G CROSS_MALL_READ (crossMallRead o
     expect(service.hasCrossMallRead('ADMIN')).toBe(false);
     expect(service.hasCrossMallRead('MALL_DIRECTOR')).toBe(false);
     expect(service.hasCrossMallRead(undefined)).toBe(false);
+  });
+});
+
+/**
+ * MALL-001 / BC-007 — the salesTurnover resolver.
+ *
+ * The Sales module's :id routes (audit / approve / dispute) trusted possession of
+ * the id. Runtime proof on 2026-09-07: a MALL_DIRECTOR holding Mall A moved a
+ * Mall B turnover row PENDING -> APPROVED -> DISPUTED. The route's owning Mall is
+ * resolved here rather than by an ad-hoc check inside sales.service, so it uses
+ * the same registry, the same bypass rules and the same failure mode as every
+ * other entity.
+ */
+describe('MallAccessService — salesTurnoverId resolution (MALL-001)', () => {
+  const prisma = {
+    userMallAccess: { findFirst: jest.fn() },
+    salesTurnover: { findUnique: jest.fn() },
+  };
+  let service: MallAccessService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new MallAccessService(prisma as any);
+  });
+
+  it('denies a turnover row whose unit belongs to another mall', async () => {
+    prisma.salesTurnover.findUnique.mockResolvedValue({ unit: { mallId: 'mall-b', floor: null } });
+    prisma.userMallAccess.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.extractAndValidateMallAccess('director-1', 'MALL_DIRECTOR', { salesTurnoverId: 'sales-b' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows a turnover row inside the caller mall', async () => {
+    prisma.salesTurnover.findUnique.mockResolvedValue({ unit: { mallId: 'mall-a', floor: null } });
+    prisma.userMallAccess.findFirst.mockResolvedValue({ id: 'grant-1' });
+
+    await expect(
+      service.extractAndValidateMallAccess('director-1', 'MALL_DIRECTOR', { salesTurnoverId: 'sales-a' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('falls back to the unit floor mall when the unit carries none', async () => {
+    prisma.salesTurnover.findUnique.mockResolvedValue({ unit: { mallId: null, floor: { mallId: 'mall-a' } } });
+    prisma.userMallAccess.findFirst.mockResolvedValue({ id: 'grant-1' });
+
+    await expect(
+      service.extractAndValidateMallAccess('director-1', 'MALL_DIRECTOR', { salesTurnoverId: 'sales-a' }),
+    ).resolves.toBeUndefined();
+    expect(prisma.userMallAccess.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ mallId: 'mall-a' }) }),
+    );
+  });
+
+  // The generic `if (mallId)` tail of the resolver passes silently when nothing
+  // resolved. For a row that EXISTS but has no reachable mall that would be
+  // fail-open on a route which mutates financial approval state.
+  it('fails closed when the row exists but resolves to no mall', async () => {
+    prisma.salesTurnover.findUnique.mockResolvedValue({ unit: null });
+
+    await expect(
+      service.extractAndValidateMallAccess('director-1', 'MALL_DIRECTOR', { salesTurnoverId: 'sales-orphan' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('ADMIN bypasses without even reading the row', async () => {
+    await expect(
+      service.extractAndValidateMallAccess('admin-1', 'ADMIN', { salesTurnoverId: 'sales-b' }),
+    ).resolves.toBeUndefined();
+    expect(prisma.salesTurnover.findUnique).not.toHaveBeenCalled();
+  });
+
+  // CEO is not a super-admin here: sales is outside the approved cross-mall-read
+  // set, so no crossMallRead opt-in is passed and CEO scopes like anyone else.
+  it('CEO without a crossMallRead opt-in is scoped like any other role', async () => {
+    prisma.salesTurnover.findUnique.mockResolvedValue({ unit: { mallId: 'mall-b', floor: null } });
+    prisma.userMallAccess.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.extractAndValidateMallAccess('ceo-1', 'CEO', { salesTurnoverId: 'sales-b' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

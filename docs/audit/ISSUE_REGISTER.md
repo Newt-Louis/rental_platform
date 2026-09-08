@@ -301,11 +301,11 @@ whether currency is always supplied explicitly.
 | Field | Value |
 |---|---|
 | ID | MALL-001 |
-| Severity | UNVERIFIED (candidate P0 if reachable) |
+| Severity | **P0** (proven: cross-mall read AND write by an ordinary role) |
 | Domain | Security / Multi-Mall |
 | Backbone | all |
-| Invariant | MALL-01, MALL-03 |
-| Status | UNVERIFIED |
+| Invariant | MALL-01, MALL-02, MALL-03, MALL-05 |
+| Status | **FIXED** (Security Batch A, 2026-09-07) |
 
 **Description.** Service-layer mall scoping is implemented as an **optional**
 parameter, e.g. `routes(mallIds?: string[], q?: any)`. When the parameter is
@@ -321,19 +321,122 @@ computing `mallIds` is not yet established.
 service layer. Counting only controller-level assertions would produce a false
 positive.
 
-**Next step.** Phase 6 — for every endpoint, trace whether `mallIds` is always
+**Next step.** Phase 6 - for every endpoint, trace whether `mallIds` is always
 computed from the authenticated user before reaching the service.
+
+### PROVEN (Security Batch A, 2026-09-07) - ORIGINAL finding above preserved
+
+The original description named the wrong mechanism. `mallIds ? {...} : {}` is a
+**truthiness** check, and `[]` is truthy, so an empty scope becomes
+`{ mallId: { in: [] } }` and matches nothing. Verified at runtime: FINANCE, who
+holds zero `UserMallAccess` rows, resolves to `[]` on every list that derives a
+scope and receives nothing. That half of the platform is **fail-closed**, and the
+83 `mallIds?: string[]` signatures are not themselves the defect.
+
+The real defect is narrower and worse: modules that **never derive a scope at
+all**, so `undefined` reaches the service and lifts the filter entirely.
+
+**Runtime proof.** Two-Mall database on real Postgres, as `director@thiso.com`
+(MALL_DIRECTOR, `UserMallAccess` for Mall A only - not ADMIN, not CEO):
+
+| Probe | Result before fix |
+|---|---|
+| `GET /api/sales?period=2026-08` | Mall B's turnover row: brand name + `grossSales` 777,000,000 |
+| `GET /api/sales/summary?period=2026-08` | `totalGross` 777,000,000 - entirely Mall B |
+| `GET /api/sales/top-tenants` | Mall B's tenant |
+| `GET /api/sales/deadline` | Mall B's contracts and tenants |
+| `GET /api/sales/:id/audit` | HTTP 200 on a Mall B record |
+| `POST /api/sales/:id/approve` | HTTP 201 - Mall B row PENDING to **APPROVED** |
+| `POST /api/sales/:id/dispute` | HTTP 201 - Mall B row APPROVED to **DISPUTED** |
+| `GET /api/announcements/admin` | Mall B's announcement |
+| `GET /api/announcements` | Mall B's announcement |
+| `GET /api/announcements/:id` | HTTP 200 on a Mall B announcement |
+
+`SalesTurnover.status` gates revenue-share billing, so the write half is a
+financial control bypass, not only a disclosure. **P0 confirmed.**
+
+**What did NOT leak** (tested, fail-closed before the fix):
+
+- `POST /api/sales` with a Mall B `unitId` gave **403**. `MallAccessGuard` reads
+  `body.unitId`, so creates carrying a resolvable id were already protected.
+- `GET /api/announcements/admin?mallId=<mall B>` gave **403**. A *supplied*
+  mallId was always validated, so MALL-04 held; **omission** was the hole -
+  textbook MALL-03, "no mall context" silently meaning "every mall".
+- `spaces` list / by-id / `units/compare` / `units/bulk-update` gave **403**.
+- `tickets` list and all three formerly-GAP routes gave **403**.
+- ADMIN saw both malls (intentional super-admin, unchanged).
+
+**Fix.**
+
+1. `MallAccessService` gains a `salesTurnoverId` resolver
+   (`SalesTurnover` to `unit` to `mallId`), so the `:id` sales routes resolve
+   ownership through the same central registry as every other entity rather than
+   through a new ad-hoc check. A row that exists but resolves to no mall throws
+   instead of falling through the resolver's generic `if (mallId)` tail.
+2. `sales.controller.ts` derives the caller's mall set for all four list routes
+   and calls the resolver on all three `:id` routes.
+3. `sales.service.ts` applies `unit.mallId in mallIds` to `findAll` (query *and*
+   count), `getSummary`, `getTopTenants`, and both queries in `getDeadlineStatus`.
+4. `announcements` derives a scope on `findAllAdmin` (which previously took no
+   user argument at all), on `findAll`'s staff branch, and adds an owning-mall
+   check to `findOneForUser`.
+
+CEO is deliberately **not** given cross-mall read here: sales and announcements
+are outside the approved five (Dashboard, Reports, Analytics, AI,
+Approvals-action), and `mall-access.service.ts` already documents that a call
+site not passing `{ crossMallRead: true }` scopes CEO like any other role. No
+super-admin semantics were changed.
+
+**Post-fix runtime matrix** - same user, same probes: every read above returns 0
+Mall B rows, every `:id` route returns **403**, and the Mall B row stayed
+`PENDING` with 0 audit rows. Positive controls confirm no over-blocking: Mall A
+lists still return their 10 rows, and Mall A `:id` audit/approve still succeed.
+
+**No production data mutated.** Mall B and all its rows were created for this
+test and deleted afterwards; every table was verified back at its baseline count,
+and the one Mall A row touched by a positive control was restored to `PENDING`.
+
+**Residual - NOT closed by this batch.** `patrol` and `parking` scope at the
+service layer and were placed out of scope by the batch brief; they are not
+re-classified here. Split out as MALL-001-OPS below.
 
 ---
 
-## SCOPE-001 — Six endpoints self-declared as unenforced
+## MALL-001-OPS - patrol / parking / inventory mall scope not re-verified
+
+| Field | Value |
+|---|---|
+| ID | MALL-001-OPS |
+| Severity | UNVERIFIED |
+| Domain | Security / Multi-Mall |
+| Invariant | MALL-01, MALL-03 |
+| Status | OPEN - split from MALL-001 |
+
+**Description.** MALL-001's original evidence cited `patrol.service.ts:95` and
+`parking.service.ts:52,391`. Security Batch A's brief placed patrol, parking and
+inventory internals out of scope, so those services were **not** traced to their
+production callers and **no** runtime probe was run against them. Their
+`mallIds?: string[]` signatures share the fail-closed `[]` semantics proven for
+the rest of the platform, but "the caller always computes a scope" is unproven
+for these three modules.
+
+**Explicitly NOT claimed.** This is not a reported leak. It is the part of
+MALL-001's original evidence that Batch A did not discharge, recorded separately
+so that closing MALL-001 does not silently absorb it.
+
+**Next step.** Repeat the Batch A method (trace callers, then two-mall runtime
+matrix) for patrol, parking and inventory.
+
+---
+
+## SCOPE-001 - Six endpoints self-declared as unenforced
 
 | Field | Value |
 |---|---|
 | ID | SCOPE-001 |
-| Severity | UNVERIFIED (candidate P0/P1) |
+| Severity | **P0** for the `sales` + `announcements` half; the rest PROVEN SAFE |
 | Domain | Security / Multi-Mall |
-| Status | CONFIRMED that the declaration exists; leakage UNVERIFIED |
+| Status | **CLOSED** (Security Batch A, 2026-09-07) |
 
 **Description.** The code annotates 6 endpoints with
 `EnforcementStatus.GAP` — the project's own record of unenforced mall scope —
@@ -343,7 +446,51 @@ carry `PENDING_BUSINESS_CONFIRMATION`.
 **Evidence.** `grep -r "EnforcementStatus.GAP" apps/backend/src` → 6 hits in
 4 controllers; 121 `ENFORCED`, 9 `PENDING_BUSINESS_CONFIRMATION`.
 
-**Next step.** Phase 6 — reproduce each as an actual cross-mall read/write.
+**Next step.** Phase 6 - reproduce each as an actual cross-mall read/write.
+
+### RESOLVED (Security Batch A, 2026-09-07) - ORIGINAL finding above preserved
+
+Each of the six was resolved independently. Two were real and are FIXED; four
+were stale annotations and are PROVEN SAFE by runtime probe, not by re-reading.
+
+| # | Site | Verdict | Evidence |
+|---|---|---|---|
+| 1 | `announcements.controller.ts` `GET /announcements/admin` | **FIXED** | Leaked Mall B before the fix; 0 rows after. See MALL-001. |
+| 2 | `sales.controller.ts` (class-level) | **FIXED** | Cross-mall read **and** write proven; all 9 routes now scoped. See MALL-001. |
+| 3 | `spaces.controller.ts` (class-level) | **PROVEN SAFE** | The default is **inert**: all 45 routes carry their own `@Scope`, so the class status can never apply to any of them. Runtime spot-check as MALL_DIRECTOR/Mall A against Mall B objects: unit by-id 403, mall by-id 403, `units/compare` with mixed ids 403, `units/bulk-update` 403 with the unit unmodified, and the unscoped unit list disclosed no Mall B row. |
+| 4 | `tickets.controller.ts` `GET :id/escalations` | **PROVEN SAFE** | 403 for a foreign-mall caller *and* a foreign-tenant caller. |
+| 5 | `tickets.controller.ts` `POST :id/rate` | **PROVEN SAFE** | 403 both ways; no `TicketRating` row written. |
+| 6 | `tickets.controller.ts` `GET :id/rating` | **PROVEN SAFE** | 403 both ways. |
+
+CONTRA-003 (the tickets tracker) is discharged: all three routes call
+`validateTicket()` for the mall boundary and pass `currentUser` into `findOne()`
+for the tenant boundary. The controller comment claiming "none of those service
+methods receive currentUser at all" no longer described the code and was
+corrected. Runtime, on a two-Mall database:
+
+| Caller | Target | Result |
+|---|---|---|
+| MALL_DIRECTOR (Mall A) | Mall B ticket | 403 on all three |
+| TENANT CircleK | Highlands' ticket | 403 on all three |
+| TENANT Highlands | own ticket | 200 |
+
+`grep -r "EnforcementStatus.GAP" apps/backend/src` now returns **zero** hits
+outside tests. Every corrected annotation is pinned by a test asserting the
+declared status *and* the mechanism behind it, so a status can no longer be a
+claim about nothing.
+
+### PENDING_BUSINESS_CONFIRMATION - 9 endpoints, unchanged and NOT fixed
+
+Deliberately untouched: their intended boundary is not derivable from code.
+
+| Site | Count | Why it cannot be decided here |
+|---|---|---|
+| `sap.controller.ts` | 7 | FINANCE cross-mall SAP visibility is an unanswered policy question. Reachability confirmed but role-gated: `GET /api/sap/reconciliation` returns 403 to MALL_DIRECTOR today. |
+| `crm/customers.controller.ts` | 1 | **`Customer` has no `mallId` column at all** (verified against the live schema), exactly like `Lead`. There is no owning mall to enforce until the business defines one. Tracked as BC-016. |
+| `parking-dashboard.controller.ts` | 1 | BC-008; parking internals were out of Batch A's scope. |
+
+Inventing a mall for any of these would be manufacturing an authorization
+boundary the business has not defined, so none was invented.
 
 ---
 
