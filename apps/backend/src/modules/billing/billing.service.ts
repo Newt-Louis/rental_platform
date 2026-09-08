@@ -4,6 +4,7 @@ import { InvoiceAdjustmentType, InvoiceStatus, PaymentMethod, Prisma, CurrencyCo
 import * as crypto from 'crypto';
 import { StorageService } from '../../storage/storage.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject, formatDateVN } from '../notifications/email-design-system';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { formatMoney, formatMoneyWithCode } from '../../common/utils/format-money';
@@ -69,14 +70,18 @@ export class BillingService {
     await this.emailDelivery.enqueue(tx, {
       eventKey: `invoice-issued:${invoice.id}`,
       to: partyEmail,
-      subject: `[THISO] Hóa đơn ${invoice.invoiceNumber} đã phát hành`,
+      subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} đã phát hành`),
       html: this.emailService.invoiceIssuedHtml({
         tenantName: partyName,
         invoiceNumber: invoice.invoiceNumber,
+        invoiceId: invoice.id,
         totalAmount: invoice.totalAmount,
-        dueDate: invoice.dueDate.toLocaleDateString('vi-VN'),
+        dueDate: formatDateVN(invoice.dueDate) ?? '',
         period: invoice.period,
-        currencyCode: full?.currencyCode,
+        // Explicitly null rather than defaulted when the re-read returned
+        // nothing: the email then says the unit is unknown instead of printing
+        // a dong figure for what may be a USD invoice.
+        currencyCode: full?.currencyCode ?? null,
       }),
     });
   }

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Put, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EmailSettingsService } from './email-settings.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { UpdateEmailSettingsDto, SendTestEmailDto } from './dto/email-settings.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
@@ -38,9 +39,10 @@ export class EmailSettingsController {
     const to = dto.to || user.email;
     const result = await this.emailService.sendMail({
       to,
-      subject: 'THISO Leasing — Email thử nghiệm cấu hình SMTP',
-      html: `<p>Đây là email thử nghiệm xác nhận cấu hình SMTP của THISO Leasing Platform đang hoạt động.</p>
-             <p>Gửi lúc: ${new Date().toLocaleString('vi-VN')}</p>`,
+      subject: emailSubject('Email thử nghiệm cấu hình SMTP'),
+      html: this.emailService.smtpTestHtml({
+        sentAt: new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+      }),
     });
     return { to, ...result };
   }

@@ -6,6 +6,7 @@ import { EmailService } from './email.service';
 import * as crypto from 'crypto';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from './email-delivery.service';
+import { emailSubject } from './email-design-system';
 
 @Injectable()
 export class ContractExpiryScheduler {
@@ -48,7 +49,7 @@ export class ContractExpiryScheduler {
         },
         include: {
           tenant: { select: { id: true, brandName: true, companyName: true, contactEmail: true, contactName: true } },
-          unit: { select: { id: true, code: true } },
+          unit: { select: { id: true, code: true, mall: { select: { name: true } } } },
           managedBy: { select: { id: true, fullName: true, email: true } },
         },
       });
@@ -79,7 +80,7 @@ export class ContractExpiryScheduler {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `contract-expiry:${contract.id}:${daysLeft}:manager`,
               to: contract.managedBy.email,
-              subject: `[THISO] Hợp đồng ${contract.contractNumber} còn ${daysLeft} ngày — ${contract.tenant.brandName}`,
+              subject: emailSubject(`Hợp đồng ${contract.contractNumber} sắp hết hạn trong ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({
                 tenantName: contract.tenant.brandName,
                 unitCode: contract.unit.code,
@@ -87,6 +88,9 @@ export class ContractExpiryScheduler {
                 endDate: endDateStr,
                 daysLeft,
                 contactName: contract.managedBy.fullName,
+                contractId: contract.id,
+                mallName: contract.unit.mall?.name ?? null,
+                managerName: contract.managedBy.fullName,
               }),
             });
         }
@@ -96,7 +100,7 @@ export class ContractExpiryScheduler {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `contract-expiry:${contract.id}:${daysLeft}:tenant`,
               to: contract.tenant.contactEmail,
-              subject: `[THISO Mall] Hợp đồng thuê mặt bằng của ${contract.tenant.brandName} còn ${daysLeft} ngày`,
+              subject: emailSubject(`Hợp đồng thuê mặt bằng của ${contract.tenant.brandName} còn ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({
                 tenantName: contract.tenant.brandName,
                 unitCode: contract.unit.code,
@@ -104,6 +108,9 @@ export class ContractExpiryScheduler {
                 endDate: endDateStr,
                 daysLeft,
                 contactName: contract.tenant.contactName ?? contract.tenant.brandName,
+                contractId: contract.id,
+                mallName: contract.unit.mall?.name ?? null,
+                managerName: contract.managedBy?.fullName ?? null,
               }),
             });
         }

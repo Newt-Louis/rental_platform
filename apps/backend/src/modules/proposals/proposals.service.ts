@@ -22,6 +22,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 
@@ -525,17 +526,18 @@ export class ProposalsService {
         try {
           await this.emailService.sendMail({
             to: approver.email,
-            subject: `[THISO] Phê duyệt Proposal ${proposal.proposalNumber}`,
+            subject: emailSubject(`Đề xuất ${proposal.proposalNumber} chờ phê duyệt`),
             html: this.emailService.proposalApprovalHtml({
               approverName: approver.fullName,
               proposalNumber: proposal.proposalNumber,
+              proposalId: proposal.id,
               tenantName: proposal.tenant?.brandName ?? '—',
               unitCode: proposal.unit.code,
               rentPerSqm: proposal.rentPerSqm,
               monthlyRent: proposal.monthlyRent,
               discount: proposal.discount,
               submittedBy: creator?.fullName ?? 'Leasing',
-              currencyCode: proposal.rentCurrency,
+              currencyCode: proposal.rentCurrency ?? null,
             }),
           });
         } catch (e) {
@@ -824,7 +826,7 @@ export class ProposalsService {
     if (proposal.status !== ProposalStatus.APPROVED) {
       throw new BadRequestException('Only APPROVED proposals can be converted');
     }
-    let invitation: { email: string; token: string } | null = null;
+    let invitation: { email: string; token: string; contactName: string } | null = null;
     if (!proposal.tenantId) {
       const lead = proposal.lead;
       const companyName = tenantData?.companyName?.trim() || lead?.company?.trim();
@@ -845,13 +847,23 @@ export class ProposalsService {
         else await tx.user.create({ data: { email: contactEmail, fullName: contactName, phone: tenantData?.contactPhone || lead?.phone || undefined, role: 'TENANT', tenantId: created.id, password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10), inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
         return created;
       });
-      invitation = { email: contactEmail, token: rawToken };
+      invitation = { email: contactEmail, token: rawToken, contactName };
       proposal = await this.findOne(id);
     }
     const contract = await this.createContractFromProposal(id, { userId, markConverted: true });
     if (invitation) {
-      const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/activate?token=${encodeURIComponent(invitation.token)}`;
-      try { await this.emailService.sendMail({ to: invitation.email, subject: '[THISO] Kích hoạt tài khoản Tenant Portal', html: `<div style="font-family:Arial;max-width:600px;margin:auto"><h2>Chào mừng đến THISO Tenant Portal</h2><p>Hợp đồng của Quý khách đã được khởi tạo. Vui lòng bấm nút dưới đây để đặt mật khẩu và kích hoạt tài khoản.</p><p><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px">Kích hoạt tài khoản</a></p><p>Liên kết có hiệu lực trong 72 giờ.</p></div>` }); }
+      const portalUrl = appUrl(`/activate?token=${encodeURIComponent(invitation.token)}`);
+      try {
+        await this.emailService.sendMail({
+          to: invitation.email,
+          subject: emailSubject('Kích hoạt tài khoản Tenant Portal'),
+          html: this.emailService.portalInvitationHtml({
+            contactName: invitation.contactName ?? 'Quý khách',
+            portalUrl,
+            isReset: false,
+          }),
+        });
+      }
       catch (error) { this.logger.warn(`Tenant portal invitation failed for ${invitation.email}: ${error.message}`); }
     }
     return { ...contract, portalInvitationSent: Boolean(invitation), portalEmail: invitation?.email };

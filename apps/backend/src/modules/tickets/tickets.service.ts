@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -225,7 +226,7 @@ export class TicketsService {
     if (ticket.tenant.contactEmail) {
       await this.emailService.sendMail({
         to: ticket.tenant.contactEmail,
-        subject: `[THISO] Phiếu kiểm tra mới — ${ticket.ticketNumber}`,
+        subject: emailSubject(`Phiếu kiểm tra hiện trường mới — ${ticket.ticketNumber}`),
         html: this.emailService.ticketInspectionHtml({
           tenantName: ticket.tenant.brandName,
           ticketNumber: ticket.ticketNumber,

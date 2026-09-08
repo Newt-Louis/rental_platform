@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject, formatDateVN } from '../notifications/email-design-system';
 import { daysOverdue, policiesToApply } from './ar-dunning.util';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
@@ -104,15 +105,15 @@ export class ArDunningService {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
               to: partyEmail,
-              subject: `[THISO] Nhắc thanh toán hóa đơn ${invoice.invoiceNumber} (L${policy.level})`,
+              subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày`),
               html: this.emailService.invoiceOverdueHtml({
                 tenantName: partyName,
                 invoiceNumber: invoice.invoiceNumber,
+                invoiceId: invoice.id,
                 totalAmount: outstanding,
-                dueDate: new Date(invoice.dueDate).toLocaleDateString('vi-VN'),
+                dueDate: formatDateVN(invoice.dueDate) ?? '',
                 daysOverdue: overdueDays,
-                contactEmail: process.env.SMTP_USER ?? 'finance@thiso.com.vn',
-                currencyCode: invoice.currencyCode,
+                currencyCode: invoice.currencyCode ?? null,
               }),
             });
         }

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { EmailService } from '../notifications/email.service';
+import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -277,12 +278,14 @@ export class TenantsService {
   }
 
   private async sendPortalInvitation(email: string, token: string, contactName: string, isReset = false) {
-    const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/activate?token=${encodeURIComponent(token)}`;
+    const portalUrl = appUrl(`/activate?token=${encodeURIComponent(token)}`);
     try {
       const result = await this.emailService.sendMail({
         to: email,
-        subject: isReset ? '[THISO] Đặt lại mật khẩu Tenant Portal' : '[THISO] Kích hoạt tài khoản Tenant Portal',
-        html: `<div style="font-family:Arial;max-width:600px;margin:auto"><h2>THISO Tenant Portal</h2><p>Xin chào ${contactName},</p><p>${isReset ? 'Quản trị viên đã yêu cầu đặt lại mật khẩu tài khoản của Quý khách.' : 'Tài khoản Portal của Quý khách đã được tạo tự động.'}</p><p><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px">${isReset ? 'Đặt mật khẩu mới' : 'Kích hoạt tài khoản'}</a></p><p>Liên kết có hiệu lực trong 72 giờ.</p></div>`,
+        subject: emailSubject(
+          isReset ? 'Đặt lại mật khẩu Tenant Portal' : 'Kích hoạt tài khoản Tenant Portal',
+        ),
+        html: this.emailService.portalInvitationHtml({ contactName, portalUrl, isReset }),
       });
       return !('skipped' in result);
     } catch (error) {

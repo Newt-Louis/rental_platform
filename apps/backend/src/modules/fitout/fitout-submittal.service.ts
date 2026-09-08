@@ -5,6 +5,8 @@ import { StorageService } from '../../storage/storage.service';
 import type { ApprovalWorkflowCompletedEvent, ApprovalWorkflowRejectedEvent, ApprovalWorkflowStepAdvancedEvent } from '../approvals/approvals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
 import { Prisma, Role } from '@prisma/client';
 
@@ -18,6 +20,7 @@ export class FitoutSubmittalService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailDelivery: EmailDeliveryService,
+    private emailService: EmailService,
     private accessPolicy: FitoutAccessPolicyService,
   ) {}
 
@@ -410,8 +413,14 @@ export class FitoutSubmittalService {
         await this.emailDelivery.enqueue(this.prisma, {
           eventKey: `fitout-submittal:${submittal.id}:step:${stepOrder}:approver:${approver.id}`,
           to: approver.email,
-          subject: `[Fitout] Submittal chờ duyệt — ${submittal.formType.name}`,
-          html: `<p>Kính gửi ${approver.fullName},</p><p>Submittal <strong>${submittal.title}</strong> của ${submittal.project.tenant.brandName} (${submittal.project.unit.code}) đang chờ bạn phê duyệt.</p>`,
+          subject: emailSubject(`Hồ sơ fitout chờ duyệt — ${submittal.formType.name}`),
+          html: this.emailService.fitoutSubmittalApprovalHtml({
+            approverName: approver.fullName,
+            submittalTitle: submittal.title,
+            formTypeName: submittal.formType.name,
+            tenantName: submittal.project.tenant.brandName,
+            unitCode: submittal.project.unit.code,
+          }),
         });
       }
     }

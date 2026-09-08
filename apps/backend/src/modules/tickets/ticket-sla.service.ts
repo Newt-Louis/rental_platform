@@ -5,6 +5,7 @@ import { TicketType, TicketPriority, Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
@@ -131,10 +132,11 @@ export class TicketSlaService {
           try {
             await this.emailService.sendMail({
               to: mgr.email,
-              subject: `[THISO] Ticket SLA L${nextLevel} — ${ticket.ticketNumber}`,
+              subject: emailSubject(`Ticket ${ticket.ticketNumber} vượt SLA (L${nextLevel})`),
               html: this.emailService.ticketSlaHtml({
                 managerName: mgr.fullName,
                 ticketNumber: ticket.ticketNumber,
+                ticketId: ticket.id,
                 subject: ticket.subject,
                 tenantName: ticket.tenant.brandName,
                 level: nextLevel,
