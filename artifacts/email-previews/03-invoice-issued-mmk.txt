@@ -1,0 +1,35 @@
+Hóa đơn mới đã phát hành
+
+Leasing Platform
+
+Hóa đơn
+
+Hóa đơn mới đã phát hành
+
+ĐÃ PHÁT HÀNH
+
+Kính gửi Golden Myanmar Retail Co., Ltd., hóa đơn kỳ 09/2026 đã được phát hành.
+
+17.550.000,00 MMK
+
+tổng phải thanh toán
+
+Thông tin hóa đơn
+
+Số hóa đơn
+INV-2026-09-00000000000042
+
+Kỳ
+09/2026
+
+Hạn thanh toán
+15/10/2026
+
+Xem hóa đơn
+
+http://127.0.0.1:4173/billing?invoiceId=invoice-preview-1
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.
