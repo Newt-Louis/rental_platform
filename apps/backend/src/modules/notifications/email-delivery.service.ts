@@ -4,12 +4,14 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailService } from './email.service';
+import { toPlainText } from './email-design-system';
 
 export interface EmailDeliveryRequest {
   eventKey: string;
   to: string | string[];
   subject: string;
   html: string;
+  text?: string;
   cc?: string | string[];
 }
 
@@ -33,7 +35,11 @@ export class EmailDeliveryService {
       create: {
         eventKey: request.eventKey,
         recipient: { to: request.to, cc: request.cc ?? null },
-        payload: { subject: request.subject, html: request.html },
+        payload: {
+          subject: request.subject,
+          html: request.html,
+          text: request.text ?? toPlainText(request.html),
+        },
       },
     });
   }
@@ -60,13 +66,14 @@ export class EmailDeliveryService {
         to: string | string[];
         cc?: string | string[] | null;
       };
-      const payload = delivery.payload as { subject: string; html: string };
+      const payload = delivery.payload as { subject: string; html: string; text?: string };
       try {
         const result = await this.email.sendMail({
           to: recipient.to,
           cc: recipient.cc ?? undefined,
           subject: payload.subject,
           html: payload.html,
+          text: payload.text,
         });
         await this.prisma.emailDelivery.update({
           where: { id: delivery.id },

@@ -3,8 +3,14 @@ import * as nodemailer from 'nodemailer';
 import { CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EncryptionService } from '../../common/services/encryption.service';
-import { formatMoneyWithCode } from '../../common/utils/format-money';
-import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
+import {
+  renderEmail,
+  appUrl,
+  esc,
+  money,
+  toPlainText,
+  type EmailSeverity,
+} from './email-design-system';
 
 interface ResolvedSmtpConfig {
   host: string;
@@ -65,7 +71,13 @@ export class EmailService {
     return null;
   }
 
-  async sendMail(opts: { to: string | string[]; subject: string; html: string; cc?: string | string[] }) {
+  async sendMail(opts: {
+    to: string | string[];
+    subject: string;
+    html: string;
+    text?: string;
+    cc?: string | string[];
+  }) {
     const config = await this.resolveConfig();
     if (!config) {
       this.logger.warn(`[EMAIL DISABLED] Would send to ${Array.isArray(opts.to) ? opts.to.join(',') : opts.to}: ${opts.subject}`);
@@ -94,6 +106,7 @@ export class EmailService {
           cc: opts.cc ? (Array.isArray(opts.cc) ? opts.cc.join(',') : opts.cc) : undefined,
           subject: opts.subject,
           html: opts.html,
+          text: opts.text ?? toPlainText(opts.html),
         });
         this.logger.log(`Email sent to ${opts.to}: ${info.messageId}`);
         return { messageId: info.messageId };
@@ -127,7 +140,24 @@ export class EmailService {
   }
 
   // ─── Templates ─────────────────────────────────────────────────────────────
+  //
+  // Every template below renders through `renderEmail` in email-design-system.ts.
+  // They decide WHAT to say and how urgent it is; the design system decides how
+  // it looks. Business strings are passed as data and escaped there — no template
+  // interpolates a tenant name into raw markup any more.
 
+  /**
+   * CONTRACT EXPIRY.
+   *
+   * Severity mirrors the thresholds this platform already uses (the amber/red
+   * split in the previous template, driven by the `[180, 90, 60, 30]` schedule in
+   * contract-expiry.scheduler.ts). Nothing about when an email is sent, or to
+   * whom, is decided here.
+   *
+   * `mallName` and `managerName` are optional: the scheduler supplies them when
+   * the contract has them, and the row simply disappears when it does not.
+   * Nothing is filled in with a placeholder.
+   */
   contractExpiryHtml(data: {
     tenantName: string;
     unitCode: string;
@@ -135,173 +165,149 @@ export class EmailService {
     endDate: string;
     daysLeft: number;
     contactName: string;
+    contractId: string;
+    mallName?: string | null;
+    managerName?: string | null;
   }): string {
-    const urgencyColor = data.daysLeft <= 30 ? '#dc2626' : data.daysLeft <= 60 ? '#d97706' : '#2563eb';
-    const urgencyLabel = data.daysLeft <= 30 ? 'KHẨN CẤP' : data.daysLeft <= 60 ? 'CẦN XỬ LÝ' : 'THÔNG BÁO';
+    // A contract already past its end date must never be described as having
+    // days left. The scheduler only targets future dates, so this is a guard on
+    // the template's own contract rather than a change to when mail is sent.
+    const expired = data.daysLeft <= 0;
+    const severity: EmailSeverity = expired || data.daysLeft <= 30
+      ? 'CRITICAL'
+      : data.daysLeft <= 60
+        ? 'WARNING'
+        : 'INFO';
 
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-  .header { background: #1e293b; color: white; padding: 24px 32px; }
-  .header h1 { margin: 0; font-size: 20px; }
-  .header p { margin: 4px 0 0; opacity: 0.7; font-size: 13px; }
-  .badge { display: inline-block; background: ${urgencyColor}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-top: 12px; }
-  .content { padding: 32px; }
-  .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-  .info-row:last-child { border-bottom: none; }
-  .label { color: #6b7280; }
-  .value { font-weight: 600; color: #111827; }
-  .days-left { font-size: 36px; font-weight: bold; color: ${urgencyColor}; text-align: center; margin: 20px 0 8px; }
-  .days-label { text-align: center; color: #6b7280; font-size: 14px; margin-bottom: 20px; }
-  .cta { display: block; text-align: center; background: ${urgencyColor}; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 24px 0; }
-  .footer { background: #f9fafb; padding: 16px 32px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style>
-</head><body>
-<div class="container">
-  <div class="header">
-    <h1>THISO Leasing Platform</h1>
-    <p>Hệ thống quản lý cho thuê mặt bằng</p>
-    <span class="badge">${urgencyLabel}</span>
-  </div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.contactName}</strong>,</p>
-    <p>Hệ thống THISO Leasing thông báo hợp đồng sau sắp hết hạn:</p>
-
-    <div class="days-left">${data.daysLeft}</div>
-    <div class="days-label">ngày còn lại</div>
-
-    <div style="background:#f9fafb;border-radius:8px;padding:16px;margin:16px 0;">
-      <div class="info-row"><span class="label">Khách thuê</span><span class="value">${data.tenantName}</span></div>
-      <div class="info-row"><span class="label">Mã lô</span><span class="value">${data.unitCode}</span></div>
-      <div class="info-row"><span class="label">Số hợp đồng</span><span class="value">${data.contractNumber}</span></div>
-      <div class="info-row"><span class="label">Ngày hết hạn</span><span class="value" style="color:${urgencyColor}">${data.endDate}</span></div>
-    </div>
-
-    <p style="color:#374151;font-size:14px;">Vui lòng liên hệ bộ phận Leasing để thực hiện gia hạn hoặc xác nhận không gia hạn hợp đồng.</p>
-  </div>
-  <div class="footer">Email tự động từ THISO Leasing Platform | Ngày gửi: ${new Date().toLocaleDateString('vi-VN')}</div>
-</div>
-</body></html>`;
+    return renderEmail({
+      severity,
+      preheader: `${data.contractNumber} · ${data.tenantName} · hết hạn ${data.endDate}`,
+      eyebrow: 'Hợp đồng',
+      title: expired ? 'Hợp đồng đã hết hạn' : 'Hợp đồng sắp hết hạn',
+      badgeLabel: expired ? 'ĐÃ HẾT HẠN' : undefined,
+      description: `Kính gửi ${esc(data.contactName)}, hợp đồng <strong>${esc(data.contractNumber)}</strong> của ${esc(data.tenantName)} ${expired ? 'đã hết hạn' : 'sẽ hết hạn'} ngày ${esc(data.endDate)}.`,
+      hero: expired
+        ? { value: 'Đã hết hạn', unit: `Ngày hết hạn ${data.endDate}` }
+        : { value: String(data.daysLeft), unit: 'ngày còn lại' },
+      info: {
+        title: 'Thông tin hợp đồng',
+        rows: [
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mã lô', value: data.unitCode },
+          { label: 'Số hợp đồng', value: data.contractNumber },
+          { label: 'Ngày hết hạn', value: data.endDate, emphasis: true },
+          { label: 'Trung tâm', value: data.mallName },
+          { label: 'Phụ trách', value: data.managerName },
+        ],
+      },
+      cta: { label: 'Xem hợp đồng', url: appUrl(`/contracts?id=${encodeURIComponent(data.contractId)}`) },
+      note: 'Vui lòng kiểm tra và thực hiện quy trình gia hạn hoặc xác nhận không gia hạn theo quy trình hiện hành.',
+    });
   }
 
+  /** APPROVAL — a proposal waiting on this recipient's decision. */
   proposalApprovalHtml(data: {
     approverName: string;
     proposalNumber: string;
+    proposalId: string;
     tenantName: string;
     unitCode: string;
     rentPerSqm: number;
     monthlyRent: number;
     discount: number;
     submittedBy: string;
-    currencyCode?: CurrencyCode;
+    /**
+     * Required, and may be explicitly null. Never defaulted — see `money()`.
+     */
+    currencyCode: CurrencyCode | null;
   }): string {
-    const money = (value: number) => formatMoneyWithCode(value, data.currencyCode ?? DEFAULT_CURRENCY_CODE);
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-  .header { background: #1e40af; color: white; padding: 24px 32px; }
-  .header h1 { margin: 0; font-size: 20px; }
-  .content { padding: 32px; }
-  .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-  .info-row:last-child { border-bottom: none; }
-  .label { color: #6b7280; }
-  .value { font-weight: 600; color: #111827; }
-  .cta { display: block; text-align: center; background: #1e40af; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 24px 0; }
-  .footer { background: #f9fafb; padding: 16px 32px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style>
-</head><body>
-<div class="container">
-  <div class="header">
-    <h1>Yêu cầu phê duyệt Proposal</h1>
-    <p>THISO Leasing Platform</p>
-  </div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.approverName}</strong>,</p>
-    <p>Một Proposal mới đang chờ phê duyệt của bạn:</p>
-
-    <div style="background:#f9fafb;border-radius:8px;padding:16px;margin:16px 0;">
-      <div class="info-row"><span class="label">Số Proposal</span><span class="value">${data.proposalNumber}</span></div>
-      <div class="info-row"><span class="label">Khách thuê</span><span class="value">${data.tenantName}</span></div>
-      <div class="info-row"><span class="label">Mã lô</span><span class="value">${data.unitCode}</span></div>
-      <div class="info-row"><span class="label">Giá thuê/m²</span><span class="value">${money(data.rentPerSqm)}</span></div>
-      <div class="info-row"><span class="label">Tiền thuê/tháng</span><span class="value">${money(data.monthlyRent)}</span></div>
-      ${data.discount > 0 ? `<div class="info-row"><span class="label">Chiết khấu</span><span class="value" style="color:#dc2626">${data.discount}%</span></div>` : ''}
-      <div class="info-row"><span class="label">Người lập</span><span class="value">${data.submittedBy}</span></div>
-    </div>
-
-    <p style="color:#374151;font-size:14px;">Vui lòng đăng nhập hệ thống để xem chi tiết và thực hiện phê duyệt.</p>
-  </div>
-  <div class="footer">Email tự động từ THISO Leasing Platform | ${new Date().toLocaleDateString('vi-VN')}</div>
-</div>
-</body></html>`;
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.proposalNumber} · ${data.tenantName} · ${data.unitCode}`,
+      eyebrow: 'Phê duyệt',
+      title: 'Đề xuất chờ phê duyệt',
+      badgeLabel: 'CHỜ DUYỆT',
+      description: `Kính gửi ${esc(data.approverName)}, đề xuất <strong>${esc(data.proposalNumber)}</strong> đang chờ phê duyệt của bạn.`,
+      info: {
+        title: 'Thông tin đề xuất',
+        rows: [
+          { label: 'Số đề xuất', value: data.proposalNumber },
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mã lô', value: data.unitCode },
+          { label: 'Giá thuê/m²', value: money(data.rentPerSqm, data.currencyCode) },
+          { label: 'Tiền thuê/tháng', value: money(data.monthlyRent, data.currencyCode), emphasis: true },
+          // Omitted entirely when there is no discount, rather than shown as 0%.
+          { label: 'Chiết khấu', value: data.discount > 0 ? `${data.discount}%` : null },
+          { label: 'Người lập', value: data.submittedBy },
+        ],
+      },
+      cta: { label: 'Xem đề xuất', url: appUrl(`/proposals?id=${encodeURIComponent(data.proposalId)}`) },
+      note: 'Vui lòng đăng nhập hệ thống để xem chi tiết và thực hiện phê duyệt.',
+    });
   }
 
+  /** FINANCE — an overdue invoice. */
   invoiceOverdueHtml(data: {
     tenantName: string;
     invoiceNumber: string;
+    invoiceId: string;
     totalAmount: number;
     dueDate: string;
     daysOverdue: number;
-    contactEmail: string;
-    currencyCode?: CurrencyCode;
+    currencyCode: CurrencyCode | null;
   }): string {
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
-  .header { background: #dc2626; color: white; padding: 24px 32px; }
-  .content { padding: 32px; font-size: 14px; color: #374151; }
-  .amount { font-size: 32px; font-weight: bold; color: #dc2626; text-align: center; margin: 20px 0; }
-  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style></head><body>
-<div class="container">
-  <div class="header"><h1 style="margin:0">Hóa đơn quá hạn</h1></div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
-    <p>Hóa đơn đã quá hạn <strong>${data.daysOverdue} ngày</strong>:</p>
-    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
-    <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
-    <p>Liên hệ Finance: <a href="mailto:${data.contactEmail}">${data.contactEmail}</a></p>
-  </div>
-  <div class="footer">THISO Leasing Platform</div>
-</div></body></html>`;
+    return renderEmail({
+      severity: 'CRITICAL',
+      preheader: `${data.invoiceNumber} · quá hạn ${data.daysOverdue} ngày · hạn ${data.dueDate}`,
+      eyebrow: 'Hóa đơn',
+      title: 'Hóa đơn quá hạn thanh toán',
+      badgeLabel: 'QUÁ HẠN',
+      description: `Kính gửi ${esc(data.tenantName)}, hóa đơn <strong>${esc(data.invoiceNumber)}</strong> đã quá hạn thanh toán ${data.daysOverdue} ngày.`,
+      hero: { value: money(data.totalAmount, data.currencyCode), unit: 'số tiền còn phải trả' },
+      info: {
+        title: 'Thông tin hóa đơn',
+        rows: [
+          { label: 'Số hóa đơn', value: data.invoiceNumber },
+          { label: 'Hạn thanh toán', value: data.dueDate, emphasis: true },
+          { label: 'Số ngày quá hạn', value: `${data.daysOverdue} ngày`, emphasis: true },
+        ],
+      },
+      cta: { label: 'Xem hóa đơn', url: appUrl(`/billing?invoiceId=${encodeURIComponent(data.invoiceId)}`) },
+      note: 'Vui lòng thanh toán hoặc liên hệ bộ phận Tài chính nếu đã thanh toán.',
+    });
   }
 
+  /** FINANCE — a newly issued invoice. */
   invoiceIssuedHtml(data: {
     tenantName: string;
     invoiceNumber: string;
+    invoiceId: string;
     totalAmount: number;
     dueDate: string;
     period: string;
-    currencyCode?: CurrencyCode;
+    currencyCode: CurrencyCode | null;
   }): string {
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
-  .header { background: #2563eb; color: white; padding: 24px 32px; }
-  .content { padding: 32px; font-size: 14px; color: #374151; }
-  .amount { font-size: 32px; font-weight: bold; color: #2563eb; text-align: center; margin: 20px 0; }
-  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style></head><body>
-<div class="container">
-  <div class="header"><h1 style="margin:0">Hóa đơn mới</h1></div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
-    <p>Hóa đơn kỳ <strong>${data.period}</strong> đã được phát hành:</p>
-    <div class="amount">${formatMoneyWithCode(data.totalAmount, data.currencyCode ?? DEFAULT_CURRENCY_CODE)}</div>
-    <p>Số HĐ: ${data.invoiceNumber} · Hạn TT: ${data.dueDate}</p>
-  </div>
-  <div class="footer">THISO Leasing Platform</div>
-</div></body></html>`;
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.invoiceNumber} · kỳ ${data.period} · hạn ${data.dueDate}`,
+      eyebrow: 'Hóa đơn',
+      title: 'Hóa đơn mới đã phát hành',
+      badgeLabel: 'ĐÃ PHÁT HÀNH',
+      description: `Kính gửi ${esc(data.tenantName)}, hóa đơn kỳ <strong>${esc(data.period)}</strong> đã được phát hành.`,
+      hero: { value: money(data.totalAmount, data.currencyCode), unit: 'tổng phải thanh toán' },
+      info: {
+        title: 'Thông tin hóa đơn',
+        rows: [
+          { label: 'Số hóa đơn', value: data.invoiceNumber },
+          { label: 'Kỳ', value: data.period },
+          { label: 'Hạn thanh toán', value: data.dueDate, emphasis: true },
+        ],
+      },
+      cta: { label: 'Xem hóa đơn', url: appUrl(`/billing?invoiceId=${encodeURIComponent(data.invoiceId)}`) },
+    });
   }
 
+  /** DEADLINE — a fitout stage past its SLA target. */
   fitoutSlaHtml(data: {
     managerName: string;
     tenantName: string;
@@ -309,92 +315,164 @@ export class EmailService {
     stageName: string;
     targetDate: string;
     isEscalation: boolean;
+    projectId: string;
   }): string {
-    const color = data.isEscalation ? '#dc2626' : '#ea580c';
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
-  .header { background: ${color}; color: white; padding: 24px 32px; }
-  .content { padding: 32px; font-size: 14px; color: #374151; }
-  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style></head><body>
-<div class="container">
-  <div class="header"><h1 style="margin:0">${data.isEscalation ? '🚨 Fitout Escalation' : '⚠️ Fitout SLA Breach'}</h1></div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.managerName}</strong>,</p>
-    <p>Dự án fitout của <strong>${data.tenantName}</strong> (lô <strong>${data.unitCode}</strong>) đã trễ SLA:</p>
-    <ul>
-      <li><strong>Giai đoạn:</strong> ${data.stageName}</li>
-      <li><strong>Hạn mục tiêu:</strong> ${data.targetDate}</li>
-    </ul>
-    <p>Vui lòng đăng nhập hệ thống để xử lý.</p>
-  </div>
-  <div class="footer">THISO Leasing Platform</div>
-</div></body></html>`;
+    return renderEmail({
+      severity: data.isEscalation ? 'CRITICAL' : 'WARNING',
+      preheader: `${data.tenantName} · ${data.unitCode} · ${data.stageName} · hạn ${data.targetDate}`,
+      eyebrow: 'Fitout',
+      title: data.isEscalation ? 'Fitout vượt SLA — đã leo thang' : 'Fitout trễ hạn SLA',
+      badgeLabel: data.isEscalation ? 'LEO THANG' : 'TRỄ SLA',
+      description: `Kính gửi ${esc(data.managerName)}, dự án fitout của <strong>${esc(data.tenantName)}</strong> tại lô ${esc(data.unitCode)} đã trễ hạn SLA.`,
+      info: {
+        title: 'Thông tin dự án',
+        rows: [
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mã lô', value: data.unitCode },
+          { label: 'Giai đoạn', value: data.stageName },
+          { label: 'Hạn mục tiêu', value: data.targetDate, emphasis: true },
+        ],
+      },
+      cta: { label: 'Xem dự án fitout', url: appUrl(`/fitout?projectId=${encodeURIComponent(data.projectId)}`) },
+      note: 'Vui lòng đăng nhập hệ thống để cập nhật tiến độ hoặc xử lý nguyên nhân chậm trễ.',
+    });
   }
 
+  /** OPERATIONS — a ticket that has breached its SLA and escalated. */
   ticketSlaHtml(data: {
     managerName: string;
     ticketNumber: string;
+    ticketId: string;
     subject: string;
     tenantName: string;
     level: number;
   }): string {
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
-  .header { background: #ea580c; color: white; padding: 24px 32px; }
-  .content { padding: 32px; font-size: 14px; color: #374151; }
-  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style></head><body>
-<div class="container">
-  <div class="header"><h1 style="margin:0">Ticket SLA — Level ${data.level}</h1></div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.managerName}</strong>,</p>
-    <p>Ticket <strong>${data.ticketNumber}</strong> đã vượt SLA và cần xử lý:</p>
-    <ul>
-      <li><strong>Tiêu đề:</strong> ${data.subject}</li>
-      <li><strong>Khách thuê:</strong> ${data.tenantName}</li>
-      <li><strong>Mức escalation:</strong> L${data.level}</li>
-    </ul>
-    <p>Vui lòng đăng nhập hệ thống để xử lý ticket.</p>
-  </div>
-  <div class="footer">THISO Leasing Platform</div>
-</div></body></html>`;
+    return renderEmail({
+      severity: 'WARNING',
+      preheader: `${data.ticketNumber} · ${data.tenantName} · escalation L${data.level}`,
+      eyebrow: 'Ticket vận hành',
+      title: 'Ticket vượt SLA',
+      badgeLabel: `ESCALATION L${data.level}`,
+      description: `Kính gửi ${esc(data.managerName)}, ticket <strong>${esc(data.ticketNumber)}</strong> đã vượt SLA và cần được xử lý.`,
+      info: {
+        title: 'Thông tin ticket',
+        rows: [
+          { label: 'Mã ticket', value: data.ticketNumber },
+          { label: 'Tiêu đề', value: data.subject },
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mức escalation', value: `L${data.level}`, emphasis: true },
+        ],
+      },
+      cta: { label: 'Xem ticket', url: appUrl(`/tickets?id=${encodeURIComponent(data.ticketId)}`) },
+    });
   }
 
+  /**
+   * OPERATIONS — an inspection recorded against a tenant's own unit.
+   *
+   * Tenant-facing, so the CTA lands on the Tenant Portal. There is no
+   * per-record deep link there (TenantPortalPage reads no URL parameter), so the
+   * link is the portal itself rather than a fabricated record URL.
+   */
   ticketInspectionHtml(data: {
     tenantName: string;
     ticketNumber: string;
     subject: string;
     unitCode: string;
   }): string {
-    return `
-<!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"/>
-<style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; }
-  .header { background: #2563eb; color: white; padding: 24px 32px; }
-  .content { padding: 32px; font-size: 14px; color: #374151; }
-  .footer { background: #f9fafb; padding: 16px; font-size: 12px; color: #9ca3af; text-align: center; }
-</style></head><body>
-<div class="container">
-  <div class="header"><h1 style="margin:0">📋 Phiếu kiểm tra hiện trường mới</h1></div>
-  <div class="content">
-    <p>Kính gửi <strong>${data.tenantName}</strong>,</p>
-    <p>Nhân viên vận hành vừa ghi nhận một phiếu kiểm tra hiện trường tại mặt bằng của quý khách:</p>
-    <ul>
-      <li><strong>Mã phiếu:</strong> ${data.ticketNumber}</li>
-      <li><strong>Tiêu đề:</strong> ${data.subject}</li>
-      <li><strong>Mặt bằng:</strong> ${data.unitCode}</li>
-    </ul>
-    <p>Vui lòng đăng nhập Tenant Portal để xem chi tiết, hình ảnh và phản hồi.</p>
-  </div>
-  <div class="footer">THISO Leasing Platform</div>
-</div></body></html>`;
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.ticketNumber} · ${data.unitCode} · ${data.subject}`,
+      eyebrow: 'Kiểm tra hiện trường',
+      title: 'Phiếu kiểm tra hiện trường mới',
+      badgeLabel: 'MỚI',
+      description: `Kính gửi ${esc(data.tenantName)}, nhân viên vận hành vừa ghi nhận một phiếu kiểm tra tại mặt bằng của Quý khách.`,
+      info: {
+        title: 'Thông tin phiếu',
+        rows: [
+          { label: 'Mã phiếu', value: data.ticketNumber },
+          { label: 'Tiêu đề', value: data.subject },
+          { label: 'Mặt bằng', value: data.unitCode },
+        ],
+      },
+      cta: { label: 'Mở Tenant Portal', url: appUrl('/tenant-portal') },
+      note: 'Vui lòng đăng nhập Tenant Portal để xem chi tiết, hình ảnh và gửi phản hồi.',
+    });
+  }
+
+  /**
+   * SYSTEM — Tenant Portal account activation / password reset.
+   *
+   * Replaces two near-identical single-line HTML strings that lived inline in
+   * tenants.service.ts and proposals.service.ts.
+   */
+  portalInvitationHtml(data: {
+    contactName: string;
+    portalUrl: string;
+    isReset: boolean;
+  }): string {
+    return renderEmail({
+      severity: 'INFO',
+      preheader: data.isReset
+        ? 'Liên kết đặt lại mật khẩu có hiệu lực trong 72 giờ'
+        : 'Liên kết kích hoạt có hiệu lực trong 72 giờ',
+      eyebrow: 'Tenant Portal',
+      title: data.isReset ? 'Đặt lại mật khẩu Tenant Portal' : 'Kích hoạt tài khoản Tenant Portal',
+      description: data.isReset
+        ? `Xin chào ${esc(data.contactName)}, quản trị viên đã yêu cầu đặt lại mật khẩu tài khoản của Quý khách.`
+        : `Xin chào ${esc(data.contactName)}, tài khoản Tenant Portal của Quý khách đã được tạo.`,
+      cta: {
+        label: data.isReset ? 'Đặt mật khẩu mới' : 'Kích hoạt tài khoản',
+        url: data.portalUrl,
+      },
+      note: 'Liên kết có hiệu lực trong <strong>72 giờ</strong>. Nếu Quý khách không thực hiện yêu cầu này, vui lòng bỏ qua email.',
+    });
+  }
+
+  /**
+   * APPROVAL — a fitout submittal waiting on this recipient.
+   *
+   * The CTA lands on the fitout approvals list: no per-submittal deep link
+   * exists in the frontend, exactly as NotificationCenter's own route map
+   * records for FITOUT_SUBMITTAL.
+   */
+  fitoutSubmittalApprovalHtml(data: {
+    approverName: string;
+    submittalTitle: string;
+    formTypeName: string;
+    tenantName: string;
+    unitCode: string;
+  }): string {
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.formTypeName} · ${data.tenantName} · ${data.unitCode}`,
+      eyebrow: 'Fitout',
+      title: 'Hồ sơ fitout chờ phê duyệt',
+      badgeLabel: 'CHỜ DUYỆT',
+      description: `Kính gửi ${esc(data.approverName)}, hồ sơ <strong>${esc(data.submittalTitle)}</strong> đang chờ bạn phê duyệt.`,
+      info: {
+        title: 'Thông tin hồ sơ',
+        rows: [
+          { label: 'Loại hồ sơ', value: data.formTypeName },
+          { label: 'Tiêu đề', value: data.submittalTitle },
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mã lô', value: data.unitCode },
+        ],
+      },
+      cta: { label: 'Xem hồ sơ chờ duyệt', url: appUrl('/fitout-approvals') },
+    });
+  }
+
+  /** SYSTEM — the SMTP configuration test send. */
+  smtpTestHtml(data: { sentAt: string }): string {
+    return renderEmail({
+      severity: 'SUCCESS',
+      preheader: 'Cấu hình SMTP hoạt động bình thường',
+      eyebrow: 'Hệ thống',
+      title: 'Email thử nghiệm cấu hình SMTP',
+      badgeLabel: 'THÀNH CÔNG',
+      description: 'Nếu Quý vị nhận được email này, cấu hình SMTP của THISO Leasing Platform đang hoạt động bình thường.',
+      info: { rows: [{ label: 'Thời điểm gửi', value: data.sentAt }] },
+    });
   }
 }
