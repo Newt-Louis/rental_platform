@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   canAccessModule,
   canAccessPath,
@@ -8,8 +8,11 @@ import {
   ROUTE_PERMISSIONS,
   TENANT_NAV,
 } from './permissions';
+import { usePermissionsStore } from '@/store/permissions.store';
 
 describe('route permissions', () => {
+  afterEach(() => usePermissionsStore.getState().reset());
+
   it('maps every navigation item to its declared path module', () => {
     const items = [...NAV_GROUPS.flatMap((group) => group.items), ...TENANT_NAV];
 
@@ -76,6 +79,21 @@ describe('route permissions', () => {
     expect(canAccessPath('CEO', '/admin?tab=departments')).toBe(true);
     expect(canAccessPath('MALL_DIRECTOR', '/admin?tab=departments')).toBe(true);
     expect(canAccessPath('FINANCE', '/admin?tab=departments')).toBe(false);
+  });
+
+  it('PERM-FITOUT-EMPTY-001 hides and denies Fitout when the configured module set is empty', () => {
+    usePermissionsStore.getState().setAllowedModules([]);
+
+    expect(ROUTE_PERMISSIONS.fitout).toContain('OPERATION');
+    expect(canAccessModule('OPERATION', 'fitout')).toBe(false);
+    expect(canAccessPath('OPERATION', '/fitout')).toBe(false);
+  });
+
+  it('PERM-FITOUT-NOCONFIG-002 uses the documented static fallback before config loads', () => {
+    usePermissionsStore.getState().reset();
+
+    expect(canAccessModule('OPERATION', 'fitout')).toBe(true);
+    expect(canAccessPath('OPERATION', '/fitout')).toBe(true);
   });
 
   it('covers every RouteModule and keeps every navigation path unique (regression guard for the ' +

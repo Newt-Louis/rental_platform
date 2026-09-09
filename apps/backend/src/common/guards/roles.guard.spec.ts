@@ -5,7 +5,11 @@ import { ExecutionContext } from '@nestjs/common';
 import { RolesGuard } from './roles.guard';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { MODULE_KEY } from '../decorators/module-roles.decorator';
+import {
+  MODULE_FIXED_ROLES_KEY,
+  MODULE_KEY,
+  MODULE_ROLE_CEILING_KEY,
+} from '../decorators/module-roles.decorator';
 import { PermissionsService } from '../services/permissions.service';
 
 describe('RolesGuard', () => {
@@ -144,6 +148,110 @@ describe('RolesGuard', () => {
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
       expect(permissions.getAllowedRoles).toHaveBeenCalledWith('tickets', 'mall-1');
+    });
+
+    it('uses the authenticated active Mall for Fitout endpoints with no resource Mall', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { class: [Role.OPERATION] },
+        [MODULE_KEY]: { class: 'fitout' },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.OPERATION]));
+      (context.switchToHttp as jest.Mock).mockReturnValue({
+        getRequest: () => ({
+          user: { role: Role.OPERATION, activeMallId: 'mall-active' },
+          query: {}, body: {}, params: {},
+        }),
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(permissions.getAllowedRoles).toHaveBeenCalledWith('fitout', 'mall-active');
+    });
+
+    it('uses the authoritative Mall resolved by MallAccessGuard for a Fitout resource', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.OPERATION] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.OPERATION]));
+      (context.switchToHttp as jest.Mock).mockReturnValue({
+        getRequest: () => ({
+          user: { role: Role.OPERATION },
+          authorizationMallId: 'mall-from-project',
+          query: {}, body: {}, params: { id: 'project-1' },
+        }),
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(permissions.getAllowedRoles).toHaveBeenCalledWith('fitout', 'mall-from-project');
+    });
+
+    it('keeps an explicit Tenant Fitout capability outside the staff matrix', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.OPERATION, Role.TENANT] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+        [MODULE_FIXED_ROLES_KEY]: { handler: [Role.TENANT] },
+      });
+      withUser({ role: Role.TENANT });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(permissions.getAllowedRoles).not.toHaveBeenCalled();
+    });
+
+    it('revokes Fitout access on a handler that explicitly composes with the module matrix', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.OPERATION, Role.TENANT] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+        [MODULE_FIXED_ROLES_KEY]: { handler: [Role.TENANT] },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.MALL_DIRECTOR]));
+      withUser({ role: Role.OPERATION });
+
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('PERM-FITOUT-EMPTY-001 denies an empty configured Fitout role set without static fallback', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.OPERATION, Role.TENANT] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+        [MODULE_FIXED_ROLES_KEY]: { handler: [Role.TENANT] },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(new Set());
+      withUser({ role: Role.OPERATION });
+
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+      expect(permissions.getAllowedRoles).toHaveBeenCalledWith('fitout', undefined);
+    });
+
+    it('PERM-FITOUT-NOCONFIG-002 uses the documented static Fitout fallback only for null', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.OPERATION, Role.TENANT] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+        [MODULE_FIXED_ROLES_KEY]: { handler: [Role.TENANT] },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(null);
+      withUser({ role: Role.OPERATION });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it('does not let the module matrix widen a restricted Fitout mutation', async () => {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { handler: [Role.MALL_DIRECTOR, Role.OPERATION] },
+        [MODULE_KEY]: { handler: 'fitout', class: 'fitout' },
+        [MODULE_ROLE_CEILING_KEY]: { handler: [Role.MALL_DIRECTOR, Role.OPERATION] },
+      });
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.FINANCE]));
+      withUser({ role: Role.FINANCE });
+
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+      expect(permissions.getAllowedRoles).not.toHaveBeenCalled();
     });
 
     it('does NOT apply the class module override to a handler with its own plain @Roles(...) extension', async () => {

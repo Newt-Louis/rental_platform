@@ -34,25 +34,66 @@ describe('MallAccessGuard architecture (CR-120)', () => {
   it('passes an explicit query mallId to the enforcement service', async () => {
     const { guard, mallAccess } = build();
     await guard.canActivate(context({ user, query: { mallId: 'mall-b' }, body: {}, params: {}, path: '/reports/revenue' }));
-    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(user.id, user.role, expect.objectContaining({ mallId: 'mall-b' }));
+    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
+      user.id,
+      user.role,
+      expect.objectContaining({ mallId: 'mall-b' }),
+      { returnResolvedMall: true },
+    );
+  });
+
+  it('publishes the authoritative resolved Mall for the following RolesGuard', async () => {
+    const { guard, mallAccess } = build();
+    mallAccess.extractAndValidateMallAccess.mockResolvedValue('mall-project-a');
+    const request = { user, query: {}, body: {}, params: { id: 'project-a' }, path: '/fitouts/project-a' };
+
+    await guard.canActivate(context(request));
+
+    expect(request).toEqual(expect.objectContaining({ authorizationMallId: 'mall-project-a' }));
   });
 
   it('prefers query mallId over body and route Mall fields', async () => {
     const { guard, mallAccess } = build();
     await guard.canActivate(context({ user, query: { mallId: 'query' }, body: { mallId: 'body' }, params: { mallId: 'param' }, path: '/' }));
-    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(user.id, user.role, expect.objectContaining({ mallId: 'query' }));
+    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
+      user.id,
+      user.role,
+      expect.objectContaining({ mallId: 'query' }),
+      { returnResolvedMall: true },
+    );
   });
 
   it('maps a named unitId from the body', async () => {
     const { guard, mallAccess } = build();
     await guard.canActivate(context({ user, query: {}, body: { unitId: 'unit-b' }, params: {}, path: '/bookings' }));
-    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(user.id, user.role, expect.objectContaining({ unitId: 'unit-b' }));
+    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
+      user.id,
+      user.role,
+      expect.objectContaining({ unitId: 'unit-b' }),
+      { returnResolvedMall: true },
+    );
   });
 
   it('maps params.id to contractId only when the path heuristic matches', async () => {
     const { guard, mallAccess } = build();
     await guard.canActivate(context({ user, query: {}, body: {}, params: { id: 'contract-b' }, path: '/contracts/contract-b' }));
-    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(user.id, user.role, expect.objectContaining({ contractId: 'contract-b' }));
+    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
+      user.id,
+      user.role,
+      expect.objectContaining({ contractId: 'contract-b' }),
+      { returnResolvedMall: true },
+    );
+  });
+
+  it('maps a /fitouts/:id route to the authoritative Fitout project resolver', async () => {
+    const { guard, mallAccess } = build();
+    await guard.canActivate(context({ user, query: {}, body: {}, params: { id: 'project-a' }, path: '/fitouts/project-a' }));
+    expect(mallAccess.extractAndValidateMallAccess).toHaveBeenCalledWith(
+      user.id,
+      user.role,
+      expect.objectContaining({ fitoutProjectId: 'project-a' }),
+      { returnResolvedMall: true },
+    );
   });
 
   it('does not recognize a generic object id outside its path heuristics', async () => {
