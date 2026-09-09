@@ -1364,6 +1364,7 @@ function PermissionsTab() {
       permissionsApi.updateCell({ module: vars.module, role: vars.role as any, allowed: vars.allowed, mallId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['permissions-matrix', scope] });
+      qc.invalidateQueries({ queryKey: ['permissions-effective'] });
       toast({ title: t('permissions.toastUpdated') });
     },
     onError: () => toast({ title: t('permissions.toastError'), variant: 'destructive' }),
@@ -1373,6 +1374,7 @@ function PermissionsTab() {
     mutationFn: () => permissionsApi.resetToDefault(mallId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['permissions-matrix', scope] });
+      qc.invalidateQueries({ queryKey: ['permissions-effective'] });
       toast({ title: t('permissions.toastReset') });
       setConfirmReset(false);
     },

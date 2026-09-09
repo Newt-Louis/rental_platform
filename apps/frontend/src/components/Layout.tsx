@@ -67,6 +67,7 @@ import { NotificationCenter } from "@/components/NotificationCenter";
 import { TenantBottomNav } from "@/components/TenantBottomNav";
 import { ErpProcessGuide } from "@/components/ErpProcessGuide";
 import { NAV_GROUPS, TENANT_NAV, canAccessModule } from "@/lib/permissions";
+import { usePermissionsStore } from "@/store/permissions.store";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   "/dashboard": LayoutDashboard,
@@ -185,6 +186,7 @@ export default function Layout() {
   }, [collapsed]);
   const isTenant = user?.role === "TENANT";
   const role = user?.role;
+  usePermissionsStore((state) => state.allowedModules);
 
   const handleLogout = async () => {
     await logout();

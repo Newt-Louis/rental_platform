@@ -24,6 +24,7 @@ export function usePermissionsSync() {
     queryKey: ['permissions-effective', selectedMallId],
     queryFn: () => permissionsApi.getEffective(selectedMallId),
     enabled: isHydrated && !!token,
+    refetchInterval: 30_000,
   });
 
   useEffect(() => {
