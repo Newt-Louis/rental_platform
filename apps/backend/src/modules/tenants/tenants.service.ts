@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -116,6 +116,223 @@ export class TenantsService {
 
     if (!tenant) throw new NotFoundException(`Tenant ${id} not found`);
     return tenant;
+  }
+
+  async getFitoutArchive(
+    tenantId: string | undefined,
+    query: { search?: string; page?: number; limit?: number } = {},
+    mallIds?: string[],
+  ) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(query.limit) || 20));
+    const search = query.search?.trim().slice(0, 120);
+
+    if (tenantId) {
+      const tenantScope: any = { id: tenantId, deletedAt: null };
+      if (mallIds) {
+        tenantScope.OR = [
+          { fitoutProjects: { some: { unit: { mallId: { in: mallIds } } } } },
+          { contracts: { some: { isActive: true, deletedAt: null, unit: { mallId: { in: mallIds } } } } },
+          { proposals: { some: { isActive: true, unit: { mallId: { in: mallIds } } } } },
+          { occupiedUnits: { some: { mallId: { in: mallIds } } } },
+        ];
+      }
+      const tenant = await this.prisma.tenant.findFirst({ where: tenantScope, select: { id: true } });
+      if (!tenant) throw new ForbiddenException('Tenant is outside the authorized Fitout dossier scope');
+    }
+
+    const projectScope: any = {};
+    if (tenantId) projectScope.tenantId = tenantId;
+    if (mallIds) projectScope.unit = { mallId: { in: mallIds } };
+    const completedScope: any = {
+      project: projectScope,
+      status: { in: ['APPROVED', 'PUBLISHED'] },
+    };
+
+    // UnifiedDocument and EntityComment are polymorphic and have no Prisma relation.
+    // Resolve the authorized completed-submittal IDs FIRST, then search those IDs only;
+    // this prevents exact Mall-B filenames/comments from becoming a search inference channel.
+    const authorizedSubmittalIds = search
+      ? (await this.prisma.fitoutSubmittal.findMany({
+          where: completedScope,
+          select: { id: true },
+        })).map((submittal) => submittal.id)
+      : [];
+
+    const matchingDocumentEntityIds = search && authorizedSubmittalIds.length
+      ? (await this.prisma.unifiedDocument.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: authorizedSubmittalIds },
+            isActive: true,
+            fileName: { contains: search, mode: 'insensitive' },
+          },
+          select: { entityId: true },
+          distinct: ['entityId'],
+        })).map((document) => document.entityId)
+      : [];
+    const matchingCommentEntityIds = search && authorizedSubmittalIds.length
+      ? (await this.prisma.entityComment.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: authorizedSubmittalIds },
+            OR: [
+              { body: { contains: search, mode: 'insensitive' } },
+              { author: { fullName: { contains: search, mode: 'insensitive' } } },
+            ],
+          },
+          select: { entityId: true },
+          distinct: ['entityId'],
+        })).map((comment) => comment.entityId)
+      : [];
+
+    const where: any = { ...completedScope };
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { stageCode: { contains: search, mode: 'insensitive' } },
+        { submittedBy: { fullName: { contains: search, mode: 'insensitive' } } },
+        { formType: { code: { contains: search, mode: 'insensitive' } } },
+        { formType: { name: { contains: search, mode: 'insensitive' } } },
+        { project: { status: { contains: search, mode: 'insensitive' } } },
+        { project: { contract: { contractNumber: { contains: search, mode: 'insensitive' } } } },
+        { project: { unit: { code: { contains: search, mode: 'insensitive' } } } },
+        { project: { unit: { name: { contains: search, mode: 'insensitive' } } } },
+        { workflow: { steps: { some: { OR: [
+          { stepName: { contains: search, mode: 'insensitive' } },
+          { comment: { contains: search, mode: 'insensitive' } },
+          { approver: { fullName: { contains: search, mode: 'insensitive' } } },
+        ] } } } },
+        ...(matchingDocumentEntityIds.length ? [{ id: { in: matchingDocumentEntityIds } }] : []),
+        ...(matchingCommentEntityIds.length ? [{ id: { in: matchingCommentEntityIds } }] : []),
+      ];
+    }
+
+    const [submittals, total] = await Promise.all([
+      this.prisma.fitoutSubmittal.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          revisionNo: true,
+          status: true,
+          stageCode: true,
+          submittedAt: true,
+          updatedAt: true,
+          formType: { select: { id: true, code: true, name: true, category: true } },
+          submittedBy: { select: { id: true, fullName: true } },
+          project: {
+            select: {
+              id: true,
+              tenant: { select: { id: true, brandName: true } },
+              contract: { select: { id: true, contractNumber: true } },
+              unit: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  mallId: true,
+                  floor: { select: { id: true, name: true, level: true } },
+                },
+              },
+            },
+          },
+          workflow: {
+            select: {
+              id: true,
+              status: true,
+              steps: {
+                orderBy: { stepOrder: 'asc' },
+                select: {
+                  id: true,
+                  stepOrder: true,
+                  stepName: true,
+                  approverRole: true,
+                  status: true,
+                  comment: true,
+                  decidedAt: true,
+                  approver: { select: { id: true, fullName: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { revisionNo: 'desc' }],
+      }),
+      this.prisma.fitoutSubmittal.count({ where }),
+    ]);
+
+    const [attachments, comments] = submittals.length
+      ? await Promise.all([
+        this.prisma.unifiedDocument.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: submittals.map((submittal) => submittal.id) },
+            isActive: true,
+          },
+          select: {
+            id: true,
+            entityId: true,
+            category: true,
+            documentType: true,
+            fileName: true,
+            fileSize: true,
+            mimeType: true,
+            version: true,
+            isLatest: true,
+            uploadedAt: true,
+            retentionYear: true,
+          },
+          orderBy: [{ entityId: 'asc' }, { version: 'desc' }, { uploadedAt: 'desc' }],
+        }),
+        this.prisma.entityComment.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: submittals.map((submittal) => submittal.id) },
+          },
+          select: {
+            id: true,
+            entityId: true,
+            body: true,
+            createdAt: true,
+            author: { select: { id: true, fullName: true } },
+          },
+          orderBy: [{ entityId: 'asc' }, { createdAt: 'asc' }],
+        }),
+      ])
+      : [[], []];
+
+    const attachmentsBySubmittal = new Map<string, Omit<(typeof attachments)[number], 'entityId'>[]>();
+    for (const { entityId, ...attachment } of attachments) {
+      const items = attachmentsBySubmittal.get(entityId) ?? [];
+      items.push(attachment);
+      attachmentsBySubmittal.set(entityId, items);
+    }
+    const commentsBySubmittal = new Map<string, Omit<(typeof comments)[number], 'entityId'>[]>();
+    for (const { entityId, ...comment } of comments) {
+      const items = commentsBySubmittal.get(entityId) ?? [];
+      items.push(comment);
+      commentsBySubmittal.set(entityId, items);
+    }
+
+    return {
+      data: submittals.map((submittal) => {
+        const { tenant, ...project } = submittal.project;
+        return {
+          ...submittal,
+          project,
+          ...(!tenantId ? { tenant } : {}),
+          attachments: attachmentsBySubmittal.get(submittal.id) ?? [],
+          comments: commentsBySubmittal.get(submittal.id) ?? [],
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async create(dto: CreateTenantDto) {
