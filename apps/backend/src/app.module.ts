@@ -117,11 +117,11 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useClass: MallAccessGuard,
     },
     {
       provide: APP_GUARD,
-      useClass: MallAccessGuard,
+      useClass: RolesGuard,
     },
   ],
 })

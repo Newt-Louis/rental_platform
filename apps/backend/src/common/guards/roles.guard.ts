@@ -66,10 +66,12 @@ export class RolesGuard implements CanActivate {
         throw new ForbiddenException('Insufficient permissions for this action');
       }
 
-      // Best-effort mallId: a direct field on the request, not the full
-      // unit/floor/contract resolver chain MallAccessGuard uses -- requests
-      // without one simply use the Global tier (see PermissionsService).
-      const mallId = req.query?.mallId ?? req.body?.mallId ?? req.params?.mallId;
+      // MallAccessGuard runs before this guard and records the authoritative
+      // resource Mall when it can resolve one. Direct request fields remain a
+      // fallback for ordinary Mall-scoped list/create endpoints.
+      const mallId = req.authorizationMallId
+        ?? req.query?.mallId ?? req.body?.mallId ?? req.params?.mallId
+        ?? user.activeMallId;
       const dynamic = await this.permissions.getAllowedRoles(moduleKey, mallId);
       if (dynamic) {
         if (!dynamic.has(user.role)) {

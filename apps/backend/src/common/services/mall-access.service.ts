@@ -30,6 +30,8 @@ export interface MallAccessOptions {
    * CROSS_MALL_READ_ROLES members unrestricted read. Never set this from generic/shared code
    * reused by other domains. */
   crossMallRead?: boolean;
+  /** Internal guard hand-off: expose the already-authorized Mall to the next guard. */
+  returnResolvedMall?: boolean;
 }
 
 @Injectable()
@@ -144,7 +146,7 @@ export class MallAccessService {
       salesTurnoverId?: string;
     },
     opts?: MallAccessOptions,
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     if (this.grantsUnrestrictedRead(role, opts)) return;
 
     let mallId = sources.mallId;
@@ -428,5 +430,6 @@ export class MallAccessService {
     if (mallId) {
       await this.assertMallAccess(userId, role, mallId);
     }
+    return opts?.returnResolvedMall ? mallId : undefined;
   }
 }
