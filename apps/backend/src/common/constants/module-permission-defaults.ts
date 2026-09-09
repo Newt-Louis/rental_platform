@@ -34,6 +34,7 @@ export const MODULE_PERMISSION_DEFAULTS: Array<{ module: string; roles: Role[] }
   { module: 'contracts', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
   { module: 'tenants', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
   { module: 'fitout', roles: [Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
+  { module: 'fitout-dossier-view', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.FITOUT_BASIC_TEAM] },
   { module: 'tickets', roles: [Role.OPERATION, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.TENANT] },
   { module: 'sales', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.TENANT] },
   { module: 'billing', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.TENANT] },

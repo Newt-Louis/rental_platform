@@ -36,6 +36,15 @@ export const MODULE_ROLES = {
     Role.LEGAL,
   ],
   fitout: [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
+  fitoutDossierView: [
+    Role.ADMIN,
+    Role.LEASING_MANAGER,
+    Role.LEASING_EXECUTIVE,
+    Role.MALL_DIRECTOR,
+    Role.FINANCE,
+    Role.LEGAL,
+    Role.FITOUT_BASIC_TEAM,
+  ],
   tickets: [Role.ADMIN, Role.OPERATION, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.TENANT],
   sales: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.TENANT],
   // Xếp hạng theo tenant, tình trạng tuân thủ nộp báo cáo, duyệt/từ chối — lộ dữ liệu tên/doanh thu của

@@ -1,6 +1,6 @@
 import type { CurrencyCode } from '@/lib/currency';
 export type { CurrencyCode };
-export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
+export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'FITOUT_BASIC_TEAM' | 'TENANT' | 'CEO';
 export type UnitStatus = 'VACANT' | 'OFFERING' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED' | 'LIQUIDATED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
 export type LeadPriority = 'HOT' | 'WARM' | 'COLD';

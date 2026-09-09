@@ -249,6 +249,7 @@ export class UsersService {
     Role.FINANCE,
     Role.LEGAL,
     Role.OPERATION,
+    Role.FITOUT_BASIC_TEAM,
   ]);
 
   private static normalizeEmail(email: string) {

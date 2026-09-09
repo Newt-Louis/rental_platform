@@ -9,6 +9,7 @@ import { Scope } from '../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../common/constants/scope.types';
 import { MallAccessService } from '../common/services/mall-access.service';
 import { MODULE_ROLES } from '../common/constants/role-permissions';
+import { FitoutDossierAccessService } from '../common/services/fitout-dossier-access.service';
 
 // CR-101 Phase 1: descriptive only. Confirmed SAFE for unauthenticated/
 // cross-tenant access (see docs/architecture-review/02-FILE-SECURITY-ARCHITECTURE.md)
@@ -70,6 +71,7 @@ export class FilesController {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly mallAccess: MallAccessService,
+    private readonly fitoutDossierAccess: FitoutDossierAccessService,
   ) {}
 
   private stream(res: Response, fileName: string, mimeType: string | null, relativeFilePath: string): StreamableFile {
@@ -203,7 +205,9 @@ export class FilesController {
             throw new ForbiddenException('Tenant cannot access this fitout document');
           }
         } else {
-          if (FITOUT_STAFF_ROLES.includes(user.role)) {
+          if (user.role === Role.FITOUT_BASIC_TEAM) {
+            await this.fitoutDossierAccess.assertCompletedDossierFileAccess(doc.entityId, user);
+          } else if (FITOUT_STAFF_ROLES.includes(user.role)) {
             await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { fitoutSubmittalId: doc.entityId });
           } else {
             await this.assertCurrentFitoutApproverFileAccess(doc.entityId, user);

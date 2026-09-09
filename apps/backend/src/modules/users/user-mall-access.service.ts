@@ -13,6 +13,7 @@ export class UserMallAccessService {
     Role.FINANCE,
     Role.LEGAL,
     Role.OPERATION,
+    Role.FITOUT_BASIC_TEAM,
   ]);
 
   async listForUser(userId: string) {

@@ -7,6 +7,7 @@ export const ADMIN_ROLE_KEYS: Record<string, string> = {
   FINANCE: 'users.roles.FINANCE',
   LEGAL: 'users.roles.LEGAL',
   OPERATION: 'users.roles.OPERATION',
+  FITOUT_BASIC_TEAM: 'users.roles.FITOUT_BASIC_TEAM',
   TENANT: 'users.roles.TENANT',
 };
 

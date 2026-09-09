@@ -19,6 +19,7 @@ const GRANT_ROLES = [
   'FINANCE',
   'LEGAL',
   'OPERATION',
+  'FITOUT_BASIC_TEAM',
 ];
 
 export function MallAccessTab() {

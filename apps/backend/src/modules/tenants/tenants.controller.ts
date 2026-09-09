@@ -11,6 +11,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 import { Role } from '@prisma/client';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { FitoutDossierAccessService } from '../../common/services/fitout-dossier-access.service';
 
 // CR-101 Phase 1: descriptive only.
 import { SetTenantPortalPasswordDto } from './dto/portal-password.dto';
@@ -24,7 +25,11 @@ const TENANT_MANAGE_ROLES = [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTO
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'tenant' }, status: EnforcementStatus.ENFORCED })
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService, private readonly mallAccess: MallAccessService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly mallAccess: MallAccessService,
+    private readonly fitoutDossierAccess: FitoutDossierAccessService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List tenants' })
@@ -42,11 +47,39 @@ export class TenantsController {
     return this.tenantsService.findAll({ ...query, mallIds: mallIds ?? undefined });
   }
 
+  @Get('fitout-archive')
+  @ModuleRoles('fitout-dossier-view')
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-AUTH-FITOUT-001 server-derived authorized Mall set' })
+  @ApiOperation({ summary: 'Search completed Fitout dossiers across authorized Malls' })
+  async searchFitoutArchive(
+    @Query() query: { tenantId?: string; mallId?: string; search?: string; page?: number; limit?: number },
+    @CurrentUser() user: any,
+  ) {
+    const mallIds = await this.fitoutDossierAccess.getAuthorizedMallIds(user, query.mallId);
+    return this.tenantsService.getFitoutArchive(query.tenantId, query, mallIds);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get tenant details' })
   async findOne(@Param('id') id: string, @CurrentUser() user: any) {
     await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { tenantId: id });
     return this.tenantsService.findOne(id);
+  }
+
+  @Get(':id/fitout-archive')
+  @ModuleRoles('fitout-dossier-view')
+  @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-AUTH-FITOUT-001 server-derived authorized Mall set' })
+  @ApiOperation({ summary: 'Search completed Fitout dossiers retained for a tenant' })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getFitoutArchive(
+    @Param('id') id: string,
+    @Query() query: { search?: string; page?: number; limit?: number },
+    @CurrentUser() user: any,
+  ) {
+    const mallIds = await this.fitoutDossierAccess.getAuthorizedMallIds(user);
+    return this.tenantsService.getFitoutArchive(id, query, mallIds);
   }
 
   @Post()

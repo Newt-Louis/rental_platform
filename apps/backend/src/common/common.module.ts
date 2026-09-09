@@ -8,11 +8,12 @@ import { OperationalController } from './operational.controller';
 import { OutboxService } from './services/outbox.service';
 import { EncryptionService } from './services/encryption.service';
 import { PermissionsService } from './services/permissions.service';
+import { FitoutDossierAccessService } from './services/fitout-dossier-access.service';
 
 @Global()
 @Module({
   controllers: [OperationalController],
-  providers: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService, PermissionsService],
-  exports: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService, PermissionsService],
+  providers: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService, PermissionsService, FitoutDossierAccessService],
+  exports: [UnitStatusService, MallAccessService, RedisService, SchedulerLockService, OperationalMetricsService, OutboxService, EncryptionService, PermissionsService, FitoutDossierAccessService],
 })
 export class CommonModule {}

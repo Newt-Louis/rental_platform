@@ -44,6 +44,7 @@ const ROLE_MAP: Record<string, { label: string; color: string; desc: string }> =
   FINANCE:           { label: 'Finance',           color: 'bg-green-100 text-green-700', desc: 'Quản lý hóa đơn, công nợ, báo cáo tài chính' },
   LEGAL:             { label: 'Legal',             color: 'bg-yellow-100 text-yellow-700', desc: 'Soạn thảo và kiểm tra hợp đồng' },
   OPERATION:         { label: 'Operation',         color: 'bg-orange-100 text-orange-700', desc: 'Vận hành mall, xử lý ticket kỹ thuật' },
+  FITOUT_BASIC_TEAM: { label: 'Fitout Basic Team', color: 'bg-cyan-100 text-cyan-700', desc: 'Tra cứu hồ sơ Fitout hoàn tất tại Mall được phân công' },
   TENANT:            { label: 'Tenant Portal',     color: 'bg-gray-100 text-gray-700',   desc: 'Khách thuê xem thông tin hợp đồng và gửi yêu cầu' },
 };
 

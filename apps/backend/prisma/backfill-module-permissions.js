@@ -35,6 +35,7 @@ const MODULE_PERMISSION_DEFAULTS = [
   { module: 'contracts', roles: ['LEASING_MANAGER', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL'] },
   { module: 'tenants', roles: ['LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL'] },
   { module: 'fitout', roles: ['OPERATION', 'LEASING_MANAGER', 'MALL_DIRECTOR'] },
+  { module: 'fitout-dossier-view', roles: ['LEASING_MANAGER', 'LEASING_EXECUTIVE', 'MALL_DIRECTOR', 'FINANCE', 'LEGAL', 'FITOUT_BASIC_TEAM'] },
   { module: 'tickets', roles: ['OPERATION', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'TENANT'] },
   { module: 'sales', roles: ['FINANCE', 'MALL_DIRECTOR', 'CEO', 'TENANT'] },
   { module: 'billing', roles: ['FINANCE', 'MALL_DIRECTOR', 'TENANT'] },

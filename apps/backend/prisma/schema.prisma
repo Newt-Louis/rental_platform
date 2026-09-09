@@ -16,6 +16,7 @@ enum Role {
   FINANCE
   LEGAL
   OPERATION
+  FITOUT_BASIC_TEAM
   TENANT
   CEO
 }

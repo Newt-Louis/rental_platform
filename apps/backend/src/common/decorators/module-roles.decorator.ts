@@ -16,6 +16,7 @@ const FRONTEND_TO_MODULE_ROLES_KEY: Partial<Record<string, ModuleKey>> = {
   'tenant-portal': 'tenantPortal',
   'cross-mall': 'crossMall',
   'audit-log': 'auditLog',
+  'fitout-dossier-view': 'fitoutDossierView',
 };
 
 /** The 21 modules with a clean 1:1 frontend<->backend mapping — see the permissions plan. */
@@ -23,7 +24,7 @@ export type DynamicModuleKey =
   | 'dashboard' | 'spaces' | 'crm' | 'bookings' | 'proposals' | 'approvals' | 'contracts'
   | 'tenants' | 'fitout' | 'tickets' | 'sales' | 'billing' | 'billing-addin' | 'sap'
   | 'reports' | 'analytics' | 'ai' | 'admin' | 'announcements' | 'tenant-portal'
-  | 'cross-mall' | 'audit-log' | 'parking';
+  | 'cross-mall' | 'audit-log' | 'parking' | 'fitout-dossier-view';
 
 /**
  * Same enforcement as @Roles(...MODULE_ROLES.xxx), but also tags the route

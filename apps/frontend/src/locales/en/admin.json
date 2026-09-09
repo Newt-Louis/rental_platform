@@ -123,6 +123,7 @@
       "FINANCE": "Finance",
       "LEGAL": "Legal",
       "OPERATION": "Operations",
+      "FITOUT_BASIC_TEAM": "Fitout Basic Team",
       "TENANT": "Tenant"
     },
     "roleDescriptions": {
@@ -134,6 +135,7 @@
       "FINANCE": "Invoices, receivables and financial reporting",
       "LEGAL": "Legal document preparation and review",
       "OPERATION": "Mall operations and technical work management",
+      "FITOUT_BASIC_TEAM": "View completed Fitout dossiers only for assigned Malls",
       "TENANT": "Access to the tenant self-service portal"
     },
     "mallScope": {

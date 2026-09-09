@@ -123,6 +123,7 @@
       "FINANCE": "Tài chính",
       "LEGAL": "Pháp lý",
       "OPERATION": "Vận hành",
+      "FITOUT_BASIC_TEAM": "Đội Fitout xây dựng cơ bản",
       "TENANT": "Khách thuê"
     },
     "roleDescriptions": {
@@ -134,6 +135,7 @@
       "FINANCE": "Quản lý hóa đơn, công nợ và báo cáo tài chính",
       "LEGAL": "Soạn thảo và kiểm tra hồ sơ pháp lý",
       "OPERATION": "Quản lý vận hành Mall và công việc kỹ thuật",
+      "FITOUT_BASIC_TEAM": "Chỉ xem kho hồ sơ Fitout hoàn tất tại Mall được phân quyền",
       "TENANT": "Truy cập cổng thông tin dành cho khách thuê"
     },
     "mallScope": {
