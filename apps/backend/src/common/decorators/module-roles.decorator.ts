@@ -1,8 +1,18 @@
 import { applyDecorators, SetMetadata } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { MODULE_ROLES, ModuleKey } from '../constants/role-permissions';
 import { ROLES_KEY } from './roles.decorator';
 
 export const MODULE_KEY = 'moduleKey';
+export const MODULE_FIXED_ROLES_KEY = 'moduleFixedRoles';
+export const MODULE_ROLE_CEILING_KEY = 'moduleRoleCeiling';
+
+interface ModuleRolesOptions {
+  /** Roles that retain an explicit capability even when absent from the staff module matrix. */
+  fixedRoles?: Role[];
+  /** A stricter endpoint-level ceiling that the module matrix cannot widen. */
+  roleCeiling?: Role[];
+}
 
 /**
  * A handful of MODULE_ROLES keys don't match the frontend RouteModule name
@@ -33,10 +43,14 @@ export type DynamicModuleKey =
  * still set as the ROLES_KEY metadata, so a missing/unseeded DB row falls
  * back to today's exact static behavior instead of failing open.
  */
-export function ModuleRoles(key: DynamicModuleKey) {
+export function ModuleRoles(key: DynamicModuleKey, options: ModuleRolesOptions = {}) {
   const staticKey = FRONTEND_TO_MODULE_ROLES_KEY[key] ?? (key as ModuleKey);
+  const fallbackRoles = options.roleCeiling ?? MODULE_ROLES[staticKey];
+  const requiredRoles = Array.from(new Set([...fallbackRoles, ...(options.fixedRoles ?? [])]));
   return applyDecorators(
     SetMetadata(MODULE_KEY, key),
-    SetMetadata(ROLES_KEY, MODULE_ROLES[staticKey]),
+    SetMetadata(ROLES_KEY, requiredRoles),
+    SetMetadata(MODULE_FIXED_ROLES_KEY, options.fixedRoles ?? []),
+    SetMetadata(MODULE_ROLE_CEILING_KEY, options.roleCeiling),
   );
 }

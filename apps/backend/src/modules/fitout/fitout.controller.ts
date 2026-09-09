@@ -14,7 +14,6 @@ import { StorageService } from '../../storage/storage.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -57,7 +56,7 @@ export class FitoutController {
 
   @Get()
   @ApiOperation({ summary: 'List fitout projects' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'page', required: false })
@@ -118,7 +117,7 @@ export class FitoutController {
   }
 
   @Get('stage-configs')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List fitout stage pipeline configuration' })
   listStageConfigs() {
     return this.stageConfigService.list();
@@ -139,7 +138,7 @@ export class FitoutController {
   }
 
   @Get('form-types')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List fitout form/document type configuration' })
   listFormTypes() {
     return this.formTypeService.list();
@@ -205,7 +204,7 @@ export class FitoutController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get fitout project details' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async findOne(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.fitoutService.findOne(id, user);
@@ -213,7 +212,7 @@ export class FitoutController {
 
   @Put(':id/status')
   @ApiOperation({ summary: 'Advance fitout status' })
-  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION)
+  @ModuleRoles('fitout', { roleCeiling: [Role.MALL_DIRECTOR, Role.OPERATION] })
   async advanceStatus(
     @Param('id') id: string,
     @Body() body: { status: string; override?: boolean; overrideReason?: string },
@@ -270,7 +269,7 @@ export class FitoutController {
 
   @Get(':id/documents')
   @ApiOperation({ summary: 'List fitout documents' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async listDocuments(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.documentsService.listDocuments(id);
@@ -346,7 +345,7 @@ export class FitoutController {
 
   @Get(':id/dashboard')
   @ApiOperation({ summary: 'Get aggregated dashboard for a single fitout project' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async getProjectDashboard(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.dashboardService.getProjectDashboard(id);

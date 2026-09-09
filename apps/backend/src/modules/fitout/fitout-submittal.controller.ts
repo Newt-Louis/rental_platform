@@ -3,9 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FitoutSubmittalService } from './fitout-submittal.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -51,7 +49,7 @@ export class FitoutSubmittalController {
   }
 
   @Get()
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List submittals for a fitout project' })
   async list(
     @Query('projectId') projectId: string,
@@ -64,7 +62,7 @@ export class FitoutSubmittalController {
   }
 
   @Post()
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'Create (nộp) a new submittal' })
   async create(@Body() body: { projectId: string; formTypeId: string; title: string; dueDate?: string }, @CurrentUser() user: any) {
     await this.validateProjectAccess(user, body.projectId);
@@ -72,7 +70,7 @@ export class FitoutSubmittalController {
   }
 
   @Get(':id')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'Get submittal detail' })
   async getOne(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id);
@@ -80,7 +78,7 @@ export class FitoutSubmittalController {
   }
 
   @Post(':id/resubmit')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'Resubmit (nộp lại) a rejected submittal' })
   async resubmit(@Param('id') id: string, @Body() body: { title?: string; dueDate?: string }, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
@@ -88,7 +86,7 @@ export class FitoutSubmittalController {
   }
 
   @Post(':id/submit-for-review')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'Gửi duyệt (bắt buộc đã đính kèm ít nhất 1 tệp) — chuyển hồ sơ nháp sang hàng chờ duyệt' })
   async submitForReview(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id, user.role === Role.TENANT);
@@ -131,7 +129,7 @@ export class FitoutSubmittalController {
   }
 
   @Get(':id/attachments')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List file attachments of a submittal' })
   async listAttachments(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateSubmittalAccess(user, id);
@@ -139,7 +137,7 @@ export class FitoutSubmittalController {
   }
 
   @Post(':id/attachments')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'Upload a file attachment to a submittal' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })

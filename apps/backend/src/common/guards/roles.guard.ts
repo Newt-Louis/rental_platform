@@ -3,7 +3,11 @@ import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { MODULE_KEY } from '../decorators/module-roles.decorator';
+import {
+  MODULE_FIXED_ROLES_KEY,
+  MODULE_KEY,
+  MODULE_ROLE_CEILING_KEY,
+} from '../decorators/module-roles.decorator';
 import { PermissionsService } from '../services/permissions.service';
 
 @Injectable()
@@ -53,6 +57,15 @@ export class RolesGuard implements CanActivate {
 
     if (moduleKey) {
       const req = context.switchToHttp().getRequest();
+      const metadataTarget = handlerRoles ? context.getHandler() : context.getClass();
+      const fixedRoles = this.reflector.get<Role[]>(MODULE_FIXED_ROLES_KEY, metadataTarget) ?? [];
+      if (fixedRoles.includes(user.role)) return true;
+
+      const roleCeiling = this.reflector.get<Role[] | undefined>(MODULE_ROLE_CEILING_KEY, metadataTarget);
+      if (roleCeiling && !roleCeiling.includes(user.role)) {
+        throw new ForbiddenException('Insufficient permissions for this action');
+      }
+
       // Best-effort mallId: a direct field on the request, not the full
       // unit/floor/contract resolver chain MallAccessGuard uses -- requests
       // without one simply use the Global tier (see PermissionsService).
