@@ -4,6 +4,10 @@ export const tenantsApi = {
   listTenants: (params?: Record<string, unknown>) =>
     api.get('/tenants', { params }).then((r) => r.data),
   getTenant: (id: string) => api.get(`/tenants/${id}`).then((r) => r.data),
+  getFitoutArchive: (id: string, params?: { search?: string; page?: number; limit?: number }) =>
+    api.get(`/tenants/${id}/fitout-archive`, { params }).then((r) => r.data),
+  searchFitoutArchive: (params?: { tenantId?: string; mallId?: string; search?: string; page?: number; limit?: number }) =>
+    api.get('/tenants/fitout-archive', { params }).then((r) => r.data),
   createTenant: (data: Record<string, unknown>) =>
     api.post('/tenants', data).then((r) => r.data),
   updateTenant: (id: string, data: Record<string, unknown>) =>

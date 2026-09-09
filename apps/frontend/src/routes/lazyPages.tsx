@@ -19,6 +19,9 @@ export const WorkOrdersPage = lazy(() => import("@/pages/work-orders/WorkOrdersP
 export const PatrolPage = lazy(() => import("@/pages/patrol/PatrolPage"));
 export const ParkingPage = lazy(() => import("@/pages/parking/ParkingPage"));
 export const FitoutPage = lazy(() => import("@/pages/fitout/FitoutPage"));
+export const FitoutDossiersPage = lazy(
+  () => import("@/pages/fitout/FitoutDossiersPage"),
+);
 export const FitoutApprovalsPage = lazy(
   () => import("@/pages/fitout/FitoutApprovalsPage"),
 );

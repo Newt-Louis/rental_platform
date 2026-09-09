@@ -11,6 +11,7 @@ export type AppRole =
   | "FINANCE"
   | "LEGAL"
   | "OPERATION"
+  | "FITOUT_BASIC_TEAM"
   | "TENANT";
 
 export type RouteModule =
@@ -32,6 +33,7 @@ export type RouteModule =
   | "tenants"
   | "fitout"
   | "fitout-approvals"
+  | "fitout-dossier-view"
   | "tickets"
   | "sales"
   | "billing"
@@ -147,6 +149,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
   // Chỉ vai trò có thể là duyệt viên (approverRole) mới thấy hàng chờ duyệt Fitout — không cấp TENANT.
   "fitout-approvals": ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
+  "fitout-dossier-view": ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR", "FINANCE", "LEGAL", "FITOUT_BASIC_TEAM"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
@@ -199,6 +202,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   tenants: "tenants",
   fitout: "fitout",
   "fitout-approvals": "fitout-approvals",
+  "fitout-dossiers": "fitout-dossier-view",
   tickets: "tickets",
   sales: "sales",
   billing: "billing",
@@ -326,6 +330,11 @@ export const NAV_GROUPS = [
     label: "Thi công & Bàn giao",
     items: [
       { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
+      {
+        label: "Kho hồ sơ Fitout",
+        path: "/fitout-dossiers",
+        module: "fitout-dossier-view" as RouteModule,
+      },
       {
         // Mục riêng cho duyệt viên Fitout — vào thẳng hàng chờ duyệt của TẤT CẢ dự án được
         // phân quyền, không phải mở từng dự án trong workspace Fitout để tìm việc cần duyệt.
@@ -490,5 +499,6 @@ export const TENANT_NAV = [
 
 export function getDefaultHomePath(role: string | undefined): string {
   if (role === "TENANT") return "/tenant-portal";
+  if (role === "FITOUT_BASIC_TEAM") return "/fitout-dossiers";
   return "/dashboard";
 }

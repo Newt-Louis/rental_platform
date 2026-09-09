@@ -25,6 +25,7 @@ import {
   PatrolPage,
   ParkingPage,
   FitoutPage,
+  FitoutDossiersPage,
   FitoutApprovalsPage,
   FitoutSettingsPage,
   FitoutDailyReportPage,
@@ -223,6 +224,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <FitoutPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="fitout-dossiers"
+                    element={
+                      <RoleRoute>
+                        <FitoutDossiersPage />
                       </RoleRoute>
                     }
                   />
