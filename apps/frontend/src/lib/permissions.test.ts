@@ -60,6 +60,15 @@ describe('route permissions', () => {
     expect(getDefaultHomePath('TENANT')).toBe('/tenant-portal');
     expect(getDefaultHomePath('ADMIN')).toBe('/dashboard');
     expect(getDefaultHomePath(undefined)).toBe('/dashboard');
+    expect(getDefaultHomePath('FITOUT_BASIC_TEAM')).toBe('/fitout-dossiers');
+  });
+
+  it('DOSSIER-013/014 grants only the dossier route to FITOUT_BASIC_TEAM', () => {
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout-dossiers')).toBe(true);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/tenants')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout-approvals')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/billing')).toBe(false);
   });
 
   it('allows Department operators into Admin while keeping other roles out', () => {
