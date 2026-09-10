@@ -316,6 +316,18 @@ enum ServiceContractValueBasis {
   OTHER
 }
 
+// Record-level grant layered UNDER the Role/Mall checks, never over them: the
+// effective right is min(role ceiling, this grant). Cumulative by rank --
+// EDIT implies READ, DELETE implies EDIT. Everyone who already passes the Role
+// and Mall gates reads every contract in their Mall, so a READ row is an
+// explicit "shared, view only" marker rather than the thing that grants
+// visibility. Only ServiceContract.createdById may grant these (no re-sharing).
+enum ServiceContractSharePermission {
+  READ
+  EDIT
+  DELETE
+}
+
 enum BillingCycle {
   MONTHLY
   QUARTERLY
@@ -514,6 +526,8 @@ model User {
   parkingPaymentsCreated     ParkingDebtPayment[]       @relation("ParkingPaymentCreator")
   parkingDocumentsUploaded   ParkingContractDocument[]  @relation("ParkingDocumentUploader")
   periodicChargeAssignments  PeriodicChargeEntry[]      @relation("PeriodicChargeAssignee")
+  serviceContractShares      ServiceContractShare[]     @relation("ServiceContractShareGrantee")
+  serviceContractSharesGiven ServiceContractShare[]     @relation("ServiceContractShareGrantor")
 
   @@index([tenantId])
   @@index([inviteTokenHash])
@@ -1793,6 +1807,7 @@ model ServiceContract {
   payments   ServiceContractPayment[]
   checklist  ServiceContractChecklistItem[]
   milestones ServiceContractMilestone[]
+  shares     ServiceContractShare[]
 
   @@index([mallId, status])
   @@index([mallId, isDeleted, status, type, paymentDirection])
@@ -1902,6 +1917,26 @@ model ServiceContractEvent {
   createdAt   DateTime        @default(now())
 
   @@index([contractId, createdAt])
+}
+
+model ServiceContractShare {
+  id         String                         @id @default(cuid())
+  contractId String
+  contract   ServiceContract                @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User                           @relation("ServiceContractShareGrantee", fields: [userId], references: [id], onDelete: Cascade)
+  permission ServiceContractSharePermission @default(READ)
+  // Always the contract's createdById (or an ADMIN acting on their behalf) --
+  // a grantee can never re-share, so this is not a chain, just an audit stamp.
+  grantedById String
+  grantedBy   User     @relation("ServiceContractShareGrantor", fields: [grantedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // One row per person: changing someone's level is an update, not a second grant.
+  @@unique([contractId, userId])
+  // Carries the "which contracts am I shared into" lookup done on every mutation.
+  @@index([userId])
 }
 
 model FitoutProject {

@@ -35,6 +35,8 @@ vi.mock('@/api', () => ({
     updateChecklist: vi.fn(),
     createMilestone: vi.fn(),
     updateMilestone: vi.fn(),
+    remove: vi.fn(),
+    shareableUsers: vi.fn(),
   },
 }));
 
@@ -82,6 +84,8 @@ describe('ServiceContractsPage all-mall view', () => {
       overdue: 4,
     } as never);
     vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      // Quyền trên từng hồ sơ do backend trả về; người tạo được toàn quyền.
+      myPermission: 'DELETE', canManageShares: true, shares: [],
       id: 'contract-created',
       contractNumber: 'PL-2026-001',
       title: 'Hợp đồng bảo trì',
@@ -175,9 +179,48 @@ describe('ServiceContractsPage all-mall view', () => {
     await waitFor(() => expect(serviceContractsApi.alerts).toHaveBeenCalledTimes(2));
   });
 
+  it('hides edit and delete from a viewer the creator never shared with', async () => {
+    // Vai trò vẫn cho vào module (hasRole mock trả true) nhưng quyền trên từng
+    // hồ sơ do backend quyết định — chưa được chia sẻ thì chỉ đọc.
+    vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      myPermission: 'READ', canManageShares: false, shares: [],
+      id: 'contract-created', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì',
+      counterpartyName: 'Đối tác', type: 'MAINTENANCE', serviceCategory: 'MAINTENANCE',
+      valueBasis: 'ANNUAL', paymentDirection: 'PAYABLE', status: 'DRAFT',
+      startDate: '2026-01-01T00:00:00.000Z', endDate: '2026-12-31T00:00:00.000Z',
+      totalValue: 120000000, currency: 'VND',
+      documents: [], events: [], payments: [], checklist: [], milestones: [],
+    } as never);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+
+    await screen.findByText('PL-2026-001');
+    expect(screen.queryByRole('button', { name: 'Chỉnh sửa' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /deleteContract/ })).not.toBeInTheDocument();
+  });
+
+  it('offers delete inside the edit modal only at permission DELETE', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
+    fireEvent.click(await screen.findByText('HD-ALL-001'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Chỉnh sửa' }));
+
+    // Fixture mặc định là myPermission DELETE + canManageShares, nên có cả nút
+    // xóa lẫn tab chia sẻ; tab thông tin vẫn nằm trong DOM để không mất dữ liệu đang gõ.
+    expect(screen.getByRole('tab', { name: /tabShare/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /deleteContract/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /tabShare/ }));
+    const editForm = screen.getByRole('heading', { name: 'Chỉnh sửa hợp đồng' }).closest('form')!;
+    expect(within(editForm).getByLabelText(/^Số hợp đồng/)).toBeInTheDocument();
+  });
+
   it('requires both dates and shows red required marks in the edit form', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
     fireEvent.click(await screen.findByRole('button', { name: 'Chỉnh sửa' }));
@@ -191,8 +234,14 @@ describe('ServiceContractsPage all-mall view', () => {
     });
   });
 
-  it('requires both dates and shows red required marks in the renew form', async () => {
+  // Tính năng gia hạn đang bị tắt có chủ ý: nút "Gia hạn" và cả modal renew đã
+  // được comment trong ServiceContractsPage, và controller trả {} ngay đầu hàm
+  // ("Tạm thời không sử dụng tính năng renew contract nữa"). Giữ lại test để bật
+  // lại cùng lúc với tính năng, thay vì xóa mất phần đặc tả.
+  it.skip('requires both dates and shows red required marks in the renew form', async () => {
     vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      // Quyền trên từng hồ sơ do backend trả về; người tạo được toàn quyền.
+      myPermission: 'DELETE', canManageShares: true, shares: [],
       id: 'contract-created', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì',
       counterpartyName: 'Đối tác', type: 'MAINTENANCE', serviceCategory: 'MAINTENANCE',
       valueBasis: 'ANNUAL', paymentDirection: 'PAYABLE', status: 'EXPIRING', totalValue: 120000000,
@@ -200,7 +249,7 @@ describe('ServiceContractsPage all-mall view', () => {
       documents: [], events: [], payments: [], checklist: [], milestones: [],
     } as never);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
     fireEvent.click(await screen.findByRole('button', { name: 'Gia hạn' }));
@@ -217,6 +266,8 @@ describe('ServiceContractsPage all-mall view', () => {
 
   it('does not offer manual expiring or expired transitions for an active contract', async () => {
     vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      // Quyền trên từng hồ sơ do backend trả về; người tạo được toàn quyền.
+      myPermission: 'DELETE', canManageShares: true, shares: [],
       id: 'contract-created', contractNumber: 'PL-2026-001', title: 'Hợp đồng bảo trì',
       counterpartyName: 'Đối tác', type: 'MAINTENANCE', serviceCategory: 'MAINTENANCE',
       valueBasis: 'ANNUAL', paymentDirection: 'PAYABLE', status: 'ACTIVE', totalValue: 120000000,
@@ -224,7 +275,7 @@ describe('ServiceContractsPage all-mall view', () => {
       documents: [], events: [], payments: [], checklist: [], milestones: [],
     } as never);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
 
@@ -237,7 +288,7 @@ describe('ServiceContractsPage all-mall view', () => {
 
   it('labels every recurring-payment field for the user', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
     fireEvent.click(await screen.findByText('Tạo thanh toán theo kỳ'));
@@ -267,7 +318,7 @@ describe('ServiceContractsPage all-mall view', () => {
   it('passes file metadata to the Service Contract open-or-download handler', async () => {
     vi.mocked(openOrDownloadAuthenticatedDocument).mockResolvedValue('preview');
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={queryClient}><ServiceContractsPage /></QueryClientProvider></MemoryRouter>);
 
     fireEvent.click(await screen.findByText('HD-ALL-001'));
     fireEvent.click(await screen.findByText('hop-dong.pdf'));
@@ -307,6 +358,8 @@ describe('ServiceContractsPage — URL-driven contract selection', () => {
 
   it('opens the exact contract when the URL already carries ?id= on first load (fresh session / direct link / refresh)', async () => {
     vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      // Quyền trên từng hồ sơ do backend trả về; người tạo được toàn quyền.
+      myPermission: 'DELETE', canManageShares: true, shares: [],
       id: 'svc-9', contractNumber: 'PL-2026-009', title: 'Hợp đồng vệ sinh', counterpartyName: 'Đối tác',
       type: 'CLEANING', status: 'ACTIVE', totalValue: 5000000, currency: 'VND',
       documents: [], events: [], payments: [], checklist: [], milestones: [],
@@ -329,6 +382,8 @@ describe('ServiceContractsPage — URL-driven contract selection', () => {
 
   it('closing the detail removes only ?id, preserving every other query param', async () => {
     vi.mocked(serviceContractsApi.detail).mockResolvedValue({
+      // Quyền trên từng hồ sơ do backend trả về; người tạo được toàn quyền.
+      myPermission: 'DELETE', canManageShares: true, shares: [],
       id: 'svc-9', contractNumber: 'PL-2026-009', title: 'Hợp đồng vệ sinh', counterpartyName: 'Đối tác',
       type: 'CLEANING', status: 'ACTIVE', totalValue: 5000000, currency: 'VND',
       documents: [], events: [], payments: [], checklist: [], milestones: [],
