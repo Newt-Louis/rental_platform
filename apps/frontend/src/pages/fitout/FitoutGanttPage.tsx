@@ -80,10 +80,10 @@ export default function FitoutGanttPage() {
 
   const p: any = project;
   const taskList: any[] = tasks as any[];
-  const byId = new Map(taskList.map((t) => [t.id, t]));
+  const byId = new Map(taskList.map((task) => [task.id, task]));
 
   // Compute overall date range for the timeline
-  const allDates = taskList.flatMap((t) => [t.plannedStart, t.plannedEnd, t.actualStart, t.actualEnd].filter(Boolean).map((d: string) => new Date(d).getTime()));
+  const allDates = taskList.flatMap((task) => [task.plannedStart, task.plannedEnd, task.actualStart, task.actualEnd].filter(Boolean).map((d: string) => new Date(d).getTime()));
   const rangeStart = allDates.length ? Math.min(...allDates) : Date.now();
   const rangeEnd = allDates.length ? Math.max(...allDates) : Date.now() + 30 * 86400000;
   const rangeSpan = Math.max(rangeEnd - rangeStart, 86400000);
@@ -107,7 +107,7 @@ export default function FitoutGanttPage() {
             <select className="h-9 text-sm border border-input rounded-md px-2 bg-white"
               value={form.parentTaskId} onChange={(e) => setForm((f) => ({ ...f, parentTaskId: e.target.value }))}>
               <option value="">{t('gantt.noParent')}</option>
-              {taskList.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {taskList.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}
             </select>
           </div>
           <Button size="sm" className="mt-2 gap-1"
@@ -129,28 +129,28 @@ export default function FitoutGanttPage() {
           ) : (
             <div className="overflow-x-auto pb-1">
             <div className="min-w-[760px] space-y-3">
-              {taskList.map((t) => {
-                const depth = depthOf(t, byId);
-                const left = pctOf(t.plannedStart);
-                const width = Math.max(pctOf(t.plannedEnd) - left, 1);
-                const draft = percentDraft[t.id] ?? String(t.percentComplete);
+              {taskList.map((task) => {
+                const depth = depthOf(task, byId);
+                const left = pctOf(task.plannedStart);
+                const width = Math.max(pctOf(task.plannedEnd) - left, 1);
+                const draft = percentDraft[task.id] ?? String(task.percentComplete);
                 return (
-                  <div key={t.id} className="flex items-center gap-3">
+                  <div key={task.id} className="flex items-center gap-3">
                     <div className="w-52 shrink-0" style={{ paddingLeft: depth * 14 }}>
                       <p className="text-sm font-medium truncate flex items-center gap-1">
-                        {t.name}
-                        {t.isLate && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
+                        {task.name}
+                        {task.isLate && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
                       </p>
-                      <p className="text-xs text-gray-400">{fmtDate(t.plannedStart, locale)} → {fmtDate(t.plannedEnd, locale)}</p>
+                      <p className="text-xs text-gray-400">{fmtDate(task.plannedStart, locale)} → {fmtDate(task.plannedEnd, locale)}</p>
                     </div>
                     <div className="flex-1 relative h-6 bg-gray-100 rounded">
                       <div
-                        className={`absolute h-full rounded ${t.isLate ? 'bg-red-200' : 'bg-blue-200'}`}
+                        className={`absolute h-full rounded ${task.isLate ? 'bg-red-200' : 'bg-blue-200'}`}
                         style={{ left: `${left}%`, width: `${width}%` }}
                       >
                         <div
-                          className={`h-full rounded ${t.isLate ? 'bg-red-500' : 'bg-blue-500'}`}
-                          style={{ width: `${t.percentComplete}%` }}
+                          className={`h-full rounded ${task.isLate ? 'bg-red-500' : 'bg-blue-500'}`}
+                          style={{ width: `${task.percentComplete}%` }}
                         />
                       </div>
                     </div>
@@ -158,16 +158,16 @@ export default function FitoutGanttPage() {
                       <Input
                         type="number" min={0} max={100} className="w-14 h-7 text-xs px-1"
                         value={draft}
-                        onChange={(e) => setPercentDraft((d) => ({ ...d, [t.id]: e.target.value }))}
+                        onChange={(e) => setPercentDraft((d) => ({ ...d, [task.id]: e.target.value }))}
                       />
                       <Button size="sm" variant="outline" className="h-7 text-xs px-2"
-                        aria-label={t('gantt.saveProgress', { title: t.name })}
-                        onClick={() => updateMutation.mutate({ id: t.id, data: { percentComplete: +draft } })}>
+                        aria-label={t('gantt.saveProgress', { title: task.name })}
+                        onClick={() => updateMutation.mutate({ id: task.id, data: { percentComplete: +draft } })}>
                         %
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400"
-                        aria-label={t('gantt.deleteTask', { title: t.name })}
-                        onClick={() => deleteMutation.mutate(t.id)}>
+                        aria-label={t('gantt.deleteTask', { title: task.name })}
+                        onClick={() => deleteMutation.mutate(task.id)}>
                         <Trash2 size={13} />
                       </Button>
                     </div>
