@@ -9,12 +9,14 @@ import {
   CreateServiceContractDto,
   CreateServiceContractPaymentDto,
   RenewServiceContractDto,
+  ServiceContractShareInputDto,
   UpdateChecklistItemDto,
   UpdateMilestoneDto,
   UpdateServiceContractDto,
   UpdateServiceContractPaymentDto,
 } from './dto/service-contract.dto';
 import { getServiceContractDateWindow, SERVICE_CONTRACT_EXPIRING_DAYS } from './service-contract-expiry';
+import { SERVICE_CONTRACT_VIEW_ROLES } from './service-contract-access';
 
 // Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
 const EDITABLE_STATUSES: ServiceContractStatus[] = ['DRAFT', 'PROPOSAL', 'UNDER_REVIEW', 'PENDING_SIGNATURE'];
@@ -52,12 +54,23 @@ export class ServiceContractsService {
     return where;
   }
 
-  async findAll(query: any, mallIds?: string[]) {
+  async findAll(query: any, mallIds?: string[], viewerId?: string) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
     const where = this.buildWhere(query, mallIds);
     const [data, total] = await Promise.all([
-      this.prisma.serviceContract.findMany({ where, include: { _count: { select: { documents: true } } }, orderBy: { updatedAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+      this.prisma.serviceContract.findMany({
+        where,
+        include: {
+          _count: { select: { documents: true } },
+          // Chỉ lấy bản ghi chia sẻ của chính người đang xem, để mỗi dòng tự
+          // biết được quyền hiệu lực mà không lộ danh sách chia sẻ của người khác.
+          ...(viewerId ? { shares: { where: { userId: viewerId }, select: { permission: true } } } : {}),
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
       this.prisma.serviceContract.count({ where }),
     ]);
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
@@ -169,15 +182,93 @@ export class ServiceContractsService {
   }
 
   async findOne(id: string) {
-    const item = await this.prisma.serviceContract.findFirst({ where: { id, isDeleted: false }, include: { billingParty: true, documents: { orderBy: { createdAt: 'desc' } }, events: { orderBy: { createdAt: 'desc' } }, payments: { orderBy: { dueDate: 'asc' }, include: { documents: true } }, checklist: { orderBy: { order: 'asc' } }, milestones: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] }, renewals: true, parentContract: true } });
+    const item = await this.prisma.serviceContract.findFirst({ where: { id, isDeleted: false }, include: { billingParty: true, documents: { orderBy: { createdAt: 'desc' } }, events: { orderBy: { createdAt: 'desc' } }, payments: { orderBy: { dueDate: 'asc' }, include: { documents: true } }, checklist: { orderBy: { order: 'asc' } }, milestones: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] }, renewals: true, parentContract: true, shares: { include: { user: { select: { id: true, fullName: true, email: true, role: true } } }, orderBy: { createdAt: 'asc' } } } });
     if (!item) throw new NotFoundException('Không tìm thấy hợp đồng dịch vụ');
     return item;
+  }
+
+  /**
+   * Ứng viên cho ô select ở tab Chia sẻ: người dùng đang hoạt động, được cấp
+   * quyền vào đúng Mall của hợp đồng. Lọc sẵn theo vai trò xem được hợp đồng
+   * dịch vụ — chia sẻ cho người không có vai trò là vô nghĩa vì RolesGuard chặn
+   * họ từ trước khi tới lớp chia sẻ.
+   */
+  async shareableUsers(mallId: string, excludeUserId: string, search?: string) {
+    const term = search?.trim();
+    const grants = await this.prisma.userMallAccess.findMany({
+      where: {
+        mallId,
+        isActive: true,
+        user: {
+          isActive: true,
+          deletedAt: null,
+          role: { in: SERVICE_CONTRACT_VIEW_ROLES },
+          id: { not: excludeUserId },
+          ...(term ? { OR: [
+            { fullName: { contains: term, mode: 'insensitive' } },
+            { email: { contains: term, mode: 'insensitive' } },
+          ] } : {}),
+        },
+      },
+      select: { user: { select: { id: true, fullName: true, email: true, role: true } } },
+      orderBy: { user: { fullName: 'asc' } },
+      take: 100,
+    });
+    return grants.map((grant) => grant.user);
+  }
+
+  /** Bản ghi chia sẻ của một người trên một hợp đồng — đầu vào cho resolveServiceContractPermission. */
+  async findShareFor(contractId: string, userId: string) {
+    return this.prisma.serviceContractShare.findUnique({
+      where: { contractId_userId: { contractId, userId } },
+      select: { permission: true },
+    });
+  }
+
+  /**
+   * Ghi đè toàn bộ danh sách chia sẻ của một hợp đồng cho khớp với `shares`.
+   * Chạy trong transaction cùng lượt lưu hợp đồng để tab thông tin và tab chia
+   * sẻ luôn được lưu trọn vẹn hoặc cùng thất bại.
+   */
+  private async replaceShares(
+    tx: Prisma.TransactionClient,
+    contractId: string,
+    mallId: string,
+    creatorId: string,
+    grantorId: string,
+    shares: ServiceContractShareInputDto[],
+  ) {
+    const deduped = new Map(shares.map((share) => [share.userId, share.permission]));
+    // Người tạo đã toàn quyền sẵn; một dòng chia sẻ cho chính họ chỉ gây nhiễu.
+    deduped.delete(creatorId);
+    const userIds = [...deduped.keys()];
+
+    if (userIds.length) {
+      // Không tin userId do client gửi lên: chỉ chấp nhận người thật sự thuộc
+      // Mall của hợp đồng và có vai trò xem được module.
+      const eligible = await tx.userMallAccess.findMany({
+        where: { mallId, isActive: true, userId: { in: userIds }, user: { isActive: true, deletedAt: null, role: { in: SERVICE_CONTRACT_VIEW_ROLES } } },
+        select: { userId: true },
+      });
+      const eligibleIds = new Set(eligible.map((grant) => grant.userId));
+      const rejected = userIds.filter((userId) => !eligibleIds.has(userId));
+      if (rejected.length) throw new BadRequestException('Chỉ có thể chia sẻ cho người dùng thuộc cùng Mall và có quyền xem hợp đồng dịch vụ');
+    }
+
+    await tx.serviceContractShare.deleteMany({ where: { contractId, userId: { notIn: userIds.length ? userIds : ['__none__'] } } });
+    for (const [userId, permission] of deduped) {
+      await tx.serviceContractShare.upsert({
+        where: { contractId_userId: { contractId, userId } },
+        create: { contractId, userId, permission, grantedById: grantorId },
+        update: { permission, grantedById: grantorId },
+      });
+    }
   }
 
   async create(dto: CreateServiceContractDto, userId: string) {
     if (!dto.startDate || !dto.endDate) throw new BadRequestException('Ngày bắt đầu và ngày kết thúc là bắt buộc');
     if (new Date(dto.endDate) < new Date(dto.startDate)) throw new BadRequestException('Ngày kết thúc phải sau ngày bắt đầu');
-    const { signedDate, startDate, endDate, totalValue, contractNumber, counterpartyAddress, ...data } = dto;
+    const { signedDate, startDate, endDate, totalValue, contractNumber, counterpartyAddress, shares, ...data } = dto;
     const finalContractNumber = contractNumber.trim();
     if (!finalContractNumber) throw new BadRequestException('Vui lòng nhập số hợp đồng pháp lý');
     const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber: finalContractNumber }, select: { id: true } });
@@ -190,14 +281,19 @@ export class ServiceContractsService {
       const party = data.paymentDirection === 'RECEIVABLE'
         ? existingParty || await tx.billingParty.create({ data: { mallId: data.mallId, name: data.counterpartyName, taxCode: data.counterpartyTax, email: data.counterpartyEmail, phone: data.counterpartyPhone, address: counterpartyAddress } })
         : null;
-      return tx.serviceContract.create({ data: { ...data, contractNumber: finalContractNumber, totalValue: normalizedTotalValue, signedDate: signedDate ? new Date(signedDate) : undefined, startDate: startDate ? new Date(startDate) : undefined, endDate: endDate ? new Date(endDate) : undefined, createdById: userId, billingPartyId: party?.id, events: { create: { eventType: 'CREATED', description: 'Tạo hợp đồng dịch vụ', userId } } } });
+      const created = await tx.serviceContract.create({ data: { ...data, contractNumber: finalContractNumber, totalValue: normalizedTotalValue, signedDate: signedDate ? new Date(signedDate) : undefined, startDate: startDate ? new Date(startDate) : undefined, endDate: endDate ? new Date(endDate) : undefined, createdById: userId, billingPartyId: party?.id, events: { create: { eventType: 'CREATED', description: 'Tạo hợp đồng dịch vụ', userId } } } });
+      if (shares?.length) {
+        await this.replaceShares(tx, created.id, created.mallId, userId, userId, shares);
+        await tx.serviceContractEvent.create({ data: { contractId: created.id, eventType: 'SHARES_UPDATED', description: `Chia sẻ hợp đồng cho ${shares.length} người`, newValue: JSON.stringify(shares), userId } });
+      }
+      return created;
     });
   }
 
   async update(id: string, dto: UpdateServiceContractDto, userId: string) {
     const before = await this.findOne(id);
     if (!EDITABLE_STATUSES.includes(before.status)) throw new BadRequestException('Hợp đồng đã hiệu lực hoặc đã kết thúc, không thể chỉnh sửa trực tiếp');
-    const { signedDate, startDate, endDate, totalValue, counterpartyAddress, ...data } = dto;
+    const { signedDate, startDate, endDate, totalValue, counterpartyAddress, shares, ...data } = dto;
     if (data.contractNumber && data.contractNumber !== before.contractNumber) {
       const duplicate = await this.prisma.serviceContract.findUnique({ where: { contractNumber: data.contractNumber }, select: { id: true } });
       if (duplicate) throw new ConflictException(`Số hợp đồng ${data.contractNumber} đã tồn tại`);
@@ -214,9 +310,14 @@ export class ServiceContractsService {
         const existingParty = taxCode ? await tx.billingParty.findFirst({ where: { mallId: before.mallId, taxCode, isActive: true } }) : null;
         billingPartyId = (existingParty || await tx.billingParty.create({ data: { mallId: before.mallId, name: data.counterpartyName || before.counterpartyName, taxCode, email: data.counterpartyEmail, phone: data.counterpartyPhone, address: counterpartyAddress } })).id;
       }
+      // `shares === undefined` là "không đụng tới"; mảng rỗng là "thu hồi hết".
+      if (shares) {
+        await this.replaceShares(tx, id, before.mallId, before.createdById, userId, shares);
+        await tx.serviceContractEvent.create({ data: { contractId: id, eventType: 'SHARES_UPDATED', description: `Cập nhật chia sẻ: ${shares.length} người`, oldValue: JSON.stringify(before.shares.map(({ userId: uid, permission }) => ({ userId: uid, permission }))), newValue: JSON.stringify(shares), userId } });
+      }
       return tx.serviceContract.update({ where: { id }, data: { ...data, totalValue: totalValue == null ? undefined : Number(totalValue), signedDate: signedDate ? new Date(signedDate) : undefined, startDate: startDate ? new Date(startDate) : undefined, endDate: endDate ? new Date(endDate) : undefined, billingPartyId } });
     });
-    const changedFields = Object.keys(dto);
+    const changedFields = Object.keys(dto).filter((key) => key !== 'shares');
     const oldValues = Object.fromEntries(changedFields.map(key => [key, key === 'counterpartyAddress' ? before.billingParty?.address : before[key]]));
     const newValues = Object.fromEntries(changedFields.map(key => [key, key === 'counterpartyAddress' ? counterpartyAddress : updated[key]]));
     await this.prisma.serviceContractEvent.create({ data: { contractId: id, eventType: 'UPDATED', description: `Cập nhật: ${changedFields.join(', ')}`, oldValue: JSON.stringify(oldValues), newValue: JSON.stringify(newValues), userId } });
@@ -257,10 +358,27 @@ export class ServiceContractsService {
     return { deleted: true };
   }
 
+  /**
+   * Xoá cứng: hợp đồng, các bản ghi chia sẻ, kỳ thanh toán, checklist, mốc,
+   * lịch sử (tất cả đi theo onDelete: Cascade) và toàn bộ file đã tải lên.
+   * Không thể hoàn tác — nên chặn thẳng khi hồ sơ đã sinh ra chứng từ kế toán,
+   * vì hoá đơn đã phát hành sẽ mất luôn nguồn gốc của nó.
+   */
   async remove(id: string, userId: string) {
-    await this.findOne(id);
-    await this.prisma.serviceContractEvent.create({ data: { contractId: id, eventType: 'DELETED', userId } });
-    return this.prisma.serviceContract.update({ where: { id }, data: { isDeleted: true } });
+    const item = await this.findOne(id);
+    const invoiced = await this.prisma.serviceContractPayment.count({
+      where: { contractId: id, OR: [{ invoiceId: { not: null } }, { transferredToBillingAt: { not: null } }] },
+    });
+    if (invoiced) throw new BadRequestException('Hợp đồng đã có kỳ thanh toán chuyển sang hoá đơn, không thể xoá. Vui lòng chuyển trạng thái sang Đã chấm dứt hoặc Đã hủy.');
+
+    // Xoá file trước khi xoá bản ghi: nếu bước DB thất bại thì cùng lắm là file
+    // mồ côi, còn xoá DB trước rồi lỗi thì mất luôn đường tìm ra file để dọn.
+    for (const document of item.documents) {
+      await this.storage.deleteFile(document.filePath);
+    }
+    await this.storage.deleteDirectory(`service-contracts/${id}`);
+    await this.prisma.serviceContract.delete({ where: { id } });
+    return { deleted: true, id, contractNumber: item.contractNumber, deletedById: userId };
   }
 
   async stats(mallIds?: string[]) {

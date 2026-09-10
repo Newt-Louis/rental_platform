@@ -6,7 +6,11 @@ export const serviceContractsApi = {
   create: (data: Record<string, unknown>) => api.post('/service-contracts', data).then(r => r.data),
   update: (id: string, data: Record<string, unknown>) => api.patch(`/service-contracts/${id}`, data).then(r => r.data),
   updateStatus: (id: string, status: string) => api.patch(`/service-contracts/${id}/status`, { status }).then(r => r.data),
+  // Xóa cứng: kéo theo chia sẻ, kỳ thanh toán, checklist, mốc, lịch sử và file.
+  remove: (id: string) => api.delete(`/service-contracts/${id}`).then(r => r.data),
   upload: (id: string, file: File, documentType = 'CONTRACT', paymentId?: string) => { const form = new FormData(); form.append('file', file); form.append('documentType', documentType); if (paymentId) form.append('paymentId', paymentId); return api.post(`/service-contracts/${id}/documents`, form).then(r => r.data); },
+  // Người có thể được chia sẻ: chỉ tài khoản thuộc cùng Mall với hợp đồng.
+  shareableUsers: (mallId: string, search?: string) => api.get('/service-contracts/shareable-users', { params: { mallId, search: search || undefined } }).then(r => r.data),
   stats: (mallId?: string) => api.get('/service-contracts/summary/stats', { params: { mallId } }).then(r => r.data),
   alerts: (days = 30, mallId?: string) => api.get('/service-contracts/summary/alerts', { params: { days, mallId } }).then(r => r.data),
   renew: (id: string, data: Record<string, unknown>) => api.post(`/service-contracts/${id}/renew`, data).then(r => r.data),

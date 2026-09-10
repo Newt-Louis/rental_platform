@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Upload, X } from "lucide-react";
+import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { openOrDownloadAuthenticatedDocument } from "@/lib/authenticatedDocument";
@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { useToast } from "@/components/ui/use-toast";
+import { ServiceContractShareTab, type ShareEntry } from "./ServiceContractShareTab";
 import { useTranslation } from "react-i18next";
 import { usePermission } from "@/hooks/usePermission";
 import type { Role } from "@/types";
@@ -88,6 +90,38 @@ const VALUE_BASES = [
 function RequiredMark() {
   return <span className="text-red-600" aria-hidden="true">*</span>;
 }
+type ModalTab = "info" | "share";
+/**
+ * Thanh tab của modal tạo/chỉnh sửa. Cố ý không dùng Radix Tabs: TabsContent
+ * unmount panel không hoạt động, mà panel thông tin toàn input uncontrolled —
+ * nhảy sang tab chia sẻ rồi quay lại sẽ mất sạch dữ liệu đang gõ.
+ */
+function ModalTabs({ value, onChange, infoLabel, shareLabel, shareCount }: {
+  value: ModalTab;
+  onChange: (tab: ModalTab) => void;
+  infoLabel: string;
+  shareLabel: string;
+  shareCount: number;
+}) {
+  const tabs: Array<[ModalTab, string]> = [["info", infoLabel], ["share", shareCount ? `${shareLabel} (${shareCount})` : shareLabel]];
+  console.log(tabs)
+  return (
+    <div role="tablist" className="inline-flex h-9 items-center justify-center self-start rounded-lg bg-gray-100 p-1 text-gray-500">
+      {tabs.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={value === key}
+          onClick={() => onChange(key)}
+          className={`inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all ${value === key ? "bg-white text-gray-950 shadow" : ""}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 const categoryLabel = (value: string) => SERVICE_CATEGORIES.find(([key]) => key === value)?.[1] ?? value;
 const valueBasisLabel = (value: string) => VALUE_BASES.find(([key]) => key === value)?.[1] ?? value;
 const labels: Record<string, string> = {
@@ -120,7 +154,10 @@ export default function ServiceContractsPage() {
   const { t } = useTranslation("serviceContracts");
   const { selectedMallId } = useMallStore();
   const { hasRole } = usePermission();
-  const canEdit = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION"] as Role[]);
+  // Vai trò chỉ quyết định được TẠO hợp đồng mới. Quyền sửa/xóa trên một hồ sơ
+  // cụ thể do backend trả về trong `myPermission`, vì nó còn phụ thuộc người tạo
+  // đã chia sẻ tới mức nào — xem modules/service-contracts/service-contract-access.ts.
+  const canCreate = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION"] as Role[]);
   const canTransferToBilling = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION", "FINANCE"] as Role[]);
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -153,6 +190,13 @@ export default function ServiceContractsPage() {
   const [exporting, setExporting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  // Tab của hai modal. Cả hai panel luôn được render (chỉ ẩn bằng CSS) để giá
+  // trị đang gõ dở ở tab thông tin không bị mất khi người dùng nhảy sang tab chia sẻ.
+  const [createTab, setCreateTab] = useState<"info" | "share">("info");
+  const [editTab, setEditTab] = useState<"info" | "share">("info");
+  const [createShares, setCreateShares] = useState<ShareEntry[]>([]);
+  const [editShares, setEditShares] = useState<ShareEntry[]>([]);
   // Skip on the very first render: this effect exists to reset selection when the operator
   // switches malls, not to wipe out a ?id= a notification link (or a bookmark/refresh) put in
   // the URL before this component ever mounted.
@@ -196,7 +240,28 @@ export default function ServiceContractsPage() {
   const alertData = (alertSummary.data as any)?.data ?? alertSummary.data ?? {};
   // Axios unwraps non-paginated API responses, while paginated lists keep `data`.
   const item = (detail.data as any)?.data ?? detail.data;
+  // Quyền hiệu lực trên đúng hồ sơ đang mở: min(trần vai trò, mức được chia sẻ),
+  // người tạo và ADMIN thì toàn quyền. Backend là nơi quyết định, đây chỉ hiển thị.
+  const myPermission: string = item?.myPermission ?? "READ";
+  const canEdit = myPermission === "EDIT" || myPermission === "DELETE";
+  const canDelete = myPermission === "DELETE";
+  const canManageShares = !!item?.canManageShares;
   useEffect(() => setPendingStatus(null), [selectedId, item?.status]);
+  // Nạp lại danh sách chia sẻ mỗi lần mở modal chỉnh sửa, để thao tác gỡ/thêm dở
+  // dang ở lần mở trước không dính sang lần sau.
+  useEffect(() => {
+    if (!showEdit) return;
+    setEditShares(
+      (item?.shares ?? []).map((share: any) => ({
+        userId: share.userId,
+        permission: share.permission,
+        fullName: share.user?.fullName ?? "",
+        email: share.user?.email ?? "",
+        role: share.user?.role,
+      })),
+    );
+    setEditTab("info");
+  }, [showEdit, item?.id]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["service-contracts"] });
     qc.invalidateQueries({ queryKey: ["service-contract-alerts"] });
@@ -228,6 +293,8 @@ export default function ServiceContractsPage() {
       refresh();
       setShowCreate(false);
       setCreateOriginalFile(undefined);
+      setCreateShares([]);
+      setCreateTab("info");
       if (created?.id) setSelectedId(created.id);
       toast(uploadError ? {
         title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
@@ -272,6 +339,22 @@ export default function ServiceContractsPage() {
         variant: "destructive",
       }),
   });
+  const remove = useMutation({
+    mutationFn: () => serviceContractsApi.remove(selectedId!),
+    onSuccess: () => {
+      setShowDelete(false);
+      setShowEdit(false);
+      setSelectedId(null);
+      refresh();
+      toast({ title: t("deleted") });
+    },
+    onError: (e: any) =>
+      toast({
+        title: t("deleteFailed"),
+        description: e?.response?.data?.message,
+        variant: "destructive",
+      }),
+  });
   const renew = useMutation({
     mutationFn: (data: Record<string, unknown>) => serviceContractsApi.renew(selectedId!, data),
     onSuccess: (response: any) => {
@@ -287,6 +370,12 @@ export default function ServiceContractsPage() {
       variant: "destructive",
     }),
   });
+  function closeCreate() {
+    setShowCreate(false);
+    setCreateOriginalFile(undefined);
+    setCreateShares([]);
+    setCreateTab("info");
+  }
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -298,6 +387,9 @@ export default function ServiceContractsPage() {
     for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
       if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
     }
+    // Tab thông tin và tab chia sẻ đi chung một request: hợp đồng và danh sách
+    // chia sẻ được lưu trọn vẹn hoặc cùng thất bại.
+    if (createShares.length) data.shares = createShares.map(({ userId, permission }) => ({ userId, permission }));
     create.mutate({
       data,
       originalFile: createOriginalFile,
@@ -310,6 +402,9 @@ export default function ServiceContractsPage() {
     for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
       if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
     }
+    // Người không phải người tạo không gửi trường này (backend cũng từ chối),
+    // nên danh sách chia sẻ hiện có được giữ nguyên khi họ sửa nội dung hợp đồng.
+    if (canManageShares) data.shares = editShares.map(({ userId, permission }) => ({ userId, permission }));
     update.mutate(data);
   }
   function submitRenew(e: FormEvent<HTMLFormElement>) {
@@ -389,7 +484,7 @@ export default function ServiceContractsPage() {
             <Download size={16} className="mr-2" />
             {exporting ? "Đang xuất..." : "Xuất Excel"}
           </Button>
-          {canEdit && <Button onClick={() => setShowCreate(true)} disabled={!selectedMallId}>
+          {canCreate && <Button onClick={() => { setCreateShares([]); setCreateTab("info"); setShowCreate(true); }} disabled={!selectedMallId}>
             <Plus size={16} className="mr-2" />
             {t("create")}
           </Button>}
@@ -503,17 +598,19 @@ export default function ServiceContractsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
             onSubmit={submit}
-            className="grid max-h-[92vh] w-full max-w-4xl grid-cols-2 gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl"
+            className="flex max-h-[92vh] w-full max-w-4xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl"
           >
-            <div className="col-span-2 flex justify-between border-b pb-4">
+            <div className="flex justify-between border-b pb-4">
               <div>
                 <h2 className="text-xl font-semibold">Tạo hợp đồng dịch vụ</h2>
                 <p className="text-sm text-muted-foreground">Nhập đầy đủ thông tin pháp lý, tài chính và bản gốc trong một lần.</p>
               </div>
-              <button type="button" onClick={() => { setShowCreate(false); setCreateOriginalFile(undefined); }}>
+              <button type="button" onClick={closeCreate}>
                 <X />
               </button>
             </div>
+            <ModalTabs value={createTab} onChange={setCreateTab} infoLabel={t("tabCreate")} shareLabel={t("tabShare")} shareCount={createShares.length} />
+            <div className={createTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"}>
             <h3 className="col-span-2 font-semibold">Thông tin pháp lý</h3>
             <label className="text-sm">Số hợp đồng pháp lý <RequiredMark /><Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng đã/phải ký" /></label>
             <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" required placeholder="Tên hợp đồng" /></label>
@@ -564,12 +661,16 @@ export default function ServiceContractsPage() {
               placeholder="Ghi chú"
             />
             <input type="hidden" name="mallId" value={selectedMallId || ""} />
-            <div className="col-span-2 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => { setShowCreate(false); setCreateOriginalFile(undefined); }}
-              >
+            </div>
+            <div className={createTab === "share" ? "" : "hidden"}>
+              <ServiceContractShareTab
+                mallId={selectedMallId || ""}
+                value={createShares}
+                onChange={setCreateShares}
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={closeCreate}>
                 Hủy
               </Button>
               <Button disabled={create.isPending}>{create.isPending ? "Đang tạo và lưu tài liệu..." : "Tạo hợp đồng"}</Button>
@@ -707,11 +808,13 @@ export default function ServiceContractsPage() {
       )}
       {showEdit && item && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <form onSubmit={submitEdit} className="grid max-h-[90vh] w-full max-w-3xl grid-cols-2 gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl">
-            <div className="col-span-2 flex items-center justify-between">
+          <form onSubmit={submitEdit} className="flex max-h-[90vh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl">
+            <div className="flex items-center justify-between border-b pb-4">
               <div><h2 className="text-xl font-semibold">Chỉnh sửa hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">{item.contractNumber}</p></div>
               <button type="button" onClick={() => setShowEdit(false)}><X /></button>
             </div>
+            <ModalTabs value={editTab} onChange={setEditTab} infoLabel={t("tabEdit")} shareLabel={t("tabShare")} shareCount={editShares.length} />
+            <div className={editTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"}>
             <label className="text-sm">Số hợp đồng <RequiredMark /><Input name="contractNumber" defaultValue={item.contractNumber || ""} required /></label>
             <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" defaultValue={item.title || ""} required /></label>
             <label className="text-sm">Tên đối tác <RequiredMark /><Input name="counterpartyName" defaultValue={item.counterpartyName || ""} required /></label>
@@ -736,7 +839,27 @@ export default function ServiceContractsPage() {
             </>}
             <label className="col-span-2 text-sm">Ghi chú<textarea name="notes" defaultValue={item.notes || ""} className="mt-1 min-h-24 w-full rounded-md border bg-background p-3" /></label>
             <input type="hidden" name="mallId" value={item.mallId} />
-            <div className="col-span-2 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setShowEdit(false)}>Hủy</Button><Button disabled={update.isPending}>{update.isPending ? "Đang lưu..." : "Lưu thay đổi"}</Button></div>
+            </div>
+            <div className={editTab === "share" ? "" : "hidden"}>
+              <ServiceContractShareTab
+                mallId={item.mallId}
+                value={editShares}
+                onChange={setEditShares}
+                readOnly={!canManageShares}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t pt-4">
+              {canDelete ? (
+                <Button type="button" variant="destructive" onClick={() => setShowDelete(true)}>
+                  <Trash2 size={14} className="mr-2" />
+                  {t("deleteContract")}
+                </Button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowEdit(false)}>Hủy</Button>
+                <Button disabled={update.isPending}>{update.isPending ? "Đang lưu..." : "Lưu thay đổi"}</Button>
+              </div>
+            </div>
           </form>
         </div>
       )}
@@ -760,6 +883,17 @@ export default function ServiceContractsPage() {
           </form>
         </div>
       )} */}
+      <ConfirmActionDialog
+        open={showDelete}
+        onOpenChange={setShowDelete}
+        title={t("deleteConfirmTitle")}
+        description={t("deleteConfirmBody")}
+        confirmLabel={t("deleteConfirm")}
+        cancelLabel={t("cancel")}
+        destructive
+        loading={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
     </div>
   );
 }

@@ -51,6 +51,20 @@ export type RouteModule =
   | "parking-report"
   | "parking-transaction";
 
+/**
+ * Trần quyền ghi của module hợp đồng dịch vụ — đồng bộ với backend
+ * `modules/service-contracts/service-contract-access.ts`. Vai trò ngoài danh
+ * sách này (CEO, FINANCE) xem được hợp đồng nhưng không bao giờ sửa/xóa được,
+ * kể cả khi được người tạo chia sẻ quyền cao hơn.
+ */
+export const SERVICE_CONTRACT_EDIT_ROLES: AppRole[] = [
+  "ADMIN",
+  "MALL_DIRECTOR",
+  "LEASING_MANAGER",
+  "LEGAL",
+  "OPERATION",
+];
+
 export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: [
     "ADMIN",
