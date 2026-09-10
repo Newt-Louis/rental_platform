@@ -67,6 +67,37 @@ export class UsersService {
     };
   }
 
+  /**
+   * Lightweight staff picker (id/fullName/email/role only, active users, same
+   * Mall-scope rule as findAll) for assignee dropdowns across CRM/Tickets/
+   * Bookings/Patrol/Fitout -- kept separate from findAll so it can stay open
+   * to any authenticated role without exposing the full user-management list
+   * (phone, department, mall grants, isActive history) that /users guards
+   * ADMIN-only for.
+   */
+  async findAssignable(query: { role?: Role; search?: string }, activeMallId?: string | null) {
+    const { role, search } = query;
+    const where: any = { deletedAt: null, isActive: true };
+
+    if (role) where.role = role;
+    const mallScope = UsersService.mallScopeFilter(activeMallId);
+    if (mallScope) where.AND = [mallScope];
+
+    if (search) {
+      where.OR = [
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return this.prisma.user.findMany({
+      where,
+      select: { id: true, fullName: true, email: true, role: true },
+      orderBy: { fullName: 'asc' },
+      take: 200,
+    });
+  }
+
   async stats(activeMallId?: string | null) {
     // Must use the same visibility rule as findAll, otherwise the summary tiles
     // claim more accounts than the table can ever show.

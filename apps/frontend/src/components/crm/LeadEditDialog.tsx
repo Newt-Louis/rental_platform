@@ -73,11 +73,11 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
 
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    queryFn: () => usersApi.listAssignableUsers(),
     enabled: open,
     staleTime: 60_000,
   });
-  const users: any[] = usersData?.data ?? usersData ?? [];
+  const users: any[] = usersData ?? [];
 
   useEffect(() => {
     if (open && lead) {

@@ -225,8 +225,8 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
   );
   const budgetCurrencyMissing = budgetEntered && !form.currencyCode;
 
-  const { data: usersData } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.listUsers({ limit: 100 }) });
-  const users: any[] = usersData?.data ?? usersData ?? [];
+  const { data: usersData } = useQuery({ queryKey: ['users-picker'], queryFn: () => usersApi.listAssignableUsers() });
+  const users: any[] = usersData ?? [];
   const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000 });
   const categoryNames: string[] = useMemo(() => {
     const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
@@ -1345,8 +1345,8 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
 
   // Fetch users for filter
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => usersApi.listUsers(),
+    queryKey: ['users-picker'],
+    queryFn: () => usersApi.listAssignableUsers(),
   });
 
   // Pipeline data

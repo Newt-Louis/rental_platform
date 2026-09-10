@@ -26,7 +26,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/api', () => ({
-  usersApi: { listUsers: vi.fn() },
+  usersApi: { listAssignableUsers: vi.fn() },
   patrolApi: {
     routes: vi.fn(), schedules: vi.fn(), shifts: vi.fn(), summary: vi.fn(), report: vi.fn(),
     shift: vi.fn(), createRoute: vi.fn(), updateRoute: vi.fn(), addPoint: vi.fn(), updatePoint: vi.fn(),
@@ -68,7 +68,7 @@ function renderAt(path: string) {
 describe('PatrolPage — URL-driven shift selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(usersApi.listUsers).mockResolvedValue({ data: [] } as never);
+    vi.mocked(usersApi.listAssignableUsers).mockResolvedValue([] as never);
     vi.mocked(patrolApi.routes).mockResolvedValue([] as never);
     vi.mocked(patrolApi.schedules).mockResolvedValue([] as never);
     vi.mocked(patrolApi.shifts).mockResolvedValue({ data: [], total: 0 } as never);

@@ -6,6 +6,7 @@ import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateSelfDto } from './dto/update-self.dto';
 import { ListUsersDto } from './dto/list-users.dto';
+import { AssignableUsersDto } from './dto/assignable-users.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -50,6 +51,15 @@ export class UsersController {
   @ApiOperation({ summary: 'Create user' })
   create(@Body() dto: CreateUserDto, @CurrentUser() actor: any) {
     return this.usersService.create(dto, actor.id);
+  }
+
+  // Declared before ':id' for the same reason as the 'me' routes below --
+  // otherwise 'assignable' would be captured as an :id param.
+  @Get('assignable')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Lightweight staff picker (id/fullName/email/role only) for assignee dropdowns -- any authenticated role, unlike the full ADMIN-only list' })
+  findAssignable(@Query() query: AssignableUsersDto, @CurrentUser() user: any) {
+    return this.usersService.findAssignable(query, user.activeMallId);
   }
 
   // ─── Self-service (any authenticated role — declared before ':id' so 'me'

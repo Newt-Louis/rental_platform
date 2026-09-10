@@ -21,7 +21,7 @@ vi.mock('@/api', () => ({
   slotsApi:    { list: vi.fn() },
   spacesApi:   { listUnits: vi.fn() },
   customersApi:{ listCustomers: vi.fn() },
-  usersApi:    { listUsers: vi.fn().mockResolvedValue({ data: [] }) },
+  usersApi:    { listAssignableUsers: vi.fn().mockResolvedValue([]) },
 }));
 
 const mockToast = vi.fn();

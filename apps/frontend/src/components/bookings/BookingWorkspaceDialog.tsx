@@ -91,8 +91,8 @@ export function BookingWorkspaceDialog({
     : (mallsData?.data ?? []);
 
   const usersData = useQuery({
-    queryKey: ["users-list"],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    queryKey: ["users-picker"],
+    queryFn: () => usersApi.listAssignableUsers(),
     enabled: open,
     staleTime: 60_000,
   }).data;

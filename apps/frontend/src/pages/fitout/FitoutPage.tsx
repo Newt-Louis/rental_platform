@@ -128,11 +128,11 @@ function FitoutDetailSheet({ projectId, onClose }: { projectId: string | null; o
   });
 
   const { data: usersData } = useQuery({
-    queryKey: ['users-op'],
-    queryFn: () => usersApi.listUsers({ role: 'OPERATION', limit: 100 }),
+    queryKey: ['users-picker', 'OPERATION'],
+    queryFn: () => usersApi.listAssignableUsers({ role: 'OPERATION' }),
     enabled: !!projectId && capabilities.canAssign,
   });
-  const opUsers: any[] = usersData?.data ?? [];
+  const opUsers: any[] = usersData ?? [];
 
   const { data: contractorsData = [] } = useQuery({
     queryKey: ['fitout-contractors', projectId],

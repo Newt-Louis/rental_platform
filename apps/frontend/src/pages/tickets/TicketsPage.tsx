@@ -216,10 +216,10 @@ function StaffTicketDetailSheet({ ticketId, onClose }: { ticketId: string | null
   const photos: any[] = photosData ?? [];
 
   const { data: usersData } = useQuery({
-    queryKey: ['staff-users'],
-    queryFn: () => usersApi.listUsers({ limit: 200 }),
+    queryKey: ['users-picker'],
+    queryFn: () => usersApi.listAssignableUsers(),
   });
-  const staffUsers: any[] = (usersData?.data ?? usersData ?? []).filter((u: any) => u.role !== 'TENANT');
+  const staffUsers: any[] = (usersData ?? []).filter((u: any) => u.role !== 'TENANT');
 
   const t: any = ticket?.data ?? ticket;
   const comments: any[] = t?.comments ?? [];
@@ -428,8 +428,8 @@ function CreateMaintenanceDialog({ open, onClose }: { open: boolean; onClose: ()
     if (open && selectedMallId) setValue('mallId', selectedMallId, { shouldValidate: true });
   }, [open, selectedMallId, setValue]);
 
-  const { data: usersData } = useQuery({ queryKey: ['maintenance-assignees'], queryFn: () => usersApi.listUsers({ limit: 200 }), enabled: open });
-  const staff: any[] = (usersData?.data ?? usersData ?? []).filter((user: any) => user.isActive && user.role !== 'TENANT');
+  const { data: usersData } = useQuery({ queryKey: ['users-picker'], queryFn: () => usersApi.listAssignableUsers(), enabled: open });
+  const staff: any[] = (usersData ?? []).filter((user: any) => user.role !== 'TENANT');
 
   const mutation = useMutation({
     mutationFn: (data: any) => maintenanceApi.create({ ...data, title: data.title.trim(), description: data.description?.trim() || undefined, estimatedHours: data.estimatedHours ? +data.estimatedHours : undefined, reminderDays: +(data.reminderDays || 3), checklist: data.checklistText.split('\n').map((item: string) => item.trim()).filter(Boolean), checklistText: undefined }),

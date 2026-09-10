@@ -2,6 +2,11 @@ import api from '@/lib/axios';
 
 export const usersApi = {
   listUsers: (params?: Record<string, unknown>) => api.get('/users', { params }).then((r) => r.data),
+  // Lightweight picker (id/fullName/email/role) open to any authenticated
+  // role, unlike listUsers() which is ADMIN-only -- use this for assignee
+  // dropdowns (CRM/Tickets/Bookings/Patrol/Fitout).
+  listAssignableUsers: (params?: Record<string, unknown>) =>
+    api.get('/users/assignable', { params }).then((r) => r.data),
   getStats: () => api.get('/users/stats').then((r) => r.data),
   getUser: (id: string) => api.get(`/users/${id}`).then((r) => r.data),
   updateUser: (id: string, data: Record<string, unknown>) =>

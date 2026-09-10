@@ -192,8 +192,8 @@ export default function PatrolPage() {
   }, [mallId]);
 
   const usersQ = useQuery({
-    queryKey: ["patrol-users"],
-    queryFn: () => usersApi.listUsers({ limit: 200 }),
+    queryKey: ["users-picker"],
+    queryFn: () => usersApi.listAssignableUsers(),
   });
   const routesQ = useQuery({
     queryKey: ["patrol-routes", mallId],
