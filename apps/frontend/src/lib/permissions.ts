@@ -287,11 +287,24 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: "crm",
+    // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể, nên nhóm này
+    // đứng ngay trước quy trình bán hàng theo mặt bằng để sidebar phản ánh đúng BP-001.
+    label: "Khách hàng tiềm năng (CRM)",
+    items: [
+      {
+        label: "Điều hành CRM",
+        path: "/crm-overview",
+        module: "crm-overview" as RouteModule,
+      },
+      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
+    ],
+  },
+  {
     key: "salesProcess",
     // Chỉ giữ lại các bước hành động tuần tự thật của quy trình cho thuê 1 mặt bằng cụ thể
-    // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM (chăm sóc lead trước khi
-    // chọn mặt bằng) và Deal Pipeline (dashboard tổng hợp chỉ để xem, không thao tác) đã tách
-    // ra 2 nhóm riêng bên dưới để không gây nhầm lẫn đây là các bước phải làm tuần tự.
+    // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM nằm ở nhóm ngay phía trên;
+    // Deal Pipeline là dashboard tổng hợp chỉ để xem nên vẫn nằm trong nhóm Phân tích.
     label: "Quy trình bán hàng",
     items: [
       {
@@ -324,20 +337,6 @@ export const NAV_GROUPS = [
         path: "/pipeline-stats",
         module: "pipeline-stats" as RouteModule,
       },
-    ],
-  },
-  {
-    key: "crm",
-    // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể — một giai đoạn
-    // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
-    label: "Khách hàng tiềm năng (CRM)",
-    items: [
-      {
-        label: "Điều hành CRM",
-        path: "/crm-overview",
-        module: "crm-overview" as RouteModule,
-      },
-      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
     ],
   },
   {

@@ -23,6 +23,16 @@ describe('route permissions', () => {
     }
   });
 
+  it('orders CRM before the unit-specific sales process', () => {
+    const groupKeys = NAV_GROUPS.map((group) => group.key);
+
+    expect(groupKeys.indexOf('crm')).toBe(groupKeys.indexOf('salesProcess') - 1);
+    expect(NAV_GROUPS.find((group) => group.key === 'crm')?.items.map((item) => item.path))
+      .toEqual(['/crm-overview', '/crm']);
+    expect(NAV_GROUPS.find((group) => group.key === 'salesProcess')?.items.map((item) => item.path))
+      .toEqual(['/bookings', '/proposals', '/approvals', '/contracts', '/tenants', '/pipeline-stats']);
+  });
+
   it('only exposes tenant navigation entries allowed to TENANT', () => {
     for (const item of TENANT_NAV) {
       expect(canAccessModule('TENANT', item.module)).toBe(true);

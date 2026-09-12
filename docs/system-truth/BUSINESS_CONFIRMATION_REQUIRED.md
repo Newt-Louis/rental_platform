@@ -2,6 +2,14 @@
 
 Live register. Consolidated from all 5 research streams, 2026-08-21.
 
+## CR-121 additions (2026-09-12)
+
+| BC-xxx | Title | Raised during | Severity if unanswered | Status |
+|---|---|---|---|---|
+| BC-027 | Which forward/backward Lead status transitions are permitted beyond the existing WON precondition and reason-required LOST/backward/reopen policy? | CR-121 | P1 — blocks activation of the centralized lifecycle adjacency policy | OPEN |
+| BC-028 | Which staff roles may view internal CRM comments across assignees/Malls, and may any comment be visible to Tenant Portal users? | CR-121 | P1 — blocks final timeline comment projection and authorization policy | OPEN |
+| BC-029 | Should stale handling ever auto-mutate a Lead to LOST, or only create a manager review/task? | CR-121 | P1 — auto-LOST remains disabled/dry-run until answered | OPEN |
+
 | BC-xxx | Title | Raised during | Severity if unanswered | Status |
 |---|---|---|---|---|
 | BC-001 | Is `Lead.estimatedValue` ever entered in a non-VND context? | Core Leasing stream | P2 — determines if CRM pipeline-value currency-blending is a real risk | OPEN |
