@@ -579,7 +579,9 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   const nextStage = nextStageKey ? LEAD_STAGES.find((s) => s.key === nextStageKey) : null;
   const proposals: any[] = fullLead?.proposals ?? [];
   const bookings: any[] = fullLead?.bookings ?? [];
-  const activities: any[] = customer?.activities ?? [];
+  // Lead activity is authoritative for the Lead experience and works before a
+  // Customer profile exists. CustomerActivity remains customer-scoped (BC-016).
+  const activities: any[] = fullLead?.activities ?? [];
   const followUps: any[] = followUpsData?.data ?? followUpsData ?? [];
 
   const invalidateFollowUps = () => qc.invalidateQueries({ queryKey: ['lead-followups', lead?.id] });
@@ -595,14 +597,14 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   });
 
   const completeFollowUpMutation = useMutation({
-    mutationFn: (id: string) => followUpApi.complete(id),
+    mutationFn: ({ id, outcome, comment }: { id: string; outcome?: string; comment?: string }) => followUpApi.complete(id, { outcome, comment }),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.completeFollowUp') }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
-  const deleteFollowUpMutation = useMutation({
-    mutationFn: (id: string) => followUpApi.delete(id),
-    onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.deleteFollowUp') }); },
+  const cancelFollowUpMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => followUpApi.cancel(id, reason),
+    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã huỷ follow-up và giữ lại lịch sử' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
@@ -977,28 +979,39 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                     <Bell size={12} /> {t('leadSheet.followUpsSection')}
                   </div>
                   <div className="space-y-2 mb-2">
-                    {followUps.filter((f: any) => !f.isDone).map((f: any) => (
+                    {followUps.map((f: any) => {
+                      const status = f.status ?? (f.isDone ? 'COMPLETED' : 'OPEN');
+                      return (
                       <div key={f.id} className="flex items-start justify-between gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                         <div className="min-w-0">
-                          <div className="text-xs font-medium text-amber-800">{fmtDate(f.dueDate)}</div>
+                          <div className="flex items-center gap-2"><span className="text-xs font-medium text-amber-800">{fmtDate(f.dueDate)}</span><Badge variant="outline" className="text-[10px]">{status}</Badge></div>
                           {f.note && <div className="text-xs text-amber-700 truncate">{f.note}</div>}
                           <div className="text-[11px] text-amber-500">{f.assignedTo?.fullName}</div>
+                          {f.outcome && <div className="text-[11px] text-green-700">Kết quả: {f.outcome}</div>}
+                          {f.cancellationReason && <div className="text-[11px] text-red-700">Lý do huỷ: {f.cancellationReason}</div>}
                         </div>
-                        <div className="flex gap-1 shrink-0">
+                        {status === 'OPEN' && <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
                             title={t('followUpsWorkspace.complete')} disabled={completeFollowUpMutation.isPending}
-                            onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            onClick={() => {
+                              const outcome = window.prompt('Kết quả follow-up (có thể để trống)') ?? undefined;
+                              const comment = window.prompt('Ghi chú hoàn thành (có thể để trống)') ?? undefined;
+                              completeFollowUpMutation.mutate({ id: f.id, outcome, comment });
+                            }}>
                             <CheckCircle size={13} />
                           </Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
-                            title={t('lead.delete')} disabled={deleteFollowUpMutation.isPending}
-                            onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            title="Huỷ follow-up" disabled={cancelFollowUpMutation.isPending}
+                            onClick={() => {
+                              const reason = window.prompt('Lý do huỷ follow-up');
+                              if (reason?.trim()) cancelFollowUpMutation.mutate({ id: f.id, reason });
+                            }}>
                             <X size={13} />
                           </Button>
-                        </div>
+                        </div>}
                       </div>
-                    ))}
-                    {followUps.filter((f: any) => !f.isDone).length === 0 && (
+                    )})}
+                    {followUps.length === 0 && (
                       <p className="text-xs text-gray-400">{t('leadSheet.noFollowUps')}</p>
                     )}
                   </div>
@@ -1014,21 +1027,10 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   </div>
                 </div>
 
-                {customer ? (
-                  <>
-                    <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>
-                      <Plus size={13} /> {t('leadSheet.addActivity')}
-                    </Button>
-                    <ActivityTimeline activities={activities} />
-                  </>
-                ) : (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    <Activity size={28} className="mx-auto mb-2 opacity-20" />
-                    {t('leadSheet.noCustomerProfile')}
-                    <br />
-                    <span className="text-xs">{t('leadSheet.noCustomerProfileHint')}</span>
-                  </div>
-                )}
+                <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>
+                  <Plus size={13} /> {t('leadSheet.addActivity')}
+                </Button>
+                <ActivityTimeline activities={activities} />
               </div>
             )}
 
@@ -1036,9 +1038,9 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
         )}
       </Sheet>
 
-      {customer && (
-        <AddActivityDialog
-          customerId={customer.id}
+      {lead?.id && (
+        <AddLeadActivityDialog
+          leadId={lead.id}
           open={showAddActivity}
           onClose={() => {
             setShowAddActivity(false);
@@ -2036,9 +2038,18 @@ function PipelineAnalytics() {
   const winLossBySource = stats?.winLossBySource ?? {};
   const winLossByCategory = stats?.winLossByCategory ?? {};
   const byPriority = stats?.byPriority ?? {};
+  const historicalCoverage = stats?.analyticsSemantics;
+  const historicalValue = (value: number | null | undefined, suffix = '') => value == null
+    ? 'Không đủ dữ liệu lịch sử'
+    : `${value.toFixed(1)}${suffix}`;
 
   return (
     <div className="space-y-6">
+      {historicalCoverage?.historicalCoverage === 'PARTIAL' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <strong>Phạm vi dữ liệu lịch sử: PARTIAL.</strong> {historicalCoverage.coverageMessage} Snapshot hiện tại và KPI lịch sử được trình bày riêng; hệ thống không suy luận từ <code>updatedAt</code>.
+        </div>
+      )}
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl border p-4">
@@ -2058,12 +2069,12 @@ function PipelineAnalytics() {
           <div className="text-xs text-gray-500">{t('analytics.lost')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
-          <div className="text-2xl font-bold text-purple-600">{(conversionRates.overallWinRate ?? 0).toFixed(1)}%</div>
-          <div className="text-xs text-gray-500">{t('analytics.winRate')}</div>
+          <div className="text-base font-bold text-purple-600">{historicalValue(conversionRates.overallWinRate, '%')}</div>
+          <div className="text-xs text-gray-500">{t('analytics.winRate')} · từ ngày kích hoạt</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
-          <div className="text-2xl font-bold text-orange-600">{summary.avgDaysToWin ?? 0}</div>
-          <div className="text-xs text-gray-500">{t('analytics.avgDaysToWin')}</div>
+          <div className="text-base font-bold text-orange-600">{historicalValue(summary.avgDaysToWin)}</div>
+          <div className="text-xs text-gray-500">{t('analytics.avgDaysToWin')} · từ ngày kích hoạt</div>
         </div>
       </div>
 
@@ -2105,10 +2116,10 @@ function PipelineAnalytics() {
               <div key={item.label}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-600">{item.label}</span>
-                  <span className="font-medium">{(item.value ?? 0).toFixed(1)}%</span>
+                  <span className="font-medium">{historicalValue(item.value, '%')}</span>
                 </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${Math.min(item.value ?? 0, 100)}%` }} />
+                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${item.value == null ? 0 : Math.min(item.value, 100)}%` }} />
                 </div>
               </div>
             ))}
@@ -2314,6 +2325,43 @@ function AddActivityDialog({ customerId, open, onClose }: { customerId: string; 
             <Button variant="outline" onClick={onClose}>{t('addActivity.cancel')}</Button>
             <Button disabled={!form.note || mutation.isPending} onClick={() => mutation.mutate()}>{t('addActivity.save')}</Button>
           </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddLeadActivityDialog({ leadId, open, onClose }: { leadId: string; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation('crm');
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [form, setForm] = useState({ type: 'CALL', note: '', outcome: '', occurredAt: '', source: 'CRM' });
+  const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const mutation = useMutation({
+    mutationFn: () => crmApi.addActivity(leadId, {
+      ...form,
+      occurredAt: form.occurredAt ? new Date(form.occurredAt).toISOString() : undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lead-detail', leadId] });
+      qc.invalidateQueries({ queryKey: ['lead-timeline', leadId] });
+      toast({ title: t('addActivity.success') });
+      setForm({ type: 'CALL', note: '', outcome: '', occurredAt: '', source: 'CRM' });
+      onClose();
+    },
+    onError: (error: any) => toast({ title: error?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>{t('addActivity.title')}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div><Label className="text-xs">{t('addActivity.type')}</Label><select className="mt-1 h-9 w-full rounded-md border px-2 text-sm" value={form.type} onChange={(event) => set('type', event.target.value)}>{ACTIVITY_TYPES.map((activity) => <option key={activity.key} value={activity.key}>{t(`activityTypes.${activity.key}`, { defaultValue: activity.label })}</option>)}</select></div>
+          <div><Label className="text-xs">Thời điểm tương tác</Label><Input type="datetime-local" className="mt-1 h-9" value={form.occurredAt} onChange={(event) => set('occurredAt', event.target.value)} /></div>
+          <div><Label className="text-xs">{t('addActivity.content')}</Label><textarea className="mt-1 h-20 w-full resize-none rounded-md border p-2 text-sm" value={form.note} onChange={(event) => set('note', event.target.value)} placeholder={t('addActivity.contentPlaceholder')} /></div>
+          <div><Label className="text-xs">{t('addActivity.result')}</Label><Input className="mt-1 h-9" value={form.outcome} onChange={(event) => set('outcome', event.target.value)} placeholder={t('addActivity.resultPlaceholder')} /></div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>{t('addActivity.cancel')}</Button><Button disabled={!form.note || mutation.isPending} onClick={() => mutation.mutate()}>{t('addActivity.save')}</Button></div>
         </div>
       </DialogContent>
     </Dialog>
@@ -2931,6 +2979,14 @@ function FollowUpsWorkspace() {
     },
     onError: () => toast({ title: t('followUpsWorkspace.completeError'), variant: 'destructive' }),
   });
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => followUpApi.cancel(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
+      toast({ title: 'Đã huỷ follow-up và giữ lại lịch sử' });
+    },
+    onError: () => toast({ title: 'Không thể huỷ follow-up', variant: 'destructive' }),
+  });
 
   const items: any[] = Array.isArray(data) ? data : [];
   const today = new Date();
@@ -2977,9 +3033,15 @@ function FollowUpsWorkspace() {
                   {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-gray-400">{t('followUpsWorkspace.dueDate', { date: fmtDate(item.dueDate) })}</span>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
-                      <CheckCircle size={12} className="mr-1" /> {t('followUpsWorkspace.complete')}
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
+                        <CheckCircle size={12} className="mr-1" /> {t('followUpsWorkspace.complete')}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" disabled={cancelMutation.isPending} onClick={() => {
+                        const reason = window.prompt('Lý do huỷ follow-up');
+                        if (reason?.trim()) cancelMutation.mutate({ id: item.id, reason });
+                      }}><X size={12} className="mr-1" /> Huỷ</Button>
+                    </div>
                   </div>
                 </article>
                 );

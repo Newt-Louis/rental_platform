@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Patch,
+  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Patch, Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
@@ -55,8 +55,18 @@ export class CustomersController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update customer info or status' })
-  update(@Param('id') id: string, @Body() dto: any, @CurrentUser() user: any) {
-    return this.customersService.update(id, dto, { userId: user.id, role: user.role });
+  update(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    return this.customersService.update(
+      id,
+      dto,
+      { userId: user.id, role: user.role },
+      idempotencyKey,
+    );
   }
 
   @Delete(':id')
