@@ -10,7 +10,8 @@ Booking proposed price
         ▼
 Pricing Policy Evaluation          PriceApprovalPolicyService.evaluate()
         ├─ CategoryMallPricing     mall/category/floor/zone/currency
-        └─ trả về                  deviation · approvalRequired · policy/rule · approver step(s)
+        ├─ Unit.baseRentPerSqm     CHỈ khi ngành hàng chưa khai khung giá
+        └─ trả về                  deviation · approvalRequired · basis · policy/rule · approver step(s)
         │
         ▼
 Price Approval Workflow            BookingPriceApprovalStep
@@ -48,10 +49,15 @@ Phần **phát hiện** lệch giá đã hoạt động. Phần **định tuyế
 Một lời gọi trả về: độ lệch, có cần duyệt không, rule giá nào quyết định, và **ai phải ký**.
 
 ```ts
-evaluate({ mallId, categoryId, floorId, zoneId, proposedRentPerSqm, currencyCode })
-  -> { evaluated, requiresApproval, deviationPercent, approvalLevel,
+evaluate({ mallId, categoryId, floorId, zoneId, proposedRentPerSqm, currencyCode,
+           unitBaseRentPerSqm, unitCurrencyCode })
+  -> { evaluated, requiresApproval, deviationPercent, approvalLevel, basis,
        pricingRuleId, pricingSnapshot, steps[], unrouted, message }
 ```
+
+`basis` cho biết giá được đối chiếu với cái gì: `CATEGORY_BAND` (khung ngành
+hàng), `UNIT_BASE_RENT` (giá cơ bản của mặt bằng — chỉ khi ngành hàng chưa khai
+khung, xem §12), hoặc `NONE`.
 
 Ba trạng thái, không phải hai:
 
@@ -220,7 +226,43 @@ Email không tạo `EmailDelivery` vì stack local đang `Email: DISABLED (no SM
 
 ## 12. Điểm còn để ngỏ
 
-**Giá thuê cơ bản của mặt bằng (`Unit.baseRentPerSqm`) vẫn KHÔNG tham gia kiểm tra.** Chỉ khung giá theo ngành hàng có hiệu lực. Tôi cố ý không đổi: đây là **thay đổi nghiệp vụ**, không phải sửa lỗi, và cần quy tắc rõ — lệch bao nhiêu % so với giá cơ bản thì phải duyệt, và nó ưu tiên hay cộng dồn với khung ngành hàng. Chờ quyết định.
+### Giá thuê cơ bản — ĐÃ QUYẾT (2026-09-12)
+
+Nghiệp vụ chốt: **chỉ dùng giá thuê cơ bản của mặt bằng khi ngành hàng chưa khai
+báo khung giá.** Không bao giờ dùng song song với khung.
+
+Lý do lựa chọn này đúng, dựa trên dữ liệu thật: **10/30 mặt bằng đang có
+`baseRentPerSqm` THẤP HƠN chính giá sàn ngành hàng của nó** (8 F&B, 1 Beauty,
+1 Fashion — ví dụ sàn F&B 900.000 nhưng có unit khai base 580.000). Nếu để cả
+hai cùng ràng buộc một mức giá, 1/3 danh mục sẽ lập tức kẹt vì **mâu thuẫn dữ
+liệu**, không phải vì quyết định thương mại. Dùng làm dự phòng thì hai nguồn
+không bao giờ gặp nhau.
+
+Ngữ nghĩa:
+
+| Tình huống | Đối chiếu với | Kết quả |
+|---|---|---|
+| Ngành hàng **có** khung giá | `CategoryMallPricing` (sàn/trần) | như cũ, `basis = CATEGORY_BAND` |
+| Ngành hàng **không** có khung, unit **có** base rent | `Unit.baseRentPerSqm` làm **giá sàn** | `basis = UNIT_BASE_RENT` |
+| Không có cả hai | — | giữ nguyên escalation CEO, fail-closed |
+
+Base rent được xử lý **đúng như một giá sàn**: bằng hoặc cao hơn thì không cần
+duyệt; thấp hơn thì tính % lệch và đi qua **cùng một thang chính sách**
+(`ApprovalPolicyRule`). **Không có giá trần** — chào cao hơn giá chào thuê không
+phải là nhân nhượng nên không cần ai phê duyệt.
+
+Hai trường hợp cố ý **không** áp dụng dự phòng, để rơi về escalation an toàn:
+- Unit chưa khai base rent (0 hoặc null) — không có gì để so.
+- Booking và unit khác đơn vị tiền tệ — hệ thống **không có FX engine**, quy đổi
+  một ngưỡng duyệt là bịa ra con số chưa ai phê chuẩn.
+
+Giá trị dùng để so và cơ sở so sánh được ghi vào `pricingSnapshot`
+(`basis`, `unitBaseRentPerSqm`) nên quyết định luôn giải thích được về sau.
+
+**Vì sao thay đổi này đáng làm, ngoài việc lấp lỗ hổng:** trước đó ngành hàng
+chưa khai khung giá khiến `deviationPercent = 100` và **mọi mức giá đều bị đẩy
+lên CEO**, dù hợp lý đến đâu. Giờ 4% dưới giá cơ bản đi đúng Leasing Manager,
+30% mới lên CEO.
 
 **Cấu hình rule `PRICE_*` trong màn Admin**: màn `ApprovalPolicyTab` đã có sẵn và bảng `ApprovalPolicyRule` dùng chung, nên rule giá khai báo được ngay. Chưa kiểm tra kỹ phần UI của tab này có lọc/hiển thị riêng cho nhóm điều kiện giá hay không.
 

@@ -262,3 +262,168 @@ describe('PriceApprovalPolicyService — ambiguity is resolved deterministically
     expect(codes).toHaveLength(2);
   });
 });
+
+/**
+ * Base-rent fallback: what happens when a category carries no CategoryMallPricing.
+ *
+ * Before this, any price on such a category produced a meaningless 100%
+ * deviation and went to the CEO, however reasonable the number was. The unit's
+ * own asking rent is the only other figure the Mall has declared for that
+ * space, so it is used as a floor -- but ONLY here, never alongside a band.
+ */
+describe('PriceApprovalPolicyService — base-rent fallback', () => {
+  const NO_BAND = {
+    isValid: false,
+    categoryPricing: null,
+    proposedRentPerSqm: 0,
+    minRentPerSqm: 0,
+    maxRentPerSqm: 0,
+    deviationPercent: 100,
+    requiresApproval: true,
+    approvalLevel: 'CEO',
+    message: 'No pricing rule is configured.',
+  };
+
+  function svc(rules = RULES, validation: any = NO_BAND) {
+    const prisma: any = { approvalPolicyRule: { findMany: jest.fn().mockResolvedValue(rules) } };
+    const categories: any = { validateProposedPrice: jest.fn().mockResolvedValue(validation) };
+    return new PriceApprovalPolicyService(prisma, categories);
+  }
+
+  it('passes a price at or above the unit base rent without approval', async () => {
+    const result = await svc().evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 1_000_000,
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    expect(result.basis).toBe('UNIT_BASE_RENT');
+    expect(result.requiresApproval).toBe(false);
+    expect(result.deviationPercent).toBe(0);
+  });
+
+  it('routes a price below the base rent through the same policy ladder', async () => {
+    // 700k against a 1,000,000 base is 30% below -> the CEO rule.
+    const result = await svc().evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 700_000,
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    expect(result.basis).toBe('UNIT_BASE_RENT');
+    expect(result.requiresApproval).toBe(true);
+    expect(result.deviationPercent).toBeCloseTo(30, 5);
+    expect(result.steps.map((s) => s.approverId)).toEqual(['user-ceo']);
+  });
+
+  it('measures the deviation against the base rent, not against the band', async () => {
+    const result = await svc().evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 960_000,
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    // 4% below base -> Leasing Manager, not the blanket CEO escalation.
+    expect(result.deviationPercent).toBeCloseTo(4, 5);
+    expect(result.steps.map((s) => s.approverId)).toEqual(['user-manager']);
+  });
+
+  it('never applies the fallback when a band exists', async () => {
+    const withBand = {
+      isValid: false,
+      categoryPricing: { id: 'rule-1' },
+      minRentPerSqm: 900_000,
+      maxRentPerSqm: 1_500_000,
+      deviationPercent: 22.2,
+      requiresApproval: true,
+      approvalLevel: 'CEO',
+      message: 'below',
+    };
+
+    const result = await svc(RULES, withBand).evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-1',
+      proposedRentPerSqm: 700_000,
+      // A base rent that would have said "fine" is deliberately ignored.
+      unitBaseRentPerSqm: 500_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    expect(result.basis).toBe('CATEGORY_BAND');
+    expect(result.deviationPercent).toBeCloseTo(22.2, 5);
+  });
+
+  it('falls back to the CEO escalation when the unit has no base rent either', async () => {
+    for (const base of [null, 0, undefined]) {
+      const result = await svc().evaluate({
+        mallId: 'mall-1',
+        categoryId: 'cat-new',
+        proposedRentPerSqm: 700_000,
+        unitBaseRentPerSqm: base as any,
+        unitCurrencyCode: 'VND',
+        currencyCode: 'VND',
+      });
+
+      expect(result.basis).toBe('CATEGORY_BAND');
+      expect(result.deviationPercent).toBe(100);
+      expect(result.steps.map((s) => s.approverId)).toEqual(['user-ceo']);
+    }
+  });
+
+  it('refuses to compare across currencies rather than inventing a rate', async () => {
+    const result = await svc().evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 25,
+      currencyCode: 'USD',
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+    });
+
+    // No FX engine: the base rent is not usable, so the safe escalation stands.
+    expect(result.basis).toBe('CATEGORY_BAND');
+    expect(result.deviationPercent).toBe(100);
+  });
+
+  it('holds the booking when the fallback needs approval but no rule matches', async () => {
+    const result = await svc([]).evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 700_000,
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    expect(result.requiresApproval).toBe(true);
+    expect(result.unrouted).toBe(true);
+    expect(result.steps).toEqual([]);
+  });
+
+  it('records the basis in the snapshot so the decision stays explainable', async () => {
+    const result = await svc().evaluate({
+      mallId: 'mall-1',
+      categoryId: 'cat-new',
+      proposedRentPerSqm: 700_000,
+      unitBaseRentPerSqm: 1_000_000,
+      unitCurrencyCode: 'VND',
+      currencyCode: 'VND',
+    });
+
+    expect(result.pricingSnapshot).toMatchObject({
+      basis: 'UNIT_BASE_RENT',
+      unitBaseRentPerSqm: 1_000_000,
+      proposedRentPerSqm: 700_000,
+    });
+  });
+});

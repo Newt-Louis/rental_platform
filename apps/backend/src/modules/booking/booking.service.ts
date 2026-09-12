@@ -113,6 +113,9 @@ export class BookingService {
           zoneId: unit.zoneId,
           proposedRentPerSqm: dto.proposedRentPerSqm,
           currencyCode: dto.currencyCode,
+          // Fallback reference when the category has no band of its own.
+          unitBaseRentPerSqm: unit.baseRentPerSqm,
+          unitCurrencyCode: unit.currencyCode,
         })
       : null;
 
@@ -574,6 +577,8 @@ export class BookingService {
           zoneId: unit.zoneId,
           proposedRentPerSqm: dto.proposedRentPerSqm,
           currencyCode: booking.currencyCode,
+          unitBaseRentPerSqm: unit.baseRentPerSqm,
+          unitCurrencyCode: unit.currencyCode,
         });
         priceApprovalTouched = true;
       }

@@ -3,6 +3,7 @@ import { Prisma, Role, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoriesService } from '../categories/categories.service';
 import { policyRuleMatches, type PolicyRuleLike } from './approval-policy.util';
+import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
 
 /**
  * CR-BOOK-PRICE-APPROVAL-001 — "Pricing Policy Evaluation".
@@ -55,6 +56,15 @@ export interface PriceApprovalEvaluation {
    */
   unrouted: boolean;
   message: string;
+  /**
+   * What the price was actually measured against.
+   *
+   * CATEGORY_BAND  the Mall's CategoryMallPricing floor/ceiling (authoritative)
+   * UNIT_BASE_RENT the unit's own asking rent, used only because the category
+   *                has no band at all
+   * NONE           nothing to compare against; escalated rather than passed
+   */
+  basis: 'CATEGORY_BAND' | 'UNIT_BASE_RENT' | 'NONE';
 }
 
 @Injectable()
@@ -73,6 +83,12 @@ export class PriceApprovalPolicyService {
     zoneId?: string | null;
     proposedRentPerSqm: number;
     currencyCode?: CurrencyCode;
+    /**
+     * The unit's own asking rent and the currency it is quoted in. Used only as
+     * a fallback when the category has no band -- see evaluateAgainstBaseRent.
+     */
+    unitBaseRentPerSqm?: number | null;
+    unitCurrencyCode?: CurrencyCode | null;
   }): Promise<PriceApprovalEvaluation> {
     if (!params.categoryId) {
       // Historically this was an early `&& unit.categoryId` guard that skipped
@@ -87,6 +103,7 @@ export class PriceApprovalPolicyService {
         pricingRuleId: null,
         steps: [],
         unrouted: false,
+        basis: 'NONE',
         message:
           'Mặt bằng chưa gán ngành hàng nên không có khung giá để đối chiếu. Giá chưa được kiểm tra.',
       };
@@ -100,6 +117,15 @@ export class PriceApprovalPolicyService {
       proposedRentPerSqm: params.proposedRentPerSqm,
       currencyCode: params.currencyCode,
     });
+
+    // No band for this category anywhere up its lineage. Rather than escalating
+    // every price to the CEO on a meaningless 100% deviation, fall back to the
+    // unit's own asking rent -- the only other number the Mall has actually
+    // declared for this space.
+    if (!validation.categoryPricing) {
+      const fallback = this.evaluateAgainstBaseRent(params);
+      if (fallback) return await this.finalise(params.mallId, fallback);
+    }
 
     const pricingSnapshot: Prisma.InputJsonValue = {
       evaluatedAt: new Date().toISOString(),
@@ -123,6 +149,7 @@ export class PriceApprovalPolicyService {
         pricingSnapshot,
         steps: [],
         unrouted: false,
+        basis: 'CATEGORY_BAND',
         message: validation.message,
       };
     }
@@ -145,7 +172,111 @@ export class PriceApprovalPolicyService {
       pricingSnapshot,
       steps,
       unrouted: steps.length === 0,
+      basis: 'CATEGORY_BAND',
       message: validation.message,
+    };
+  }
+
+  /**
+   * Fallback comparison for a category with no CategoryMallPricing.
+   *
+   * `Unit.baseRentPerSqm` is treated exactly as a floor would be: at or above it
+   * is fine, below it needs sign-off in proportion to how far below. There is no
+   * ceiling, because quoting ABOVE the asking rent is not a concession and needs
+   * nobody's permission.
+   *
+   * Deliberately NOT used when a band exists. The two figures already disagree
+   * in live data -- 10 of 30 units carry a base rent below their own category
+   * floor -- so letting both constrain the same price would block a third of the
+   * portfolio on a data inconsistency rather than a commercial decision.
+   *
+   * Returns null when the fallback cannot be applied, leaving the caller on the
+   * existing fail-closed escalation:
+   *   - no base rent recorded (0 or null): nothing to compare against
+   *   - unit and booking quoted in different currencies: there is no FX engine,
+   *     and converting a threshold would invent a number nobody approved
+   */
+  private evaluateAgainstBaseRent(params: {
+    proposedRentPerSqm: number;
+    currencyCode?: CurrencyCode;
+    unitBaseRentPerSqm?: number | null;
+    unitCurrencyCode?: CurrencyCode | null;
+  }): { deviationPercent: number; requiresApproval: boolean; snapshot: Prisma.InputJsonValue; message: string } | null {
+    const base = params.unitBaseRentPerSqm;
+    if (base == null || !(base > 0)) return null;
+
+    const bookingCurrency = params.currencyCode ?? DEFAULT_CURRENCY_CODE;
+    const unitCurrency = params.unitCurrencyCode ?? DEFAULT_CURRENCY_CODE;
+    if (bookingCurrency !== unitCurrency) {
+      this.logger.warn(
+        `Base-rent fallback skipped: booking is quoted in ${bookingCurrency} but the unit's ` +
+          `base rent is in ${unitCurrency}. No conversion is applied.`,
+      );
+      return null;
+    }
+
+    const below = params.proposedRentPerSqm < base;
+    const deviationPercent = below ? ((base - params.proposedRentPerSqm) / base) * 100 : 0;
+
+    return {
+      deviationPercent,
+      requiresApproval: below,
+      snapshot: {
+        evaluatedAt: new Date().toISOString(),
+        proposedRentPerSqm: params.proposedRentPerSqm,
+        basis: 'UNIT_BASE_RENT',
+        unitBaseRentPerSqm: base,
+        currencyCode: bookingCurrency,
+        deviationPercent,
+        note: 'Ngành hàng chưa khai báo khung giá — đối chiếu với giá thuê cơ bản của mặt bằng.',
+      },
+      message: below
+        ? `Giá đề xuất thấp hơn giá thuê cơ bản của mặt bằng ${deviationPercent.toFixed(1)}%. ` +
+          'Ngành hàng chưa khai báo khung giá nên hệ thống đối chiếu với giá cơ bản.'
+        : 'Giá đề xuất không thấp hơn giá thuê cơ bản của mặt bằng.',
+    };
+  }
+
+  /** Route a base-rent verdict through the same policy ladder as a band verdict. */
+  private async finalise(
+    mallId: string,
+    fallback: { deviationPercent: number; requiresApproval: boolean; snapshot: Prisma.InputJsonValue; message: string },
+  ): Promise<PriceApprovalEvaluation> {
+    if (!fallback.requiresApproval) {
+      return {
+        evaluated: true,
+        requiresApproval: false,
+        deviationPercent: 0,
+        approvalLevel: 'NONE',
+        pricingRuleId: null,
+        pricingSnapshot: fallback.snapshot,
+        steps: [],
+        unrouted: false,
+        basis: 'UNIT_BASE_RENT',
+        message: fallback.message,
+      };
+    }
+
+    const steps = await this.resolveSteps(mallId, fallback.deviationPercent);
+    if (steps.length === 0) {
+      this.logger.warn(
+        `Base-rent deviation ${fallback.deviationPercent.toFixed(1)}% on mall ${mallId} matched no ` +
+          'active PRICE_* ApprovalPolicyRule. The booking is held as PENDING with no approver.',
+      );
+    }
+
+    return {
+      evaluated: true,
+      requiresApproval: true,
+      deviationPercent: fallback.deviationPercent,
+      // The ladder decides the real routing; this label just mirrors it.
+      approvalLevel: fallback.deviationPercent > 10 ? 'CEO' : fallback.deviationPercent > 5 ? 'DIRECTOR' : 'MANAGER',
+      pricingRuleId: null,
+      pricingSnapshot: fallback.snapshot,
+      steps,
+      unrouted: steps.length === 0,
+      basis: 'UNIT_BASE_RENT',
+      message: fallback.message,
     };
   }
 
