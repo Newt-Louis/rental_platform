@@ -4,6 +4,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, CreateCustomerActivityDto } from './dto/create-customer.dto';
+import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -57,7 +58,9 @@ export class CustomersController {
   @ApiOperation({ summary: 'Update customer info or status' })
   update(
     @Param('id') id: string,
-    @Body() dto: any,
+    // Typed so the global ValidationPipe's whitelist actually has something to
+    // whitelist against: with `any`, every field in the body reached Prisma.
+    @Body() dto: UpdateCustomerDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @CurrentUser() user: any,
   ) {
