@@ -28,9 +28,13 @@ import {
   initialCategoryValue,
 } from './CategorySelect';
 
+// Deliberately in the flat, cross-level sortOrder the API actually returns:
+// children are NOT adjacent to their parents here.
 const MASTER = [
-  { id: 'cat-fnb', code: 'FNB', name: 'F&B' },
-  { id: 'cat-fashion', code: 'FASHION', name: 'Fashion' },
+  { id: 'cat-apparel', code: 'FASHION_APPAREL', name: 'Apparel', parentId: 'cat-fashion' },
+  { id: 'cat-coffee', code: 'FNB_COFFEE', name: 'Coffee & Tea', parentId: 'cat-fnb' },
+  { id: 'cat-fnb', code: 'FNB', name: 'F&B', parentId: null },
+  { id: 'cat-fashion', code: 'FASHION', name: 'Fashion', parentId: null },
 ];
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -105,6 +109,60 @@ describe('CategorySelect', () => {
     await userEvent.click(await screen.findByText('F&B'));
 
     expect(onChange).toHaveBeenCalledWith('cat-fnb');
+  });
+});
+
+describe('category hierarchy', () => {
+  // The flat list the API returns is ordered by sortOrder across every level,
+  // so "Apparel" and "Coffee & Tea" used to render detached from their parents
+  // with nothing on screen saying what they belong to.
+  it('lays the list out parent-first, depth-first', async () => {
+    render(<CategorySelect value="" onChange={vi.fn()} />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(mockGetOptions).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button'));
+
+    const rows = await screen.findAllByRole('option');
+    // Skip the "no selection" row.
+    const labels = rows.slice(1).map((r) => r.textContent ?? '');
+    const order = ['F&B', 'Coffee & Tea', 'Fashion', 'Apparel'];
+    expect(labels.map((l) => order.find((o) => l.startsWith(o)))).toEqual(order);
+  });
+
+  it('indents a child below its parent', async () => {
+    render(<CategorySelect value="" onChange={vi.fn()} />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(mockGetOptions).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button'));
+
+    const parent = (await screen.findByText('F&B')).closest('[role="option"]') as HTMLElement;
+    const child = (await screen.findByText('Coffee & Tea')).closest('[role="option"]') as HTMLElement;
+    expect(parent.style.paddingLeft).toBe('');
+    expect(child.style.paddingLeft).toBe('28px');
+  });
+
+  it('names the parent so context survives a search that hides it', async () => {
+    render(<CategorySelect value="" onChange={vi.fn()} />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(mockGetOptions).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button'));
+    await userEvent.type(screen.getByPlaceholderText('Tìm ngành hàng...'), 'Coffee');
+
+    expect(await screen.findByText('Coffee & Tea')).toBeInTheDocument();
+    expect(screen.getByText('F&B · FNB_COFFEE')).toBeInTheDocument();
+    expect(screen.queryByText('Apparel')).not.toBeInTheDocument();
+  });
+
+  it('keeps a category whose parent is inactive visible as a root', async () => {
+    mockGetOptions.mockResolvedValue([
+      { id: 'cat-orphan', code: 'ORPHAN', name: 'Mồ côi', parentId: 'cat-gone' },
+    ]);
+    render(<CategorySelect value="" onChange={vi.fn()} />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(mockGetOptions).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByText('Mồ côi')).toBeInTheDocument();
   });
 });
 

@@ -7,6 +7,12 @@ export interface SearchableSelectOption {
   label: string;
   /** Secondary line, e.g. the department a person belongs to. */
   hint?: string;
+  /**
+   * Nesting level for hierarchical lists. Indents the row in the dropdown only
+   * -- the closed trigger keeps the plain label, so a deep entry does not push
+   * its own text out of view.
+   */
+  depth?: number;
 }
 
 interface SearchableSelectProps {
@@ -171,6 +177,9 @@ export function SearchableSelect({
                   aria-selected={option.value === value}
                   onClick={() => select(option)}
                   className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                  style={
+                    option.depth ? { paddingLeft: 12 + option.depth * 16 } : undefined
+                  }
                 >
                   <Check
                     className={cn(

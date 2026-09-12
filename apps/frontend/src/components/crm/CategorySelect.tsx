@@ -73,11 +73,42 @@ export function CategorySelect({
   const { data, isLoading, isError } = useCategoryOptions(enabled);
 
   const options: SearchableSelectOption[] = useMemo(() => {
-    const master = (data ?? []).map((c) => ({
-      value: c.id,
-      label: c.name,
-      hint: c.code,
-    }));
+    // The Category master is a tree (Admin > Ngành hàng shows it as one), but
+    // /categories/options returns it flat, ordered by sortOrder across ALL
+    // levels. Rendered as-is a child such as "Coffee & Tea" lands far from
+    // "F&B" and the user cannot tell what it belongs to. Rebuild the hierarchy
+    // here and lay it out depth-first, the same order the admin tree uses.
+    const flat = data ?? [];
+    const knownIds = new Set(flat.map((c) => c.id));
+    const childrenOf = new Map<string | null, CategoryOption[]>();
+    for (const c of flat) {
+      // A child whose parent is inactive is not returned by the API, so it
+      // would otherwise vanish into a dangling branch. Treat it as a root
+      // rather than dropping a selectable category.
+      const key = c.parentId && knownIds.has(c.parentId) ? c.parentId : null;
+      const bucket = childrenOf.get(key);
+      if (bucket) bucket.push(c);
+      else childrenOf.set(key, [c]);
+    }
+
+    const master: SearchableSelectOption[] = [];
+    const visited = new Set<string>();
+    const walk = (parentId: string | null, depth: number, path: string[]) => {
+      for (const c of childrenOf.get(parentId) ?? []) {
+        if (visited.has(c.id)) continue; // defensive: never loop on bad data
+        visited.add(c.id);
+        master.push({
+          value: c.id,
+          label: c.name,
+          // The parent path keeps the context visible once a search filters
+          // the parent row out of the list.
+          hint: path.length > 0 ? `${path.join(' › ')} · ${c.code}` : c.code,
+          depth,
+        });
+        walk(c.id, depth + 1, [...path, c.name]);
+      }
+    };
+    walk(null, 0, []);
 
     // An inactive category still linked to this record is not in the active
     // options list — add it back so the field shows the truth.
