@@ -9,6 +9,7 @@ Live register. Consolidated from all 5 research streams, 2026-08-21.
 | BC-027 | Which forward/backward Lead status transitions are permitted beyond the existing WON precondition and reason-required LOST/backward/reopen policy? | CR-121 | P1 — blocks activation of the centralized lifecycle adjacency policy | OPEN |
 | BC-028 | Which staff roles may view internal CRM comments across assignees/Malls, and may any comment be visible to Tenant Portal users? | CR-121 | P1 — blocks final timeline comment projection and authorization policy | OPEN |
 | BC-029 | Should stale handling ever auto-mutate a Lead to LOST, or only create a manager review/task? | CR-121 | P1 — auto-LOST remains disabled/dry-run until answered | OPEN |
+| BC-030 | What authoritative Mall owns a CRM event when the persisted Lead has `mallId = null`? | CR-121 / CR-CRM-BUSINESS-EVENT-001 | P1 — blocks event schema activation, Mall authorization and migration for null-Mall Leads | OPEN |
 
 | BC-xxx | Title | Raised during | Severity if unanswered | Status |
 |---|---|---|---|---|

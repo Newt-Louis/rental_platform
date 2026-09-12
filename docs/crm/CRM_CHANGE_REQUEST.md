@@ -1,12 +1,12 @@
-# CR-121 — CRM lifecycle integrity, activity history, and KPI correctness
+# CR-121 / CR-CRM-BUSINESS-EVENT-001 — CRM lifecycle integrity, activity history, and KPI correctness
 
 ## CHANGE ID
 
-CR-121
+CR-121 (repository sequence) / CR-CRM-BUSINESS-EVENT-001 (business-event workstream alias)
 
 ## STATUS
 
-PROPOSED — awaiting the architecture and functional review required for a P1/Tier 1 cross-domain change. Wave 0 documentation is complete enough for review; production implementation is not approved by this document.
+IMPLEMENTED IN WORKTREE FOR VERIFICATION — production release and commit remain unapproved pending the architecture and functional review required for a P1/Tier 1 cross-domain change. Safe fallbacks are applied; this document does not self-approve deployment.
 
 ## BUSINESS REASON
 
@@ -159,6 +159,7 @@ Disable new UI and KPI/event read paths via feature flags; keep additive tables 
 ## OPEN BUSINESS QUESTIONS
 
 - BC-016 — Customer Mall ownership and visibility remains open and blocks safe Customer-only event scoping.
+- BC-030 — future event ownership for legacy/new Leads whose `mallId` is null remains open; a required `CrmBusinessEvent.mallId` cannot be populated by inference without an approved rule.
 - Exact allowed adjacency for non-WON Lead transitions requires Leasing Functional Consultant confirmation.
 - Internal-comment visibility by manager/role requires Security + Functional confirmation.
 - Whether the existing manual auto-LOST operation should remain available after dry-run support requires Functional confirmation.
@@ -169,7 +170,13 @@ Priority: P1 — Tier: 1. It spans Tier 1 lifecycle domains, state consumed cros
 
 ## Gate results
 
-Wave 0 documentation: VERIFIED by direct code inspection on 2026-09-12. Gates 1–9: NOT RUN — no implementation is approved yet.
+Wave 0 documentation: VERIFIED by direct code inspection on 2026-09-12. Disposable-database verification is tracked separately; test results do not replace reviewer sign-off.
+
+Required discovery outputs A–H are complete in `CRM_LIFECYCLE_MATRIX.md`,
+`CRM_IMPACT_MAP.md`, `CRM_KPI_DICTIONARY.md`, and
+`CRM_BUSINESS_EVENT_MODEL.md`. Production implementation, including Phase A,
+remains blocked by the sign-off table below under the repository's P1/Tier 1
+governance rule.
 
 ## Sign-off
 

@@ -1,4 +1,8 @@
-# CRM lifecycle integrity — Impact Map and write-path inventory
+# CRM event lifecycle integrity — Impact Map and write-path inventory
+
+This file is the repository-equivalent `CRM_EVENT_IMPACT_MAP.md` requested by
+CR-CRM-BUSINESS-EVENT-001. It is reused instead of creating a second,
+conflicting impact-map document.
 
 Status: Wave 0 VERIFIED by direct code inspection on 2026-09-12. This is an implementation inventory, not architecture approval.
 
@@ -16,7 +20,7 @@ Primary source: `apps/backend/prisma/schema.prisma`, CRM controllers/services, a
 | Lead bulk assignment/status/priority/delete | `POST /crm/leads/bulk` | `CrmService.bulkAction`, `crm.service.ts:598-650` | One `updateMany`, not event-atomic | Controller prechecks each ID; status bypasses lifecycle guards/reason | Per-ID edit access; manager restriction only assign/delete, `crm.controller.ts:190-215` | No per-record before/after/actor; response cannot identify per-record outcome | No focused event/lifecycle test found |
 | Lead soft delete | `DELETE /crm/leads/:id` | `CrmService.remove`, `crm.service.ts:451-457` | No | Existence only | Manager roles + edit access | No delete event/reason | No focused history test found |
 | Lead activity create | `POST /crm/leads/:id/activities` | `CrmService.addActivity`, `crm.service.ts:460-476` | `Promise.all`, not a DB transaction | DTO requires type/note | Edit access and Mall scope | Activity and `lastActivityAt` can split on failure; frontend API is unused | No focused atomicity/UI test found |
-| Lead auto-LOST | `POST /crm/leads/auto-move-stale` | `CrmService.autoMoveStaleToLost`, `crm.service.ts:907-927` | One `updateMany` | Uses incomplete `lastActivityAt`; no per-Lead lifecycle guard/reason context | ADMIN/LEASING_MANAGER + accessible Mall set | Writes generic lostReason; no SYSTEM event; no dry-run | Mall-scope predicate test exists; meaningful-contact correctness absent |
+| Lead stale evaluation | `POST /crm/leads/auto-move-stale` | `CrmService.autoMoveStaleToLost` | Read-only `findMany` | Preserves the legacy candidate predicate while `lastActivityAt` remains incomplete | ADMIN/LEASING_MANAGER + accessible Mall set | `AUTO_LOST_MODE=DRY_RUN`; returns scoped candidates and deterministic reason; no Lead/event write | AUTOLOST-001..008 unit coverage; runtime Mall E2E requires PostgreSQL fixture |
 | Lead auto-assign | `POST /crm/leads/:id/auto-assign` | `CrmService.autoAssignLead`, `crm.service.ts:930-975` | No | Hard-coded category/role; oldest user, described as round-robin | Edit access; assignee filtered to accessible Mall | No assignment event; rules not Mall configuration | No focused configuration/event test found |
 | Lead auto-follow-up | `POST /crm/leads/:id/auto-followup` | `CrmService.createAutoFollowUp`, `crm.service.ts:979-1000` | No | Lead/assignee existence | Lead edit access in controller | No creator field/event; fixed default 7 days | No actor/history test found |
 | Customer create | `POST /crm/customers` | `CustomersService.create`, `customers.service.ts:258-297` | No | Currency/category/optional Lead checks | Module role; Customer Mall scope unresolved (BC-016) | May connect Lead but no customer-created/link event | Customer/category/currency specs |
@@ -83,4 +87,22 @@ Primary source: `apps/backend/prisma/schema.prisma`, CRM controllers/services, a
 - Generic AuditLog: useful forensic evidence but best-effort, request-oriented, lacks before state, and classifies `/api/crm/...` as CRM rather than Lead (`audit-log.interceptor.ts:42-120`). It is not the business-event source.
 - Existing Outbox/Booking transaction/idempotency patterns: suitable reference implementations.
 - Currency propagation through Lead→Booking→Proposal→Contract: checked; CR-121 must not alter it.
+
+## Required discovery output index
+
+| Required output | Authoritative document/section | Status |
+|---|---|---|
+| A. Lead status matrix | `CRM_LIFECYCLE_MATRIX.md` | VERIFIED current behavior; target adjacency BLOCKED by BC-027 |
+| B. All direct `Lead.status` writes | `CRM_LIFECYCLE_MATRIX.md`, this file's cross-module inventory | VERIFIED across runtime modules, seed/test/import scripts classified separately |
+| C. Activity write paths | This file's Lead/Customer write-path inventory | VERIFIED |
+| D. Follow-up write paths | This file's Follow-up paths | VERIFIED |
+| E. KPI formula map | `CRM_KPI_DICTIONARY.md` | VERIFIED current formulas; target historical semantics proposed |
+| F. Customer Mall ownership | Authorization impact; BC-016 | **UNKNOWN — BUSINESS CONFIRMATION REQUIRED** |
+| G. Comment visibility | `CRM_BUSINESS_EVENT_MODEL.md`; BC-028 | **UNKNOWN — BUSINESS CONFIRMATION REQUIRED** |
+| H. Event source map | `CRM_BUSINESS_EVENT_MODEL.md` | VERIFIED source inventory; implementation pending review |
+
+The whole-repository writer sweep also found only non-runtime Lead writes in
+`prisma/seed.ts`, category-only migration/backfill scripts, and test setup/
+cleanup. Category scripts do not write `Lead.status`; seed/test fixtures are
+not production lifecycle entry points and must not emit runtime CRM events.
 

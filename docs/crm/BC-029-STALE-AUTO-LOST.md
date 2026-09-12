@@ -20,7 +20,7 @@ B) Configurable Mall-scoped auto-LOST after dry-run/review and a defined grace p
 
 ## IMPACT IF UNANSWERED
 
-**UNKNOWN — BUSINESS CONFIRMATION REQUIRED.** Auto-LOST remains disabled/dry-run in the proposed design. Existing production configuration is not changed by CR-121 Wave 0.
+**UNKNOWN — BUSINESS CONFIRMATION REQUIRED.** Auto-LOST is disabled and stale evaluation operates in `DRY_RUN` under CR-CRM-BUSINESS-EVENT-001A. This safety gate does not answer the final automation question.
 
 ## ANSWER
 
