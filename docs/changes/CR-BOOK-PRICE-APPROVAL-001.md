@@ -36,7 +36,7 @@ Phần **phát hiện** lệch giá đã hoạt động. Phần **định tuyế
 | **Không có cơ chế chỉ định người duyệt** | Chỉ một cờ `priceApprovalStatus` phẳng, một bước, không gắn với ai |
 | **Sale tự duyệt giá của mình** | `approvePrice`/`rejectPrice` **không có `@Roles`** → rơi về mức lớp `@ModuleRoles('bookings')` gồm `LEASING_EXECUTIVE`. Probe thực tế: executive gọi approve trả **404** (qua guard) |
 | **CEO không duyệt được** | `MODULE_ROLES.booking` không có `CEO`. Probe: CEO trả **403** trên chính escalation dành cho mình |
-| Ngưỡng 5%/10% **hard-code** | `categories.service.ts:693-702`, không theo mall, không cấu hình được |
+| Ngưỡng 5%/10% **hard-code** | `categories.service.ts:693-702`, không theo mall, không cấu hình được. **Đã gỡ hoàn toàn ở CR-...-ALWAYS-WARN-004** — ngưỡng và người duyệt nay chỉ nằm trong `ApprovalPolicyRule` |
 | **Không có thông báo nào** | `BookingModule` không import `NotificationsModule`; 0 lần `notifications.create`, 0 lần `sendMail` trong toàn module |
 | Cổng convert hở | Chỉ chặn `PENDING`/`REJECTED`, nên `NULL` (giá **chưa từng được thẩm định**) lọt qua |
 
@@ -81,7 +81,7 @@ mallId + isActive + conditionType ∈ { PRICE_DEVIATION_PCT, PRICE_BELOW_MIN }
   → khử trùng lặp → sắp theo stepOrder → đánh số lại 1..n
 ```
 
-Dữ liệu thật của THISO Mall Sala:
+Dữ liệu `ApprovalPolicyRule` đang seed cho THISO Mall Sala — **là dữ liệu cấu hình, không phải hằng số trong mã nguồn**; admin sửa được mà không cần deploy:
 
 | Rule | Điều kiện | Người duyệt |
 |---|---|---|

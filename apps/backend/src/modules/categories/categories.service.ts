@@ -13,7 +13,6 @@ export interface PriceValidationResult {
   maxRentPerSqm: number;
   deviationPercent: number;
   requiresApproval: boolean;
-  approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
   message: string;
   sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
@@ -657,16 +656,20 @@ export class CategoriesService {
     const pricing = await this.getApplicablePricing(params);
 
     if (!pricing) {
+      // CR-...-ALWAYS-WARN-004: facts only. This used to report a 100%
+      // deviation and name the CEO, which both invented a number that measured
+      // nothing and wrote an authority chain into the pricing layer. The caller
+      // decides what a missing band means; PriceApprovalPolicyService turns it
+      // into PRICING_REFERENCE_MISSING or a base-rent comparison.
       return {
         isValid: false,
         categoryPricing: null,
         proposedRentPerSqm: params.proposedRentPerSqm,
         minRentPerSqm: 0,
         maxRentPerSqm: 0,
-        deviationPercent: 100,
-        requiresApproval: true,
-        approvalLevel: 'CEO',
-        message: 'No pricing rule is configured for this category/mall combination. CEO approval is required.',
+        deviationPercent: 0,
+        requiresApproval: false,
+        message: 'No pricing rule is configured for this category/mall combination.',
       };
     }
 
@@ -685,22 +688,14 @@ export class CategoriesService {
         : 0;
     const isValid = !belowMinimum && !aboveMaximum;
 
-    // Determine approval level based on deviation
-    let approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO' = 'NONE';
-    let message = '';
-
-    if (isValid) {
-      message = 'Price is within acceptable range.';
-    } else if (deviationPercent <= 5) {
-      approvalLevel = 'MANAGER';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires Leasing Manager approval.`;
-    } else if (deviationPercent <= 10) {
-      approvalLevel = 'DIRECTOR';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires Mall Director approval.`;
-    } else {
-      approvalLevel = 'CEO';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires CEO approval.`;
-    }
+    // CR-...-ALWAYS-WARN-004: the 5%/10% -> Manager/Director/CEO ladder that
+    // used to live here is gone. Approval authority is configuration
+    // (ApprovalPolicyRule), not a constant in the pricing service, and the
+    // level it produced was discarded by every caller anyway. This returns the
+    // facts; the policy engine decides who signs.
+    const message = isValid
+      ? 'Price is within acceptable range.'
+      : `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}.`;
 
     return {
       isValid,
@@ -710,7 +705,6 @@ export class CategoriesService {
       maxRentPerSqm,
       deviationPercent: Math.max(0, deviationPercent),
       requiresApproval: !isValid,
-      approvalLevel,
       message,
       sources: pricing.sources,
     };

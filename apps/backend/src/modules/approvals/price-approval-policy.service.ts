@@ -1,70 +1,60 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, Role, CurrencyCode } from '@prisma/client';
+import { createHash } from 'crypto';
+import { Prisma, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CategoriesService } from '../categories/categories.service';
 import { policyRuleMatches, type PolicyRuleLike } from './approval-policy.util';
 import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
+import {
+  PRICING_DECISION_PRESENTATION,
+  type PricingBasis,
+  type PricingDecision,
+  type PricingDecisionStatus,
+  type PricingDecisionStep,
+} from './pricing-decision.types';
 
 /**
- * CR-BOOK-PRICE-APPROVAL-001 — "Pricing Policy Evaluation".
+ * CR-BOOK-PRICE-APPROVAL-001 / CR-...-ALWAYS-WARN-004 — Pricing Policy Evaluation.
  *
- * One place that answers, for a proposed rent: how far outside the band is it,
- * does it need approval, which pricing rule decided that, and WHO has to sign
- * it off.
+ * Two responsibilities, deliberately separated:
  *
- * Before this, the deviation was computed and the approval LEVEL
- * (MANAGER/DIRECTOR/CEO) was computed alongside it — and then thrown away.
- * `UnitBooking` only ever stored a flat PENDING flag, so nothing routed the
- * decision to anyone, the endpoint carried no role restriction at all, and the
- * CEO the rules kept naming was not even a member of the bookings module.
+ *   1. Establish the FACTS: which reference applies, what the deviation is.
+ *      Nothing here knows what a Manager or a CEO is.
+ *   2. Ask the Mall's configured ApprovalPolicyRule who signs.
  *
- * The approver chain comes from `ApprovalPolicyRule`, the same per-mall,
- * admin-editable table the proposal workflow already uses, filtered to the
- * price conditions. Nothing about the thresholds is hard-coded here.
+ * That split is the point. The thresholds and approvers used to be written into
+ * the pricing service (`<=5% -> MANAGER`, `<=10% -> DIRECTOR`, else `CEO`) and
+ * the resulting level was then discarded, so the system both hard-coded an
+ * authority chain and failed to route anything to it. Approval authority is now
+ * configuration: changing who signs is a data change, not a deploy.
+ *
+ * Every path returns a PricingDecision with a user-readable message. A price
+ * that needs no approval says so out loud, because "no warning" used to be
+ * indistinguishable from "nobody checked".
  */
 
 /** Only these conditions describe a PRICE decision. */
 const PRICE_CONDITION_TYPES = ['PRICE_DEVIATION_PCT', 'PRICE_BELOW_MIN'] as const;
 
-export interface ResolvedPriceApprovalStep {
-  stepOrder: number;
-  stepName: string;
-  approverRole: Role;
-  approverId: string;
-  policyRuleCode: string;
+export interface EvaluateParams {
+  mallId: string;
+  categoryId?: string | null;
+  floorId?: string | null;
+  zoneId?: string | null;
+  proposedRentPerSqm: number;
+  currencyCode?: CurrencyCode | null;
+  unitBaseRentPerSqm?: number | null;
+  unitCurrencyCode?: CurrencyCode | null;
+  /** Include approver names in the decision. Omit for unprivileged callers. */
+  includeApproverNames?: boolean;
 }
 
-export interface PriceApprovalEvaluation {
-  /**
-   * False when no band could be resolved at all — the unit carries no category,
-   * so there is nothing to compare against. The caller must NOT treat this as
-   * "price is fine": it is "price was never checked".
-   */
-  evaluated: boolean;
-  requiresApproval: boolean;
-  deviationPercent: number;
-  /** Advisory label from the pricing service; the real routing is `steps`. */
-  approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
-  pricingRuleId: string | null;
-  pricingSnapshot?: Prisma.InputJsonValue;
-  steps: ResolvedPriceApprovalStep[];
-  /**
-   * Approval is required but the Mall has no active price policy rule that
-   * matches. The booking is still held — it is never let through — but nobody
-   * is addressable, so only an ADMIN can clear it. Surfaced so the queue can
-   * say why instead of showing an empty approver column.
-   */
-  unrouted: boolean;
-  message: string;
-  /**
-   * What the price was actually measured against.
-   *
-   * CATEGORY_BAND  the Mall's CategoryMallPricing floor/ceiling (authoritative)
-   * UNIT_BASE_RENT the unit's own asking rent, used only because the category
-   *                has no band at all
-   * NONE           nothing to compare against; escalated rather than passed
-   */
-  basis: 'CATEGORY_BAND' | 'UNIT_BASE_RENT' | 'NONE';
+function money(value: number, currency: CurrencyCode): string {
+  return `${new Intl.NumberFormat('vi-VN').format(Math.round(value))} ${currency}`;
+}
+
+function pct(value: number): string {
+  return `${value.toFixed(2).replace('.', ',')}%`;
 }
 
 @Injectable()
@@ -76,230 +66,264 @@ export class PriceApprovalPolicyService {
     private readonly categoriesService: CategoriesService,
   ) {}
 
-  async evaluate(params: {
-    mallId: string;
-    categoryId: string | null | undefined;
-    floorId?: string | null;
-    zoneId?: string | null;
-    proposedRentPerSqm: number;
-    currencyCode?: CurrencyCode;
-    /**
-     * The unit's own asking rent and the currency it is quoted in. Used only as
-     * a fallback when the category has no band -- see evaluateAgainstBaseRent.
-     */
-    unitBaseRentPerSqm?: number | null;
-    unitCurrencyCode?: CurrencyCode | null;
-  }): Promise<PriceApprovalEvaluation> {
-    if (!params.categoryId) {
-      // Historically this was an early `&& unit.categoryId` guard that skipped
-      // the whole check in silence, so any unit missing a category accepted any
-      // price at all. It still cannot be priced against a band, but the caller
-      // now receives an explicit "not evaluated" instead of a pass.
-      return {
-        evaluated: false,
-        requiresApproval: false,
-        deviationPercent: 0,
-        approvalLevel: 'NONE',
-        pricingRuleId: null,
-        steps: [],
-        unrouted: false,
-        basis: 'NONE',
-        message:
-          'Mặt bằng chưa gán ngành hàng nên không có khung giá để đối chiếu. Giá chưa được kiểm tra.',
-      };
-    }
+  // ───────────────────────────────────────────────────────────────────────────
+  // Public entry point
+  // ───────────────────────────────────────────────────────────────────────────
 
-    const validation = await this.categoriesService.validateProposedPrice({
-      mallId: params.mallId,
-      categoryId: params.categoryId,
-      floorId: params.floorId ?? undefined,
-      zoneId: params.zoneId ?? undefined,
-      proposedRentPerSqm: params.proposedRentPerSqm,
-      currencyCode: params.currencyCode,
-    });
-
-    // No band for this category anywhere up its lineage. Rather than escalating
-    // every price to the CEO on a meaningless 100% deviation, fall back to the
-    // unit's own asking rent -- the only other number the Mall has actually
-    // declared for this space.
-    if (!validation.categoryPricing) {
-      const fallback = this.evaluateAgainstBaseRent(params);
-      if (fallback) return await this.finalise(params.mallId, fallback);
-    }
-
-    const pricingSnapshot: Prisma.InputJsonValue = {
-      evaluatedAt: new Date().toISOString(),
-      proposedRentPerSqm: params.proposedRentPerSqm,
-      minRentPerSqm: validation.minRentPerSqm,
-      maxRentPerSqm: validation.maxRentPerSqm,
-      suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
-      camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
-      sources: validation.categoryPricing?.sources ?? null,
-      deviationPercent: validation.deviationPercent,
-      approvalLevel: validation.approvalLevel,
-    };
-
-    if (!validation.requiresApproval) {
-      return {
-        evaluated: true,
-        requiresApproval: false,
-        deviationPercent: validation.deviationPercent,
-        approvalLevel: 'NONE',
-        pricingRuleId: validation.categoryPricing?.id ?? null,
-        pricingSnapshot,
-        steps: [],
-        unrouted: false,
-        basis: 'CATEGORY_BAND',
-        message: validation.message,
-      };
-    }
-
-    const steps = await this.resolveSteps(params.mallId, validation.deviationPercent);
-
-    if (steps.length === 0) {
-      this.logger.warn(
-        `Price deviation ${validation.deviationPercent.toFixed(1)}% on mall ${params.mallId} ` +
-          'matched no active PRICE_* ApprovalPolicyRule. The booking is held as PENDING with no approver.',
-      );
-    }
-
-    return {
-      evaluated: true,
-      requiresApproval: true,
-      deviationPercent: validation.deviationPercent,
-      approvalLevel: validation.approvalLevel,
-      pricingRuleId: validation.categoryPricing?.id ?? null,
-      pricingSnapshot,
-      steps,
-      unrouted: steps.length === 0,
-      basis: 'CATEGORY_BAND',
-      message: validation.message,
-    };
-  }
-
-  /**
-   * Fallback comparison for a category with no CategoryMallPricing.
-   *
-   * `Unit.baseRentPerSqm` is treated exactly as a floor would be: at or above it
-   * is fine, below it needs sign-off in proportion to how far below. There is no
-   * ceiling, because quoting ABOVE the asking rent is not a concession and needs
-   * nobody's permission.
-   *
-   * Deliberately NOT used when a band exists. The two figures already disagree
-   * in live data -- 10 of 30 units carry a base rent below their own category
-   * floor -- so letting both constrain the same price would block a third of the
-   * portfolio on a data inconsistency rather than a commercial decision.
-   *
-   * Returns null when the fallback cannot be applied, leaving the caller on the
-   * existing fail-closed escalation:
-   *   - no base rent recorded (0 or null): nothing to compare against
-   *   - unit and booking quoted in different currencies: there is no FX engine,
-   *     and converting a threshold would invent a number nobody approved
-   */
-  private evaluateAgainstBaseRent(params: {
-    proposedRentPerSqm: number;
-    currencyCode?: CurrencyCode;
-    unitBaseRentPerSqm?: number | null;
-    unitCurrencyCode?: CurrencyCode | null;
-  }): { deviationPercent: number; requiresApproval: boolean; snapshot: Prisma.InputJsonValue; message: string } | null {
-    const base = params.unitBaseRentPerSqm;
-    if (base == null || !(base > 0)) return null;
-
+  async evaluate(params: EvaluateParams): Promise<PricingDecision> {
     const bookingCurrency = params.currencyCode ?? DEFAULT_CURRENCY_CODE;
-    const unitCurrency = params.unitCurrencyCode ?? DEFAULT_CURRENCY_CODE;
-    if (bookingCurrency !== unitCurrency) {
-      this.logger.warn(
-        `Base-rent fallback skipped: booking is quoted in ${bookingCurrency} but the unit's ` +
-          `base rent is in ${unitCurrency}. No conversion is applied.`,
-      );
-      return null;
+
+    const band = params.categoryId
+      ? await this.categoriesService.validateProposedPrice({
+          mallId: params.mallId,
+          categoryId: params.categoryId,
+          floorId: params.floorId ?? undefined,
+          zoneId: params.zoneId ?? undefined,
+          proposedRentPerSqm: params.proposedRentPerSqm,
+          currencyCode: bookingCurrency,
+        })
+      : null;
+
+    // ── A category band applies ──────────────────────────────────────────────
+    if (band?.categoryPricing) {
+      const reference = {
+        minRentPerSqm: band.minRentPerSqm,
+        maxRentPerSqm: band.maxRentPerSqm,
+        currency: bookingCurrency,
+      };
+
+      if (!band.requiresApproval) {
+        return this.decide({
+          status: 'NOT_REQUIRED',
+          basis: 'CATEGORY_BAND',
+          params,
+          reference,
+          deviationPercent: 0,
+          steps: [],
+          policyConfigured: true,
+          categoryPricingId: band.categoryPricing.id,
+          message:
+            `Kiểm tra giá thuê hoàn tất. Giá đề xuất ${money(params.proposedRentPerSqm, bookingCurrency)}/m² ` +
+            `nằm trong khung giá của ngành hàng (${money(band.minRentPerSqm, bookingCurrency)} – ` +
+            `${money(band.maxRentPerSqm, bookingCurrency)}/m²). Booking này không yêu cầu phê duyệt giá.`,
+        });
+      }
+
+      const deviation = band.deviationPercent;
+      const belowFloor = params.proposedRentPerSqm < band.minRentPerSqm;
+      const factMessage =
+        `Giá đề xuất ${money(params.proposedRentPerSqm, bookingCurrency)}/m² ` +
+        (belowFloor
+          ? `thấp hơn giá sàn của ngành hàng ${money(band.minRentPerSqm, bookingCurrency)}/m²`
+          : `cao hơn giá trần của ngành hàng ${money(band.maxRentPerSqm, bookingCurrency)}/m²`) +
+        `, lệch ${pct(deviation)}.`;
+
+      return this.routeThroughPolicy({
+        params,
+        basis: 'CATEGORY_BAND',
+        reference,
+        deviationPercent: deviation,
+        factMessage,
+        categoryPricingId: band.categoryPricing.id,
+      });
     }
 
-    const below = params.proposedRentPerSqm < base;
-    const deviationPercent = below ? ((base - params.proposedRentPerSqm) / base) * 100 : 0;
+    // ── No band in this currency. Is one configured in another? ──────────────
+    if (params.categoryId) {
+      const otherCurrency = await this.findBandInAnotherCurrency(params, bookingCurrency);
+      if (otherCurrency) {
+        return this.decide({
+          status: 'CURRENCY_MISMATCH',
+          basis: 'NONE',
+          params,
+          reference: { currency: bookingCurrency, referenceCurrency: otherCurrency },
+          deviationPercent: null,
+          steps: [],
+          policyConfigured: false,
+          message:
+            `Không thể đối chiếu giá. Đơn vị tiền tệ của Booking (${bookingCurrency}) không khớp với ` +
+            `khung giá đã khai báo cho ngành hàng (${otherCurrency}). Hệ thống không thực hiện quy đổi ` +
+            'tự động vì chưa có quy tắc tỷ giá được phê duyệt.',
+        });
+      }
+    }
 
-    return {
-      deviationPercent,
-      requiresApproval: below,
-      snapshot: {
-        evaluatedAt: new Date().toISOString(),
-        proposedRentPerSqm: params.proposedRentPerSqm,
+    // ── Fall back to the unit's own asking rent ──────────────────────────────
+    const base = params.unitBaseRentPerSqm;
+    if (base != null && base > 0) {
+      const unitCurrency = params.unitCurrencyCode ?? DEFAULT_CURRENCY_CODE;
+      if (unitCurrency !== bookingCurrency) {
+        return this.decide({
+          status: 'CURRENCY_MISMATCH',
+          basis: 'NONE',
+          params,
+          reference: {
+            unitBaseRentPerSqm: base,
+            currency: bookingCurrency,
+            referenceCurrency: unitCurrency,
+          },
+          deviationPercent: null,
+          steps: [],
+          policyConfigured: false,
+          message:
+            `Không thể đối chiếu giá. Đơn vị tiền tệ của Booking (${bookingCurrency}) không khớp với ` +
+            `giá thuê cơ bản của mặt bằng (${unitCurrency}). Hệ thống không thực hiện quy đổi tự động ` +
+            'vì chưa có quy tắc tỷ giá được phê duyệt.',
+        });
+      }
+
+      const reference = { unitBaseRentPerSqm: base, currency: bookingCurrency };
+      const preamble =
+        'Ngành hàng chưa khai báo khung giá. Hệ thống đang đối chiếu với giá thuê cơ bản của mặt bằng ' +
+        `(${money(base, bookingCurrency)}/m²). `;
+
+      if (params.proposedRentPerSqm >= base) {
+        return this.decide({
+          status: 'NOT_REQUIRED',
+          basis: 'UNIT_BASE_RENT',
+          params,
+          reference,
+          deviationPercent: 0,
+          steps: [],
+          policyConfigured: true,
+          message:
+            preamble +
+            `Giá đề xuất ${money(params.proposedRentPerSqm, bookingCurrency)}/m² không thấp hơn mức tham chiếu. ` +
+            'Booking này không yêu cầu phê duyệt giá.',
+        });
+      }
+
+      const deviation = ((base - params.proposedRentPerSqm) / base) * 100;
+      return this.routeThroughPolicy({
+        params,
         basis: 'UNIT_BASE_RENT',
-        unitBaseRentPerSqm: base,
-        currencyCode: bookingCurrency,
-        deviationPercent,
-        note: 'Ngành hàng chưa khai báo khung giá — đối chiếu với giá thuê cơ bản của mặt bằng.',
-      },
-      message: below
-        ? `Giá đề xuất thấp hơn giá thuê cơ bản của mặt bằng ${deviationPercent.toFixed(1)}%. ` +
-          'Ngành hàng chưa khai báo khung giá nên hệ thống đối chiếu với giá cơ bản.'
-        : 'Giá đề xuất không thấp hơn giá thuê cơ bản của mặt bằng.',
-    };
+        reference,
+        deviationPercent: deviation,
+        factMessage:
+          preamble +
+          `Giá đề xuất ${money(params.proposedRentPerSqm, bookingCurrency)}/m² thấp hơn mức tham chiếu, ` +
+          `lệch ${pct(deviation)}.`,
+      });
+    }
+
+    // ── Nothing to compare against ───────────────────────────────────────────
+    return this.decide({
+      status: 'PRICING_REFERENCE_MISSING',
+      basis: 'NONE',
+      params,
+      reference: { currency: bookingCurrency },
+      // Deliberately null. The old code reported 100% here, a number that
+      // described nothing and escalated every price to one person.
+      deviationPercent: null,
+      steps: [],
+      policyConfigured: false,
+      message:
+        'Chưa có giá tham chiếu. Ngành hàng chưa được cấu hình khung giá và mặt bằng chưa có giá thuê ' +
+        'cơ bản. Hệ thống chưa đủ dữ liệu để đánh giá mức giá đề xuất.',
+    });
   }
 
-  /** Route a base-rent verdict through the same policy ladder as a band verdict. */
-  private async finalise(
-    mallId: string,
-    fallback: { deviationPercent: number; requiresApproval: boolean; snapshot: Prisma.InputJsonValue; message: string },
-  ): Promise<PriceApprovalEvaluation> {
-    if (!fallback.requiresApproval) {
-      return {
-        evaluated: true,
-        requiresApproval: false,
-        deviationPercent: 0,
-        approvalLevel: 'NONE',
-        pricingRuleId: null,
-        pricingSnapshot: fallback.snapshot,
+  // ───────────────────────────────────────────────────────────────────────────
+  // Policy routing
+  // ───────────────────────────────────────────────────────────────────────────
+
+  private async routeThroughPolicy(input: {
+    params: EvaluateParams;
+    basis: PricingBasis;
+    reference: PricingDecision['reference'];
+    deviationPercent: number;
+    factMessage: string;
+    categoryPricingId?: string | null;
+  }): Promise<PricingDecision> {
+    const resolution = await this.resolveSteps(
+      input.params.mallId,
+      input.deviationPercent,
+      input.params.includeApproverNames ?? false,
+    );
+
+    if (resolution.ambiguous) {
+      return this.decide({
+        status: 'POLICY_AMBIGUOUS',
+        basis: input.basis,
+        params: input.params,
+        reference: input.reference,
+        deviationPercent: input.deviationPercent,
         steps: [],
-        unrouted: false,
-        basis: 'UNIT_BASE_RENT',
-        message: fallback.message,
-      };
+        policyConfigured: true,
+        categoryPricingId: input.categoryPricingId,
+        message:
+          input.factMessage +
+          ' Cấu hình quy trình duyệt chưa hợp lệ: có nhiều quy tắc phê duyệt cùng một vị trí bước ' +
+          `(${resolution.ambiguousDetail}) nên hệ thống không thể xác định một kết quả an toàn. ` +
+          'Vui lòng kiểm tra cấu hình quy trình phê duyệt.',
+      });
     }
 
-    const steps = await this.resolveSteps(mallId, fallback.deviationPercent);
-    if (steps.length === 0) {
+    if (resolution.steps.length === 0) {
       this.logger.warn(
-        `Base-rent deviation ${fallback.deviationPercent.toFixed(1)}% on mall ${mallId} matched no ` +
-          'active PRICE_* ApprovalPolicyRule. The booking is held as PENDING with no approver.',
+        `Deviation ${input.deviationPercent.toFixed(2)}% on mall ${input.params.mallId} matched no ` +
+          'active PRICE_* ApprovalPolicyRule. The booking is held with no approver.',
       );
+      return this.decide({
+        status: 'POLICY_NOT_CONFIGURED',
+        basis: input.basis,
+        params: input.params,
+        reference: input.reference,
+        deviationPercent: input.deviationPercent,
+        steps: [],
+        policyConfigured: false,
+        categoryPricingId: input.categoryPricingId,
+        message:
+          input.factMessage +
+          ' Hệ thống chưa tìm thấy quy trình phê duyệt phù hợp với Booking này. Booking có thể được lưu, ' +
+          'nhưng chưa thể hoàn tất phê duyệt để tiếp tục sang Proposal cho đến khi quy trình được cấu hình.',
+      });
     }
 
-    return {
-      evaluated: true,
-      requiresApproval: true,
-      deviationPercent: fallback.deviationPercent,
-      // The ladder decides the real routing; this label just mirrors it.
-      approvalLevel: fallback.deviationPercent > 10 ? 'CEO' : fallback.deviationPercent > 5 ? 'DIRECTOR' : 'MANAGER',
-      pricingRuleId: null,
-      pricingSnapshot: fallback.snapshot,
-      steps,
-      unrouted: steps.length === 0,
-      basis: 'UNIT_BASE_RENT',
-      message: fallback.message,
-    };
+    return this.decide({
+      status: 'ROUTED',
+      basis: input.basis,
+      params: input.params,
+      reference: input.reference,
+      deviationPercent: input.deviationPercent,
+      steps: resolution.steps,
+      policyConfigured: true,
+      categoryPricingId: input.categoryPricingId,
+      message:
+        input.factMessage +
+        ' Theo quy trình phê duyệt hiện được cấu hình, Booking này cần được phê duyệt trước khi có thể ' +
+        'tiếp tục sang Proposal.',
+    });
   }
 
   /**
-   * Load the Mall's active price policy rules and turn the matching ones into
-   * an ordered, de-duplicated approver chain.
+   * Turn the Mall's active price rules into an ordered approver chain.
    *
-   * Only PRICE_* conditions are considered. The generic matcher treats
-   * `isRequired` as "always matches", so feeding it the full rule set would drag
-   * the proposal workflow's mandatory Finance and Legal sign-offs into every
-   * booking price decision — those steps review a deal, not a rate.
+   * Only PRICE_* conditions are read. The shared matcher treats `isRequired` as
+   * "always matches", so passing the whole rule set would drag the proposal
+   * workflow's mandatory Finance and Legal sign-offs into every rate decision.
+   *
+   * Two matching rules at DIFFERENT stepOrders are a sequential chain — that is
+   * what stepOrder means, and both must sign. Two at the SAME stepOrder naming
+   * different people express no order at all, so the resulting chain would
+   * depend on the query plan; that is reported as ambiguous rather than
+   * resolved arbitrarily.
    */
-  async resolveSteps(mallId: string, deviationPercent: number): Promise<ResolvedPriceApprovalStep[]> {
+  async resolveSteps(
+    mallId: string,
+    deviationPercent: number,
+    includeApproverNames = false,
+  ): Promise<{ steps: PricingDecisionStep[]; ambiguous: boolean; ambiguousDetail: string }> {
     const rules = await this.prisma.approvalPolicyRule.findMany({
       where: {
         mallId,
         isActive: true,
         conditionType: { in: [...PRICE_CONDITION_TYPES] },
       },
-      // `code` is the deterministic tie-break. It is unique per Mall
-      // (@@unique([mallId, code])), so two rules sharing a stepOrder still have
-      // one defined order that does not depend on the query plan.
       orderBy: [{ stepOrder: 'asc' }, { code: 'asc' }],
+      ...(includeApproverNames
+        ? { include: { approver: { select: { id: true, fullName: true } } } }
+        : {}),
     });
 
     const ctx = {
@@ -312,9 +336,20 @@ export class PriceApprovalPolicyService {
 
     const matched = rules.filter((rule) => policyRuleMatches(rule as PolicyRuleLike, ctx));
 
-    // Two rules naming the same person for the same step are one step; two rules
-    // naming different people are two real sign-offs and must both stand.
-    const unique = new Map<string, ResolvedPriceApprovalStep>();
+    // Same position, different signer: undetermined order.
+    const byOrder = new Map<number, Set<string>>();
+    for (const rule of matched) {
+      const bucket = byOrder.get(rule.stepOrder) ?? new Set<string>();
+      bucket.add(rule.approverId);
+      byOrder.set(rule.stepOrder, bucket);
+    }
+    const clash = [...byOrder.entries()].find(([, approvers]) => approvers.size > 1);
+    if (clash) {
+      const codes = matched.filter((rule) => rule.stepOrder === clash[0]).map((rule) => rule.code);
+      return { steps: [], ambiguous: true, ambiguousDetail: `bước ${clash[0]}: ${codes.join(', ')}` };
+    }
+
+    const unique = new Map<string, PricingDecisionStep>();
     for (const rule of matched) {
       const key = `${rule.stepOrder}-${rule.stepName}-${rule.approverRole}-${rule.approverId}`;
       if (unique.has(key)) continue;
@@ -323,16 +358,127 @@ export class PriceApprovalPolicyService {
         stepName: rule.stepName,
         approverRole: rule.approverRole,
         approverId: rule.approverId,
+        approverName: (rule as any).approver?.fullName ?? null,
         policyRuleCode: rule.code,
+        policyName: rule.name,
       });
     }
 
-    // Sorting on stepOrder alone is stable, which means ties silently inherit
-    // the order Postgres happened to return -- i.e. the chain could differ
-    // between two runs over identical data. Tie-break on the rule code so the
-    // resolved chain is a property of the policy, not of the query plan.
-    return [...unique.values()]
+    const steps = [...unique.values()]
       .sort((a, b) => a.stepOrder - b.stepOrder || a.policyRuleCode.localeCompare(b.policyRuleCode))
       .map((step, index) => ({ ...step, stepOrder: index + 1 }));
+
+    return { steps, ambiguous: false, ambiguousDetail: '' };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Assembly
+  // ───────────────────────────────────────────────────────────────────────────
+
+  private decide(input: {
+    status: PricingDecisionStatus;
+    basis: PricingBasis;
+    params: EvaluateParams;
+    reference: PricingDecision['reference'];
+    deviationPercent: number | null;
+    steps: PricingDecisionStep[];
+    policyConfigured: boolean;
+    message: string;
+    categoryPricingId?: string | null;
+  }): PricingDecision {
+    const presentation = PRICING_DECISION_PRESENTATION[input.status];
+    const decision: PricingDecision = {
+      status: input.status,
+      severity: presentation.severity,
+      requiresAcknowledgement: presentation.requiresAcknowledgement,
+      blocking: presentation.blocking,
+      basis: input.basis,
+      proposedRentPerSqm: input.params.proposedRentPerSqm,
+      reference: input.reference,
+      deviationPercent: input.deviationPercent,
+      approval: {
+        required: input.status === 'ROUTED' || input.status === 'POLICY_NOT_CONFIGURED',
+        policyConfigured: input.policyConfigured,
+        steps: input.steps,
+      },
+      categoryPricingId: input.categoryPricingId ?? null,
+      warningCode: `PRICE_${input.status}`,
+      message: input.message,
+      evaluatedAt: new Date().toISOString(),
+      fingerprint: '',
+    };
+    decision.fingerprint = this.fingerprint(decision);
+    return decision;
+  }
+
+  /**
+   * Digest of everything that would change the outcome, so the server can tell
+   * whether the decision the user acknowledged is still the one that applies.
+   *
+   * `evaluatedAt` is excluded on purpose: re-evaluating identical inputs a
+   * second later must produce the same fingerprint, or every submit would look
+   * like a change.
+   */
+  fingerprint(decision: PricingDecision): string {
+    const material = JSON.stringify({
+      status: decision.status,
+      basis: decision.basis,
+      proposed: decision.proposedRentPerSqm,
+      reference: decision.reference,
+      // Rounded: float noise below a ten-thousandth of a percent is not a
+      // change the user needs to re-read a warning for.
+      deviation:
+        decision.deviationPercent == null ? null : Number(decision.deviationPercent.toFixed(4)),
+      categoryPricingId: decision.categoryPricingId ?? null,
+      steps: decision.approval.steps.map((s) => `${s.stepOrder}:${s.policyRuleCode}:${s.approverId}`),
+    });
+    return createHash('sha256').update(material).digest('hex').slice(0, 32);
+  }
+
+  /**
+   * Evidence for the decision, persisted on the booking. A historical booking
+   * must stay explainable after the policy or the band is edited, so the ids
+   * and the numbers are stored — not just the sentence shown to the user.
+   */
+  snapshotOf(decision: PricingDecision): Prisma.InputJsonValue {
+    return {
+      status: decision.status,
+      basis: decision.basis,
+      proposedRentPerSqm: decision.proposedRentPerSqm,
+      currency: decision.reference.currency,
+      referenceCurrency: decision.reference.referenceCurrency ?? null,
+      minRentPerSqm: decision.reference.minRentPerSqm ?? null,
+      maxRentPerSqm: decision.reference.maxRentPerSqm ?? null,
+      unitBaseRentPerSqm: decision.reference.unitBaseRentPerSqm ?? null,
+      deviationPercent: decision.deviationPercent,
+      categoryPricingId: decision.categoryPricingId ?? null,
+      policyRuleCodes: decision.approval.steps.map((s) => s.policyRuleCode),
+      policyApproverIds: decision.approval.steps.map((s) => s.approverId),
+      policyConfigured: decision.approval.policyConfigured,
+      approvalRequired: decision.approval.required,
+      fingerprint: decision.fingerprint,
+      evaluatedAt: decision.evaluatedAt,
+      message: decision.message,
+    };
+  }
+
+  /** Does the category have a band configured in some OTHER currency? */
+  private async findBandInAnotherCurrency(
+    params: EvaluateParams,
+    bookingCurrency: CurrencyCode,
+  ): Promise<CurrencyCode | null> {
+    const now = new Date();
+    const other = await this.prisma.categoryMallPricing.findFirst({
+      where: {
+        mallId: params.mallId,
+        categoryId: params.categoryId as string,
+        isActive: true,
+        currencyCode: { not: bookingCurrency },
+        effectiveFrom: { lte: now },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }],
+      },
+      select: { currencyCode: true },
+    });
+    return other?.currencyCode ?? null;
   }
 }

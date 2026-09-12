@@ -1,429 +1,430 @@
 /**
- * CR-BOOK-PRICE-APPROVAL-001 — Pricing Policy Evaluation.
+ * CR-BOOKING-PRICE-APPROVAL-ALWAYS-WARN-004 — Pricing Decision contract.
  *
- * The thresholds that decide who signs off a price used to be hard-coded
- * (5% / 10%) and the resulting level was discarded, so nothing was ever routed
- * to anyone. Routing now comes from the Mall's own ApprovalPolicyRule rows.
+ * Two properties are under test here and they are easy to conflate:
+ *
+ *   1. Every evaluation produces a decision the user can read. Silence used to
+ *      mean either "fine" or "nobody could tell" and the two looked identical.
+ *   2. Who signs comes from configuration. The thresholds and the role names
+ *      used to be written into the pricing service; nothing in this file may
+ *      pass because the code happens to agree with 5% / 10%.
  */
 import { Role } from '@prisma/client';
 import { PriceApprovalPolicyService } from './price-approval-policy.service';
+import type { PricingDecisionStatus } from './pricing-decision.types';
 
-const RULES = [
-  {
-    code: 'PRICE_BELOW_MIN_5',
-    stepName: 'Leasing Manager Price Review',
-    stepOrder: 15,
-    approverRole: Role.LEASING_MANAGER,
-    approverId: 'user-manager',
-    conditionType: 'PRICE_DEVIATION_PCT',
-    operator: 'BETWEEN',
-    threshold: 0,
-    matchValue: '5',
-    isRequired: false,
-  },
-  {
-    code: 'PRICE_BELOW_MIN_10',
-    stepName: 'Mall Director Price Review',
-    stepOrder: 25,
-    approverRole: Role.MALL_DIRECTOR,
-    approverId: 'user-director',
-    conditionType: 'PRICE_DEVIATION_PCT',
-    operator: 'BETWEEN',
-    threshold: 5,
-    matchValue: '10',
-    isRequired: false,
-  },
-  {
-    code: 'PRICE_BELOW_MIN_OVER_10',
-    stepName: 'CEO Price Review',
-    stepOrder: 35,
-    approverRole: Role.CEO,
-    approverId: 'user-ceo',
-    conditionType: 'PRICE_DEVIATION_PCT',
-    operator: '>',
-    threshold: 10,
-    matchValue: null,
-    isRequired: false,
-  },
-];
+const MANAGER_RULE = {
+  code: 'PRICE_BELOW_MIN_5',
+  name: 'Duyệt giá cấp 1',
+  stepName: 'Leasing Manager Price Review',
+  stepOrder: 15,
+  approverRole: Role.LEASING_MANAGER,
+  approverId: 'user-manager',
+  approver: { id: 'user-manager', fullName: 'Nguyễn Văn A' },
+  conditionType: 'PRICE_DEVIATION_PCT',
+  operator: 'BETWEEN',
+  threshold: 0,
+  matchValue: '5',
+  isRequired: false,
+};
 
-function makeService(rules = RULES, validation?: any) {
+const DIRECTOR_RULE = {
+  ...MANAGER_RULE,
+  code: 'PRICE_BELOW_MIN_10',
+  name: 'Duyệt giá cấp 2',
+  stepName: 'Mall Director Price Review',
+  stepOrder: 25,
+  approverRole: Role.MALL_DIRECTOR,
+  approverId: 'user-director',
+  approver: { id: 'user-director', fullName: 'Nguyễn Văn B' },
+  threshold: 5,
+  matchValue: '10',
+};
+
+const CEO_RULE = {
+  ...MANAGER_RULE,
+  code: 'PRICE_BELOW_MIN_OVER_10',
+  name: 'Duyệt giá cấp 3',
+  stepName: 'CEO Price Review',
+  stepOrder: 35,
+  approverRole: Role.CEO,
+  approverId: 'user-ceo',
+  approver: { id: 'user-ceo', fullName: 'Nguyễn Văn C' },
+  operator: '>',
+  threshold: 10,
+  matchValue: null,
+};
+
+const RULES = [MANAGER_RULE, DIRECTOR_RULE, CEO_RULE];
+
+const BAND = {
+  isValid: false,
+  categoryPricing: { id: 'band-1', suggestedRent: null, camPerSqm: null, sources: null },
+  proposedRentPerSqm: 0,
+  minRentPerSqm: 900_000,
+  maxRentPerSqm: 1_500_000,
+  deviationPercent: 0,
+  requiresApproval: false,
+  message: '',
+};
+
+function makeService(opts: { rules?: any[]; band?: any; otherCurrencyBand?: string | null } = {}) {
   const prisma: any = {
-    approvalPolicyRule: { findMany: jest.fn().mockResolvedValue(rules) },
+    approvalPolicyRule: { findMany: jest.fn().mockResolvedValue(opts.rules ?? RULES) },
+    categoryMallPricing: {
+      findFirst: jest.fn().mockResolvedValue(
+        opts.otherCurrencyBand ? { currencyCode: opts.otherCurrencyBand } : null,
+      ),
+    },
   };
   const categories: any = {
-    validateProposedPrice: jest.fn().mockResolvedValue(
-      validation ?? {
-        isValid: false,
-        categoryPricing: { id: 'rule-1', suggestedRent: 900_000, camPerSqm: 100_000, sources: null },
-        proposedRentPerSqm: 700_000,
-        minRentPerSqm: 900_000,
-        maxRentPerSqm: 1_500_000,
-        deviationPercent: 22.2,
-        requiresApproval: true,
-        approvalLevel: 'CEO',
-        message: 'below',
-      },
-    ),
+    validateProposedPrice: jest.fn().mockResolvedValue(opts.band === undefined ? BAND : opts.band),
   };
   return { service: new PriceApprovalPolicyService(prisma, categories), prisma, categories };
 }
 
-describe('PriceApprovalPolicyService', () => {
-  it('routes a >10% deviation to the CEO rule the Mall configured', async () => {
-    const { service } = makeService();
+const BASE = { mallId: 'mall-1', categoryId: 'cat-1', includeApproverNames: true };
 
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
-      proposedRentPerSqm: 700_000,
-    });
+describe('PricingDecision — the always-warn invariant', () => {
+  // BOOK-WARN-010
+  it('BOOK-WARN-010 every status carries a non-empty user-visible message', async () => {
+    const seen = new Map<PricingDecisionStatus, string>();
 
-    expect(result.requiresApproval).toBe(true);
-    expect(result.unrouted).toBe(false);
-    expect(result.steps).toEqual([
+    const cases: Array<[string, () => Promise<any>]> = [
+      ['NOT_REQUIRED', () =>
+        makeService({ band: { ...BAND, requiresApproval: false } }).service.evaluate({
+          ...BASE, proposedRentPerSqm: 1_000_000,
+        })],
+      ['ROUTED', () =>
+        makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 22.2 } }).service.evaluate({
+          ...BASE, proposedRentPerSqm: 700_000,
+        })],
+      ['POLICY_NOT_CONFIGURED', () =>
+        makeService({ rules: [], band: { ...BAND, requiresApproval: true, deviationPercent: 22.2 } }).service.evaluate({
+          ...BASE, proposedRentPerSqm: 700_000,
+        })],
+      ['POLICY_AMBIGUOUS', () =>
+        makeService({
+          rules: [MANAGER_RULE, { ...DIRECTOR_RULE, stepOrder: 15, threshold: 0, matchValue: '5' }],
+          band: { ...BAND, requiresApproval: true, deviationPercent: 3 },
+        }).service.evaluate({ ...BASE, proposedRentPerSqm: 873_000 })],
+      ['PRICING_REFERENCE_MISSING', () =>
+        makeService({ band: { ...BAND, categoryPricing: null } }).service.evaluate({
+          ...BASE, proposedRentPerSqm: 700_000,
+        })],
+      ['CURRENCY_MISMATCH', () =>
+        makeService({ band: { ...BAND, categoryPricing: null }, otherCurrencyBand: 'USD' }).service.evaluate({
+          ...BASE, proposedRentPerSqm: 700_000, currencyCode: 'VND',
+        })],
+    ];
+
+    for (const [expected, run] of cases) {
+      const decision = await run();
+      expect(decision.status).toBe(expected);
+      expect(typeof decision.message).toBe('string');
+      expect(decision.message.trim().length).toBeGreaterThan(20);
+      expect(decision.warningCode).toBe(`PRICE_${expected}`);
+      seen.set(decision.status, decision.message);
+    }
+
+    // All six outcomes really were produced, not just the easy ones.
+    expect(seen.size).toBe(6);
+  });
+});
+
+describe('PricingDecision — category band', () => {
+  // BOOK-WARN-001
+  it('BOOK-WARN-001 states the band and that no approval is needed', async () => {
+    const { service } = makeService({ band: { ...BAND, requiresApproval: false } });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 1_000_000 });
+
+    expect(d.status).toBe('NOT_REQUIRED');
+    expect(d.severity).toBe('INFO');
+    expect(d.requiresAcknowledgement).toBe(false);
+    expect(d.basis).toBe('CATEGORY_BAND');
+    expect(d.reference).toMatchObject({ minRentPerSqm: 900_000, maxRentPerSqm: 1_500_000 });
+    expect(d.message).toContain('không yêu cầu phê duyệt');
+    expect(d.approval.required).toBe(false);
+  });
+
+  // BOOK-WARN-002
+  it('BOOK-WARN-002 warns and names the configured signers when approval is needed', async () => {
+    const { service } = makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 4 } });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 864_000 });
+
+    expect(d.status).toBe('ROUTED');
+    expect(d.severity).toBe('WARNING');
+    expect(d.requiresAcknowledgement).toBe(true);
+    expect(d.blocking).toBe(false);
+    expect(d.message).toContain('thấp hơn giá sàn');
+    expect(d.message).toContain('4,00%');
+    expect(d.approval.steps).toEqual([
       expect.objectContaining({
-        stepOrder: 1,
-        approverRole: Role.CEO,
-        approverId: 'user-ceo',
-        policyRuleCode: 'PRICE_BELOW_MIN_OVER_10',
+        approverId: 'user-manager',
+        approverName: 'Nguyễn Văn A',
+        policyRuleCode: 'PRICE_BELOW_MIN_5',
       }),
     ]);
   });
 
-  it('routes a 3% deviation to the Leasing Manager, not the CEO', async () => {
-    const { service } = makeService(RULES, {
-      isValid: false,
-      categoryPricing: { id: 'rule-1' },
-      minRentPerSqm: 900_000,
-      maxRentPerSqm: 1_500_000,
-      deviationPercent: 3,
-      requiresApproval: true,
-      approvalLevel: 'MANAGER',
-      message: 'below',
-    });
+  it('reports a price above the ceiling as above, not below', async () => {
+    const { service } = makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 20 } });
 
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
-      proposedRentPerSqm: 873_000,
-    });
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 1_800_000 });
 
-    expect(result.steps.map((s) => s.approverId)).toEqual(['user-manager']);
-  });
-
-  it('never pulls the proposal workflow mandatory steps into a price decision', async () => {
-    // Finance/Legal/base-manager rules carry isRequired, which the shared matcher
-    // treats as "always matches". They review a deal, not a rate, so the price
-    // path must not see them at all.
-    const { service, prisma } = makeService();
-    await service.evaluate({ mallId: 'mall-1', categoryId: 'cat-1', proposedRentPerSqm: 700_000 });
-
-    expect(prisma.approvalPolicyRule.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          mallId: 'mall-1',
-          isActive: true,
-          conditionType: { in: ['PRICE_DEVIATION_PCT', 'PRICE_BELOW_MIN'] },
-        }),
-      }),
-    );
-  });
-
-  it('reports unrouted when approval is needed but no rule matches', async () => {
-    const { service } = makeService([]);
-
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
-      proposedRentPerSqm: 700_000,
-    });
-
-    expect(result.requiresApproval).toBe(true);
-    expect(result.unrouted).toBe(true);
-    expect(result.steps).toEqual([]);
-  });
-
-  it('returns NOT evaluated when the unit has no category, never a silent pass', async () => {
-    const { service, categories } = makeService();
-
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: null,
-      proposedRentPerSqm: 700_000,
-    });
-
-    expect(result.evaluated).toBe(false);
-    expect(result.requiresApproval).toBe(false);
-    expect(categories.validateProposedPrice).not.toHaveBeenCalled();
-  });
-
-  it('requires no approval and no steps when the price sits inside the band', async () => {
-    const { service } = makeService(RULES, {
-      isValid: true,
-      categoryPricing: { id: 'rule-1' },
-      minRentPerSqm: 900_000,
-      maxRentPerSqm: 1_500_000,
-      deviationPercent: 0,
-      requiresApproval: false,
-      approvalLevel: 'NONE',
-      message: 'ok',
-    });
-
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
-      proposedRentPerSqm: 1_000_000,
-    });
-
-    expect(result.evaluated).toBe(true);
-    expect(result.requiresApproval).toBe(false);
-    expect(result.steps).toEqual([]);
-  });
-
-  it('keeps two different approvers on the same step as two real sign-offs', async () => {
-    const { service } = makeService([
-      { ...RULES[2], code: 'A', approverId: 'user-ceo' },
-      { ...RULES[2], code: 'B', approverId: 'user-chairman' },
-    ]);
-
-    const result = await service.evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
-      proposedRentPerSqm: 700_000,
-    });
-
-    expect(result.steps.map((s) => s.approverId)).toEqual(['user-ceo', 'user-chairman']);
-    expect(result.steps.map((s) => s.stepOrder)).toEqual([1, 2]);
+    expect(d.message).toContain('cao hơn giá trần');
   });
 });
 
-describe('PriceApprovalPolicyService — ambiguity is resolved deterministically', () => {
-  // Two rules that both match the same deviation at the SAME stepOrder. The
-  // order they come back from Postgres is unspecified, so the resolved chain
-  // must not inherit it.
-  const AMBIGUOUS = [
-    {
-      code: 'ZZ_SECOND',
-      stepName: 'Price Review',
-      stepOrder: 20,
-      approverRole: Role.MALL_DIRECTOR,
-      approverId: 'user-director',
-      conditionType: 'PRICE_DEVIATION_PCT',
-      operator: '>',
-      threshold: 10,
-      matchValue: null,
-      isRequired: false,
-    },
-    {
-      code: 'AA_FIRST',
-      stepName: 'Price Review',
-      stepOrder: 20,
-      approverRole: Role.CEO,
-      approverId: 'user-ceo',
-      conditionType: 'PRICE_BELOW_MIN',
-      operator: null,
-      threshold: null,
-      matchValue: null,
-      isRequired: false,
-    },
-  ];
+describe('PricingDecision — unit base rent fallback', () => {
+  const NO_BAND = { ...BAND, categoryPricing: null };
 
-  async function resolveWith(rows: any[]) {
-    const prisma: any = { approvalPolicyRule: { findMany: jest.fn().mockResolvedValue(rows) } };
-    const categories: any = {
-      validateProposedPrice: jest.fn().mockResolvedValue({
-        isValid: false,
-        categoryPricing: { id: 'r' },
-        minRentPerSqm: 900_000,
-        maxRentPerSqm: 1_500_000,
-        deviationPercent: 22.2,
-        requiresApproval: true,
-        approvalLevel: 'CEO',
-        message: 'below',
-      }),
-    };
-    const service = new PriceApprovalPolicyService(prisma, categories);
-    const r = await service.evaluate({ mallId: 'mall-1', categoryId: 'cat-1', proposedRentPerSqm: 700_000 });
-    return r.steps.map((s) => s.policyRuleCode);
-  }
+  // BOOK-WARN-003
+  it('BOOK-WARN-003 says which reference it used and that nothing is needed', async () => {
+    const { service } = makeService({ band: NO_BAND });
 
-  it('produces the same chain whichever order Postgres returns the rows in', async () => {
-    const forwards = await resolveWith(AMBIGUOUS);
-    const backwards = await resolveWith([...AMBIGUOUS].reverse());
-
-    expect(forwards).toEqual(backwards);
-    // And the tie-break is a stable property of the data, not of the query plan.
-    expect(forwards).toEqual(['AA_FIRST', 'ZZ_SECOND']);
-  });
-
-  it('keeps both matching rules as separate sign-offs rather than silently picking one', async () => {
-    const codes = await resolveWith(AMBIGUOUS);
-    expect(codes).toHaveLength(2);
-  });
-});
-
-/**
- * Base-rent fallback: what happens when a category carries no CategoryMallPricing.
- *
- * Before this, any price on such a category produced a meaningless 100%
- * deviation and went to the CEO, however reasonable the number was. The unit's
- * own asking rent is the only other figure the Mall has declared for that
- * space, so it is used as a floor -- but ONLY here, never alongside a band.
- */
-describe('PriceApprovalPolicyService — base-rent fallback', () => {
-  const NO_BAND = {
-    isValid: false,
-    categoryPricing: null,
-    proposedRentPerSqm: 0,
-    minRentPerSqm: 0,
-    maxRentPerSqm: 0,
-    deviationPercent: 100,
-    requiresApproval: true,
-    approvalLevel: 'CEO',
-    message: 'No pricing rule is configured.',
-  };
-
-  function svc(rules = RULES, validation: any = NO_BAND) {
-    const prisma: any = { approvalPolicyRule: { findMany: jest.fn().mockResolvedValue(rules) } };
-    const categories: any = { validateProposedPrice: jest.fn().mockResolvedValue(validation) };
-    return new PriceApprovalPolicyService(prisma, categories);
-  }
-
-  it('passes a price at or above the unit base rent without approval', async () => {
-    const result = await svc().evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-new',
+    const d = await service.evaluate({
+      ...BASE,
       proposedRentPerSqm: 1_000_000,
       unitBaseRentPerSqm: 1_000_000,
       unitCurrencyCode: 'VND',
       currencyCode: 'VND',
     });
 
-    expect(result.basis).toBe('UNIT_BASE_RENT');
-    expect(result.requiresApproval).toBe(false);
-    expect(result.deviationPercent).toBe(0);
+    expect(d.status).toBe('NOT_REQUIRED');
+    expect(d.basis).toBe('UNIT_BASE_RENT');
+    expect(d.message).toContain('Ngành hàng chưa khai báo khung giá');
+    expect(d.message).toContain('giá thuê cơ bản');
   });
 
-  it('routes a price below the base rent through the same policy ladder', async () => {
-    // 700k against a 1,000,000 base is 30% below -> the CEO rule.
-    const result = await svc().evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-new',
+  // BOOK-WARN-004
+  it('BOOK-WARN-004 warns with the configured chain when below the base rent', async () => {
+    const { service } = makeService({ band: NO_BAND });
+
+    const d = await service.evaluate({
+      ...BASE,
       proposedRentPerSqm: 700_000,
       unitBaseRentPerSqm: 1_000_000,
       unitCurrencyCode: 'VND',
       currencyCode: 'VND',
     });
 
-    expect(result.basis).toBe('UNIT_BASE_RENT');
-    expect(result.requiresApproval).toBe(true);
-    expect(result.deviationPercent).toBeCloseTo(30, 5);
-    expect(result.steps.map((s) => s.approverId)).toEqual(['user-ceo']);
+    expect(d.status).toBe('ROUTED');
+    expect(d.basis).toBe('UNIT_BASE_RENT');
+    expect(d.deviationPercent).toBeCloseTo(30, 5);
+    expect(d.approval.steps.map((s: any) => s.approverId)).toEqual(['user-ceo']);
   });
 
-  it('measures the deviation against the base rent, not against the band', async () => {
-    const result = await svc().evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-new',
-      proposedRentPerSqm: 960_000,
-      unitBaseRentPerSqm: 1_000_000,
-      unitCurrencyCode: 'VND',
-      currencyCode: 'VND',
-    });
+  it('never uses the base rent while a band applies', async () => {
+    const { service } = makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 22.2 } });
 
-    // 4% below base -> Leasing Manager, not the blanket CEO escalation.
-    expect(result.deviationPercent).toBeCloseTo(4, 5);
-    expect(result.steps.map((s) => s.approverId)).toEqual(['user-manager']);
-  });
-
-  it('never applies the fallback when a band exists', async () => {
-    const withBand = {
-      isValid: false,
-      categoryPricing: { id: 'rule-1' },
-      minRentPerSqm: 900_000,
-      maxRentPerSqm: 1_500_000,
-      deviationPercent: 22.2,
-      requiresApproval: true,
-      approvalLevel: 'CEO',
-      message: 'below',
-    };
-
-    const result = await svc(RULES, withBand).evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-1',
+    const d = await service.evaluate({
+      ...BASE,
       proposedRentPerSqm: 700_000,
       // A base rent that would have said "fine" is deliberately ignored.
       unitBaseRentPerSqm: 500_000,
       unitCurrencyCode: 'VND',
-      currencyCode: 'VND',
     });
 
-    expect(result.basis).toBe('CATEGORY_BAND');
-    expect(result.deviationPercent).toBeCloseTo(22.2, 5);
+    expect(d.basis).toBe('CATEGORY_BAND');
+  });
+});
+
+describe('PricingDecision — configuration outcomes', () => {
+  const NEEDS_APPROVAL = { ...BAND, requiresApproval: true, deviationPercent: 22.2 };
+
+  // BOOK-WARN-005 / BOOK-WARN-006
+  it('BOOK-WARN-005/006 reports missing policy and infers no approver', async () => {
+    const { service } = makeService({ rules: [], band: NEEDS_APPROVAL });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 700_000 });
+
+    expect(d.status).toBe('POLICY_NOT_CONFIGURED');
+    expect(d.severity).toBe('WARNING');
+    expect(d.approval.policyConfigured).toBe(false);
+    expect(d.approval.steps).toEqual([]);
+    // Nothing may name an authority the configuration did not.
+    expect(d.message).not.toMatch(/Manager|Director|CEO|Giám đốc|Tổng giám đốc/i);
+    expect(d.message).toContain('chưa tìm thấy quy trình phê duyệt');
   });
 
-  it('falls back to the CEO escalation when the unit has no base rent either', async () => {
-    for (const base of [null, 0, undefined]) {
-      const result = await svc().evaluate({
-        mallId: 'mall-1',
-        categoryId: 'cat-new',
-        proposedRentPerSqm: 700_000,
-        unitBaseRentPerSqm: base as any,
-        unitCurrencyCode: 'VND',
-        currencyCode: 'VND',
-      });
+  // BOOK-WARN-007
+  it('BOOK-WARN-007 blocks on an ambiguous configuration instead of picking one', async () => {
+    // Two rules claim the SAME step position but name different people: the
+    // order would otherwise come from whatever the query plan returned.
+    const { service } = makeService({
+      rules: [MANAGER_RULE, { ...DIRECTOR_RULE, stepOrder: 15, threshold: 0, matchValue: '5' }],
+      band: { ...BAND, requiresApproval: true, deviationPercent: 3 },
+    });
 
-      expect(result.basis).toBe('CATEGORY_BAND');
-      expect(result.deviationPercent).toBe(100);
-      expect(result.steps.map((s) => s.approverId)).toEqual(['user-ceo']);
-    }
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 873_000 });
+
+    expect(d.status).toBe('POLICY_AMBIGUOUS');
+    expect(d.severity).toBe('ERROR');
+    expect(d.blocking).toBe(true);
+    expect(d.approval.steps).toEqual([]);
+    expect(d.message).toContain('Cấu hình quy trình duyệt chưa hợp lệ');
   });
 
-  it('refuses to compare across currencies rather than inventing a rate', async () => {
-    const result = await svc().evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-new',
+  it('treats different step orders as a sequential chain, not ambiguity', async () => {
+    // Both rules match 5.00% but sit at different positions: that IS the
+    // configuration expressing "both sign, in this order".
+    const { service } = makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 5 } });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 855_000 });
+
+    expect(d.status).toBe('ROUTED');
+    expect(d.approval.steps.map((s: any) => s.approverId)).toEqual(['user-manager', 'user-director']);
+    expect(d.approval.steps.map((s: any) => s.stepOrder)).toEqual([1, 2]);
+  });
+
+  // BOOK-WARN-008
+  it('BOOK-WARN-008 refuses to compare across currencies and says so', async () => {
+    const { service } = makeService({ band: { ...BAND, categoryPricing: null }, otherCurrencyBand: 'USD' });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 700_000, currencyCode: 'VND' });
+
+    expect(d.status).toBe('CURRENCY_MISMATCH');
+    expect(d.deviationPercent).toBeNull();
+    expect(d.message).toContain('không thực hiện quy đổi tự động');
+    expect(d.reference.referenceCurrency).toBe('USD');
+  });
+
+  it('reports a currency mismatch against the unit base rent too', async () => {
+    const { service } = makeService({ band: { ...BAND, categoryPricing: null } });
+
+    const d = await service.evaluate({
+      ...BASE,
       proposedRentPerSqm: 25,
       currencyCode: 'USD',
       unitBaseRentPerSqm: 1_000_000,
       unitCurrencyCode: 'VND',
     });
 
-    // No FX engine: the base rent is not usable, so the safe escalation stands.
-    expect(result.basis).toBe('CATEGORY_BAND');
-    expect(result.deviationPercent).toBe(100);
+    expect(d.status).toBe('CURRENCY_MISMATCH');
+    expect(d.deviationPercent).toBeNull();
   });
 
-  it('holds the booking when the fallback needs approval but no rule matches', async () => {
-    const result = await svc([]).evaluate({
+  // BOOK-WARN-009
+  it('BOOK-WARN-009 reports a missing reference without inventing a deviation', async () => {
+    const { service } = makeService({ band: { ...BAND, categoryPricing: null } });
+
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 700_000, unitBaseRentPerSqm: 0 });
+
+    expect(d.status).toBe('PRICING_REFERENCE_MISSING');
+    expect(d.basis).toBe('NONE');
+    // The old code reported 100% here and escalated everything to one person.
+    expect(d.deviationPercent).toBeNull();
+    expect(d.message).toContain('Chưa có giá tham chiếu');
+  });
+
+  it('falls back to the base rent when the unit has no category at all', async () => {
+    const { service, categories } = makeService();
+
+    const d = await service.evaluate({
       mallId: 'mall-1',
-      categoryId: 'cat-new',
-      proposedRentPerSqm: 700_000,
+      categoryId: null,
+      proposedRentPerSqm: 900_000,
       unitBaseRentPerSqm: 1_000_000,
       unitCurrencyCode: 'VND',
       currencyCode: 'VND',
     });
 
-    expect(result.requiresApproval).toBe(true);
-    expect(result.unrouted).toBe(true);
-    expect(result.steps).toEqual([]);
+    expect(categories.validateProposedPrice).not.toHaveBeenCalled();
+    expect(d.basis).toBe('UNIT_BASE_RENT');
+    expect(d.status).toBe('ROUTED');
+  });
+});
+
+describe('PricingDecision — routing is configuration, not code', () => {
+  const NEEDS_APPROVAL = { ...BAND, requiresApproval: true, deviationPercent: 3 };
+
+  // BOOK-WARN-020
+  it('BOOK-WARN-020 the same facts route differently when the configuration differs', async () => {
+    const facts = { ...BASE, proposedRentPerSqm: 873_000 };
+
+    const asSeeded = await makeService({ band: NEEDS_APPROVAL }).service.evaluate(facts);
+    // Identical pricing facts; only the configured rule changed.
+    const reconfigured = await makeService({
+      rules: [{ ...MANAGER_RULE, approverId: 'user-chairman', approver: { id: 'user-chairman', fullName: 'Chủ tịch' }, code: 'CUSTOM' }],
+      band: NEEDS_APPROVAL,
+    }).service.evaluate(facts);
+
+    expect(asSeeded.approval.steps.map((s: any) => s.approverId)).toEqual(['user-manager']);
+    expect(reconfigured.approval.steps.map((s: any) => s.approverId)).toEqual(['user-chairman']);
+    expect(asSeeded.deviationPercent).toBe(reconfigured.deviationPercent);
   });
 
-  it('records the basis in the snapshot so the decision stays explainable', async () => {
-    const result = await svc().evaluate({
-      mallId: 'mall-1',
-      categoryId: 'cat-new',
-      proposedRentPerSqm: 700_000,
-      unitBaseRentPerSqm: 1_000_000,
-      unitCurrencyCode: 'VND',
-      currencyCode: 'VND',
-    });
+  it('reads only PRICE_* rules, never the proposal workflow mandatory steps', async () => {
+    const { service, prisma } = makeService({ band: NEEDS_APPROVAL });
+    await service.evaluate({ ...BASE, proposedRentPerSqm: 873_000 });
 
-    expect(result.pricingSnapshot).toMatchObject({
-      basis: 'UNIT_BASE_RENT',
-      unitBaseRentPerSqm: 1_000_000,
-      proposedRentPerSqm: 700_000,
+    expect(prisma.approvalPolicyRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          conditionType: { in: ['PRICE_DEVIATION_PCT', 'PRICE_BELOW_MIN'] },
+        }),
+      }),
+    );
+  });
+});
+
+describe('PricingDecision — fingerprint', () => {
+  it('is stable across two evaluations of identical inputs', async () => {
+    const facts = { ...BASE, proposedRentPerSqm: 873_000 };
+    const band = { ...BAND, requiresApproval: true, deviationPercent: 3 };
+
+    const a = await makeService({ band }).service.evaluate(facts);
+    const b = await makeService({ band }).service.evaluate(facts);
+
+    // Timestamps differ; the fingerprint must not.
+    expect(a.evaluatedAt).not.toBe('');
+    expect(a.fingerprint).toBe(b.fingerprint);
+  });
+
+  it('changes when the configured approver changes', async () => {
+    const facts = { ...BASE, proposedRentPerSqm: 873_000 };
+    const band = { ...BAND, requiresApproval: true, deviationPercent: 3 };
+
+    const a = await makeService({ band }).service.evaluate(facts);
+    const b = await makeService({
+      band,
+      rules: [{ ...MANAGER_RULE, approverId: 'someone-else' }],
+    }).service.evaluate(facts);
+
+    expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+
+  it('changes when the proposed price changes', async () => {
+    const band = { ...BAND, requiresApproval: true, deviationPercent: 3 };
+    const a = await makeService({ band }).service.evaluate({ ...BASE, proposedRentPerSqm: 873_000 });
+    const b = await makeService({ band }).service.evaluate({ ...BASE, proposedRentPerSqm: 860_000 });
+
+    expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+});
+
+describe('PricingDecision — snapshot', () => {
+  it('persists evidence, not only the sentence shown to the user', async () => {
+    const { service } = makeService({ band: { ...BAND, requiresApproval: true, deviationPercent: 4 } });
+    const d = await service.evaluate({ ...BASE, proposedRentPerSqm: 864_000 });
+
+    const snapshot: any = service.snapshotOf(d);
+
+    expect(snapshot).toMatchObject({
+      status: 'ROUTED',
+      basis: 'CATEGORY_BAND',
+      proposedRentPerSqm: 864_000,
+      minRentPerSqm: 900_000,
+      maxRentPerSqm: 1_500_000,
+      categoryPricingId: 'band-1',
+      policyRuleCodes: ['PRICE_BELOW_MIN_5'],
+      policyApproverIds: ['user-manager'],
+      approvalRequired: true,
     });
+    expect(snapshot.fingerprint).toBe(d.fingerprint);
+    expect(typeof snapshot.evaluatedAt).toBe('string');
   });
 });

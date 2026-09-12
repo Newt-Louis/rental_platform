@@ -14,6 +14,7 @@ import {
   ApprovePriceDto,
   RejectPriceDto,
 } from './dto/create-booking.dto';
+import { PreviewPricingDto } from './dto/preview-pricing.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
@@ -183,6 +184,24 @@ export class BookingController {
   ) {
     await this.checkBooking(user, id);
     return this.bookingService.convertToProposal(id, dto, user.id);
+  }
+
+  // ─── Pricing decision preview ────────────────────────────────────────────
+
+  /**
+   * CR-...-ALWAYS-WARN-004: evaluate a price without creating anything, so the
+   * UI can show the decision BEFORE the user confirms. Writing first and
+   * warning afterwards was the only path that existed.
+   *
+   * Writes nothing, so every role that may create a booking may call it. Who
+   * signs is only included for roles that can act on the approval queue.
+   */
+  @Post('price-preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Đánh giá giá đề xuất (không ghi dữ liệu) để cảnh báo trước khi tạo/sửa booking' })
+  async previewPricingDecision(@Body() dto: PreviewPricingDto, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { unitId: dto.unitId });
+    return this.bookingService.previewPricingDecision(dto, { role: user.role });
   }
 
   // ─── Price Approval ──────────────────────────────────────────────────────

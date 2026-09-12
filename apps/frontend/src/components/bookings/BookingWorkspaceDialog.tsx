@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  PricingDecisionAlert,
+  type PricingDecision,
+} from "@/components/bookings/PricingDecisionAlert";
 import { useTranslation } from "react-i18next";
 import { BookmarkPlus, X } from "lucide-react";
 import { bookingApi, spacesApi, usersApi } from "@/api";
@@ -116,6 +120,57 @@ export function BookingWorkspaceDialog({
     setSubmitError(null);
   };
 
+  // ── CR-...-ALWAYS-WARN-004: evaluate before the user confirms ─────────────
+  //
+  // Re-runs whenever anything the decision depends on changes, so a stale
+  // warning can never sit under a price the user has since edited.
+  const [pricingDecision, setPricingDecision] = useState<PricingDecision | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingAcknowledged, setPricingAcknowledged] = useState(false);
+
+  const pricingUnitId = selectedUnit?.id ?? null;
+  const pricingRent = details.proposedRentPerSqm;
+  const pricingCurrency = details.currencyCode;
+
+  useEffect(() => {
+    const rent = Number(pricingRent);
+    if (!pricingUnitId || !pricingRent || Number.isNaN(rent)) {
+      setPricingDecision(null);
+      setPricingAcknowledged(false);
+      return;
+    }
+
+    // The previous answer describes a price that no longer exists.
+    setPricingAcknowledged(false);
+    setPricingLoading(true);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const decision = await bookingApi.previewPricingDecision({
+          unitId: pricingUnitId,
+          proposedRentPerSqm: rent,
+          currencyCode: pricingCurrency,
+        });
+        if (!cancelled) setPricingDecision(decision);
+      } catch {
+        // A failed preview must not present itself as "no approval needed".
+        if (!cancelled) setPricingDecision(null);
+      } finally {
+        if (!cancelled) setPricingLoading(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pricingUnitId, pricingRent, pricingCurrency]);
+
+  const pricingBlocksSubmit =
+    !!pricingDecision?.blocking ||
+    (!!pricingDecision?.requiresAcknowledgement && !pricingAcknowledged) ||
+    pricingLoading;
+
   const mutation = useMutation({
     mutationFn: () =>
       bookingApi.create({
@@ -140,6 +195,8 @@ export function BookingWorkspaceDialog({
         holdDays: Number(details.holdDays) || 30,
         notes: details.notes || undefined,
         assignedToId: details.assignedToId || undefined,
+        // Lets the server refuse a submit whose decision has since changed.
+        acknowledgedPricingFingerprint: pricingDecision?.fingerprint,
       }),
     onSuccess: (booking: any) => {
       queryClient.invalidateQueries({ queryKey: ["bookings"] });
@@ -182,6 +239,9 @@ export function BookingWorkspaceDialog({
     !!workspaceMallId &&
     selectableUnit &&
     !!selectedLead &&
+    // A price warning must be read before it can be submitted, and an
+    // ambiguous policy cannot be acknowledged away at all.
+    !pricingBlocksSubmit &&
     !mutation.isPending;
   const currencySymbol =
     CURRENCIES[details.currencyCode]?.symbol ?? details.currencyCode;
@@ -476,6 +536,14 @@ export function BookingWorkspaceDialog({
                   />
                 </Field>
               </div>
+              {/* CR-...-ALWAYS-WARN-004: the decision is shown here, before the
+                  user can confirm — not discovered from the booking afterwards. */}
+              <PricingDecisionAlert
+                decision={pricingDecision}
+                loading={pricingLoading}
+                acknowledged={pricingAcknowledged}
+                onAcknowledgeChange={setPricingAcknowledged}
+              />
               <Field label="Phụ trách (Sale)">
                 <select
                   className="h-8 w-full rounded-md border border-input bg-background px-3 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

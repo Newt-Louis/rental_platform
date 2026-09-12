@@ -131,7 +131,9 @@ export interface PriceValidationResult {
   maxRentPerSqm: number;
   deviationPercent: number;
   requiresApproval: boolean;
-  approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
+  // CR-...-ALWAYS-WARN-004: removed. Approval authority is configuration
+  // (ApprovalPolicyRule); the pricing endpoint returns facts only, and the
+  // routing arrives as PricingDecision.approval.steps.
   message: string;
   sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
