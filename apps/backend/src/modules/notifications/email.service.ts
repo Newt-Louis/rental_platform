@@ -336,6 +336,63 @@ export class EmailService {
     });
   }
 
+  /**
+   * CR-BOOK-PRICE-APPROVAL-001 — a booking price waiting on this recipient.
+   *
+   * Until now nothing in the booking module sent anything at all: a price could
+   * sit PENDING indefinitely and the only way to find out was to open the
+   * approvals queue and look. The band the price is measured against is
+   * included, because "12% below" means nothing without the floor it is below.
+   */
+  bookingPriceApprovalHtml(data: {
+    approverName: string;
+    stepName: string;
+    bookingNumber: string;
+    bookingId: string;
+    partyName: string;
+    unitCode: string;
+    mallName: string;
+    proposedRentPerSqm: number;
+    deviationPercent: number;
+    proposedBy: string;
+    currencyCode: CurrencyCode | null;
+    snapshot: Record<string, unknown> | null;
+  }): string {
+    const min = typeof data.snapshot?.minRentPerSqm === 'number' ? data.snapshot.minRentPerSqm : null;
+    const max = typeof data.snapshot?.maxRentPerSqm === 'number' ? data.snapshot.maxRentPerSqm : null;
+
+    return renderEmail({
+      // A deviation past 10% is the band the policy escalates to CEO; flag it
+      // visually rather than making every price approval look the same.
+      severity: data.deviationPercent > 10 ? 'CRITICAL' : 'WARNING',
+      preheader: `${data.bookingNumber} · ${data.partyName} · ${data.unitCode} · lệch ${data.deviationPercent.toFixed(1)}%`,
+      eyebrow: 'Duyệt giá',
+      title: 'Giá đề xuất chờ phê duyệt',
+      badgeLabel: 'CHỜ DUYỆT GIÁ',
+      description: `Kính gửi ${esc(data.approverName)}, booking <strong>${esc(data.bookingNumber)}</strong> có mức giá nằm ngoài khung giá ngành hàng và đang chờ bước <strong>${esc(data.stepName)}</strong> của bạn.`,
+      hero: {
+        value: money(data.proposedRentPerSqm, data.currencyCode),
+        unit: `giá đề xuất/m²/tháng · lệch ${data.deviationPercent.toFixed(1)}% so với khung`,
+      },
+      info: {
+        title: 'Thông tin booking',
+        rows: [
+          { label: 'Mã booking', value: data.bookingNumber },
+          { label: 'Khách thuê', value: data.partyName },
+          { label: 'Mặt bằng', value: data.unitCode },
+          { label: 'Trung tâm', value: data.mallName },
+          { label: 'Giá sàn (khung ngành hàng)', value: min !== null ? money(min, data.currencyCode) : null },
+          { label: 'Giá trần (khung ngành hàng)', value: max !== null ? money(max, data.currencyCode) : null },
+          { label: 'Giá đề xuất', value: money(data.proposedRentPerSqm, data.currencyCode), emphasis: true },
+          { label: 'Người đề xuất', value: data.proposedBy },
+          { label: 'Bước duyệt', value: data.stepName },
+        ],
+      },
+      cta: { label: 'Xem & phê duyệt', url: appUrl(`/approvals?tab=price&booking=${encodeURIComponent(data.bookingId)}`) },
+      note: 'Người đề xuất mức giá không thể tự phê duyệt. Nếu bạn là người đề xuất, vui lòng chuyển cho người duyệt khác.',
+    });
+  }
+
   /** FINANCE — an overdue invoice. */
   invoiceOverdueHtml(data: {
     tenantName: string;
