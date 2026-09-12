@@ -9,6 +9,9 @@ describe("BookingService.findUnits", () => {
     lead: { findUnique: jest.fn() },
   };
   const categories: any = { validateProposedPrice: jest.fn() };
+  const priceApprovalPolicy: any = { evaluate: jest.fn(), resolveSteps: jest.fn().mockResolvedValue([]) };
+  const notifications: any = { create: jest.fn() };
+  const emailService: any = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() };
   const unitStatus: any = {
     isLockedForBooking: jest.fn(
       (status: UnitStatus) =>
@@ -24,7 +27,7 @@ describe("BookingService.findUnits", () => {
     prisma.unit.findMany.mockResolvedValue([]);
     prisma.unit.count.mockResolvedValue(0);
     prisma.unitBooking.groupBy.mockResolvedValue([]);
-    service = new BookingService(prisma, categories, unitStatus);
+    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService);
   });
 
   it("applies accessible Mall IDs at the Unit query boundary", async () => {

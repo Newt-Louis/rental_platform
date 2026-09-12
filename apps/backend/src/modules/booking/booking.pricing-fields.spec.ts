@@ -22,6 +22,8 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
       aggregate: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
   const unitStatus = {
@@ -30,6 +32,10 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     transition: jest.fn().mockResolvedValue({}),
   } as any;
   const categories = { validateProposedPrice: jest.fn() } as any;
+  // CR-BOOK-PRICE-APPROVAL-001 — price routing/notification collaborators.
+  const priceApprovalPolicy = { evaluate: jest.fn(), resolveSteps: jest.fn().mockResolvedValue([]) } as any;
+  const notifications = { create: jest.fn() } as any;
+  const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -42,7 +48,7 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     prisma.bookingActivity.create.mockResolvedValue({});
     prisma.lead.update.mockResolvedValue({});
     prisma.proposal.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'proposal-1', ...data }));
-    service = new BookingService(prisma, categories, unitStatus);
+    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService);
   });
 
   describe('create()', () => {

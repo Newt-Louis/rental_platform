@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
+import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 /**
  * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md items 1-3,
@@ -14,6 +17,26 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
  * cover the Serializable-transaction + P2034-retry hardening added this phase, mirroring the
  * pattern already proven in contract-activation.spec.ts / proposals.service.spec.ts.
  */
+// CR-BOOK-PRICE-APPROVAL-001 — the price path now resolves its approver chain
+// from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
+// band" so tests that say nothing about price keep their old behaviour.
+const priceApprovalPolicy = {
+  evaluate: jest.fn().mockResolvedValue({
+    evaluated: true,
+    requiresApproval: false,
+    deviationPercent: 0,
+    approvalLevel: 'NONE',
+    pricingRuleId: null,
+    pricingSnapshot: undefined,
+    steps: [],
+    unrouted: false,
+    message: 'ok',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue([]),
+} as any;
+const notifications = { create: jest.fn() } as any;
+const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+
 describe('BookingService reliability — create/update/cancel atomicity, idempotency, concurrency', () => {
   let service: BookingService;
 
@@ -32,6 +55,8 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
       update: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
 
@@ -69,6 +94,10 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: CategoriesService, useValue: categories },
+        // CR-BOOK-PRICE-APPROVAL-001 — price routing / notification collaborators.
+        { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EmailService, useValue: emailService },
       ],
     }).compile();
     service = module.get(BookingService);

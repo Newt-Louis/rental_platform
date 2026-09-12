@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus, Prisma } from '@prisma/client';
+import { BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus, StepStatus, Role, Prisma } from '@prisma/client';
 import {
   CreateBookingDto,
   UpdateBookingDto,
@@ -22,6 +22,12 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { UnitFinderQueryDto } from './dto/unit-finder-query.dto';
 import { formatMoneyWithCode } from '../../common/utils/format-money';
 import { computeContractValue } from '../../common/finance/rent-calculation.util';
+import {
+  PriceApprovalPolicyService,
+  type PriceApprovalEvaluation,
+} from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class BookingService {
@@ -31,6 +37,9 @@ export class BookingService {
     private prisma: PrismaService,
     private categoriesService: CategoriesService,
     private unitStatus: UnitStatusService,
+    private priceApprovalPolicy: PriceApprovalPolicyService,
+    private notifications: NotificationsService,
+    private emailService: EmailService,
   ) {}
 
   // ─── Tạo booking mới với priority tự động ────────────────────────────────
@@ -86,45 +95,33 @@ export class BookingService {
 
     // Validate proposed price if provided — read-only external validation, safe to run once
     // ahead of the transaction/retry loop rather than re-running it on every attempt.
-    let priceApprovalStatus: PriceApprovalStatus | null = null;
-    let priceDeviationPercent: number | null = null;
-    let pricingRuleId: string | null = null;
-    let pricingSnapshot: Prisma.InputJsonValue | undefined;
+    // CR-BOOK-PRICE-APPROVAL-001 -- Pricing Policy Evaluation. One call now
+    // answers the deviation, whether approval is required, which pricing rule
+    // decided it, and WHICH APPROVERS the Mall's policy names. Previously the
+    // approver chain did not exist at all: the level was computed inside
+    // validateProposedPrice and discarded, leaving a flat PENDING flag nobody
+    // was routed to.
+    //
+    // CategoryPricing carries its own currencyCode, so a USD/MMK booking is
+    // checked against a same-currency band where one exists and otherwise falls
+    // through to the "no pricing rule configured" escalation path.
+    const priceEvaluation = dto.proposedRentPerSqm !== undefined
+      ? await this.priceApprovalPolicy.evaluate({
+          mallId: unit.mallId,
+          categoryId: unit.categoryId,
+          floorId: unit.floorId,
+          zoneId: unit.zoneId,
+          proposedRentPerSqm: dto.proposedRentPerSqm,
+          currencyCode: dto.currencyCode,
+        })
+      : null;
 
-    // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
-    // Float with no currency field at all -- docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
-    // validateProposedPrice() only matches a pricing rule in the SAME currency as the
-    // booking, so a USD/MMK booking is checked against a same-currency band where one
-    // exists, and otherwise falls through to the "no pricing rule configured" CEO-escalation
-    // path, same as a VND booking would. (The frontend's "not checked for {currency}"
-    // disclaimer predates this and should be dropped/updated to match.)
-    if (dto.proposedRentPerSqm !== undefined && unit.categoryId) {
-      const validation = await this.categoriesService.validateProposedPrice({
-        mallId: unit.mallId,
-        categoryId: unit.categoryId,
-        floorId: unit.floorId ?? undefined,
-        zoneId: unit.zoneId ?? undefined,
-        proposedRentPerSqm: dto.proposedRentPerSqm,
-        currencyCode: dto.currencyCode,
-      });
+    const priceApprovalStatus = this.statusFromEvaluation(priceEvaluation);
+    const priceDeviationPercent = priceEvaluation?.evaluated ? priceEvaluation.deviationPercent : null;
+    const pricingRuleId = priceEvaluation?.pricingRuleId ?? null;
+    const pricingSnapshot = priceEvaluation?.pricingSnapshot;
 
-      if (validation.requiresApproval) {
-        priceApprovalStatus = PriceApprovalStatus.PENDING;
-        priceDeviationPercent = validation.deviationPercent;
-      }
-      pricingRuleId = validation.categoryPricing?.id ?? null;
-      pricingSnapshot = {
-        evaluatedAt: new Date().toISOString(),
-        proposedRentPerSqm: dto.proposedRentPerSqm,
-        minRentPerSqm: validation.minRentPerSqm,
-        maxRentPerSqm: validation.maxRentPerSqm,
-        suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
-        camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
-        sources: validation.categoryPricing?.sources ?? null,
-      };
-    }
-
-    return this.runSerializable(async (tx) => {
+    const created = await this.runSerializable(async (tx) => {
       // Finder eligibility is advisory. Re-read the Unit and Lead inside every
       // serializable attempt so a status/Mall change between search and submit
       // cannot create a queued Booking against stale eligibility.
@@ -204,6 +201,11 @@ export class BookingService {
           priceDeviationPercent,
           pricingRuleId,
           pricingSnapshot,
+          // Separation of duties: remember who put this number on the booking.
+          ...(priceEvaluation ? { priceProposedById: createdById, priceProposedAt: new Date() } : {}),
+          ...(priceEvaluation?.steps.length
+            ? { priceApprovalSteps: { create: priceEvaluation.steps } }
+            : {}),
           holdDays,
           expiresAt,
           activatedAt: priority === 1 ? new Date() : null,
@@ -242,6 +244,15 @@ export class BookingService {
 
       return booking;
     });
+
+    // CR-BOOK-PRICE-APPROVAL-001 — tell the approver, after the commit. Until
+    // now nothing was sent at all: a price could sit PENDING indefinitely and
+    // the only way to find out was to open the queue and look.
+    if (created.priceApprovalStatus === PriceApprovalStatus.PENDING) {
+      await this.notifyPriceApprovalPending(created.id);
+    }
+
+    return created;
   }
 
   // ─── Danh sách bookings ───────────────────────────────────────────────────
@@ -548,46 +559,36 @@ export class BookingService {
     const targetUnitId = targetNewUnitId ?? booking.unitId;
     const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId } });
 
-    let priceApprovalStatus: PriceApprovalStatus | null | undefined = undefined;
-    let priceDeviationPercent: number | null | undefined = undefined;
-    let pricingRuleId: string | null | undefined = undefined;
-    let pricingSnapshot: Prisma.InputJsonValue | undefined;
+    // CR-BOOK-PRICE-APPROVAL-001 — re-evaluate through the same policy service
+    // as create(). A changed price invalidates any decision already made on the
+    // old figure, so the chain is rebuilt from scratch below.
+    let priceEvaluation: PriceApprovalEvaluation | null = null;
+    let priceApprovalTouched = false;
 
-    // See the currency note on the same guard in create() above -- CategoryPricing now has
-    // its own currencyCode; UpdateBookingDto has no currencyCode of its own, so the
-    // booking's existing currency is authoritative here.
-    if (dto.proposedRentPerSqm !== undefined && unit?.categoryId) {
+    if (dto.proposedRentPerSqm !== undefined && unit) {
       if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
-        const validation = await this.categoriesService.validateProposedPrice({
+        priceEvaluation = await this.priceApprovalPolicy.evaluate({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
-          floorId: unit.floorId ?? undefined,
-          zoneId: unit.zoneId ?? undefined,
+          floorId: unit.floorId,
+          zoneId: unit.zoneId,
           proposedRentPerSqm: dto.proposedRentPerSqm,
           currencyCode: booking.currencyCode,
         });
-
-        if (validation.requiresApproval) {
-          priceApprovalStatus = PriceApprovalStatus.PENDING;
-          priceDeviationPercent = validation.deviationPercent;
-        } else {
-          priceApprovalStatus = null;
-          priceDeviationPercent = null;
-        }
-        pricingRuleId = validation.categoryPricing?.id ?? null;
-        pricingSnapshot = {
-          evaluatedAt: new Date().toISOString(),
-          proposedRentPerSqm: dto.proposedRentPerSqm,
-          minRentPerSqm: validation.minRentPerSqm,
-          maxRentPerSqm: validation.maxRentPerSqm,
-          suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
-          camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
-          sources: validation.categoryPricing?.sources ?? null,
-        };
+        priceApprovalTouched = true;
       }
     }
 
-    return this.runSerializable(async (tx) => {
+    const priceApprovalStatus = priceApprovalTouched
+      ? this.statusFromEvaluation(priceEvaluation)
+      : undefined;
+    const priceDeviationPercent = priceApprovalTouched
+      ? (priceEvaluation?.evaluated ? priceEvaluation.deviationPercent : null)
+      : undefined;
+    const pricingRuleId = priceApprovalTouched ? (priceEvaluation?.pricingRuleId ?? null) : undefined;
+    const pricingSnapshot = priceApprovalTouched ? priceEvaluation?.pricingSnapshot : undefined;
+
+    const result = await this.runSerializable(async (tx) => {
       let newUnitId: string | undefined;
       let newPriority: number | undefined;
       let newStatus: BookingStatus | undefined;
@@ -623,6 +624,16 @@ export class BookingService {
           ...(priceDeviationPercent !== undefined && { priceDeviationPercent }),
           ...(pricingRuleId !== undefined && { pricingRuleId }),
           ...(pricingSnapshot !== undefined && { pricingSnapshot }),
+          // A re-priced booking carries a NEW decision. The previous approver,
+          // note and timestamp described a figure that no longer exists and are
+          // cleared rather than left to look like a sign-off on the new one.
+          ...(priceApprovalTouched && {
+            priceProposedById: userId,
+            priceProposedAt: new Date(),
+            priceApprovedById: null,
+            priceApprovedAt: null,
+            priceApprovalNote: null,
+          }),
           notes: dto.notes,
         },
         include: this.defaultInclude(),
@@ -640,17 +651,211 @@ export class BookingService {
         }
       }
 
+      if (priceApprovalTouched) {
+        await this.replacePriceApproval(tx, id, priceEvaluation);
+      }
+
       await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' }, tx);
       return updated;
     });
+
+    // A re-priced booking starts a NEW chain, so its first approver has to hear
+    // about it the same way a freshly created one does.
+    if (priceApprovalTouched && result.priceApprovalStatus === PriceApprovalStatus.PENDING) {
+      await this.notifyPriceApprovalPending(id);
+    }
+
+    return result;
+  }
+
+  // ─── CR-BOOK-PRICE-APPROVAL-001 — price approval workflow ─────────────────
+
+  /**
+   * Map a policy evaluation onto the stored status.
+   *
+   * NULL is reserved for "not evaluated": no price was proposed, or the unit
+   * carries no category so no band exists. NOT_REQUIRED means the policy ran
+   * and the price is inside the band. Conversion accepts APPROVED and
+   * NOT_REQUIRED — never NULL, which would be an unchecked price.
+   */
+  private statusFromEvaluation(evaluation: PriceApprovalEvaluation | null): PriceApprovalStatus | null {
+    if (!evaluation || !evaluation.evaluated) return null;
+    return evaluation.requiresApproval
+      ? PriceApprovalStatus.PENDING
+      : PriceApprovalStatus.NOT_REQUIRED;
+  }
+
+  /** The step awaiting a decision: lowest order still PENDING. Steps are sequential. */
+  private currentPriceStep<T extends { stepOrder: number; status: StepStatus }>(steps: T[]): T | undefined {
+    return [...steps]
+      .filter((step) => step.status === StepStatus.PENDING)
+      .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+  }
+
+  /**
+   * Separation of duties. The person who proposed the rate cannot sign it off,
+   * and neither can the person who opened the booking.
+   *
+   * This holds for ADMIN too. An ADMIN bypass would defeat the control on the
+   * exact account most likely to hold both roles in a small team; the fix for a
+   * one-person mall is a second approver account, not a weaker rule.
+   */
+  private assertSeparationOfDuties(
+    booking: { priceProposedById: string | null; createdById: string },
+    approverId: string,
+  ) {
+    if (booking.priceProposedById === approverId) {
+      throw new ForbiddenException(
+        'Bạn là người đề xuất mức giá này nên không thể tự phê duyệt (phân tách trách nhiệm).',
+      );
+    }
+    if (booking.createdById === approverId) {
+      throw new ForbiddenException(
+        'Bạn là người tạo booking này nên không thể tự phê duyệt giá (phân tách trách nhiệm).',
+      );
+    }
+  }
+
+  /**
+   * Re-run the policy for a price that changed, replacing any chain still in
+   * flight. A new number is a new decision: earlier sign-offs approved a figure
+   * that no longer exists, so they are discarded rather than carried over.
+   */
+  private async replacePriceApproval(
+    tx: Prisma.TransactionClient,
+    bookingId: string,
+    evaluation: PriceApprovalEvaluation | null,
+  ) {
+    await tx.bookingPriceApprovalStep.deleteMany({ where: { bookingId } });
+    if (evaluation?.requiresApproval && evaluation.steps.length > 0) {
+      await tx.bookingPriceApprovalStep.createMany({
+        data: evaluation.steps.map((step) => ({ bookingId, ...step })),
+      });
+    }
+  }
+
+  /**
+   * Tell the approver a price is waiting, in-app and by email.
+   *
+   * Runs AFTER the transaction commits: a notification for a booking that was
+   * rolled back is worse than a late one. Failures are logged, never rethrown —
+   * a mail outage must not fail the booking write that already succeeded.
+   */
+  private async notifyPriceApprovalPending(bookingId: string) {
+    const booking = await this.prisma.unitBooking.findUnique({
+      where: { id: bookingId },
+      include: {
+        unit: { select: { code: true, mallId: true, mall: { select: { name: true } } } },
+        lead: { select: { brandName: true } },
+        customer: { select: { companyName: true } },
+        priceProposedBy: { select: { fullName: true } },
+        priceApprovalSteps: {
+          where: { status: StepStatus.PENDING },
+          orderBy: { stepOrder: 'asc' },
+          include: { approver: { select: { id: true, email: true, fullName: true } } },
+        },
+      },
+    });
+    if (!booking) return;
+
+    const step = booking.priceApprovalSteps?.[0];
+    if (!step) return; // unrouted — nobody to tell; the queue surfaces it instead
+
+    const party = booking.lead?.brandName ?? booking.customer?.companyName ?? '—';
+    const amount = formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode);
+    const deviation = booking.priceDeviationPercent ?? 0;
+
+    try {
+      await this.notifications.create({
+        userId: step.approver.id,
+        title: `Duyệt giá: ${booking.bookingNumber}`,
+        body: `${step.stepName} — ${party} / ${booking.unit.code}: ${amount}/m² (lệch ${deviation.toFixed(1)}% so với khung giá)`,
+        type: 'PRICE_APPROVAL_PENDING',
+        entityType: 'BOOKING',
+        entityId: booking.id,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Price approval notification failed for ${step.approverId}: ${e.message}`);
+    }
+
+    if (!step.approver?.email) return;
+    try {
+      await this.emailService.sendMail({
+        to: step.approver.email,
+        delivery: {
+          // Keyed on the step, so a retry of the same step cannot double-send
+          // while a genuinely new chain (new price) gets its own key.
+          eventKey: `booking-price-approval:${booking.id}:${step.id}`,
+          eventType: 'BOOKING_PRICE_APPROVAL',
+          entityType: 'UnitBooking',
+          entityId: booking.id,
+          mallId: booking.unit.mallId,
+        },
+        subject: `[THISO] Booking ${booking.bookingNumber} chờ duyệt giá`,
+        html: this.emailService.bookingPriceApprovalHtml({
+          approverName: step.approver.fullName,
+          stepName: step.stepName,
+          bookingNumber: booking.bookingNumber,
+          bookingId: booking.id,
+          partyName: party,
+          unitCode: booking.unit.code,
+          mallName: booking.unit.mall?.name ?? '—',
+          proposedRentPerSqm: booking.proposedRentPerSqm ?? 0,
+          deviationPercent: deviation,
+          currencyCode: booking.currencyCode,
+          proposedBy: booking.priceProposedBy?.fullName ?? 'Leasing',
+          snapshot: booking.pricingSnapshot as Record<string, unknown> | null,
+        }),
+      });
+    } catch (e: any) {
+      this.logger.warn(`Price approval email failed for ${step.approverId}: ${e.message}`);
+    }
+  }
+
+  /** Tell the proposer what happened to the price they submitted. */
+  private async notifyPriceDecision(bookingId: string, approved: boolean, note?: string) {
+    const booking = await this.prisma.unitBooking.findUnique({
+      where: { id: bookingId },
+      include: { unit: { select: { code: true } } },
+    });
+    if (!booking?.priceProposedById) return;
+
+    const amount = formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode);
+    try {
+      await this.notifications.create({
+        userId: booking.priceProposedById,
+        title: approved
+          ? `Giá đã được duyệt: ${booking.bookingNumber}`
+          : `Giá bị từ chối: ${booking.bookingNumber}`,
+        body: `${booking.unit.code} — ${amount}/m²${note ? '. ' + note : ''}`,
+        type: approved ? 'PRICE_APPROVAL_APPROVED' : 'PRICE_APPROVAL_REJECTED',
+        entityType: 'BOOKING',
+        entityId: booking.id,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Price decision notification failed: ${e.message}`);
+    }
   }
 
   // ─── Phê duyệt giá đề xuất ─────────────────────────────────────────────────
 
-  async approvePrice(id: string, dto: ApprovePriceDto, approverId: string) {
+  /**
+   * Resolve the booking and the step this user is allowed to decide.
+   *
+   * Authority comes from the policy-resolved step, not from the caller's role
+   * alone: a Mall Director cannot sign off a deviation the policy routed to the
+   * CEO. Before this, approve/reject carried no role restriction whatsoever, so
+   * the Leasing Executive who created the booking could approve their own
+   * price, while the CEO the rules kept naming was not even a member of the
+   * bookings module and got a 403.
+   */
+  private async loadPriceDecisionContext(bookingId: string, approver: { id: string; role: Role }) {
     const booking = await this.prisma.unitBooking.findUnique({
-      where: { id },
-      include: { unit: true },
+      where: { id: bookingId },
+      include: {
+        unit: true,
+        priceApprovalSteps: { orderBy: { stepOrder: 'asc' } },
+      },
     });
     if (!booking) throw new NotFoundException('Booking không tồn tại');
 
@@ -658,49 +863,163 @@ export class BookingService {
       throw new BadRequestException('Booking không cần phê duyệt giá hoặc đã được xử lý');
     }
 
-    const updated = await this.prisma.unitBooking.update({
-      where: { id },
-      data: {
-        priceApprovalStatus: PriceApprovalStatus.APPROVED,
-        priceApprovalNote: dto.note,
-        priceApprovedById: approverId,
-        priceApprovedAt: new Date(),
-      },
-      include: this.defaultInclude(),
+    this.assertSeparationOfDuties(booking, approver.id);
+
+    const step = this.currentPriceStep(booking.priceApprovalSteps);
+
+    if (!step) {
+      // Unrouted: the deviation needed approval but the Mall has no matching
+      // active price policy rule. The booking is still held. Only an ADMIN can
+      // clear it, and the right fix is to configure the policy.
+      if (approver.role !== Role.ADMIN) {
+        throw new ForbiddenException(
+          'Mall chưa cấu hình quy tắc duyệt giá (ApprovalPolicyRule) cho mức lệch này. ' +
+            'Vui lòng khai báo chính sách trong Quản trị › Chính sách duyệt, hoặc nhờ Admin xử lý.',
+        );
+      }
+      return { booking, step: null };
+    }
+
+    if (step.approverId !== approver.id && approver.role !== Role.ADMIN) {
+      throw new ForbiddenException(
+        `Bước duyệt hiện tại là "${step.stepName}" và đã được chỉ định cho người khác.`,
+      );
+    }
+
+    return { booking, step };
+  }
+
+  async approvePrice(id: string, dto: ApprovePriceDto, approver: { id: string; role: Role }) {
+    const { booking, step } = await this.loadPriceDecisionContext(id, approver);
+
+    const remaining = booking.priceApprovalSteps.filter(
+      (candidate) => candidate.status === StepStatus.PENDING && candidate.id !== step?.id,
+    );
+    const isFinal = remaining.length === 0;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (step) {
+        // Claim the step with a CONDITIONAL write. An unconditional update lets
+        // two concurrent decisions on the same step both succeed: the second
+        // overwrites the first, the requester gets two notifications, and an
+        // approve racing a reject leaves the booking verdict contradicting the
+        // step that produced it.
+        const claimed = await tx.bookingPriceApprovalStep.updateMany({
+          where: { id: step.id, status: StepStatus.PENDING },
+          data: {
+            status: StepStatus.APPROVED,
+            comment: dto.note,
+            decidedAt: new Date(),
+            decidedById: approver.id,
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictException(
+            'Bước duyệt này vừa được xử lý bởi một thao tác khác. Vui lòng tải lại và kiểm tra kết quả.',
+          );
+        }
+      } else {
+        // Unrouted ADMIN remediation has no step to claim, so the booking row
+        // itself is the guard.
+        const claimedBooking = await tx.unitBooking.updateMany({
+          where: { id, priceApprovalStatus: PriceApprovalStatus.PENDING },
+          data: { priceApprovalNote: dto.note ?? null },
+        });
+        if (claimedBooking.count !== 1) {
+          throw new ConflictException('Giá của booking này vừa được xử lý bởi một thao tác khác.');
+        }
+      }
+
+      // Only the LAST step flips the booking. An intermediate sign-off leaves
+      // the price PENDING so the chain cannot be short-circuited.
+      return tx.unitBooking.update({
+        where: { id },
+        data: isFinal
+          ? {
+              priceApprovalStatus: PriceApprovalStatus.APPROVED,
+              priceApprovalNote: dto.note,
+              priceApprovedById: approver.id,
+              priceApprovedAt: new Date(),
+            }
+          : { priceApprovalNote: dto.note },
+        include: this.defaultInclude(),
+      });
     });
 
-    await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² được phê duyệt${dto.note ? '. ' + dto.note : ''}`,
+    const stepLabel = step ? `${step.stepName} (bước ${step.stepOrder})` : 'Admin (chưa có chính sách)';
+    await this.logActivity(id, BookingActivityType.NOTE_ADDED, approver.id, {
+      note:
+        `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² ` +
+        `được duyệt tại ${stepLabel}` +
+        (isFinal ? ' — hoàn tất phê duyệt giá' : ` — còn ${remaining.length} bước`) +
+        (dto.note ? '. ' + dto.note : ''),
     });
+
+    if (isFinal) {
+      await this.notifyPriceDecision(id, true, dto.note);
+    } else {
+      // Hand the baton to the next approver in the chain.
+      await this.notifyPriceApprovalPending(id);
+    }
 
     return updated;
   }
 
-  async rejectPrice(id: string, dto: RejectPriceDto, approverId: string) {
-    const booking = await this.prisma.unitBooking.findUnique({
-      where: { id },
-      include: { unit: true },
-    });
-    if (!booking) throw new NotFoundException('Booking không tồn tại');
+  async rejectPrice(id: string, dto: RejectPriceDto, approver: { id: string; role: Role }) {
+    const { booking, step } = await this.loadPriceDecisionContext(id, approver);
 
-    if (booking.priceApprovalStatus !== PriceApprovalStatus.PENDING) {
-      throw new BadRequestException('Booking không cần phê duyệt giá hoặc đã được xử lý');
-    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (step) {
+        const claimed = await tx.bookingPriceApprovalStep.updateMany({
+          where: { id: step.id, status: StepStatus.PENDING },
+          data: {
+            status: StepStatus.REJECTED,
+            comment: dto.reason,
+            decidedAt: new Date(),
+            decidedById: approver.id,
+          },
+        });
+        if (claimed.count !== 1) {
+          throw new ConflictException(
+            'Bước duyệt này vừa được xử lý bởi một thao tác khác. Vui lòng tải lại và kiểm tra kết quả.',
+          );
+        }
+      } else {
+        const claimedBooking = await tx.unitBooking.updateMany({
+          where: { id, priceApprovalStatus: PriceApprovalStatus.PENDING },
+          data: { priceApprovalNote: dto.reason },
+        });
+        if (claimedBooking.count !== 1) {
+          throw new ConflictException('Giá của booking này vừa được xử lý bởi một thao tác khác.');
+        }
+      }
+      // A rejection ends the chain: later steps never get to review a price
+      // that has already been refused.
+      await tx.bookingPriceApprovalStep.updateMany({
+        where: { bookingId: id, status: StepStatus.PENDING },
+        data: { status: StepStatus.SKIPPED },
+      });
 
-    const updated = await this.prisma.unitBooking.update({
-      where: { id },
-      data: {
-        priceApprovalStatus: PriceApprovalStatus.REJECTED,
-        priceApprovalNote: dto.reason,
-        priceApprovedById: approverId,
-        priceApprovedAt: new Date(),
-      },
-      include: this.defaultInclude(),
+      return tx.unitBooking.update({
+        where: { id },
+        data: {
+          priceApprovalStatus: PriceApprovalStatus.REJECTED,
+          priceApprovalNote: dto.reason,
+          priceApprovedById: approver.id,
+          priceApprovedAt: new Date(),
+        },
+        include: this.defaultInclude(),
+      });
     });
 
-    await this.logActivity(id, BookingActivityType.NOTE_ADDED, approverId, {
-      note: `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² bị từ chối. Lý do: ${dto.reason}`,
+    const stepLabel = step ? `${step.stepName} (bước ${step.stepOrder})` : 'Admin (chưa có chính sách)';
+    await this.logActivity(id, BookingActivityType.NOTE_ADDED, approver.id, {
+      note:
+        `Giá đề xuất ${formatMoneyWithCode(booking.proposedRentPerSqm ?? 0, booking.currencyCode)}/m² ` +
+        `bị từ chối tại ${stepLabel}. Lý do: ${dto.reason}`,
     });
+
+    await this.notifyPriceDecision(id, false, dto.reason);
 
     return updated;
   }
@@ -758,6 +1077,13 @@ export class BookingService {
               mall: { select: { id: true, name: true, code: true } },
             },
           },
+          // CR-BOOK-PRICE-APPROVAL-001 — the queue used to show a deviation and
+          // two action buttons with no indication of WHOSE decision it was.
+          priceApprovalSteps: {
+            orderBy: { stepOrder: 'asc' },
+            include: { approver: { select: { id: true, fullName: true, email: true, role: true } } },
+          },
+          priceProposedBy: { select: { id: true, fullName: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -776,7 +1102,18 @@ export class BookingService {
             zoneId: booking.unit.zone?.id,
           });
         }
-        return { ...booking, categoryPricing };
+        // Surface the actionable step so the UI can name the approver and
+        // disable the buttons for everyone else, instead of letting the click
+        // fail on the server.
+        const currentStep = this.currentPriceStep(booking.priceApprovalSteps) ?? null;
+        return {
+          ...booking,
+          categoryPricing,
+          currentPriceStep: currentStep,
+          // No step on a PENDING price means the Mall has no policy rule for
+          // this deviation. Shown as a warning rather than an empty column.
+          priceApprovalUnrouted: booking.priceApprovalSteps.length === 0,
+        };
       }),
     );
 
@@ -983,12 +1320,32 @@ export class BookingService {
       throw new ConflictException('Booking này đã được convert thành Proposal');
     }
 
-    // Check if price approval is pending
+    // CR-BOOK-PRICE-APPROVAL-001 — conversion is allowed ONLY on APPROVED or
+    // NOT_REQUIRED. The previous check listed the two blocking states, which
+    // meant NULL fell through as "fine" — and NULL is precisely an unevaluated
+    // price: no rate proposed, or a unit with no category so no band existed.
+    // Allow-listing the two safe states closes that.
     if (booking.priceApprovalStatus === PriceApprovalStatus.PENDING) {
       throw new BadRequestException('Giá đề xuất chưa được phê duyệt. Vui lòng chờ phê duyệt hoặc điều chỉnh giá.');
     }
     if (booking.priceApprovalStatus === PriceApprovalStatus.REJECTED) {
       throw new BadRequestException('Giá đề xuất đã bị từ chối. Vui lòng điều chỉnh giá trước khi chuyển thành Proposal.');
+    }
+    // A booking that never proposed a rate is fine to convert: the Proposal
+    // carries its own rentPerSqm and runs its own price check at submit. But a
+    // booking that DOES carry a rate and still has no verdict was never
+    // measured against a band at all -- the old code only listed the two
+    // blocking states, so that case fell through as if it had passed.
+    if (
+      booking.proposedRentPerSqm !== null &&
+      booking.proposedRentPerSqm !== undefined &&
+      booking.priceApprovalStatus !== PriceApprovalStatus.APPROVED &&
+      booking.priceApprovalStatus !== PriceApprovalStatus.NOT_REQUIRED
+    ) {
+      throw new BadRequestException(
+        'Giá đề xuất chưa được thẩm định theo khung giá ngành hàng — thường do mặt bằng chưa gán ngành hàng. ' +
+          'Vui lòng gán ngành hàng cho mặt bằng rồi cập nhật lại giá đề xuất.',
+      );
     }
 
     // Trước đây tenantId luôn bị bỏ trống khi convert — nếu booking đến từ Customer (không phải Lead),

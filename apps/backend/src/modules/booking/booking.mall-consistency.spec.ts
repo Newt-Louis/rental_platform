@@ -5,6 +5,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
+import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 // CR-101 Phase 3E — INV-AUTH-006 caller-specific coverage: BookingService.update()'s
 // unit-reassignment branch is the one call site (of 12) where UnitStatusService.transition()
@@ -13,6 +16,26 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
 // Mall (a staff member can legitimately hold grants to several Malls) — it says nothing about
 // whether that Mall is consistent with the booking's own. This suite proves that consistency
 // is enforced, and enforced before any write.
+// CR-BOOK-PRICE-APPROVAL-001 — the price path now resolves its approver chain
+// from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
+// band" so tests that say nothing about price keep their old behaviour.
+const priceApprovalPolicy = {
+  evaluate: jest.fn().mockResolvedValue({
+    evaluated: true,
+    requiresApproval: false,
+    deviationPercent: 0,
+    approvalLevel: 'NONE',
+    pricingRuleId: null,
+    pricingSnapshot: undefined,
+    steps: [],
+    unrouted: false,
+    message: 'ok',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue([]),
+} as any;
+const notifications = { create: jest.fn() } as any;
+const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+
 describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reassignment', () => {
   let service: BookingService;
 
@@ -42,6 +65,8 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
     },
     unit: { findUnique: jest.fn() },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((fn: any) => fn(prisma)),
   } as any;
 
@@ -69,6 +94,10 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: CategoriesService, useValue: categories },
+        // CR-BOOK-PRICE-APPROVAL-001 — price routing / notification collaborators.
+        { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EmailService, useValue: emailService },
       ],
     }).compile();
     service = module.get(BookingService);

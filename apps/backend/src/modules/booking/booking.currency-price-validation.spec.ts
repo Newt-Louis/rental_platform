@@ -4,6 +4,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
+import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
 
 /**
  * CategoryPricing now carries its own currencyCode (previously a plain
@@ -16,6 +19,26 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
  * currency -- these tests assert the booking's currencyCode is what actually
  * gets passed through, not that non-VND bookings are skipped.
  */
+// CR-BOOK-PRICE-APPROVAL-001 — the price path now resolves its approver chain
+// from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
+// band" so tests that say nothing about price keep their old behaviour.
+const priceApprovalPolicy = {
+  evaluate: jest.fn().mockResolvedValue({
+    evaluated: true,
+    requiresApproval: false,
+    deviationPercent: 0,
+    approvalLevel: 'NONE',
+    pricingRuleId: null,
+    pricingSnapshot: undefined,
+    steps: [],
+    unrouted: false,
+    message: 'ok',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue([]),
+} as any;
+const notifications = { create: jest.fn() } as any;
+const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+
 describe('BookingService — category price validation is currency-aware', () => {
   let service: BookingService;
 
@@ -34,6 +57,8 @@ describe('BookingService — category price validation is currency-aware', () =>
       update: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
 
@@ -78,6 +103,10 @@ describe('BookingService — category price validation is currency-aware', () =>
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: CategoriesService, useValue: categories },
+        // CR-BOOK-PRICE-APPROVAL-001 — price routing / notification collaborators.
+        { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EmailService, useValue: emailService },
       ],
     }).compile();
     service = module.get(BookingService);
@@ -85,6 +114,17 @@ describe('BookingService — category price validation is currency-aware', () =>
 
   describe('create()', () => {
     beforeEach(() => {
+      priceApprovalPolicy.evaluate.mockResolvedValue({
+        evaluated: true,
+        requiresApproval: true,
+        deviationPercent: 99.995,
+        approvalLevel: 'CEO',
+        pricingRuleId: 'rule-1',
+        pricingSnapshot: undefined,
+        steps: [],
+        unrouted: true,
+        message: 'Below floor',
+      });
       prisma.unit.findUnique.mockResolvedValue({
         id: 'unit-1', mallId: 'mall-1', categoryId: 'cat-1', status: UnitStatus.VACANT, isActive: true,
       });
@@ -99,7 +139,7 @@ describe('BookingService — category price validation is currency-aware', () =>
 
       const booking = await service.create(dto, 'user-1');
 
-      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+      expect(priceApprovalPolicy.evaluate).toHaveBeenCalledWith(
         expect.objectContaining({ proposedRentPerSqm: 25, currencyCode: 'USD' }),
       );
       expect(booking.priceApprovalStatus).toBe('PENDING');
@@ -114,7 +154,7 @@ describe('BookingService — category price validation is currency-aware', () =>
 
       const booking = await service.create(dto, 'user-1');
 
-      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+      expect(priceApprovalPolicy.evaluate).toHaveBeenCalledWith(
         expect.objectContaining({ proposedRentPerSqm: 100000, currencyCode: undefined }),
       );
       expect(booking.priceApprovalStatus).toBe('PENDING');
@@ -134,7 +174,7 @@ describe('BookingService — category price validation is currency-aware', () =>
 
       const updated = await service.update('b1', { proposedRentPerSqm: 25 } as any, 'user-1');
 
-      expect(categories.validateProposedPrice).toHaveBeenCalledWith(
+      expect(priceApprovalPolicy.evaluate).toHaveBeenCalledWith(
         expect.objectContaining({ proposedRentPerSqm: 25, currencyCode: 'USD' }),
       );
       expect(updated.priceApprovalStatus).toBe('PENDING');
