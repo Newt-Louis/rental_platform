@@ -61,10 +61,24 @@ export class CreateCustomerDto {
   @IsEnum(LeadSource)
   source?: LeadSource;
 
-  @ApiPropertyOptional()
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — DEPRECATED as an input. Identity is
+   * `preferredCategoryId`; this free text is a display snapshot derived from
+   * the Category master server-side.
+   */
+  @ApiPropertyOptional({ deprecated: true, description: 'Deprecated — send preferredCategoryId instead. Legacy display text only.' })
   @IsOptional()
   @IsString()
   preferredCategory?: string;
+
+  /**
+   * Authoritative preferred-category identity. PATCH semantics:
+   *   omitted -> unchanged, null -> explicit clear, Category.id -> change.
+   */
+  @ApiPropertyOptional({ nullable: true, description: 'Category.id, or null to clear. Omit to leave unchanged.' })
+  @IsOptional()
+  @IsString()
+  preferredCategoryId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CustomerStatus, Role } from '@prisma/client';
 import { CustomersService } from './customers.service';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 describe('CustomersService Lead linking', () => {
   const prisma: any = {
@@ -12,7 +13,7 @@ describe('CustomersService Lead linking', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CustomersService(prisma);
+    service = new CustomersService(prisma, new CategoryResolverService(prisma as any));
   });
 
   it('creates and links a profile without forcing an early Lead to ACTIVE', async () => {
@@ -97,7 +98,7 @@ describe('CustomersService — Leasing Executive scoping', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CustomersService(prisma);
+    service = new CustomersService(prisma, new CategoryResolverService(prisma as any));
   });
 
   it('findAll does not restrict LEASING_EXECUTIVE to their own customers', async () => {

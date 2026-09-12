@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomerStatus, ActivityType, LeadSource, CurrencyCode, Role } from '@prisma/client';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 export interface CustomerScope {
   userId: string;
@@ -20,7 +21,10 @@ export interface CreateCustomerDto {
   address?: string;
   website?: string;
   source?: LeadSource;
+  /** CR-CRM-CATEGORY-MASTER-001 — deprecated input, display snapshot only. */
   preferredCategory?: string;
+  /** Authoritative identity: Category.id. null clears, undefined leaves unchanged. */
+  preferredCategoryId?: string | null;
   expectedArea?: number;
   budgetMin?: number;
   budgetMax?: number;
@@ -41,7 +45,16 @@ export interface CreateCustomerActivityDto {
 
 @Injectable()
 export class CustomersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private categoryResolver: CategoryResolverService,
+  ) {}
+
+  // CR-CRM-CATEGORY-MASTER-001 — reads expose the authoritative Category
+  // relation alongside the legacy snapshot.
+  private static readonly PREFERRED_CATEGORY_REF_SELECT = {
+    select: { id: true, code: true, name: true, isActive: true },
+  } as const;
 
   private async generateCustomerCode(): Promise<string> {
     const year = new Date().getFullYear();
@@ -71,15 +84,18 @@ export class CustomersService {
     status?: CustomerStatus;
     search?: string;
     assignedToId?: string;
+    preferredCategoryId?: string;
     page?: number;
     limit?: number;
   }) {
-    const { page = 1, limit = 20, search, status, assignedToId } = query;
+    const { page = 1, limit = 20, search, status, assignedToId, preferredCategoryId } = query;
     const skip = (page - 1) * +limit;
 
     const where: any = { isActive: true, deletedAt: null };
     if (status) where.status = status;
     if (assignedToId) where.assignedToId = assignedToId;
+    // Filter by FK identity, never by display text.
+    if (preferredCategoryId) where.preferredCategoryId = preferredCategoryId;
     if (search) {
       where.OR = [
         { companyName: { contains: search, mode: 'insensitive' } },
@@ -98,6 +114,7 @@ export class CustomersService {
         include: {
           assignedTo: { select: { id: true, fullName: true, email: true } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
+          preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
           _count: { select: { leads: true, activities: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -128,6 +145,7 @@ export class CustomersService {
       include: {
         assignedTo: { select: { id: true, fullName: true, email: true } },
         tenant: { select: { id: true, brandName: true, companyName: true, contactPhone: true } },
+        preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
         leads: {
           where: { isActive: true },
           include: {
@@ -251,16 +269,29 @@ export class CustomersService {
     }
     this.assertCustomerBudgetCurrency(customerDto as any);
 
+    // CR-CRM-CATEGORY-MASTER-001 — resolve against the Category master before
+    // the insert, so an unknown/inactive id yields no Customer at all.
+    const { preferredCategory, preferredCategoryId, ...rest } = customerDto as any;
+    const resolved = await this.categoryResolver.resolveForWrite({
+      categoryId: preferredCategoryId,
+      legacyText: preferredCategory,
+      existingCategoryId: null,
+      subject: 'new Customer',
+    });
+
     const customerCode = await this.generateCustomerCode();
     return this.prisma.customer.create({
       data: {
-        ...customerDto,
+        ...rest,
+        ...(resolved.categoryId !== undefined ? { preferredCategoryId: resolved.categoryId } : {}),
+        ...(resolved.categoryName !== undefined ? { preferredCategory: resolved.categoryName } : {}),
         customerCode,
         createdById: userId,
         ...(leadId ? { leads: { connect: { id: leadId } } } : {}),
       } as any,
       include: {
         assignedTo: { select: { id: true, fullName: true } },
+        preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
         leads: { select: { id: true, brandName: true, contactName: true, status: true } },
       },
     });
@@ -271,6 +302,21 @@ export class CustomersService {
     await this.assertCustomerEditAccess(id, scope);
     this.assertCustomerBudgetCurrency(dto as any, existing as any);
     const data: any = { ...dto };
+
+    // CR-CRM-CATEGORY-MASTER-001 — the category pair never reaches Prisma
+    // straight from the payload. Omitting preferredCategoryId means UNCHANGED,
+    // so a status change or a budget edit can never erase it (CRM-CAT-013).
+    delete data.preferredCategory;
+    delete data.preferredCategoryId;
+    const resolvedCategory = await this.categoryResolver.resolveForWrite({
+      categoryId: (dto as any).preferredCategoryId,
+      legacyText: (dto as any).preferredCategory,
+      existingCategoryId: (existing as any).preferredCategoryId ?? null,
+      subject: `Customer ${id}`,
+    });
+    if (resolvedCategory.categoryId !== undefined) data.preferredCategoryId = resolvedCategory.categoryId;
+    if (resolvedCategory.categoryName !== undefined) data.preferredCategory = resolvedCategory.categoryName;
+
     if (dto.status === CustomerStatus.ACTIVE && !data.wonAt) data.wonAt = new Date();
     if (dto.status === CustomerStatus.INACTIVE && !data.lostAt) data.lostAt = new Date();
 
@@ -280,6 +326,7 @@ export class CustomersService {
       include: {
         assignedTo: { select: { id: true, fullName: true } },
         tenant: { select: { id: true, brandName: true, companyName: true } },
+        preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
       },
     });
 
@@ -366,7 +413,12 @@ export class CustomersService {
       ['contactName', lead.contactName],
       ['phone', lead.phone],
       ['email', lead.email],
-      ['preferredCategory', lead.preferredCategory || lead.category],
+      // CR-CRM-CATEGORY-MASTER-001 — conversion carries the CANONICAL identity
+      // across. The text is only the snapshot that travels with it; it is never
+      // re-matched against the master by name, which is what previously let a
+      // Lead and its Customer drift onto different categories.
+      ['preferredCategoryId', lead.categoryId],
+      ['preferredCategory', lead.categoryId ? lead.category : lead.preferredCategory || lead.category],
       ['expectedArea', lead.expectedArea],
       ['budgetMin', lead.expectedRent],
       ['currencyCode', lead.currencyCode],

@@ -12,6 +12,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { CustomersService } from './customers.service';
 import { resolveDealCurrency } from './lead-pipeline-currency';
 import { scoreFinancialCapacity, FINANCIAL_CAPACITY_NEUTRAL } from '../proposals/deal-scoring.service';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 function buildService(overrides: any = {}) {
   const prisma: any = {
@@ -27,7 +28,7 @@ function buildService(overrides: any = {}) {
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
     ...overrides,
   };
-  const service = new CustomersService(prisma as any);
+  const service = new CustomersService(prisma as any, new CategoryResolverService(prisma as any as any));
   // generateCustomerCode reads customer.findFirst; stub it out of the way.
   jest.spyOn(service as any, 'generateCustomerCode').mockResolvedValue('KH-2026-00099');
   return { service, prisma };

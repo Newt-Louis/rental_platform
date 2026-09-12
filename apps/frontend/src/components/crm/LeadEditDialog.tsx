@@ -63,6 +63,12 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     budgetMax: lead?.customer?.budgetMax?.toString() ?? '',
     budgetCurrencyCode: lead?.customer?.currencyCode ?? '',
     rating: lead?.customer?.rating?.toString() ?? '',
+    // CR-CRM-CATEGORY-MASTER-001 — the Customer profile keeps its own
+    // preferred category, editable from the same master as the Lead's.
+    preferredCategoryId: initialCategoryValue({
+      categoryId: lead?.customer?.preferredCategoryId,
+      category: lead?.customer?.preferredCategory,
+    }),
   });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
@@ -108,6 +114,10 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         budgetMax: lead.customer?.budgetMax?.toString() ?? '',
         budgetCurrencyCode: lead.customer?.currencyCode ?? '',
         rating: lead.customer?.rating?.toString() ?? '',
+        preferredCategoryId: initialCategoryValue({
+          categoryId: lead.customer?.preferredCategoryId,
+          category: lead.customer?.preferredCategory,
+        }),
       };
       setForm(newForm);
       setTouched({});
@@ -150,7 +160,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
       // Sau khi đã có Customer (post-conversion), "Tên công ty" hiển thị trong sheet đọc từ
       // customer.companyName chứ không phải lead.company — phải đồng bộ cả 2 khi sửa, nếu không
       // sửa xong người dùng thấy "Lưu thành công" nhưng dữ liệu hiển thị không đổi.
-      if (customerId && (form.company || form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
+      if (customerId && (form.company || form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating || form.preferredCategoryId)) {
         await customersApi.updateCustomer(customerId, {
           companyName: form.company.trim() || undefined,
           contactTitle: form.contactTitle || undefined,
@@ -159,6 +169,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
           currencyCode: form.budgetCurrencyCode || undefined,
           budgetMax: form.budgetMax ? +form.budgetMax : undefined,
           rating: form.rating ? +form.rating : undefined,
+          preferredCategoryId: categoryIdForUpdate(form.preferredCategoryId),
         });
       }
     },
@@ -397,6 +408,16 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                   {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 {budgetCurrencyMissing && <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập ngân sách.</p>}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.industry')}</label>
+                <CategorySelect
+                  value={form.preferredCategoryId}
+                  onChange={(v) => set('preferredCategoryId', v)}
+                  legacyText={lead?.customer?.preferredCategoryId ? null : lead?.customer?.preferredCategory}
+                  currentCategory={lead?.customer?.preferredCategoryRef ?? null}
+                  enabled={open}
+                />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.potential')}</label>

@@ -30,6 +30,7 @@ export class CustomersController {
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'preferredCategoryId', required: false, description: 'Category.id — lọc theo ngành hàng chuẩn (không lọc theo tên)' })
   findAll(@Query() query: any) {
     return this.customersService.findAll(query);
   }
