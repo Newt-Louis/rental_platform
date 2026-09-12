@@ -45,7 +45,7 @@ export function scoreFinancialCapacity(
  * Falls back to the legacy text snapshot only when either side has not been
  * linked to the Category master yet.
  */
-function matchesIndustry(
+export function matchesIndustry(
   unit: { categoryId?: string | null; category?: string | null } | null | undefined,
   customer: { preferredCategoryId?: string | null; preferredCategory?: string | null } | null | undefined,
 ): boolean {
