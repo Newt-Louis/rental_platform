@@ -113,6 +113,52 @@ enum LeadPriority {
   COLD
 }
 
+enum CrmBusinessEventType {
+  LEAD_CREATED
+  LEAD_UPDATED
+  LEAD_STATUS_CHANGED
+  LEAD_OWNER_CHANGED
+  LEAD_CATEGORY_CHANGED
+  LEAD_MALL_ASSIGNED
+  ACTIVITY_ADDED
+  FOLLOW_UP_CREATED
+  FOLLOW_UP_UPDATED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_CANCELLED
+  CUSTOMER_CREATED
+  CUSTOMER_LINKED
+  BOOKING_CREATED
+  BOOKING_LINKED
+  PROPOSAL_CREATED
+  PROPOSAL_SUBMITTED
+  PROPOSAL_APPROVED
+  PROPOSAL_REJECTED
+  LEAD_CONVERTED
+  LEAD_WON
+  LEAD_LOST
+  LEAD_REOPENED
+}
+
+enum CrmEventScope {
+  MALL
+  GLOBAL_UNASSIGNED
+}
+
+enum CrmActorType {
+  USER
+  SYSTEM
+}
+
+enum CrmEventSourceModule {
+  CRM
+  CUSTOMER
+  BOOKING
+  PROPOSAL
+  APPROVAL
+  CONTRACT
+  SYSTEM
+}
+
 enum CustomerStatus {
   PROSPECT
   NEGOTIATING
@@ -129,6 +175,12 @@ enum ActivityType {
   PROPOSAL_SENT
   NOTE
   OTHER
+}
+
+enum CrmFollowUpStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
 }
 
 enum PriceApprovalStatus {
@@ -483,6 +535,9 @@ model User {
   contractEvents             ContractEvent[]
   mallAccess                 UserMallAccess[]
   followUpsAssigned          LeadFollowUp[]             @relation("FollowUpAssigned")
+  followUpsCreated           LeadFollowUp[]             @relation("FollowUpCreatedBy")
+  followUpsCompleted         LeadFollowUp[]             @relation("FollowUpCompletedBy")
+  followUpsCancelled         LeadFollowUp[]             @relation("FollowUpCancelledBy")
   uploadedDocuments          UnifiedDocument[]          @relation("DocumentUploadedBy")
   salesAudits                SalesAuditTrail[]          @relation("SalesAuditBy")
   announcements              MallAnnouncement[]         @relation("AnnouncementCreatedBy")
@@ -537,6 +592,7 @@ model User {
   periodicChargeAssignments  PeriodicChargeEntry[]      @relation("PeriodicChargeAssignee")
   serviceContractShares      ServiceContractShare[]     @relation("ServiceContractShareGrantee")
   serviceContractSharesGiven ServiceContractShare[]     @relation("ServiceContractShareGrantor")
+  crmBusinessEvents          CrmBusinessEvent[]         @relation("CrmBusinessEventActor")
 
   @@index([tenantId])
   @@index([inviteTokenHash])
@@ -593,6 +649,7 @@ model Mall {
   billingParties           BillingParty[]
   invoices                 Invoice[]
   departments              Department[]
+  crmBusinessEvents        CrmBusinessEvent[]
 }
 
 // Mall-scoped organisational master data. User.department intentionally stays
@@ -1425,25 +1482,65 @@ model Lead {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  activities   LeadActivity[]
-  proposals    Proposal[]
-  followUps    LeadFollowUp[]
-  bookings     UnitBooking[]
-  slotBookings SlotBooking[]
+  activities     LeadActivity[]
+  proposals      Proposal[]
+  followUps      LeadFollowUp[]
+  bookings       UnitBooking[]
+  slotBookings   SlotBooking[]
+  businessEvents CrmBusinessEvent[]
 
   @@index([status, priority, position])
   @@index([mallId])
 }
 
 model LeadActivity {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   leadId      String
-  lead        Lead     @relation(fields: [leadId], references: [id])
+  lead        Lead      @relation(fields: [leadId], references: [id])
   type        String
   note        String
+  outcome     String?
+  source      String?
+  occurredAt  DateTime?
   createdById String
-  createdBy   User     @relation(fields: [createdById], references: [id])
-  createdAt   DateTime @default(now())
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+// CR-CRM-BUSINESS-EVENT-001: append-only evidence. Lead remains the source of
+// authoritative current state; this table is never used as full event sourcing.
+model CrmBusinessEvent {
+  id               String               @id @default(cuid())
+  leadId           String
+  lead             Lead                 @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  customerId       String?
+  customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  mallId           String?
+  mall             Mall?                @relation(fields: [mallId], references: [id], onDelete: Restrict)
+  scope            CrmEventScope
+  eventType        CrmBusinessEventType
+  occurredAt       DateTime
+  recordedAt       DateTime             @default(now())
+  actorType        CrmActorType
+  actorUserId      String?
+  actor            User?                @relation("CrmBusinessEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  sourceModule     CrmEventSourceModule
+  sourceEntityType String?
+  sourceEntityId   String?
+  fromStatus       LeadStatus?
+  toStatus         LeadStatus?
+  reasonCode       String?
+  reason           String?
+  comment          String?
+  metadataJson     Json?
+  idempotencyKey   String               @unique
+  payloadHash      String
+  createdAt        DateTime             @default(now())
+
+  @@index([leadId, occurredAt, id])
+  @@index([customerId, occurredAt, id])
+  @@index([mallId, occurredAt, id])
+  @@index([eventType, occurredAt, id])
 }
 
 model Proposal {
@@ -2885,11 +2982,12 @@ model Customer {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
-  leads        Lead[]
-  activities   CustomerActivity[]
-  followUps    LeadFollowUp[]
-  bookings     UnitBooking[]
-  slotBookings SlotBooking[]
+  leads          Lead[]
+  activities     CustomerActivity[]
+  followUps      LeadFollowUp[]
+  businessEvents CrmBusinessEvent[]
+  bookings       UnitBooking[]
+  slotBookings   SlotBooking[]
 }
 
 model CustomerActivity {
@@ -3132,21 +3230,34 @@ model UserMallAccess {
 
 // Reminder follow-up cho Lead/Customer
 model LeadFollowUp {
-  id           String    @id @default(cuid())
-  leadId       String?
-  lead         Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  customerId   String?
-  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  assignedToId String
-  assignedTo   User      @relation("FollowUpAssigned", fields: [assignedToId], references: [id])
-  dueDate      DateTime
-  note         String?
-  isDone       Boolean   @default(false)
-  completedAt  DateTime?
-  createdAt    DateTime  @default(now())
+  id                 String            @id @default(cuid())
+  leadId             String?
+  lead               Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customerId         String?
+  customer           Customer?         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedToId       String
+  assignedTo         User              @relation("FollowUpAssigned", fields: [assignedToId], references: [id])
+  createdById        String?
+  createdBy          User?             @relation("FollowUpCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  dueDate            DateTime
+  note               String?
+  status             CrmFollowUpStatus @default(OPEN)
+  isDone             Boolean           @default(false)
+  completedAt        DateTime?
+  completedById      String?
+  completedBy        User?             @relation("FollowUpCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  outcome            String?
+  completionComment  String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?             @relation("FollowUpCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancellationReason String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([assignedToId, isDone, dueDate])
   @@index([dueDate, isDone])
+  @@index([status, dueDate])
 }
 
 // Nhiu kch bn ti chnh cho mt Proposal
