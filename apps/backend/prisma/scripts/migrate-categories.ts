@@ -42,6 +42,26 @@ const CATEGORY_CODE_MAP: Record<string, string> = {
 };
 
 async function main() {
+  // CR-CRM-CATEGORY-MASTER-001 — SUPERSEDED AND GUARDED.
+  //
+  // This script CREATES Category master records from arbitrary legacy strings
+  // (Step 3 below), has no dry run, and cannot tell an ambiguous legacy value
+  // from a safe one. Running it against real data mints junk categories such as
+  // `HEALTH___BEAUTY` alongside the real BEAUTY record, which is exactly the
+  // drift this CR removes.
+  //
+  // Use prisma/scripts/backfill-crm-category-ids.ts instead: dry-run by
+  // default, creates nothing, and refuses to guess.
+  if (!process.argv.includes('--i-understand-this-creates-categories')) {
+    console.error(
+      'REFUSED: migrate-categories.ts is superseded by backfill-crm-category-ids.ts\n' +
+        '(CR-CRM-CATEGORY-MASTER-001). It creates Category master rows from free text.\n' +
+        'Pass --i-understand-this-creates-categories only if that is genuinely intended.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   console.log('Starting category migration...\n');
 
   // Step 1: Get all unique category strings from Units
