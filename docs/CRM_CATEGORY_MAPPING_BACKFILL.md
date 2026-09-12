@@ -2,7 +2,9 @@
 
 **CR:** CR-CRM-CATEGORY-MASTER-001
 **Script:** `apps/backend/prisma/scripts/backfill-crm-category-ids.ts`
-**Trạng thái:** dry-run đã chạy · **chưa mutate dữ liệu**
+**Trạng thái:** ĐÃ APPLY trên môi trường dev `leasing_platform` ngày 2026-09-12
+(21 Lead + 10 Customer). Alias `Health & Beauty → Beauty & Wellness` đã được
+nghiệp vụ phê duyệt.
 
 ---
 
@@ -13,21 +15,30 @@ với Category master, dựa trên text legacy đã lưu — **không đoán**.
 
 ## 2. Cách chạy
 
+**Chạy từ source checkout trên host, KHÔNG chạy trong container production.**
+Ảnh production chỉ copy `dist/` + `prisma/`, không có `src/`, trong khi script
+import rule phân loại từ `src/modules/crm/category-backfill-rules.ts`.
+
+Đặt `DATABASE_URL` trỏ tới DB đích — lấy giá trị thật từ `apps/backend/.env`
+hoặc từ secret store của môi trường, **không** chép connection string vào tài
+liệu hay lệnh lưu trong shell history.
+
 ```bash
+cd apps/backend
+export DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DB>"
+
 # Dry run (mặc định) — in bảng ánh xạ, không ghi gì
-docker compose exec backend npx ts-node --compiler-options '{"module":"commonjs"}' \
-  prisma/scripts/backfill-crm-category-ids.ts
+npx ts-node --compiler-options '{"module":"commonjs"}' prisma/scripts/backfill-crm-category-ids.ts
 
 # JSON cho pipeline / lưu vết
-... prisma/scripts/backfill-crm-category-ids.ts --json
+npx ts-node --compiler-options '{"module":"commonjs"}' prisma/scripts/backfill-crm-category-ids.ts --json
 
 # Thực thi (chỉ sau khi bảng ánh xạ đã được nghiệp vụ duyệt)
-... prisma/scripts/backfill-crm-category-ids.ts --apply
+npx ts-node --compiler-options '{"module":"commonjs"}' prisma/scripts/backfill-crm-category-ids.ts --apply
 ```
 
-> Container `leasing-backend` chỉ bind-mount `src/`, nên file script mới cần
-> `docker compose cp apps/backend/prisma/scripts/backfill-crm-category-ids.ts backend:/app/prisma/scripts/`
-> trước lần chạy đầu (hoặc rebuild image).
+`--compiler-options '{"module":"commonjs"}'` là bắt buộc: `package.json` không
+đặt `"type"`, còn ts-node mặc định bung ra ESM loader và từ chối `.ts`.
 
 ## 3. Bảo đảm an toàn
 
@@ -158,3 +169,40 @@ Script đã được thêm guard, sẽ từ chối chạy trừ khi truyền
 `apps/backend/src/modules/crm/crm-category-backfill.spec.ts` — CRM-CAT-014..019:
 exact, case-only, approved alias, không fuzzy-match, ambiguous (2 dạng),
 no-match, category inactive, idempotence, dry-run-by-default.
+
+
+---
+
+## 11. Kết quả APPLY (dev `leasing_platform`, 2026-09-12)
+
+```
+APPLIED - 21 Lead va 10 Customer da duoc lien ket.
+```
+
+### Reconciliation sau khi apply
+
+| Kiểm tra | Kỳ vọng | Thực tế |
+|---|---|---|
+| Lead total | 21 (không đổi) | 21 |
+| Customer total | 10 (không đổi) | 10 |
+| Lead `categoryId IS NULL` | 0 | 0 |
+| Customer `preferredCategoryId IS NULL` | 0 | 0 |
+| FK gãy / trỏ Category inactive | 0 | 0 |
+| Snapshot lệch tên master | 0 | 0 |
+| Bản ghi trùng | 0 | 0 |
+| Bản ghi bị xoá | 0 | 0 |
+
+Phân bố cuối: F&B 9 · Fashion 5 · Entertainment 3 · Beauty & Wellness 2 ·
+Technology 1 · Supermarket 1. Text legacy `Health & Beauty` còn lại: 0 dòng
+(2 Lead + 2 Customer đã chuyển sang `Beauty & Wellness`).
+
+### Idempotency
+
+Chạy lại `--apply` lần 2 và lần 3: `0 Lead va 0 Customer`. Hash md5 của
+`(id, category, categoryId, updatedAt)` toàn bảng `Lead` **giống hệt** trước và
+sau lần chạy thứ ba — `b98315c6d24e376fe5182936ca1f7e16`.
+
+### Snapshot tiền-backfill
+
+`docs/lead-category-before.csv`, `docs/customer-category-before.csv` —
+chỉ gồm `id`, giá trị category, FK, `updatedAt`. Không chứa PII.
