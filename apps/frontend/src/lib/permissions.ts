@@ -106,7 +106,9 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "MALL_DIRECTOR",
     "CEO",
   ],
-  bookings: ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR"],
+  // CR-BOOK-PRICE-APPROVAL-001: kept in sync with MODULE_ROLES.booking. CEO
+  // added because the price policy escalates deviations above 10% to them.
+  bookings: ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR", "CEO"],
   proposals: [
     "ADMIN",
     "LEASING_MANAGER",

@@ -18,7 +18,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BookingStatus, UnitStatus } from '@prisma/client';
+import { BookingStatus, UnitStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
@@ -192,7 +192,7 @@ export class BookingController {
   @ApiQuery({ name: 'mallId', required: false })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @Roles('ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR')
+  @Roles(Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO)
   async getBookingsPendingPriceApproval(
     @Query('mallId') mallId?: string,
     @Query('page') page?: number,
@@ -204,26 +204,33 @@ export class BookingController {
     return this.bookingService.getBookingsPendingPriceApproval(scope);
   }
 
+  // CR-BOOK-PRICE-APPROVAL-001 — these two carried NO @Roles at all, so they
+  // fell back to the bookings module ceiling and a LEASING_EXECUTIVE could
+  // approve the very price they had just proposed. The role list here is only
+  // the outer gate; the service still requires the caller to be the approver
+  // the Mall's policy named for the current step, and refuses the proposer.
   @Patch(':id/price/approve')
-  @ApiOperation({ summary: 'Phê duyệt giá đề xuất của booking' })
+  @Roles(Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO)
+  @ApiOperation({ summary: 'Phê duyệt giá đề xuất của booking (theo bước trong chính sách duyệt)' })
   async approvePrice(
     @Param('id') id: string,
     @Body() dto: ApprovePriceDto,
     @CurrentUser() user: any,
   ) {
     await this.checkBooking(user, id);
-    return this.bookingService.approvePrice(id, dto, user.id);
+    return this.bookingService.approvePrice(id, dto, { id: user.id, role: user.role });
   }
 
   @Patch(':id/price/reject')
-  @ApiOperation({ summary: 'Từ chối giá đề xuất của booking' })
+  @Roles(Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO)
+  @ApiOperation({ summary: 'Từ chối giá đề xuất của booking (theo bước trong chính sách duyệt)' })
   async rejectPrice(
     @Param('id') id: string,
     @Body() dto: RejectPriceDto,
     @CurrentUser() user: any,
   ) {
     await this.checkBooking(user, id);
-    return this.bookingService.rejectPrice(id, dto, user.id);
+    return this.bookingService.rejectPrice(id, dto, { id: user.id, role: user.role });
   }
 
   @Delete(':id')

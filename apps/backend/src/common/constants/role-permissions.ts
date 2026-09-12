@@ -23,7 +23,11 @@ export const MODULE_ROLES = {
   ],
   spacesManage: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER],
   crm: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
-  booking: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
+  // CR-BOOK-PRICE-APPROVAL-001: CEO added. The price policy escalates
+  // deviations above 10% to the CEO, but the CEO was not a member of this
+  // module, so every such escalation ended in a 403 for the only person
+  // authorised to clear it.
+  booking: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO],
   proposals: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO],
   approvals: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.CEO, Role.OPERATION],
   contracts: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL],
