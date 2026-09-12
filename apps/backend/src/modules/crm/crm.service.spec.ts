@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { LeadStatus, Role } from '@prisma/client';
 import { CrmService } from './crm.service';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 describe('CrmService lead list filters', () => {
   const prisma = {
@@ -10,7 +11,7 @@ describe('CrmService lead list filters', () => {
       findFirst: jest.fn(),
     },
   } as any;
-  const service = new CrmService(prisma, {} as any);
+  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -104,7 +105,7 @@ describe('CrmService lead list filters', () => {
 
 describe('CrmService.assertLeadEditAccess', () => {
   const prisma = { lead: { findFirst: jest.fn() } } as any;
-  const service = new CrmService(prisma, {} as any);
+  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
 
   beforeEach(() => jest.clearAllMocks());
 

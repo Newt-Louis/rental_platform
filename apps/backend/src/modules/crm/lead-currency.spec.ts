@@ -20,6 +20,7 @@ import {
   resolveDealCurrency,
   UNKNOWN_LEAD_CURRENCY,
 } from './lead-pipeline-currency';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 const lead = (
   currencyCode: 'VND' | 'USD' | 'MMK' | null,
@@ -152,7 +153,7 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
         findUnique: jest.fn(),
       },
     };
-    service = new CrmService(prisma as any, {} as any);
+    service = new CrmService(prisma as any, {} as any, new CategoryResolverService(prisma as any as any));
   });
 
   // T1 / T2 / T3
@@ -223,7 +224,7 @@ describe('Lead update currency enforcement (RPT-CUR-005)', () => {
         update: jest.fn(async ({ data }: any) => ({ id: 'lead-1', customerId: null, ...data })),
       },
     };
-    service = new CrmService(prisma as any, {} as any);
+    service = new CrmService(prisma as any, {} as any, new CategoryResolverService(prisma as any as any));
     jest.spyOn(service, 'findOne').mockResolvedValue(legacyLead as any);
   });
 

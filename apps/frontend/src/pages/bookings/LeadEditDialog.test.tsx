@@ -14,6 +14,10 @@ beforeAll(() => i18n.changeLanguage('vi'));
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockUpdateLead = vi.fn();
+const mockGetCategoryOptions = vi.fn().mockResolvedValue([
+  { id: 'cat-fnb', code: 'FNB', name: 'F&B' },
+  { id: 'cat-fashion', code: 'FASHION', name: 'Fashion' },
+]);
 
 vi.mock('@/api', () => ({
   crmApi:      { updateLead: (...args: any[]) => mockUpdateLead(...args) },
@@ -22,6 +26,9 @@ vi.mock('@/api', () => ({
   spacesApi:   { listUnits: vi.fn() },
   customersApi:{ listCustomers: vi.fn() },
   usersApi:    { listAssignableUsers: vi.fn().mockResolvedValue([]) },
+  // CR-CRM-CATEGORY-MASTER-001 — the industry field is now driven by the
+  // Category master instead of a hard-coded list.
+  categoriesApi: { getOptions: (...args: any[]) => mockGetCategoryOptions(...args) },
 }));
 
 const mockToast = vi.fn();

@@ -41,6 +41,7 @@ export class CrmController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'mallId', required: false })
+  @ApiQuery({ name: 'categoryId', required: false, description: 'Category.id — lọc theo ngành hàng chuẩn (không lọc theo tên)' })
   async findAll(@Query() query: any, @CurrentUser() user: any) {
     return this.crmService.findAll({ ...query, scope: await this.scope(user, query.mallId) });
   }

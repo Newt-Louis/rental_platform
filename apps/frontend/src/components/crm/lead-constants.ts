@@ -1,12 +1,9 @@
-export const CATEGORY_OPTS: Record<string, string> = {
-  FB: '🍜 F&B',
-  FASHION: '👗 Thời trang',
-  ENTERTAINMENT: '🎮 Giải trí',
-  SERVICES: '⚙️ Dịch vụ',
-  EDUCATION: '📚 Giáo dục',
-  HEALTH: '🏥 Sức khoẻ',
-  RETAIL: '🛍️ Bán lẻ',
-};
+// CR-CRM-CATEGORY-MASTER-001 — the hard-coded CATEGORY_OPTS map that used to
+// live here (FB / FASHION / ENTERTAINMENT / ...) has been removed. It was a
+// third, incompatible category vocabulary: no lead in the database ever held
+// one of those codes, so the edit dialog rendered an empty "Ngành hàng" for
+// every lead. Category options now come from the Category master via
+// components/crm/CategorySelect.tsx.
 
 export const LEAD_SOURCE_OPTS = [
   { value: 'BROKER', label: 'Môi giới', tKey: 'sources.BROKER' },

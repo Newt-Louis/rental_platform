@@ -1,6 +1,13 @@
 export { LeadEditDialog } from './LeadEditDialog';
 export {
-  CATEGORY_OPTS,
+  CategorySelect,
+  LEGACY_CATEGORY_VALUE,
+  useCategoryOptions,
+  categoryIdForCreate,
+  categoryIdForUpdate,
+  initialCategoryValue,
+} from './CategorySelect';
+export {
   LEAD_SOURCE_OPTS,
   LEAD_PRIORITY_OPTS,
   normalizePhone,

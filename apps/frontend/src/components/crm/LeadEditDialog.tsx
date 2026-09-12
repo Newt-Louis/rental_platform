@@ -9,7 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/use-toast';
 import { CURRENCY_CODES } from '@/lib/currency';
 import {
-  CATEGORY_OPTS,
+  CategorySelect,
+  categoryIdForUpdate,
+  initialCategoryValue,
+} from './CategorySelect';
+import {
   LEAD_SOURCE_OPTS,
   LEAD_PRIORITY_OPTS,
   normalizePhone,
@@ -41,7 +45,9 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     contactName: lead?.contactName ?? '',
     phone: lead?.phone ?? '',
     email: lead?.email ?? '',
-    category: lead?.category ?? '',
+    // CR-CRM-CATEGORY-MASTER-001 — the selector holds Category.id (or the
+    // legacy sentinel); the free text is display-only from here on.
+    categoryId: initialCategoryValue(lead ?? {}),
     source: lead?.source ?? '',
     priority: lead?.priority ?? '',
     leaseTermType: lead?.leaseTermType ?? 'LONG',
@@ -86,7 +92,7 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         contactName: lead.contactName ?? '',
         phone: normalizePhone(lead.phone),
         email: lead.email ?? '',
-        category: lead.category ?? '',
+        categoryId: initialCategoryValue(lead),
         source: lead.source ?? '',
         priority: lead.priority ?? '',
         leaseTermType: lead.leaseTermType ?? 'LONG',
@@ -125,7 +131,9 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         contactName: form.contactName.trim() || undefined,
         phone: form.phone.trim() || undefined,
         email: form.email.trim() || undefined,
-        category: form.category || undefined,
+        // Omitted when the lead is still on unmapped legacy text, so editing
+        // any other field cannot erase or rewrite its category.
+        categoryId: categoryIdForUpdate(form.categoryId),
         source: form.source || undefined,
         priority: form.priority || undefined,
         leaseTermType: form.leaseTermType,
@@ -273,13 +281,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.industry')}</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.category ?? ''} onChange={(e) => set('category', e.target.value)}>
-                  <option value="">-- {t('fields.industry')} --</option>
-                  {Object.entries(CATEGORY_OPTS).map(([k, label]) => (
-                    <option key={k} value={k}>{label}</option>
-                  ))}
-                </select>
+                <CategorySelect
+                  value={form.categoryId}
+                  onChange={(v) => set('categoryId', v)}
+                  legacyText={lead?.categoryId ? null : lead?.category}
+                  currentCategory={lead?.categoryRef ?? null}
+                  enabled={open}
+                />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.source')}</label>

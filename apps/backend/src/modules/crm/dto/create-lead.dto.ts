@@ -27,10 +27,23 @@ export class CreateLeadDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — DEPRECATED as an input. Category identity is
+   * `categoryId`; this free text is derived from the Category master
+   * server-side. It is still accepted so that pre-backfill clients can label a
+   * lead that has no canonical category yet, but it can never override a lead
+   * that is already linked to the master.
+   */
+  @ApiPropertyOptional({ deprecated: true, description: 'Deprecated — send categoryId instead. Legacy display text only.' })
   @IsOptional()
   @IsString()
   category?: string;
+
+  /** Authoritative category identity (Category.id from GET /categories/options). */
+  @ApiPropertyOptional({ description: 'Category.id — authoritative category identity' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 
   @ApiPropertyOptional({ enum: LeadSource })
   @IsOptional()
@@ -154,10 +167,24 @@ export class UpdateLeadDto {
   @IsEmail({}, { message: 'Email không đúng định dạng' })
   email?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — DEPRECATED as an input, see CreateLeadDto.
+   */
+  @ApiPropertyOptional({ deprecated: true, description: 'Deprecated — send categoryId instead. Legacy display text only.' })
   @IsOptional()
   @IsString()
   category?: string;
+
+  /**
+   * Authoritative category identity. PATCH semantics:
+   *   omitted -> unchanged (an edit to other fields never clears the category)
+   *   null    -> explicit clear
+   *   Category.id -> change to that master category
+   */
+  @ApiPropertyOptional({ nullable: true, description: 'Category.id, or null to clear. Omit to leave unchanged.' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

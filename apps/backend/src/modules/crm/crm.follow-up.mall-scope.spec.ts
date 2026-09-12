@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { CrmService } from './crm.service';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 describe('CRM follow-up Mall isolation (CR-120)', () => {
   const scope = { userId: 'manager-a', role: Role.LEASING_MANAGER, mallIds: ['mall-a'] };
@@ -20,7 +21,7 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
       },
       proposal: { groupBy: jest.fn().mockResolvedValue([]) },
     };
-    service = new CrmService(prisma, {} as any);
+    service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
   });
 
   it('SEC-MALL-004 keeps the Mall predicate when assignedToId is supplied', async () => {

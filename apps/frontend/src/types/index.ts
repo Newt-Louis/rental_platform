@@ -358,6 +358,14 @@ export interface UnitSlotSummary {
   vacantArea: number;
 }
 
+/** Authoritative category identity exposed alongside every CRM record. */
+export interface CategoryRef {
+  id: string;
+  code: string;
+  name: string;
+  isActive?: boolean;
+}
+
 export interface Lead {
   id: string;
   brandName: string;
@@ -365,7 +373,13 @@ export interface Lead {
   contactName: string;
   phone?: string;
   email?: string;
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — display snapshot only. Identity is
+   * `categoryId` / `categoryRef`; prefer `categoryRef.name` when rendering.
+   */
   category?: string;
+  categoryId?: string | null;
+  categoryRef?: CategoryRef | null;
   source: string;
   status: LeadStatus;
   priority: LeadPriority;
@@ -415,7 +429,10 @@ export interface Customer {
   website?: string;
   source: LeadSource;
   status: CustomerStatus;
+  /** CR-CRM-CATEGORY-MASTER-001 — display snapshot only, see Lead.category. */
   preferredCategory?: string;
+  preferredCategoryId?: string | null;
+  preferredCategoryRef?: CategoryRef | null;
   expectedArea?: number;
   budgetMin?: number;
   budgetMax?: number;

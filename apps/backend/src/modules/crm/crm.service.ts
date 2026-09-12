@@ -10,6 +10,7 @@ import {
   leadValue,
 } from './lead-pipeline-currency';
 import { CustomersService } from './customers.service';
+import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
 @Injectable()
 export class CrmService {
@@ -17,7 +18,15 @@ export class CrmService {
   constructor(
     private prisma: PrismaService,
     private customersService: CustomersService,
+    private categoryResolver: CategoryResolverService,
   ) {}
+
+  // CR-CRM-CATEGORY-MASTER-001 — every Lead read exposes the authoritative
+  // Category relation so the UI never has to reconstruct identity from the
+  // legacy text snapshot.
+  private static readonly CATEGORY_REF_SELECT = {
+    select: { id: true, code: true, name: true, isActive: true },
+  } as const;
 
   // Read access is mall-scoped for every role, LEASING_EXECUTIVE included — they
   // can see all leads related to their malls, not just their own assignments.
@@ -63,13 +72,14 @@ export class CrmService {
     assignedToId?: string;
     customerId?: string;
     mallId?: string;
+    categoryId?: string;
     leaseTermType?: UnitLeaseTermType;
     search?: string;
     page?: number;
     limit?: number;
     scope?: { userId: string; role: Role; mallIds?: string[] };
   }) {
-    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, mallId, leaseTermType } = query;
+    const { page = 1, limit = 20, search, status, statuses, assignedToId, customerId, mallId, leaseTermType, categoryId } = query;
     const skip = (page - 1) * limit;
 
     const where: any = { isActive: true, deletedAt: null, ...this.leadScope(query.scope) };
@@ -89,6 +99,9 @@ export class CrmService {
     }
     if (assignedToId) where.assignedToId = assignedToId;
     if (customerId) where.customerId = customerId;
+    // CR-CRM-CATEGORY-MASTER-001 — category filtering is by FK identity, never
+    // by display text, so renaming a Category cannot break a saved filter.
+    if (categoryId) where.categoryId = categoryId;
     // An explicit Mall filter is stricter than the general CRM visibility
     // scope. Booking may only pair a Lead whose owning mallId matches the
     // selected Unit, so related/assigned Leads from another Mall must not be
@@ -113,6 +126,7 @@ export class CrmService {
           assignedTo: { select: { id: true, fullName: true, email: true } },
           tenant: { select: { id: true, brandName: true, companyName: true } },
           customer: { select: { id: true, customerCode: true, companyName: true } },
+          categoryRef: CrmService.CATEGORY_REF_SELECT,
           _count: { select: { activities: true, proposals: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -135,6 +149,7 @@ export class CrmService {
             include: {
               assignedTo: { select: { id: true, fullName: true, avatar: true } },
               customer: { select: { id: true, customerCode: true } },
+              categoryRef: CrmService.CATEGORY_REF_SELECT,
               _count: { select: { activities: true, proposals: true } },
             },
             orderBy: [
@@ -210,6 +225,7 @@ export class CrmService {
       include: {
         assignedTo: { select: { id: true, fullName: true, email: true } },
         tenant: true,
+        categoryRef: CrmService.CATEGORY_REF_SELECT,
         customer: {
           select: {
             id: true, customerCode: true, status: true,
@@ -217,6 +233,8 @@ export class CrmService {
             address: true, industry: true, website: true,
             contactName: true, contactTitle: true, phone: true, email: true,
             rating: true, budgetMin: true, budgetMax: true, notes: true,
+            preferredCategory: true, preferredCategoryId: true,
+            preferredCategoryRef: { select: { id: true, code: true, name: true, isActive: true } },
             assignedTo: { select: { id: true, fullName: true } },
             activities: {
               include: { createdBy: { select: { id: true, fullName: true } } },
@@ -295,11 +313,28 @@ export class CrmService {
 
   async create(dto: CreateLeadDto & { customerId?: string }) {
     this.assertLeadCurrency(dto);
+
+    // CR-CRM-CATEGORY-MASTER-001 — the category pair is never written straight
+    // from the payload. An unknown/inactive categoryId throws here, before the
+    // create, so a rejected category leaves no partial Lead behind.
+    const { category, categoryId, ...rest } = dto;
+    const resolved = await this.categoryResolver.resolveForWrite({
+      categoryId,
+      legacyText: category,
+      existingCategoryId: null,
+      subject: 'new Lead',
+    });
+
     return this.prisma.lead.create({
-      data: dto,
+      data: {
+        ...rest,
+        ...(resolved.categoryId !== undefined ? { categoryId: resolved.categoryId } : {}),
+        ...(resolved.categoryName !== undefined ? { category: resolved.categoryName } : {}),
+      } as any,
       include: {
         assignedTo: { select: { id: true, fullName: true } },
         customer: { select: { id: true, customerCode: true } },
+        categoryRef: CrmService.CATEGORY_REF_SELECT,
       },
     });
   }
@@ -347,7 +382,17 @@ export class CrmService {
     if (dto.contactName !== undefined) updateData.contactName = dto.contactName;
     if (dto.phone !== undefined) updateData.phone = dto.phone;
     if (dto.email !== undefined) updateData.email = dto.email;
-    if (dto.category !== undefined) updateData.category = dto.category;
+    // CR-CRM-CATEGORY-MASTER-001 — category is resolved against the master, not
+    // copied from the payload. `categoryId` omitted means UNCHANGED, so editing
+    // an unrelated field can never erase the category (CRM-CAT-004).
+    const resolvedCategory = await this.categoryResolver.resolveForWrite({
+      categoryId: (dto as any).categoryId,
+      legacyText: dto.category,
+      existingCategoryId: (existing as any).categoryId ?? null,
+      subject: `Lead ${id}`,
+    });
+    if (resolvedCategory.categoryId !== undefined) updateData.categoryId = resolvedCategory.categoryId;
+    if (resolvedCategory.categoryName !== undefined) updateData.category = resolvedCategory.categoryName;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
     if (dto.source !== undefined) updateData.source = dto.source;
     if (dto.status !== undefined) updateData.status = dto.status;
@@ -370,6 +415,7 @@ export class CrmService {
       include: {
         assignedTo: { select: { id: true, fullName: true } },
         customer: { select: { id: true, customerCode: true, status: true } },
+        categoryRef: CrmService.CATEGORY_REF_SELECT,
       },
     });
 
