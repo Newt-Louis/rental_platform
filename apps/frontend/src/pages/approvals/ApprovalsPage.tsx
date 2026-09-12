@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
+import { useAuthStore } from '@/store/auth.store';
 import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
@@ -337,8 +338,12 @@ export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
+  const { user } = useAuthStore();
   const { selectedMallId } = useMallStore();
-  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
+  // CR-BOOK-PRICE-APPROVAL-001 — CEO added: the price policy escalates
+  // deviations above 10% to the CEO, who previously could not even open the
+  // queue holding their own escalations.
+  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'CEO'].includes(role);
   const [view, setView] = useState<'proposals' | 'fitout' | 'prices' | 'history'>('proposals');
   const [proposalPage, setProposalPage] = useState(1);
   const [fitoutPage, setFitoutPage] = useState(1);
@@ -750,6 +755,7 @@ export default function ApprovalsPage() {
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposed')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.ceiling')}</th>
                       <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.deviation')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Bước duyệt</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -760,6 +766,24 @@ export default function ApprovalsPage() {
                       const dev: number = booking.priceDeviationPercent ?? 0;
                       const devColor = dev > 10 ? 'text-red-600' : dev > 5 ? 'text-orange-500' : 'text-yellow-600';
                       const devBg = dev > 10 ? 'bg-red-50' : dev > 5 ? 'bg-orange-50' : 'bg-yellow-50';
+                      // CR-BOOK-PRICE-APPROVAL-001 — the backend routes each
+                      // price to the approver its Mall policy names, and refuses
+                      // anyone else plus the person who proposed the rate.
+                      // Mirror that here so the buttons say what will happen
+                      // instead of failing on click.
+                      const step = booking.currentPriceStep;
+                      const unrouted: boolean = booking.priceApprovalUnrouted;
+                      const isMyStep = step ? step.approverId === user?.id : user?.role === 'ADMIN';
+                      const isProposer =
+                        booking.priceProposedById === user?.id || booking.createdById === user?.id;
+                      const canDecide = isMyStep && !isProposer;
+                      const blockedReason = isProposer
+                        ? 'Bạn là người đề xuất mức giá này nên không thể tự phê duyệt'
+                        : unrouted
+                          ? 'Mall chưa cấu hình quy tắc duyệt giá cho mức lệch này — cần Admin hoặc khai báo chính sách'
+                          : !isMyStep && step
+                            ? `Bước "${step.stepName}" đã chỉ định cho ${step.approver?.fullName ?? 'người khác'}`
+                            : '';
                       return (
                         <tr key={booking.id}
                           className="transition-colors hover:bg-gray-50/60"
@@ -796,20 +820,41 @@ export default function ApprovalsPage() {
                               -{dev.toFixed(1)}%
                             </span>
                           </td>
+                          <td className="px-4 py-3">
+                            {unrouted ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">
+                                <AlertTriangle size={11} /> Chưa có chính sách duyệt
+                              </span>
+                            ) : step ? (
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium text-gray-700">{step.stepName}</div>
+                                <div className="truncate text-[11px] text-gray-400">
+                                  {step.approver?.fullName ?? '—'}
+                                  {booking.priceApprovalSteps?.length > 1 && (
+                                    <span className="ml-1">
+                                      · bước {step.stepOrder}/{booking.priceApprovalSteps.length}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.rejectPrice')}
-                                disabled={anyPending}
+                                title={blockedReason || t('approvals.actions.rejectPrice')}
+                                disabled={anyPending || !canDecide}
                                 onClick={(e) => { e.stopPropagation(); setRejectDialog({ id: booking.id, type: 'price' }); }}
                               >
                                 <XCircle size={13} /> {t('approvals.actions.reject')}
                               </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.approvePrice')}
-                                disabled={anyPending}
+                                title={blockedReason || t('approvals.actions.approvePrice')}
+                                disabled={anyPending || !canDecide}
                                 onClick={(e) => { e.stopPropagation(); setPriceApproveTarget(booking); }}
                               >
                                 {approvePriceMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
