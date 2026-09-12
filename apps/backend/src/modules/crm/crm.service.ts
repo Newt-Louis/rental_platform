@@ -1,8 +1,18 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
-import { LeadStatus, Role, UnitLeaseTermType, CurrencyCode } from '@prisma/client';
+import {
+  CrmActorType,
+  CrmBusinessEventType,
+  CrmEventSourceModule,
+  CrmFollowUpStatus,
+  LeadStatus,
+  Role,
+  UnitLeaseTermType,
+  CurrencyCode,
+  Prisma,
+} from '@prisma/client';
 import {
   groupPipelineValueByCurrency,
   groupValueByStatusAndCurrency,
@@ -11,6 +21,16 @@ import {
 } from './lead-pipeline-currency';
 import { CustomersService } from './customers.service';
 import { CategoryResolverService } from '../../common/services/category-resolver.service';
+import { CRM_EVENT_LEDGER_ACTIVATION_AT, CrmBusinessEventService } from './crm-business-event.service';
+import { LeadLifecycleService } from './lead-lifecycle.service';
+import { randomUUID } from 'crypto';
+
+/**
+ * CR-CRM-BUSINESS-EVENT-001A — stale evaluation is report-only until the
+ * activity source, last-touch projection and final BC-029 policy are trusted.
+ */
+export const AUTO_LOST_MODE = 'DRY_RUN' as const;
+export const AUTO_LOST_REASON_CODE = 'NO_ACTIVITY_BEFORE_CUTOFF' as const;
 
 @Injectable()
 export class CrmService {
@@ -19,6 +39,8 @@ export class CrmService {
     private prisma: PrismaService,
     private customersService: CustomersService,
     private categoryResolver: CategoryResolverService,
+    private crmEvents: CrmBusinessEventService,
+    private leadLifecycle: LeadLifecycleService,
   ) {}
 
   // CR-CRM-CATEGORY-MASTER-001 — every Lead read exposes the authoritative
@@ -34,20 +56,11 @@ export class CrmService {
   // assertLeadEditAccess().
   private leadScope(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     if (!scope?.mallIds) return {};
-    const mallIds = scope.mallIds;
-    const inferredForLegacyLead = [
-      { assignedTo: { mallAccess: { some: { isActive: true, mallId: { in: mallIds } } } } },
-      { bookings: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
-      { proposals: { some: { isActive: true, unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } },
-      { slotBookings: { some: { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } } } },
-    ];
-    // A direct Lead.mallId is authoritative. Assignment or downstream records
-    // may infer scope only for legacy leads whose mallId is null; otherwise a
-    // Mall-B lead assigned to a Mall-A user becomes a cross-Mall bypass.
-    return { AND: [{ OR: [
-      { mallId: { in: mallIds } },
-      { mallId: null, OR: inferredForLegacyLead },
-    ] }] };
+    // BC-030 safe fallback: persisted Lead.mallId is the only Mall authority.
+    // Relationship inference changes over time and can cross Malls, so a
+    // Mall-scoped user must not read or mutate a null-Mall Lead. Global ADMIN
+    // access reaches this method without mallIds and remains explicit.
+    return { mallId: { in: scope.mallIds } };
   }
 
   async assertLeadAccess(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
@@ -168,25 +181,31 @@ export class CrmService {
     return pipeline;
   }
 
-  async moveLead(id: string, targetStatus: LeadStatus, targetPosition: number, userId?: string) {
+  async moveLead(
+    id: string,
+    targetStatus: LeadStatus,
+    targetPosition: number,
+    userId: string,
+    idempotencyKey?: string,
+  ) {
     const lead = await this.findOne(id);
     const oldStatus = lead.status;
 
-    // Update the lead
-    const updated = await this.prisma.lead.update({
-      where: { id },
-      data: {
-        status: targetStatus,
-        position: targetPosition,
-      },
-      include: {
-        assignedTo: { select: { id: true, fullName: true, avatar: true } },
-        customer: { select: { id: true, customerCode: true, status: true } },
-      },
+    const transition = await this.leadLifecycle.transition({
+      leadId: id,
+      targetStatus,
+      position: targetPosition,
+      actor: LeadLifecycleService.userActor(userId),
+      sourceModule: CrmEventSourceModule.CRM,
+      sourceEntityType: 'LEAD',
+      sourceEntityId: id,
+      occurredAt: new Date(),
+      idempotencyKey: idempotencyKey ?? `manual-lead-move:${id}:${randomUUID()}`,
     });
+    const updated = await this.findOne(id);
 
     // If status changed, handle side effects
-    if (oldStatus !== targetStatus) {
+    if (transition.changed && oldStatus !== targetStatus) {
       // Sync customer status if linked
       if (updated.customerId) {
         const targetCustomerStatus = this.LEAD_TO_CUSTOMER[targetStatus];
@@ -311,7 +330,7 @@ export class CrmService {
     }
   }
 
-  async create(dto: CreateLeadDto & { customerId?: string }) {
+  async create(dto: CreateLeadDto & { customerId?: string }, userId: string) {
     this.assertLeadCurrency(dto);
 
     // CR-CRM-CATEGORY-MASTER-001 — the category pair is never written straight
@@ -325,18 +344,32 @@ export class CrmService {
       subject: 'new Lead',
     });
 
-    return this.prisma.lead.create({
-      data: {
-        ...rest,
-        ...(resolved.categoryId !== undefined ? { categoryId: resolved.categoryId } : {}),
-        ...(resolved.categoryName !== undefined ? { category: resolved.categoryName } : {}),
-      } as any,
-      include: {
-        assignedTo: { select: { id: true, fullName: true } },
-        customer: { select: { id: true, customerCode: true } },
-        categoryRef: CrmService.CATEGORY_REF_SELECT,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await tx.lead.create({
+        data: {
+          ...rest,
+          ...(resolved.categoryId !== undefined ? { categoryId: resolved.categoryId } : {}),
+          ...(resolved.categoryName !== undefined ? { category: resolved.categoryName } : {}),
+        } as any,
+        include: {
+          assignedTo: { select: { id: true, fullName: true } },
+          customer: { select: { id: true, customerCode: true } },
+          categoryRef: CrmService.CATEGORY_REF_SELECT,
+        },
+      });
+      await this.crmEvents.append({
+        leadId: lead.id,
+        eventType: CrmBusinessEventType.LEAD_CREATED,
+        occurredAt: lead.createdAt,
+        actor: { type: CrmActorType.USER, userId },
+        sourceModule: CrmEventSourceModule.CRM,
+        sourceEntityType: 'LEAD',
+        sourceEntityId: lead.id,
+        toStatus: lead.status,
+        idempotencyKey: `lead-created:${lead.id}`,
+      }, tx);
+      return lead;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async createCustomerProfile(leadId: string, userId: string) {
@@ -359,7 +392,12 @@ export class CrmService {
     PROSPECT: 1, NEGOTIATING: 2, ACTIVE: 3, INACTIVE: 0, BLACKLISTED: 0,
   };
 
-  async update(id: string, dto: UpdateLeadDto & { customerId?: string }, userId?: string) {
+  async update(
+    id: string,
+    dto: UpdateLeadDto & { customerId?: string },
+    userId: string,
+    idempotencyKey?: string,
+  ) {
     const existing = await this.findOne(id);
 
     // Chặn nhảy thẳng lên WON khi chưa có Proposal nào được duyệt — tránh tạo Customer/kích hoạt
@@ -395,10 +433,10 @@ export class CrmService {
     if (resolvedCategory.categoryName !== undefined) updateData.category = resolvedCategory.categoryName;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
     if (dto.source !== undefined) updateData.source = dto.source;
-    if (dto.status !== undefined) updateData.status = dto.status;
     if (dto.priority !== undefined) updateData.priority = dto.priority;
     if (dto.leaseTermType !== undefined) updateData.leaseTermType = dto.leaseTermType;
     if (dto.assignedToId !== undefined) updateData.assignedToId = dto.assignedToId;
+    if ((dto as any).mallId !== undefined) updateData.mallId = (dto as any).mallId;
     if ((dto as any).expectedArea !== undefined) updateData.expectedArea = (dto as any).expectedArea;
     if ((dto as any).expectedRent !== undefined) updateData.expectedRent = (dto as any).expectedRent;
     if ((dto as any).currencyCode !== undefined) updateData.currencyCode = (dto as any).currencyCode;
@@ -409,18 +447,67 @@ export class CrmService {
     // still allowed.
     this.assertLeadCurrency(dto as any, existing as any);
 
-    const updated = await this.prisma.lead.update({
-      where: { id },
-      data: updateData,
-      include: {
-        assignedTo: { select: { id: true, fullName: true } },
-        customer: { select: { id: true, customerCode: true, status: true } },
-        categoryRef: CrmService.CATEGORY_REF_SELECT,
-      },
+    const include = {
+      assignedTo: { select: { id: true, fullName: true } },
+      customer: { select: { id: true, customerCode: true, status: true } },
+      categoryRef: CrmService.CATEGORY_REF_SELECT,
+    } as const;
+
+    const changedFields = Object.keys(updateData).filter((field) => {
+      const previous = field === 'assignedToId'
+        ? (existing as any).assignedTo?.id ?? null
+        : field === 'customerId'
+          ? (existing as any).customer?.id ?? null
+          : (existing as any)[field] ?? null;
+      return previous !== (updateData as any)[field];
     });
+    const changesStatus = dto.status !== undefined && dto.status !== existing.status;
+    if (!changesStatus && changedFields.length === 0) return existing;
+    const operationKey = idempotencyKey ?? `manual-lead-update:${id}:${randomUUID()}`;
+    const occurredAt = new Date();
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (changedFields.length) {
+        await tx.lead.update({ where: { id }, data: updateData });
+        const specializedType = changedFields.length === 1
+          ? changedFields[0] === 'assignedToId'
+            ? CrmBusinessEventType.LEAD_OWNER_CHANGED
+            : changedFields[0] === 'categoryId' || changedFields[0] === 'category'
+              ? CrmBusinessEventType.LEAD_CATEGORY_CHANGED
+              : changedFields[0] === 'mallId'
+                ? CrmBusinessEventType.LEAD_MALL_ASSIGNED
+                : CrmBusinessEventType.LEAD_UPDATED
+          : CrmBusinessEventType.LEAD_UPDATED;
+        await this.crmEvents.append({
+          leadId: id,
+          eventType: specializedType,
+          occurredAt,
+          actor: LeadLifecycleService.userActor(userId),
+          sourceModule: CrmEventSourceModule.CRM,
+          sourceEntityType: 'LEAD',
+          sourceEntityId: id,
+          metadata: { changedFields },
+          idempotencyKey: `${operationKey}:fields`,
+        }, tx);
+      }
+      if (changesStatus) {
+          await this.leadLifecycle.transition({
+            leadId: id,
+            targetStatus: dto.status!,
+            actor: LeadLifecycleService.userActor(userId),
+            sourceModule: CrmEventSourceModule.CRM,
+            sourceEntityType: 'LEAD',
+            sourceEntityId: id,
+            occurredAt,
+            idempotencyKey: `${operationKey}:status`,
+            preserveExistingWonValidation: true,
+          }, tx);
+      }
+      return tx.lead.findUniqueOrThrow({ where: { id }, include });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     if (dto.status && dto.status !== existing.status) {
-      if (dto.status === 'WON' && userId) {
+      if (dto.status === 'WON') {
         await this.customersService.createFromLead(id, userId);
       } else if (updated.customerId) {
         const targetStatus = this.LEAD_TO_CUSTOMER[dto.status];
@@ -458,56 +545,87 @@ export class CrmService {
   }
 
   async addActivity(leadId: string, dto: CreateActivityDto, userId: string) {
-    await this.findOne(leadId);
-    
-    // Create activity and update lastActivityAt in parallel
-    const [activity] = await Promise.all([
-      this.prisma.leadActivity.create({
-        data: { leadId, type: dto.type, note: dto.note, createdById: userId },
-        include: { createdBy: { select: { id: true, fullName: true } } },
-      }),
-      this.prisma.lead.update({
+    const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await tx.lead.findUnique({
         where: { id: leadId },
-        data: { lastActivityAt: new Date() },
-      }),
-    ]);
-    
-    return activity;
+        select: { id: true, isActive: true, deletedAt: true, lastActivityAt: true },
+      });
+      if (!lead || !lead.isActive || lead.deletedAt) throw new NotFoundException('Lead not found');
+
+      const activity = await tx.leadActivity.create({
+        data: {
+          leadId,
+          type: dto.type,
+          note: dto.note,
+          outcome: dto.outcome,
+          source: dto.source ?? 'CRM',
+          occurredAt,
+          createdById: userId,
+        },
+        include: { createdBy: { select: { id: true, fullName: true } } },
+      });
+
+      // A back-dated activity is valid evidence but must not move the current
+      // last-touch projection backwards.
+      if (!lead.lastActivityAt || occurredAt > lead.lastActivityAt) {
+        await tx.lead.update({
+          where: { id: leadId },
+          data: { lastActivityAt: occurredAt },
+        });
+      }
+
+      await this.crmEvents.append({
+        leadId,
+        eventType: CrmBusinessEventType.ACTIVITY_ADDED,
+        occurredAt,
+        actor: LeadLifecycleService.userActor(userId),
+        sourceModule: CrmEventSourceModule.CRM,
+        sourceEntityType: 'LEAD_ACTIVITY',
+        sourceEntityId: activity.id,
+        comment: dto.note,
+        metadata: {
+          activityType: dto.type,
+          outcome: dto.outcome ?? null,
+          source: dto.source ?? 'CRM',
+        },
+        idempotencyKey: `lead-activity-created:${activity.id}`,
+      }, tx);
+
+      return activity;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async getStats(scope?: { userId: string; role: Role; mallIds?: string[] }) {
     const scopedWhere = { isActive: true, ...this.leadScope(scope) };
-    const [total, byStatus, wonThisMonth, lostThisMonth] = await Promise.all([
+    const [total, byStatus] = await Promise.all([
       this.prisma.lead.count({ where: scopedWhere }),
       this.prisma.lead.groupBy({
         by: ['status'],
         where: scopedWhere,
         _count: true,
       }),
-      this.prisma.lead.count({
-        where: {
-          ...scopedWhere,
-          status: 'WON',
-          updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
-        },
-      }),
-      this.prisma.lead.count({
-        where: {
-          ...scopedWhere,
-          status: 'LOST',
-          updatedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
-        },
-      }),
     ]);
 
-    return { total, byStatus, wonThisMonth, lostThisMonth };
+    return {
+      total,
+      byStatus,
+      wonThisMonth: null,
+      lostThisMonth: null,
+      historicalCoverage: 'PARTIAL' as const,
+      coverageMessage: `Không đủ dữ liệu lịch sử trước ${CRM_EVENT_LEDGER_ACTIVATION_AT}; dùng /crm/pipeline/stats cho KPI event-based.`,
+    };
   }
 
   async listFollowUps(query: { leadId?: string; assignedToId?: string; isDone?: string; daysAhead?: number; scope?: { userId: string; role: Role; mallIds?: string[] } }) {
     const where: any = {};
     if (query.leadId) where.leadId = query.leadId;
     if (query.assignedToId) where.assignedToId = query.assignedToId;
-    if (query.isDone !== undefined) where.isDone = query.isDone === 'true';
+    if (query.isDone !== undefined) {
+      where.status = query.isDone === 'true'
+        ? CrmFollowUpStatus.COMPLETED
+        : CrmFollowUpStatus.OPEN;
+    }
     if (query.daysAhead) {
       const future = new Date();
       future.setDate(future.getDate() + +query.daysAhead);
@@ -521,7 +639,7 @@ export class CrmService {
         customer: { select: { id: true, companyName: true, brandName: true } },
         assignedTo: { select: { id: true, fullName: true } },
       },
-      orderBy: [{ isDone: 'asc' }, { dueDate: 'asc' }],
+      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }],
     });
   }
 
@@ -539,33 +657,136 @@ export class CrmService {
       });
       if (!assignee) throw new ForbiddenException('Follow-up assignee is outside your mall access');
     }
-    return this.prisma.leadFollowUp.create({
-      data: {
-        leadId: dto.leadId,
-        customerId: dto.customerId,
-        assignedToId,
-        dueDate: new Date(dto.dueDate),
-        note: dto.note,
-      },
-      include: {
-        lead: { select: { id: true, brandName: true } },
-        customer: { select: { id: true, companyName: true } },
-        assignedTo: { select: { id: true, fullName: true } },
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const followUp = await tx.leadFollowUp.create({
+        data: {
+          leadId: dto.leadId,
+          customerId: dto.customerId,
+          assignedToId,
+          createdById,
+          dueDate: new Date(dto.dueDate),
+          note: dto.note,
+          status: CrmFollowUpStatus.OPEN,
+        },
+        include: {
+          lead: { select: { id: true, brandName: true } },
+          customer: { select: { id: true, companyName: true } },
+          assignedTo: { select: { id: true, fullName: true } },
+          createdBy: { select: { id: true, fullName: true } },
+        },
+      });
+      if (followUp.leadId) {
+        await this.crmEvents.append({
+          leadId: followUp.leadId,
+          eventType: CrmBusinessEventType.FOLLOW_UP_CREATED,
+          occurredAt: followUp.createdAt,
+          actor: LeadLifecycleService.userActor(createdById),
+          sourceModule: CrmEventSourceModule.CRM,
+          sourceEntityType: 'FOLLOW_UP',
+          sourceEntityId: followUp.id,
+          comment: followUp.note ?? undefined,
+          metadata: { dueDate: followUp.dueDate.toISOString(), assignedToId },
+          idempotencyKey: `follow-up-created:${followUp.id}`,
+        }, tx);
+      }
+      return followUp;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
-  async completeFollowUp(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
-    await this.assertFollowUpAccess(id, scope);
-    return this.prisma.leadFollowUp.update({
-      where: { id },
-      data: { isDone: true, completedAt: new Date() },
-    });
+  async completeFollowUp(
+    id: string,
+    input: { outcome?: string; comment?: string } = {},
+    scope?: { userId: string; role: Role; mallIds?: string[] },
+  ) {
+    if (!scope?.userId) throw new ForbiddenException('Authenticated user is required');
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.leadFollowUp.findFirst({
+        where: { id, ...this.followUpScope(scope) },
+      });
+      if (!current) throw new NotFoundException('Follow-up not found or outside your mall access');
+      if (current.status === CrmFollowUpStatus.COMPLETED) return current;
+      if (current.status !== CrmFollowUpStatus.OPEN) {
+        throw new ConflictException('Cancelled follow-up cannot be completed');
+      }
+      const completedAt = new Date();
+      const winner = await tx.leadFollowUp.updateMany({
+        where: { id, status: CrmFollowUpStatus.OPEN },
+        data: {
+          status: CrmFollowUpStatus.COMPLETED,
+          isDone: true,
+          completedAt,
+          completedById: scope.userId,
+          outcome: input.outcome,
+          completionComment: input.comment,
+        },
+      });
+      if (winner.count !== 1) throw new ConflictException('Follow-up lifecycle changed concurrently');
+      if (current.leadId) {
+        await this.crmEvents.append({
+          leadId: current.leadId,
+          eventType: CrmBusinessEventType.FOLLOW_UP_COMPLETED,
+          occurredAt: completedAt,
+          actor: LeadLifecycleService.userActor(scope.userId),
+          sourceModule: CrmEventSourceModule.CRM,
+          sourceEntityType: 'FOLLOW_UP',
+          sourceEntityId: id,
+          comment: input.comment,
+          metadata: { outcome: input.outcome ?? null },
+          idempotencyKey: `follow-up-completed:${id}`,
+        }, tx);
+      }
+      return tx.leadFollowUp.findUniqueOrThrow({ where: { id } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
+  async cancelFollowUp(
+    id: string,
+    cancellationReason: string,
+    scope?: { userId: string; role: Role; mallIds?: string[] },
+  ) {
+    if (!scope?.userId) throw new ForbiddenException('Authenticated user is required');
+    if (!cancellationReason?.trim()) throw new BadRequestException('Cancellation reason is required');
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.leadFollowUp.findFirst({
+        where: { id, ...this.followUpScope(scope) },
+      });
+      if (!current) throw new NotFoundException('Follow-up not found or outside your mall access');
+      if (current.status === CrmFollowUpStatus.CANCELLED) return current;
+      if (current.status !== CrmFollowUpStatus.OPEN) {
+        throw new ConflictException('Completed follow-up cannot be cancelled');
+      }
+      const cancelledAt = new Date();
+      const winner = await tx.leadFollowUp.updateMany({
+        where: { id, status: CrmFollowUpStatus.OPEN },
+        data: {
+          status: CrmFollowUpStatus.CANCELLED,
+          isDone: false,
+          cancelledAt,
+          cancelledById: scope.userId,
+          cancellationReason: cancellationReason.trim(),
+        },
+      });
+      if (winner.count !== 1) throw new ConflictException('Follow-up lifecycle changed concurrently');
+      if (current.leadId) {
+        await this.crmEvents.append({
+          leadId: current.leadId,
+          eventType: CrmBusinessEventType.FOLLOW_UP_CANCELLED,
+          occurredAt: cancelledAt,
+          actor: LeadLifecycleService.userActor(scope.userId),
+          sourceModule: CrmEventSourceModule.CRM,
+          sourceEntityType: 'FOLLOW_UP',
+          sourceEntityId: id,
+          reason: cancellationReason.trim(),
+          idempotencyKey: `follow-up-cancelled:${id}`,
+        }, tx);
+      }
+      return tx.leadFollowUp.findUniqueOrThrow({ where: { id } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  /** @deprecated Normal business deletion is cancellation, never a hard delete. */
   async deleteFollowUp(id: string, scope?: { userId: string; role: Role; mallIds?: string[] }) {
-    await this.assertFollowUpAccess(id, scope);
-    return this.prisma.leadFollowUp.delete({ where: { id } });
+    return this.cancelFollowUp(id, 'Cancelled through legacy DELETE endpoint', scope);
   }
 
   /**
@@ -599,6 +820,7 @@ export class CrmService {
     action: 'assign' | 'changeStatus' | 'changePriority' | 'delete';
     leadIds: string[];
     data?: { assignedToId?: string; status?: LeadStatus; priority?: string };
+    idempotencyKey?: string;
   }, userId: string) {
     const { action, leadIds, data } = dto;
 
@@ -620,11 +842,26 @@ export class CrmService {
 
       case 'changeStatus':
         if (!data?.status) throw new Error('status required');
-        const statusResult = await this.prisma.lead.updateMany({
-          where: { id: { in: leadIds }, isActive: true },
-          data: { status: data.status },
-        });
-        result = { updated: statusResult.count, message: `Đã chuyển ${statusResult.count} leads sang ${data.status}` };
+        if (leadIds.length > 100) throw new BadRequestException('A status batch is limited to 100 Leads');
+        const bulkKey = dto.idempotencyKey ?? `manual-lead-bulk:${randomUUID()}`;
+        const statusCount = await this.prisma.$transaction(async (tx) => {
+          let matched = 0;
+          for (const leadId of leadIds) {
+            await this.leadLifecycle.transition({
+              leadId,
+              targetStatus: data.status!,
+              actor: LeadLifecycleService.userActor(userId),
+              sourceModule: CrmEventSourceModule.CRM,
+              sourceEntityType: 'LEAD_BULK',
+              sourceEntityId: bulkKey,
+              occurredAt: new Date(),
+              idempotencyKey: `${bulkKey}:lead:${leadId}`,
+            }, tx);
+            matched += 1;
+          }
+          return matched;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        result = { updated: statusCount, message: `Đã chuyển ${statusCount} leads sang ${data.status}` };
         break;
 
       case 'changePriority':
@@ -673,7 +910,6 @@ export class CrmService {
         source: true,
         category: true,
         createdAt: true,
-        updatedAt: true,
         lastActivityAt: true,
         estimatedValue: true,
         expectedRent: true,
@@ -697,7 +933,7 @@ export class CrmService {
     // consumer should read.
     const valueByStatusAndCurrency = groupValueByStatusAndCurrency(leads);
 
-    // Calculate conversion rates
+    // Current-state counts are snapshots, not historical conversion evidence.
     const totalNew = statusCounts['NEW'] || 0;
     const totalContacted = statusCounts['CONTACTED'] || 0;
     const totalQualified = statusCounts['QUALIFIED'] || 0;
@@ -707,50 +943,61 @@ export class CrmService {
     const totalLost = statusCounts['LOST'] || 0;
     const totalActive = leads.length - totalWon - totalLost;
 
-    const percent = (numerator: number, denominator: number) => denominator > 0 ? (numerator / denominator) * 100 : 0;
-    const conversionRates = {
-      newToContacted: percent(leads.length - totalNew, leads.length),
-      contactedToQualified: percent(totalQualified + totalProposal + totalNegotiation + totalWon, totalContacted + totalQualified + totalProposal + totalNegotiation + totalWon),
-      qualifiedToProposal: percent(totalProposal + totalNegotiation + totalWon, totalQualified + totalProposal + totalNegotiation + totalWon),
-      proposalToNegotiation: percent(totalNegotiation + totalWon, totalProposal + totalNegotiation + totalWon),
-      negotiationToWon: percent(totalWon, totalNegotiation + totalWon),
-      overallWinRate: (totalWon + totalLost) > 0 ? (totalWon / (totalWon + totalLost)) * 100 : 0,
+    const eventAccessWhere: Prisma.CrmBusinessEventWhereInput = scope?.role === Role.ADMIN
+      ? {}
+      : { mallId: { in: scope?.mallIds ?? [] }, scope: 'MALL' };
+    const activationAt = new Date(CRM_EVENT_LEDGER_ACTIVATION_AT);
+    const evidenceRows = await this.prisma.crmBusinessEvent.findMany({
+      where: { ...eventAccessWhere, occurredAt: { gte: activationAt } },
+      select: {
+        id: true,
+        leadId: true,
+        eventType: true,
+        occurredAt: true,
+        fromStatus: true,
+        toStatus: true,
+      },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      take: 5001,
+    });
+    const evidenceTruncated = evidenceRows.length > 5000;
+    const evidence = evidenceRows.slice(0, 5000);
+    const eventCount = (predicate: (event: typeof evidence[number]) => boolean) => evidence.filter(predicate).length;
+    const transitionCount = (from: LeadStatus, to: LeadStatus) => eventCount(
+      (event) => event.fromStatus === from && event.toStatus === to,
+    );
+    const transitionRate = (from: LeadStatus, to: LeadStatus) => {
+      const entered = eventCount((event) => event.toStatus === from || event.eventType === CrmBusinessEventType.LEAD_CREATED && from === LeadStatus.NEW);
+      return entered > 0 ? transitionCount(from, to) / entered * 100 : null;
     };
-
-    // Average days per stage (simplified - based on createdAt to updatedAt for completed leads)
-    const wonLeads = leads.filter(l => l.status === 'WON');
-    const avgDaysToWin = wonLeads.length > 0
-      ? wonLeads.reduce((sum, l) => sum + Math.floor((new Date(l.updatedAt).getTime() - new Date(l.createdAt).getTime()) / (1000 * 60 * 60 * 24)), 0) / wonLeads.length
-      : 0;
-
-    // Win/Loss by source
-    const winLossBySource: Record<string, { won: number; lost: number; rate: number }> = {};
-    leads.filter(l => l.status === 'WON' || l.status === 'LOST').forEach((l) => {
-      if (!winLossBySource[l.source]) {
-        winLossBySource[l.source] = { won: 0, lost: 0, rate: 0 };
+    const createdAtByLead = new Map<string, Date>();
+    const durationsToWin: number[] = [];
+    for (const event of evidence) {
+      if (event.eventType === CrmBusinessEventType.LEAD_CREATED) createdAtByLead.set(event.leadId, event.occurredAt);
+      if (event.eventType === CrmBusinessEventType.LEAD_WON) {
+        const createdAt = createdAtByLead.get(event.leadId);
+        if (createdAt && event.occurredAt >= createdAt) {
+          durationsToWin.push((event.occurredAt.getTime() - createdAt.getTime()) / 86_400_000);
+        }
       }
-      if (l.status === 'WON') winLossBySource[l.source].won++;
-      else winLossBySource[l.source].lost++;
-    });
-    Object.keys(winLossBySource).forEach((k) => {
-      const s = winLossBySource[k];
-      s.rate = (s.won + s.lost) > 0 ? (s.won / (s.won + s.lost)) * 100 : 0;
-    });
-
-    // Win/Loss by category
-    const winLossByCategory: Record<string, { won: number; lost: number; rate: number }> = {};
-    leads.filter(l => (l.status === 'WON' || l.status === 'LOST') && l.category).forEach((l) => {
-      const cat = l.category!;
-      if (!winLossByCategory[cat]) {
-        winLossByCategory[cat] = { won: 0, lost: 0, rate: 0 };
-      }
-      if (l.status === 'WON') winLossByCategory[cat].won++;
-      else winLossByCategory[cat].lost++;
-    });
-    Object.keys(winLossByCategory).forEach((k) => {
-      const s = winLossByCategory[k];
-      s.rate = (s.won + s.lost) > 0 ? (s.won / (s.won + s.lost)) * 100 : 0;
-    });
+    }
+    const wonEvidence = eventCount((event) => event.eventType === CrmBusinessEventType.LEAD_WON);
+    const lostEvidence = eventCount((event) => event.eventType === CrmBusinessEventType.LEAD_LOST);
+    const conversionRates = {
+      newToContacted: transitionRate(LeadStatus.NEW, LeadStatus.CONTACTED),
+      contactedToQualified: transitionRate(LeadStatus.CONTACTED, LeadStatus.QUALIFIED),
+      qualifiedToProposal: transitionRate(LeadStatus.QUALIFIED, LeadStatus.PROPOSAL),
+      proposalToNegotiation: transitionRate(LeadStatus.PROPOSAL, LeadStatus.NEGOTIATION),
+      negotiationToWon: transitionRate(LeadStatus.NEGOTIATION, LeadStatus.WON),
+      overallWinRate: wonEvidence + lostEvidence > 0 ? wonEvidence / (wonEvidence + lostEvidence) * 100 : null,
+    };
+    const avgDaysToWin = durationsToWin.length
+      ? durationsToWin.reduce((sum, value) => sum + value, 0) / durationsToWin.length
+      : null;
+    // Source/category-at-event were not historically captured. Do not group
+    // terminal snapshot rows and present them as historical attribution.
+    const winLossBySource: Record<string, never> = {};
+    const winLossByCategory: Record<string, never> = {};
 
     // By priority
     const byPriority: Record<string, number> = {};
@@ -787,9 +1034,9 @@ export class CrmService {
       proposalValueByStatus[group.status] = group._sum.totalContractValue ?? 0;
     });
 
-    // This month stats
-    const wonThisMonth = leads.filter(l => l.status === 'WON' && new Date(l.updatedAt) >= startOfMonth).length;
-    const lostThisMonth = leads.filter(l => l.status === 'LOST' && new Date(l.updatedAt) >= startOfMonth).length;
+    // This-month lifecycle counts come only from immutable event timestamps.
+    const wonThisMonth = eventCount((event) => event.eventType === CrmBusinessEventType.LEAD_WON && event.occurredAt >= startOfMonth);
+    const lostThisMonth = eventCount((event) => event.eventType === CrmBusinessEventType.LEAD_LOST && event.occurredAt >= startOfMonth);
     const newThisMonth = leads.filter(l => new Date(l.createdAt) >= startOfMonth).length;
 
     const summarizeLeaseTerm = (leaseTermType: UnitLeaseTermType) => {
@@ -814,8 +1061,10 @@ export class CrmService {
           // RPT-CUR-005 — the authoritative figure for this segment.
           pipelineValueByCurrency: groupPipelineValueByCurrency(segmentOpen),
           totalPipelineValue: segmentOpen.reduce((sum, lead) => sum + leadValue(lead), 0),
-          wonThisMonth: segment.filter((lead) => lead.status === 'WON' && new Date(lead.updatedAt) >= startOfMonth).length,
-          lostThisMonth: segment.filter((lead) => lead.status === 'LOST' && new Date(lead.updatedAt) >= startOfMonth).length,
+          // Historical segment attribution is unavailable because lease-term
+          // was not captured on the immutable event payload.
+          wonThisMonth: null,
+          lostThisMonth: null,
           newThisMonth: segment.filter((lead) => new Date(lead.createdAt) >= startOfMonth).length,
         },
         // RPT-CUR-005 — `totalPipelineValue` and `valueByStatus` here remain
@@ -826,7 +1075,7 @@ export class CrmService {
         byStatus,
         valueByStatus,
         byPriority,
-        conversionRates: { overallWinRate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0 },
+        conversionRates: { overallWinRate: null },
       };
     };
 
@@ -840,7 +1089,7 @@ export class CrmService {
         wonThisMonth,
         lostThisMonth,
         newThisMonth,
-        avgDaysToWin: Math.round(avgDaysToWin),
+        avgDaysToWin: avgDaysToWin === null ? null : Math.round(avgDaysToWin * 10) / 10,
       },
       // RPT-CUR-005 — FIXED in Wave 3. `Lead.currencyCode` now exists, so the
       // pipeline value is GROUPED by currency instead of being a currency-less
@@ -868,6 +1117,15 @@ export class CrmService {
       conversionRates,
       winLossBySource,
       winLossByCategory,
+      analyticsSemantics: {
+        currentSnapshot: ['summary.total', 'summary.totalActive', 'summary.totalWon', 'summary.totalLost', 'byStatus', 'byPriority', 'pipelineValueByCurrency'],
+        historicalEvidence: ['summary.wonThisMonth', 'summary.lostThisMonth', 'summary.avgDaysToWin', 'conversionRates'],
+        historicalCoverage: 'PARTIAL' as const,
+        coverageStartedAt: CRM_EVENT_LEDGER_ACTIVATION_AT,
+        coverageMessage: `Không đủ dữ liệu lịch sử trước ${CRM_EVENT_LEDGER_ACTIVATION_AT}`,
+        evidenceTruncated,
+        eventSampleLimit: 5000,
+      },
       byLeaseTerm: {
         LONG: summarizeLeaseTerm(UnitLeaseTermType.LONG),
         SHORT: summarizeLeaseTerm(UnitLeaseTermType.SHORT),
@@ -908,7 +1166,11 @@ export class CrmService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const result = await this.prisma.lead.updateMany({
+    // SAFETY GATE 001A: preserve the exact candidate predicate, but never turn
+    // an unreliable stale projection into a lifecycle mutation. This method is
+    // intentionally independent of HTTP so a scheduler can call the same
+    // idempotent, read-only operation later.
+    const candidates = await this.prisma.lead.findMany({
       where: {
         isActive: true,
         ...this.leadScope(scope),
@@ -918,13 +1180,53 @@ export class CrmService {
           { lastActivityAt: null, createdAt: { lt: cutoffDate } },
         ],
       },
-      data: {
-        status: 'LOST',
-        lostReason: `Auto-closed: No activity for ${days}+ days`,
+      select: {
+        id: true,
+        brandName: true,
+        status: true,
+        mallId: true,
+        lastActivityAt: true,
+        createdAt: true,
       },
+      orderBy: [
+        { lastActivityAt: { sort: 'asc', nulls: 'first' } },
+        { createdAt: 'asc' },
+        { id: 'asc' },
+      ],
     });
 
-    return { moved: result.count, message: `Moved ${result.count} stale leads to LOST` };
+    const reason = `No Lead activity recorded for ${days}+ days`;
+    const result = {
+      mode: AUTO_LOST_MODE,
+      dryRun: true,
+      thresholdDays: days,
+      evaluatedAt: new Date().toISOString(),
+      cutoffAt: cutoffDate.toISOString(),
+      candidateCount: candidates.length,
+      moved: 0,
+      statusMutations: 0,
+      candidates: candidates.map((lead) => ({
+        leadId: lead.id,
+        brandName: lead.brandName,
+        currentStatus: lead.status,
+        mallId: lead.mallId,
+        reasonCode: AUTO_LOST_REASON_CODE,
+        reason,
+        basis: lead.lastActivityAt ? 'LAST_ACTIVITY_AT' : 'CREATED_AT',
+        basisAt: (lead.lastActivityAt ?? lead.createdAt).toISOString(),
+      })),
+      message: `DRY_RUN: ${candidates.length} stale Lead candidate(s); no status changed`,
+    };
+
+    this.logger.log(JSON.stringify({
+      event: 'crm.auto_lost.evaluated',
+      mode: AUTO_LOST_MODE,
+      candidateCount: candidates.length,
+      statusMutations: 0,
+      thresholdDays: days,
+    }));
+
+    return result;
   }
 
   async getAutoAssignRules() {
@@ -975,7 +1277,7 @@ export class CrmService {
     return { assigned: true, assignedTo: user.fullName, message: `Lead assigned to ${user.fullName}` };
   }
 
-  async createAutoFollowUp(leadId: string, daysFromNow: number = 7, note?: string) {
+  async createAutoFollowUp(leadId: string, userId: string, daysFromNow: number = 7, note?: string) {
     const lead = await this.findOne(leadId);
     if (!lead.assignedToId) {
       return { created: false, message: 'Lead has no assignee' };
@@ -984,14 +1286,12 @@ export class CrmService {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + daysFromNow);
 
-    const followUp = await this.prisma.leadFollowUp.create({
-      data: {
-        leadId,
-        assignedToId: lead.assignedToId,
-        dueDate,
-        note: note || `Auto-generated follow-up reminder`,
-      },
-    });
+    const followUp = await this.createFollowUp({
+      leadId,
+      assignedToId: lead.assignedToId,
+      dueDate: dueDate.toISOString(),
+      note: note || 'Auto-generated follow-up reminder',
+    }, userId);
 
     return { created: true, followUp };
   }
@@ -1204,7 +1504,103 @@ export class CrmService {
     }
   }
 
-  async getLeadTimeline(leadId: string) {
+  async getLeadTimeline(
+    leadId: string,
+    scope: { userId: string; role: Role; mallIds?: string[] },
+    options: { limit?: number; cursor?: string } = {},
+  ) {
+    const lead = await this.prisma.lead.findUnique({
+      where: { id: leadId },
+      select: { id: true, brandName: true, status: true },
+    });
+    if (!lead) throw new NotFoundException('Lead not found');
+
+    const page = await this.crmEvents.listForLead(leadId, scope, options);
+    const authoritative = page.data.map((event) => ({
+      id: event.id,
+      type: event.eventType,
+      label: event.eventType.replaceAll('_', ' '),
+      status: event.toStatus ?? undefined,
+      entityId: event.sourceEntityId ?? undefined,
+      entityType: event.sourceEntityType ?? undefined,
+      date: event.occurredAt.toISOString(),
+      actor: event.actor
+        ? { id: event.actor.id, name: event.actor.fullName, role: event.actor.role }
+        : { id: null, name: 'SYSTEM', role: null },
+      source: event.sourceModule,
+      fromStatus: event.fromStatus,
+      toStatus: event.toStatus,
+      reasonCode: event.reasonCode,
+      reason: event.reason,
+      comment: event.comment,
+      commentStatus: event.commentStatus,
+      mallId: event.mallId,
+      eventScope: event.scope,
+      evidence: 'CRM_BUSINESS_EVENT' as const,
+    }));
+
+    // Pre-ledger activities are genuine records, but not lifecycle evidence.
+    // Include them only on the first page and label coverage as partial; never
+    // reconstruct status changes from current snapshots or updatedAt.
+    const legacyActivities = options.cursor ? [] : await this.prisma.leadActivity.findMany({
+      where: {
+        leadId,
+        createdAt: { lt: new Date(CRM_EVENT_LEDGER_ACTIVATION_AT) },
+      },
+      select: {
+        id: true,
+        type: true,
+        occurredAt: true,
+        createdAt: true,
+        source: true,
+        createdBy: { select: { id: true, fullName: true, role: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.min(Math.max(options.limit ?? 50, 1), 100),
+    });
+
+    const events = [
+      ...authoritative,
+      ...legacyActivities.map((activity) => ({
+        id: activity.id,
+        type: 'LEAD_ACTIVITY',
+        label: activity.type,
+        entityId: activity.id,
+        entityType: 'LEAD_ACTIVITY',
+        date: (activity.occurredAt ?? activity.createdAt).toISOString(),
+        actor: { id: activity.createdBy.id, name: activity.createdBy.fullName, role: activity.createdBy.role },
+        source: activity.source ?? 'LEGACY_LEAD_ACTIVITY',
+        fromStatus: null,
+        toStatus: null,
+        reasonCode: null,
+        reason: null,
+        comment: null,
+        commentStatus: 'WITHHELD_PENDING_BC_028',
+        mallId: null,
+        eventScope: null,
+        evidence: 'LEGACY_SOURCE_RECORD' as const,
+      })),
+    ].sort((left, right) => {
+      const dateOrder = new Date(right.date).getTime() - new Date(left.date).getTime();
+      return dateOrder || right.id.localeCompare(left.id);
+    });
+
+    return {
+      leadId,
+      brandName: lead.brandName,
+      currentStatus: lead.status,
+      events,
+      nextCursor: page.nextCursor,
+      historicalCoverage: page.historicalCoverage,
+      coverageStartedAt: page.coverageStartedAt,
+      coverageMessage: page.coverageMessage,
+    };
+  }
+
+  // Kept temporarily as a private comparison aid during UAT. Runtime APIs do
+  // not call this snapshot reconstruction and therefore cannot present it as
+  // historical evidence.
+  private async getDeprecatedSnapshotTimeline(leadId: string) {
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
       select: {

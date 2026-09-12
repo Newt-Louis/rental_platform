@@ -1,7 +1,9 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Logger, ForbiddenException,
+  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Logger, ForbiddenException, Headers,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody, ApiCreatedResponse,
+} from '@nestjs/swagger';
 import { CrmService } from './crm.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/create-lead.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
@@ -13,6 +15,7 @@ import { LeadStatus, Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
+import { CrmBusinessEventService } from './crm-business-event.service';
 
 // CR-101 Phase 1: descriptive only.
 
@@ -24,7 +27,11 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @Controller('crm')
 export class CrmController {
   private readonly logger = new Logger(CrmController.name);
-  constructor(private readonly crmService: CrmService, private readonly mallAccess: MallAccessService) {}
+  constructor(
+    private readonly crmService: CrmService,
+    private readonly mallAccess: MallAccessService,
+    private readonly crmEvents: CrmBusinessEventService,
+  ) {}
 
   private async scope(user: any, mallId?: string) {
     if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
@@ -72,10 +79,11 @@ export class CrmController {
   async moveLead(
     @Param('id') id: string,
     @Body() body: { status: LeadStatus; position: number },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @CurrentUser() user: any,
   ) {
     await this.crmService.assertLeadEditAccess(id, await this.scope(user));
-    return this.crmService.moveLead(id, body.status, body.position, user?.id);
+    return this.crmService.moveLead(id, body.status, body.position, user.id, idempotencyKey);
   }
 
   @Get('stats')
@@ -86,9 +94,38 @@ export class CrmController {
 
   @Get('leads/:id/timeline')
   @ApiOperation({ summary: 'Deal timeline: lead → booking → proposal → approval → contract' })
-  async getLeadTimeline(@Param('id') id: string, @CurrentUser() user: any) {
-    await this.crmService.assertLeadAccess(id, await this.scope(user));
-    return this.crmService.getLeadTimeline(id);
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'cursor', required: false })
+  async getLeadTimeline(
+    @Param('id') id: string,
+    @Query('limit') limit: string | undefined,
+    @Query('cursor') cursor: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    const scope = await this.scope(user);
+    await this.crmService.assertLeadAccess(id, scope);
+    return this.crmService.getLeadTimeline(id, scope, {
+      limit: limit ? Number(limit) : undefined,
+      cursor,
+    });
+  }
+
+  @Get('leads/:id/events')
+  @ApiOperation({ summary: 'Paginated authoritative CRM business history for a Lead' })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'cursor', required: false })
+  async getLeadEvents(
+    @Param('id') id: string,
+    @Query('limit') limit: string | undefined,
+    @Query('cursor') cursor: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    const scope = await this.scope(user);
+    await this.crmService.assertLeadAccess(id, scope);
+    return this.crmEvents.listForLead(id, scope, {
+      limit: limit ? +limit : undefined,
+      cursor,
+    });
   }
 
   @Get('leads/:id')
@@ -101,16 +138,24 @@ export class CrmController {
   @Post('leads')
   @ApiOperation({ summary: 'Create new lead' })
   async create(@Body() dto: CreateLeadDto, @CurrentUser() user: any) {
+    if (!dto.mallId && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('Mall is required for non-global CRM users');
+    }
     if (dto.mallId) await this.mallAccess.assertMallAccess(user.id, user.role, dto.mallId);
     const payload = user.role === Role.LEASING_EXECUTIVE ? { ...dto, assignedToId: user.id } : dto;
-    return this.crmService.create(payload);
+    return this.crmService.create(payload, user.id);
   }
 
   @Put('leads/:id')
   @ApiOperation({ summary: 'Update lead' })
-  async update(@Param('id') id: string, @Body() dto: UpdateLeadDto, @CurrentUser() user: any) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateLeadDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: any,
+  ) {
     await this.crmService.assertLeadEditAccess(id, await this.scope(user));
-    return this.crmService.update(id, dto, user?.id);
+    return this.crmService.update(id, dto, user.id, idempotencyKey);
   }
 
   @Delete('leads/:id')
@@ -175,14 +220,36 @@ export class CrmController {
 
   @Put('follow-ups/:id/complete')
   @ApiOperation({ summary: 'Mark follow-up as done' })
-  async completeFollowUp(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.crmService.completeFollowUp(id, await this.scope(user));
+  async completeFollowUp(
+    @Param('id') id: string,
+    @Body() body: { outcome?: string; comment?: string },
+    @CurrentUser() user: any,
+  ) {
+    return this.crmService.completeFollowUp(id, body ?? {}, await this.scope(user));
+  }
+
+  @Put('follow-ups/:id/cancel')
+  @ApiOperation({ summary: 'Cancel a follow-up while preserving its history' })
+  async cancelFollowUp(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.crmService.cancelFollowUp(id, reason, await this.scope(user));
   }
 
   @Delete('follow-ups/:id')
-  @ApiOperation({ summary: 'Delete follow-up' })
-  async deleteFollowUp(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.crmService.deleteFollowUp(id, await this.scope(user));
+  @ApiOperation({ summary: 'Legacy compatibility: cancel follow-up; never hard-delete' })
+  async deleteFollowUp(
+    @Param('id') id: string,
+    @Body('reason') reason: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    return this.crmService.cancelFollowUp(
+      id,
+      reason || 'Cancelled through legacy DELETE endpoint',
+      await this.scope(user),
+    );
   }
 
   // ── Bulk Actions ───────────────────────────────────────────────────────────────
@@ -239,7 +306,23 @@ export class CrmController {
 
   @Post('leads/auto-move-stale')
   @Roles(Role.ADMIN, Role.LEASING_MANAGER)
-  @ApiOperation({ summary: 'Auto-move stale leads to LOST status' })
+  @ApiOperation({
+    summary: 'Dry-run stale Lead candidates without changing status',
+  })
+  @ApiCreatedResponse({
+    description: 'DRY_RUN candidate report; this endpoint never mutates Lead lifecycle state.',
+    schema: {
+      type: 'object',
+      required: ['mode', 'moved', 'statusMutations', 'candidateCount', 'candidates'],
+      properties: {
+        mode: { type: 'string', enum: ['DRY_RUN'], example: 'DRY_RUN' },
+        moved: { type: 'integer', enum: [0], example: 0 },
+        statusMutations: { type: 'integer', enum: [0], example: 0 },
+        candidateCount: { type: 'integer', minimum: 0 },
+        candidates: { type: 'array', items: { type: 'object' } },
+      },
+    },
+  })
   @ApiQuery({ name: 'days', required: false, description: 'Days threshold (default 60)' })
   async autoMoveStaleToLost(@Query('days') days: string | undefined, @CurrentUser() user: any) {
     return this.crmService.autoMoveStaleToLost(days ? +days : 60, await this.scope(user));
@@ -269,6 +352,6 @@ export class CrmController {
     @CurrentUser() user?: any,
   ) {
     await this.crmService.assertLeadEditAccess(id, await this.scope(user));
-    return this.crmService.createAutoFollowUp(id, daysFromNow ? +daysFromNow : 7, body?.note);
+    return this.crmService.createAutoFollowUp(id, user.id, daysFromNow ? +daysFromNow : 7, body?.note);
   }
 }

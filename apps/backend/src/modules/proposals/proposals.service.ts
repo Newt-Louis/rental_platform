@@ -2,7 +2,10 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
-import { BookingStatus, ContractStatus, ProposalStatus, Role, UnitStatus, WorkflowStatus, Prisma } from '@prisma/client';
+import {
+  BookingStatus, ContractStatus, ProposalStatus, Role, UnitStatus, WorkflowStatus,
+  Prisma, LeadStatus, CrmEventSourceModule,
+} from '@prisma/client';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
@@ -25,6 +28,7 @@ import { EmailService, TrackedEmailOptions } from '../notifications/email.servic
 import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 @Injectable()
 export class ProposalsService {
@@ -39,6 +43,7 @@ export class ProposalsService {
     private emailService: EmailService,
     private categoriesService: CategoriesService,
     private metrics: OperationalMetricsService,
+    private leadLifecycle: LeadLifecycleService,
   ) {}
 
   private generateProposalNumber() {
@@ -217,7 +222,8 @@ export class ProposalsService {
     const financials = this.calcFinancials(dto);
     const proposalNumber = this.generateProposalNumber();
 
-    const proposal = await this.prisma.proposal.create({
+    return this.prisma.$transaction(async (tx) => {
+      const proposal = await tx.proposal.create({
       data: {
         proposalNumber,
         leadId: dto.leadId,
@@ -265,18 +271,33 @@ export class ProposalsService {
       },
     });
 
-    await this.snapshotProposal(proposal as unknown as Record<string, unknown>, userId, 'CREATED');
+      await this.snapshotProposal(
+        proposal as unknown as Record<string, unknown>,
+        userId,
+        'CREATED',
+        tx,
+      );
 
     // Advance lead status to PROPOSAL if still in early stage
     if (dto.leadId) {
-      const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId }, select: { status: true } });
+      const lead = await tx.lead.findUnique({ where: { id: dto.leadId }, select: { status: true } });
       const earlyStatuses = ['NEW', 'CONTACTED', 'QUALIFIED'];
       if (lead && earlyStatuses.includes(lead.status)) {
-        await this.prisma.lead.update({ where: { id: dto.leadId }, data: { status: 'PROPOSAL' as any } });
+        await this.leadLifecycle.transition({
+          leadId: dto.leadId,
+          targetStatus: LeadStatus.PROPOSAL,
+          actor: LeadLifecycleService.userActor(userId),
+          sourceModule: CrmEventSourceModule.PROPOSAL,
+          sourceEntityType: 'PROPOSAL',
+          sourceEntityId: proposal.id,
+          occurredAt: proposal.createdAt,
+          idempotencyKey: `proposal-created:${proposal.id}:lead:${dto.leadId}`,
+        }, tx);
       }
     }
 
-    return proposal;
+      return proposal;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async update(id: string, dto: UpdateProposalDto, userId?: string) {
@@ -813,10 +834,18 @@ export class ProposalsService {
         }
 
         if (proposal.leadId) {
-          await tx.lead.update({
-            where: { id: proposal.leadId },
-            data: { status: 'WON' as any },
-          });
+          await this.leadLifecycle.transition({
+            leadId: proposal.leadId,
+            targetStatus: LeadStatus.WON,
+            actor: options?.userId
+              ? LeadLifecycleService.userActor(options.userId)
+              : LeadLifecycleService.systemActor(),
+            sourceModule: CrmEventSourceModule.PROPOSAL,
+            sourceEntityType: 'PROPOSAL',
+            sourceEntityId: proposal.id,
+            occurredAt: created.createdAt,
+            idempotencyKey: `proposal-converted:${proposal.id}:lead:${proposal.leadId}`,
+          }, tx);
         }
 
         return created;
@@ -921,20 +950,43 @@ export class ProposalsService {
       throw new BadRequestException('Only SUBMITTED or UNDER_REVIEW proposals can be rejected');
     }
 
-    await this.snapshotProposal(proposal as unknown as Record<string, unknown>, userId, 'REJECTED');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.snapshotProposal(
+        proposal as unknown as Record<string, unknown>,
+        userId,
+        'REJECTED',
+        tx,
+      );
 
-    const updated = await this.prisma.proposal.update({
-      where: { id },
-      data: { status: ProposalStatus.REJECTED, notes: rejectionReason ? `[Từ chối] ${rejectionReason}${proposal.notes ? '\n' + proposal.notes : ''}` : proposal.notes },
-    });
+      const rejected = await tx.proposal.update({
+        where: { id },
+        data: { status: ProposalStatus.REJECTED, notes: rejectionReason ? `[Từ chối] ${rejectionReason}${proposal.notes ? '\n' + proposal.notes : ''}` : proposal.notes },
+      });
 
-    // Revert lead back to NEGOTIATION if it was advanced
-    if (proposal.leadId) {
-      const lead = await this.prisma.lead.findUnique({ where: { id: proposal.leadId }, select: { status: true } });
-      if (lead?.status === 'PROPOSAL') {
-        await this.prisma.lead.update({ where: { id: proposal.leadId }, data: { status: 'NEGOTIATION' as any } });
+      // Preserve the existing transition rule, but record it atomically with
+      // the proposal rejection so neither state can be committed alone.
+      if (proposal.leadId) {
+        const lead = await tx.lead.findUnique({
+          where: { id: proposal.leadId },
+          select: { status: true },
+        });
+        if (lead?.status === LeadStatus.PROPOSAL) {
+          await this.leadLifecycle.transition({
+            leadId: proposal.leadId,
+            targetStatus: LeadStatus.NEGOTIATION,
+            actor: LeadLifecycleService.userActor(userId),
+            sourceModule: CrmEventSourceModule.PROPOSAL,
+            sourceEntityType: 'PROPOSAL',
+            sourceEntityId: proposal.id,
+            reason: rejectionReason || undefined,
+            occurredAt: rejected.updatedAt,
+            idempotencyKey: `proposal-rejected:${proposal.id}:lead:${proposal.leadId}`,
+          }, tx);
+        }
       }
-    }
+
+      return rejected;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     // Mặt bằng không nên kẹt mãi ở BOOKING/NEGOTIATING sau khi proposal bị từ chối — trả về VACANT
     // nếu không còn booking nào khác đang giữ chỗ cho unit này (nếu còn, giữ nguyên trạng thái để

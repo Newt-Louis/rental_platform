@@ -1,7 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CustomerStatus, ActivityType, LeadSource, CurrencyCode, Role } from '@prisma/client';
+import {
+  CustomerStatus, ActivityType, LeadSource, CurrencyCode, Role,
+  CrmEventSourceModule, LeadStatus, Prisma,
+} from '@prisma/client';
 import { CategoryResolverService } from '../../common/services/category-resolver.service';
+import { LeadLifecycleService } from './lead-lifecycle.service';
+import { randomUUID } from 'crypto';
 
 export interface CustomerScope {
   userId: string;
@@ -48,6 +53,7 @@ export class CustomersService {
   constructor(
     private prisma: PrismaService,
     private categoryResolver: CategoryResolverService,
+    private leadLifecycle: LeadLifecycleService,
   ) {}
 
   // CR-CRM-CATEGORY-MASTER-001 — reads expose the authoritative Category
@@ -297,7 +303,12 @@ export class CustomersService {
     });
   }
 
-  async update(id: string, dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string }, scope?: CustomerScope) {
+  async update(
+    id: string,
+    dto: Partial<CreateCustomerDto> & { status?: CustomerStatus; lostReason?: string; tenantId?: string },
+    scope?: CustomerScope,
+    idempotencyKey?: string,
+  ) {
     const existing = await this.findOne(id);
     await this.assertCustomerEditAccess(id, scope);
     this.assertCustomerBudgetCurrency(dto as any, existing as any);
@@ -320,41 +331,61 @@ export class CustomersService {
     if (dto.status === CustomerStatus.ACTIVE && !data.wonAt) data.wonAt = new Date();
     if (dto.status === CustomerStatus.INACTIVE && !data.lostAt) data.lostAt = new Date();
 
-    const updated = await this.prisma.customer.update({
-      where: { id },
-      data,
-      include: {
-        assignedTo: { select: { id: true, fullName: true } },
-        tenant: { select: { id: true, brandName: true, companyName: true } },
-        preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
-      },
-    });
-
-    // Sync linked leads when customer status changes
-    if (dto.status && dto.status !== existing.status) {
-      if (dto.status === CustomerStatus.ACTIVE) {
-        // All active leads (not already WON/LOST) → WON
-        await this.prisma.lead.updateMany({
-          where: { customerId: id, isActive: true, status: { notIn: ['WON', 'LOST'] as any } },
-          data: { status: 'WON' as any },
-        });
-      } else if (dto.status === CustomerStatus.INACTIVE) {
-        // All active leads (not WON) → LOST
-        await this.prisma.lead.updateMany({
-          where: { customerId: id, isActive: true, status: { not: 'WON' as any } },
-          data: { status: 'LOST' as any },
-        });
-      } else if (dto.status === CustomerStatus.NEGOTIATING) {
-        // Early-stage leads → NEGOTIATION (don't touch PROPOSAL/NEGOTIATION/WON/LOST)
-        await this.prisma.lead.updateMany({
-          where: { customerId: id, isActive: true, status: { in: ['NEW', 'CONTACTED', 'QUALIFIED'] as any } },
-          data: { status: 'NEGOTIATION' as any },
-        });
-      }
-      // PROSPECT / BLACKLISTED: don't modify leads
+    const include = {
+      assignedTo: { select: { id: true, fullName: true } },
+      tenant: { select: { id: true, brandName: true, companyName: true } },
+      preferredCategoryRef: CustomersService.PREFERRED_CATEGORY_REF_SELECT,
+    } as const;
+    if (!dto.status || dto.status === existing.status) {
+      return this.prisma.customer.update({ where: { id }, data, include });
     }
 
-    return updated;
+    const targetByCustomerStatus: Partial<Record<CustomerStatus, {
+      target: LeadStatus;
+      where: Prisma.LeadWhereInput;
+    }>> = {
+      [CustomerStatus.ACTIVE]: {
+        target: LeadStatus.WON,
+        where: { status: { notIn: [LeadStatus.WON, LeadStatus.LOST] } },
+      },
+      [CustomerStatus.INACTIVE]: {
+        target: LeadStatus.LOST,
+        where: { status: { not: LeadStatus.WON } },
+      },
+      [CustomerStatus.NEGOTIATING]: {
+        target: LeadStatus.NEGOTIATION,
+        where: { status: { in: [LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.QUALIFIED] } },
+      },
+    };
+    const mapping = targetByCustomerStatus[dto.status];
+    if (mapping && !scope?.userId) {
+      throw new BadRequestException('Customer status transition requires an actor');
+    }
+    const operationKey = idempotencyKey ?? `customer-status:${id}:${dto.status}:${randomUUID()}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.customer.update({ where: { id }, data, include });
+      if (!mapping) return updated;
+
+      const leads = await tx.lead.findMany({
+        where: { customerId: id, isActive: true, ...mapping.where },
+        select: { id: true },
+      });
+      for (const lead of leads) {
+        await this.leadLifecycle.transition({
+          leadId: lead.id,
+          targetStatus: mapping.target,
+          actor: LeadLifecycleService.userActor(scope!.userId),
+          sourceModule: CrmEventSourceModule.CUSTOMER,
+          sourceEntityType: 'CUSTOMER',
+          sourceEntityId: id,
+          occurredAt: new Date(),
+          reasonCode: `CUSTOMER_STATUS_${dto.status}`,
+          idempotencyKey: `${operationKey}:lead:${lead.id}`,
+        }, tx);
+      }
+      return updated;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async remove(id: string, scope?: CustomerScope) {

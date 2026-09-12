@@ -6,9 +6,10 @@ import { BookingScheduler } from './booking.scheduler';
 import { CategoriesModule } from '../categories/categories.module';
 import { ApprovalsModule } from '../approvals/approvals.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CrmModule } from '../crm/crm.module';
 
 @Module({
-  imports: [ScheduleModule, CategoriesModule, ApprovalsModule, NotificationsModule],
+  imports: [ScheduleModule, CategoriesModule, ApprovalsModule, NotificationsModule, CrmModule],
   controllers: [BookingController],
   providers: [BookingService, BookingScheduler],
   exports: [BookingService],
