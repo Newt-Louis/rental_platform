@@ -106,6 +106,7 @@ export default function SalesPipelineStatsPage() {
   const longBookingStats = bookingStatsData?.data ?? bookingStatsData;
   const rawPipelineStats = pipelineStatsData?.data ?? pipelineStatsData;
   const ps = rawPipelineStats?.byLeaseTerm?.[leaseTermType] ?? rawPipelineStats;
+  const historicalCoverage = rawPipelineStats?.analyticsSemantics;
 
   const allSlotBookings: any[] = slotBookingsData?.data ?? slotBookingsData ?? [];
   const slotStats = {
@@ -128,6 +129,7 @@ export default function SalesPipelineStatsPage() {
   const leadByStatus: Record<string, number> = ps?.byStatus ?? {};
   const proposalByStatus: Record<string, number> = ps?.proposalByStatus ?? {};
   const proposalValueByStatus: Record<string, number> = ps?.proposalValueByStatus ?? {};
+  const proposalSegmentAvailable = Boolean(ps?.proposalByStatus);
 
   const activeLeads = Object.entries(leadByStatus)
     .filter(([k]) => !['WON', 'LOST'].includes(k))
@@ -288,6 +290,8 @@ export default function SalesPipelineStatsPage() {
           <div>
             <SectionHeading icon={FileText}>Proposal theo Trạng thái</SectionHeading>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
+              {!proposalSegmentAvailable && <p className="py-6 text-center text-sm text-amber-700">Không đủ dữ liệu để phân loại Proposal theo kỳ thuê này. Hệ thống không gán mặc định.</p>}
+              {proposalSegmentAvailable && <>
               {PROPOSAL_STATUSES.map(({ key, label, badge }) => {
                 const count = proposalByStatus[key] ?? 0;
                 const value = proposalValueByStatus[key] ?? 0;
@@ -301,6 +305,7 @@ export default function SalesPipelineStatsPage() {
                   </div>
                 );
               })}
+              </>}
             </div>
           </div>
 
@@ -317,20 +322,20 @@ export default function SalesPipelineStatsPage() {
                   <div key={label}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-gray-500">{label}</span>
-                      <span className={`text-sm font-bold ${color}`}>{Number(value).toFixed(1)}%</span>
+                      <span className={`text-sm font-bold ${color}`}>{value == null ? 'Không đủ dữ liệu lịch sử' : `${Number(value).toFixed(1)}%`}</span>
                     </div>
                     <div className="bg-gray-100 rounded-full h-1.5 overflow-hidden">
                       <div className={`h-1.5 rounded-full ${bar} transition-all`}
-                        style={{ width: `${Math.min(100, value)}%` }} />
+                        style={{ width: `${value == null ? 0 : Math.min(100, value)}%` }} />
                     </div>
                   </div>
                 ))}
-                {ps.avgDaysToWin > 0 && (
+                {ps.avgDaysToWin != null ? (
                   <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                     <span className="text-xs text-gray-500">Avg. ngày để chốt deal</span>
                     <span className="text-sm font-bold text-gray-700">{Math.round(ps.avgDaysToWin)} ngày</span>
                   </div>
-                )}
+                ) : <p className="border-t border-gray-100 pt-2 text-xs text-amber-700">{historicalCoverage?.coverageMessage ?? 'Không đủ dữ liệu lịch sử'}</p>}
               </div>
             </div>
           )}
