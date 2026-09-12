@@ -40,6 +40,22 @@ export function scoreFinancialCapacity(
   return Math.min(100, (budgetMax / FINANCIAL_CAPACITY_FULL_MARK) * 100);
 }
 
+/**
+ * CR-CRM-CATEGORY-MASTER-001 — industry fit compares Category identity first.
+ * Falls back to the legacy text snapshot only when either side has not been
+ * linked to the Category master yet.
+ */
+function matchesIndustry(
+  unit: { categoryId?: string | null; category?: string | null } | null | undefined,
+  customer: { preferredCategoryId?: string | null; preferredCategory?: string | null } | null | undefined,
+): boolean {
+  if (!unit || !customer) return false;
+  if (unit.categoryId && customer.preferredCategoryId) {
+    return unit.categoryId === customer.preferredCategoryId;
+  }
+  return Boolean(unit.category) && unit.category === customer.preferredCategory;
+}
+
 @Injectable()
 export class DealScoringService {
   constructor(private prisma: PrismaService) {}
@@ -102,7 +118,12 @@ export class DealScoringService {
       // is a mitigation, not a foreign-currency scoring policy -- see the note
       // on scoreFinancialCapacity.
       financialCapacity: scoreFinancialCapacity(customer?.budgetMax, customer?.currencyCode),
-      industryFit: proposal.unit?.category === customer?.preferredCategory ? 90 : 65,
+      // CR-CRM-CATEGORY-MASTER-001: match on canonical Category identity when
+      // both sides carry it. The free-text fallback is kept only for rows that
+      // predate the backfill -- text equality alone used to score a Unit
+      // "Beauty & Wellness" against a Customer "Health & Beauty" as a mismatch
+      // even though both mean the same master category.
+      industryFit: matchesIndustry(proposal.unit, customer) ? 90 : 65,
       discountPct: proposal.discount ?? 0,
       rentFreeMonths: proposal.rentFree ?? 0,
     });

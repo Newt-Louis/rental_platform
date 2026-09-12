@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { crmApi, customersApi, usersApi, categoriesApi, followUpApi } from '@/api';
+import { crmApi, customersApi, usersApi, followUpApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,12 @@ import {
   BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
 import { LeadEditDialog } from '@/components/crm';
+import {
+  CategorySelect,
+  categoryIdForCreate,
+  categoryIdForUpdate,
+  initialCategoryValue,
+} from '@/components/crm/CategorySelect';
 import { useMallStore } from '@/store/mall.store';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
@@ -141,27 +147,25 @@ const LEAD_SOURCES = [
   { key: 'EXISTING_TENANT', label: 'KH hiện tại' },
 ];
 
-const LEAD_CATEGORIES = [
-  'F&B - Ẩm thực',
-  'Café & Trà',
-  'Thời trang',
-  'Giày dép & Túi xách',
-  'Phụ kiện & Trang sức',
-  'Làm đẹp & Spa',
-  'Điện tử & Công nghệ',
-  'Giải trí & Vui chơi',
-  'Thể thao & Fitness',
-  'Siêu thị & FMCG',
-  'Cửa hàng tiện lợi',
-  'Trang trí nội thất',
-  'Giáo dục & Trẻ em',
-  'Sức khỏe & Dược phẩm',
-  'Dịch vụ tài chính',
-  'Du lịch & Dịch vụ',
-  'Sách & Văn phòng phẩm',
-  'Thú cưng',
-  'Khác',
-];
+
+/**
+ * CR-CRM-CATEGORY-MASTER-001 — always prefer the authoritative Category
+ * relation. The free-text column is a snapshot that can go stale if a Category
+ * is renamed, and on un-backfilled rows it is the only value there is.
+ */
+function categoryLabel(record: {
+  categoryRef?: { name?: string } | null;
+  category?: string | null;
+}): string | null {
+  return record.categoryRef?.name ?? record.category ?? null;
+}
+
+function preferredCategoryLabel(record: {
+  preferredCategoryRef?: { name?: string } | null;
+  preferredCategory?: string | null;
+}): string | null {
+  return record.preferredCategoryRef?.name ?? record.preferredCategory ?? null;
+}
 
 const PROPOSAL_STATUS: Record<string, { label: string; color: string }> = {
   DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
@@ -213,7 +217,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
   const [mode, setMode] = useState<'lead' | 'customer'>('lead');
   const [form, setForm] = useState({
     brandName: '', companyName: '', contactName: '', contactTitle: '',
-    phone: '', email: '', category: '', expectedArea: '',
+    phone: '', email: '', categoryId: '', expectedArea: '',
     source: 'WALK_IN', notes: '', website: '',
     budgetMin: '', budgetMax: '', currencyCode: '', rating: '3',
     leaseTermType: 'LONG',
@@ -227,11 +231,6 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
 
   const { data: usersData } = useQuery({ queryKey: ['users-picker'], queryFn: () => usersApi.listAssignableUsers() });
   const users: any[] = usersData ?? [];
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000 });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
-  }, [categoryOptions]);
   const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
@@ -253,7 +252,8 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactName: lead.contactName || current.contactName,
       phone: lead.phone || current.phone,
       email: lead.email || current.email,
-      category: lead.category || current.category,
+      // CR-CRM-CATEGORY-MASTER-001 — carry the canonical id, not the label.
+      categoryId: lead.categoryId || current.categoryId,
       expectedArea: lead.expectedArea != null ? String(lead.expectedArea) : current.expectedArea,
       budgetMin: lead.expectedRent != null ? String(lead.expectedRent) : current.budgetMin,
       source: lead.source || current.source,
@@ -269,7 +269,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactName: form.contactName,
       phone: form.phone || undefined,
       email: form.email || undefined,
-      category: form.category || undefined,
+      categoryId: categoryIdForCreate(form.categoryId),
       expectedArea: form.expectedArea ? +form.expectedArea : undefined,
       source: form.source as any,
       notes: form.notes || undefined,
@@ -298,7 +298,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactTitle: form.contactTitle || undefined,
       phone: form.phone || undefined,
       email: form.email || undefined,
-      preferredCategory: form.category || undefined,
+      preferredCategoryId: categoryIdForCreate(form.categoryId),
       expectedArea: form.expectedArea ? +form.expectedArea : undefined,
       source: form.source as any,
       notes: form.notes || undefined,
@@ -423,17 +423,15 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldIndustry')}</Label>
-              <Select value={form.category || '_none'} onValueChange={(v) => set('category', v === '_none' ? '' : v)}>
-                <SelectTrigger className="mt-1 h-9">
-                  <SelectValue placeholder={t('addDialog.fieldIndustryPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">{t('addDialog.fieldIndustryNone')}</SelectItem>
-                  {categoryNames.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="mt-1">
+                <CategorySelect
+                  value={form.categoryId}
+                  onChange={(v) => set('categoryId', v)}
+                  enabled={open}
+                  placeholder={t('addDialog.fieldIndustryPlaceholder')}
+                  clearLabel={t('addDialog.fieldIndustryNone')}
+                />
+              </div>
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldArea')}</Label>
@@ -687,7 +685,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 {customer && (
                   <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-mono">{customer.customerCode}</span>
                 )}
-                {displayLead.category && <Badge variant="outline" className="text-xs">{displayLead.category}</Badge>}
+                {categoryLabel(displayLead) && <Badge variant="outline" className="text-xs">{categoryLabel(displayLead)}</Badge>}
                 {displayLead.source && <span className="text-xs text-gray-400">{SOURCE_LABELS[displayLead.source]}</span>}
               </div>
             </div>
@@ -754,7 +752,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
 
                 {/* Yêu cầu thuê */}
                 <SheetSection label={t('leadSheet.rentRequirements')} className="bg-gray-50">
-                  {displayLead.category && <SheetRow label={t('leadSheet.fieldCategory')} value={displayLead.category} icon={Tag} />}
+                  {categoryLabel(displayLead) && <SheetRow label={t('leadSheet.fieldCategory')} value={categoryLabel(displayLead)!} icon={Tag} />}
                   {displayLead.expectedArea && <SheetRow label={t('leadSheet.fieldArea')} value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
                   {/* RPT-CUR-005: was hardcoded 'VND'. The currency now comes
                       from the Lead; a legacy row with none says so. */}
@@ -1134,8 +1132,8 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
         </div>
 
         {/* Category */}
-        {lead.category && (
-          <div className="text-[10px] text-gray-500 mt-1">{lead.category}</div>
+        {categoryLabel(lead) && (
+          <div className="text-[10px] text-gray-500 mt-1">{categoryLabel(lead)}</div>
         )}
 
         {/* Footer: Days + Deal value + Activity warning */}
@@ -1276,7 +1274,13 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
 interface PipelineFilters {
   status?: string;
   assignedTo?: string;
-  category?: string;
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — Category.id, never a display label. Filtering
+   * by name broke the moment a Category was renamed, and the old hard-coded
+   * Vietnamese label list matched no stored value at all, so this filter
+   * always returned zero rows.
+   */
+  categoryId?: string;
   source?: string;
   priority?: string;
   quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | 'unassigned' | null;
@@ -1314,7 +1318,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
   const filters: PipelineFilters = useMemo(() => ({
     status: searchParams.get('status') || undefined,
     assignedTo: searchParams.get('assignedTo') || undefined,
-    category: searchParams.get('category') || undefined,
+    categoryId: searchParams.get('categoryId') || undefined,
     source: searchParams.get('source') || undefined,
     priority: searchParams.get('priority') || undefined,
     quickFilter: (searchParams.get('quickFilter') as PipelineFilters['quickFilter']) || null,
@@ -1434,8 +1438,8 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
       if (filters.assignedTo) {
         leads = leads.filter(l => l.assignedTo?.id === filters.assignedTo);
       }
-      if (filters.category) {
-        leads = leads.filter(l => l.category === filters.category);
+      if (filters.categoryId) {
+        leads = leads.filter(l => l.categoryId === filters.categoryId);
       }
       if (filters.source) {
         leads = leads.filter(l => l.source === filters.source);
@@ -1783,17 +1787,14 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
                 ))}
               </SelectContent>
             </Select>
-            <Select value={filters.category || '_all'} onValueChange={(v) => updateFilter('category', v === '_all' ? null : v)}>
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue placeholder={t('toolbar.industry')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
-                {LEAD_CATEGORIES.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-40">
+              <CategorySelect
+                value={filters.categoryId || ''}
+                onChange={(v) => updateFilter('categoryId', v || null)}
+                placeholder={t('toolbar.industry')}
+                clearLabel={t('toolbar.allValues')}
+              />
+            </div>
             <Select value={filters.source || '_all'} onValueChange={(v) => updateFilter('source', v === '_all' ? null : v)}>
               <SelectTrigger className="w-32 h-8 text-xs">
                 <SelectValue placeholder={t('toolbar.source')} />
@@ -1932,7 +1933,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
                       <div className="text-gray-700">{lead.contactName}</div>
                       {lead.phone && <div className="text-xs text-gray-400">{lead.phone}</div>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{lead.category ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{categoryLabel(lead) ?? '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-500 text-xs">{lead.expectedArea ? `${lead.expectedArea.toLocaleString()} m²` : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -2331,6 +2332,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const [inactiveReason, setInactiveReason] = useState('');
   const [showLeadSync, setShowLeadSync] = useState(false);
   const [syncLeadId, setSyncLeadId] = useState('');
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState('');
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2376,6 +2379,24 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
         title: t('customerDetail.advanceStatus', { label: statusLabel }),
         description: leadsCount > 0 && syncLabel ? t('customerDetail.leadsSyncHint', { count: leadsCount, label: syncLabel }) : undefined,
       });
+    },
+  });
+
+  // CR-CRM-CATEGORY-MASTER-001 — sends only the category, so nothing else on
+  // the customer can be touched by this edit.
+  const categoryMutation = useMutation({
+    mutationFn: () =>
+      customersApi.updateCustomer(customer!.id, {
+        preferredCategoryId: categoryIdForUpdate(categoryDraft),
+      }),
+    onSuccess: () => {
+      invalidateAll();
+      setEditingCategory(false);
+      toast({ title: t('customerDetail.categoryUpdated', 'Đã cập nhật ngành hàng') });
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.message;
+      toast({ title: Array.isArray(msg) ? msg.join(' | ') : msg ?? t('checkInfo'), variant: 'destructive' });
     },
   });
 
@@ -2450,7 +2471,55 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                 </SheetSection>
 
                 <SheetSection label={t('customerDetail.colRent')} className="bg-purple-50">
-                  {customer.preferredCategory && <SheetRow label={t('customerDetail.fieldCategory')} value={customer.preferredCategory} icon={Tag} />}
+                  {/* CR-CRM-CATEGORY-MASTER-001 — preferred category used to be
+                      write-once (set at creation or copied on conversion) with
+                      no way to correct it afterwards. */}
+                  <div className="py-1">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <Tag size={11} /> {t('customerDetail.fieldCategory')}
+                      </span>
+                      {canEdit && !editingCategory && (
+                        <button
+                          className="text-[11px] text-blue-600 hover:underline"
+                          onClick={() => {
+                            setCategoryDraft(initialCategoryValue({
+                              categoryId: (customer as any).preferredCategoryId,
+                              category: customer.preferredCategory,
+                            }));
+                            setEditingCategory(true);
+                          }}
+                        >
+                          {preferredCategoryLabel(customer) ? t('common:actions.edit', 'Sửa') : t('common:actions.add', 'Chọn')}
+                        </button>
+                      )}
+                    </div>
+                    {editingCategory ? (
+                      <div className="space-y-2">
+                        <CategorySelect
+                          value={categoryDraft}
+                          onChange={setCategoryDraft}
+                          legacyText={(customer as any).preferredCategoryId ? null : customer.preferredCategory}
+                          currentCategory={(customer as any).preferredCategoryRef ?? null}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="h-7 text-xs" disabled={categoryMutation.isPending} onClick={() => categoryMutation.mutate()}>
+                            {categoryMutation.isPending ? t('saving') : t('update')}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingCategory(false)}>
+                            {t('common:actions.cancel', 'Hủy')}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm">
+                        {preferredCategoryLabel(customer) ?? <span className="text-gray-400">—</span>}
+                        {!(customer as any).preferredCategoryId && customer.preferredCategory && (
+                          <span className="ml-2 text-[11px] text-amber-600">(Chưa ánh xạ)</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {customer.expectedArea && <SheetRow label={t('customerDetail.fieldArea')} value={`${customer.expectedArea.toLocaleString()} m²`} icon={Building2} />}
                   {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={formatBudgetRange(customer.budgetMin, customer.budgetMax, customer.currencyCode)} icon={TrendingUp} />}
                 </SheetSection>
@@ -2697,7 +2766,7 @@ function CustomersView({ onAddNew, requestedCustomerId, onCustomerClosed }: { on
                       <div className="text-gray-700 text-sm">{c.contactName}</div>
                       {c.phone && <div className="text-xs text-gray-400">{c.phone}</div>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500">{c.preferredCategory ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500">{preferredCategoryLabel(c) ?? '—'}</td>
                     <td className="px-4 py-2.5 text-right text-xs text-gray-500">{c.expectedArea ? `${c.expectedArea.toLocaleString()} m²` : '—'}</td>
                     <td className="px-4 py-2.5">
                       <div className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${s?.color}`}>
