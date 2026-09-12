@@ -16,6 +16,9 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+// Added to BookingService by the concurrent CRM business-event work; mocked so
+// this suite exercises the price path and nothing else.
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 const PROPOSER = 'user-sales';
 const MANAGER = 'user-manager';
@@ -83,6 +86,7 @@ describe('BookingService — price approval workflow', () => {
         { provide: PriceApprovalPolicyService, useValue: { evaluate: jest.fn() } },
         { provide: NotificationsService, useValue: notifications },
         { provide: EmailService, useValue: { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } },
+        { provide: LeadLifecycleService, useValue: { recordBookingEvent: jest.fn() } },
       ],
     }).compile();
     service = module.get(BookingService);

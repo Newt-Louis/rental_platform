@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { CrmFollowUpStatus, Role } from '@prisma/client';
 import { CrmService } from './crm.service';
 import { CategoryResolverService } from '../../common/services/category-resolver.service';
 
@@ -14,14 +14,25 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
       user: { findFirst: jest.fn().mockResolvedValue({ id: 'assignee-a' }) },
       leadFollowUp: {
         findMany: jest.fn().mockResolvedValue([]),
-        findFirst: jest.fn().mockResolvedValue({ id: 'follow-up-a' }),
-        create: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue({ id: 'follow-up-a', status: CrmFollowUpStatus.OPEN, leadId: null }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'follow-up-a', status: CrmFollowUpStatus.COMPLETED }),
+        create: jest.fn().mockResolvedValue({
+          id: 'follow-up-a', leadId: 'lead-a', assignedToId: 'assignee-a',
+          dueDate: new Date('2026-09-10'), createdAt: new Date('2026-09-01'), note: null,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       proposal: { groupBy: jest.fn().mockResolvedValue([]) },
+      crmBusinessEvent: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
+    service = new CrmService(
+      prisma,
+      {} as any,
+      new CategoryResolverService(prisma as any),
+      { append: jest.fn() } as any,
+      {} as any,
+    );
   });
 
   it('SEC-MALL-004 keeps the Mall predicate when assignedToId is supplied', async () => {
@@ -35,9 +46,7 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
   it('treats explicit Lead.mallId as authoritative over a cross-Mall assignee relationship', async () => {
     await service.createFollowUp({ leadId: 'lead-b', assignedToId: 'assignee-a', dueDate: '2026-09-10' }, 'manager-a', scope);
     const leadWhere = prisma.lead.findFirst.mock.calls[0][0].where;
-    const scopeOr = leadWhere.AND[0].OR;
-    expect(scopeOr[0]).toEqual({ mallId: { in: ['mall-a'] } });
-    expect(scopeOr[1]).toMatchObject({ mallId: null, OR: expect.any(Array) });
+    expect(leadWhere.mallId).toEqual({ in: ['mall-a'] });
   });
 
   it('SEC-MALL-006 validates both a Lead parent and assignee before create', async () => {
@@ -58,16 +67,16 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
   });
 
   it.each([
-    ['complete', (s: CrmService) => s.completeFollowUp('follow-up-b', scope), 'update'],
-    ['delete', (s: CrmService) => s.deleteFollowUp('follow-up-b', scope), 'delete'],
-  ])('SEC-MALL-002/003 denies %s by foreign id with zero write side effects', async (_name, call, mutation) => {
+    ['complete', (s: CrmService) => s.completeFollowUp('follow-up-b', {}, scope)],
+    ['cancel', (s: CrmService) => s.cancelFollowUp('follow-up-b', 'No longer needed', scope)],
+  ])('SEC-MALL-002/003 denies %s by foreign id with zero write side effects', async (_name, call) => {
     prisma.leadFollowUp.findFirst.mockResolvedValue(null);
     await expect(call(service)).rejects.toBeInstanceOf(NotFoundException);
-    expect(prisma.leadFollowUp[mutation]).not.toHaveBeenCalled();
+    expect(prisma.leadFollowUp.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not let a Mall-B Lead pass through a Mall-A assignee fallback', async () => {
-    await service.completeFollowUp('follow-up-b', scope);
+    await service.completeFollowUp('follow-up-b', {}, scope);
     const where = prisma.leadFollowUp.findFirst.mock.calls[0][0].where;
     expect(where.AND[0].OR[1]).toMatchObject({ leadId: null });
   });
@@ -76,16 +85,15 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
     prisma.lead.findMany = jest.fn().mockResolvedValue([]);
     await service.getPipelineStats(scope);
     const where = prisma.lead.findMany.mock.calls[0][0].where;
-    expect(where.AND[0].OR[0]).toEqual({ mallId: { in: ['mall-a'] } });
-    expect(where.AND[0].OR[1]).toMatchObject({ mallId: null });
+    expect(where.mallId).toEqual({ in: ['mall-a'] });
     expect(where).not.toHaveProperty('assignedToId');
   });
 
-  it('scopes the stale-lead batch update instead of mutating every Mall', async () => {
-    prisma.lead.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+  it('scopes the stale-lead dry-run query instead of exposing every Mall', async () => {
+    prisma.lead.findMany = jest.fn().mockResolvedValue([]);
     await service.autoMoveStaleToLost(60, scope);
-    const where = prisma.lead.updateMany.mock.calls[0][0].where;
-    expect(where.AND[0].OR[0]).toEqual({ mallId: { in: ['mall-a'] } });
+    const where = prisma.lead.findMany.mock.calls[0][0].where;
+    expect(where.mallId).toEqual({ in: ['mall-a'] });
   });
 
   it('scopes both the Lead and selected assignee during automatic assignment', async () => {
@@ -94,7 +102,7 @@ describe('CRM follow-up Mall isolation (CR-120)', () => {
     await service.autoAssignLead('lead-a', scope);
     const leadCall = prisma.lead.findFirst.mock.calls[prisma.lead.findFirst.mock.calls.length - 1][0];
     const userCall = prisma.user.findFirst.mock.calls[prisma.user.findFirst.mock.calls.length - 1][0];
-    expect(leadCall.where.AND[0].OR[0]).toEqual({ mallId: { in: ['mall-a'] } });
+    expect(leadCall.where.mallId).toEqual({ in: ['mall-a'] });
     expect(userCall.where).toMatchObject({
       mallAccess: { some: { isActive: true, mallId: { in: ['mall-a'] } } },
     });

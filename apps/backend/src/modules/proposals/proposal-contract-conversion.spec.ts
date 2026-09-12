@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 import { ProposalStatus, UnitStatus } from '@prisma/client';
 
 /**
@@ -47,6 +48,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
   };
   const unitStatus: any = { transition: jest.fn() };
   const customersService: any = { createFromLead: jest.fn() };
+  const leadLifecycle: any = { transition: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -58,6 +60,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     prisma.$transaction.mockImplementation((cb: any) => cb(prisma));
     unitStatus.transition.mockResolvedValue({ id: 'u1', status: UnitStatus.CONTRACTED });
     customersService.createFromLead.mockResolvedValue({ id: 'cust-1' });
+    leadLifecycle.transition.mockResolvedValue({ changed: true });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -70,6 +73,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(ProposalsService);
@@ -91,7 +95,10 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     );
     expect(prisma.unitBooking.updateMany).toHaveBeenCalledTimes(1);
     expect(prisma.proposal.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { status: ProposalStatus.CONVERTED } });
-    expect(prisma.lead.update).toHaveBeenCalledWith({ where: { id: 'l1' }, data: { status: 'WON' } });
+    expect(leadLifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: 'l1', targetStatus: 'WON' }),
+      prisma,
+    );
   });
 
   // Regression found live in the running dev environment during a QC pass on the multi-currency

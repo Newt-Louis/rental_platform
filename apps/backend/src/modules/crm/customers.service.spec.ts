@@ -13,7 +13,7 @@ describe('CustomersService Lead linking', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CustomersService(prisma, new CategoryResolverService(prisma as any));
+    service = new CustomersService(prisma, new CategoryResolverService(prisma as any), {} as any);
   });
 
   it('creates and links a profile without forcing an early Lead to ACTIVE', async () => {
@@ -98,7 +98,7 @@ describe('CustomersService — Leasing Executive scoping', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CustomersService(prisma, new CategoryResolverService(prisma as any));
+    service = new CustomersService(prisma, new CategoryResolverService(prisma as any), {} as any);
   });
 
   it('findAll does not restrict LEASING_EXECUTIVE to their own customers', async () => {

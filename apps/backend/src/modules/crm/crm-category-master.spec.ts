@@ -37,19 +37,27 @@ describe('CrmService — Lead category identity', () => {
     prisma = {
       category: { findUnique: categoryFindUnique() },
       lead: {
-        create: jest.fn(async ({ data }: any) => ({ id: 'lead-1', ...data })),
+        create: jest.fn(async ({ data }: any) => ({ id: 'lead-1', status: 'NEW', createdAt: new Date(), ...data })),
         update: jest.fn(async ({ data }: any) => ({ id: 'lead-1', ...data })),
         findUnique: jest.fn(),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'lead-1', status: 'NEW' }),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
     };
-    service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma));
+    prisma.$transaction = jest.fn((callback: any) => callback(prisma));
+    service = new CrmService(
+      prisma,
+      {} as any,
+      new CategoryResolverService(prisma),
+      { append: jest.fn().mockResolvedValue({ id: 'event-1' }) } as any,
+      {} as any,
+    );
   });
 
   // CRM-CAT-001 / CRM-CAT-002
   it('CRM-CAT-001/002 persists categoryId and derives the name from the master', async () => {
-    await service.create({ brandName: 'Highlands', contactName: 'A', categoryId: FNB.id } as any);
+    await service.create({ brandName: 'Highlands', contactName: 'A', categoryId: FNB.id } as any, 'user-1');
 
     const data = prisma.lead.create.mock.calls[0][0].data;
     expect(data.categoryId).toBe(FNB.id);
@@ -63,7 +71,7 @@ describe('CrmService — Lead category identity', () => {
       contactName: 'A',
       categoryId: FNB.id,
       category: 'Ẩm thực (client bịa)',
-    } as any);
+    } as any, 'user-1');
 
     const data = prisma.lead.create.mock.calls[0][0].data;
     expect(data.category).toBe('F&B');
@@ -72,14 +80,14 @@ describe('CrmService — Lead category identity', () => {
   // CRM-CAT-006
   it('CRM-CAT-006 rejects an unknown categoryId with zero mutation', async () => {
     await expect(
-      service.create({ brandName: 'X', contactName: 'A', categoryId: 'does-not-exist' } as any),
+      service.create({ brandName: 'X', contactName: 'A', categoryId: 'does-not-exist' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.lead.create).not.toHaveBeenCalled();
   });
 
   it('CRM-CAT-006 rejects an inactive category with zero mutation', async () => {
     await expect(
-      service.create({ brandName: 'X', contactName: 'A', categoryId: RETIRED.id } as any),
+      service.create({ brandName: 'X', contactName: 'A', categoryId: RETIRED.id } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.lead.create).not.toHaveBeenCalled();
   });
@@ -94,7 +102,7 @@ describe('CrmService — Lead category identity', () => {
       category: 'F&B',
     } as any);
 
-    await service.update('lead-1', { phone: '0912345678' } as any);
+    await service.update('lead-1', { phone: '0912345678' } as any, 'user-1');
 
     const data = prisma.lead.update.mock.calls[0][0].data;
     expect(data).not.toHaveProperty('categoryId');
@@ -110,7 +118,7 @@ describe('CrmService — Lead category identity', () => {
       category: 'F&B',
     } as any);
 
-    await service.update('lead-1', { categoryId: FASHION.id } as any);
+    await service.update('lead-1', { categoryId: FASHION.id } as any, 'user-1');
 
     const data = prisma.lead.update.mock.calls[0][0].data;
     expect(data.categoryId).toBe(FASHION.id);
@@ -127,11 +135,9 @@ describe('CrmService — Lead category identity', () => {
       category: 'F&B',
     } as any);
 
-    await service.update('lead-1', { category: 'Thời trang' } as any);
+    await service.update('lead-1', { category: 'Thời trang' } as any, 'user-1');
 
-    const data = prisma.lead.update.mock.calls[0][0].data;
-    expect(data).not.toHaveProperty('category');
-    expect(data).not.toHaveProperty('categoryId');
+    expect(prisma.lead.update).not.toHaveBeenCalled();
   });
 
   // CRM-CAT-009 — an un-backfilled lead is still correctable by a legacy client.
@@ -143,7 +149,7 @@ describe('CrmService — Lead category identity', () => {
       category: 'F&B',
     } as any);
 
-    await service.update('lead-1', { category: 'Giá trị cũ khác' } as any);
+    await service.update('lead-1', { category: 'Giá trị cũ khác' } as any, 'user-1');
 
     expect(prisma.lead.update.mock.calls[0][0].data.category).toBe('Giá trị cũ khác');
   });
@@ -157,7 +163,7 @@ describe('CrmService — Lead category identity', () => {
       category: 'F&B',
     } as any);
 
-    await service.update('lead-1', { categoryId: null } as any);
+    await service.update('lead-1', { categoryId: null } as any, 'user-1');
 
     const data = prisma.lead.update.mock.calls[0][0].data;
     expect(data.categoryId).toBeNull();
@@ -184,7 +190,7 @@ describe('CrmService — Lead category identity', () => {
     } as any);
 
     prisma.category.findUnique = jest.fn(async () => ({ ...FNB, name: 'Ẩm thực & Đồ uống' }));
-    await service.update('lead-1', { categoryId: FNB.id } as any);
+    await service.update('lead-1', { categoryId: FNB.id } as any, 'user-1');
 
     const data = prisma.lead.update.mock.calls[0][0].data;
     expect(data.categoryId).toBe(FNB.id);
@@ -218,7 +224,7 @@ describe('CustomersService — preferred category identity', () => {
       },
       lead: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     };
-    service = new CustomersService(prisma, new CategoryResolverService(prisma));
+    service = new CustomersService(prisma, new CategoryResolverService(prisma), {} as any);
   });
 
   // CRM-CAT-012

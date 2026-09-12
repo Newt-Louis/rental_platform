@@ -11,7 +11,7 @@ describe('CrmService lead list filters', () => {
       findFirst: jest.fn(),
     },
   } as any;
-  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
+  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any), {} as any, {} as any);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -47,12 +47,19 @@ describe('CrmService lead list filters', () => {
     });
 
     const where = prisma.lead.findMany.mock.calls[0][0].where;
-    expect(where.AND[0].OR).toEqual(expect.arrayContaining([
-      { mallId: { in: ['mall-1'] } },
-    ]));
-    expect(where.AND[0].OR).not.toEqual(expect.arrayContaining([
-      { assignedToId: 'executive-1' },
-    ]));
+    expect(where.mallId).toEqual({ in: ['mall-1'] });
+    expect(where).not.toHaveProperty('assignedToId');
+  });
+
+  it('CRM-SEC-030 fails closed for a null-Mall Lead instead of inferring ownership', async () => {
+    prisma.lead.findFirst.mockResolvedValue(null);
+    await expect(service.assertLeadAccess('legacy-null-mall', {
+      userId: 'manager-1', role: Role.LEASING_MANAGER, mallIds: ['mall-1'],
+    })).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.lead.findFirst.mock.calls[0][0].where).toMatchObject({
+      id: 'legacy-null-mall',
+      mallId: { in: ['mall-1'] },
+    });
   });
 
   it('keeps mall scope when a search filter also adds an OR clause', async () => {
@@ -62,7 +69,7 @@ describe('CrmService lead list filters', () => {
     });
 
     const where = prisma.lead.findMany.mock.calls[0][0].where;
-    expect(where.AND).toHaveLength(1);
+    expect(where.mallId).toEqual({ in: ['mall-1'] });
     expect(where.OR).toHaveLength(4);
   });
 
@@ -74,7 +81,6 @@ describe('CrmService lead list filters', () => {
 
     const where = prisma.lead.findMany.mock.calls[0][0].where;
     expect(where.mallId).toBe('mall-1');
-    expect(where.AND).toHaveLength(1);
   });
 
   it('applies caller and explicit Mall scope before querying unified deals', async () => {
@@ -85,10 +91,6 @@ describe('CrmService lead list filters', () => {
 
     const where = prisma.lead.findMany.mock.calls[0][0].where;
     expect(where.mallId).toBe('mall-1');
-    expect(where.AND).toHaveLength(1);
-    expect(where.AND[0].OR).toEqual(expect.arrayContaining([
-      { mallId: { in: ['mall-1'] } },
-    ]));
   });
 
   it('scopes unified deals for a leasing executive by mall, same as other roles', async () => {
@@ -97,15 +99,13 @@ describe('CrmService lead list filters', () => {
     });
 
     const where = prisma.lead.findMany.mock.calls[0][0].where;
-    expect(where.AND[0].OR).toEqual(expect.arrayContaining([
-      { mallId: { in: ['mall-1'] } },
-    ]));
+    expect(where.mallId).toEqual({ in: ['mall-1'] });
   });
 });
 
 describe('CrmService.assertLeadEditAccess', () => {
   const prisma = { lead: { findFirst: jest.fn() } } as any;
-  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any));
+  const service = new CrmService(prisma, {} as any, new CategoryResolverService(prisma as any), {} as any, {} as any);
 
   beforeEach(() => jest.clearAllMocks());
 

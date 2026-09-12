@@ -20,6 +20,8 @@ import { BookingService } from '../src/modules/booking/booking.service';
 import { PriceApprovalPolicyService } from '../src/modules/approvals/price-approval-policy.service';
 import { CategoriesService } from '../src/modules/categories/categories.service';
 import { EmailService } from '../src/modules/notifications/email.service';
+import { CrmBusinessEventService } from '../src/modules/crm/crm-business-event.service';
+import { LeadLifecycleService } from '../src/modules/crm/lead-lifecycle.service';
 
 const DB_URL = process.env.CR_TEST_DATABASE_URL;
 
@@ -63,6 +65,8 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
 
     const categories = new CategoriesService(prisma as any);
     const policy = new PriceApprovalPolicyService(prisma as any, categories);
+    const crmEvents = new CrmBusinessEventService(prisma as any);
+    const leadLifecycle = new LeadLifecycleService(prisma as any, crmEvents);
     service = new BookingService(
       prisma as any,
       categories,
@@ -70,6 +74,7 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
       policy,
       notifications,
       emailService,
+      leadLifecycle,
     );
   });
 
@@ -79,6 +84,7 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
 
   async function reset() {
     jest.clearAllMocks();
+    await prisma.crmBusinessEvent.deleteMany({});
     await prisma.bookingActivity.deleteMany({});
     await prisma.bookingPriceApprovalStep.deleteMany({});
     await prisma.unitBooking.deleteMany({});
@@ -547,6 +553,137 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
     });
   });
 
+  // ── CR-...-ALWAYS-WARN-004 §23: the routing is configuration, proved live ──
+
+  describe('configuration-driven routing (no code changes between cases)', () => {
+    beforeEach(reset);
+
+    async function decide(rent = 700_000) {
+      return service.previewPricingDecision(
+        { unitId: ids.unitA, proposedRentPerSqm: rent, currencyCode: 'VND' },
+        { role: Role.ADMIN },
+      );
+    }
+
+    it('TEST A — no policy: warns, and names nobody', async () => {
+      const decision = await decide();
+
+      expect(decision.status).toBe('POLICY_NOT_CONFIGURED');
+      expect(decision.message.length).toBeGreaterThan(20);
+      expect(decision.approval.steps).toEqual([]);
+      // Nothing may appear that the configuration did not put there.
+      expect(decision.message).not.toMatch(/Manager|Director|CEO/i);
+    });
+
+    it('TEST B — policy inserted into the DB: same code, now ROUTED', async () => {
+      await addRule({ code: 'B1', approverId: ids.manager, approverRole: Role.LEASING_MANAGER });
+
+      const decision = await decide();
+
+      expect(decision.status).toBe('ROUTED');
+      expect(decision.approval.steps.map((s) => s.approverId)).toEqual([ids.manager]);
+      expect(decision.approval.policyConfigured).toBe(true);
+    });
+
+    it('TEST C — policy edited: same facts route to the newly configured signer', async () => {
+      const rule = await addRule({ code: 'C1', approverId: ids.manager });
+      const before = await decide();
+      expect(before.approval.steps.map((s) => s.approverId)).toEqual([ids.manager]);
+
+      // Data change only. No rebuild, no source edit.
+      await prisma.approvalPolicyRule.update({
+        where: { id: rule.id },
+        data: { approverId: ids.director, approverRole: Role.MALL_DIRECTOR },
+      });
+
+      const after = await decide();
+      expect(after.approval.steps.map((s) => s.approverId)).toEqual([ids.director]);
+      expect(after.deviationPercent).toBe(before.deviationPercent);
+      expect(after.fingerprint).not.toBe(before.fingerprint);
+    });
+
+    it('TEST D — price inside the band still tells the user something', async () => {
+      await addRule({ code: 'D1', approverId: ids.manager });
+
+      const decision = await decide(1_000_000);
+
+      expect(decision.status).toBe('NOT_REQUIRED');
+      expect(decision.severity).toBe('INFO');
+      expect(decision.message).toContain('không yêu cầu phê duyệt');
+    });
+
+    it('deactivating the rule falls back to a warning, not to silence', async () => {
+      const rule = await addRule({ code: 'E1', approverId: ids.manager });
+      expect((await decide()).status).toBe('ROUTED');
+
+      await prisma.approvalPolicyRule.update({ where: { id: rule.id }, data: { isActive: false } });
+
+      const decision = await decide();
+      expect(decision.status).toBe('POLICY_NOT_CONFIGURED');
+      expect(decision.message.length).toBeGreaterThan(20);
+    });
+  });
+
+  // ── TOCTOU ────────────────────────────────────────────────────────────────
+
+  describe('preview is not authorization', () => {
+    beforeEach(async () => {
+      await reset();
+      await addRule({ code: 'T1', approverId: ids.manager });
+    });
+
+    it('accepts a submit whose acknowledged decision still holds', async () => {
+      const preview = await service.previewPricingDecision(
+        { unitId: ids.unitA, proposedRentPerSqm: 700_000, currencyCode: 'VND' },
+        { role: Role.ADMIN },
+      );
+
+      const booking = await service.create(
+        {
+          unitId: ids.unitA,
+          leadId: ids.leadA,
+          holdDays: 7,
+          proposedRentPerSqm: 700_000,
+          currencyCode: 'VND',
+          acknowledgedPricingFingerprint: preview.fingerprint,
+        } as any,
+        ids.proposer,
+      );
+
+      expect(booking.priceApprovalStatus).toBe(PriceApprovalStatus.PENDING);
+    });
+
+    it('refuses a submit after the policy changed under the preview', async () => {
+      const preview = await service.previewPricingDecision(
+        { unitId: ids.unitA, proposedRentPerSqm: 700_000, currencyCode: 'VND' },
+        { role: Role.ADMIN },
+      );
+
+      // Somebody re-points the rule between preview and submit.
+      await prisma.approvalPolicyRule.updateMany({
+        where: { code: 'T1' },
+        data: { approverId: ids.director, approverRole: Role.MALL_DIRECTOR },
+      });
+
+      await expect(
+        service.create(
+          {
+            unitId: ids.unitA,
+            leadId: ids.leadA,
+            holdDays: 7,
+            proposedRentPerSqm: 700_000,
+            currencyCode: 'VND',
+            acknowledgedPricingFingerprint: preview.fingerprint,
+          } as any,
+          ids.proposer,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // Refused means nothing was written.
+      expect(await prisma.unitBooking.count()).toBe(0);
+    });
+  });
+
   // ── 7. Approver resolution ─────────────────────────────────────────────────
 
   describe('approver resolution', () => {
@@ -576,9 +713,11 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
       expect(booking.priceApprovalStatus).toBe(PriceApprovalStatus.PENDING);
     });
 
-    it('creates one step per named approver when several rules match', async () => {
+    it('creates one step per named approver across a sequential chain', async () => {
+      // Different stepOrders: the configuration is saying "both sign, in this
+      // order", so both steps stand.
       await addRule({ code: 'S1', stepOrder: 10, approverId: ids.manager });
-      await addRule({ code: 'S2', stepOrder: 10, approverId: ids.director, approverRole: Role.MALL_DIRECTOR });
+      await addRule({ code: 'S2', stepOrder: 20, approverId: ids.director, approverRole: Role.MALL_DIRECTOR });
 
       const booking = await makePendingBooking();
       const steps = await prisma.bookingPriceApprovalStep.findMany({
@@ -587,6 +726,16 @@ maybeDescribe('CR-BOOK-PRICE-APPROVAL-001 — real PostgreSQL', () => {
       });
       expect(steps.map((s) => s.approverId)).toEqual([ids.manager, ids.director]);
       expect(steps.map((s) => s.stepOrder)).toEqual([1, 2]);
+    });
+
+    it('refuses the write when two rules claim the same step position', async () => {
+      // Same stepOrder, different signers: the chain would depend on the query
+      // plan. The booking is refused rather than routed arbitrarily.
+      await addRule({ code: 'S1', stepOrder: 10, approverId: ids.manager });
+      await addRule({ code: 'S2', stepOrder: 10, approverId: ids.director, approverRole: Role.MALL_DIRECTOR });
+
+      await expect(makePendingBooking()).rejects.toBeInstanceOf(BadRequestException);
+      expect(await prisma.unitBooking.count()).toBe(0);
     });
   });
 });

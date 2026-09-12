@@ -28,7 +28,7 @@ function buildService(overrides: any = {}) {
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
     ...overrides,
   };
-  const service = new CustomersService(prisma as any, new CategoryResolverService(prisma as any as any));
+  const service = new CustomersService(prisma as any, new CategoryResolverService(prisma as any as any), {} as any);
   // generateCustomerCode reads customer.findFirst; stub it out of the way.
   jest.spyOn(service as any, 'generateCustomerCode').mockResolvedValue('KH-2026-00099');
   return { service, prisma };

@@ -8,6 +8,7 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
 import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 /**
  * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md items 1-3,
@@ -21,21 +22,36 @@ import { EmailService } from '../notifications/email.service';
 // from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
 // band" so tests that say nothing about price keep their old behaviour.
 const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
   evaluate: jest.fn().mockResolvedValue({
-    evaluated: true,
-    requiresApproval: false,
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
     deviationPercent: 0,
-    approvalLevel: 'NONE',
-    pricingRuleId: null,
-    pricingSnapshot: undefined,
-    steps: [],
-    unrouted: false,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
     message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
   }),
-  resolveSteps: jest.fn().mockResolvedValue([]),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
 } as any;
 const notifications = { create: jest.fn() } as any;
 const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+// CR-CRM-BUSINESS-EVENT: BookingService now routes the Lead status change
+// through LeadLifecycleService instead of writing tx.lead.update directly, so
+// the transition is recorded as a CRM business event. The double records the
+// call; the suites assert on it rather than on the raw write.
+const leadLifecycle = { transition: jest.fn().mockResolvedValue(undefined) } as any;
+
 
 describe('BookingService reliability — create/update/cancel atomicity, idempotency, concurrency', () => {
   let service: BookingService;
@@ -98,6 +114,7 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
         { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
         { provide: NotificationsService, useValue: notifications },
         { provide: EmailService, useValue: emailService },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(BookingService);
@@ -205,8 +222,14 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
         expect.objectContaining({ userId: 'user-1' }),
         prisma, // the tx client (== prisma in this mock harness)
       );
-      expect(prisma.lead.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'lead-1' }, data: { status: 'PROPOSAL' } }),
+      // The invariant is unchanged -- the Lead moves inside the SAME transaction
+      // as the booking create -- but the write now goes through
+      // LeadLifecycleService so it is captured as a CRM business event. Asserting
+      // on the transition (and on the tx it was handed) keeps the atomicity
+      // guarantee under test instead of quietly dropping it.
+      expect(leadLifecycle.transition).toHaveBeenCalledWith(
+        expect.objectContaining({ leadId: 'lead-1', targetStatus: 'PROPOSAL' }),
+        expect.anything(),
       );
     });
   });

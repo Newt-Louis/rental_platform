@@ -7,6 +7,7 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
 import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 /**
  * CategoryPricing now carries its own currencyCode (previously a plain
@@ -23,21 +24,36 @@ import { EmailService } from '../notifications/email.service';
 // from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
 // band" so tests that say nothing about price keep their old behaviour.
 const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
   evaluate: jest.fn().mockResolvedValue({
-    evaluated: true,
-    requiresApproval: false,
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
     deviationPercent: 0,
-    approvalLevel: 'NONE',
-    pricingRuleId: null,
-    pricingSnapshot: undefined,
-    steps: [],
-    unrouted: false,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
     message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
   }),
-  resolveSteps: jest.fn().mockResolvedValue([]),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
 } as any;
 const notifications = { create: jest.fn() } as any;
 const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+// CR-CRM-BUSINESS-EVENT: BookingService now routes the Lead status change
+// through LeadLifecycleService instead of writing tx.lead.update directly, so
+// the transition is recorded as a CRM business event. The double records the
+// call; the suites assert on it rather than on the raw write.
+const leadLifecycle = { transition: jest.fn().mockResolvedValue(undefined) } as any;
+
 
 describe('BookingService — category price validation is currency-aware', () => {
   let service: BookingService;
@@ -107,6 +123,7 @@ describe('BookingService — category price validation is currency-aware', () =>
         { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
         { provide: NotificationsService, useValue: notifications },
         { provide: EmailService, useValue: emailService },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(BookingService);
@@ -115,15 +132,20 @@ describe('BookingService — category price validation is currency-aware', () =>
   describe('create()', () => {
     beforeEach(() => {
       priceApprovalPolicy.evaluate.mockResolvedValue({
-        evaluated: true,
-        requiresApproval: true,
+        status: 'ROUTED',
+        severity: 'WARNING',
+        requiresAcknowledgement: true,
+        blocking: false,
+        basis: 'CATEGORY_BAND',
+        proposedRentPerSqm: 0,
+        reference: { minRentPerSqm: 900000, maxRentPerSqm: 1500000, currency: 'VND' },
         deviationPercent: 99.995,
-        approvalLevel: 'CEO',
-        pricingRuleId: 'rule-1',
-        pricingSnapshot: undefined,
-        steps: [],
-        unrouted: true,
+        approval: { required: true, policyConfigured: false, steps: [] },
+        categoryPricingId: 'rule-1',
+        warningCode: 'PRICE_ROUTED',
         message: 'Below floor',
+        evaluatedAt: new Date().toISOString(),
+        fingerprint: 'fp',
       });
       prisma.unit.findUnique.mockResolvedValue({
         id: 'unit-1', mallId: 'mall-1', categoryId: 'cat-1', status: UnitStatus.VACANT, isActive: true,

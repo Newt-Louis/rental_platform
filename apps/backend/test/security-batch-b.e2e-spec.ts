@@ -21,6 +21,7 @@ describe('Security Batch B runtime proof (e2e)', () => {
   const mallBCode = 'CR120-MALL-B';
   const rateAId = 'cr120-rate-a';
   const rateBId = 'cr120-rate-b';
+  const leadAId = 'cr120-lead-a';
   const leadBId = 'cr120-lead-b';
   const autoLeadBId = 'cr120-auto-lead-b';
   const followUpBId = 'cr120-followup-b';
@@ -80,15 +81,25 @@ describe('Security Batch B runtime proof (e2e)', () => {
       skipDuplicates: true,
     });
 
-    await prisma.lead.create({
-      data: {
-        id: leadBId,
-        brandName: 'CR-120 Mall B Lead',
-        contactName: 'Security Fixture',
-        mallId: mallBId,
-        assignedToId: manager.id,
-        createdAt: new Date('1800-01-01T00:00:00.000Z'),
-      },
+    await prisma.lead.createMany({
+      data: [
+        {
+          id: leadAId,
+          brandName: 'CR-120 Mall A Lead',
+          contactName: 'Security Fixture',
+          mallId: mallAId,
+          assignedToId: manager.id,
+          createdAt: new Date('1800-01-01T00:00:00.000Z'),
+        },
+        {
+          id: leadBId,
+          brandName: 'CR-120 Mall B Lead',
+          contactName: 'Security Fixture',
+          mallId: mallBId,
+          assignedToId: manager.id,
+          createdAt: new Date('1800-01-01T00:00:00.000Z'),
+        },
+      ],
     });
     await prisma.lead.create({
       data: {
@@ -145,7 +156,7 @@ describe('Security Batch B runtime proof (e2e)', () => {
   afterAll(async () => {
     if (prisma) {
       await prisma.leadFollowUp.deleteMany({ where: { id: { startsWith: 'cr120-' } } });
-      await prisma.lead.deleteMany({ where: { id: { in: [leadBId, autoLeadBId] } } });
+      await prisma.lead.deleteMany({ where: { id: { in: [leadAId, leadBId, autoLeadBId] } } });
       await prisma.periodicChargeRateConfig.deleteMany({ where: { id: { in: [rateAId, rateBId] } } });
       if (createdOperationGrant) {
         const operation = await prisma.user.findUnique({ where: { email: 'operation@thiso.com' } });
@@ -230,14 +241,61 @@ describe('Security Batch B runtime proof (e2e)', () => {
     expect(after).toBe(before);
   });
 
-  it('SEC-MALL-008: cross-Mall stale batch leaves the foreign Lead unchanged', async () => {
-    await request(app.getHttpServer())
+  it('SEC-MALL-008 / AUTOLOST-003/004/005: dry-run is scoped, spoof-safe and business-idempotent', async () => {
+    const before = await prisma.lead.findMany({
+      where: { id: { in: [leadAId, leadBId] } },
+      select: { id: true, status: true, lostReason: true, updatedAt: true },
+      orderBy: { id: 'asc' },
+    });
+
+    const first = await request(app.getHttpServer())
       .post('/api/crm/leads/auto-move-stale?days=50000')
       .set('Authorization', `Bearer ${managerToken}`)
       .expect(201);
-    const unchanged = await prisma.lead.findUniqueOrThrow({ where: { id: leadBId } });
-    expect(unchanged.status).toBe('NEW');
-    expect(unchanged.lostReason).toBeNull();
+
+    expect(first.body).toMatchObject({
+      mode: 'DRY_RUN',
+      moved: 0,
+      statusMutations: 0,
+      candidateCount: 1,
+    });
+    expect(first.body.candidates).toEqual([
+      expect.objectContaining({ leadId: leadAId, mallId: mallAId }),
+    ]);
+    expect(first.body.candidates).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ leadId: leadBId })]),
+    );
+
+    await request(app.getHttpServer())
+      .post(`/api/crm/leads/auto-move-stale?days=50000&mallId=${mallBId}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(403);
+
+    const second = await request(app.getHttpServer())
+      .post('/api/crm/leads/auto-move-stale?days=50000')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(201);
+    expect(second.body.candidateCount).toBe(1);
+    expect(second.body.candidates.map((candidate: any) => candidate.leadId)).toEqual(
+      first.body.candidates.map((candidate: any) => candidate.leadId),
+    );
+
+    const after = await prisma.lead.findMany({
+      where: { id: { in: [leadAId, leadBId] } },
+      select: { id: true, status: true, lostReason: true, updatedAt: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(after).toEqual(before);
+
+    // This used to assert the CrmBusinessEvent table did not exist, which proved
+    // "dry-run writes no lifecycle history" only for as long as there was no
+    // history to write. The ledger now exists (CR-CRM-BUSINESS-EVENT-001), so
+    // the original intent is asserted directly and more strictly: the candidates
+    // the dry run listed must have produced no event of any kind.
+    const lifecycleEvents = await prisma.crmBusinessEvent.count({
+      where: { leadId: { in: [leadAId, leadBId] } },
+    });
+    expect(lifecycleEvents).toBe(0);
   });
 
   it('SEC-MALL-002/008: cross-Mall automatic assignment is denied before mutation', async () => {

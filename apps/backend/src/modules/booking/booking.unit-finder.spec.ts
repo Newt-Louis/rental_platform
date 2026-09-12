@@ -9,9 +9,32 @@ describe("BookingService.findUnits", () => {
     lead: { findUnique: jest.fn() },
   };
   const categories: any = { validateProposedPrice: jest.fn() };
-  const priceApprovalPolicy: any = { evaluate: jest.fn(), resolveSteps: jest.fn().mockResolvedValue([]) };
+  const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
+  evaluate: jest.fn().mockResolvedValue({
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
+    deviationPercent: 0,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
+    message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
+} as any;
   const notifications: any = { create: jest.fn() };
   const emailService: any = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() };
+  const leadLifecycle: any = { transition: jest.fn() };
   const unitStatus: any = {
     isLockedForBooking: jest.fn(
       (status: UnitStatus) =>
@@ -27,7 +50,7 @@ describe("BookingService.findUnits", () => {
     prisma.unit.findMany.mockResolvedValue([]);
     prisma.unit.count.mockResolvedValue(0);
     prisma.unitBooking.groupBy.mockResolvedValue([]);
-    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService);
+    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService, leadLifecycle);
   });
 
   it("applies accessible Mall IDs at the Unit query boundary", async () => {

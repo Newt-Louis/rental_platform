@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 import { ProposalStatus } from '@prisma/client';
 import { Role } from '@prisma/client';
 
@@ -48,6 +49,7 @@ describe('ProposalsService integration (mocked DB)', () => {
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
         { provide: CategoriesService, useValue: categories },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
+        { provide: LeadLifecycleService, useValue: { transition: jest.fn() } },
       ],
     }).compile();
     service = module.get(ProposalsService);

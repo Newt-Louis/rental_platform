@@ -10,7 +10,7 @@ describe('CrmController unified-deals scope', () => {
       assertMallAccess: jest.fn(),
       getAccessibleMallIds: jest.fn(),
     };
-    const controller = new CrmController(crmService, mallAccess);
+    const controller = new CrmController(crmService, mallAccess, {} as any);
     const user = { id: 'manager-1', role: Role.LEASING_MANAGER };
 
     await controller.getUnifiedDeals({ mallId: 'mall-1', page: 2 }, user);
@@ -29,7 +29,7 @@ describe('CrmController unified-deals scope', () => {
       assertMallAccess: jest.fn(),
       getAccessibleMallIds: jest.fn().mockResolvedValue(['mall-1', 'mall-2']),
     };
-    const controller = new CrmController(crmService, mallAccess);
+    const controller = new CrmController(crmService, mallAccess, {} as any);
     const user = { id: 'manager-1', role: Role.LEASING_MANAGER };
 
     await controller.getUnifiedDeals({}, user);

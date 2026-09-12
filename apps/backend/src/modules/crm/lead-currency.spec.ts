@@ -148,12 +148,19 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
   beforeEach(() => {
     prisma = {
       lead: {
-        create: jest.fn(async ({ data }: any) => ({ id: 'lead-1', ...data })),
+        create: jest.fn(async ({ data }: any) => ({ id: 'lead-1', status: 'NEW', createdAt: new Date(), ...data })),
         update: jest.fn(async ({ data }: any) => ({ id: 'lead-1', ...data })),
         findUnique: jest.fn(),
       },
     };
-    service = new CrmService(prisma as any, {} as any, new CategoryResolverService(prisma as any as any));
+    prisma.$transaction = jest.fn((callback: any) => callback(prisma));
+    service = new CrmService(
+      prisma as any,
+      {} as any,
+      new CategoryResolverService(prisma as any as any),
+      { append: jest.fn().mockResolvedValue({ id: 'event-1' }) } as any,
+      {} as any,
+    );
   });
 
   // T1 / T2 / T3
@@ -165,7 +172,7 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
     const created: any = await service.create({
       brandName: 'B', contactName: 'C',
       estimatedValue, currencyCode,
-    } as any);
+    } as any, 'user-1');
 
     expect(created.currencyCode).toBe(currencyCode);
     expect(created.estimatedValue).toBe(estimatedValue);
@@ -174,11 +181,11 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
   // T4
   it('T4: rejects money with no currency on a new write', async () => {
     await expect(
-      service.create({ brandName: 'B', contactName: 'C', estimatedValue: 180_000_000 } as any),
+      service.create({ brandName: 'B', contactName: 'C', estimatedValue: 180_000_000 } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     await expect(
-      service.create({ brandName: 'B', contactName: 'C', expectedRent: 900_000 } as any),
+      service.create({ brandName: 'B', contactName: 'C', expectedRent: 900_000 } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.lead.create).not.toHaveBeenCalled();
@@ -186,13 +193,13 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
 
   it('T4b: the rejection never mentions a default currency', async () => {
     await expect(
-      service.create({ brandName: 'B', contactName: 'C', expectedRent: 1 } as any),
+      service.create({ brandName: 'B', contactName: 'C', expectedRent: 1 } as any, 'user-1'),
     ).rejects.toThrow(/không mặc định VND/);
   });
 
   // T5
   it('T5: a lead with no money may have no currency', async () => {
-    const created: any = await service.create({ brandName: 'B', contactName: 'C' } as any);
+    const created: any = await service.create({ brandName: 'B', contactName: 'C' } as any, 'user-1');
     expect(created.currencyCode).toBeUndefined();
     expect(prisma.lead.create).toHaveBeenCalled();
   });
@@ -204,7 +211,7 @@ describe('Lead write-path currency enforcement (RPT-CUR-005)', () => {
       service.create({
         brandName: 'B', contactName: 'C', estimatedValue: 100,
         mallId: 'mall-1', tenantId: 'tenant-1', customerId: 'cust-1',
-      } as any),
+      } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
@@ -219,18 +226,30 @@ describe('Lead update currency enforcement (RPT-CUR-005)', () => {
   };
 
   beforeEach(() => {
+    let current = { ...legacyLead } as any;
     prisma = {
       lead: {
-        update: jest.fn(async ({ data }: any) => ({ id: 'lead-1', customerId: null, ...data })),
+        update: jest.fn(async ({ data }: any) => {
+          current = { ...current, ...data, customerId: null };
+          return current;
+        }),
+        findUniqueOrThrow: jest.fn(async () => current),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prisma)),
     };
-    service = new CrmService(prisma as any, {} as any, new CategoryResolverService(prisma as any as any));
+    service = new CrmService(
+      prisma as any,
+      {} as any,
+      new CategoryResolverService(prisma as any as any),
+      { append: jest.fn() } as any,
+      {} as any,
+    );
     jest.spyOn(service, 'findOne').mockResolvedValue(legacyLead as any);
   });
 
   // T13 — a legacy row is NOT auto-backfilled just because it is touched.
   it('T13: editing a legacy currency-less lead without touching money is allowed and infers nothing', async () => {
-    const updated: any = await service.update('lead-1', { notes: 'called them' } as any);
+    const updated: any = await service.update('lead-1', { notes: 'called them' } as any, 'user-1');
 
     expect(prisma.lead.update).toHaveBeenCalled();
     const data = prisma.lead.update.mock.calls[0][0].data;
@@ -240,7 +259,7 @@ describe('Lead update currency enforcement (RPT-CUR-005)', () => {
 
   it('T13b: setting a NEW amount on a legacy currency-less lead is rejected', async () => {
     await expect(
-      service.update('lead-1', { expectedRent: 1_000_000 } as any),
+      service.update('lead-1', { expectedRent: 1_000_000 } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.lead.update).not.toHaveBeenCalled();
   });
@@ -249,13 +268,14 @@ describe('Lead update currency enforcement (RPT-CUR-005)', () => {
     const updated: any = await service.update(
       'lead-1',
       { expectedRent: 1_000_000, currencyCode: 'USD' } as any,
+      'user-1',
     );
     expect(updated.currencyCode).toBe('USD');
     expect(updated.expectedRent).toBe(1_000_000);
   });
 
   it('lets a legacy row be corrected by setting only the currency', async () => {
-    const updated: any = await service.update('lead-1', { currencyCode: 'VND' } as any);
+    const updated: any = await service.update('lead-1', { currencyCode: 'VND' } as any, 'user-1');
     expect(updated.currencyCode).toBe('VND');
   });
 });
