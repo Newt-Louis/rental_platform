@@ -77,6 +77,17 @@ function legacyRentFreeDaysThresholdToMonths(rule: PolicyRuleLike): number {
   return (rule.threshold ?? 0) / LEGACY_DAYS_PER_MONTH;
 }
 
+/**
+ * CR-BOOK-PRICE-APPROVAL-001 -- exported so the booking price path can select
+ * rules with exactly the same semantics without going through
+ * `buildApprovalStepsFromRules`. That builder's return value is spread straight
+ * into `tx.approvalStep.create`, so it cannot carry the extra fields (the
+ * originating rule code) the price audit trail needs.
+ */
+export function policyRuleMatches(rule: PolicyRuleLike, ctx: PolicyContext): boolean {
+  return matchesRule(rule, ctx);
+}
+
 function matchesRule(rule: PolicyRuleLike, ctx: PolicyContext): boolean {
   if (rule.isRequired) return true;
 
