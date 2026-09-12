@@ -57,6 +57,7 @@ import {
   categoryIdForUpdate,
   initialCategoryValue,
 } from '@/components/crm/CategorySelect';
+import { CustomerEditDialog } from '@/components/crm/CustomerEditDialog';
 import { useMallStore } from '@/store/mall.store';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
@@ -2382,6 +2383,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   const [syncLeadId, setSyncLeadId] = useState('');
   const [editingCategory, setEditingCategory] = useState(false);
   const [categoryDraft, setCategoryDraft] = useState('');
+  // CR-CRM-CUSTOMER-PROFILE-EDIT — the profile was read-only once created.
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2484,6 +2487,16 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
               {statusInfo && <Badge className={`${statusInfo.color} border-0`}>{statusInfo.label}</Badge>}
               <RatingStars value={customer.rating} />
               {customer.source && <span className="text-xs text-gray-400">{SOURCE_LABELS[customer.source]}</span>}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-7 gap-1.5 text-xs"
+                  onClick={() => setShowEditProfile(true)}
+                >
+                  <Pencil size={12} /> Sửa hồ sơ
+                </Button>
+              )}
             </div>
 
             {/* Inline tabs */}
@@ -2676,6 +2689,15 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
           </div>
         ) : null}
       </Sheet>
+
+      {customer && (
+        <CustomerEditDialog
+          customer={customer}
+          open={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          onSaved={invalidateAll}
+        />
+      )}
 
       {/* Dialogs */}
       {customer && <AddActivityDialog customerId={customer.id} open={showActivity} onClose={() => setShowActivity(false)} />}
