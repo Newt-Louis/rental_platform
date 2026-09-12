@@ -94,5 +94,3 @@ apps/backend/prisma/migrations/.DS_Store
 # ─── Private local-only docs/keys, never committed ───────────────────────────
 docs-private/
 docs-private/*
-*.sql
-apps/backend/prisma/migrations/20260912104912_booking_price_approval_workflow/migration.sql
