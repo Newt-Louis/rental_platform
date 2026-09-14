@@ -49,6 +49,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         // Domain services may throw `new BadRequestException({ message, code })`
         // so the UI can localize the reason instead of echoing English text.
         code = typeof resp.code === 'string' ? resp.code : null;
+        // …and may attach structured, client-safe detail (e.g. which approval
+        // step cannot be routed) the UI needs to explain what to fix.
+        if (Array.isArray(resp.errors)) errors = resp.errors;
         if (Array.isArray(resp.message)) {
           errors = resp.message;
           // Keep the top-level message useful on its own: clients that only read

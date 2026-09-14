@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -26,9 +26,20 @@ import {
 import type { Proposal, UnitBooking } from '@/types';
 import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { ProposalEditorDialog } from './ProposalEditor';
+import { SendProposalDocumentDialog } from '@/components/proposals/SendProposalDocumentDialog';
+import {
+  exportOfficialProposalPdf,
+  proposalErrorCode,
+  proposalErrorMessage,
+  proposalRoutingIssues,
+  ROUTING_REASON_LABELS,
+  SUBMIT_BLOCK_LABELS,
+} from './proposalPdf';
 import { CreateProposalEntryDialog } from './CreateProposalDialog';
 import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
 import { usePermission } from '@/hooks/usePermission';
+import { canPerformAction } from '@/lib/permissions';
+import { usePermissionsStore } from '@/store/permissions.store';
 import { useMallStore } from '@/store/mall.store';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
@@ -370,17 +381,27 @@ function ProposalDetailSheet({
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showEditor, setShowEditor] = useState(false);
+  const [showSend, setShowSend] = useState(false);
   const [showTenantDialog, setShowTenantDialog] = useState(false);
   const [tenantForm, setTenantForm] = useState<any>({ companyName: '', brandName: '', taxCode: '', contactName: '', contactEmail: '', contactPhone: '', address: '' });
 
+  // Proposal governance: a refused submit is explained where it happened, with
+  // the action that resolves it, not as a generic "submit failed".
+  const [submitBlock, setSubmitBlock] = useState<{ code: string | null; message: string; issues: ReturnType<typeof proposalRoutingIssues> } | null>(null);
   const submitMutation = useMutation({
     mutationFn: () => proposalsApi.submitProposal(p!.id),
     onSuccess: () => {
+      setSubmitBlock(null);
       qc.invalidateQueries({ queryKey: ['proposals'] });
       toast({ title: t('proposals.actions.submitSuccess') });
       onClose();
     },
-    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
+    onError: (e) => {
+      const code = proposalErrorCode(e);
+      const message = proposalErrorMessage(e, t('proposals.bulk.errorSubmit'));
+      setSubmitBlock({ code, message, issues: proposalRoutingIssues(e) });
+      toast({ title: (code && SUBMIT_BLOCK_LABELS[code]) || message, variant: 'destructive' });
+    },
   });
 
   const convertMutation = useMutation({
@@ -397,6 +418,23 @@ function ProposalDetailSheet({
       onClose();
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
+  });
+
+  // Frontend hint only; the send endpoint enforces the Mall-scoped permission.
+  // Live, Mall-scoped action permission (same matrix the API enforces).
+  const { role: currentRole } = usePermission();
+  const allowedModules = usePermissionsStore((s) => s.allowedModules);
+  const canSendExternal = useMemo(() => canPerformAction(currentRole, 'proposal-send-external'), [currentRole, allowedModules]);
+  const reviseMutation = useMutation({
+    mutationFn: () => proposalsApi.startRevision(p!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['proposals'] });
+      qc.invalidateQueries({ queryKey: ['proposal-detail', p!.id] });
+      qc.invalidateQueries({ queryKey: ['proposal-document', p!.id] });
+      toast({ title: 'Đã tạo bản tờ trình mới' });
+      setShowEditor(true);
+    },
+    onError: (e) => toast({ title: proposalErrorMessage(e, 'Không thể tạo bản tờ trình mới'), variant: 'destructive' }),
   });
 
   const rejectMutation = useMutation({
@@ -422,6 +460,14 @@ function ProposalDetailSheet({
         <ProposalEditorDialog
           proposal={p}
           onClose={() => setShowEditor(false)}
+        />
+      )}
+      {p && (
+        <SendProposalDocumentDialog
+          proposalId={p.id}
+          proposalNumber={p.proposalNumber}
+          open={showSend}
+          onClose={() => setShowSend(false)}
         />
       )}
     <Sheet
@@ -689,6 +735,24 @@ function ProposalDetailSheet({
               {contractHandoff.state === 'TENANT_REQUIRED' && (
                 <p className="mb-2 text-xs text-amber-700">{t('proposals.handoff.tenantRequired')}</p>
               )}
+              {submitBlock && p.status === 'DRAFT' && (
+                <div role="alert" data-testid="submit-block" className="mb-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                  <p className="font-semibold">{(submitBlock.code && SUBMIT_BLOCK_LABELS[submitBlock.code]) || 'Không thể trình duyệt'}</p>
+                  <p className="mt-1">{submitBlock.message}</p>
+                  {submitBlock.issues.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4">
+                      {submitBlock.issues.map((issue, i) => (
+                        <li key={i}>{issue.stepOrder ? `Bước ${issue.stepOrder}${issue.stepName ? ` (${issue.stepName})` : ''}: ` : ''}{ROUTING_REASON_LABELS[issue.reason] ?? issue.reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {(submitBlock.code === 'PROPOSAL_DOCUMENT_NOT_REVIEWED' || submitBlock.code === 'PROPOSAL_DOCUMENT_STALE') && (
+                    <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => { setSubmitBlock(null); setShowEditor(true); }}>
+                      <PenSquare size={12} className="mr-1" /> Mở và kiểm tra tờ trình
+                    </Button>
+                  )}
+                </div>
+              )}
               {canEdit && p.status === 'DRAFT' && (
                 <Button
                   className="w-full gap-2"
@@ -705,6 +769,21 @@ function ProposalDetailSheet({
                   disabled={convertMutation.isPending}
                 >
                   <FileText size={15} /> {t('proposals.actions.convert')}
+                </Button>
+              )}
+              {canEdit && p.status === 'REJECTED' && (
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => reviseMutation.mutate()}
+                  disabled={reviseMutation.isPending}
+                >
+                  <PenSquare size={15} /> Tạo bản tờ trình mới
+                </Button>
+              )}
+              {['APPROVED', 'CONVERTED'].includes(p.status) && canSendExternal && (
+                <Button variant="outline" className="w-full gap-2" onClick={() => setShowSend(true)}>
+                  <Send size={15} /> Gửi tờ trình
                 </Button>
               )}
               {canDirectReject && ['SUBMITTED', 'UNDER_REVIEW'].includes(p.status) && (
@@ -730,13 +809,7 @@ function ProposalDetailSheet({
                   className="gap-2"
                   onClick={async () => {
                     try {
-                      const blob = await proposalsApi.exportPdf(p.id);
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `proposal-${p.proposalNumber}.pdf`;
-                      a.click();
-                      URL.revokeObjectURL(url);
+                      await exportOfficialProposalPdf(p);
                     } catch {
                       toast({ title: t('proposals.exportPdfError'), variant: 'destructive' });
                     }
@@ -860,7 +933,7 @@ export default function ProposalsPage() {
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       toast({ title: t('proposals.actions.submitSuccess') });
     },
-    onError: () => toast({ title: t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
+    onError: (e) => toast({ title: proposalErrorMessage(e, t('proposals.bulk.errorSubmit')), variant: 'destructive' }),
   });
 
   const convertMutation = useMutation({
@@ -911,16 +984,28 @@ export default function ProposalsPage() {
 
   const bulkSubmitMutation = useMutation({
     mutationFn: (ids: string[]) =>
+      // Each Proposal is gated on its own review and routing; a bulk action is
+      // never treated as a review.
       Promise.allSettled(ids.map((id) => proposalsApi.submitProposal(id))).then((results) => ({
         ok: results.filter((r) => r.status === 'fulfilled').length,
         fail: results.filter((r) => r.status === 'rejected').length,
+        reasons: results.reduce<Record<string, number>>((acc, r) => {
+          if (r.status === 'rejected') {
+            const code = proposalErrorCode(r.reason) ?? 'OTHER';
+            acc[code] = (acc[code] ?? 0) + 1;
+          }
+          return acc;
+        }, {}),
       })),
-    onSuccess: ({ ok, fail }) => {
+    onSuccess: ({ ok, fail, reasons }) => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-stats'] });
       setSelectedIds(new Set());
       if (fail > 0) {
-        toast({ title: t('proposals.bulk.submitPartial', { ok, fail }), variant: 'destructive' });
+        const detail = Object.entries(reasons)
+          .map(([code, count]) => `${count} × ${SUBMIT_BLOCK_LABELS[code] ?? 'lỗi khác'}`)
+          .join('\n');
+        toast({ title: t('proposals.bulk.submitPartial', { ok, fail }), description: detail, variant: 'destructive' });
       } else {
         toast({ title: t('proposals.bulk.submitSuccess', { ok }) });
       }

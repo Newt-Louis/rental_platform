@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
@@ -9,6 +9,8 @@ import {
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
+import { assertApprovalRoutable } from '../approvals/approval-routing.validator';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { computeContractValue } from '../../common/finance/rent-calculation.util';
 import type {
   ApprovalWorkflowCompletedEvent,
@@ -16,10 +18,12 @@ import type {
   ApprovalWorkflowRejectedEvent,
 } from '../approvals/approvals.service';
 import {
-  buildProposalSnapshot,
   compareProposalSnapshots,
   ProposalSnapshot,
 } from './proposal-version.util';
+import { recordProposalVersion } from './proposal-version.recorder';
+import { ProposalDocumentService } from './document/proposal-document.service';
+import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { CustomersService } from '../crm/customers.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
@@ -29,6 +33,7 @@ import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
+import { OutboxService } from '../../common/services/outbox.service';
 
 @Injectable()
 export class ProposalsService {
@@ -44,6 +49,9 @@ export class ProposalsService {
     private categoriesService: CategoriesService,
     private metrics: OperationalMetricsService,
     private leadLifecycle: LeadLifecycleService,
+    private documents: ProposalDocumentService,
+    private outbox: OutboxService,
+    private delivery: ProposalDocumentDeliveryService,
   ) {}
 
   private generateProposalNumber() {
@@ -58,21 +66,7 @@ export class ProposalsService {
     changeReason?: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const latest = await client.proposalVersion.findFirst({
-      where: { proposalId: proposal.id as string },
-      orderBy: { version: 'desc' },
-    });
-    const version = (latest?.version ?? 0) + 1;
-
-    return client.proposalVersion.create({
-      data: {
-        proposalId: proposal.id as string,
-        version,
-        snapshot: buildProposalSnapshot(proposal) as object,
-        createdById,
-        changeReason,
-      },
-    });
+    return recordProposalVersion(client, proposal, createdById, changeReason);
   }
 
   /**
@@ -187,7 +181,7 @@ export class ProposalsService {
     const proposal = await this.prisma.proposal.findUnique({
       where: { id },
       include: {
-        unit: { include: { floor: true, zone: true } },
+        unit: { include: { floor: true, zone: true, mall: { select: { id: true, code: true, name: true } } } },
         tenant: true,
         lead: true,
         approvalWorkflow: {
@@ -338,7 +332,7 @@ export class ProposalsService {
    * P2002-repair pattern already proven in `createContractFromProposal`, rather than a new
    * idempotency-key mechanism this flow doesn't need.
    */
-  async submit(id: string) {
+  async submit(id: string, actorId: string, reviewedFingerprint?: string | null) {
     const proposal = await this.findOne(id);
     if (proposal.status !== ProposalStatus.DRAFT) {
       throw new BadRequestException('Proposal is not in DRAFT status');
@@ -356,16 +350,10 @@ export class ProposalsService {
     if (!proposalMallId) {
       throw new BadRequestException('Không xác định được mall của đề xuất để áp quy tắc duyệt');
     }
-    const rules = await this.prisma.approvalPolicyRule.findMany({
-      where: { isActive: true, mallId: proposalMallId },
-      orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
-    });
-
-    if (!rules.length) {
-      throw new BadRequestException(
-        'Approval policy is not configured for this Mall. Please create active approval rules before submitting proposal.',
-      );
-    }
+    // Proposal governance: approval rules are read, built into steps and validated
+    // inside the submit transaction below, after the document review gate, so a
+    // workflow is never created from a configuration read at a different moment
+    // than the one it is committed with.
 
     // Tính % lệch giá so với bảng giá ngành hàng (master data) NGAY TẠI THỜI ĐIỂM submit — trước đây
     // luồng này không truyền priceDeviationPct nên các rule PRICE_DEVIATION_PCT (Director/CEO price
@@ -402,19 +390,13 @@ export class ProposalsService {
       };
     }
 
-    const steps = buildApprovalStepsFromRules(rules, {
+    const policyContext = {
       discountPct: proposal.discount ?? 0,
       rentFreeMonths: proposal.rentFree ?? 0,
       industryTag: proposal.unit?.category ?? proposal.tenant?.category ?? null,
       hasArDebt,
       priceDeviationPct,
-    });
-
-    if (!steps.length) {
-      throw new BadRequestException(
-        'No approval step matched current proposal. Please review approval policy rules.',
-      );
-    }
+    };
 
     let workflow: { id: string };
     const startedAt = Date.now();
@@ -428,6 +410,34 @@ export class ProposalsService {
         if (current.status !== ProposalStatus.DRAFT) {
           throw new BadRequestException('Proposal is not in DRAFT status');
         }
+
+        // CR-PROPOSAL-DOCUMENT-SOURCE-001 §18: the Tờ trình an approver opens is
+        // the one the author reviewed. Checked inside the Serializable transaction
+        // so a concurrent edit to the Proposal cannot slip between check and submit.
+        const reviewed = await this.documents.assertSubmittable(id, tx, reviewedFingerprint);
+
+        // Routing pre-flight: an approval workflow that no one can complete must
+        // fail here, before any version, workflow, outbox or audit row exists.
+        const rules = await tx.approvalPolicyRule.findMany({
+          where: { isActive: true, mallId: proposalMallId },
+          orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
+        });
+        if (!rules.length) {
+          throw new BadRequestException({
+            code: 'APPROVAL_ROUTING_INVALID',
+            message: 'Mall này chưa cấu hình quy tắc phê duyệt Proposal. Vui lòng cấu hình trước khi trình.',
+            errors: [{ stepOrder: null, stepName: null, reason: 'NO_ACTIVE_POLICY' }],
+          });
+        }
+        const steps = buildApprovalStepsFromRules(rules, policyContext);
+        await assertApprovalRoutable(tx, steps, {
+          creatorId: current.createdById,
+          mallId: proposalMallId,
+          eligibleRoles: ApprovalsService.ELIGIBLE_APPROVER_ROLES,
+        });
+        // CR-PROPOSAL-DOCUMENT-FINALIZATION: freeze exactly that document. The
+        // workflow below is bound to this version, never to the live Proposal.
+        const documentVersion = await this.documents.createSubmittedVersion(tx, reviewed, actorId);
 
         if (pricingRuleId || pricingSnapshot) {
           await tx.proposal.update({ where: { id }, data: { pricingRuleId, pricingSnapshot } });
@@ -445,6 +455,7 @@ export class ProposalsService {
             entityType: 'PROPOSAL',
             entityId: id,
             proposalId: id,
+            documentVersionId: documentVersion.id,
             status: WorkflowStatus.IN_PROGRESS,
             steps: {
               create: steps,
@@ -455,6 +466,32 @@ export class ProposalsService {
         await tx.proposal.update({
           where: { id },
           data: { status: ProposalStatus.SUBMITTED },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: actorId,
+            action: 'PROPOSAL_DOCUMENT_SUBMITTED',
+            entityType: 'PROPOSAL',
+            entityId: id,
+            payload: JSON.stringify({
+              documentVersionId: documentVersion.id,
+              versionNumber: documentVersion.versionNumber,
+              sourceFingerprint: documentVersion.sourceFingerprint,
+              workflowId: created.id,
+            }),
+            status: 'SUCCESS',
+          },
+        });
+
+        // The first approver's notification is durable with the submission: if
+        // the process dies after commit, the outbox still delivers it.
+        await this.outbox.enqueue(tx, {
+          eventKey: `approval:${created.id}:step-advanced:1`,
+          eventName: 'approval.workflow.step-advanced',
+          aggregateType: 'APPROVAL_WORKFLOW',
+          aggregateId: created.id,
+          payload: { workflowId: created.id, entityType: 'PROPOSAL', entityId: id, nextStepOrder: 1 },
         });
 
         return created;
@@ -470,7 +507,9 @@ export class ProposalsService {
       // Concurrent request won the race: our insert hit the unique constraint on
       // ApprovalWorkflow.proposalId. Resolve to the workflow that now exists instead of
       // surfacing a raw database error — the proposal was submitted exactly once either way.
-      if (error?.code === 'P2002') {
+      // P2034 is the Serializable loser of the same race when Postgres detects it
+      // before the unique index does.
+      if (error?.code === 'P2002' || error?.code === 'P2034') {
         const winner = await this.prisma.approvalWorkflow.findUnique({ where: { proposalId: id } });
         if (winner) {
           this.metrics.increment('duplicate_transition_blocked_total');
@@ -483,6 +522,15 @@ export class ProposalsService {
           }));
           return { message: 'Proposal submitted for approval', workflowId: winner.id };
         }
+        if (error?.code === 'P2034') {
+          // Serializable conflict with a concurrent change (e.g. the approval rules
+          // were edited mid-submit) and nothing was committed: ask for a retry
+          // rather than surfacing a database error.
+          throw new ConflictException({
+            code: 'PROPOSAL_SUBMIT_CONFLICT',
+            message: 'Dữ liệu Proposal hoặc cấu hình phê duyệt vừa thay đổi trong lúc trình. Vui lòng thử lại.',
+          });
+        }
       }
       this.metrics.increment('proposal_submit_failure_total');
       this.logger.warn(JSON.stringify({
@@ -494,109 +542,17 @@ export class ProposalsService {
       throw error;
     }
 
-    // Best-effort, not part of the atomic core: in-app + email notifications to approvers.
-    // A failure here must not roll back a proposal that was already correctly submitted —
-    // matches the "notification is not state" rule (network side effects stay out of the
-    // DB transaction; the workflow itself is already durable at this point).
-    await this.notifyPendingApprovers(workflow.id, 1);
-
+    // Approver notification is delivered by the outbox event written above.
     return { message: 'Proposal submitted for approval', workflowId: workflow.id };
   }
 
-  /** Notify users with pending approval role + optional email */
+  /**
+   * Approver notification for a step. CR-PROPOSAL-DOCUMENT-FINALIZATION moved the
+   * content (document version, approval history, official PDF attachment) and
+   * the tracked delivery into ProposalDocumentDeliveryService.
+   */
   async notifyPendingApprovers(workflowId: string, stepOrder: number) {
-    const step = await this.prisma.approvalStep.findFirst({
-      where: {
-        workflowId,
-        stepOrder,
-        status: 'PENDING',
-      },
-      include: {
-        workflow: {
-          include: {
-            proposal: {
-              include: {
-                unit: { select: { code: true, mallId: true } },
-                tenant: { select: { brandName: true } },
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!step?.workflow.proposal) return;
-
-    const proposal = step.workflow.proposal;
-    // Bước duyệt giờ gắn đích danh một tài khoản (ApprovalPolicyRule.approverId), nên báo thẳng
-    // người được giao. Truy vấn cũ lấy MỌI user mang role đó ở MỌI mall -- gửi tên khách thuê, mã
-    // mặt bằng và số đề xuất cho người không có quyền duyệt hồ sơ đó -- rồi `take: 5` không kèm
-    // orderBy nên khi một role có từ 6 người trở lên thì ai được báo là ngẫu nhiên.
-    // Workflow cũ (tạo trước khi quy tắc có approverId) không có approverId nên vẫn lọc theo role,
-    // nhưng giới hạn trong mall của đề xuất thay vì toàn hệ thống.
-    const approvers = step.approverId
-      ? await this.prisma.user.findMany({
-          where: { id: step.approverId, isActive: true, deletedAt: null },
-          select: { id: true, email: true, fullName: true },
-        })
-      : await this.prisma.user.findMany({
-          where: {
-            role: step.approverRole,
-            isActive: true,
-            deletedAt: null,
-            OR: [
-              { role: Role.ADMIN },
-              { mallAccess: { some: { mallId: proposal.unit.mallId, isActive: true } } },
-            ],
-          },
-          select: { id: true, email: true, fullName: true },
-        });
-
-    const creator = await this.prisma.user.findUnique({
-      where: { id: proposal.createdById },
-      select: { fullName: true },
-    });
-
-    for (const approver of approvers) {
-      await this.notifications.create({
-        userId: approver.id,
-        title: `Phê duyệt: ${proposal.proposalNumber}`,
-        body: `${step.stepName} — ${proposal.tenant?.brandName ?? 'Chưa có tenant'} / ${proposal.unit.code}`,
-        type: 'APPROVAL_PENDING',
-        entityType: 'PROPOSAL',
-        entityId: proposal.id,
-      });
-
-      if (approver.email) {
-        try {
-          await this.emailService.sendMail({
-            to: approver.email,
-            delivery: {
-              eventKey: `proposal-approval:${proposal.id}:${step.id}:${approver.id}`,
-              eventType: 'PROPOSAL_APPROVAL',
-              entityType: 'Proposal',
-              entityId: proposal.id,
-              mallId: proposal.unit.mallId,
-            },
-            subject: emailSubject(`Đề xuất ${proposal.proposalNumber} chờ phê duyệt`),
-            html: this.emailService.proposalApprovalHtml({
-              approverName: approver.fullName,
-              proposalNumber: proposal.proposalNumber,
-              proposalId: proposal.id,
-              tenantName: proposal.tenant?.brandName ?? '—',
-              unitCode: proposal.unit.code,
-              rentPerSqm: proposal.rentPerSqm,
-              monthlyRent: proposal.monthlyRent,
-              discount: proposal.discount,
-              submittedBy: creator?.fullName ?? 'Leasing',
-              currencyCode: proposal.rentCurrency ?? null,
-            }),
-          });
-        } catch (e) {
-          this.logger.warn(`Approval email failed for ${approver.email}: ${e.message}`);
-        }
-      }
-    }
+    return this.delivery.notifyApprovalStep(workflowId, stepOrder);
   }
 
   /**
@@ -611,6 +567,7 @@ export class ProposalsService {
       where: { id: proposalId },
       data: { status: ProposalStatus.APPROVED },
     });
+    await this.markDocumentVersion(payload.workflowId, 'APPROVED');
 
     await this.handleProposalFullyApproved(proposalId, payload.decidedByUserId);
 
@@ -630,18 +587,34 @@ export class ProposalsService {
     }
   }
 
-  @OnEvent('approval.workflow.step-advanced')
+  // suppressErrors:false — @OnEvent swallows handler errors by default, so the
+  // outbox recorded a failed notification as PROCESSED and never retried it.
+  @OnEvent('approval.workflow.step-advanced', { suppressErrors: false })
   async onApprovalWorkflowStepAdvanced(payload: ApprovalWorkflowStepAdvancedEvent) {
     if (payload.entityType !== 'PROPOSAL') return;
     await this.notifyPendingApprovers(payload.workflowId, payload.nextStepOrder);
   }
 
-  @OnEvent('approval.workflow.rejected')
+  @OnEvent('approval.workflow.rejected', { suppressErrors: false })
   async onApprovalWorkflowRejected(payload: ApprovalWorkflowRejectedEvent) {
     if (payload.entityType !== 'PROPOSAL') return;
     await this.prisma.proposal.update({
       where: { id: payload.entityId },
       data: { status: ProposalStatus.REJECTED },
+    });
+    await this.markDocumentVersion(payload.workflowId, 'REJECTED');
+  }
+
+  /** Only `status` of a document version may change; the trigger enforces it. */
+  private async markDocumentVersion(workflowId: string, status: 'APPROVED' | 'REJECTED') {
+    const workflow = await this.prisma.approvalWorkflow.findUnique({
+      where: { id: workflowId },
+      select: { documentVersionId: true },
+    });
+    if (!workflow?.documentVersionId) return;
+    await this.prisma.proposalDocumentVersion.updateMany({
+      where: { id: workflow.documentVersionId, status: 'SUBMITTED' },
+      data: { status },
     });
   }
 
@@ -1008,18 +981,6 @@ export class ProposalsService {
       }
     }
 
-    return updated;
-  }
-
-  async saveEditorContent(id: string, editorContent: any) {
-    const proposal = await this.findOne(id);
-    if (proposal.status !== ProposalStatus.DRAFT) throw new BadRequestException('Only DRAFT proposals can be edited');
-    const updated = await this.prisma.proposal.update({
-      where: { id },
-      data: { editorContent },
-      select: { id: true, proposalNumber: true, editorContent: true },
-    });
-    await this.snapshotProposal({ ...proposal, editorContent } as unknown as Record<string, unknown>, undefined, 'EDITOR_UPDATED');
     return updated;
   }
 
