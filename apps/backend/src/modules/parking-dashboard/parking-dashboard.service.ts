@@ -36,8 +36,10 @@ function addMonths(d: Date, months: number): Date {
 // user's Vietnam wall-clock time, so anchor them at +07:00, not the server's local timezone
 // (Docker runs UTC, which would shift a same-day filter by 7 hours and drop edge rows).
 function vnLocalToUtc(dateStr: string): Date {
-  const withSeconds = dateStr.length <= 16 ? `${dateStr}:00` : dateStr;
-  return new Date(`${withSeconds}+07:00`);
+  const withTime = dateStr.includes('T')
+    ? (dateStr.length <= 16 ? `${dateStr}:00` : dateStr)
+    : `${dateStr}T00:00:00`;
+  return new Date(`${withTime}+07:00`);
 }
 
 // Date-only strings keep the whole-day behavior (midnight to next midnight, VN time); a string
