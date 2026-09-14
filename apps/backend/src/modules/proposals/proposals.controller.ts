@@ -1,11 +1,14 @@
 import {
-  Controller, Get, Post, Put, Patch, Delete, Param, Body, Query, UseGuards, Res, HttpCode, HttpStatus,
+  Controller, Get, Post, Put, Patch, Delete, Param, Body, Query, UseGuards, Res, HttpCode, HttpStatus, Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ProposalsService } from './proposals.service';
 import { ProposalPdfService } from './proposal-pdf.service';
 import { ProposalScenarioService } from './proposal-scenario.service';
+import { ProposalDocumentService } from './document/proposal-document.service';
+import { SaveProposalDocumentContentDto, SendProposalDocumentDto, SubmitProposalDto } from './dto/proposal-document-content.dto';
+import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { CreateProposalDto, RejectProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -33,6 +36,8 @@ export class ProposalsController {
     private readonly pdfService: ProposalPdfService,
     private readonly scenarioService: ProposalScenarioService,
     private readonly mallAccess: MallAccessService,
+    private readonly documents: ProposalDocumentService,
+    private readonly delivery: ProposalDocumentDeliveryService,
   ) {}
 
   private async validateProposal(user: any, proposalId: string) {
@@ -96,9 +101,9 @@ export class ProposalsController {
   @Post(':id/submit')
   @Roles(...PROPOSAL_EDIT_ROLES)
   @ApiOperation({ summary: 'Submit proposal for approval' })
-  async submit(@Param('id') id: string, @CurrentUser() user: any) {
+  async submit(@Param('id') id: string, @Body() dto: SubmitProposalDto, @CurrentUser() user: any) {
     await this.validateProposal(user, id);
-    return this.proposalsService.submit(id);
+    return this.proposalsService.submit(id, user.id, dto?.reviewedFingerprint ?? null);
   }
 
   @Post(':id/convert')
@@ -130,27 +135,123 @@ export class ProposalsController {
     return this.proposalsService.reject(id, dto.rejectionReason, user.id);
   }
 
+  /**
+   * CR-PROPOSAL-DOCUMENT-SOURCE-001 — the canonical Tờ trình: current business
+   * facts, the author's saved wording, approval evidence and stale metadata.
+   */
+  @Get(':id/document')
+  @ApiOperation({ summary: 'Canonical proposal document model (editor, PDF and approval screen share it)' })
+  async getDocument(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.documents.getDocument(id);
+  }
+
+  /** Editorial content only; business facts are not writable here. */
+  @Patch(':id/document-content')
+  @Roles(...PROPOSAL_EDIT_ROLES)
+  @ApiOperation({ summary: 'Save editable proposal document content (optimistic concurrency)' })
+  async saveDocumentContent(
+    @Param('id') id: string,
+    @Body() dto: SaveProposalDocumentContentDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.validateProposal(user, id);
+    return this.documents.saveContent(id, dto, user.id);
+  }
+
+  /**
+   * The official Tờ trình a reader should see now: the live draft for a DRAFT,
+   * otherwise the submitted version bound to the current workflow.
+   */
   @Get(':id/pdf')
-  @ApiOperation({ summary: 'Export proposal as PDF' })
+  @ApiOperation({ summary: 'Export the current official proposal document as PDF' })
   async exportPdf(@Param('id') id: string, @Res() res: Response, @CurrentUser() user: any) {
     await this.validateProposal(user, id);
-    const proposal = await this.proposalsService.findOne(id);
-    const buffer = await this.pdfService.generateProposalPdf(proposal);
+    await this.sendPdf(res, await this.documents.getDocument(id));
+  }
+
+  @Get(':id/document-versions')
+  @ApiOperation({ summary: 'List submitted, immutable document versions' })
+  async listDocumentVersions(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.documents.listVersions(id);
+  }
+
+  @Get(':id/document-versions/:versionId')
+  @ApiOperation({ summary: 'One submitted document version, with its own approval evidence' })
+  async getDocumentVersion(@Param('id') id: string, @Param('versionId') versionId: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.documents.getVersionDocument(id, versionId);
+  }
+
+  /** Exact-version PDF. The approval screen always asks for its workflow's version. */
+  @Get(':id/document-versions/:versionId/pdf')
+  @ApiOperation({ summary: 'PDF of one submitted document version' })
+  async exportVersionPdf(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @Res() res: Response,
+    @CurrentUser() user: any,
+  ) {
+    await this.validateProposal(user, id);
+    await this.sendPdf(res, await this.documents.getVersionDocument(id, versionId));
+  }
+
+  /** Starts a new document cycle for a rejected Proposal; old evidence stays with its version. */
+  @Post(':id/revise')
+  @Roles(...PROPOSAL_EDIT_ROLES)
+  @ApiOperation({ summary: 'Create a new document revision for a rejected proposal' })
+  async revise(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.documents.startRevision(id, user.id);
+  }
+
+  @Get(':id/send-context')
+  @ApiOperation({ summary: 'Approved versions and suggested recipients for an external send' })
+  async sendContext(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.delivery.sendContext(id, user);
+  }
+
+  @Post(':id/send')
+  @ApiOperation({ summary: 'Send an approved document version outside the company (requires Idempotency-Key)' })
+  async sendExternal(
+    @Param('id') id: string,
+    @Body() dto: SendProposalDocumentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    await this.validateProposal(user, id);
+    return this.delivery.sendExternal(id, dto, user, idempotencyKey);
+  }
+
+  @Get(':id/sends')
+  @ApiOperation({ summary: 'External send history of a proposal' })
+  async listSends(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.validateProposal(user, id);
+    return this.delivery.listSends(id);
+  }
+
+  private async sendPdf(res: Response, document: Awaited<ReturnType<ProposalDocumentService['getDocument']>>) {
+    const buffer = await this.pdfService.render(document);
+    const suffix = document.version ? `-v${document.version.versionNumber}` : '-draft';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="proposal-${proposal.proposalNumber}.pdf"`,
+      'Content-Disposition': `attachment; filename="proposal-${document.proposalNumber}${suffix}.pdf"`,
       'Content-Length': buffer.length,
+      'X-Proposal-Document-Fingerprint': document.sync.sourceFingerprint,
+      'X-Proposal-Document-Stale': String(document.sync.documentStale),
+      ...(document.version
+        ? {
+            'X-Proposal-Document-Version-Id': document.version.id,
+            'X-Proposal-Document-Version': String(document.version.versionNumber),
+            'X-Proposal-Live-Differs': String(document.version.liveDiffers),
+          }
+        : {}),
     });
     res.end(buffer);
   }
 
-  @Patch(':id/editor-content')
-  @Roles(...PROPOSAL_EDIT_ROLES)
-  @ApiOperation({ summary: 'Save proposal editor content (logo, font, item overrides, signatories)' })
-  async saveEditorContent(@Param('id') id: string, @Body() body: { editorContent: any }, @CurrentUser() user: any) {
-    await this.validateProposal(user, id);
-    return this.proposalsService.saveEditorContent(id, body.editorContent);
-  }
 
   @Patch(':id/doc-fields')
   @Roles(...PROPOSAL_EDIT_ROLES)

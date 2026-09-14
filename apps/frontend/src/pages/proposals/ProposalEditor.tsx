@@ -1,257 +1,132 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { proposalsApi } from '@/api';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import {
-  X, Printer, Save, Upload, Image, Type,
-  Plus, Trash2, Eye, EyeOff, Maximize2, Minimize2, GripVertical,
+  X, FileDown, Save, Upload, Image, Lock, RotateCcw, AlertTriangle, RefreshCw,
+  Eye, EyeOff, Maximize2, Minimize2, GripVertical,
 } from 'lucide-react';
+import { exportOfficialProposalPdf, proposalErrorMessage } from './proposalPdf';
+import type {
+  ProposalDocumentItemKey,
+  ProposalDocumentModel,
+  SaveProposalDocumentContentPayload,
+} from './proposalDocument.types';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface DocItem {
-  label: string;
-  content: string;
-  note: string;
-  locked?: boolean; // standard clauses user shouldn't accidentally delete
-}
-
-interface Signatory {
-  title: string;
-  name: string;
-}
-
-export interface EditorContent {
-  logoBase64: string;
-  layoutImageBase64: string;
-  font: string;
-  primaryColor: string;
-  docNumber: string;
-  dateDay: string;
-  dateMonth: string;
-  dateYear: string;
-  brandTitle: string;      // "1.1 Thương hiệu ..."
-  preamble: string[];
-  bodyIntro: string;
-  items: DocItem[];
-  signatories: Signatory[];
-  closingLine: string;
-}
-
-// ── Font options ───────────────────────────────────────────────────────────────
-
-const FONTS = [
-  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
-  { label: 'Arial', value: 'Arial, sans-serif' },
-  { label: 'Roboto', value: 'Roboto, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Courier New', value: '"Courier New", monospace' },
-];
+/**
+ * CR-PROPOSAL-DOCUMENT-SOURCE-001 / CR-PROPOSAL-MAPPING-002 — Tờ trình editor.
+ *
+ * Renders the canonical document from GET /proposals/:id/document. It does not
+ * map Proposal fields itself any more: business facts arrive as text from the
+ * server and are shown read-only; only editorial wording, notes, row order and
+ * images are editable. The official PDF is the server's, for every screen.
+ */
 
 const COLORS = ['#1a237e', '#1e3a5f', '#2c3e50', '#1b5e20', '#4a148c', '#212121'];
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+/** Standard clauses the author usually leaves alone (formerly rows 12–16). */
+const STANDARD_CLAUSES: ProposalDocumentItemKey[] = ['UTILITIES', 'OPERATING_HOURS', 'AFTER_HOURS', 'EXCHANGE_RATE', 'PAYMENT'];
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+export const LIVE_DIFFERS_MESSAGE = 'Proposal hiện tại đã thay đổi so với tờ trình đã trình duyệt.';
 
-function fmtDate(d?: string | null) {
-  if (!d) return '…/…/20……';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+export const STALE_DOCUMENT_MESSAGE =
+  'Thông tin Proposal đã thay đổi sau lần lưu nội dung tờ trình gần nhất. Vui lòng kiểm tra lại nội dung trước khi xuất hoặc trình duyệt.';
+
+interface DraftState {
+  docNumber: string;
+  documentDate: string;
+  subject: string;
+  preamble: string[];
+  bodyIntro: string;
+  closingLine: string;
+  items: Partial<Record<ProposalDocumentItemKey, { narrativeText: string | null; note: string }>>;
+  itemOrder: ProposalDocumentItemKey[];
+  logoDataUrl: string | null;
+  layoutImageDataUrl: string | null;
+  primaryColor: string;
 }
 
-function initEditorContent(p: any): EditorContent {
-  const fmtR = (v: number) => p.rentCurrency
-    ? formatMoneyWithCode(v, p.rentCurrency as CurrencyCode)
-    : '—';
-  const fmtS = fmtR;
-
-  const brandName = p.tenant?.brandName ?? p.lead?.brandName ?? '[…]';
-  const companyName = p.tenant?.companyName ?? p.lead?.company ?? '[…]';
-  const industry = p.tenant?.preferredCategory ?? p.lead?.category ?? '[…]';
-  const unitCode = p.unit?.code ?? '[…]';
-  const floorName = p.unit?.floor?.name ?? '[…]';
-  const zoneName = p.unit?.zone?.name ?? '';
-  const unitLocation = zoneName ? `${unitCode}, ${zoneName}, ${floorName}` : `${unitCode}, ${floorName}`;
-  const mallName = p.unit?.floor?.mall?.name ?? p.unit?.mall?.name ?? 'Thiso Mall';
-  const termYears = Math.round((p.term ?? 0) / 12);
-  const depositMonths = p.deposit ?? 3;
-  const depositWord = depositMonths === 3 ? 'ba' : depositMonths === 2 ? 'hai' : depositMonths === 1 ? 'một' : String(depositMonths);
-
-  const saved: EditorContent | null = p.editorContent ?? null;
-
-  const today = new Date();
-
-  const defaultItems: DocItem[] = [
-    { label: 'Tên Pháp nhân', content: companyName, note: '' },
-    { label: 'Tên Thương hiệu', content: brandName, note: '' },
-    { label: 'Ngành hàng Kinh doanh', content: industry, note: '' },
-    { label: 'Mô hình Kinh doanh', content: p.businessModel ?? '[…]', note: '' },
-    { label: 'Vị trí chào thuê', content: unitLocation, note: 'Layout chi tiết đính kèm phần II' },
-    {
-      label: 'Diện tích',
-      content: `Tổng diện tích: ${(p.area ?? 0).toLocaleString('vi-VN')} m²\nDiện tích này được tạm tính vào thời điểm Bên Cho Thuê phát hành Thư Đề Nghị Cho Thuê. Diện Tích Thuê thực tế sẽ xác nhận sau khi đo đạc và các Bên xác nhận vào Ngày Bàn giao Mặt bằng.`,
-      note: '',
-    },
-    { label: 'Thời hạn thuê', content: `${termYears} năm (${p.term ?? 0} tháng) kể từ Ngày Bàn giao.`, note: '' },
-    {
-      label: 'Ngày bắt đầu tính Tiền thuê',
-      content: '• Ngày bắt đầu tính Tiền thuê là Ngày Bàn giao.\n• Tiền thuê trong Thời hạn hoàn thiện nội thất (từ Ngày Bàn giao đến trước ngày Khai trương): Bên Thuê sẽ không phải thanh toán Tiền Thuê, Phí Dịch vụ và Phí hỗ trợ Kinh doanh.',
-      note: '',
-    },
-    {
-      label: 'Giá thuê\n(Chưa bao gồm Thuế GTGT)',
-      content: `Năm 1 của Thời hạn thuê:\nGiá thuê: ${fmtR(p.rentPerSqm ?? 0)}/m²/tháng\nTừ năm 2 trở đi, giá thuê tăng ${p.escalationPercent ?? 5}% so với năm liền kề trước đó.`,
-      note: '',
-    },
-    { label: 'Phí Dịch vụ', content: `${fmtS(p.serviceFeeSqm ?? p.camPerSqm ?? 0)}/m²/tháng\n(Chưa bao gồm Thuế GTGT).`, note: '' },
-    { label: 'Phí hỗ trợ Kinh doanh', content: `${fmtS(p.businessSupportFeeSqm ?? 0)}/m²/tháng\n(Chưa bao gồm Thuế GTGT).`, note: '' },
-    {
-      label: 'Phí tiện ích',
-      content: 'Các Phí tiện ích: điện, nước, gas, … trong phần Diện Tích Thuê của Khách thuê sẽ được tính theo đồng hồ tiêu thụ được cấp tại khu vực thuê và được thanh toán bởi Bên Thuê.',
-      note: '',
-      locked: true,
-    },
-    {
-      label: 'Thời gian hoạt động của TTTM',
-      content: p.operatingHours ?? 'Thứ 2 – Thứ 6:   10:00 – 22:00\nThứ 7 – Chủ nhật: 09:30 – 22:00',
-      note: '',
-      locked: true,
-    },
-    {
-      label: 'Phí Dịch vụ ngoài giờ',
-      content: p.afterHoursFee
-        ? `Phí ngoài giờ: ${fmtS(p.afterHoursFee)}/giờ. Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.`
-        : 'Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.',
-      note: '',
-      locked: true,
-    },
-    {
-      label: 'Tỷ giá',
-      content: '• Tỷ giá áp dụng cho Tiền thuê là tỷ giá bán ra của Ngân hàng TMCP Ngoại Thương Việt Nam vào ngày Bên Cho Thuê ban hành Thư Đề Nghị Cho Thuê/ Hợp Đồng Thuê.\n• Tỷ giá áp dụng cho Phí Dịch vụ và Phí hỗ trợ Kinh doanh là tỷ giá áp dụng đồng nhất cho Khách thuê tại TTTM: tỷ giá 26.340 VND/USD.',
-      note: '',
-      locked: true,
-    },
-    {
-      label: 'Thanh toán Tiền thuê',
-      content: '• Bên Thuê thanh toán Tiền thuê cho Bên Cho Thuê trong vòng 05 (năm) ngày đầu tiên của mỗi Tháng.\n• Tiền thuê bao gồm: Tiền thuê, Phí Dịch vụ, Phí hỗ trợ Kinh doanh và các chi phí phát sinh (đã bao gồm Thuế GTGT).',
-      note: '',
-      locked: true,
-    },
-    {
-      label: 'Tiền Đặt Cọc',
-      content: (() => {
-        const leaseDeposit = p.depositLease
-          ? `Tiền Đặt cọc: ${fmtR(p.depositLease)} (tương đương ${depositMonths} tháng tiền thuê và Phí Dịch vụ)`
-          : `Tiền Đặt cọc tương đương ${depositMonths} (${depositWord}) tháng Tiền thuê và Phí Dịch vụ`;
-        const fitoutParts: string[] = [];
-        if (p.depositFitout) fitoutParts.push(`Cọc thi công: ${fmtR(p.depositFitout)}`);
-        if (p.fitoutFee) fitoutParts.push(`Phí thi công: ${fmtR(p.fitoutFee)}`);
-        const extra = fitoutParts.length ? '\n' + fitoutParts.join('\n') : '';
-        return `${leaseDeposit} (không bao gồm Thuế GTGT) và sẽ được thanh toán trong vòng 07 (bảy) ngày kể từ ngày ký Thư Đề Nghị Cho Thuê.${extra}`;
-      })(),
-      note: '',
-    },
-    {
-      label: 'Thời hạn hoàn thiện nội thất',
-      content: `Dự kiến ${p.fitoutDays ?? 90} ngày kể từ Ngày Bàn giao.\nNgày Khai trương dự kiến: ${fmtDate(p.openingDate)}`,
-      note: '',
-    },
-    {
-      label: 'Phí Thi công',
-      content: 'Bên Thuê thanh toán cho Bên Cho Thuê trước Ngày Bàn giao. Trong trường hợp có ngày ngưng thi công thực tế do lỗi của Bên Cho Thuê, Bên Cho Thuê sẽ giảm trừ phần Tiền Phí thi công cho những ngày ngưng thi công thực tế vào Tiền thuê của tháng đầu tiên của Thời hạn thuê.',
-      note: '',
-    },
-    {
-      label: 'Ngày Bàn giao Mặt bằng',
-      content: p.handoverDate
-        ? `Dự kiến ngày ${fmtDate(p.handoverDate)} hoặc một ngày khác theo thông báo của Trung tâm thương mại ${mallName} bằng văn bản trước 07 (bảy) ngày.`
-        : `Dự kiến ngày …/…/20…… hoặc một ngày khác theo thông báo của Trung tâm thương mại ${mallName} bằng văn bản trước 07 (bảy) ngày.`,
-      note: '',
-    },
-    { label: 'Điều kiện đặc biệt', content: p.specialConditions ?? p.notes ?? '[…]', note: '' },
-  ];
-
-  const year = new Date().getFullYear();
-  const seq = p.proposalNumber?.split('-')[2] ?? '…';
-
-  return saved ?? {
-    logoBase64: '',
-    layoutImageBase64: '',
-    font: '"Times New Roman", Times, serif',
-    primaryColor: '#1a237e',
-    docNumber: `${seq}/${year}/TTr-CTTTTM`,
-    dateDay: String(today.getDate()).padStart(2, '0'),
-    dateMonth: String(today.getMonth() + 1).padStart(2, '0'),
-    dateYear: String(today.getFullYear()),
-    brandTitle: `Thương hiệu ${brandName}`,
-    preamble: [
-      `Căn cứ nhu cầu thuê mặt bằng kinh doanh của Khách Thuê ${brandName} thuộc Công ty ${companyName} tại Dự Án Trung Tâm Thương Mại ${mallName};`,
-      `Căn cứ kế hoạch chốt thuê cho các Khách Thuê tại TTTM ${mallName};`,
-      'Căn cứ các yêu cầu đề xuất, điều kiện thoả thuận, phạm vi công việc đã được Các Bên thống nhất.',
-    ],
-    bodyIntro: `Phòng cho thuê TTTM kính trình Ban Tổng Giám Đốc phê duyệt Đề xuất Cho Thuê cho Khách Thuê ${brandName} tại TTTM ${mallName}, bao gồm các nội dung chính sau:`,
-    items: defaultItems,
-    signatories: [
-      { title: 'TRƯỞNG PHÒNG CHO THUÊ TTTM', name: p.createdBy?.fullName ?? 'PHẠM THỊ KHÁNH TRANG' },
-      { title: 'BAN KẾ TOÁN THISO', name: 'NGUYỄN ĐÌNH CÔNG' },
-      { title: 'PHÓ TỔNG GIÁM ĐỐC THƯỜNG TRỰC THISO', name: 'TRẦN VIÊN NGỌC OANH' },
-    ],
-    closingLine: 'Phòng cho thuê TTTM kính trình Ban Tổng Giám đốc xem xét và phê duyệt.',
+function draftFromModel(model: ProposalDocumentModel): DraftState {
+  return {
+    docNumber: model.header.docNumber,
+    documentDate: model.header.documentDate ?? '',
+    subject: model.header.subject,
+    preamble: [...model.preamble],
+    bodyIntro: model.bodyIntro,
+    closingLine: model.closingLine,
+    // Untouched rows hold null and display the template, so template wording keeps
+    // following the facts if they are refreshed while the editor is open.
+    items: Object.fromEntries(model.items.map((i) => [i.key, { narrativeText: i.narrativeOverridden ? i.narrativeText : null, note: i.note }])),
+    itemOrder: model.items.map((i) => i.key),
+    logoDataUrl: model.presentation.logoDataUrl,
+    layoutImageDataUrl: model.presentation.layoutImageDataUrl,
+    primaryColor: model.presentation.primaryColor,
   };
 }
 
-// ── EditableCell ───────────────────────────────────────────────────────────────
+export function buildSavePayload(model: ProposalDocumentModel, draft: DraftState): SaveProposalDocumentContentPayload {
+  return {
+    expectedContentVersion: model.sync.contentVersion,
+    reviewedFingerprint: model.sync.sourceFingerprint,
+    content: {
+      docNumber: draft.docNumber,
+      documentDate: draft.documentDate || null,
+      subject: draft.subject,
+      preamble: draft.preamble,
+      bodyIntro: draft.bodyIntro,
+      closingLine: draft.closingLine,
+      items: model.items.map((item) => ({
+        key: item.key,
+        note: draft.items[item.key]?.note ?? '',
+        // Fact rows never send wording: the server would refuse it.
+        ...(item.narrativeEditable ? { narrativeText: draft.items[item.key]?.narrativeText ?? null } : {}),
+      })),
+      itemOrder: draft.itemOrder,
+      logoDataUrl: draft.logoDataUrl,
+      layoutImageDataUrl: draft.layoutImageDataUrl,
+      primaryColor: draft.primaryColor,
+    },
+  };
+}
 
-function EditableCell({ value, onChange, multiline = true, className = '' }: {
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+}
+
+// ── Auto-growing text field ─────────────────────────────────────────────────
+
+function DocText({ value, onChange, readOnly, label, className = '', singleLine = false }: {
   value: string;
   onChange: (v: string) => void;
-  multiline?: boolean;
+  readOnly?: boolean;
+  label: string;
   className?: string;
+  singleLine?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const ref = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
-
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
-  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
-
-  if (editing) {
-    const rows = Math.max(2, draft.split('\n').length + 1);
-    return multiline ? (
-      <textarea
-        ref={ref as React.RefObject<HTMLTextAreaElement>}
-        value={draft}
-        rows={rows}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { onChange(draft); setEditing(false); }}
-        onKeyDown={(e) => { if (e.key === 'Escape') { setDraft(value); setEditing(false); } }}
-        className={`w-full resize-none border border-blue-400 rounded bg-blue-50 p-1 text-sm focus:outline-none ${className}`}
-      />
-    ) : (
-      <input
-        ref={ref as React.RefObject<HTMLInputElement>}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => { onChange(draft); setEditing(false); }}
-        onKeyDown={(e) => { if (e.key === 'Escape') { setDraft(value); setEditing(false); } else if (e.key === 'Enter') { onChange(draft); setEditing(false); } }}
-        className={`w-full border border-blue-400 rounded bg-blue-50 px-2 py-0.5 text-sm focus:outline-none ${className}`}
-      />
-    );
-  }
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !el.scrollHeight) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
 
   return (
-    <div
-      onClick={() => { setDraft(value); setEditing(true); }}
-      className={`cursor-text hover:bg-blue-50 hover:ring-1 hover:ring-blue-200 rounded px-1 min-h-[20px] whitespace-pre-wrap text-sm group relative ${className}`}
-      title="Click để chỉnh sửa"
-    >
-      {value || <span data-editor-only className="text-gray-300 italic text-xs">[trống — click để nhập]</span>}
-      <span data-editor-only className="absolute top-0 right-0 text-[9px] text-blue-300 opacity-0 group-hover:opacity-100 px-1">✎</span>
-    </div>
+    <textarea
+      ref={ref}
+      aria-label={label}
+      value={value}
+      readOnly={readOnly}
+      rows={1}
+      onChange={(e) => onChange(singleLine ? e.target.value.replace(/\n/g, ' ') : e.target.value)}
+      className={`block w-full resize-none overflow-hidden bg-transparent rounded px-1 leading-snug ${readOnly ? '' : 'hover:bg-blue-50 focus:bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-300'} ${className}`}
+      style={{ font: 'inherit' }}
+    />
   );
 }
 
-// ── Main Editor ────────────────────────────────────────────────────────────────
+// ── Main Editor ──────────────────────────────────────────────────────────────
 
 export function ProposalEditorDialog({ proposal, onClose }: {
   proposal: any;
@@ -259,58 +134,130 @@ export function ProposalEditorDialog({ proposal, onClose }: {
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [doc, setDoc] = useState<EditorContent>(() => initEditorContent(proposal));
-  const [sidebar, setSidebar] = useState<'settings' | 'signatories' | 'style'>('settings');
-  const [showLockedItems, setShowLockedItems] = useState(true);
+  const documentKey = ['proposal-document', proposal.id];
 
-  // GAP #41, #91–94 — editable proposal fields (saved separately from editorContent)
+  const { data: model, isLoading, isError, refetch } = useQuery({
+    queryKey: documentKey,
+    queryFn: () => proposalsApi.getDocument(proposal.id),
+  });
+
+  const [draft, setDraft] = useState<DraftState | null>(null);
+  const [baseline, setBaseline] = useState('');
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  const [sidebar, setSidebar] = useState<'settings' | 'approval' | 'style'>('settings');
+  const [showStandardClauses, setShowStandardClauses] = useState(true);
+
+  const resetDraftFrom = useCallback((m: ProposalDocumentModel) => {
+    const next = draftFromModel(m);
+    setDraft(next);
+    setBaseline(JSON.stringify(next));
+  }, []);
+
+  // Seed the draft once. A later refetch (e.g. after "Lưu Phí & Điều khoản")
+  // refreshes the facts but must not discard what the author is typing.
+  useEffect(() => {
+    if (model && !draft) resetDraftFrom(model);
+  }, [model, draft, resetDraftFrom]);
+
+  const dirty = !!draft && JSON.stringify(draft) !== baseline;
+  const readOnly = !model || model.status !== 'DRAFT';
+
+  // GAP #41, #91–94 — Proposal fields that feed the document (saved as facts).
   const [extraFields, setExtraFields] = useState({
     utilityFee:      proposal.utilityFee      ?? 0,
     operatingHours:  proposal.operatingHours  ?? '',
     afterHoursFee:   proposal.afterHoursFee   ?? 0,
     paymentTermDays: proposal.paymentTermDays ?? 30,
-    depositLease:    proposal.depositLease    ?? 0,  // 0 = tính tự động từ deposit × monthlyRent
+    depositLease:    proposal.depositLease    ?? 0,
     depositFitout:   proposal.depositFitout   ?? 0,
     fitoutFee:       proposal.fitoutFee       ?? 0,
   });
   const setEF = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setExtraFields((f) => ({ ...f, [k]: e.target.type === 'number' ? Number(e.target.value) : e.target.value }));
 
-  const extraFieldsPayload = () => ({
-      utilityFee:      extraFields.utilityFee,
-      operatingHours:  extraFields.operatingHours || undefined,
-      afterHoursFee:   extraFields.afterHoursFee,
-      paymentTermDays: extraFields.paymentTermDays,
-      // depositLease = 0 → gửi null → DB lưu null → tính tự động
-      depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : null,
-      depositFitout:   extraFields.depositFitout,
-      fitoutFee:       extraFields.fitoutFee,
-  });
-
   const refreshProposal = () => {
     qc.invalidateQueries({ queryKey: ['proposal-detail', proposal.id] });
     qc.invalidateQueries({ queryKey: ['proposal-versions', proposal.id] });
     qc.invalidateQueries({ queryKey: ['proposals'] });
+    qc.invalidateQueries({ queryKey: documentKey });
   };
 
-  const saveExtraMutation = useMutation({
-    mutationFn: () => proposalsApi.updateDocFields(proposal.id, extraFieldsPayload()),
-    onSuccess: () => { refreshProposal(); toast({ title: 'Đã lưu phí & điều khoản' }); },
-    onError: (error: any) => toast({ title: error?.response?.data?.message ?? 'Lỗi khi lưu', variant: 'destructive' }),
+  // CR-PROPOSAL-DOCUMENT-FINALIZATION — a rejected Proposal starts a new document
+  // cycle; the rejected version and its approval evidence stay as they were.
+  const reviseMutation = useMutation({
+    mutationFn: () => proposalsApi.startRevision(proposal.id),
+    onSuccess: async () => {
+      refreshProposal();
+      const fresh = await refetch();
+      if (fresh.data) resetDraftFrom(fresh.data);
+      toast({ title: 'Đã tạo bản tờ trình mới. Kiểm tra, lưu và trình duyệt lại.' });
+    },
+    onError: (error) => toast({ title: proposalErrorMessage(error, 'Không thể tạo bản tờ trình mới'), variant: 'destructive' }),
   });
-  const printAreaRef = useRef<HTMLDivElement>(null);
+
+  const saveExtraMutation = useMutation({
+    mutationFn: () => proposalsApi.updateDocFields(proposal.id, {
+      utilityFee:      extraFields.utilityFee,
+      operatingHours:  extraFields.operatingHours || undefined,
+      afterHoursFee:   extraFields.afterHoursFee,
+      paymentTermDays: extraFields.paymentTermDays,
+      depositLease:    extraFields.depositLease > 0 ? extraFields.depositLease : null,
+      depositFitout:   extraFields.depositFitout,
+      fitoutFee:       extraFields.fitoutFee,
+    }),
+    onSuccess: () => { refreshProposal(); toast({ title: 'Đã lưu phí & điều khoản' }); },
+    onError: (error) => toast({ title: proposalErrorMessage(error, 'Lỗi khi lưu'), variant: 'destructive' }),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => proposalsApi.saveDocumentContent(proposal.id, buildSavePayload(model!, draft!)),
+    onSuccess: (saved) => {
+      qc.setQueryData(documentKey, saved);
+      resetDraftFrom(saved);
+      setConflictMessage(null);
+      refreshProposal();
+      toast({ title: 'Đã lưu và xác nhận nội dung tờ trình' });
+    },
+    onError: (error: any) => {
+      const message = proposalErrorMessage(error, 'Lỗi khi lưu tờ trình');
+      if (error?.response?.status === 409) setConflictMessage(message);
+      toast({ title: message, variant: 'destructive' });
+    },
+  });
+
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    if (!model) return;
+    setExporting(true);
+    try {
+      // The official PDF is rendered from what is saved, so unsaved edits go first.
+      if (dirty && !readOnly) {
+        try { await saveMutation.mutateAsync(); } catch { return; } // save already reported why
+      }
+      await exportOfficialProposalPdf({
+        id: model.proposalId,
+        proposalNumber: model.proposalNumber,
+        documentVersionId: model.version?.id ?? null,
+        versionNumber: model.version?.versionNumber ?? null,
+      });
+    } catch (error) {
+      toast({ title: proposalErrorMessage(error, 'Không thể xuất PDF tờ trình'), variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const reloadDocument = async () => {
+    const fresh = await refetch();
+    if (fresh.data) resetDraftFrom(fresh.data);
+    setConflictMessage(null);
+  };
 
   // Draggable window
   const [maximized, setMaximized] = useState(true);
   const [winOffset, setWinOffset] = useState({ x: 0, y: 0 });
   const isDraggingWin = useRef(false);
   const winDragStart = useRef({ mx: 0, my: 0, ox: 0, oy: 0 });
-
-  // Row drag-to-reorder
-  const [rowDragIdx, setRowDragIdx] = useState<number | null>(null);
-  const [rowDropIdx, setRowDropIdx] = useState<number | null>(null);
-
-  // Window drag listeners
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!isDraggingWin.current) return;
@@ -325,185 +272,120 @@ export function ProposalEditorDialog({ proposal, onClose }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const update = useCallback(<K extends keyof EditorContent>(key: K, value: EditorContent[K]) => {
-    setDoc((d) => ({ ...d, [key]: value }));
+  // Row drag-to-reorder
+  const [rowDragKey, setRowDragKey] = useState<ProposalDocumentItemKey | null>(null);
+  const [rowDropKey, setRowDropKey] = useState<ProposalDocumentItemKey | null>(null);
+
+  const patch = useCallback((changes: Partial<DraftState>) => {
+    setDraft((d) => (d ? { ...d, ...changes } : d));
   }, []);
 
-  const reorderItems = useCallback((from: number, to: number) => {
-    setDoc((d) => {
-      const items = [...d.items];
-      const [moved] = items.splice(from, 1);
-      items.splice(to, 0, moved);
-      return { ...d, items };
+  const updateItem = useCallback((key: ProposalDocumentItemKey, field: 'narrativeText' | 'note', value: string | null) => {
+    setDraft((d) => d ? {
+      ...d,
+      items: { ...d.items, [key]: { narrativeText: d.items[key]?.narrativeText ?? null, note: d.items[key]?.note ?? '', [field]: value } },
+    } : d);
+  }, []);
+
+  const moveItem = useCallback((from: ProposalDocumentItemKey, to: ProposalDocumentItemKey) => {
+    setDraft((d) => {
+      if (!d || from === to) return d;
+      const order = [...d.itemOrder];
+      const fromIdx = order.indexOf(from);
+      const toIdx = order.indexOf(to);
+      if (fromIdx < 0 || toIdx < 0) return d;
+      order.splice(fromIdx, 1);
+      order.splice(toIdx, 0, from);
+      return { ...d, itemOrder: order };
     });
   }, []);
 
-  const updateItem = useCallback((idx: number, field: 'content' | 'note' | 'label', value: string) => {
-    setDoc((d) => ({
-      ...d,
-      items: d.items.map((item, i) => i === idx ? { ...item, [field]: value } : item),
-    }));
-  }, []);
-
-  const updateSignatory = useCallback((idx: number, field: 'title' | 'name', value: string) => {
-    setDoc((d) => ({
-      ...d,
-      signatories: d.signatories.map((s, i) => i === idx ? { ...s, [field]: value } : s),
-    }));
-  }, []);
-
-  const updatePreamble = useCallback((idx: number, value: string) => {
-    setDoc((d) => ({ ...d, preamble: d.preamble.map((p, i) => i === idx ? value : p) }));
-  }, []);
-
-  // File upload helpers
-  const toBase64 = (file: File): Promise<string> =>
-    new Promise((res) => {
+  const readImage = async (e: React.ChangeEvent<HTMLInputElement>, field: 'logoDataUrl' | 'layoutImageDataUrl') => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    // The PDF renderer embeds PNG and JPEG only; anything else would break the official PDF.
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      toast({ title: 'Chỉ hỗ trợ ảnh PNG hoặc JPEG', variant: 'destructive' });
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast({ title: 'Ảnh vượt quá 2 MB', variant: 'destructive' });
+      return;
+    }
+    const dataUrl = await new Promise<string>((res) => {
       const reader = new FileReader();
       reader.onload = () => res(reader.result as string);
       reader.readAsDataURL(file);
     });
-
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const b64 = await toBase64(file);
-    update('logoBase64', b64);
+    patch({ [field]: dataUrl });
   };
 
-  const handleLayoutImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const b64 = await toBase64(file);
-    update('layoutImageBase64', b64);
-  };
+  const orderedItems = useMemo(() => {
+    if (!model || !draft) return [];
+    const byKey = new Map(model.items.map((i) => [i.key, i]));
+    const keys = [
+      ...draft.itemOrder.filter((k) => byKey.has(k)),
+      ...model.items.map((i) => i.key).filter((k) => !draft.itemOrder.includes(k)),
+    ];
+    return keys.map((k) => byKey.get(k)!);
+  }, [model, draft]);
 
-  // Save to DB
-  const saveMutation = useMutation({
-    mutationFn: () => Promise.all([
-      proposalsApi.saveEditorContent(proposal.id, doc),
-      proposalsApi.updateDocFields(proposal.id, extraFieldsPayload()),
-    ]),
-    onSuccess: () => { refreshProposal(); toast({ title: 'Đã lưu toàn bộ nội dung Proposal' }); },
-    onError: (error: any) => toast({ title: error?.response?.data?.message ?? 'Lỗi khi lưu Proposal', variant: 'destructive' }),
-  });
-
-  // Print
-  const handlePrint = () => {
-    if (!printAreaRef.current) {
-      toast({ title: 'Không tìm thấy nội dung để in', variant: 'destructive' });
-      return;
-    }
-    const printWindow = window.open('', '_blank', 'width=1000,height=800');
-    if (!printWindow) {
-      toast({ title: 'Trình duyệt đang chặn cửa sổ in. Vui lòng cho phép popup.', variant: 'destructive' });
-      return;
-    }
-    printWindow.opener = null;
-    printWindow.document.open();
-    printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${proposal.proposalNumber}</title><style>
-      * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; background: white; }
-      body { font-family: ${JSON.stringify(doc.font)}; color: #111; }
-      .no-print, [data-editor-only] { display: none !important; }
-      #proposal-print-area { width: 210mm; margin: 0 auto; box-shadow: none !important; }
-      textarea, input { border: 0; resize: none; font: inherit; color: inherit; background: transparent; }
-      @page { size: A4; margin: 0; }
-      @media print { #proposal-print-area { margin: 0; } }
-    </style></head><body>${printAreaRef.current.outerHTML}</body></html>`);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
-    };
-  };
-
-  const addSignatory = () => {
-    setDoc((d) => ({ ...d, signatories: [...d.signatories, { title: 'CHỨC DANH', name: 'HỌ VÀ TÊN' }] }));
-  };
-
-  const removeSignatory = (idx: number) => {
-    setDoc((d) => ({ ...d, signatories: d.signatories.filter((_, i) => i !== idx) }));
-  };
-
-  const primaryHex = doc.primaryColor;
+  const accent = draft?.primaryColor ?? '#1a237e';
 
   return (
     <>
-      {/* Backdrop khi chế độ cửa sổ (nhấn ra ngoài không đóng vì có nội dung) */}
       {!maximized && <div className="fixed inset-0 z-[199] bg-black/30 pointer-events-none" />}
       <div
+        role="dialog"
+        aria-label={`Tờ trình ${proposal.proposalNumber}`}
         className={`fixed z-[200] bg-white flex flex-col ${maximized ? 'inset-0' : 'shadow-2xl rounded-lg overflow-hidden'}`}
-        style={maximized ? {} : {
-          left: `calc(5vw + ${winOffset.x}px)`,
-          top: `calc(4vh + ${winOffset.y}px)`,
-          width: '90vw',
-          height: '92vh',
-        }}
+        style={maximized ? {} : { left: `calc(5vw + ${winOffset.x}px)`, top: `calc(4vh + ${winOffset.y}px)`, width: '90vw', height: '92vh' }}
       >
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div
-        className={`no-print flex items-center gap-2 px-4 py-2 bg-gray-900 text-white shrink-0 select-none ${!maximized ? 'cursor-move' : ''}`}
+        className={`flex items-center gap-2 px-4 py-2 bg-gray-900 text-white shrink-0 select-none ${!maximized ? 'cursor-move' : ''}`}
         onMouseDown={(e) => {
           if (maximized) return;
-          const target = e.target as HTMLElement;
-          if (target.closest('button,select,label,input,a')) return;
+          if ((e.target as HTMLElement).closest('button,select,label,input,a')) return;
           isDraggingWin.current = true;
           winDragStart.current = { mx: e.clientX, my: e.clientY, ox: winOffset.x, oy: winOffset.y };
         }}
       >
         <span className="font-semibold text-sm text-gray-300 whitespace-nowrap">Tờ Trình</span>
         <span className="text-gray-500 text-xs font-mono hidden sm:block">{proposal.proposalNumber}</span>
+        {dirty && <span className="text-[11px] text-amber-300 whitespace-nowrap">● Chưa lưu</span>}
 
         <div className="ml-auto flex items-center gap-1.5">
-          {/* Font selector */}
-          <div className="relative">
-            <select
-              value={doc.font}
-              onChange={(e) => update('font', e.target.value)}
-              className="text-xs bg-gray-700 text-white border-0 rounded px-2 py-1.5 cursor-pointer appearance-none pr-5"
-              style={{ maxWidth: '130px' }}
-            >
-              {FONTS.map((f) => (
-                <option key={f.value} value={f.value}>{f.label}</option>
-              ))}
-            </select>
-            <Type size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
-
-          <div className="w-px h-5 bg-gray-600" />
-
-          {/* Sidebar tabs */}
-          {(['settings', 'signatories', 'style'] as const).map((tab) => (
+          {(['settings', 'approval', 'style'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setSidebar(tab)}
               className={`text-xs px-2 py-1.5 rounded transition-colors whitespace-nowrap ${sidebar === tab ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
             >
-              {tab === 'settings' ? '⚙ Cài đặt' : tab === 'signatories' ? '✍ Ký tên' : '🎨 Style'}
+              {tab === 'settings' ? '⚙ Cài đặt' : tab === 'approval' ? '✍ Phê duyệt' : '🎨 Màu'}
             </button>
           ))}
-
           <div className="w-px h-5 bg-gray-600" />
-
-          <Button
-            size="sm"
-            className="bg-green-600 hover:bg-green-700 text-xs gap-1.5 h-8 whitespace-nowrap"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-          >
-            <Save size={13} /> {saveMutation.isPending ? 'Đang lưu...' : 'Lưu'}
-          </Button>
+          {!readOnly && (
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-xs gap-1.5 h-8 whitespace-nowrap"
+              onClick={() => saveMutation.mutate()}
+              disabled={!model || !draft || saveMutation.isPending}
+            >
+              <Save size={13} /> {saveMutation.isPending ? 'Đang lưu...' : 'Lưu & xác nhận'}
+            </Button>
+          )}
           <Button
             size="sm"
             className="bg-blue-600 hover:bg-blue-700 text-xs gap-1.5 h-8 whitespace-nowrap"
-            onClick={handlePrint}
+            onClick={handleExport}
+            disabled={!model || exporting}
           >
-            <Printer size={13} /> In / PDF
+            <FileDown size={13} /> {exporting ? 'Đang xuất...' : dirty && !readOnly ? 'Lưu & xuất PDF' : 'Xuất PDF chính thức'}
           </Button>
-
           <div className="w-px h-5 bg-gray-600" />
-
           <button
             onClick={() => { setMaximized((m) => !m); setWinOffset({ x: 0, y: 0 }); }}
             className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
@@ -511,434 +393,466 @@ export function ProposalEditorDialog({ proposal, onClose }: {
           >
             {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white">
+          <button onClick={onClose} aria-label="Đóng" className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white">
             <X size={16} />
           </button>
         </div>
       </div>
 
+      {/* ── Banners ─────────────────────────────────────────────────────────── */}
+      {model?.sync.documentStale && (
+        <div role="alert" className="flex items-start gap-2 bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-900 shrink-0">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <div>
+            {model.sync.staleReason === 'LEGACY_UNVERIFIED'
+              ? <>Tờ trình được lưu bằng phiên bản cũ. Các mục số liệu nay lấy trực tiếp từ Proposal{model.sync.legacyContentNotImported.length ? ` (${model.sync.legacyContentNotImported.length} mục soạn tay trước đây không còn được dùng)` : ''}. Vui lòng kiểm tra lại nội dung trước khi xuất hoặc trình duyệt.</>
+              : STALE_DOCUMENT_MESSAGE}
+            {!readOnly && <span className="block text-xs text-amber-700 mt-0.5">Bấm “Lưu” sau khi kiểm tra để xác nhận tờ trình khớp với dữ liệu hiện tại.</span>}
+          </div>
+        </div>
+      )}
+      {model?.status === 'REJECTED' && (
+        <div role="alert" className="flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800 shrink-0">
+          <AlertTriangle size={16} className="shrink-0" />
+          <span className="flex-1">
+            Tờ trình{model.version ? ` phiên bản ${model.version.versionNumber}` : ''} đã bị từ chối. Bản đã trình được giữ nguyên; tạo bản tờ trình mới để chỉnh sửa và trình lại.
+          </span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => reviseMutation.mutate()} disabled={reviseMutation.isPending}>
+            {reviseMutation.isPending ? 'Đang tạo…' : 'Tạo bản tờ trình mới'}
+          </Button>
+        </div>
+      )}
+      {model?.version?.liveDiffers && (
+        <div role="alert" className="flex items-start gap-2 bg-amber-50 border-b border-amber-200 px-4 py-2 text-sm text-amber-900 shrink-0">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>{LIVE_DIFFERS_MESSAGE} Nội dung bên dưới là phiên bản {model.version.versionNumber} đã trình và không bị thay đổi.</span>
+        </div>
+      )}
+      {conflictMessage && (
+        <div role="alert" className="flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-800 shrink-0">
+          <AlertTriangle size={16} className="shrink-0" />
+          <span className="flex-1">{conflictMessage} Tải lại sẽ bỏ các thay đổi chưa lưu trên màn hình này.</span>
+          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={reloadDocument}>
+            <RefreshCw size={12} /> Tải lại tờ trình
+          </Button>
+        </div>
+      )}
+      {!!model?.warnings.length && (
+        <ul className="bg-gray-50 border-b px-4 py-1.5 text-xs text-gray-600 shrink-0 list-disc list-inside">
+          {model.warnings.map((w) => <li key={w}>{w}</li>)}
+        </ul>
+      )}
+
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
-        {/* Document area */}
         <div className="flex-1 overflow-auto bg-gray-300 p-6">
-          <div
-            id="proposal-print-area"
-            ref={printAreaRef}
-            style={{ fontFamily: doc.font }}
-            className="bg-white mx-auto shadow-xl"
-            css-width="210mm"
-          >
-            <div style={{ width: '210mm', minHeight: '297mm', padding: '18mm 14mm 18mm 20mm', margin: '0 auto', fontFamily: doc.font, fontSize: '10pt', lineHeight: '1.5' }}>
-
-              {/* ── Letterhead ─── */}
-              <table style={{ width: '100%', marginBottom: '12pt' }}>
-                <tbody>
-                  <tr>
-                    <td style={{ width: '60px', verticalAlign: 'top', paddingRight: '8pt' }}>
-                      {doc.logoBase64 ? (
-                        <img src={doc.logoBase64} alt="logo" style={{ maxWidth: '60px', maxHeight: '60px', objectFit: 'contain' }} />
-                      ) : (
-                        <label className="no-print cursor-pointer block w-16 h-16 border-2 border-dashed border-gray-300 rounded flex items-center justify-center hover:border-blue-400 transition-colors" title="Upload logo">
-                          <div className="text-center">
-                            <Image size={18} className="mx-auto text-gray-300" />
-                            <div className="text-[9px] text-gray-400 mt-0.5">Logo</div>
-                          </div>
-                          <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                        </label>
-                      )}
-                    </td>
-                    <td style={{ verticalAlign: 'top', textAlign: 'center' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '10pt' }}>KHỐI KINH DOANH BĐS TM & DV</div>
-                      <div style={{ fontWeight: 'bold', fontSize: '10pt' }}>PHÒNG CHO THUÊ TTTM</div>
-                    </td>
-                    <td style={{ verticalAlign: 'top', textAlign: 'right', whiteSpace: 'nowrap', width: '200px' }}>
-                      <div style={{ fontSize: '9pt' }}>
-                        Số/No: <EditableCell value={doc.docNumber} onChange={(v) => update('docNumber', v)} multiline={false} className="inline-block min-w-[100px]" />
-                      </div>
-                      <div style={{ fontSize: '9pt', fontStyle: 'italic', marginTop: '2pt' }}>
-                        TP.HCM, ngày{' '}
-                        <EditableCell value={doc.dateDay} onChange={(v) => update('dateDay', v)} multiline={false} className="inline-block w-8 text-center" /> tháng{' '}
-                        <EditableCell value={doc.dateMonth} onChange={(v) => update('dateMonth', v)} multiline={false} className="inline-block w-8 text-center" /> năm{' '}
-                        <EditableCell value={doc.dateYear} onChange={(v) => update('dateYear', v)} multiline={false} className="inline-block w-16 text-center" />
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* ── Title ─── */}
-              <div style={{ textAlign: 'center', marginBottom: '6pt' }}>
-                <div style={{ fontSize: '14pt', fontWeight: 'bold' }}>TỜ TRÌNH</div>
+          {isLoading && <div className="text-center text-sm text-gray-600 py-20">Đang tải tờ trình…</div>}
+          {isError && (
+            <div className="text-center text-sm text-red-700 py-20">
+              Không tải được tờ trình. <button className="underline" onClick={() => refetch()}>Thử lại</button>
+            </div>
+          )}
+          {model && draft && (
+            <div
+              data-testid="proposal-document-preview"
+              className="bg-white mx-auto shadow-xl"
+              style={{ width: '210mm', minHeight: '297mm', padding: '18mm 14mm 18mm 20mm', fontFamily: 'Roboto, Arial, sans-serif', fontSize: '10pt', lineHeight: 1.45, color: '#111' }}
+            >
+              {/* Letterhead */}
+              <div className="flex items-start gap-3 mb-4">
+                {draft.logoDataUrl && <img src={draft.logoDataUrl} alt="logo" style={{ maxWidth: 60, maxHeight: 60, objectFit: 'contain' }} />}
+                <div className="flex-1 text-center font-bold">
+                  {model.header.organisationLines.map((l) => <div key={l}>{l}</div>)}
+                </div>
+                <div className="text-right" style={{ fontSize: '9pt', width: 230 }}>
+                  <div className="flex items-center justify-end gap-1">
+                    <span>Số/No:</span>
+                    <input
+                      aria-label="Số tờ trình"
+                      value={draft.docNumber}
+                      readOnly={readOnly}
+                      onChange={(e) => patch({ docNumber: e.target.value })}
+                      className="w-40 bg-transparent text-right rounded px-1 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-1 italic">
+                    <span>{model.header.city ?? '……'}, ngày</span>
+                    <input
+                      type="date"
+                      aria-label="Ngày tờ trình"
+                      value={draft.documentDate}
+                      readOnly={readOnly}
+                      onChange={(e) => patch({ documentDate: e.target.value })}
+                      className="bg-transparent rounded px-1 hover:bg-blue-50 focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* ── Addressee ─── */}
-              <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '11pt', marginBottom: '10pt' }}>
-                KÍNH GỬI: BAN TỔNG GIÁM ĐỐC
-              </div>
+              <div className="text-center font-bold mb-1" style={{ fontSize: '14pt', color: accent }}>{model.header.title}</div>
+              <DocText label="Trích yếu" value={draft.subject} readOnly={readOnly} onChange={(v) => patch({ subject: v })} className="text-center font-bold mb-3" />
+              <div className="text-center font-bold mb-3" style={{ fontSize: '11pt' }}>{model.header.addressee}</div>
 
-              {/* ── Preamble ─── */}
-              <ul style={{ margin: '0 0 8pt 20pt', padding: 0 }}>
-                {doc.preamble.map((p, i) => (
-                  <li key={i} style={{ marginBottom: '4pt', fontSize: '10pt' }}>
-                    <EditableCell value={p} onChange={(v) => updatePreamble(i, v)} multiline={false} />
+              <ul className="mb-2 ml-5 list-disc">
+                {draft.preamble.map((line, i) => (
+                  <li key={i}>
+                    <DocText
+                      label={`Căn cứ ${i + 1}`}
+                      value={line}
+                      readOnly={readOnly}
+                      onChange={(v) => patch({ preamble: draft.preamble.map((p, j) => (j === i ? v : p)) })}
+                    />
                   </li>
                 ))}
               </ul>
+              <DocText label="Đoạn mở đầu" value={draft.bodyIntro} readOnly={readOnly} onChange={(v) => patch({ bodyIntro: v })} className="mb-3" />
 
-              {/* ── Body intro ─── */}
-              <div style={{ marginBottom: '10pt' }}>
-                <EditableCell value={doc.bodyIntro} onChange={(v) => update('bodyIntro', v)} multiline={false} />
-              </div>
+              <div className="font-bold mb-1" style={{ color: accent }}>I.&nbsp;&nbsp;&nbsp;CÁC ĐIỀU KHOẢN CHI TIẾT ĐÃ THỎA THUẬN GIỮA HAI BÊN:</div>
+              <div className="font-bold mb-2 ml-5">1.1&nbsp;&nbsp;Thương hiệu {model.facts.party.brandName ?? 'Chưa xác định'}</div>
 
-              {/* ── Section I ─── */}
-              <div style={{ fontWeight: 'bold', marginBottom: '4pt' }}>
-                I.&nbsp;&nbsp;&nbsp;CÁC ĐIỀU KHOẢN CHI TIẾT ĐÃ THỎA THUẬN GIỮA HAI BÊN:
-              </div>
-              <div style={{ fontWeight: 'bold', marginLeft: '20pt', marginBottom: '6pt' }}>
-                1.1&nbsp;&nbsp;<EditableCell value={doc.brandTitle} onChange={(v) => update('brandTitle', v)} multiline={false} className="inline-block" />
-              </div>
-
-              {/* ── Table ─── */}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt', marginBottom: '14pt' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#f0f0f0' }}>
-                    {/* Drag handle col — ẩn khi in */}
-                    <th className="no-print" style={{ border: '0.5pt solid #999', padding: '2pt', width: '14pt' }} />
-                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', textAlign: 'center', width: '22pt' }}>STT</th>
-                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', textAlign: 'center', width: '100pt' }}>HẠNG MỤC</th>
-                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', textAlign: 'center' }}>ĐIỀU KIỆN THƯƠNG MẠI</th>
-                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', textAlign: 'center', width: '80pt' }}>GHI CHÚ</th>
+                    {!readOnly && <th style={{ border: '0.5pt solid #999', width: '14pt' }} />}
+                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', width: '22pt' }}>STT</th>
+                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', width: '100pt' }}>HẠNG MỤC</th>
+                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt' }}>ĐIỀU KIỆN THƯƠNG MẠI</th>
+                    <th style={{ border: '0.5pt solid #999', padding: '4pt 3pt', width: '80pt' }}>GHI CHÚ</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {doc.items.map((item, idx) => (
-                    (!item.locked || showLockedItems) && (
+                  {orderedItems.map((item, idx) => {
+                    if (!showStandardClauses && STANDARD_CLAUSES.includes(item.key)) return null;
+                    const local = draft.items[item.key];
+                    const narrative = local?.narrativeText ?? item.defaultNarrativeText;
+                    const overridden = narrative !== item.defaultNarrativeText;
+                    const plainLabel = item.label.split('\n')[0];
+                    return (
                       <tr
-                        key={idx}
-                        draggable
-                        onDragStart={() => setRowDragIdx(idx)}
-                        onDragOver={(e) => { e.preventDefault(); setRowDropIdx(idx); }}
-                        onDrop={() => {
-                          if (rowDragIdx !== null && rowDropIdx !== null && rowDragIdx !== rowDropIdx) {
-                            reorderItems(rowDragIdx, rowDropIdx);
-                          }
-                          setRowDragIdx(null); setRowDropIdx(null);
-                        }}
-                        onDragEnd={() => { setRowDragIdx(null); setRowDropIdx(null); }}
+                        key={item.key}
+                        data-testid={`doc-row-${item.key}`}
+                        draggable={!readOnly}
+                        onDragStart={() => setRowDragKey(item.key)}
+                        onDragOver={(e) => { e.preventDefault(); setRowDropKey(item.key); }}
+                        onDrop={() => { if (rowDragKey) moveItem(rowDragKey, item.key); setRowDragKey(null); setRowDropKey(null); }}
+                        onDragEnd={() => { setRowDragKey(null); setRowDropKey(null); }}
                         style={{
-                          backgroundColor: rowDropIdx === idx && rowDragIdx !== idx
-                            ? '#dbeafe'
-                            : idx % 2 === 0 ? 'transparent' : '#fafafa',
-                          opacity: rowDragIdx === idx ? 0.4 : 1,
-                          outline: rowDropIdx === idx && rowDragIdx !== idx ? '2px solid #3b82f6' : undefined,
+                          backgroundColor: rowDropKey === item.key && rowDragKey !== item.key ? '#dbeafe' : undefined,
+                          opacity: rowDragKey === item.key ? 0.4 : 1,
                         }}
                       >
-                        {/* Drag handle */}
-                        <td
-                          className="no-print"
-                          style={{ border: '0.5pt solid #ddd', padding: '2pt', textAlign: 'center', cursor: 'grab', verticalAlign: 'middle', width: '14pt' }}
-                          title="Kéo để đổi thứ tự"
-                        >
-                          <GripVertical size={11} style={{ margin: '0 auto', color: '#bbb', display: 'block' }} />
-                        </td>
+                        {!readOnly && (
+                          <td style={{ border: '0.5pt solid #ddd', textAlign: 'center', cursor: 'grab' }} title="Kéo để đổi thứ tự">
+                            <GripVertical size={11} style={{ margin: '0 auto', color: '#bbb' }} />
+                          </td>
+                        )}
                         <td style={{ border: '0.5pt solid #999', padding: '3pt', textAlign: 'center', verticalAlign: 'top' }}>{idx + 1}</td>
+                        <td style={{ border: '0.5pt solid #999', padding: '3pt', verticalAlign: 'top', whiteSpace: 'pre-line' }}>{item.label}</td>
                         <td style={{ border: '0.5pt solid #999', padding: '3pt', verticalAlign: 'top' }}>
-                          <EditableCell value={item.label} onChange={(v) => updateItem(idx, 'label', v)} multiline={false} />
-                        </td>
-                        <td style={{ border: '0.5pt solid #999', padding: '3pt', verticalAlign: 'top' }}>
-                          <EditableCell value={item.content} onChange={(v) => updateItem(idx, 'content', v)} />
+                          {item.factText && (
+                            <div
+                              data-testid={`doc-fact-${item.key}`}
+                              title="Lấy từ dữ liệu Proposal — sửa tại Proposal, không sửa trong tờ trình"
+                              className="relative rounded bg-slate-50 px-1 pr-4"
+                              style={{ whiteSpace: 'pre-line' }}
+                            >
+                              {item.factText}
+                              <Lock size={9} className="absolute right-1 top-1 text-slate-400" aria-hidden />
+                            </div>
+                          )}
+                          {item.narrativeEditable && (
+                            <div className={item.factText ? 'mt-1' : ''}>
+                              <DocText
+                                label={`Nội dung ${plainLabel}`}
+                                value={narrative ?? ''}
+                                readOnly={readOnly}
+                                onChange={(v) => updateItem(item.key, 'narrativeText', v)}
+                              />
+                              {overridden && !readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateItem(item.key, 'narrativeText', null)}
+                                  className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-blue-600 hover:underline"
+                                >
+                                  <RotateCcw size={9} /> Khôi phục nội dung mẫu
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td style={{ border: '0.5pt solid #999', padding: '3pt', verticalAlign: 'top', fontSize: '8pt', color: '#555', fontStyle: 'italic' }}>
-                          <EditableCell value={item.note} onChange={(v) => updateItem(idx, 'note', v)} />
+                          <DocText label={`Ghi chú ${plainLabel}`} value={local?.note ?? ''} readOnly={readOnly} onChange={(v) => updateItem(item.key, 'note', v)} />
                         </td>
                       </tr>
-                    )
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
 
-              {/* ── Section II ─── */}
-              <div style={{ fontWeight: 'bold', marginBottom: '8pt' }}>
-                II.&nbsp;&nbsp;LAYOUT MẶT BẰNG NHƯ SAU:
-              </div>
-
-              {doc.layoutImageBase64 ? (
-                <div style={{ marginBottom: '12pt', position: 'relative' }}>
-                  <img src={doc.layoutImageBase64} alt="layout" style={{ maxWidth: '100%', border: '0.5pt solid #ccc' }} />
-                  <button
-                    className="no-print absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
-                    onClick={() => update('layoutImageBase64', '')}
-                  >×</button>
-                </div>
+              <div className="font-bold mb-2" style={{ color: accent }}>II.&nbsp;&nbsp;LAYOUT MẶT BẰNG NHƯ SAU:</div>
+              {draft.layoutImageDataUrl ? (
+                <img src={draft.layoutImageDataUrl} alt="layout" style={{ maxWidth: '100%', border: '0.5pt solid #ccc', marginBottom: '12pt' }} />
               ) : (
-                <label className="no-print cursor-pointer block border-2 border-dashed border-gray-300 rounded p-8 text-center mb-12 hover:border-blue-400 transition-colors" style={{ marginBottom: '12pt' }}>
-                  <Image size={32} className="mx-auto text-gray-300 mb-2" />
-                  <div className="text-sm text-gray-400">Click để upload layout mặt bằng</div>
-                  <div className="text-xs text-gray-300 mt-1">PNG, JPG, PDF screenshot...</div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleLayoutImageUpload} />
-                </label>
+                <div className="text-center text-gray-400 mb-4" style={{ fontSize: '9pt' }}>(Chưa đính kèm layout mặt bằng)</div>
               )}
 
-              {/* ── Closing ─── */}
-              <div style={{ marginBottom: '14pt' }}>
-                <EditableCell value={doc.closingLine} onChange={(v) => update('closingLine', v)} multiline={false} />
-              </div>
+              <DocText label="Đoạn kết" value={draft.closingLine} readOnly={readOnly} onChange={(v) => patch({ closingLine: v })} className="mb-4" />
 
-              {/* ── Signatories ─── */}
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <tbody>
-                  <tr>
-                    {doc.signatories.map((sig, idx) => (
-                      <td key={idx} style={{ border: '0.5pt solid #999', padding: '8pt 4pt', textAlign: 'center', width: `${100 / doc.signatories.length}%`, verticalAlign: 'top', position: 'relative' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '9pt', marginBottom: '60pt' }}>
-                          <EditableCell value={sig.title} onChange={(v) => updateSignatory(idx, 'title', v)} multiline={false} className="text-center" />
-                        </div>
-                        <div style={{ fontWeight: 'bold', fontSize: '9pt' }}>
-                          <EditableCell value={sig.name} onChange={(v) => updateSignatory(idx, 'name', v)} multiline={false} className="text-center" />
-                        </div>
-                        {doc.signatories.length > 1 && (
-                          <button
-                            className="no-print absolute top-1 right-1 text-red-400 hover:text-red-600"
-                            onClick={() => removeSignatory(idx)}
-                            title="Xóa"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-
+              <ApprovalBlock model={model} />
             </div>
-          </div>
+          )}
         </div>
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-        <div className="no-print w-72 bg-white border-l border-gray-200 overflow-y-auto flex flex-col shrink-0">
+        <div className="w-72 bg-white border-l border-gray-200 overflow-y-auto flex flex-col shrink-0">
           <div className="p-4 space-y-5 text-sm flex-1">
-
-            {sidebar === 'settings' && (
+            {sidebar === 'settings' && draft && (
               <>
-                {/* Logo */}
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Logo công ty</div>
-                  {doc.logoBase64 ? (
-                    <div className="relative inline-block">
-                      <img src={doc.logoBase64} alt="logo" className="h-12 object-contain border rounded" />
-                      <button
-                        onClick={() => update('logoBase64', '')}
-                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]"
-                      >×</button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 border border-dashed border-blue-300 rounded p-2 hover:bg-blue-50">
-                      <Upload size={14} /> Upload logo (PNG, JPG)
-                      <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                    </label>
-                  )}
-                </div>
+                <ImagePicker
+                  title="Logo công ty"
+                  value={draft.logoDataUrl}
+                  readOnly={readOnly}
+                  onPick={(e) => readImage(e, 'logoDataUrl')}
+                  onClear={() => patch({ logoDataUrl: null })}
+                />
+                <ImagePicker
+                  title="Ảnh layout mặt bằng (Mục II)"
+                  value={draft.layoutImageDataUrl}
+                  readOnly={readOnly}
+                  onPick={(e) => readImage(e, 'layoutImageDataUrl')}
+                  onClear={() => patch({ layoutImageDataUrl: null })}
+                />
 
-                {/* Layout image */}
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Ảnh layout mặt bằng (Mục II)</div>
-                  {doc.layoutImageBase64 ? (
-                    <div className="relative">
-                      <img src={doc.layoutImageBase64} alt="layout" className="w-full border rounded" />
-                      <button
-                        onClick={() => update('layoutImageBase64', '')}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
-                      >×</button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 border border-dashed border-blue-300 rounded p-2 hover:bg-blue-50">
-                      <Image size={14} /> Upload layout mặt bằng
-                      <input type="file" accept="image/*" className="hidden" onChange={handleLayoutImageUpload} />
-                    </label>
-                  )}
-                </div>
-
-                {/* GAP #41, #91–94 — Phí & Điều khoản bổ sung */}
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Phí & Điều khoản</div>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-[11px] text-gray-500 block mb-0.5">Giờ hoạt động (mục 13)</label>
-                      <input value={extraFields.operatingHours} onChange={setEF('operatingHours')}
-                        placeholder="10:00–22:00 hàng ngày" className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí tiện ích/tháng ({proposal.rentCurrency ?? '—'})</label>
-                        <input type="number" value={extraFields.utilityFee} onChange={setEF('utilityFee')}
-                          className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Phí ngoài giờ/giờ ({proposal.rentCurrency ?? '—'})</label>
-                        <input type="number" value={extraFields.afterHoursFee} onChange={setEF('afterHoursFee')}
-                          className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-gray-500 block mb-0.5">Thanh toán trong vòng (ngày) — mục 16</label>
-                      <input type="number" value={extraFields.paymentTermDays} onChange={setEF('paymentTermDays')}
-                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </div>
-                    <div className="text-[11px] text-gray-400 font-medium mt-1">Cọc & Phí thi công (mục 17, 19)</div>
-                    <div className="grid grid-cols-1 gap-2">
-                      <div>
-                        <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thuê ({proposal.rentCurrency ?? '—'}) — 0 = tính tự động</label>
-                        <input type="number" min={0} value={extraFields.depositLease} onChange={setEF('depositLease')}
-                          placeholder="0 = tự tính từ deposit × monthlyRent" className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                      </div>
+                {!readOnly && (
+                  <div className="border-t border-gray-100 pt-3">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Phí & Điều khoản</div>
+                    <div className="text-[11px] text-gray-400 mb-2">Lưu vào Proposal; tờ trình tự cập nhật theo.</div>
+                    <div className="space-y-2">
+                      <Field label="Thời hạn thanh toán (ngày)">
+                        <input type="number" min={0} value={extraFields.paymentTermDays} onChange={setEF('paymentTermDays')} className="w-full border rounded px-2 py-1 text-xs" />
+                      </Field>
+                      <Field label="Giờ hoạt động">
+                        <input value={extraFields.operatingHours} onChange={setEF('operatingHours')} placeholder="10:00–22:00 hằng ngày" className="w-full border rounded px-2 py-1 text-xs" />
+                      </Field>
                       <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Cọc thi công ({proposal.rentCurrency ?? '—'})</label>
-                          <input type="number" value={extraFields.depositFitout} onChange={setEF('depositFitout')}
-                            className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-gray-500 block mb-0.5">Phí thi công ({proposal.rentCurrency ?? '—'})</label>
-                          <input type="number" value={extraFields.fitoutFee} onChange={setEF('fitoutFee')}
-                            className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                        </div>
+                        <Field label={`Phí tiện ích/tháng (${proposal.rentCurrency ?? '—'})`}>
+                          <input type="number" value={extraFields.utilityFee} onChange={setEF('utilityFee')} className="w-full border rounded px-2 py-1 text-xs" />
+                        </Field>
+                        <Field label={`Phí ngoài giờ/giờ (${proposal.rentCurrency ?? '—'})`}>
+                          <input type="number" value={extraFields.afterHoursFee} onChange={setEF('afterHoursFee')} className="w-full border rounded px-2 py-1 text-xs" />
+                        </Field>
                       </div>
-                    </div>
-                    <button
-                      onClick={() => saveExtraMutation.mutate()}
-                      disabled={saveExtraMutation.isPending}
-                      className="w-full mt-1 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {saveExtraMutation.isPending ? 'Đang lưu...' : 'Lưu Phí & Điều khoản'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Show/hide locked items */}
-                <div>
-                  <button
-                    onClick={() => setShowLockedItems(!showLockedItems)}
-                    className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800"
-                  >
-                    {showLockedItems ? <Eye size={13} /> : <EyeOff size={13} />}
-                    {showLockedItems ? 'Ẩn' : 'Hiện'} điều khoản chuẩn (12–16)
-                  </button>
-                </div>
-
-                {/* Info hint */}
-                <div className="text-xs text-gray-400 bg-gray-50 rounded p-2">
-                  <span className="font-medium">💡 Tip:</span> Click vào bất kỳ ô nào trong tài liệu để chỉnh sửa nội dung. Nhấn <kbd className="bg-white border rounded px-1">Esc</kbd> để hủy, <kbd className="bg-white border rounded px-1">blur</kbd> để lưu.
-                </div>
-              </>
-            )}
-
-            {sidebar === 'signatories' && (
-              <>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Người ký duyệt</div>
-                {doc.signatories.map((sig, idx) => (
-                  <div key={idx} className="border rounded-lg p-3 space-y-2 bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-600">Người ký #{idx + 1}</span>
-                      {doc.signatories.length > 1 && (
-                        <button onClick={() => removeSignatory(idx)} className="text-red-400 hover:text-red-600">
-                          <Trash2 size={13} />
-                        </button>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">Chức danh</label>
-                      <input
-                        value={sig.title}
-                        onChange={(e) => updateSignatory(idx, 'title', e.target.value)}
-                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">Họ và tên</label>
-                      <input
-                        value={sig.name}
-                        onChange={(e) => updateSignatory(idx, 'name', e.target.value)}
-                        className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-                      />
+                      <Field label={`Cọc thuê (${proposal.rentCurrency ?? '—'}) — 0 = tính theo số tháng`}>
+                        <input type="number" min={0} value={extraFields.depositLease} onChange={setEF('depositLease')} className="w-full border rounded px-2 py-1 text-xs" />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label={`Cọc thi công (${proposal.rentCurrency ?? '—'})`}>
+                          <input type="number" value={extraFields.depositFitout} onChange={setEF('depositFitout')} className="w-full border rounded px-2 py-1 text-xs" />
+                        </Field>
+                        <Field label={`Phí thi công (${proposal.rentCurrency ?? '—'})`}>
+                          <input type="number" value={extraFields.fitoutFee} onChange={setEF('fitoutFee')} className="w-full border rounded px-2 py-1 text-xs" />
+                        </Field>
+                      </div>
+                      <button
+                        onClick={() => saveExtraMutation.mutate()}
+                        disabled={saveExtraMutation.isPending}
+                        className="w-full mt-1 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {saveExtraMutation.isPending ? 'Đang lưu...' : 'Lưu Phí & Điều khoản'}
+                      </button>
                     </div>
                   </div>
-                ))}
+                )}
+
                 <button
-                  onClick={addSignatory}
-                  className="w-full flex items-center justify-center gap-2 text-xs text-blue-600 border border-dashed border-blue-300 rounded p-2 hover:bg-blue-50"
+                  onClick={() => setShowStandardClauses(!showStandardClauses)}
+                  className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800"
                 >
-                  <Plus size={13} /> Thêm người ký
+                  {showStandardClauses ? <EyeOff size={13} /> : <Eye size={13} />}
+                  {showStandardClauses ? 'Ẩn' : 'Hiện'} điều khoản chuẩn khi soạn
                 </button>
+                <div className="text-xs text-gray-400 bg-gray-50 rounded p-2 space-y-1">
+                  <div><Lock size={10} className="inline mr-1" />Ô có biểu tượng khoá lấy từ dữ liệu Proposal và không sửa trong tờ trình.</div>
+                  <div>PDF chính thức luôn do hệ thống tạo — cùng một bản cho người lập, danh sách Proposal và màn phê duyệt.</div>
+                </div>
               </>
             )}
 
-            {sidebar === 'style' && (
-              <>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Font chữ</div>
-                <div className="space-y-1">
-                  {FONTS.map((f) => (
-                    <button
-                      key={f.value}
-                      onClick={() => update('font', f.value)}
-                      style={{ fontFamily: f.value }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm border transition-colors ${doc.font === f.value ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50'}`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
+            {sidebar === 'approval' && model && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Người lập & phê duyệt</div>
+                <div className="text-xs text-gray-500">Lấy từ quy trình phê duyệt thực tế; không nhập tay.</div>
+                <ApprovalList model={model} />
+              </div>
+            )}
 
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4 mb-2">Màu chủ đề</div>
+            {sidebar === 'style' && draft && (
+              <>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Màu tiêu đề</div>
                 <div className="flex flex-wrap gap-2">
                   {COLORS.map((c) => (
                     <button
                       key={c}
-                      onClick={() => update('primaryColor', c)}
-                      className={`w-8 h-8 rounded-full border-4 transition-transform hover:scale-110 ${doc.primaryColor === c ? 'border-gray-800 scale-110' : 'border-gray-200'}`}
+                      disabled={readOnly}
+                      aria-label={`Màu ${c}`}
+                      onClick={() => patch({ primaryColor: c })}
+                      className={`w-8 h-8 rounded-full border-4 ${draft.primaryColor === c ? 'border-gray-800' : 'border-gray-200'}`}
                       style={{ backgroundColor: c }}
-                      title={c}
                     />
                   ))}
                 </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <label className="text-xs text-gray-500">Màu tùy chỉnh:</label>
-                  <input
-                    type="color"
-                    value={doc.primaryColor}
-                    onChange={(e) => update('primaryColor', e.target.value)}
-                    className="w-8 h-8 rounded cursor-pointer border border-gray-200"
-                  />
-                  <span className="text-xs font-mono text-gray-600">{doc.primaryColor}</span>
-                </div>
-
-                <div className="mt-4 text-xs text-gray-400 bg-gray-50 rounded p-2">
-                  Màu chủ đề áp dụng cho tiêu đề, đường kẻ và các nhấn mạnh trong tài liệu.
+                <div className="mt-3 text-xs text-gray-400 bg-gray-50 rounded p-2">
+                  PDF chính thức dùng phông Roboto hỗ trợ đầy đủ tiếng Việt.
                 </div>
               </>
             )}
           </div>
 
-          {/* Footer */}
           <div className="p-3 border-t bg-gray-50 space-y-2">
-            <Button
-              className="w-full gap-2 text-sm bg-green-600 hover:bg-green-700"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-            >
-              <Save size={14} /> {saveMutation.isPending ? 'Đang lưu...' : 'Lưu vào hệ thống'}
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full gap-2 text-sm"
-              onClick={handlePrint}
-            >
-              <Printer size={14} /> In / Xuất PDF
+            {model && <DocumentStatus model={model} />}
+            {!readOnly && (
+              <Button className="w-full gap-2 text-sm bg-green-600 hover:bg-green-700" onClick={() => saveMutation.mutate()} disabled={!model || !draft || saveMutation.isPending}>
+                <Save size={14} /> {saveMutation.isPending ? 'Đang lưu...' : 'Lưu & xác nhận tờ trình'}
+              </Button>
+            )}
+            <Button variant="outline" className="w-full gap-2 text-sm" onClick={handleExport} disabled={!model || exporting}>
+              <FileDown size={14} /> Xuất PDF chính thức
             </Button>
           </div>
         </div>
       </div>
     </div>
     </>
+  );
+}
+
+/** Draft vs submitted, source freshness, and which version this is. */
+/** Text and symbol carry the state; colour only reinforces it. */
+const REVIEW_LABELS = {
+  NOT_REVIEWED: { text: 'CHƯA XÁC NHẬN', icon: '○', cls: 'border-slate-300 bg-slate-50 text-slate-700' },
+  REVIEWED: { text: 'ĐÃ XÁC NHẬN', icon: '✓', cls: 'border-green-300 bg-green-50 text-green-800' },
+  STALE: { text: 'CẦN KIỂM TRA LẠI', icon: '!', cls: 'border-amber-300 bg-amber-50 text-amber-900' },
+} as const;
+
+function DocumentStatus({ model }: { model: ProposalDocumentModel }) {
+  if (model.version) {
+    return (
+      <div data-testid="document-status" className="text-[11px] text-gray-600 space-y-0.5">
+        <div className="font-semibold text-gray-700">Tờ trình đã trình · phiên bản {model.version.versionNumber}</div>
+        <div>Trình lúc: {formatDateTime(model.version.submittedAt)}</div>
+        <div>Người trình: {model.version.submittedByName ?? 'Không xác định'}</div>
+        <div>Trạng thái phiên bản: {model.version.status}</div>
+      </div>
+    );
+  }
+  const review = REVIEW_LABELS[model.sync.reviewState];
+  return (
+    <div data-testid="document-status" className="text-[11px] text-gray-600 space-y-0.5">
+      <div className="font-semibold text-gray-700">Bản nháp</div>
+      <div data-testid="review-state" className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-semibold ${review.cls}`}>
+        <span aria-hidden>{review.icon}</span> {review.text}
+      </div>
+      {model.sync.reviewState !== 'NOT_REVIEWED' && (
+        <div>Xác nhận bởi: {model.sync.reviewedByName ?? 'Không xác định'}{model.sync.reviewedAt ? ` · ${formatDateTime(model.sync.reviewedAt)}` : ''}</div>
+      )}
+      <div>Dữ liệu nguồn: {model.sync.reviewState === 'STALE' || model.sync.documentStale ? 'đã thay đổi — cần kiểm tra lại' : model.sync.reviewState === 'REVIEWED' ? 'khớp với lần xác nhận gần nhất' : 'chưa được xác nhận'}</div>
+      <div>Phiên bản nội dung: {model.sync.contentVersion}</div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-[11px] text-gray-500 block mb-0.5">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function ImagePicker({ title, value, readOnly, onPick, onClear }: {
+  title: string;
+  value: string | null;
+  readOnly: boolean;
+  onPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{title}</div>
+      {value ? (
+        <div className="relative inline-block">
+          <img src={value} alt={title} className="max-h-24 object-contain border rounded" />
+          {!readOnly && (
+            <button onClick={onClear} aria-label={`Xoá ${title}`} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">×</button>
+          )}
+        </div>
+      ) : readOnly ? (
+        <div className="text-xs text-gray-400">Không có</div>
+      ) : (
+        <label className="cursor-pointer flex items-center gap-2 text-xs text-blue-600 border border-dashed border-blue-300 rounded p-2 hover:bg-blue-50">
+          {title.startsWith('Logo') ? <Upload size={14} /> : <Image size={14} />} Tải ảnh PNG/JPEG (≤ 2 MB)
+          <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={onPick} />
+        </label>
+      )}
+    </div>
+  );
+}
+
+const PRESENTATION_LABEL = {
+  APPROVED_BY: { text: 'Đã duyệt', cls: 'text-green-700' },
+  REJECTED_BY: { text: 'Từ chối', cls: 'text-red-700' },
+  EXPECTED_APPROVER: { text: 'Người duyệt dự kiến — chưa duyệt', cls: 'text-gray-500' },
+  SKIPPED: { text: 'Bỏ qua', cls: 'text-gray-400' },
+} as const;
+
+function ApprovalList({ model }: { model: ProposalDocumentModel }) {
+  return (
+    <ol className="space-y-2">
+      <li className="border rounded p-2">
+        <div className="text-[11px] font-semibold text-gray-500">NGƯỜI LẬP</div>
+        <div className="font-medium">{model.facts.preparedBy.fullName ?? 'Không xác định'}</div>
+      </li>
+      {model.approval.state === 'NOT_SUBMITTED' && (
+        <li className="text-xs italic text-gray-500">Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.</li>
+      )}
+      {model.approval.steps.map((s) => (
+        <li key={`${s.stepOrder}-${s.stepName}`} data-testid={`approval-step-${s.stepOrder}`} className="border rounded p-2">
+          <div className="text-[11px] font-semibold text-gray-500">{s.stepOrder}. {s.stepName}</div>
+          <div className={`text-[11px] ${PRESENTATION_LABEL[s.presentation].cls}`}>{PRESENTATION_LABEL[s.presentation].text}</div>
+          <div className="font-medium">{s.approverName ?? 'Chưa phân công'}</div>
+          {s.decidedAt && <div className="text-[11px] text-gray-500">{formatDateTime(s.decidedAt)}</div>}
+          {s.comment && <div className="text-[11px] italic text-gray-500">Ý kiến: {s.comment}</div>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ApprovalBlock({ model }: { model: ProposalDocumentModel }) {
+  return (
+    <div data-testid="document-approval-block">
+      <div className="font-bold mb-1" style={{ fontSize: '9pt' }}>NGƯỜI LẬP VÀ QUÁ TRÌNH PHÊ DUYỆT</div>
+      <div className="grid grid-cols-4 border-l border-t" style={{ borderColor: '#999', fontSize: '8pt' }}>
+        <div className="border-r border-b p-2 text-center" style={{ borderColor: '#999' }}>
+          <div className="font-bold">NGƯỜI LẬP</div>
+          <div className="mt-6 font-bold" style={{ fontSize: '9pt' }}>{model.facts.preparedBy.fullName ?? 'Không xác định'}</div>
+        </div>
+        {model.approval.state === 'NOT_SUBMITTED' && (
+          <div className="col-span-3 border-r border-b p-2 text-center italic text-gray-500" style={{ borderColor: '#999' }}>
+            Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.
+          </div>
+        )}
+        {model.approval.steps.map((s) => (
+          <div key={`${s.stepOrder}-${s.stepName}`} className="border-r border-b p-2 text-center" style={{ borderColor: '#999' }}>
+            <div className="font-bold uppercase">{s.stepName}</div>
+            <div className={PRESENTATION_LABEL[s.presentation].cls}>{PRESENTATION_LABEL[s.presentation].text}</div>
+            <div className="mt-3" style={{ fontSize: '9pt' }}>{s.approverName ?? 'Chưa phân công'}</div>
+            {s.decidedAt && <div className="text-gray-500">{formatDateTime(s.decidedAt)}</div>}
+            {s.comment && <div className="italic text-gray-500">Ý kiến: {s.comment}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

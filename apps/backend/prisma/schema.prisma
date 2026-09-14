@@ -291,6 +291,13 @@ enum WorkflowStatus {
   REJECTED
 }
 
+enum ProposalDocumentVersionStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
 enum StepStatus {
   PENDING
   APPROVED
@@ -1609,15 +1616,17 @@ model Proposal {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  bookingId        String?            @unique
-  booking          UnitBooking?       @relation(fields: [bookingId], references: [id])
-  slotBookingId    String?            @unique
-  slotBooking      SlotBooking?       @relation(fields: [slotBookingId], references: [id])
+  bookingId        String?                   @unique
+  booking          UnitBooking?              @relation(fields: [bookingId], references: [id])
+  slotBookingId    String?                   @unique
+  slotBooking      SlotBooking?              @relation(fields: [slotBookingId], references: [id])
   approvalWorkflow ApprovalWorkflow?
   contract         Contract?
   versions         ProposalVersion[]
   dealScore        ProposalDealScore?
   scenarios        ProposalScenario[]
+  documentVersions ProposalDocumentVersion[]
+  documentSends    ProposalDocumentSend[]
   services         ProposalService[] // GAP #15 -- line items dch v
 }
 
@@ -1689,22 +1698,33 @@ model ApprovalWorkflow {
 
   steps           ApprovalStep[]
   fitoutSubmittal FitoutSubmittal?
+
+  // CR-PROPOSAL-DOCUMENT-FINALIZATION: the immutable proposal document this workflow is
+  // deciding on. A revision gets a new version and a new workflow; the old
+  // workflow keeps pointing at the version its approvers actually saw.
+  documentVersionId String?                  @unique
+  documentVersion   ProposalDocumentVersion? @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
 }
 
 model ApprovalStep {
-  id           String           @id @default(cuid())
-  workflowId   String
-  workflow     ApprovalWorkflow @relation(fields: [workflowId], references: [id])
-  stepOrder    Int
-  stepName     String
-  approverRole Role
-  approverId   String?
-  approver     User?            @relation(fields: [approverId], references: [id])
-  status       StepStatus       @default(PENDING)
-  comment      String?
-  decidedAt    DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id                   String           @id @default(cuid())
+  workflowId           String
+  workflow             ApprovalWorkflow @relation(fields: [workflowId], references: [id])
+  stepOrder            Int
+  stepName             String
+  approverRole         Role
+  approverId           String?
+  approver             User?            @relation(fields: [approverId], references: [id])
+  status               StepStatus       @default(PENDING)
+  comment              String?
+  decidedAt            DateTime?
+  // Decision evidence captured when the step is decided (proposal governance CR).
+  // The approver's User row stays mutable; these do not. Null on rows decided
+  // before this existed - never backfilled from today's User data.
+  decidedByUserId      String?
+  decidedByDisplayName String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 }
 
 // Ma tran quyen module dong -- Admin bat/tat qua UI (/admin?section=permissions),
@@ -2900,30 +2920,31 @@ model OutboxEvent {
 }
 
 model EmailDelivery {
-  id                 String          @id @default(cuid())
-  eventKey           String          @unique
-  eventType          String?
-  entityType         String?
-  entityId           String?
-  mallId             String?
-  recipient          Json
-  payload            Json
-  status             String          @default("PENDING")
-  attempts           Int             @default(0)
-  nextAttemptAt      DateTime        @default(now())
-  providerMessageId  String?
-  deliveredAt        DateTime?
-  lastAttemptAt      DateTime?
-  sentAt             DateTime?
-  lastError          String?
-  originalDeliveryId String?
-  originalDelivery   EmailDelivery?  @relation("EmailDeliveryOriginal", fields: [originalDeliveryId], references: [id], onDelete: SetNull)
-  derivedDeliveries  EmailDelivery[] @relation("EmailDeliveryOriginal")
-  resendOfId         String?
-  resendOf           EmailDelivery?  @relation("EmailDeliveryResend", fields: [resendOfId], references: [id], onDelete: SetNull)
-  resends            EmailDelivery[] @relation("EmailDeliveryResend")
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id                   String                @id @default(cuid())
+  eventKey             String                @unique
+  eventType            String?
+  entityType           String?
+  entityId             String?
+  mallId               String?
+  recipient            Json
+  payload              Json
+  status               String                @default("PENDING")
+  attempts             Int                   @default(0)
+  nextAttemptAt        DateTime              @default(now())
+  providerMessageId    String?
+  deliveredAt          DateTime?
+  lastAttemptAt        DateTime?
+  sentAt               DateTime?
+  lastError            String?
+  originalDeliveryId   String?
+  originalDelivery     EmailDelivery?        @relation("EmailDeliveryOriginal", fields: [originalDeliveryId], references: [id], onDelete: SetNull)
+  derivedDeliveries    EmailDelivery[]       @relation("EmailDeliveryOriginal")
+  resendOfId           String?
+  resendOf             EmailDelivery?        @relation("EmailDeliveryResend", fields: [resendOfId], references: [id], onDelete: SetNull)
+  resends              EmailDelivery[]       @relation("EmailDeliveryResend")
+  proposalDocumentSend ProposalDocumentSend?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([status, nextAttemptAt, createdAt])
   @@index([mallId, createdAt])
@@ -3842,4 +3863,61 @@ model EmailSettings {
   updatedById       String?
   updatedAt         DateTime @updatedAt
   createdAt         DateTime @default(now())
+}
+
+// CR-PROPOSAL-DOCUMENT-FINALIZATION - the exact proposal document put in front of
+// approvers. Written once, inside the submit transaction; the snapshot columns
+// are protected against UPDATE by a database trigger (see migration). Only
+// `status` moves afterwards.
+//
+// Distinct from ProposalVersion, which is a change log of commercial fields on
+// every edit; this is the reviewed document that a decision is bound to.
+model ProposalDocumentVersion {
+  id                String                        @id @default(cuid())
+  proposalId        String
+  proposal          Proposal                      @relation(fields: [proposalId], references: [id])
+  versionNumber     Int
+  status            ProposalDocumentVersionStatus @default(SUBMITTED)
+  // Fingerprint of the facts the author reviewed and submitted.
+  sourceFingerprint String
+  // editorContent.contentVersion at submission (0 = never customised).
+  contentVersion    Int
+  factsSnapshot     Json
+  contentSnapshot   Json
+  // Header, narrative, rows and presentation exactly as rendered at submit.
+  renderedSnapshot  Json
+  submittedById     String
+  submittedAt       DateTime                      @default(now())
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+
+  approvalWorkflow ApprovalWorkflow?
+  sends            ProposalDocumentSend[]
+
+  @@unique([proposalId, versionNumber])
+  @@index([proposalId, status])
+}
+
+// CR-PROPOSAL-DOCUMENT-FINALIZATION - every external send of a proposal document.
+// Delivery state lives on the linked EmailDelivery; this row records what was
+// sent, to whom, by whom, and which document version.
+model ProposalDocumentSend {
+  id                 String                  @id @default(cuid())
+  proposalId         String
+  proposal           Proposal                @relation(fields: [proposalId], references: [id])
+  documentVersionId  String
+  documentVersion    ProposalDocumentVersion @relation(fields: [documentVersionId], references: [id])
+  idempotencyKey     String
+  recipients         Json
+  subject            String
+  message            String?
+  attachmentFilename String
+  attachmentSha256   String
+  emailDeliveryId    String                  @unique
+  emailDelivery      EmailDelivery           @relation(fields: [emailDeliveryId], references: [id])
+  sentById           String
+  createdAt          DateTime                @default(now())
+
+  @@unique([proposalId, idempotencyKey])
+  @@index([proposalId, createdAt])
 }

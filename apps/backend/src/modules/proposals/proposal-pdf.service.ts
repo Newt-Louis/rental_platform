@@ -1,305 +1,63 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import { Injectable, Logger } from '@nestjs/common';
+import type {
+  ProposalDocumentApprovalStep,
+  ProposalDocumentModel,
+} from './document/proposal-document.types';
 
+type Margin = [number, number, number, number];
+
+export interface ProposalPdfOptions {
+  /**
+   * EXTERNAL omits approvers' comments, which are internal deliberation; who
+   * decided and when stays, as evidence the document was approved.
+   */
+  audience?: 'INTERNAL' | 'EXTERNAL';
+}
+
+const PRESENTATION_LABEL: Record<ProposalDocumentApprovalStep['presentation'], string> = {
+  APPROVED_BY: 'ĐÃ DUYỆT',
+  REJECTED_BY: 'TỪ CHỐI',
+  EXPECTED_APPROVER: 'NGƯỜI DUYỆT DỰ KIẾN — CHƯA DUYỆT',
+  SKIPPED: 'BỎ QUA',
+};
+
+function formatVnDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(iso));
+}
+
+/**
+ * CR-PROPOSAL-DOCUMENT-SOURCE-001 — the official Tờ trình renderer.
+ *
+ * Renders a ProposalDocumentModel and nothing else. It used to read the raw
+ * Proposal and run its own mapping, ignoring everything the author edited, so
+ * the approver's PDF and the author's print disagreed. Mapping now lives in
+ * proposal-document.mapper.ts only.
+ *
+ * `render` returns the exact bytes served by GET /proposals/:id/pdf, so a later
+ * email attachment can reuse it instead of growing a third renderer.
+ */
 @Injectable()
 export class ProposalPdfService {
   private readonly logger = new Logger(ProposalPdfService.name);
 
-  generateProposalPdf(proposal: any): Promise<Buffer> {
+  render(model: ProposalDocumentModel, options: ProposalPdfOptions = {}): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       try {
         const PdfPrinter = require('pdfmake');
         const vfs: Record<string, string> = require('pdfmake/build/vfs_fonts');
-
-        const fonts = {
+        const printer = new PdfPrinter({
           Roboto: {
             normal: Buffer.from(vfs['Roboto-Regular.ttf'], 'base64'),
             bold: Buffer.from(vfs['Roboto-Medium.ttf'], 'base64'),
             italics: Buffer.from(vfs['Roboto-Italic.ttf'], 'base64'),
             bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf'], 'base64'),
           },
-        };
-
-        const printer = new PdfPrinter(fonts);
-
-        // ── Helpers ─────────────────────────────────────────────────────────────
-        const fmtDate = (d?: string | Date | null) =>
-          d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '…/…/20……';
-        const fmtDateFull = (d?: string | Date | null) => {
-          if (!d) return { day: '…', month: '…', year: '20……' };
-          const dt = new Date(d);
-          return {
-            day: String(dt.getDate()).padStart(2, '0'),
-            month: String(dt.getMonth() + 1).padStart(2, '0'),
-            year: String(dt.getFullYear()),
-          };
-        };
-        const today = fmtDateFull(new Date());
-
-        const isUSD = (proposal.rentCurrency ?? 'VND') === 'USD';
-        // Any currency other than USD used to fall through to a hardcoded "VND"
-        // label, so an MMK proposal printed its amounts as VND on a document the
-        // customer signs off. Label with the proposal's real currency instead.
-        const fmtMoney = (v: number, currency?: string) => {
-          const cur = currency ?? proposal.rentCurrency ?? 'VND';
-          if (cur === 'USD') return `$${v?.toLocaleString('en-US', { minimumFractionDigits: 0 })} USD`;
-          if (cur === 'VND') return `${v?.toLocaleString('vi-VN')} VND`;
-          return `${v?.toLocaleString('vi-VN')} ${cur}`;
-        };
-        const fmtRent = (v: number) => fmtMoney(v, proposal.rentCurrency ?? 'VND');
-
-        // ── Source data ──────────────────────────────────────────────────────────
-        const brandName = proposal.tenant?.brandName ?? proposal.lead?.brandName ?? '[…]';
-        const companyName = proposal.tenant?.companyName ?? proposal.lead?.company ?? '[…]';
-        const industry = proposal.tenant?.preferredCategory ?? proposal.lead?.category ?? '[…]';
-        const unitCode = proposal.unit?.code ?? '[…]';
-        const floorName = proposal.unit?.floor?.name ?? '[…]';
-        const zoneName = proposal.unit?.zone?.name ?? '';
-        const unitLocation = zoneName ? `${unitCode}, ${zoneName}, ${floorName}` : `${unitCode}, ${floorName}`;
-        const mallName = proposal.unit?.floor?.mall?.name ?? proposal.unit?.mall?.name ?? 'Thiso Mall';
-
-        const businessModel = proposal.businessModel ?? '[…]';
-        const area = proposal.area ?? 0;
-        const termMonths = proposal.term ?? 0;
-        const termYears = (termMonths / 12).toFixed(0);
-        const rentPerSqm = proposal.rentPerSqm ?? 0;
-        const serviceFeeSqm = proposal.serviceFeeSqm ?? proposal.camPerSqm ?? 0;
-        const businessSupportFeeSqm = proposal.businessSupportFeeSqm ?? 0;
-        const depositMonths = proposal.deposit ?? 3;
-        const fitoutDays = proposal.fitoutDays ?? 90;
-        const escalation = proposal.escalationPercent ?? 5;
-        const handoverDate = proposal.handoverDate ? fmtDateFull(proposal.handoverDate) : null;
-        const openingDate = proposal.openingDate ? fmtDate(proposal.openingDate) : `…/…/20……`;
-        const specialConditions = proposal.specialConditions ?? proposal.notes ?? '[…]';
-        const approvalSteps = (proposal.approvalWorkflow?.steps ?? []) as any[];
-        const signatureSteps = approvalSteps.filter((step) => step.status === 'APPROVED' && step.approver);
-        const signatureCells = (signatureSteps.length ? signatureSteps : approvalSteps).map((step) => ({
-          stack: [
-            { text: step.stepName?.toUpperCase() ?? step.approverRole, fontSize: 8, bold: true, alignment: 'center' },
-            { text: '\n\n', fontSize: 8 },
-            { text: step.approver?.fullName ?? 'CHƯA DUYỆT', fontSize: 9, bold: true, alignment: 'center' },
-            { text: step.decidedAt ? `Duyệt lúc ${new Date(step.decidedAt).toLocaleString('vi-VN')}` : 'Đang chờ phê duyệt', fontSize: 7, color: '#555', alignment: 'center', margin: [0, 3, 0, 0] },
-            ...(step.comment ? [{ text: `Ý kiến: ${step.comment}`, fontSize: 7, italics: true, color: '#555', alignment: 'center', margin: [0, 2, 0, 0] }] : []),
-          ],
-          alignment: 'center',
-          fillColor: '#fafafa',
-        }));
-
-        // Document number
-        const year = new Date().getFullYear();
-        const docNumber = `${proposal.proposalNumber?.split('-')[2] ?? '…'}/${year}/TTr-CTTTTM`;
-
-        // ── Table row builder ────────────────────────────────────────────────────
-        const row = (stt: string | number, label: string, content: any, note = '') => ([
-          { text: String(stt), alignment: 'center', fontSize: 9 },
-          { text: label, fontSize: 9, bold: false },
-          typeof content === 'string'
-            ? { text: content, fontSize: 9 }
-            : { stack: content, fontSize: 9 },
-          { text: note, fontSize: 8, color: '#555', italics: true },
-        ]);
-
-        // ── Build item 8 text ────────────────────────────────────────────────────
-        const item8Lines = [
-          '• Ngày bắt đầu tính Tiền thuê là Ngày Bàn giao.',
-          '• Tiền thuê trong Thời hạn hoàn thiện nội thất (từ Ngày Bàn giao đến trước ngày Khai trương): Bên Thuê sẽ không phải thanh toán Tiền Thuê, Phí Dịch vụ và Phí hỗ trợ Kinh doanh.',
-        ];
-
-        // ── Signature block ──────────────────────────────────────────────────────
-        const signCol = (title: string, name: string) => ({
-          width: '33%',
-          stack: [
-            { text: title, fontSize: 9, bold: true, alignment: 'center' },
-            { text: '\n\n\n\n\n' },
-            { text: name, fontSize: 9, bold: true, alignment: 'center' },
-          ],
-          border: [true, true, true, true],
         });
-
-        const docDefinition: any = {
-          pageSize: 'A4',
-          pageMargins: [50, 50, 40, 60],
-          defaultStyle: { font: 'Roboto', fontSize: 10, lineHeight: 1.4 },
-
-          footer: (_currentPage: number, pageCount: number) => ({
-            text: `Trang ${_currentPage} | ${pageCount}`,
-            fontSize: 9, alignment: 'right', margin: [0, 10, 40, 0], color: '#888',
-          }),
-
-          content: [
-            // ── Letterhead ───────────────────────────────────────────────────────
-            {
-              columns: [
-                {
-                  width: '*',
-                  stack: [
-                    { text: 'KHỐI KINH DOANH BĐS TM & DV', fontSize: 10, bold: true, alignment: 'center' },
-                    { text: 'PHÒNG CHO THUÊ TTTM', fontSize: 10, bold: true, alignment: 'center' },
-                  ],
-                },
-                {
-                  width: '*',
-                  stack: [
-                    { text: `Số/No: ${docNumber}`, fontSize: 9, alignment: 'right' },
-                    { text: `TP.HCM, ngày ${today.day} tháng ${today.month} năm ${today.year}`, fontSize: 9, alignment: 'right', italics: true },
-                  ],
-                },
-              ],
-              margin: [0, 0, 0, 16] as [number, number, number, number],
-            },
-
-            // ── Title ────────────────────────────────────────────────────────────
-            { text: 'TỜ TRÌNH', fontSize: 14, bold: true, alignment: 'center', margin: [0, 0, 0, 6] as [number, number, number, number] },
-            {
-              text: `V/v: Phê duyệt xác nhận thông tin Thư Đề Nghị Cho Thuê/ Hợp Đồng Thuê gửi đến Khách thuê Công ty ${companyName} với tên thương hiệu ${brandName} tại vị trí thuê ${unitCode}, ${floorName} thuộc Dự Án Trung Tâm Thương Mại ${mallName}`,
-              fontSize: 10, bold: true, alignment: 'center', margin: [20, 0, 20, 16] as [number, number, number, number],
-            },
-
-            // ── Addressee ────────────────────────────────────────────────────────
-            { text: 'KÍNH GỬI: BAN TỔNG GIÁM ĐỐC', fontSize: 11, bold: true, alignment: 'center', margin: [0, 0, 0, 12] as [number, number, number, number] },
-
-            // ── Preamble bullets ─────────────────────────────────────────────────
-            {
-              ul: [
-                `Căn cứ nhu cầu thuê mặt bằng kinh doanh của Khách Thuê ${brandName} thuộc Công ty ${companyName} tại Dự Án Trung Tâm Thương Mại ${mallName};`,
-                `Căn cứ kế hoạch chốt thuê cho các Khách Thuê tại TTTM ${mallName};`,
-                `Căn cứ các yêu cầu đề xuất, điều kiện thoả thuận, phạm vi công việc đã được Các Bên thống nhất.`,
-              ],
-              fontSize: 10,
-              margin: [20, 0, 0, 10] as [number, number, number, number],
-            },
-            {
-              text: `Phòng cho thuê TTTM kính trình Ban Tổng Giám Đốc phê duyệt Đề xuất Cho Thuê cho Khách Thuê ${brandName} tại TTTM ${mallName}, bao gồm các nội dung chính sau:`,
-              fontSize: 10, margin: [0, 0, 0, 16] as [number, number, number, number],
-            },
-
-            // ── Section I ────────────────────────────────────────────────────────
-            { text: 'I.   CÁC ĐIỀU KHOẢN CHI TIẾT ĐÃ THỎA THUẬN GIỮA HAI BÊN:', fontSize: 10, bold: true, margin: [0, 0, 0, 6] as [number, number, number, number] },
-            { text: `1.1  Thương hiệu ${brandName}`, fontSize: 10, bold: true, margin: [20, 0, 0, 6] as [number, number, number, number] },
-
-            // ── Main table 21 items ──────────────────────────────────────────────
-            {
-              table: {
-                headerRows: 1,
-                widths: [22, 120, '*', 90],
-                body: [
-                  // Header
-                  [
-                    { text: 'STT', bold: true, fontSize: 9, fillColor: '#f0f0f0', alignment: 'center' },
-                    { text: 'HẠNG MỤC', bold: true, fontSize: 9, fillColor: '#f0f0f0', alignment: 'center' },
-                    { text: 'ĐIỀU KIỆN THƯƠNG MẠI', bold: true, fontSize: 9, fillColor: '#f0f0f0', alignment: 'center' },
-                    { text: 'GHI CHÚ', bold: true, fontSize: 9, fillColor: '#f0f0f0', alignment: 'center' },
-                  ],
-                  // 1
-                  row(1, 'Tên Pháp nhân', companyName),
-                  // 2
-                  row(2, 'Tên Thương hiệu', brandName),
-                  // 3
-                  row(3, 'Ngành hàng Kinh doanh', industry),
-                  // 4
-                  row(4, 'Mô hình Kinh doanh', businessModel),
-                  // 5
-                  row(5, 'Vị trí chào thuê', unitLocation, 'Layout chi tiết đính kèm phần II'),
-                  // 6
-                  row(6, 'Diện tích', [
-                    { text: `Tổng diện tích: ${area.toLocaleString('vi-VN')} m²`, bold: false },
-                    { text: 'Diện tích này được tạm tính vào thời điểm Bên Cho Thuê phát hành Thư Đề Nghị Cho Thuê. Diện Tích Thuê thực tế sẽ xác nhận sau khi đo đạc và các Bên xác nhận vào Ngày Bàn giao Mặt bằng.', fontSize: 8, color: '#555', margin: [0, 2, 0, 0] as [number, number, number, number] },
-                  ]),
-                  // 7
-                  row(7, 'Thời hạn thuê', `${termYears} năm (${termMonths} tháng) kể từ Ngày Bàn giao.`),
-                  // 8
-                  row(8, 'Ngày bắt đầu tính Tiền thuê', item8Lines.join('\n')),
-                  // 9
-                  row(9, 'Giá thuê\n(Chưa bao gồm Thuế GTGT)', [
-                    { text: `Năm 1 của Thời hạn thuê:` },
-                    { text: `Giá thuê: ${fmtRent(rentPerSqm)}/m²/tháng`, bold: true, margin: [0, 2, 0, 2] as [number, number, number, number] },
-                    { text: `Từ năm 2 trở đi, giá thuê tăng ${escalation}% so với năm liền kề trước đó.`, fontSize: 8, color: '#555' },
-                  ]),
-                  // 10
-                  row(10, 'Phí Dịch vụ', `${fmtMoney(serviceFeeSqm, isUSD ? 'USD' : 'VND')}/m²/tháng\n(Chưa bao gồm Thuế GTGT).`),
-                  // 11
-                  row(11, 'Phí hỗ trợ Kinh doanh', `${fmtMoney(businessSupportFeeSqm, isUSD ? 'USD' : 'VND')}/m²/tháng\n(Chưa bao gồm Thuế GTGT).`),
-                  // 12
-                  row(12, 'Phí tiện ích', 'Các Phí tiện ích: điện, nước, gas, … trong phần Diện Tích Thuê của Khách thuê sẽ được tính theo đồng hồ tiêu thụ được cấp tại khu vực thuê và được thanh toán bởi Bên Thuê.'),
-                  // 13
-                  row(13, 'Thời gian hoạt động của TTTM', 'Thứ 2 – Thứ 6:   10:00 – 22:00\nThứ 7 – Chủ nhật: 09:30 – 22:00'),
-                  // 14
-                  row(14, 'Phí Dịch vụ ngoài giờ', 'Các chi phí liên quan đến hoạt động ngoài giờ sẽ được Bên Thuê thanh toán theo quy định của TTTM.'),
-                  // 15
-                  row(15, 'Tỷ giá', [
-                    { text: '• Tỷ giá áp dụng cho Tiền thuê là tỷ giá bán ra của Ngân hàng TMCP Ngoại Thương Việt Nam vào ngày Bên Cho Thuê ban hành Thư Đề Nghị Cho Thuê/ Hợp Đồng Thuê.' },
-                    { text: '• Tỷ giá áp dụng cho Phí Dịch vụ và Phí hỗ trợ Kinh doanh là tỷ giá áp dụng đồng nhất cho Khách thuê tại TTTM: tỷ giá 26.340 VND/USD.', margin: [0, 3, 0, 0] as [number, number, number, number] },
-                  ]),
-                  // 16
-                  row(16, 'Thanh toán Tiền thuê', [
-                    { text: '• Bên Thuê thanh toán Tiền thuê cho Bên Cho Thuê trong vòng 05 (năm) ngày đầu tiên của mỗi Tháng.' },
-                    { text: '• Tiền thuê bao gồm: Tiền thuê, Phí Dịch vụ, Phí hỗ trợ Kinh doanh và các chi phí phát sinh nếu có (đã bao gồm Thuế GTGT).', margin: [0, 3, 0, 0] as [number, number, number, number] },
-                  ]),
-                  // 17
-                  row(17, 'Tiền Đặt Cọc', `Tiền Đặt cọc tương đương ${depositMonths} (${depositMonths === 3 ? 'ba' : depositMonths === 2 ? 'hai' : depositMonths === 1 ? 'một' : String(depositMonths)}) tháng Tiền thuê và Phí Dịch vụ (không bao gồm Thuế GTGT) và sẽ được thanh toán trong vòng 07 (bảy) ngày kể từ ngày ký Thư Đề Nghị Cho Thuê.`),
-                  // 18
-                  row(18, 'Thời hạn hoàn thiện nội thất', `Dự kiến ${fitoutDays} ngày kể từ Ngày Bàn giao.\nNgày Khai trương dự kiến: ${openingDate}`),
-                  // 19
-                  row(19, 'Phí Thi công', 'Bên Thuê thanh toán cho Bên Cho Thuê trước Ngày Bàn giao. Trong trường hợp có ngày ngưng thi công thực tế do lỗi của Bên Cho Thuê, Bên Cho Thuê sẽ giảm trừ phần Tiền Phí thi công cho những ngày ngưng thi công thực tế vào Tiền thuê của tháng đầu tiên của Thời hạn thuê.'),
-                  // 20
-                  row(20, 'Ngày Bàn giao Mặt bằng', handoverDate
-                    ? `Dự kiến ngày ${handoverDate.day}/${handoverDate.month}/${handoverDate.year} hoặc một ngày khác theo thông báo của Trung tâm thương mại ${mallName} bằng văn bản trước 07 (bảy) ngày.`
-                    : `Dự kiến ngày …/…/20…… hoặc một ngày khác theo thông báo của Trung tâm thương mại ${mallName} bằng văn bản trước 07 (bảy) ngày.`),
-                  // 21
-                  row(21, 'Điều kiện đặc biệt', specialConditions),
-                ],
-              },
-              layout: {
-                hLineColor: '#999',
-                vLineColor: '#999',
-                hLineWidth: () => 0.5,
-                vLineWidth: () => 0.5,
-                paddingLeft: () => 5,
-                paddingRight: () => 5,
-                paddingTop: () => 4,
-                paddingBottom: () => 4,
-              },
-              margin: [0, 0, 0, 20] as [number, number, number, number],
-            },
-
-            // ── Section II ───────────────────────────────────────────────────────
-            { text: 'II.  LAYOUT MẶT BẰNG NHƯ SAU:', fontSize: 10, bold: true, margin: [0, 0, 0, 6] as [number, number, number, number] },
-            {
-              canvas: [{
-                type: 'rect', x: 0, y: 0, w: 480, h: 200,
-                lineWidth: 0.5, lineColor: '#ccc', dash: { length: 4 },
-              }],
-              margin: [0, 0, 0, 8] as [number, number, number, number],
-            },
-            { text: '(Đính kèm layout mặt bằng)', fontSize: 9, color: '#888', alignment: 'center', margin: [0, 0, 0, 20] as [number, number, number, number] },
-
-            // ── Closing line ─────────────────────────────────────────────────────
-            {
-              text: 'Phòng cho thuê TTTM kính trình Ban Tổng Giám đốc xem xét và phê duyệt.',
-              fontSize: 10, margin: [0, 0, 0, 16] as [number, number, number, number],
-            },
-
-            // ── Signature block ──────────────────────────────────────────────────
-            {
-              table: {
-                widths: signatureCells.length ? signatureCells.map(() => '*') : ['*'],
-                body: [signatureCells.length ? signatureCells : [{ text: 'Chưa có thông tin phê duyệt', alignment: 'center', fontSize: 9 }]],
-              },
-              layout: {
-                hLineColor: '#999',
-                vLineColor: '#999',
-                hLineWidth: () => 0.5,
-                vLineWidth: () => 0.5,
-                paddingTop: () => 8,
-                paddingBottom: () => 8,
-                paddingLeft: () => 4,
-                paddingRight: () => 4,
-              },
-            },
-          ],
-        };
-
-        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const pdfDoc = printer.createPdfKitDocument(buildProposalDocDefinition(model, options));
         const chunks: Buffer[] = [];
         pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
         pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -312,3 +70,172 @@ export class ProposalPdfService {
     });
   }
 }
+
+/** Pure: the pdfmake definition for a model. Exported for tests. */
+export function buildProposalDocDefinition(model: ProposalDocumentModel, options: ProposalPdfOptions = {}): any {
+  const { header, facts, presentation } = model;
+  const accent = presentation.primaryColor;
+  const date = header.documentDate ? header.documentDate.split('-') : null;
+  const dateLine = `${header.city ?? '……'}, ngày ${date?.[2] ?? '…'} tháng ${date?.[1] ?? '…'} năm ${date?.[0] ?? '……'}`;
+
+  const itemRows = model.items.map((item) => {
+    const cell: any[] = [];
+    if (item.factText) cell.push({ text: item.factText });
+    if (item.narrativeText) cell.push({ text: item.narrativeText, margin: [0, item.factText ? 3 : 0, 0, 0] as Margin });
+    return [
+      { text: String(item.stt), alignment: 'center' },
+      { text: item.label },
+      cell.length ? { stack: cell } : { text: '' },
+      { text: item.note, fontSize: 8, color: '#555', italics: true },
+    ];
+  });
+
+  const letterheadLeft: any[] = [];
+  if (presentation.logoDataUrl) {
+    letterheadLeft.push({ image: presentation.logoDataUrl, fit: [60, 60], width: 60 });
+  }
+
+  return {
+    pageSize: 'A4',
+    pageMargins: [50, 50, 40, 60],
+    // A submitted version renders with fixed metadata dates, so the same version
+    // (and the same approval cut-off) always produces byte-identical output: that is
+    // what lets an email attachment be verified against the version it came from.
+    info: {
+      title: `Tờ trình ${model.proposalNumber}${model.version ? ` - phiên bản ${model.version.versionNumber}` : ''}`,
+      subject: header.subject,
+      ...(model.version
+        ? {
+            creationDate: new Date(model.version.submittedAt),
+            modDate: new Date(model.approvalAsOf ?? model.version.submittedAt),
+          }
+        : {}),
+    },
+    defaultStyle: { font: 'Roboto', fontSize: 10, lineHeight: 1.3 },
+    footer: (currentPage: number, pageCount: number) => ({
+      text: `${model.proposalNumber}${model.version ? ` · Phiên bản ${model.version.versionNumber}` : ' · Bản nháp'} · Trang ${currentPage}/${pageCount}`,
+      fontSize: 8, alignment: 'right', margin: [0, 10, 40, 0], color: '#888',
+    }),
+    content: [
+      {
+        columns: [
+          ...letterheadLeft,
+          {
+            width: '*',
+            stack: header.organisationLines.map((line) => ({ text: line, bold: true, alignment: 'center' })),
+          },
+          {
+            width: 'auto',
+            stack: [
+              { text: `Số/No: ${header.docNumber}`, fontSize: 9, alignment: 'right' },
+              { text: dateLine, fontSize: 9, alignment: 'right', italics: true },
+            ],
+          },
+        ],
+        columnGap: 10,
+        margin: [0, 0, 0, 16] as Margin,
+      },
+      { text: header.title, fontSize: 14, bold: true, alignment: 'center', color: accent, margin: [0, 0, 0, 6] as Margin },
+      { text: header.subject, bold: true, alignment: 'center', margin: [20, 0, 20, 14] as Margin },
+      { text: header.addressee, fontSize: 11, bold: true, alignment: 'center', margin: [0, 0, 0, 12] as Margin },
+      { ul: model.preamble, margin: [20, 0, 0, 10] as Margin },
+      { text: model.bodyIntro, margin: [0, 0, 0, 14] as Margin },
+      { text: 'I.   CÁC ĐIỀU KHOẢN CHI TIẾT ĐÃ THỎA THUẬN GIỮA HAI BÊN:', bold: true, color: accent, margin: [0, 0, 0, 6] as Margin },
+      { text: `1.1  Thương hiệu ${facts.party.brandName ?? 'Chưa xác định'}`, bold: true, margin: [20, 0, 0, 6] as Margin },
+      {
+        table: {
+          headerRows: 1,
+          widths: [22, 110, '*', 85],
+          body: [
+            ['STT', 'HẠNG MỤC', 'ĐIỀU KIỆN THƯƠNG MẠI', 'GHI CHÚ'].map((h) => ({
+              text: h, bold: true, fontSize: 9, fillColor: '#f0f0f0', alignment: 'center',
+            })),
+            ...itemRows,
+          ],
+        },
+        fontSize: 9,
+        layout: tableLayout(4),
+        margin: [0, 0, 0, 18] as Margin,
+      },
+      { text: 'II.  LAYOUT MẶT BẰNG NHƯ SAU:', bold: true, color: accent, margin: [0, 0, 0, 6] as Margin },
+      presentation.layoutImageDataUrl
+        ? { image: presentation.layoutImageDataUrl, fit: [480, 320], alignment: 'center', margin: [0, 0, 0, 18] as Margin }
+        : { text: '(Chưa đính kèm layout mặt bằng)', fontSize: 9, color: '#888', alignment: 'center', margin: [0, 0, 0, 18] as Margin },
+      { text: model.closingLine, margin: [0, 0, 0, 14] as Margin },
+      approvalBlock(model, options.audience ?? 'INTERNAL'),
+    ],
+  };
+}
+
+function tableLayout(padding: number) {
+  return {
+    hLineColor: '#999', vLineColor: '#999',
+    hLineWidth: () => 0.5, vLineWidth: () => 0.5,
+    paddingLeft: () => 5, paddingRight: () => 5,
+    paddingTop: () => padding, paddingBottom: () => padding,
+  };
+}
+
+/**
+ * Who prepared the document and what each approval step actually did. A
+ * pending step names the expected approver and says it is not approved; it is
+ * never drawn as a signature.
+ */
+function approvalBlock(model: ProposalDocumentModel, audience: 'INTERNAL' | 'EXTERNAL'): any {
+  const prepared = model.facts.preparedBy;
+  const cells: any[] = [{
+    stack: [
+      { text: 'NGƯỜI LẬP', fontSize: 8, bold: true, alignment: 'center' },
+      { text: prepared.fullName ?? 'Không xác định', fontSize: 9, bold: true, alignment: 'center', margin: [0, 24, 0, 0] as Margin },
+    ],
+  }];
+
+  if (model.approval.state === 'NOT_SUBMITTED') {
+    cells.push({
+      text: 'Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.',
+      fontSize: 8, italics: true, color: '#555', alignment: 'center', margin: [0, 16, 0, 0] as Margin,
+    });
+  }
+
+  for (const step of model.approval.steps) {
+    const approved = step.presentation === 'APPROVED_BY';
+    const rejected = step.presentation === 'REJECTED_BY';
+    cells.push({
+      fillColor: approved ? '#f3faf3' : rejected ? '#fdf2f2' : undefined,
+      stack: [
+        { text: step.stepName.toUpperCase(), fontSize: 8, bold: true, alignment: 'center' },
+        {
+          text: PRESENTATION_LABEL[step.presentation], fontSize: 7, alignment: 'center', margin: [0, 2, 0, 0] as Margin,
+          color: approved ? '#1b5e20' : rejected ? '#b71c1c' : '#777',
+        },
+        { text: step.approverName ?? 'Chưa phân công', fontSize: 9, bold: approved || rejected, alignment: 'center', margin: [0, 14, 0, 0] as Margin },
+        ...(step.decidedAt
+          ? [{ text: `${rejected ? 'Từ chối' : 'Duyệt'} lúc ${formatVnDateTime(step.decidedAt)}`, fontSize: 7, color: '#555', alignment: 'center', margin: [0, 2, 0, 0] as Margin }]
+          : []),
+        ...(step.comment && audience === 'INTERNAL'
+          ? [{ text: `Ý kiến: ${step.comment}`, fontSize: 7, italics: true, color: '#555', alignment: 'center', margin: [0, 2, 0, 0] as Margin }]
+          : []),
+      ],
+    });
+  }
+
+  const perRow = 4;
+  const body: any[][] = [];
+  for (let i = 0; i < cells.length; i += perRow) {
+    const row = cells.slice(i, i + perRow);
+    while (row.length < Math.min(perRow, cells.length)) row.push({ text: '', border: [false, false, false, false] });
+    body.push(row);
+  }
+
+  return {
+    unbreakable: cells.length <= perRow,
+    stack: [
+      { text: 'NGƯỜI LẬP VÀ QUÁ TRÌNH PHÊ DUYỆT', bold: true, fontSize: 9, margin: [0, 0, 0, 4] as Margin },
+      {
+        table: { widths: body[0].map(() => '*'), body },
+        layout: tableLayout(8),
+      },
+    ],
+  };
+}
+
