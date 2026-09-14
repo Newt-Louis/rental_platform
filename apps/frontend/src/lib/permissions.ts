@@ -1,5 +1,7 @@
 /** Ma trận quyền — đồng bộ với backend `common/constants/role-permissions.ts` */
 
+import { usePermissionsStore } from "@/store/permissions.store";
+
 export type AppRole =
   | "ADMIN"
   | "CEO"
@@ -9,6 +11,7 @@ export type AppRole =
   | "FINANCE"
   | "LEGAL"
   | "OPERATION"
+  | "FITOUT_BASIC_TEAM"
   | "TENANT";
 
 export type RouteModule =
@@ -30,6 +33,7 @@ export type RouteModule =
   | "tenants"
   | "fitout"
   | "fitout-approvals"
+  | "fitout-dossier-view"
   | "tickets"
   | "sales"
   | "billing"
@@ -43,8 +47,23 @@ export type RouteModule =
   | "tenant-portal"
   | "cross-mall"
   | "audit-log"
+  | "email-deliveries"
   | "parking-report"
   | "parking-transaction";
+
+/**
+ * Trần quyền ghi của module hợp đồng dịch vụ — đồng bộ với backend
+ * `modules/service-contracts/service-contract-access.ts`. Vai trò ngoài danh
+ * sách này (CEO, FINANCE) xem được hợp đồng nhưng không bao giờ sửa/xóa được,
+ * kể cả khi được người tạo chia sẻ quyền cao hơn.
+ */
+export const SERVICE_CONTRACT_EDIT_ROLES: AppRole[] = [
+  "ADMIN",
+  "MALL_DIRECTOR",
+  "LEASING_MANAGER",
+  "LEGAL",
+  "OPERATION",
+];
 
 export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: [
@@ -87,7 +106,9 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
     "MALL_DIRECTOR",
     "CEO",
   ],
-  bookings: ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR"],
+  // CR-BOOK-PRICE-APPROVAL-001: kept in sync with MODULE_ROLES.booking. CEO
+  // added because the price policy escalates deviations above 10% to them.
+  bookings: ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR", "CEO"],
   proposals: [
     "ADMIN",
     "LEASING_MANAGER",
@@ -144,6 +165,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   fitout: ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR", "TENANT"],
   // Chỉ vai trò có thể là duyệt viên (approverRole) mới thấy hàng chờ duyệt Fitout — không cấp TENANT.
   "fitout-approvals": ["ADMIN", "OPERATION", "LEASING_MANAGER", "MALL_DIRECTOR"],
+  "fitout-dossier-view": ["ADMIN", "LEASING_MANAGER", "LEASING_EXECUTIVE", "MALL_DIRECTOR", "FINANCE", "LEGAL", "FITOUT_BASIC_TEAM"],
   tickets: ["ADMIN", "OPERATION", "MALL_DIRECTOR", "LEASING_MANAGER", "TENANT"],
   sales: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "CEO", "TENANT"],
   billing: ["ADMIN", "FINANCE", "MALL_DIRECTOR", "TENANT"],
@@ -171,6 +193,7 @@ export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   ],
   "cross-mall": ["ADMIN", "CEO"],
   "audit-log": ["ADMIN", "CEO"],
+  "email-deliveries": ["ADMIN", "CEO", "MALL_DIRECTOR", "OPERATION"],
   "parking-report": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
   "parking-transaction": ["ADMIN", "CEO", "MALL_DIRECTOR", "FINANCE", "OPERATION"],
 };
@@ -195,6 +218,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   tenants: "tenants",
   fitout: "fitout",
   "fitout-approvals": "fitout-approvals",
+  "fitout-dossiers": "fitout-dossier-view",
   tickets: "tickets",
   sales: "sales",
   billing: "billing",
@@ -208,6 +232,7 @@ export const PATH_TO_MODULE: Record<string, RouteModule> = {
   "tenant-portal": "tenant-portal",
   "cross-mall": "cross-mall",
   "audit-log": "audit-log",
+  "email-deliveries": "email-deliveries",
   "parking-report": "parking-report",
   "parking-transaction": "parking-transaction",
 };
@@ -218,6 +243,11 @@ export function canAccessModule(
 ): boolean {
   if (!role) return false;
   if (role === "ADMIN") return true;
+  // Dynamic matrix (DB-backed, /admin?section=permissions) wins when it has
+  // loaded; null means "not fetched yet or the request failed", in which case
+  // we fall back to the static table below rather than deny everything.
+  const dynamic = usePermissionsStore.getState().allowedModules;
+  if (dynamic) return dynamic.has(module);
   return ROUTE_PERMISSIONS[module]?.includes(role as AppRole) ?? false;
 }
 
@@ -257,11 +287,24 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    key: "crm",
+    // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể, nên nhóm này
+    // đứng ngay trước quy trình bán hàng theo mặt bằng để sidebar phản ánh đúng BP-001.
+    label: "Khách hàng tiềm năng (CRM)",
+    items: [
+      {
+        label: "Điều hành CRM",
+        path: "/crm-overview",
+        module: "crm-overview" as RouteModule,
+      },
+      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
+    ],
+  },
+  {
     key: "salesProcess",
     // Chỉ giữ lại các bước hành động tuần tự thật của quy trình cho thuê 1 mặt bằng cụ thể
-    // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM (chăm sóc lead trước khi
-    // chọn mặt bằng) và Deal Pipeline (dashboard tổng hợp chỉ để xem, không thao tác) đã tách
-    // ra 2 nhóm riêng bên dưới để không gây nhầm lẫn đây là các bước phải làm tuần tự.
+    // (Booking → Đề xuất → Phê duyệt → Hợp đồng → Khách thuê). CRM nằm ở nhóm ngay phía trên;
+    // Deal Pipeline là dashboard tổng hợp chỉ để xem nên vẫn nằm trong nhóm Phân tích.
     label: "Quy trình bán hàng",
     items: [
       {
@@ -297,25 +340,16 @@ export const NAV_GROUPS = [
     ],
   },
   {
-    key: "crm",
-    // CRM quản lý quan hệ khách hàng tiềm năng TRƯỚC KHI chọn mặt bằng cụ thể — một giai đoạn
-    // khác về bản chất so với quy trình bán hàng theo mặt bằng ở trên.
-    label: "Khách hàng tiềm năng (CRM)",
-    items: [
-      {
-        label: "Điều hành CRM",
-        path: "/crm-overview",
-        module: "crm-overview" as RouteModule,
-      },
-      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
-    ],
-  },
-  {
     key: "fitoutOps",
     // Thi công & bàn giao mặt bằng cho khách thuê sau khi ký hợp đồng.
     label: "Thi công & Bàn giao",
     items: [
       { label: "Fitout", path: "/fitout", module: "fitout" as RouteModule },
+      {
+        label: "Kho hồ sơ Fitout",
+        path: "/fitout-dossiers",
+        module: "fitout-dossier-view" as RouteModule,
+      },
       {
         // Mục riêng cho duyệt viên Fitout — vào thẳng hàng chờ duyệt của TẤT CẢ dự án được
         // phân quyền, không phải mở từng dự án trong workspace Fitout để tìm việc cần duyệt.
@@ -447,6 +481,11 @@ export const NAV_GROUPS = [
         path: "/audit-log",
         module: "audit-log" as RouteModule,
       },
+      {
+        label: "Email Delivery",
+        path: "/email-deliveries",
+        module: "email-deliveries" as RouteModule,
+      },
       { label: "Quản trị", path: "/admin", module: "admin" as RouteModule },
     ],
   },
@@ -475,5 +514,6 @@ export const TENANT_NAV = [
 
 export function getDefaultHomePath(role: string | undefined): string {
   if (role === "TENANT") return "/tenant-portal";
+  if (role === "FITOUT_BASIC_TEAM") return "/fitout-dossiers";
   return "/dashboard";
 }

@@ -1,6 +1,6 @@
 import type { Role, User } from '@/types';
 
-export const MALL_ACCESS_ROLES: Role[] = ['MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION'];
+export const MALL_ACCESS_ROLES: Role[] = ['MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE', 'FINANCE', 'LEGAL', 'OPERATION', 'FITOUT_BASIC_TEAM'];
 const GLOBAL_ACCESS_ROLES: Role[] = ['ADMIN', 'CEO'];
 
 export type MallAccessDisplay =

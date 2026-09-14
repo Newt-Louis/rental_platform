@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { crmApi } from '@/api';
 import { Sheet, SheetSection } from '@/components/ui/sheet';
@@ -17,6 +17,12 @@ interface TimelineEvent {
   entityType?: string;
   date: string;
   meta?: Record<string, unknown>;
+  actor?: { id: string | null; name: string; role: string | null };
+  source?: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  reason?: string | null;
+  comment?: string | null;
 }
 
 const TYPE_ICON: Record<string, React.ElementType> = {
@@ -62,29 +68,37 @@ export function DealTimelineSheet({
 }) {
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['lead-timeline', leadId],
-    queryFn: () => crmApi.getLeadTimeline(leadId!),
+    queryFn: ({ pageParam }) => crmApi.getLeadTimeline(leadId!, { limit: 30, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: any) => lastPage?.nextCursor ?? undefined,
     enabled: open && !!leadId,
-    select: (r: any) => r?.data ?? r,
   });
 
-  const events: TimelineEvent[] = data?.events ?? [];
+  const firstPage: any = data?.pages?.[0] ?? {};
+  const events: TimelineEvent[] = data?.pages?.flatMap((page: any) => page?.events ?? []) ?? [];
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
       title="Deal Timeline"
-      subtitle={brandName ?? data?.brandName}
+      subtitle={brandName ?? firstPage?.brandName}
     >
       <div className="px-6 pb-8">
         <SheetSection label="Trạng thái">
           <div className="flex items-center gap-2 mb-4">
             <GitBranch size={16} className="text-gray-500" />
-            <Badge variant="secondary">{data?.currentStatus ?? '—'}</Badge>
+            <Badge variant="secondary">{firstPage?.currentStatus ?? '—'}</Badge>
           </div>
         </SheetSection>
+
+        {firstPage?.historicalCoverage === 'PARTIAL' && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <strong>Lịch sử chưa đầy đủ.</strong> {firstPage.coverageMessage}
+          </div>
+        )}
 
         {isLoading && (
           <div className="space-y-3">
@@ -117,6 +131,10 @@ export function DealTimelineSheet({
                     <div>
                       <p className="text-sm font-medium text-gray-900">{ev.label}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{fmtDate(ev.date)}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{ev.actor?.name ?? 'SYSTEM'} · {ev.source ?? 'CRM'}</p>
+                      {(ev.fromStatus || ev.toStatus) && <p className="mt-1 text-xs text-blue-700">{ev.fromStatus ?? '—'} → {ev.toStatus ?? '—'}</p>}
+                      {ev.reason && <p className="mt-1 text-xs text-gray-600">Lý do: {ev.reason}</p>}
+                      {ev.comment && <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">{ev.comment}</p>}
                     </div>
                     {ev.status && (
                       <Badge variant="outline" className="text-[10px] shrink-0">
@@ -142,6 +160,11 @@ export function DealTimelineSheet({
             );
           })}
         </div>
+        {hasNextPage && (
+          <Button variant="outline" className="mt-3 w-full" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>
+            {isFetchingNextPage ? 'Đang tải…' : 'Xem thêm lịch sử'}
+          </Button>
+        )}
       </div>
     </Sheet>
   );

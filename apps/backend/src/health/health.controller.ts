@@ -69,7 +69,9 @@ export class HealthController {
     }
 
     const aiEnabled = !!process.env.ANTHROPIC_API_KEY;
-    const emailEnabled = !!process.env.SMTP_USER;
+    const dbEmailSettings = await this.prisma.emailSettings.findFirst().catch(() => null);
+    const emailEnabled = !!(dbEmailSettings?.isEnabled && dbEmailSettings.smtpHost && dbEmailSettings.smtpPassEncrypted)
+      || !!process.env.SMTP_USER;
     const sapEnabled = process.env.SAP_ENABLED === 'true';
     const redisStatus = this.redis.isConfigured
       ? ((await this.redis.ping()) ? 'up' : 'down')

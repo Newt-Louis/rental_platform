@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
-import { BookingStatus, ContractStatus, ProposalStatus, UnitStatus, WorkflowStatus, Prisma } from '@prisma/client';
+import {
+  BookingStatus, ContractStatus, ProposalStatus, Role, UnitStatus, WorkflowStatus,
+  Prisma, LeadStatus, CrmEventSourceModule,
+} from '@prisma/client';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
+import { computeContractValue } from '../../common/finance/rent-calculation.util';
 import type {
   ApprovalWorkflowCompletedEvent,
   ApprovalWorkflowStepAdvancedEvent,
@@ -20,9 +24,11 @@ import { CustomersService } from '../crm/customers.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { EmailService } from '../notifications/email.service';
+import { EmailService, TrackedEmailOptions } from '../notifications/email.service';
+import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 @Injectable()
 export class ProposalsService {
@@ -37,6 +43,7 @@ export class ProposalsService {
     private emailService: EmailService,
     private categoriesService: CategoriesService,
     private metrics: OperationalMetricsService,
+    private leadLifecycle: LeadLifecycleService,
   ) {}
 
   private generateProposalNumber() {
@@ -68,31 +75,39 @@ export class ProposalsService {
     });
   }
 
+  /**
+   * FIN-CALC-01 — delegates to the single canonical calculator
+   * (`common/finance/rent-calculation.util.ts`). This method used to implement
+   * its own `discountedRent * (term - rentFree) + monthlyCAM * term`, which
+   * ignored escalation entirely and disagreed with both the billing schedule and
+   * `BookingService.convertToProposal`. Do not reintroduce a local formula here.
+   */
   private calcFinancials(dto: CreateProposalDto) {
     const area = dto.area;
-    const rentPerSqm = dto.rentPerSqm;
     const camPerSqm = dto.camPerSqm ?? 0;
-    const deposit = dto.deposit ?? 3;
     const term = dto.term;
-    const rentFree = dto.rentFree ?? 0;
-    const escalation = dto.escalationPercent ?? 0;
-    const discount = dto.discount ?? 0;
-
-    const baseMonthlyRent = area * rentPerSqm;
-    const discountedRent = baseMonthlyRent * (1 - discount / 100);
     const monthlyCAM = area * camPerSqm;
-    const depositAmount = discountedRent * deposit;
-    const billableMonths = term - rentFree;
-    const totalContractValue = discountedRent * billableMonths + monthlyCAM * term;
+
+    const value = computeContractValue({
+      termMonths: term,
+      // SEM-001 — months, never days.
+      rentFreeMonths: dto.rentFree ?? 0,
+      monthlyBaseRent: area * dto.rentPerSqm,
+      monthlyCAM,
+      discountPercent: dto.discount ?? 0,
+      escalationPercent: dto.escalationPercent ?? 0,
+    });
 
     const endDate = new Date(dto.startDate);
     endDate.setMonth(endDate.getMonth() + term);
 
     return {
-      monthlyRent: discountedRent,
+      monthlyRent: value.discountedMonthlyRent,
       monthlyCAM,
-      depositAmount,
-      totalContractValue,
+      // Deposit is a multiple of the discounted monthly rent and is NOT part of
+      // totalContractValue (confirmed business rule).
+      depositAmount: value.discountedMonthlyRent * (dto.deposit ?? 3),
+      totalContractValue: value.totalContractValue,
       endDate,
     };
   }
@@ -207,7 +222,8 @@ export class ProposalsService {
     const financials = this.calcFinancials(dto);
     const proposalNumber = this.generateProposalNumber();
 
-    const proposal = await this.prisma.proposal.create({
+    return this.prisma.$transaction(async (tx) => {
+      const proposal = await tx.proposal.create({
       data: {
         proposalNumber,
         leadId: dto.leadId,
@@ -255,18 +271,33 @@ export class ProposalsService {
       },
     });
 
-    await this.snapshotProposal(proposal as unknown as Record<string, unknown>, userId, 'CREATED');
+      await this.snapshotProposal(
+        proposal as unknown as Record<string, unknown>,
+        userId,
+        'CREATED',
+        tx,
+      );
 
     // Advance lead status to PROPOSAL if still in early stage
     if (dto.leadId) {
-      const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId }, select: { status: true } });
+      const lead = await tx.lead.findUnique({ where: { id: dto.leadId }, select: { status: true } });
       const earlyStatuses = ['NEW', 'CONTACTED', 'QUALIFIED'];
       if (lead && earlyStatuses.includes(lead.status)) {
-        await this.prisma.lead.update({ where: { id: dto.leadId }, data: { status: 'PROPOSAL' as any } });
+        await this.leadLifecycle.transition({
+          leadId: dto.leadId,
+          targetStatus: LeadStatus.PROPOSAL,
+          actor: LeadLifecycleService.userActor(userId),
+          sourceModule: CrmEventSourceModule.PROPOSAL,
+          sourceEntityType: 'PROPOSAL',
+          sourceEntityId: proposal.id,
+          occurredAt: proposal.createdAt,
+          idempotencyKey: `proposal-created:${proposal.id}:lead:${dto.leadId}`,
+        }, tx);
       }
     }
 
-    return proposal;
+      return proposal;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async update(id: string, dto: UpdateProposalDto, userId?: string) {
@@ -319,14 +350,20 @@ export class ProposalsService {
         })) > 0
       : false;
 
+    // Quy tắc duyệt khai báo riêng cho từng mall (admin?section=approval): trước đây truy vấn này
+    // nạp toàn bộ quy tắc active bất kể mall, nên một bộ ngưỡng chiết khấu duy nhất áp cho mọi mall.
+    const proposalMallId = proposal.unit?.mallId;
+    if (!proposalMallId) {
+      throw new BadRequestException('Không xác định được mall của đề xuất để áp quy tắc duyệt');
+    }
     const rules = await this.prisma.approvalPolicyRule.findMany({
-      where: { isActive: true },
+      where: { isActive: true, mallId: proposalMallId },
       orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
     });
 
     if (!rules.length) {
       throw new BadRequestException(
-        'Approval policy is not configured. Please create active approval rules before submitting proposal.',
+        'Approval policy is not configured for this Mall. Please create active approval rules before submitting proposal.',
       );
     }
 
@@ -336,20 +373,21 @@ export class ProposalsService {
     let priceDeviationPct = 0;
     let pricingRuleId: string | null = null;
     let pricingSnapshot: Prisma.InputJsonValue | undefined;
-    // CategoryPricing.minRentPerSqm/maxRentPerSqm are plain VND-denominated Floats with no
-    // currency field (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Comparing a USD/MMK
-    // proposal.rentPerSqm against a VND floor/ceiling produces a nonsensical deviation (e.g. a
-    // $2,500/sqm proposal read as ~99.6% below a 700,000 VND floor), which then feeds straight
-    // into buildApprovalStepsFromRules()'s PRICE_DEVIATION_PCT rule matching -- silently forcing
-    // or skipping CEO/Director escalation based on a meaningless number. Skip the check for a
-    // non-VND proposal, same as the equivalent guard in BookingService.create()/update().
-    if (proposal.unit?.categoryId && proposal.rentCurrency === 'VND') {
+    // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
+    // Float with no currency field at all -- docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
+    // validateProposedPrice() only matches a pricing rule in the SAME currency as the
+    // proposal, so a USD/MMK proposal is no longer silently skipped (which previously let
+    // large USD/MMK deviations bypass CEO/Director review entirely) -- it's now checked
+    // against a same-currency band where one exists, and otherwise falls through to the
+    // "no pricing rule configured" CEO-escalation path below, same as a VND proposal would.
+    if (proposal.unit?.categoryId) {
       const validation = await this.categoriesService.validateProposedPrice({
         mallId: proposal.unit.mallId,
         categoryId: proposal.unit.categoryId,
         floorId: proposal.unit.floorId ?? undefined,
         zoneId: proposal.unit.zoneId ?? undefined,
         proposedRentPerSqm: proposal.rentPerSqm,
+        currencyCode: proposal.rentCurrency,
       });
       priceDeviationPct = validation.deviationPercent;
       pricingRuleId = validation.categoryPricing?.id ?? null;
@@ -366,7 +404,7 @@ export class ProposalsService {
 
     const steps = buildApprovalStepsFromRules(rules, {
       discountPct: proposal.discount ?? 0,
-      rentFreeDays: proposal.rentFree ?? 0,
+      rentFreeMonths: proposal.rentFree ?? 0,
       industryTag: proposal.unit?.category ?? proposal.tenant?.category ?? null,
       hasArDebt,
       priceDeviationPct,
@@ -478,7 +516,7 @@ export class ProposalsService {
           include: {
             proposal: {
               include: {
-                unit: { select: { code: true } },
+                unit: { select: { code: true, mallId: true } },
                 tenant: { select: { brandName: true } },
               },
             },
@@ -490,11 +528,29 @@ export class ProposalsService {
     if (!step?.workflow.proposal) return;
 
     const proposal = step.workflow.proposal;
-    const approvers = await this.prisma.user.findMany({
-      where: { role: step.approverRole, isActive: true, deletedAt: null },
-      select: { id: true, email: true, fullName: true },
-      take: 5,
-    });
+    // Bước duyệt giờ gắn đích danh một tài khoản (ApprovalPolicyRule.approverId), nên báo thẳng
+    // người được giao. Truy vấn cũ lấy MỌI user mang role đó ở MỌI mall -- gửi tên khách thuê, mã
+    // mặt bằng và số đề xuất cho người không có quyền duyệt hồ sơ đó -- rồi `take: 5` không kèm
+    // orderBy nên khi một role có từ 6 người trở lên thì ai được báo là ngẫu nhiên.
+    // Workflow cũ (tạo trước khi quy tắc có approverId) không có approverId nên vẫn lọc theo role,
+    // nhưng giới hạn trong mall của đề xuất thay vì toàn hệ thống.
+    const approvers = step.approverId
+      ? await this.prisma.user.findMany({
+          where: { id: step.approverId, isActive: true, deletedAt: null },
+          select: { id: true, email: true, fullName: true },
+        })
+      : await this.prisma.user.findMany({
+          where: {
+            role: step.approverRole,
+            isActive: true,
+            deletedAt: null,
+            OR: [
+              { role: Role.ADMIN },
+              { mallAccess: { some: { mallId: proposal.unit.mallId, isActive: true } } },
+            ],
+          },
+          select: { id: true, email: true, fullName: true },
+        });
 
     const creator = await this.prisma.user.findUnique({
       where: { id: proposal.createdById },
@@ -515,16 +571,25 @@ export class ProposalsService {
         try {
           await this.emailService.sendMail({
             to: approver.email,
-            subject: `[THISO] Phê duyệt Proposal ${proposal.proposalNumber}`,
+            delivery: {
+              eventKey: `proposal-approval:${proposal.id}:${step.id}:${approver.id}`,
+              eventType: 'PROPOSAL_APPROVAL',
+              entityType: 'Proposal',
+              entityId: proposal.id,
+              mallId: proposal.unit.mallId,
+            },
+            subject: emailSubject(`Đề xuất ${proposal.proposalNumber} chờ phê duyệt`),
             html: this.emailService.proposalApprovalHtml({
               approverName: approver.fullName,
               proposalNumber: proposal.proposalNumber,
+              proposalId: proposal.id,
               tenantName: proposal.tenant?.brandName ?? '—',
               unitCode: proposal.unit.code,
               rentPerSqm: proposal.rentPerSqm,
               monthlyRent: proposal.monthlyRent,
               discount: proposal.discount,
               submittedBy: creator?.fullName ?? 'Leasing',
+              currencyCode: proposal.rentCurrency ?? null,
             }),
           });
         } catch (e) {
@@ -680,20 +745,24 @@ export class ProposalsService {
         const alreadyExists = await tx.contract.findFirst({ where: { proposalId: id } });
         if (alreadyExists) return alreadyExists;
 
-        // Một mặt bằng chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal khác
-        // nhau cho cùng unit đều được duyệt và cùng cố tạo hợp đồng.
-        const existingUnitContract = await tx.contract.findFirst({
-          where: {
-            unitId: proposal.unitId,
-            isActive: true,
-            deletedAt: null,
-            status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
-          },
-        });
-        if (existingUnitContract) {
-          throw new BadRequestException(
-            `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
-          );
+        // Một mặt bằng dài hạn chỉ nên có một hợp đồng còn hiệu lực — chặn trường hợp 2 proposal
+        // khác nhau cho cùng unit đều được duyệt và cùng cố tạo hợp đồng. Không áp dụng cho unit
+        // SHORT (cho thuê ngắn hạn theo ô nhỏ/slot): một unit dạng này chủ ý host nhiều hợp đồng
+        // đồng thời, mỗi hợp đồng ứng với một slot booking khác nhau trong cùng mặt bằng.
+        if (proposal.unit?.leaseTermType !== 'SHORT') {
+          const existingUnitContract = await tx.contract.findFirst({
+            where: {
+              unitId: proposal.unitId,
+              isActive: true,
+              deletedAt: null,
+              status: { notIn: [ContractStatus.EXPIRED, ContractStatus.TERMINATED] },
+            },
+          });
+          if (existingUnitContract) {
+            throw new BadRequestException(
+              `Mặt bằng này đã có hợp đồng đang hiệu lực (${existingUnitContract.contractNumber}) từ một đề xuất khác. Không thể tạo thêm hợp đồng.`,
+            );
+          }
         }
 
         const year = new Date().getFullYear();
@@ -733,13 +802,18 @@ export class ProposalsService {
           },
         });
 
-        await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
-          userId: options?.userId,
-          reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
-          tenantId: proposal.tenantId,
-          leaseStartDate: proposal.startDate,
-          leaseEndDate: proposal.endDate ?? undefined,
-        }, tx);
+        // Unit SHORT host nhiều slot/hợp đồng đồng thời — không khóa toàn bộ mặt bằng về
+        // CONTRACTED chỉ vì một slot trong đó vừa có hợp đồng (xem điều kiện tương tự ở
+        // existingUnitContract phía trên).
+        if (proposal.unit?.leaseTermType !== 'SHORT') {
+          await this.unitStatus.transition(proposal.unitId, UnitStatus.CONTRACTED, {
+            userId: options?.userId,
+            reason: `Contract ${contractNumber} created from proposal ${proposal.proposalNumber}`,
+            tenantId: proposal.tenantId,
+            leaseStartDate: proposal.startDate,
+            leaseEndDate: proposal.endDate ?? undefined,
+          }, tx);
+        }
 
         // Mặt bằng đã có hợp đồng chính thức — mọi booking khác còn xếp hàng (queue) cho unit này
         // không còn ý nghĩa, huỷ để tránh tồn đọng booking "ma" trỏ vào unit đã ký hợp đồng.
@@ -760,10 +834,18 @@ export class ProposalsService {
         }
 
         if (proposal.leadId) {
-          await tx.lead.update({
-            where: { id: proposal.leadId },
-            data: { status: 'WON' as any },
-          });
+          await this.leadLifecycle.transition({
+            leadId: proposal.leadId,
+            targetStatus: LeadStatus.WON,
+            actor: options?.userId
+              ? LeadLifecycleService.userActor(options.userId)
+              : LeadLifecycleService.systemActor(),
+            sourceModule: CrmEventSourceModule.PROPOSAL,
+            sourceEntityType: 'PROPOSAL',
+            sourceEntityId: proposal.id,
+            occurredAt: created.createdAt,
+            idempotencyKey: `proposal-converted:${proposal.id}:lead:${proposal.leadId}`,
+          }, tx);
         }
 
         return created;
@@ -804,7 +886,7 @@ export class ProposalsService {
     if (proposal.status !== ProposalStatus.APPROVED) {
       throw new BadRequestException('Only APPROVED proposals can be converted');
     }
-    let invitation: { email: string; token: string } | null = null;
+    let invitation: { email: string; token: string; contactName: string; mail: TrackedEmailOptions; deliveryId: string } | null = null;
     if (!proposal.tenantId) {
       const lead = proposal.lead;
       const companyName = tenantData?.companyName?.trim() || lead?.company?.trim();
@@ -817,21 +899,46 @@ export class ProposalsService {
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
       const inviteExpiresAt = new Date(Date.now() + 72 * 3600000);
-      const tenant = await this.prisma.$transaction(async tx => {
+      const prepared = await this.prisma.$transaction(async tx => {
         const created = await tx.tenant.create({ data: { companyName, brandName, taxCode: tenantData?.taxCode || undefined, contactName, contactEmail, contactPhone: tenantData?.contactPhone || lead?.phone || undefined, address: tenantData?.address || undefined, category: tenantData?.category || lead?.category || undefined, isPortalUser: true } });
         await tx.proposal.update({ where: { id }, data: { tenantId: created.id } });
         if (proposal.leadId) await tx.lead.update({ where: { id: proposal.leadId }, data: { tenantId: created.id } });
         if (existingUser) await tx.user.update({ where: { id: existingUser.id }, data: { tenantId: created.id, inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
         else await tx.user.create({ data: { email: contactEmail, fullName: contactName, phone: tenantData?.contactPhone || lead?.phone || undefined, role: 'TENANT', tenantId: created.id, password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10), inviteTokenHash: tokenHash, inviteExpiresAt, mustChangePassword: true } });
-        return created;
+        const portalUrl = appUrl(`/activate?token=${encodeURIComponent(rawToken)}`);
+        const mail: TrackedEmailOptions = {
+          to: contactEmail,
+          delivery: {
+            eventKey: `portal-activation:tenant:${created.id}:${Date.now()}`,
+            eventType: 'TENANT_ACTIVATION',
+            entityType: 'Tenant',
+            entityId: created.id,
+            mallId: proposal.unit.mallId,
+          },
+          subject: emailSubject('KÃ­ch hoáº¡t tÃ i khoáº£n Tenant Portal'),
+          html: this.emailService.portalInvitationHtml({ contactName, portalUrl, isReset: false }),
+        };
+        const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+        return { tenant: created, mail, deliveryId: delivery.id };
       });
-      invitation = { email: contactEmail, token: rawToken };
+      invitation = { email: contactEmail, token: rawToken, contactName, mail: prepared.mail, deliveryId: prepared.deliveryId };
       proposal = await this.findOne(id);
     }
     const contract = await this.createContractFromProposal(id, { userId, markConverted: true });
     if (invitation) {
-      const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/activate?token=${encodeURIComponent(invitation.token)}`;
-      try { await this.emailService.sendMail({ to: invitation.email, subject: '[THISO] Kích hoạt tài khoản Tenant Portal', html: `<div style="font-family:Arial;max-width:600px;margin:auto"><h2>Chào mừng đến THISO Tenant Portal</h2><p>Hợp đồng của Quý khách đã được khởi tạo. Vui lòng bấm nút dưới đây để đặt mật khẩu và kích hoạt tài khoản.</p><p><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px">Kích hoạt tài khoản</a></p><p>Liên kết có hiệu lực trong 72 giờ.</p></div>` }); }
+      const portalUrl = appUrl(`/activate?token=${encodeURIComponent(invitation.token)}`);
+      try {
+        await this.emailService.sendMail({
+          ...invitation.mail,
+          preparedDeliveryId: invitation.deliveryId,
+          subject: emailSubject('Kích hoạt tài khoản Tenant Portal'),
+          html: this.emailService.portalInvitationHtml({
+            contactName: invitation.contactName ?? 'Quý khách',
+            portalUrl,
+            isReset: false,
+          }),
+        });
+      }
       catch (error) { this.logger.warn(`Tenant portal invitation failed for ${invitation.email}: ${error.message}`); }
     }
     return { ...contract, portalInvitationSent: Boolean(invitation), portalEmail: invitation?.email };
@@ -843,20 +950,43 @@ export class ProposalsService {
       throw new BadRequestException('Only SUBMITTED or UNDER_REVIEW proposals can be rejected');
     }
 
-    await this.snapshotProposal(proposal as unknown as Record<string, unknown>, userId, 'REJECTED');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.snapshotProposal(
+        proposal as unknown as Record<string, unknown>,
+        userId,
+        'REJECTED',
+        tx,
+      );
 
-    const updated = await this.prisma.proposal.update({
-      where: { id },
-      data: { status: ProposalStatus.REJECTED, notes: rejectionReason ? `[Từ chối] ${rejectionReason}${proposal.notes ? '\n' + proposal.notes : ''}` : proposal.notes },
-    });
+      const rejected = await tx.proposal.update({
+        where: { id },
+        data: { status: ProposalStatus.REJECTED, notes: rejectionReason ? `[Từ chối] ${rejectionReason}${proposal.notes ? '\n' + proposal.notes : ''}` : proposal.notes },
+      });
 
-    // Revert lead back to NEGOTIATION if it was advanced
-    if (proposal.leadId) {
-      const lead = await this.prisma.lead.findUnique({ where: { id: proposal.leadId }, select: { status: true } });
-      if (lead?.status === 'PROPOSAL') {
-        await this.prisma.lead.update({ where: { id: proposal.leadId }, data: { status: 'NEGOTIATION' as any } });
+      // Preserve the existing transition rule, but record it atomically with
+      // the proposal rejection so neither state can be committed alone.
+      if (proposal.leadId) {
+        const lead = await tx.lead.findUnique({
+          where: { id: proposal.leadId },
+          select: { status: true },
+        });
+        if (lead?.status === LeadStatus.PROPOSAL) {
+          await this.leadLifecycle.transition({
+            leadId: proposal.leadId,
+            targetStatus: LeadStatus.NEGOTIATION,
+            actor: LeadLifecycleService.userActor(userId),
+            sourceModule: CrmEventSourceModule.PROPOSAL,
+            sourceEntityType: 'PROPOSAL',
+            sourceEntityId: proposal.id,
+            reason: rejectionReason || undefined,
+            occurredAt: rejected.updatedAt,
+            idempotencyKey: `proposal-rejected:${proposal.id}:lead:${proposal.leadId}`,
+          }, tx);
+        }
       }
-    }
+
+      return rejected;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
     // Mặt bằng không nên kẹt mãi ở BOOKING/NEGOTIATING sau khi proposal bị từ chối — trả về VACANT
     // nếu không còn booking nào khác đang giữ chỗ cho unit này (nếu còn, giữ nguyên trạng thái để

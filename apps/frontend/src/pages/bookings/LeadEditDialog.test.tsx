@@ -14,6 +14,10 @@ beforeAll(() => i18n.changeLanguage('vi'));
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockUpdateLead = vi.fn();
+const mockGetCategoryOptions = vi.fn().mockResolvedValue([
+  { id: 'cat-fnb', code: 'FNB', name: 'F&B' },
+  { id: 'cat-fashion', code: 'FASHION', name: 'Fashion' },
+]);
 
 vi.mock('@/api', () => ({
   crmApi:      { updateLead: (...args: any[]) => mockUpdateLead(...args) },
@@ -21,7 +25,10 @@ vi.mock('@/api', () => ({
   slotsApi:    { list: vi.fn() },
   spacesApi:   { listUnits: vi.fn() },
   customersApi:{ listCustomers: vi.fn() },
-  usersApi:    { listUsers: vi.fn().mockResolvedValue({ data: [] }) },
+  usersApi:    { listAssignableUsers: vi.fn().mockResolvedValue([]) },
+  // CR-CRM-CATEGORY-MASTER-001 — the industry field is now driven by the
+  // Category master instead of a hard-coded list.
+  categoriesApi: { getOptions: (...args: any[]) => mockGetCategoryOptions(...args) },
 }));
 
 const mockToast = vi.fn();
@@ -269,5 +276,61 @@ describe('LeadEditDialog — backend response', () => {
     expect(capturedPayload.company).toBe('');        // gửi '' để xóa
     expect(capturedPayload.phone).toBe('0912345678'); // phone không đổi → vẫn gửi giá trị
     expect(capturedResponse.company).toBe('');        // backend lưu ''
+  });
+});
+
+// ── CR-CRM-CATEGORY-MASTER-001 ────────────────────────────────────────────────
+//
+// The "Ngành hàng" field used to be a hard-coded <select> of codes (FB,
+// FASHION, ...) that matched no stored value, so it rendered blank for every
+// lead. These pin the replacement end to end through the dialog.
+
+describe('LeadEditDialog — ngành hàng (Category master)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetCategoryOptions.mockResolvedValue([
+      { id: 'cat-fnb', code: 'FNB', name: 'F&B' },
+      { id: 'cat-fashion', code: 'FASHION', name: 'Fashion' },
+    ]);
+    mockUpdateLead.mockResolvedValue({});
+  });
+
+  // CRM-CAT-003
+  it('CRM-CAT-003 hiển thị đúng ngành hàng đã liên kết của lead', async () => {
+    renderDialog({ lead: { ...MOCK_LEAD, categoryId: 'cat-fnb', category: 'F&B' } });
+    await waitFor(() => expect(screen.getByText('F&B')).toBeInTheDocument());
+  });
+
+  // CRM-CAT-009 / CRM-CAT-010
+  it('CRM-CAT-009 hiển thị giá trị cũ chưa ánh xạ thay vì để trống', async () => {
+    renderDialog({ lead: { ...MOCK_LEAD, categoryId: null, category: 'Health & Beauty' } });
+    await waitFor(() =>
+      expect(screen.getByText('Health & Beauty (Chưa ánh xạ)')).toBeInTheDocument(),
+    );
+  });
+
+  it('CRM-CAT-010 không gửi categoryId khi lead vẫn ở giá trị cũ chưa ánh xạ', async () => {
+    const user = userEvent.setup();
+    renderDialog({ lead: { ...MOCK_LEAD, categoryId: null, category: 'Health & Beauty' } });
+
+    await user.click(screen.getByRole('button', { name: 'Cập nhật' }));
+
+    await waitFor(() => expect(mockUpdateLead).toHaveBeenCalled());
+    const payload = mockUpdateLead.mock.calls[0][1];
+    expect(payload.categoryId).toBeUndefined();
+    expect(payload).not.toHaveProperty('category');
+  });
+
+  // CRM-CAT-004 — an edit to another field carries the category id unchanged.
+  it('CRM-CAT-004 giữ nguyên categoryId khi chỉ sửa trường khác', async () => {
+    const user = userEvent.setup();
+    renderDialog({ lead: { ...MOCK_LEAD, categoryId: 'cat-fnb', category: 'F&B' } });
+
+    await user.clear(screen.getByDisplayValue('0912345678'));
+    await user.type(screen.getByPlaceholderText('0912345678'), '0987654321');
+    await user.click(screen.getByRole('button', { name: 'Cập nhật' }));
+
+    await waitFor(() => expect(mockUpdateLead).toHaveBeenCalled());
+    expect(mockUpdateLead.mock.calls[0][1].categoryId).toBe('cat-fnb');
   });
 });

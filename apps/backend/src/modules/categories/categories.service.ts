@@ -2,7 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CreateCategoryPricingDto, UpdateCategoryPricingDto } from './dto/category-pricing.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, CurrencyCode } from '@prisma/client';
+import { DEFAULT_CURRENCY_CODE } from '../../common/constants/currency.constants';
 
 export interface PriceValidationResult {
   isValid: boolean;
@@ -12,7 +13,6 @@ export interface PriceValidationResult {
   maxRentPerSqm: number;
   deviationPercent: number;
   requiresApproval: boolean;
-  approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
   message: string;
   sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
@@ -103,14 +103,17 @@ export class CategoriesService {
     categoryId: string;
     floorId?: string;
     zoneId?: string;
+    currencyCode?: CurrencyCode;
     excludeId?: string;
   }) {
     const now = new Date();
+    const currencyCode = params.currencyCode ?? DEFAULT_CURRENCY_CODE;
     const lineage = await this.getCategoryLineage(params.categoryId);
     const rules = await this.prisma.categoryMallPricing.findMany({
       where: {
         mallId: params.mallId,
         categoryId: { in: lineage },
+        currencyCode,
         isActive: true,
         ...(params.excludeId ? { id: { not: params.excludeId } } : {}),
         effectiveFrom: { lte: now },
@@ -118,7 +121,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },
@@ -166,6 +169,7 @@ export class CategoriesService {
     categoryId: string;
     floorId: string | null;
     zoneId: string | null;
+    currencyCode: CurrencyCode;
     effectiveFrom: Date;
     effectiveTo: Date | null;
     excludeId?: string;
@@ -176,6 +180,7 @@ export class CategoriesService {
         categoryId: params.categoryId,
         floorId: params.floorId,
         zoneId: params.zoneId,
+        currencyCode: params.currencyCode,
         isActive: true,
         ...(params.excludeId && { id: { not: params.excludeId } }),
         effectiveFrom: { lte: params.effectiveTo ?? new Date('9999-12-31T23:59:59.999Z') },
@@ -270,7 +275,7 @@ export class CategoriesService {
         code: dto.code.toUpperCase(),
         name: dto.name,
         description: dto.description,
-        parentId: dto.parentId,
+        parentId: dto.parentId || null,
         sortOrder: dto.sortOrder ?? 0,
       },
       include: {
@@ -300,7 +305,7 @@ export class CategoriesService {
         ...(dto.code && { code: dto.code.toUpperCase() }),
         ...(dto.name && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.parentId !== undefined && { parentId: dto.parentId }),
+        ...(dto.parentId !== undefined && { parentId: dto.parentId || null }),
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
       },
@@ -361,7 +366,7 @@ export class CategoriesService {
       where,
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true } },
@@ -379,7 +384,7 @@ export class CategoriesService {
       where: { id },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true } },
@@ -420,6 +425,7 @@ export class CategoriesService {
 
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
     const effectiveTo = dto.effectiveTo ? new Date(dto.effectiveTo) : null;
+    const currencyCode = dto.currencyCode ?? DEFAULT_CURRENCY_CODE;
     const isMallBase = !dto.floorId && !dto.zoneId;
     if (isMallBase && (dto.minRentPerSqm == null || dto.maxRentPerSqm == null)) {
       throw new BadRequestException('Mall-wide base pricing requires minimum and maximum rent');
@@ -434,6 +440,7 @@ export class CategoriesService {
           categoryId: dto.categoryId,
           floorId: dto.floorId,
           zoneId: dto.zoneId,
+          currencyCode,
         });
     this.validatePricingValues(
       dto.minRentPerSqm ?? inherited?.minRentPerSqm,
@@ -448,6 +455,7 @@ export class CategoriesService {
       categoryId: dto.categoryId,
       floorId: dto.floorId ?? null,
       zoneId: dto.zoneId ?? null,
+      currencyCode,
       effectiveFrom,
       effectiveTo,
     });
@@ -462,6 +470,7 @@ export class CategoriesService {
         maxRentPerSqm: dto.maxRentPerSqm,
         suggestedRent: dto.suggestedRent,
         camPerSqm: dto.camPerSqm ?? null,
+        currencyCode,
         effectiveFrom,
         effectiveTo,
         notes: dto.notes,
@@ -469,7 +478,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },
@@ -495,6 +504,7 @@ export class CategoriesService {
           categoryId: pricing.categoryId,
           floorId: pricing.floorId ?? undefined,
           zoneId: pricing.zoneId ?? undefined,
+          currencyCode: pricing.currencyCode,
           excludeId: id,
         });
     const newMin = rawMin ?? fallback?.minRentPerSqm;
@@ -521,6 +531,7 @@ export class CategoriesService {
         categoryId: pricing.categoryId,
         floorId: pricing.floorId,
         zoneId: pricing.zoneId,
+        currencyCode: pricing.currencyCode,
         effectiveFrom: pricing.effectiveFrom,
         effectiveTo: newEffectiveTo,
         excludeId: id,
@@ -563,7 +574,7 @@ export class CategoriesService {
           },
           include: {
             mall: { select: { id: true, name: true, code: true } },
-            category: { select: { id: true, code: true, name: true } },
+            category: { select: { id: true, code: true, name: true, parentId: true } },
             floor: { select: { id: true, name: true, level: true } },
             zone: { select: { id: true, name: true, code: true } },
           },
@@ -586,7 +597,7 @@ export class CategoriesService {
       },
       include: {
         mall: { select: { id: true, name: true, code: true } },
-        category: { select: { id: true, code: true, name: true } },
+        category: { select: { id: true, code: true, name: true, parentId: true } },
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
       },
@@ -618,13 +629,18 @@ export class CategoriesService {
     categoryId: string;
     floorId?: string;
     zoneId?: string;
+    currencyCode?: CurrencyCode;
   }) {
     return this.resolvePricing(params);
   }
 
   /**
    * Validate a proposed price against category pricing rules.
-   * Returns validation result including approval requirements.
+   * Returns validation result including approval requirements. Only a pricing
+   * rule in the SAME currency as proposedRentPerSqm is used -- comparing e.g.
+   * a USD proposal against a VND-denominated band produces a meaningless
+   * deviation, so a currency mismatch resolves the same way as "no rule
+   * configured" (below) rather than silently guessing.
    */
   async validateProposedPrice(params: {
     mallId: string;
@@ -632,6 +648,7 @@ export class CategoriesService {
     floorId?: string;
     zoneId?: string;
     proposedRentPerSqm: number;
+    currencyCode?: CurrencyCode;
   }): Promise<PriceValidationResult> {
     if (!Number.isFinite(params.proposedRentPerSqm) || params.proposedRentPerSqm < 0) {
       throw new BadRequestException('Proposed rent must be a finite, non-negative number');
@@ -639,16 +656,20 @@ export class CategoriesService {
     const pricing = await this.getApplicablePricing(params);
 
     if (!pricing) {
+      // CR-...-ALWAYS-WARN-004: facts only. This used to report a 100%
+      // deviation and name the CEO, which both invented a number that measured
+      // nothing and wrote an authority chain into the pricing layer. The caller
+      // decides what a missing band means; PriceApprovalPolicyService turns it
+      // into PRICING_REFERENCE_MISSING or a base-rent comparison.
       return {
         isValid: false,
         categoryPricing: null,
         proposedRentPerSqm: params.proposedRentPerSqm,
         minRentPerSqm: 0,
         maxRentPerSqm: 0,
-        deviationPercent: 100,
-        requiresApproval: true,
-        approvalLevel: 'CEO',
-        message: 'No pricing rule is configured for this category/mall combination. CEO approval is required.',
+        deviationPercent: 0,
+        requiresApproval: false,
+        message: 'No pricing rule is configured for this category/mall combination.',
       };
     }
 
@@ -667,22 +688,14 @@ export class CategoriesService {
         : 0;
     const isValid = !belowMinimum && !aboveMaximum;
 
-    // Determine approval level based on deviation
-    let approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO' = 'NONE';
-    let message = '';
-
-    if (isValid) {
-      message = 'Price is within acceptable range.';
-    } else if (deviationPercent <= 5) {
-      approvalLevel = 'MANAGER';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires Leasing Manager approval.`;
-    } else if (deviationPercent <= 10) {
-      approvalLevel = 'DIRECTOR';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires Mall Director approval.`;
-    } else {
-      approvalLevel = 'CEO';
-      message = `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}. Requires CEO approval.`;
-    }
+    // CR-...-ALWAYS-WARN-004: the 5%/10% -> Manager/Director/CEO ladder that
+    // used to live here is gone. Approval authority is configuration
+    // (ApprovalPolicyRule), not a constant in the pricing service, and the
+    // level it produced was discarded by every caller anyway. This returns the
+    // facts; the policy engine decides who signs.
+    const message = isValid
+      ? 'Price is within acceptable range.'
+      : `Price is ${deviationPercent.toFixed(1)}% ${belowMinimum ? 'below minimum' : 'above maximum'}.`;
 
     return {
       isValid,
@@ -692,7 +705,6 @@ export class CategoriesService {
       maxRentPerSqm,
       deviationPercent: Math.max(0, deviationPercent),
       requiresApproval: !isValid,
-      approvalLevel,
       message,
       sources: pricing.sources,
     };

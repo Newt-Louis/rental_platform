@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 import { ProposalStatus, UnitStatus } from '@prisma/client';
 
 /**
@@ -47,6 +48,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
   };
   const unitStatus: any = { transition: jest.fn() };
   const customersService: any = { createFromLead: jest.fn() };
+  const leadLifecycle: any = { transition: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -58,6 +60,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     prisma.$transaction.mockImplementation((cb: any) => cb(prisma));
     unitStatus.transition.mockResolvedValue({ id: 'u1', status: UnitStatus.CONTRACTED });
     customersService.createFromLead.mockResolvedValue({ id: 'cust-1' });
+    leadLifecycle.transition.mockResolvedValue({ changed: true });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -70,6 +73,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
         { provide: EmailService, useValue: { sendMail: jest.fn(), isConfigured: false } },
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(ProposalsService);
@@ -91,7 +95,10 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     );
     expect(prisma.unitBooking.updateMany).toHaveBeenCalledTimes(1);
     expect(prisma.proposal.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { status: ProposalStatus.CONVERTED } });
-    expect(prisma.lead.update).toHaveBeenCalledWith({ where: { id: 'l1' }, data: { status: 'WON' } });
+    expect(leadLifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: 'l1', targetStatus: 'WON' }),
+      prisma,
+    );
   });
 
   // Regression found live in the running dev environment during a QC pass on the multi-currency
@@ -162,5 +169,28 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
     prisma.proposal.findUnique.mockResolvedValue({ ...APPROVED_PROPOSAL, status: ProposalStatus.DRAFT, unit: {}, tenant: {}, lead: null, approvalWorkflow: null, contract: null });
     await expect(service.createContractFromProposal('p1')).rejects.toThrow('Proposal must be approved');
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  // A SHORT-lease-term unit (short-term slot/ô nhỏ leasing) hosts many concurrent slot
+  // bookings within the same Unit, each of which can independently convert into its own
+  // Proposal → Contract. Locking the whole Unit to CONTRACTED or enforcing "one active
+  // contract per unit" on the first slot's contract would silently block every other slot
+  // in that unit — see the SHORT-unit branches added to createContractFromProposal.
+  it('does not lock the unit or enforce the one-contract-per-unit rule for a SHORT-lease-term unit', async () => {
+    prisma.proposal.findUnique.mockResolvedValue({
+      ...APPROVED_PROPOSAL, unit: { leaseTermType: 'SHORT' }, tenant: {}, lead: { id: 'l1' }, approvalWorkflow: null, contract: null,
+    });
+    prisma.contract.findFirst
+      .mockResolvedValueOnce(null) // outer pre-check
+      .mockResolvedValueOnce(null); // inner re-check inside the transaction
+    prisma.contract.create.mockResolvedValue({ id: 'c1', contractNumber: 'CTR-2026-00001', proposalId: 'p1' });
+
+    const result = await service.createContractFromProposal('p1', { userId: 'user-1' });
+
+    expect(result).toMatchObject({ id: 'c1' });
+    // Only the two idempotency pre-checks ran — the existingUnitContract exclusivity
+    // check never fired, so a conflicting contract elsewhere on the unit would not block this.
+    expect(prisma.contract.findFirst).toHaveBeenCalledTimes(2);
+    expect(unitStatus.transition).not.toHaveBeenCalled();
   });
 });

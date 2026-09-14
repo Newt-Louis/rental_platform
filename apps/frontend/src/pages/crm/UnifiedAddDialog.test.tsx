@@ -21,7 +21,7 @@ let mockAuthUser: any = SELF_USER;
 vi.mock('@/api', () => ({
   crmApi: { createLead: (...args: any[]) => mockCreateLead(...args) },
   customersApi: { createCustomer: (...args: any[]) => mockCreateCustomer(...args) },
-  usersApi: { listUsers: (...args: any[]) => mockListUsers(...args) },
+  usersApi: { listAssignableUsers: (...args: any[]) => mockListUsers(...args) },
   categoriesApi: { getOptions: (...args: any[]) => mockGetOptions(...args) },
 }));
 
@@ -47,7 +47,7 @@ vi.mock('@tanstack/react-query', async (importActual) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockListUsers.mockResolvedValue({ data: [SELF_USER, OTHER_USER] });
+  mockListUsers.mockResolvedValue([SELF_USER, OTHER_USER]);
   mockGetOptions.mockResolvedValue([]);
 });
 

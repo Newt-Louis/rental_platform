@@ -88,6 +88,18 @@ export class CreateBookingDto {
   @IsOptional()
   @IsString()
   notes?: string;
+  /**
+   * CR-...-ALWAYS-WARN-004: the fingerprint of the pricing decision the user
+   * actually read and acknowledged. The server re-evaluates on write and
+   * refuses if the decision has since changed, so a booking can never be
+   * submitted under a workflow the user was never shown. Optional: API clients
+   * that never previewed simply skip the check.
+   */
+  @ApiPropertyOptional({ description: 'Fingerprint của cảnh báo giá mà người dùng đã xác nhận' })
+  @IsOptional()
+  @IsString()
+  acknowledgedPricingFingerprint?: string;
+
 }
 
 export class UpdateBookingDto {
@@ -161,6 +173,18 @@ export class UpdateBookingDto {
   @IsOptional()
   @IsString()
   notes?: string;
+  /**
+   * CR-...-ALWAYS-WARN-004: the fingerprint of the pricing decision the user
+   * actually read and acknowledged. The server re-evaluates on write and
+   * refuses if the decision has since changed, so a booking can never be
+   * submitted under a workflow the user was never shown. Optional: API clients
+   * that never previewed simply skip the check.
+   */
+  @ApiPropertyOptional({ description: 'Fingerprint của cảnh báo giá mà người dùng đã xác nhận' })
+  @IsOptional()
+  @IsString()
+  acknowledgedPricingFingerprint?: string;
+
 }
 
 export class ApprovePriceDto {
@@ -223,7 +247,7 @@ export class ConvertToProposalDto {
   @IsNumber()
   deposit?: number;
 
-  @ApiPropertyOptional({ description: 'Số ngày miễn phí thuê' })
+  @ApiPropertyOptional({ description: 'Số tháng miễn phí thuê (SEM-001: đơn vị THÁNG, không phải ngày)' })
   @IsOptional()
   @IsInt()
   rentFree?: number;

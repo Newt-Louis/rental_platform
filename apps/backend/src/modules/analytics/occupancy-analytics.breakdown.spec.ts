@@ -20,11 +20,13 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
     unit: { findMany: jest.fn() },
     slotBooking: { findMany: jest.fn() },
     occupancySnapshot: { findMany: jest.fn() },
+    category: { findMany: jest.fn() },
   } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.slotBooking.findMany.mockResolvedValue([]);
+    prisma.category.findMany.mockResolvedValue([]);
     service = new OccupancyAnalyticsService(prisma, {
       runExclusive: jest.fn((_name, _ttl, task) => task()),
     } as any);
@@ -34,11 +36,15 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
   describe('getOccupancyV2 — avgRentPerSqm by floor', () => {
     it('calculates avgRentPerSqm for occupied units per floor', async () => {
+      // RPT-CUR-002: the fixture predates Unit.currencyCode. The scalar now
+      // exists only when exactly one KNOWN currency contributes, so the units
+      // must state theirs -- otherwise they group as UNKNOWN and there is
+      // correctly no scalar at all.
       prisma.unit.findMany.mockResolvedValue([
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100 }),
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100 }),
-        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, areaNLA: 50 }),
-        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f2', name: 'T2' }, baseRentPerSqm: 900, areaNLA: 200 }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, areaNLA: 50, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f2', name: 'T2' }, baseRentPerSqm: 900, areaNLA: 200, currencyCode: 'VND' }),
       ]);
 
       const result = await service.getOccupancyV2();
@@ -48,16 +54,39 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       expect(t1).toBeDefined();
       expect(t1.avgRentPerSqm).toBe(600); // (500+700)/2
+      expect(t1.avgRentPerSqmCurrency).toBe('VND');
       expect(t2.avgRentPerSqm).toBe(900);
+      expect(t2.avgRentPerSqmCurrency).toBe('VND');
     });
 
-    it('returns avgRentPerSqm = 0 for floor with no occupied units', async () => {
+    // RPT-CUR-002: the same floor, once its units stop sharing a currency.
+    it('emits NO scalar when a floor mixes currencies', async () => {
       prisma.unit.findMany.mockResolvedValue([
-        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0 }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 500, areaNLA: 100, currencyCode: 'VND' }),
+        makeUnit({ status: UnitStatus.OCCUPIED, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 700, areaNLA: 100, currencyCode: 'USD' }),
+      ]);
+
+      const t1 = (await service.getOccupancyV2()).byFloor.find((f: any) => f.name === 'T1');
+
+      expect(t1.avgRentPerSqm).toBeNull();
+      expect(t1.avgRentPerSqmCurrency).toBeNull();
+      expect(t1.avgRentPerSqmCurrencyMixed).toBe(true);
+      // The old average would have been 600 -- a figure in no currency.
+      expect(t1.avgRentPerSqmByCurrency.some((b: any) => b.avgRentPerSqm === 600)).toBe(false);
+    });
+
+    // RPT-CUR-002: this asserted 0, which claimed "the average rent here is
+    // zero". A floor with no occupied unit has no average at all, and 0 was a
+    // fabricated figure in an unstated currency. It is null now.
+    it('returns avgRentPerSqm = null for floor with no occupied units', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ status: UnitStatus.VACANT, floor: { id: 'f1', name: 'T1' }, baseRentPerSqm: 0, currencyCode: 'VND' }),
       ]);
 
       const result = await service.getOccupancyV2();
-      expect(result.byFloor.find((floor: any) => floor.name === 'T1')?.avgRentPerSqm).toBe(0);
+      const t1 = result.byFloor.find((floor: any) => floor.name === 'T1');
+      expect(t1?.avgRentPerSqm).toBeNull();
+      expect(t1?.avgRentPerSqmByCurrency).toEqual([]);
     });
   });
 
@@ -108,6 +137,48 @@ describe('OccupancyAnalyticsService — floor × category breakdown (#26, #28)',
 
       const result = await service.getOccupancyV2();
       expect(result.summary).toHaveProperty('totalMonthlyBillingRevenue');
+    });
+  });
+
+  // ─── byCategory hierarchical ordering ────────────────────────────────────
+  // Regression for a bug where an uncategorized ("Unknown") group's null
+  // categoryId, coerced via `?? ''`, sent the walk right back into the ROOT
+  // bucket at depth+1 -- mislabeling every other not-yet-visited root
+  // category as if it were a child of "Unknown".
+
+  describe('getOccupancyV2 — byCategory hierarchy', () => {
+    it('does not indent root categories just because an uncategorized unit exists', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ category: null, categoryId: null }), // the "Unknown" bucket
+        makeUnit({ category: 'F&B', categoryId: 'cat-fnb' }),
+        makeUnit({ category: 'Fashion', categoryId: 'cat-fashion' }),
+      ]);
+      prisma.category.findMany.mockResolvedValue([
+        { id: 'cat-fnb', parentId: null, sortOrder: 1 },
+        { id: 'cat-fashion', parentId: null, sortOrder: 2 },
+      ]);
+
+      const result = await service.getOccupancyV2();
+
+      expect(result.byCategory.find((c: any) => c.name === 'F&B')).toBeDefined();
+      expect(result.byCategory.find((c: any) => c.name === 'Fashion')).toBeDefined();
+      expect(result.byCategory.some((c: any) => c.name.includes('↳'))).toBe(false);
+    });
+
+    it('indents a subcategory under its parent', async () => {
+      prisma.unit.findMany.mockResolvedValue([
+        makeUnit({ category: 'F&B', categoryId: 'cat-fnb' }),
+        makeUnit({ category: 'Coffee & Tea', categoryId: 'cat-coffee' }),
+      ]);
+      prisma.category.findMany.mockResolvedValue([
+        { id: 'cat-fnb', parentId: null, sortOrder: 1 },
+        { id: 'cat-coffee', parentId: 'cat-fnb', sortOrder: 1 },
+      ]);
+
+      const result = await service.getOccupancyV2();
+
+      expect(result.byCategory.find((c: any) => c.name === 'F&B')).toBeDefined();
+      expect(result.byCategory.find((c: any) => c.name === '↳ Coffee & Tea')).toBeDefined();
     });
   });
 

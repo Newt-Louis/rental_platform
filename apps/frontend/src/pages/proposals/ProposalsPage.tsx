@@ -288,7 +288,7 @@ function ProposalScenariosPanel({ proposalId, rentCurrency }: { proposalId: stri
                   <div><span className="text-gray-400">{t('proposals.scenarios.compare.depositAmount')}:</span> {terms.depositAmount != null ? formatMoneyWithCode(terms.depositAmount, rentCurrency) : '—'}</div>
                   <div><span className="text-gray-400">{t('proposals.scenarios.compare.totalValue')}:</span> <span className="font-medium text-green-700">{terms.totalValue != null ? formatMoneyWithCode(terms.totalValue, rentCurrency) : '—'}</span></div>
                   {terms.discount > 0 && <div><span className="text-gray-400">CK:</span> {terms.discount}%</div>}
-                  {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} {t('proposals.scenarios.days')}</div>}
+                  {terms.rentFree > 0 && <div><span className="text-gray-400">MFR:</span> {terms.rentFree} {t('proposals.scenarios.months')}</div>}
                   {terms.escalation > 0 && <div><span className="text-gray-400">{t('proposals.scenarios.fields.escalation')}:</span> {terms.escalation}%/năm</div>}
                 </div>
               </div>
@@ -318,7 +318,7 @@ function ProposalScenariosPanel({ proposalId, rentCurrency }: { proposalId: stri
                 { labelKey: 'proposals.scenarios.compare.camPerSqm', key: 'camPerSqm', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined },
                 { labelKey: 'proposals.scenarios.compare.term', key: 'term', fmt: (v: number) => `${v} th` },
                 { labelKey: 'proposals.scenarios.compare.discount', key: 'discount', fmt: (v: number) => `${v}%` },
-                { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} ${t('proposals.scenarios.days')}` },
+                { labelKey: 'proposals.scenarios.compare.rentFree', key: 'rentFree', fmt: (v: number) => `${v} ${t('proposals.scenarios.months')}` },
                 { labelKey: 'proposals.scenarios.compare.monthlyRent', key: 'monthlyRent', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined, highlight: true },
                 { labelKey: 'proposals.scenarios.compare.depositAmount', key: 'depositAmount', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined },
                 { labelKey: 'proposals.scenarios.compare.totalValue', key: 'totalValue', fmt: (v: number) => v != null ? formatMoneyWithCode(v, rentCurrency) : undefined, highlight: true },
@@ -587,7 +587,7 @@ function ProposalDetailSheet({
                     <SheetRow label={t('proposals.fields.marketingFee')} value={fmtFull(p.marketingFee, p.rentCurrency)} icon={DollarSign} />
                   )}
                   {p.rentFree > 0 && (
-                    <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} ${t('proposals.scenarios.days')}`} icon={Calendar} />
+                    <SheetRow label={t('proposals.fields.freeRentMonths')} value={`${p.rentFree} ${t('proposals.scenarios.months')}`} icon={Calendar} />
                   )}
                   {p.discount > 0 && (
                     <SheetRow label={t('proposals.scenarios.fields.discount')} value={`${p.discount}%`} icon={DollarSign} />

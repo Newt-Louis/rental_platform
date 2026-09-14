@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEmail, IsNumber, IsEnum, IsDateString, IsInt, IsNotEmpty, MinLength, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { LeadSource, LeadStatus, LeadPriority, UnitLeaseTermType } from '@prisma/client';
+import { LeadSource, LeadStatus, LeadPriority, UnitLeaseTermType, CurrencyCode } from '@prisma/client';
 
 export class CreateLeadDto {
   @ApiProperty()
@@ -27,10 +27,23 @@ export class CreateLeadDto {
   @IsEmail()
   email?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — DEPRECATED as an input. Category identity is
+   * `categoryId`; this free text is derived from the Category master
+   * server-side. It is still accepted so that pre-backfill clients can label a
+   * lead that has no canonical category yet, but it can never override a lead
+   * that is already linked to the master.
+   */
+  @ApiPropertyOptional({ deprecated: true, description: 'Deprecated — send categoryId instead. Legacy display text only.' })
   @IsOptional()
   @IsString()
   category?: string;
+
+  /** Authoritative category identity (Category.id from GET /categories/options). */
+  @ApiPropertyOptional({ description: 'Category.id — authoritative category identity' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 
   @ApiPropertyOptional({ enum: LeadSource })
   @IsOptional()
@@ -82,10 +95,22 @@ export class CreateLeadDto {
   @IsNumber()
   expectedArea?: number;
 
-  @ApiPropertyOptional({ description: 'Estimated deal value in VND' })
+  // RPT-CUR-005: was documented as "in VND". Nothing enforced that, and the
+  // pipeline aggregates it as if it were. The amount now carries its currency.
+  @ApiPropertyOptional({ description: 'Estimated deal value, denominated in currencyCode' })
   @IsOptional()
   @IsNumber()
   estimatedValue?: number;
+
+  @ApiPropertyOptional({
+    enum: CurrencyCode,
+    description:
+      'Currency of expectedRent and estimatedValue. REQUIRED whenever either is supplied — ' +
+      'there is no default and no FX conversion.',
+  })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional({ description: 'Expected close date (ISO string)' })
   @IsOptional()
@@ -142,10 +167,24 @@ export class UpdateLeadDto {
   @IsEmail({}, { message: 'Email không đúng định dạng' })
   email?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — DEPRECATED as an input, see CreateLeadDto.
+   */
+  @ApiPropertyOptional({ deprecated: true, description: 'Deprecated — send categoryId instead. Legacy display text only.' })
   @IsOptional()
   @IsString()
   category?: string;
+
+  /**
+   * Authoritative category identity. PATCH semantics:
+   *   omitted -> unchanged (an edit to other fields never clears the category)
+   *   null    -> explicit clear
+   *   Category.id -> change to that master category
+   */
+  @ApiPropertyOptional({ nullable: true, description: 'Category.id, or null to clear. Omit to leave unchanged.' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -187,4 +226,16 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsNumber()
   expectedArea?: number;
+
+  // RPT-CUR-005: settable on update so a legacy row whose currency was never
+  // captured can be corrected without re-entering the amounts. `estimatedValue`
+  // is deliberately still not updatable here — that is pre-existing behaviour
+  // this wave does not change.
+  @ApiPropertyOptional({
+    enum: CurrencyCode,
+    description: 'Currency of expectedRent and estimatedValue. No default, no FX conversion.',
+  })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 }

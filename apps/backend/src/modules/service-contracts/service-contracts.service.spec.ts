@@ -63,7 +63,9 @@ describe('ServiceContractsService data boundaries', () => {
   it('only renews expiring or expired contracts', async () => {
     prisma.serviceContract.findFirst.mockResolvedValue({ id: 'contract-1', status: 'ACTIVE' });
 
-    await expect(service.renew('contract-1', { contractNumber: 'PL-RENEW-001', endDate: '2027-12-31' }, 'user-1'))
+    await expect(service.renew('contract-1', {
+      contractNumber: 'PL-RENEW-001', startDate: '2027-01-01', endDate: '2027-12-31',
+    }, 'user-1'))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -78,11 +80,48 @@ describe('ServiceContractsService data boundaries', () => {
     } as any, 'user-1')).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects creating a contract without both effective dates at the service boundary', async () => {
+    await expect(service.create({
+      contractNumber: 'SC-2026-001',
+      title: 'Hợp đồng bảo trì',
+      mallId: 'mall-1',
+      counterpartyName: 'Đối tác',
+      serviceCategory: 'MAINTENANCE',
+      valueBasis: 'ANNUAL',
+    } as any, 'user-1')).rejects.toThrow('Ngày bắt đầu và ngày kết thúc là bắt buộc');
+  });
+
+  it('does not let an edit leave a legacy contract without an effective period', async () => {
+    prisma.serviceContract.findFirst.mockResolvedValue({
+      id: 'contract-1', status: 'DRAFT', startDate: null, endDate: null, billingParty: null,
+    });
+
+    await expect(service.update('contract-1', { notes: 'Cập nhật' }, 'user-1'))
+      .rejects.toThrow('Ngày bắt đầu và ngày kết thúc là bắt buộc');
+  });
+
+  it('rejects renewal without an explicit start date', async () => {
+    prisma.serviceContract.findFirst.mockResolvedValue({
+      id: 'contract-1', status: 'EXPIRED', endDate: new Date('2026-12-31'),
+    });
+
+    await expect(service.renew('contract-1', {
+      contractNumber: 'SC-2027-001', endDate: '2027-12-31',
+    } as any, 'user-1')).rejects.toThrow('hợp đồng gia hạn là bắt buộc');
+  });
+
   it('does not allow marking a contract renewed without creating its renewal', async () => {
     prisma.serviceContract.findFirst.mockResolvedValue({ id: 'contract-1', status: 'EXPIRED' });
 
     await expect(service.updateStatus('contract-1', 'RENEWED', undefined, 'user-1'))
       .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it.each(['EXPIRING', 'EXPIRED'])('rejects manual transition to automatic status %s', async (status) => {
+    prisma.serviceContract.findFirst.mockResolvedValue({ id: 'contract-1', status: 'ACTIVE' });
+
+    await expect(service.updateStatus('contract-1', status as any, undefined, 'user-1'))
+      .rejects.toThrow('được hệ thống tự động cập nhật');
   });
 
   it('rejects zero-value payment schedules', async () => {
@@ -105,7 +144,7 @@ describe('ServiceContractsService data boundaries', () => {
     expect(storage.saveFile).not.toHaveBeenCalled();
   });
 
-  it('includes draft contracts in the expiring-soon list filter', async () => {
+  it('only includes effective contracts in the fixed seven-day expiry filter', async () => {
     prisma.serviceContract.findMany.mockResolvedValue([]);
     prisma.serviceContract.count.mockResolvedValue(0);
 
@@ -114,21 +153,25 @@ describe('ServiceContractsService data boundaries', () => {
     expect(prisma.serviceContract.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         mallId: { in: ['mall-1'] },
-        status: { in: expect.arrayContaining(['DRAFT', 'PENDING_SIGNATURE', 'ACTIVE', 'EXPIRING']) },
+        status: { in: ['ACTIVE', 'EXPIRING'] },
         endDate: { gte: expect.any(Date), lte: expect.any(Date) },
       }),
     }));
+    const where = prisma.serviceContract.findMany.mock.calls[0][0].where;
+    expect(where.endDate.lte.getTime() - where.endDate.gte.getTime()).toBe(7 * 86_400_000);
   });
 
-  it('counts draft contracts in the 30-day expiry alert without enabling draft payment alerts', async () => {
+  it('counts only effective contracts in the seven-day expiry alert without changing payment alert days', async () => {
     prisma.serviceContract.count.mockResolvedValue(1);
     prisma.serviceContractPayment.count.mockResolvedValue(0);
 
     const result = await service.alerts(['mall-1'], 30);
 
     expect(result.expiring).toBe(1);
+    expect(result.expiryDays).toBe(7);
     expect(prisma.serviceContract.count).toHaveBeenCalledWith({ where: expect.objectContaining({
-      status: { in: expect.arrayContaining(['DRAFT', 'ACTIVE', 'EXPIRING']) },
+      status: { in: ['ACTIVE', 'EXPIRING'] },
+      endDate: { gte: expect.any(Date), lte: expect.any(Date) },
     }) });
     expect(prisma.serviceContractPayment.count).toHaveBeenCalledWith({ where: expect.objectContaining({
       contract: expect.objectContaining({ status: { in: ['ACTIVE', 'EXPIRING'] } }),

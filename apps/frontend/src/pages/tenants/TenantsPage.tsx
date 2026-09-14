@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/use-toast';
 import { usePermission } from '@/hooks/usePermission';
 import { formatMoney, type CurrencyCode } from '@/lib/currency';
+import { TenantFitoutDossierArchive } from './TenantFitoutDossierArchive';
 import {
   Search, Building2, Phone, Mail, FileText, Receipt, Ticket,
   Plus, Edit2, Globe, Shield, MapPin, Hash, User, X,
@@ -317,6 +318,7 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [activeTab, setActiveTab] = useState('info');
 
   const { data, isLoading } = useQuery({
     queryKey: ['tenant', tenantId],
@@ -455,12 +457,13 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
             <Skeleton className="h-8 w-full" /><Skeleton className="h-32" /><Skeleton className="h-24" />
           </div>
         ) : (
-          <Tabs defaultValue="info" className="px-5 pt-4 pb-6">
-            <TabsList className="grid grid-cols-5 w-full mb-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="px-5 pt-4 pb-6">
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 mb-4">
               <TabsTrigger value="info">{t('tabs.info')}</TabsTrigger>
               <TabsTrigger value="contracts">{`${t('tabs.contracts')} (${contracts.length})`}</TabsTrigger>
               <TabsTrigger value="invoices">{`${t('tabs.invoices')} (${invoices.length})`}</TabsTrigger>
               <TabsTrigger value="tickets">{`${t('tabs.tickets')} (${tickets.length})`}</TabsTrigger>
+              <TabsTrigger value="fitoutArchive">{t('tabs.fitoutArchive')}</TabsTrigger>
               <TabsTrigger value="portal">{t('tabs.portal')}</TabsTrigger>
             </TabsList>
 
@@ -650,6 +653,11 @@ function TenantDetailPanel({ tenantId, onEdit, onClose, canEdit }: {
                 onClick={() => navigate('/tickets')}>
                 <ChevronRight size={12} /> {t('info.viewAllTickets')}
               </Button>
+            </TabsContent>
+
+            {/* Tab: Fitout dossier archive */}
+            <TabsContent value="fitoutArchive" className="space-y-3">
+              <TenantFitoutDossierArchive tenantId={tenantId} />
             </TabsContent>
 
             {/* Tab: Portal */}

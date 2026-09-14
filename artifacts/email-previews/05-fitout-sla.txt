@@ -1,0 +1,36 @@
+Fitout vượt SLA — đã leo thang
+
+Leasing Platform
+
+Fitout
+
+Fitout vượt SLA — đã leo thang
+
+LEO THANG
+
+Kính gửi Phạm Thị Lan, dự án fitout của Coffee House Flagship tại lô G-001 đã trễ hạn SLA.
+
+Thông tin dự án
+
+Khách thuê
+Coffee House Flagship
+
+Mã lô
+G-001
+
+Giai đoạn
+Nghiệm thu hệ thống phòng cháy chữa cháy
+
+Hạn mục tiêu
+06/09/2026
+
+Xem dự án fitout
+
+http://127.0.0.1:4173/fitout?projectId=fitout-preview-1
+
+Vui lòng đăng nhập hệ thống để cập nhật tiến độ hoặc xử lý nguyên nhân chậm trễ.
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

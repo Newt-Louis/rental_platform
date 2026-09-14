@@ -1,5 +1,11 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
+import {
+  buildTurnoverContext,
+  AR_VND_SCOPE_DISCLOSURE,
+  NO_FX_INSTRUCTION,
+} from './ai-financial-context';
 
 // CR-101 Phase 3D -- server-derived AI security context. `authorizedMallIds`
 // mirrors the exact convention MallAccessService.getAccessibleMallIds() and
@@ -27,7 +33,8 @@ Nhiệm vụ của bạn:
 Quy tắc:
 - CHỈ dựa vào dữ liệu được cung cấp, không bịa số liệu
 - Nếu không có dữ liệu, nói rõ "Chưa có dữ liệu"
-- Đề xuất hành động cụ thể, không chung chung`;
+- Đề xuất hành động cụ thể, không chung chung
+- Số tiền ở các đơn vị tiền tệ khác nhau (VND, USD, MMK) là các đơn vị tính riêng biệt. TUYỆT ĐỐI không cộng, so sánh hay quy đổi chúng với nhau — hệ thống không có tỷ giá được phê duyệt. Luôn trình bày từng đơn vị tiền tệ riêng, không tạo ra con số tổng gộp`;
 
 @Injectable()
 export class AiService {
@@ -153,6 +160,9 @@ export class AiService {
   private async buildContext(message: string, ctx: AiRequestContext): Promise<string> {
     const lower = message.toLowerCase();
     const parts: string[] = [];
+    // Set by any block that puts money into the context, so the no-FX rule
+    // travels with the data rather than depending on the system prompt alone.
+    let monetaryContext = false;
     // `null` authorizedMallIds = unrestricted (ADMIN/CEO bypass, existing
     // platform policy). A non-null array must constrain every query below --
     // prompt text (`message`) only ever selects WHICH block runs, never
@@ -213,8 +223,12 @@ export class AiService {
         });
         const allOverdue = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'OVERDUE', currencyCode: 'VND', ...invoiceMallFilter }, _sum: { totalAmount: true }, _count: true });
         const issued = await this.prisma.invoice.aggregate({ where: { isActive: true, status: 'ISSUED', currencyCode: 'VND', ...invoiceMallFilter }, _sum: { totalAmount: true }, _count: true });
-        const topDebt = overdue.map((i) => `  - ${i.tenant.brandName}: ${i.totalAmount.toLocaleString('vi-VN')} VNĐ`).join('\n');
-        parts.push(`Hóa đơn quá hạn: ${allOverdue._count} hóa đơn, tổng: ${(allOverdue._sum.totalAmount ?? 0).toLocaleString('vi-VN')} VNĐ\nĐang chờ thanh toán: ${issued._count} hóa đơn, tổng: ${(issued._sum.totalAmount ?? 0).toLocaleString('vi-VN')} VNĐ\nTop công nợ lớn nhất:\n${topDebt}`);
+        const topDebt = overdue.map((i) => `  - ${i.tenant.brandName}: ${formatMoneyWithCode(i.totalAmount, 'VND')}`).join('\n');
+        // RPT-CUR-004 (local mitigation only — NOT a global fix): the queries
+        // above stay VND-filtered in this wave, so the scope is DECLARED rather
+        // than left for the model to read as a complete AR position.
+        parts.push(`${AR_VND_SCOPE_DISCLOSURE}\nHóa đơn quá hạn: ${allOverdue._count} hóa đơn, tổng: ${formatMoneyWithCode(allOverdue._sum.totalAmount ?? 0, 'VND')}\nĐang chờ thanh toán: ${issued._count} hóa đơn, tổng: ${formatMoneyWithCode(issued._sum.totalAmount ?? 0, 'VND')}\nTop công nợ lớn nhất:\n${topDebt}`);
+        monetaryContext = true;
       }
 
       if (lower.includes('doanh thu') || lower.includes('revenue') || lower.includes('sales') || lower.includes('kinh doanh')) {
@@ -225,14 +239,29 @@ export class AiService {
         const prevMonth = today.getMonth() === 0 ? 12 : today.getMonth();
         const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
         const prevPeriod = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
-        const [curr, prev] = await Promise.all([
-          this.prisma.salesTurnover.aggregate({ where: { period, ...turnoverMallFilter }, _sum: { grossSales: true, netSales: true }, _count: true }),
-          this.prisma.salesTurnover.aggregate({ where: { period: prevPeriod, ...turnoverMallFilter }, _sum: { grossSales: true }, _count: true }),
+        // RPT-CUR-001: this was a single `aggregate({ _sum: { grossSales } })`
+        // across every currency, rendered as one "VNĐ" figure, with growth
+        // derived from two such mixed sums. There is no FX engine, so the
+        // amounts are GROUPED by currencyCode instead and growth is computed
+        // within each currency. `groupBy` returns NULL currencyCode as its own
+        // group, which is what carries CUR-001's "reported before currency was
+        // captured" rows through to the prompt without calling them VND.
+        const [currRows, prevRows] = await Promise.all([
+          this.prisma.salesTurnover.groupBy({
+            by: ['currencyCode'],
+            where: { period, ...turnoverMallFilter },
+            _sum: { grossSales: true, netSales: true },
+            _count: true,
+          }),
+          this.prisma.salesTurnover.groupBy({
+            by: ['currencyCode'],
+            where: { period: prevPeriod, ...turnoverMallFilter },
+            _sum: { grossSales: true, netSales: true },
+            _count: true,
+          }),
         ]);
-        const currTotal = curr._sum.grossSales ?? 0;
-        const prevTotal = prev._sum.grossSales ?? 0;
-        const growth = prevTotal > 0 ? (((currTotal - prevTotal) / prevTotal) * 100).toFixed(1) : 'N/A';
-        parts.push(`Doanh thu tháng ${period}: ${currTotal.toLocaleString('vi-VN')} VNĐ (${curr._count} khách thuê báo cáo)\nTháng trước (${prevPeriod}): ${prevTotal.toLocaleString('vi-VN')} VNĐ\nTăng trưởng: ${growth}%`);
+        parts.push(buildTurnoverContext(period, prevPeriod, currRows, prevRows));
+        monetaryContext = true;
       }
 
       if (lower.includes('ticket') || lower.includes('yêu cầu') || lower.includes('vận hành') || lower.includes('sự cố')) {
@@ -275,6 +304,8 @@ export class AiService {
     } catch (err) {
       this.logger.warn(`Failed to build context: ${err.message}`);
     }
+
+    if (monetaryContext) parts.push(NO_FX_INSTRUCTION);
 
     return parts.join('\n\n');
   }

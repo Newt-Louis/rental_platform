@@ -204,6 +204,29 @@ export class ContractAmendmentsService {
         data: updateData as any,
       });
 
+      // Unit.leaseStartDate/leaseEndDate are a denormalized copy of the Contract's dates, set
+      // once when the Unit reaches OCCUPIED (UnitStatusService.transition) and otherwise never
+      // touched. Without this sync, a renewal/extension amendment moves Contract.endDate
+      // forward but leaves the Unit's copy stale — silently breaking every place (e.g. the
+      // "expiring soon" badge) that derives urgency from Unit.leaseEndDate instead of
+      // re-reading the Contract. Only applies to the Unit currently occupied by this exact
+      // tenant/contract, so a superseded or not-yet-active contract can't stomp on it.
+      if (updateData.startDate || updateData.endDate) {
+        const unit = await tx.unit.findUnique({
+          where: { id: amendment.contract.unitId },
+          select: { id: true, tenantId: true },
+        });
+        if (unit && unit.tenantId === amendment.contract.tenantId) {
+          await tx.unit.update({
+            where: { id: unit.id },
+            data: {
+              ...(updateData.startDate ? { leaseStartDate: updateData.startDate } : {}),
+              ...(updateData.endDate ? { leaseEndDate: updateData.endDate } : {}),
+            },
+          });
+        }
+      }
+
       if (Object.keys(updateData).some((key) => BILLING_RELEVANT_FIELDS.has(key))) {
         await this.billingScheduleService.buildScheduleForContract(amendment.contractId, tx);
       }

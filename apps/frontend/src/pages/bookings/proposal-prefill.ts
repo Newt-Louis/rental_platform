@@ -12,47 +12,80 @@ const businessModelFromSpaceType = (spaceType?: string) => {
   return '';
 };
 
+/** `null` for anything absent or non-finite; preserves a genuine 0. */
+const nullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
 export function buildProposalPrefill(booking: UnitBooking | null) {
   const unit = booking?.unit;
   const rentCurrency = booking?.currencyCode ?? 'VND';
-  // Unit.camPerSqm/askingRentPerSqm/baseRentPerSqm have no currency field of their own -- they
-  // are always VND (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Falling back to them for a
-  // non-VND booking would silently mix a VND-scale number into a USD/MMK proposal (e.g. a VND
-  // 75,000/sqm CAM rate submitted as if it were $75,000/sqm), producing a wildly wrong monthly
-  // bill once the contract is billed. Only use the Unit fallback when the proposal is actually
-  // VND; otherwise leave the field blank so the user must enter it explicitly in the right unit.
-  const isVndPricing = rentCurrency === 'VND';
+  // Unit.camPerSqm/askingRentPerSqm/baseRentPerSqm now carry the Unit's own currencyCode
+  // (docs/program/MULTI_CURRENCY_ARCHITECTURE.md). Falling back to them across a currency
+  // boundary would silently mix scales into the proposal (e.g. a VND 75,000/sqm CAM rate
+  // submitted as if it were $75,000/sqm), producing a wildly wrong monthly bill once the
+  // contract is billed. So the fallback applies only when the Unit is quoted in the same
+  // currency as the proposal -- otherwise leave the field blank for explicit entry. This
+  // replaces an older `rentCurrency === 'VND'` check, which both blocked a legitimate
+  // USD-unit → USD-proposal prefill and, once Units gained their own currency, would have
+  // let a USD-quoted Unit prefill a VND proposal.
+  const unitCurrency = (unit as { currencyCode?: string } | undefined)?.currencyCode ?? 'VND';
+  const unitCurrencyMatches = unitCurrency === rentCurrency;
   const rawSnapshotCam = (booking?.pricingSnapshot as any)?.camPerSqm;
   const snapshotCam = rawSnapshotCam == null ? undefined : Number(rawSnapshotCam);
   const camPerSqm = booking?.proposedCamPerSqm
     ?? (snapshotCam !== undefined && Number.isFinite(snapshotCam) ? snapshotCam : undefined)
-    ?? (isVndPricing ? unit?.camPerSqm : undefined);
+    ?? (unitCurrencyMatches ? unit?.camPerSqm : undefined);
 
   return {
-    area: String(booking?.requestedArea ?? unit?.areaNLA ?? ''),
-    term: String(booking?.requestedTerm ?? unit?.minLeaseTerm ?? 36),
+    // ── Numeric fields hold NUMBERS, or `null` when genuinely empty ──────────
+    // The conversion form binds these through `NumericField`/`useController`, so
+    // form state is authoritative and the submitted payload carries numeric
+    // primitives. `null` (not supplied) stays distinguishable from `0` (a real
+    // commercial value the user chose), which a string-based `''`/`'0'` model
+    // blurred.
+    area: nullableNumber(booking?.requestedArea ?? unit?.areaNLA),
+    term: booking?.requestedTerm ?? unit?.minLeaseTerm ?? 36,
     startDate: localIsoDate(),
-    rentPerSqm: String(
+    rentPerSqm: nullableNumber(
       booking?.proposedRentPerSqm
       ?? booking?.expectedRent
-      ?? (isVndPricing ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined)
-      ?? '',
+      ?? (unitCurrencyMatches ? (unit?.askingRentPerSqm ?? unit?.baseRentPerSqm) : undefined),
     ),
-    camPerSqm: String(camPerSqm ?? ''),
-    deposit: '3',
-    rentFree: '0',
-    escalationPercent: String(unit?.escalationRate ?? 5),
+    camPerSqm: nullableNumber(camPerSqm),
+    // VISIBLE_BUSINESS_DEFAULT — the shared conversion form renders this
+    // pre-filled so the 3-month deposit is a value the user saw and accepted,
+    // not a backend `?? 3` they never knew about.
+    deposit: 3,
+    // SEM-001 — rentFree is denominated in MONTHS. Never days.
+    rentFree: 0,
+    escalationPercent: nullableNumber(unit?.escalationRate) ?? 5,
     notes: booking?.notes ?? '',
     businessModel: businessModelFromSpaceType(unit?.spaceType),
     rentCurrency,
-    exchangeRate: String(booking?.exchangeRate ?? ''),
+    exchangeRate: nullableNumber(booking?.exchangeRate),
     // Phí Dịch vụ/Phí HTKD đã đàm phán ở bước Booking (HĐT TTTM) — mang sang làm giá trị mặc định,
     // người dùng vẫn có thể sửa lại trước khi convert.
-    serviceFeeSqm: String(booking?.serviceFeeSqm ?? ''),
-    businessSupportFeeSqm: String(booking?.businessSupportFeeSqm ?? ''),
-    fitoutDays: '90',
+    serviceFeeSqm: nullableNumber(booking?.serviceFeeSqm),
+    businessSupportFeeSqm: nullableNumber(booking?.businessSupportFeeSqm),
+    // VISIBLE_BUSINESS_DEFAULT — rendered in section C of the shared form.
+    fitoutDays: 90,
     handoverDate: '',
     openingDate: '',
     specialConditions: booking?.notes ?? '',
+    // VISIBLE_BUSINESS_DEFAULT — rendered in section B.
+    paymentTermDays: 30,
+    // OPTIONAL_ZERO_ALLOWED — 0 is a legitimate commercial position (no such
+    // fee agreed), so these stay zero-prefilled and always submitted explicitly
+    // rather than relying on a backend `?? 0`.
+    utilityFee: 0,
+    afterHoursFee: 0,
+    depositFitout: 0,
+    fitoutFee: 0,
+    // DERIVED when blank — backend computes depositLease = deposit × monthlyRent.
+    depositLease: 0,
+    operatingHours: '',
   };
 }

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketStatus, TicketPriority, TicketSource } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -194,7 +195,7 @@ export class TicketsService {
       },
       include: {
         tenant: { select: { id: true, brandName: true, contactEmail: true } },
-        unit: { select: { id: true, code: true } },
+        unit: { select: { id: true, code: true, mallId: true } },
       },
     });
 
@@ -205,7 +206,7 @@ export class TicketsService {
     return ticket;
   }
 
-  private async notifyTenantOfInspection(ticket: { id: string; ticketNumber: string; subject: string; tenantId: string; tenant: { brandName: string; contactEmail: string | null }; unit: { code: string } }) {
+  private async notifyTenantOfInspection(ticket: { id: string; ticketNumber: string; subject: string; tenantId: string; tenant: { brandName: string; contactEmail: string | null }; unit: { code: string; mallId: string } }) {
     const tenantUsers = await this.prisma.user.findMany({
       where: { tenantId: ticket.tenantId, isActive: true },
       select: { id: true, email: true, fullName: true },
@@ -225,7 +226,14 @@ export class TicketsService {
     if (ticket.tenant.contactEmail) {
       await this.emailService.sendMail({
         to: ticket.tenant.contactEmail,
-        subject: `[THISO] Phiếu kiểm tra mới — ${ticket.ticketNumber}`,
+        delivery: {
+          eventKey: `ticket-inspection:${ticket.id}:tenant`,
+          eventType: 'TICKET_INSPECTION',
+          entityType: 'Ticket',
+          entityId: ticket.id,
+          mallId: ticket.unit.mallId,
+        },
+        subject: emailSubject(`Phiếu kiểm tra hiện trường mới — ${ticket.ticketNumber}`),
         html: this.emailService.ticketInspectionHtml({
           tenantName: ticket.tenant.brandName,
           ticketNumber: ticket.ticketNumber,

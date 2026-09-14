@@ -31,6 +31,7 @@
     "contracts": "Contracts",
     "invoices": "Invoices",
     "tickets": "Requests",
+    "fitoutArchive": "Fitout files",
     "portal": "Portal"
   },
   "noTenants": "No tenants found",
@@ -94,6 +95,39 @@
     "dueDate": "Due",
     "perMonth": "/month",
     "daysLeft": "({{count}}d left)"
+  },
+  "fitoutArchive": {
+    "title": "Completed Fitout dossier archive",
+    "description": "Approved dossiers and every retained attachment version are indexed here from the authoritative Fitout record.",
+    "searchPlaceholder": "Search dossier, form, unit, contract or filename...",
+    "loadError": "Could not load the Fitout dossier archive.",
+    "empty": "No completed Fitout dossiers",
+    "emptyDescription": "Approved or published dossiers will appear here automatically.",
+    "noSearchResults": "No dossier matches this search.",
+    "resultCount": "{{count}} completed dossier",
+    "resultCount_other": "{{count}} completed dossiers",
+    "revision": "Revision {{revision}}",
+    "unit": "Space",
+    "contract": "Contract",
+    "stage": "Fitout stage",
+    "completedAt": "Last completed update",
+    "attachments": "Attachments ({{count}})",
+    "version": "version {{version}}",
+    "latest": "latest",
+    "noAttachments": "No retained attachment",
+    "openError": "Could not open this attachment",
+    "approvalHistory": "Approval history ({{count}} steps)",
+    "comments": "Dossier discussion ({{count}} comments)",
+    "approvalStatus": {
+      "PENDING": "Pending",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected",
+      "SKIPPED": "Skipped"
+    },
+    "status": {
+      "APPROVED": "Approved",
+      "PUBLISHED": "Published"
+    }
   },
   "portal": {
     "title": "Tenant Portal",

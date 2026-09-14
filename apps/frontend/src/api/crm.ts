@@ -11,7 +11,7 @@ export const crmApi = {
   pipeline: (limit?: number, mallId?: string, leaseTermType?: 'LONG' | 'SHORT') => api.get('/crm/pipeline', { params: { limit, mallId, leaseTermType } }).then((r) => r.data),
   stats: (mallId?: string) => api.get('/crm/stats', { params: { mallId } }).then((r) => r.data),
   getLead: (id: string) => api.get(`/crm/leads/${id}`).then((r) => r.data),
-  getLeadTimeline: (id: string) => api.get(`/crm/leads/${id}/timeline`).then((r) => r.data),
+  getLeadTimeline: (id: string, params?: { limit?: number; cursor?: string }) => api.get(`/crm/leads/${id}/timeline`, { params }).then((r) => r.data),
   getDeals: (params?: Record<string, unknown>) =>
     api.get('/crm/deals', { params }).then((r) => r.data),
   addActivity: (leadId: string, data: Record<string, unknown>) =>
@@ -53,6 +53,6 @@ export const customersApi = {
 export const followUpApi = {
   list: (params?: Record<string, unknown>) => api.get('/crm/follow-ups', { params }).then((r) => r.data),
   create: (data: Record<string, unknown>) => api.post('/crm/follow-ups', data).then((r) => r.data),
-  complete: (id: string) => api.put(`/crm/follow-ups/${id}/complete`).then((r) => r.data),
-  delete: (id: string) => api.delete(`/crm/follow-ups/${id}`).then((r) => r.data),
+  complete: (id: string, data?: { outcome?: string; comment?: string }) => api.put(`/crm/follow-ups/${id}/complete`, data ?? {}).then((r) => r.data),
+  cancel: (id: string, reason: string) => api.put(`/crm/follow-ups/${id}/cancel`, { reason }).then((r) => r.data),
 };

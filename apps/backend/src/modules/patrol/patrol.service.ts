@@ -515,7 +515,11 @@ export class PatrolService {
           body: `${current.point.name} · ${current.shift.shiftNumber}`,
           type: "WORK_ORDER",
           entityType: "PATROL_CHECK_ESCALATION",
-          entityId: current.id,
+          // PatrolPage only has a shift-level detail view (no standalone per-check screen), and
+          // the abnormal check itself — result, severity, note — renders inside that shift's
+          // checklist. Point this at the shift (current.id is the PatrolCheck id, which no
+          // route can resolve) so the notification actually opens something real.
+          entityId: current.shift.id,
         });
     }
 

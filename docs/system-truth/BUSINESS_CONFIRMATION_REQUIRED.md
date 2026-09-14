@@ -2,6 +2,15 @@
 
 Live register. Consolidated from all 5 research streams, 2026-08-21.
 
+## CR-121 additions (2026-09-12)
+
+| BC-xxx | Title | Raised during | Severity if unanswered | Status |
+|---|---|---|---|---|
+| BC-027 | Which forward/backward Lead status transitions are permitted beyond the existing WON precondition and reason-required LOST/backward/reopen policy? | CR-121 | P1 — blocks activation of the centralized lifecycle adjacency policy | OPEN |
+| BC-028 | Which staff roles may view internal CRM comments across assignees/Malls, and may any comment be visible to Tenant Portal users? | CR-121 | P1 — blocks final timeline comment projection and authorization policy | OPEN |
+| BC-029 | Should stale handling ever auto-mutate a Lead to LOST, or only create a manager review/task? | CR-121 | P1 — auto-LOST remains disabled/dry-run until answered | OPEN |
+| BC-030 | What authoritative Mall owns a CRM event when the persisted Lead has `mallId = null`? | CR-121 / CR-CRM-BUSINESS-EVENT-001 | P1 — blocks event schema activation, Mall authorization and migration for null-Mall Leads | OPEN |
+
 | BC-xxx | Title | Raised during | Severity if unanswered | Status |
 |---|---|---|---|---|
 | BC-001 | Is `Lead.estimatedValue` ever entered in a non-VND context? | Core Leasing stream | P2 — determines if CRM pipeline-value currency-blending is a real risk | OPEN |
@@ -28,6 +37,8 @@ Live register. Consolidated from all 5 research streams, 2026-08-21.
 | BC-022 | How should free-text `User.department` migrate to Mall-scoped Department records? | CR-114 | P0 — incorrect mapping can corrupt staff organisation assignments | **ANSWERED 2026-08-27 — retain string; new values are Department IDs; unmatched legacy values resolve null** |
 | BC-023 | What happens to children and user assignments on hard delete of a Department? | CR-114 | P0 — incorrect referential action can destroy or orphan organisation data | **ANSWERED 2026-08-27 — reject parent deletion; leaf delete clears matching User values** |
 | BC-024 | Which Mall context is fixed for a multi-Mall Department operator? | CR-114 | P0 — incorrect selection can breach Mall isolation | **ANSWERED 2026-08-27 — one Department per User; administer in active Mall** |
+| BC-025 | Which logo source is authoritative for transactional email when runtime branding is configured? | CR-119 | P2 — determines whether email uses the stable repository logo or mutable BrandingSettings | **ANSWERED 2026-09-07 — always use repository `logo.png`** |
+| BC-026 | What approved, monitored Finance contact may appear in overdue invoice email? | CR-119 | P2 — prevents an invented or unmonitored address from reaching tenants | **ANSWERED 2026-09-07 — omit contact; never use `SMTP_USER` or a guessed address** |
 
 ## Correction record — BC-018 (2026-08-21, Architecture Review phase)
 

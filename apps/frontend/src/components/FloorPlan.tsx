@@ -3,8 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
-import { Pencil, Trash2, Plus } from 'lucide-react';
+import { MoreHorizontal, Pencil, Trash2, Plus } from 'lucide-react';
 import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface FloorMeta {
   id?: string;
@@ -15,11 +22,13 @@ interface FloorMeta {
 
 const STATUS_CFG: Record<string, { bg: string; border: string; text: string }> = {
   VACANT:       { bg: 'bg-red-50',     border: 'border-red-300',    text: 'text-red-800' },
+  OFFERING:     { bg: 'bg-yellow-50',  border: 'border-yellow-300', text: 'text-yellow-800' },
   BOOKING:      { bg: 'bg-amber-50',   border: 'border-amber-300',  text: 'text-amber-800' },
   NEGOTIATING:  { bg: 'bg-orange-50',  border: 'border-orange-300', text: 'text-orange-800' },
   CONTRACTED:   { bg: 'bg-blue-50',    border: 'border-blue-300',   text: 'text-blue-800' },
   UNDER_FITOUT: { bg: 'bg-purple-50',  border: 'border-purple-300', text: 'text-purple-800' },
   OCCUPIED:     { bg: 'bg-green-50',   border: 'border-green-300',  text: 'text-green-800' },
+  LIQUIDATED:   { bg: 'bg-rose-50',    border: 'border-rose-300',   text: 'text-rose-800' },
 };
 
 const FLOOR_SORT: Record<string, number> = { B2: -2, B1: -1, GF: 0, L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, RF: 9 };
@@ -77,10 +86,12 @@ export function FloorPlan({
     total: floorUnits.length,
     occupied: floorUnits.filter(u => u.status === 'OCCUPIED').length,
     vacant: floorUnits.filter(u => u.status === 'VACANT').length,
+    offering: floorUnits.filter(u => u.status === 'OFFERING').length,
     booking: floorUnits.filter(u => u.status === 'BOOKING').length,
     negotiating: floorUnits.filter(u => u.status === 'NEGOTIATING').length,
     contracted: floorUnits.filter(u => u.status === 'CONTRACTED').length,
     fitout: floorUnits.filter(u => u.status === 'UNDER_FITOUT').length,
+    liquidated: floorUnits.filter(u => u.status === 'LIQUIDATED').length,
     totalArea: floorUnits.reduce((s, u) => s + u.areaNLA, 0),
     leasedArea: floorUnits.filter(u => u.status === 'OCCUPIED').reduce((s, u) => s + u.areaNLA, 0),
   }), [floorUnits]);
@@ -114,26 +125,37 @@ export function FloorPlan({
                 <span className="ml-1 text-xs opacity-50">({count})</span>
               </button>
               {isAdmin && f.id && (onEditFloor || onDeleteFloor) && (
-                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
-                  {onEditFloor && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onEditFloor(f); }}
-                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title={t('floor.edit')}
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 opacity-100 transition-opacity hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
+                      title={`${t('floor.edit')} / ${t('floor.delete')}`}
+                      aria-label={`${t('floor.edit')} / ${t('floor.delete')}`}
                     >
-                      <Pencil size={11} />
+                      <MoreHorizontal size={16} />
                     </button>
-                  )}
-                  {onDeleteFloor && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteFloor(f); }}
-                      className="p-0.5 rounded hover:bg-black/10 text-gray-400"
-                      title={t('floor.delete')}
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
-                </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    {onEditFloor && (
+                      <DropdownMenuItem onSelect={() => onEditFloor(f)} className="gap-2 cursor-pointer">
+                        <Pencil size={14} />
+                        {t('floor.edit')}
+                      </DropdownMenuItem>
+                    )}
+                    {onEditFloor && onDeleteFloor && <DropdownMenuSeparator />}
+                    {onDeleteFloor && (
+                      <DropdownMenuItem
+                        onSelect={() => onDeleteFloor(f)}
+                        className="gap-2 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+                      >
+                        <Trash2 size={14} />
+                        {t('floor.delete')}
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           );
@@ -154,10 +176,12 @@ export function FloorPlan({
         <span className="text-gray-300">|</span>
         <span className="text-green-600 font-medium">{stats.occupied} {getUnitStatusLabel(t, 'OCCUPIED').toLowerCase()}</span>
         <span className="text-red-500">{stats.vacant} {getUnitStatusLabel(t, 'VACANT').toLowerCase()}</span>
+        {stats.offering > 0 && <span className="text-yellow-500">{stats.offering} {getUnitStatusLabel(t, 'OFFERING').toLowerCase()}</span>}
         {stats.booking > 0 && <span className="text-amber-500">{stats.booking} {getUnitStatusLabel(t, 'BOOKING').toLowerCase()}</span>}
         {stats.negotiating > 0 && <span className="text-orange-500">{stats.negotiating} {getUnitStatusLabel(t, 'NEGOTIATING').toLowerCase()}</span>}
         {stats.contracted > 0 && <span className="text-blue-500">{stats.contracted} {getUnitStatusLabel(t, 'CONTRACTED').toLowerCase()}</span>}
         {stats.fitout > 0 && <span className="text-purple-500">{stats.fitout} {getUnitStatusLabel(t, 'UNDER_FITOUT').toLowerCase()}</span>}
+        {stats.liquidated > 0 && <span className="text-rose-500">{stats.liquidated} {getUnitStatusLabel(t, 'LIQUIDATED').toLowerCase()}</span>}
         <span className="ml-auto text-xs text-gray-400">
           {stats.leasedArea.toLocaleString()} / {stats.totalArea.toLocaleString()} m² NLA
         </span>

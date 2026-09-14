@@ -11,17 +11,32 @@ type PrismaClientOrTx = PrismaService | Prisma.TransactionClient;
 
 /** Allowed unit status transitions for automated leasing lifecycle */
 const ALLOWED_TRANSITIONS: Record<UnitStatus, UnitStatus[]> = {
-  [UnitStatus.VACANT]: [UnitStatus.BOOKING, UnitStatus.NEGOTIATING],
-  [UnitStatus.BOOKING]: [UnitStatus.VACANT, UnitStatus.NEGOTIATING, UnitStatus.CONTRACTED],
-  [UnitStatus.NEGOTIATING]: [UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.CONTRACTED],
-  [UnitStatus.CONTRACTED]: [UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED, UnitStatus.VACANT],
-  [UnitStatus.UNDER_FITOUT]: [UnitStatus.OCCUPIED, UnitStatus.VACANT],
-  [UnitStatus.OCCUPIED]: [UnitStatus.VACANT, UnitStatus.UNDER_FITOUT],
+  [UnitStatus.VACANT]: [UnitStatus.OFFERING, UnitStatus.BOOKING, UnitStatus.NEGOTIATING],
+  [UnitStatus.OFFERING]: [UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.NEGOTIATING],
+  [UnitStatus.BOOKING]: [UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.NEGOTIATING, UnitStatus.CONTRACTED],
+  [UnitStatus.NEGOTIATING]: [UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING, UnitStatus.CONTRACTED],
+  // CONTRACTED→LIQUIDATED and UNDER_FITOUT→LIQUIDATED: a Contract goes ACTIVE (and is
+  // therefore terminable via ContractTerminationService.initiate) as soon as the Unit
+  // reaches CONTRACTED — long before fit-out finishes and the Unit ever reaches OCCUPIED.
+  // Termination-during-fitout (e.g. tenant default before opening) must be representable.
+  [UnitStatus.CONTRACTED]: [UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED, UnitStatus.VACANT, UnitStatus.LIQUIDATED],
+  [UnitStatus.UNDER_FITOUT]: [UnitStatus.OCCUPIED, UnitStatus.VACANT, UnitStatus.LIQUIDATED],
+  [UnitStatus.OCCUPIED]: [UnitStatus.VACANT, UnitStatus.UNDER_FITOUT, UnitStatus.LIQUIDATED],
+  // LIQUIDATED can resolve back to whichever of the three committed states it came from
+  // (contract-termination cancel restores the captured pre-termination status) or to VACANT
+  // once termination completes.
+  [UnitStatus.LIQUIDATED]: [UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED, UnitStatus.VACANT],
   [UnitStatus.MERGED]: [],
 };
 
-/** Trạng thái mặt bằng đã cam kết cho một khách thuê chính thức — không nên nhận thêm booking mới chồng lên. */
-const COMMITTED_STATUSES: UnitStatus[] = [UnitStatus.OCCUPIED, UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT];
+/** Trạng thái mặt bằng đã cam kết cho một khách thuê chính thức — không nên nhận thêm booking mới chồng lên.
+ * LIQUIDATED nằm trong nhóm này vì hợp đồng vẫn còn hiệu lực (đang TERMINATING) cho tới khi complete(). */
+const COMMITTED_STATUSES: UnitStatus[] = [
+  UnitStatus.OCCUPIED,
+  UnitStatus.CONTRACTED,
+  UnitStatus.UNDER_FITOUT,
+  UnitStatus.LIQUIDATED,
+];
 
 /**
  * GAP #20 — Trạng thái bị khoá hoàn toàn, không nhận bất kỳ booking mới nào.
@@ -92,7 +107,7 @@ export class UnitStatusService {
       );
     }
 
-    const isLowAvailabilityStatus = ([UnitStatus.VACANT, UnitStatus.BOOKING, UnitStatus.NEGOTIATING] as UnitStatus[])
+    const isLowAvailabilityStatus = ([UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING, UnitStatus.NEGOTIATING] as UnitStatus[])
       .includes(toStatus);
     if (unit.status !== toStatus && isLowAvailabilityStatus) {
       const liveContract = await client.contract.findFirst({

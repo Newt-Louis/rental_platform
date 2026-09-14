@@ -1,0 +1,34 @@
+Ticket vượt SLA
+
+Leasing Platform
+
+Ticket vận hành
+
+Ticket vượt SLA
+
+ESCALATION L2
+
+Kính gửi Đỗ Quốc Huy, ticket TIC-2026-00991 đã vượt SLA và cần được xử lý.
+
+Thông tin ticket
+
+Mã ticket
+TIC-2026-00991
+
+Tiêu đề
+Điều hòa không hoạt động <script>alert(1)</script>"><img src=x onerror=alert(1)>
+
+Khách thuê
+Nhà hàng An Nhiên
+
+Mức escalation
+L2
+
+Xem ticket
+
+http://127.0.0.1:4173/tickets?id=ticket-preview-1
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

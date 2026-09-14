@@ -12,7 +12,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useToast } from '@/components/ui/use-toast';
 import { useTranslation } from 'react-i18next';
 import {
-  Map, Plus, Pencil, Trash2, Layers, LayoutGrid, BarChart3,
+  Map, MoreHorizontal, Plus, Pencil, Trash2, Layers, LayoutGrid, BarChart3,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { CATEGORIES } from './spaces.constants';
@@ -27,6 +27,13 @@ import { SpacesAlerts } from '@/components/spaces/SpacesAlerts';
 import { AnalyticsView } from '@/components/spaces/AnalyticsView';
 import { SpacesFilters } from './SpacesFilters';
 import { SpacesGrid } from './SpacesGrid';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type ViewMode = 'grid' | 'floor' | 'map' | 'analytics';
 
@@ -280,22 +287,36 @@ export default function SpacesPage() {
                 )}
               </button>
               {isAdmin && (
-                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setEditingFloor(f); setFloorDialogOpen(true); }}
-                    className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title={t('floor.edit')}
-                  >
-                    <Pencil size={11} />
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setDeletingFloor(f); }}
-                    className={`p-0.5 rounded hover:bg-black/10 ${floorFilter === f.id ? 'text-white' : 'text-gray-400'}`}
-                    title={t('floor.delete')}
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-100 transition-opacity hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-black/10 data-[state=open]:opacity-100 ${floorFilter === f.id ? 'text-white' : 'text-gray-500'}`}
+                      title={`${t('floor.edit')} / ${t('floor.delete')}`}
+                      aria-label={`${t('floor.edit')} / ${t('floor.delete')}`}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem
+                      onSelect={() => { setEditingFloor(f); setFloorDialogOpen(true); }}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Pencil size={14} />
+                      {t('floor.edit')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={() => setDeletingFloor(f)}
+                      className="gap-2 cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+                    >
+                      <Trash2 size={14} />
+                      {t('floor.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ))}

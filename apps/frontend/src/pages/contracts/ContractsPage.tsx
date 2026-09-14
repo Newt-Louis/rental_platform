@@ -20,7 +20,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
-import { openAuthenticatedFile } from '@/lib/downloadFile';
+import { openOrDownloadAuthenticatedDocument } from '@/lib/authenticatedDocument';
 import {
   Search, File, AlertTriangle, Calendar, DollarSign, User, FileText, History, GitBranch,
   ArrowRight, Link2, Upload, Trash2, Download, PenLine, ShieldCheck, QrCode,
@@ -325,6 +325,21 @@ function DocumentsTab({ contractId, canEdit }: { contractId: string; canEdit: bo
     if (file) handleUpload(file);
   }, [handleUpload]);
 
+  const openDocument = useCallback(async (file: any) => {
+    try {
+      await openOrDownloadAuthenticatedDocument(`/files/contracts/${file.id}`, {
+        fileName: file.fileName,
+        mimeType: file.fileType,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Không thể mở hoặc tải tài liệu',
+        description: error?.response?.data?.message || error?.message || 'Vui lòng thử lại.',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
+
   const fileIcon = (mime?: string) => {
     if (!mime) return '📄';
     if (mime.includes('pdf')) return '📕';
@@ -405,12 +420,10 @@ function DocumentsTab({ contractId, canEdit }: { contractId: string; canEdit: bo
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {/* Download — authenticated (see docs/security/SECRET_INCIDENT_REMEDIATION.md P1):
-                      a plain <a href> can't attach the JWT bearer token, so this
-                      fetches through the API and opens a blob URL instead. */}
+                  {/* Preview/download through the authenticated API. */}
                   <button
                     type="button"
-                    onClick={() => openAuthenticatedFile(`/files/contracts/${f.id}`, { download: f.fileName })}
+                    onClick={() => openDocument(f)}
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
                     title={t('documents.download')}>
                     <Download size={14} />

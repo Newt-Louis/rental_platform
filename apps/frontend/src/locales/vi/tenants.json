@@ -31,6 +31,7 @@
     "contracts": "HĐ",
     "invoices": "HĐon",
     "tickets": "YC",
+    "fitoutArchive": "Hồ sơ Fitout",
     "portal": "Portal"
   },
   "noTenants": "Không có khách thuê nào",
@@ -94,6 +95,38 @@
     "dueDate": "Hạn",
     "perMonth": "/tháng",
     "daysLeft": "(còn {{count}}n)"
+  },
+  "fitoutArchive": {
+    "title": "Kho hồ sơ Fitout hoàn tất",
+    "description": "Hồ sơ đã duyệt và toàn bộ phiên bản tệp còn lưu trữ được tra cứu trực tiếp từ dữ liệu Fitout gốc.",
+    "searchPlaceholder": "Tìm hồ sơ, biểu mẫu, mặt bằng, hợp đồng hoặc tên tệp...",
+    "loadError": "Không thể tải kho hồ sơ Fitout.",
+    "empty": "Chưa có hồ sơ Fitout hoàn tất",
+    "emptyDescription": "Hồ sơ đã duyệt hoặc phát hành sẽ tự động xuất hiện tại đây.",
+    "noSearchResults": "Không có hồ sơ phù hợp với từ khóa.",
+    "resultCount": "{{count}} hồ sơ hoàn tất",
+    "revision": "Lần sửa đổi {{revision}}",
+    "unit": "Mặt bằng",
+    "contract": "Hợp đồng",
+    "stage": "Bước Fitout",
+    "completedAt": "Cập nhật hoàn tất gần nhất",
+    "attachments": "Tệp đính kèm ({{count}})",
+    "version": "phiên bản {{version}}",
+    "latest": "mới nhất",
+    "noAttachments": "Không có tệp đính kèm còn lưu trữ",
+    "openError": "Không thể mở tệp đính kèm này",
+    "approvalHistory": "Lịch sử phê duyệt ({{count}} bước)",
+    "comments": "Trao đổi hồ sơ ({{count}} ý kiến)",
+    "approvalStatus": {
+      "PENDING": "Đang chờ",
+      "APPROVED": "Đã duyệt",
+      "REJECTED": "Từ chối",
+      "SKIPPED": "Bỏ qua"
+    },
+    "status": {
+      "APPROVED": "Đã duyệt",
+      "PUBLISHED": "Đã phát hành"
+    }
   },
   "portal": {
     "title": "Tenant Portal",

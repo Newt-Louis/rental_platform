@@ -1,0 +1,13 @@
+-- CUR-001 — give SalesTurnover an explicit currency.
+--
+-- NULLABLE and WITHOUT a default, deliberately. Existing rows have an
+-- unprovable currency: the shipped seed created VND-scale turnover against USD
+-- and MMK contracts, so `DEFAULT 'VND'` or a backfill from Contract.currencyCode
+-- would stamp a fabricated unit onto figures that feed revenue-share invoices.
+--
+-- NULL therefore means "reported before currency was captured". Application
+-- write paths all supply the value; revenue-share generation refuses to bill a
+-- NULL or mismatched row. Reconcile existing rows with
+-- prisma/scripts/sales-turnover-currency-reconciliation.sql before enabling
+-- revenue-share billing on them.
+ALTER TABLE "SalesTurnover" ADD COLUMN "currencyCode" "CurrencyCode";

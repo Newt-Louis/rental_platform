@@ -1,0 +1,22 @@
+Kích hoạt tài khoản Tenant Portal
+
+Leasing Platform
+
+Tenant Portal
+
+Kích hoạt tài khoản Tenant Portal
+
+THÔNG TIN
+
+Xin chào Võ Thanh Tâm, tài khoản Tenant Portal của Quý khách đã được tạo.
+
+Kích hoạt tài khoản
+
+http://127.0.0.1:4173/activate?token=non-sensitive-preview-token
+
+Liên kết có hiệu lực trong 72 giờ . Nếu Quý khách không thực hiện yêu cầu này, vui lòng bỏ qua email.
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

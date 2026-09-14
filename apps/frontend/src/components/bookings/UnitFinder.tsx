@@ -28,11 +28,13 @@ import { useDebouncedValue } from "./useDebouncedValue";
 const PAGE_SIZE = 10;
 const UNIT_STATUSES = [
   "VACANT",
+  "OFFERING",
   "BOOKING",
   "NEGOTIATING",
   "CONTRACTED",
   "UNDER_FITOUT",
   "OCCUPIED",
+  "LIQUIDATED",
   "MERGED",
 ] as const;
 

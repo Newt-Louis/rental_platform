@@ -7,8 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+import { CURRENCY_CODES } from '@/lib/currency';
 import {
-  CATEGORY_OPTS,
+  CategorySelect,
+  categoryIdForUpdate,
+  initialCategoryValue,
+} from './CategorySelect';
+import {
   LEAD_SOURCE_OPTS,
   LEAD_PRIORITY_OPTS,
   normalizePhone,
@@ -40,12 +45,15 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     contactName: lead?.contactName ?? '',
     phone: lead?.phone ?? '',
     email: lead?.email ?? '',
-    category: lead?.category ?? '',
+    // CR-CRM-CATEGORY-MASTER-001 — the selector holds Category.id (or the
+    // legacy sentinel); the free text is display-only from here on.
+    categoryId: initialCategoryValue(lead ?? {}),
     source: lead?.source ?? '',
     priority: lead?.priority ?? '',
     leaseTermType: lead?.leaseTermType ?? 'LONG',
     expectedArea: lead?.expectedArea?.toString() ?? '',
     expectedRent: lead?.expectedRent?.toString() ?? '',
+    currencyCode: lead?.currencyCode ?? '',
     notes: lead?.notes ?? '',
     assignedToId: lead?.assignedToId ?? '',
     company: lead?.customer?.companyName ?? lead?.company ?? '',
@@ -53,17 +61,35 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
     website: lead?.customer?.website ?? '',
     budgetMin: lead?.customer?.budgetMin?.toString() ?? '',
     budgetMax: lead?.customer?.budgetMax?.toString() ?? '',
+    budgetCurrencyCode: lead?.customer?.currencyCode ?? '',
     rating: lead?.customer?.rating?.toString() ?? '',
+    // CR-CRM-CATEGORY-MASTER-001 — the Customer profile keeps its own
+    // preferred category, editable from the same master as the Lead's.
+    preferredCategoryId: initialCategoryValue({
+      categoryId: lead?.customer?.preferredCategoryId,
+      category: lead?.customer?.preferredCategory,
+    }),
   });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
+  // RPT-CUR-005 — money present + currency absent is refused by the API, so the
+  // form surfaces it rather than letting the user hit a 400.
+  const moneyEntered = Boolean(form.expectedRent && form.expectedRent.trim());
+  const currencyMissing = moneyEntered && !form.currencyCode;
+
+  // CUR-002-CUSTOMER — same rule for the Customer budget range.
+  const budgetEntered = Boolean(
+    (form.budgetMin && form.budgetMin.trim()) || (form.budgetMax && form.budgetMax.trim()),
+  );
+  const budgetCurrencyMissing = budgetEntered && !form.budgetCurrencyCode;
+
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
-    queryFn: () => usersApi.listUsers({ limit: 100 }),
+    queryFn: () => usersApi.listAssignableUsers(),
     enabled: open,
     staleTime: 60_000,
   });
-  const users: any[] = usersData?.data ?? usersData ?? [];
+  const users: any[] = usersData ?? [];
 
   useEffect(() => {
     if (open && lead) {
@@ -72,12 +98,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         contactName: lead.contactName ?? '',
         phone: normalizePhone(lead.phone),
         email: lead.email ?? '',
-        category: lead.category ?? '',
+        categoryId: initialCategoryValue(lead),
         source: lead.source ?? '',
         priority: lead.priority ?? '',
         leaseTermType: lead.leaseTermType ?? 'LONG',
         expectedArea: lead.expectedArea?.toString() ?? '',
         expectedRent: lead.expectedRent?.toString() ?? '',
+        currencyCode: lead.currencyCode ?? '',
         notes: lead.notes ?? '',
         assignedToId: lead.assignedToId ?? '',
         company: lead.customer?.companyName ?? lead.company ?? '',
@@ -85,7 +112,12 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         website: lead.customer?.website ?? '',
         budgetMin: lead.customer?.budgetMin?.toString() ?? '',
         budgetMax: lead.customer?.budgetMax?.toString() ?? '',
+        budgetCurrencyCode: lead.customer?.currencyCode ?? '',
         rating: lead.customer?.rating?.toString() ?? '',
+        preferredCategoryId: initialCategoryValue({
+          categoryId: lead.customer?.preferredCategoryId,
+          category: lead.customer?.preferredCategory,
+        }),
       };
       setForm(newForm);
       setTouched({});
@@ -109,12 +141,17 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
         contactName: form.contactName.trim() || undefined,
         phone: form.phone.trim() || undefined,
         email: form.email.trim() || undefined,
-        category: form.category || undefined,
+        // Omitted when the lead is still on unmapped legacy text, so editing
+        // any other field cannot erase or rewrite its category.
+        categoryId: categoryIdForUpdate(form.categoryId),
         source: form.source || undefined,
         priority: form.priority || undefined,
         leaseTermType: form.leaseTermType,
         expectedArea: form.expectedArea && form.expectedArea.trim() ? +form.expectedArea : undefined,
         expectedRent: form.expectedRent && form.expectedRent.trim() ? +form.expectedRent : undefined,
+        // RPT-CUR-005: the backend rejects money without a currency, so it is
+        // sent whenever the user has chosen one.
+        currencyCode: form.currencyCode || undefined,
         notes: form.notes.trim() || undefined,
         assignedToId: form.assignedToId || undefined,
       };
@@ -123,14 +160,16 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
       // Sau khi đã có Customer (post-conversion), "Tên công ty" hiển thị trong sheet đọc từ
       // customer.companyName chứ không phải lead.company — phải đồng bộ cả 2 khi sửa, nếu không
       // sửa xong người dùng thấy "Lưu thành công" nhưng dữ liệu hiển thị không đổi.
-      if (customerId && (form.company || form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating)) {
+      if (customerId && (form.company || form.contactTitle || form.website || form.budgetMin || form.budgetMax || form.rating || form.preferredCategoryId)) {
         await customersApi.updateCustomer(customerId, {
           companyName: form.company.trim() || undefined,
           contactTitle: form.contactTitle || undefined,
           website: form.website || undefined,
           budgetMin: form.budgetMin ? +form.budgetMin : undefined,
+          currencyCode: form.budgetCurrencyCode || undefined,
           budgetMax: form.budgetMax ? +form.budgetMax : undefined,
           rating: form.rating ? +form.rating : undefined,
+          preferredCategoryId: categoryIdForUpdate(form.preferredCategoryId),
         });
       }
     },
@@ -253,13 +292,13 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.industry')}</label>
-                <select className="w-full border rounded-md h-9 px-2 text-sm border-gray-300 bg-white"
-                  value={form.category ?? ''} onChange={(e) => set('category', e.target.value)}>
-                  <option value="">-- {t('fields.industry')} --</option>
-                  {Object.entries(CATEGORY_OPTS).map(([k, label]) => (
-                    <option key={k} value={k}>{label}</option>
-                  ))}
-                </select>
+                <CategorySelect
+                  value={form.categoryId}
+                  onChange={(v) => set('categoryId', v)}
+                  legacyText={lead?.categoryId ? null : lead?.category}
+                  currentCategory={lead?.categoryRef ?? null}
+                  enabled={open}
+                />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.source')}</label>
@@ -306,6 +345,27 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
                 <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.expectedRent')}</label>
                 <Input type="number" value={form.expectedRent} onChange={(e) => set('expectedRent', e.target.value)} placeholder="680000" />
               </div>
+              {/* RPT-CUR-005: the amount above has no meaning without this. The
+                  currency is never hidden and never defaulted to VND. */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">
+                  Đơn vị tiền tệ{moneyEntered && <span className="text-red-500"> *</span>}
+                </label>
+                <select
+                  aria-label="Đơn vị tiền tệ"
+                  className={`w-full border rounded-md h-9 px-2 text-sm bg-white ${currencyMissing ? 'border-red-400' : 'border-gray-300'}`}
+                  value={form.currencyCode}
+                  onChange={(e) => set('currencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                {currencyMissing && (
+                  <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập số tiền — hệ thống không mặc định VND.</p>
+                )}
+              </div>
             </div>
             <div>
               <label className="text-xs text-gray-500 mb-1 block">{t('lead.fields.notes')}</label>
@@ -334,6 +394,30 @@ export function LeadEditDialog({ lead, open, onClose, onSuccess, queryKeys }: Le
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.budgetMax')}</label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" />
+              </div>
+              {/* CUR-002-CUSTOMER: budget range needs an explicit unit. */}
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Đơn vị tiền tệ ngân sách{budgetEntered && <span className="text-red-500"> *</span>}</label>
+                <select
+                  aria-label="Đơn vị tiền tệ ngân sách"
+                  className={`w-full border rounded-md h-9 px-2 text-sm bg-white ${budgetCurrencyMissing ? 'border-red-400' : 'border-gray-300'}`}
+                  value={form.budgetCurrencyCode}
+                  onChange={(e) => set('budgetCurrencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {budgetCurrencyMissing && <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập ngân sách.</p>}
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">{t('fields.industry')}</label>
+                <CategorySelect
+                  value={form.preferredCategoryId}
+                  onChange={(v) => set('preferredCategoryId', v)}
+                  legacyText={lead?.customer?.preferredCategoryId ? null : lead?.customer?.preferredCategory}
+                  currentCategory={lead?.customer?.preferredCategoryRef ?? null}
+                  enabled={open}
+                />
               </div>
               <div>
                 <label className="text-xs text-gray-500 mb-1 block">{t('fields.potential')}</label>

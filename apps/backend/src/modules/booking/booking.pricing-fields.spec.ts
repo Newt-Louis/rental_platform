@@ -22,6 +22,8 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
       aggregate: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
   const unitStatus = {
@@ -30,6 +32,33 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     transition: jest.fn().mockResolvedValue({}),
   } as any;
   const categories = { validateProposedPrice: jest.fn() } as any;
+  // CR-BOOK-PRICE-APPROVAL-001 — price routing/notification collaborators.
+  const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
+  evaluate: jest.fn().mockResolvedValue({
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
+    deviationPercent: 0,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
+    message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
+} as any;
+  const notifications = { create: jest.fn() } as any;
+  const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+  const leadLifecycle = { transition: jest.fn().mockResolvedValue({ changed: true }) } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -42,7 +71,7 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     prisma.bookingActivity.create.mockResolvedValue({});
     prisma.lead.update.mockResolvedValue({});
     prisma.proposal.create.mockImplementation(({ data }: any) => Promise.resolve({ id: 'proposal-1', ...data }));
-    service = new BookingService(prisma, categories, unitStatus);
+    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService, leadLifecycle);
   });
 
   describe('create()', () => {
@@ -68,7 +97,7 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     it('passes the new fields through to the update data', async () => {
       prisma.unitBooking.findUnique.mockResolvedValue({
         id: 'b1', unitId: 'unit-1', status: BookingStatus.ACTIVE, isActive: true,
-        currencyCode: 'USD', leadId: 'lead-1',
+        currencyCode: 'USD', leadId: 'lead-1', createdById: 'user-1',
       });
       prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', mallId: 'mall-1', categoryId: null, isActive: true });
 

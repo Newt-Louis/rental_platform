@@ -1,7 +1,8 @@
-import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType } from '@prisma/client';
+import { PrismaClient, Role, UnitStatus, BillingScheduleStatus, LeadSource, LeadStatus, LeadPriority, ProposalStatus, ContractStatus, ContractType, BillingCycle, TicketType, TicketPriority, TicketStatus, InvoiceType, InvoiceStatus, PaymentMethod, CustomerStatus, BookingStatus, BookingActivityType, CurrencyCode } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { buildApprovalStepsFromRules } from './approval-policy-seed.util';
 import { generateBillingPeriods } from '../src/modules/billing/billing-schedule.util';
+import { MODULE_PERMISSION_DEFAULTS } from '../src/common/constants/module-permission-defaults';
 
 const prisma = new PrismaClient();
 
@@ -73,6 +74,8 @@ async function main() {
   await prisma.approvalStep.deleteMany();
   await prisma.approvalWorkflow.deleteMany();
   await prisma.approvalPolicyRule.deleteMany();
+  // Cấp duyệt hồ sơ fitout tham chiếu User.id, phải xoá trước khi xoá user.
+  await prisma.fitoutFormApprovalLevel.deleteMany();
   await prisma.contract.deleteMany();
   await prisma.proposal.deleteMany();
   await prisma.leadActivity.deleteMany();
@@ -203,132 +206,6 @@ async function main() {
 
   console.log('Users created');
 
-  // Create approval policy rules (config-driven, no hardcoded workflow in runtime)
-  await prisma.approvalPolicyRule.createMany({
-    data: [
-      {
-        code: 'BASE_LEASING_MANAGER',
-        name: 'Base Leasing Manager Approval',
-        stepName: 'Leasing Manager Approval',
-        stepOrder: 10,
-        approverRole: Role.LEASING_MANAGER,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'MALL_DIRECTOR_HIGH_DISCOUNT',
-        name: 'Mall Director on discount > 5%',
-        stepName: 'Mall Director Approval',
-        stepOrder: 20,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>',
-        threshold: 5,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'CEO_VERY_HIGH_DISCOUNT',
-        name: 'CEO on discount > 10%',
-        stepName: 'CEO Approval',
-        stepOrder: 30,
-        approverRole: Role.CEO,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>',
-        threshold: 10,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'MALL_DIRECTOR_LONG_RENT_FREE',
-        name: 'Mall Director on rent free > 60 days',
-        stepName: 'Mall Director Approval',
-        stepOrder: 40,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'RENT_FREE_DAYS',
-        operator: '>',
-        threshold: 60,
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'FINANCE_REQUIRED',
-        name: 'Finance Review Mandatory',
-        stepName: 'Finance Review',
-        stepOrder: 50,
-        approverRole: Role.FINANCE,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'LEGAL_REQUIRED',
-        name: 'Legal Review Mandatory',
-        stepName: 'Legal Review',
-        stepOrder: 60,
-        approverRole: Role.LEGAL,
-        conditionType: 'DISCOUNT_PCT',
-        operator: '>=',
-        threshold: 0,
-        isRequired: true,
-        isActive: true,
-      },
-      {
-        code: 'FINANCE_AR_DEBT',
-        name: 'Finance Review if tenant has overdue AR',
-        stepName: 'Finance Risk Review',
-        stepOrder: 55,
-        approverRole: Role.FINANCE,
-        conditionType: 'HAS_AR_DEBT',
-        isRequired: false,
-        isActive: true,
-      },
-      // Price Deviation Rules
-      {
-        code: 'PRICE_BELOW_MIN_5',
-        name: 'Giá thấp hơn sàn 0-5%',
-        stepName: 'Leasing Manager Price Review',
-        stepOrder: 15,
-        approverRole: Role.LEASING_MANAGER,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: 'BETWEEN',
-        threshold: 0,
-        matchValue: '5',
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'PRICE_BELOW_MIN_10',
-        name: 'Giá thấp hơn sàn 5-10%',
-        stepName: 'Mall Director Price Review',
-        stepOrder: 25,
-        approverRole: Role.MALL_DIRECTOR,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: 'BETWEEN',
-        threshold: 5,
-        matchValue: '10',
-        isRequired: false,
-        isActive: true,
-      },
-      {
-        code: 'PRICE_BELOW_MIN_OVER_10',
-        name: 'Giá thấp hơn sàn >10%',
-        stepName: 'CEO Price Review',
-        stepOrder: 35,
-        approverRole: Role.CEO,
-        conditionType: 'PRICE_DEVIATION_PCT',
-        operator: '>',
-        threshold: 10,
-        isRequired: false,
-        isActive: true,
-      },
-    ],
-  });
 
   await prisma.dealScoreCriterion.createMany({
     data: [
@@ -416,6 +293,175 @@ async function main() {
       description: 'A premium shopping mall in the heart of Sala urban area',
       isActive: true,
     },
+  });
+
+  // UserMallAccess — grant admin and CEO access to all malls
+  await prisma.userMallAccess.createMany({
+    data: [
+      { userId: adminUser.id, mallId: mall.id, role: Role.ADMIN, grantedById: adminUser.id },
+      { userId: ceoUser.id, mallId: mall.id, role: Role.CEO, grantedById: adminUser.id },
+      { userId: mallDirector.id, mallId: mall.id, role: Role.MALL_DIRECTOR, grantedById: adminUser.id },
+      // Các role đứng tên duyệt phải có quyền truy cập mall, nếu không ApprovalsController
+      // trả 403 khi họ bấm duyệt và danh sách chờ duyệt của họ luôn rỗng.
+      { userId: leasingManager.id, mallId: mall.id, role: Role.LEASING_MANAGER, grantedById: adminUser.id },
+      { userId: financeUser.id, mallId: mall.id, role: Role.FINANCE, grantedById: adminUser.id },
+      { userId: legalUser.id, mallId: mall.id, role: Role.LEGAL, grantedById: adminUser.id },
+      { userId: operationUser.id, mallId: mall.id, role: Role.OPERATION, grantedById: adminUser.id },
+    ],
+    skipDuplicates: true,
+  });
+  console.log('UserMallAccess created');
+
+  // Quy tắc duyệt đề xuất — khai báo riêng cho từng mall và chỉ định đích danh người duyệt.
+  // Phải seed SAU mall và UserMallAccess: mallId/approverId là bắt buộc, và người duyệt phải
+  // có quyền truy cập mall thì mới bấm duyệt được (ApprovalsController kiểm tra quyền mall).
+  await prisma.approvalPolicyRule.createMany({
+    data: [
+      {
+        code: 'BASE_LEASING_MANAGER',
+        name: 'Base Leasing Manager Approval',
+        stepName: 'Leasing Manager Approval',
+        stepOrder: 10,
+        mallId: mall.id,
+        approverRole: Role.LEASING_MANAGER,
+        approverId: leasingManager.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'MALL_DIRECTOR_HIGH_DISCOUNT',
+        name: 'Mall Director on discount > 5%',
+        stepName: 'Mall Director Approval',
+        stepOrder: 20,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>',
+        threshold: 5,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'CEO_VERY_HIGH_DISCOUNT',
+        name: 'CEO on discount > 10%',
+        stepName: 'CEO Approval',
+        stepOrder: 30,
+        mallId: mall.id,
+        approverRole: Role.CEO,
+        approverId: ceoUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>',
+        threshold: 10,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'MALL_DIRECTOR_LONG_RENT_FREE',
+        // SEM-001: was 'rent free > 60 days' against a value denominated in
+        // months, so it could never fire. Confirmed business rule: rent-free
+        // greater than 2 months requires Mall Director approval.
+        name: 'Mall Director on rent free > 2 months',
+        stepName: 'Mall Director Approval',
+        stepOrder: 40,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'RENT_FREE_MONTHS',
+        operator: '>',
+        threshold: 2,
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'FINANCE_REQUIRED',
+        name: 'Finance Review Mandatory',
+        stepName: 'Finance Review',
+        stepOrder: 50,
+        mallId: mall.id,
+        approverRole: Role.FINANCE,
+        approverId: financeUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'LEGAL_REQUIRED',
+        name: 'Legal Review Mandatory',
+        stepName: 'Legal Review',
+        stepOrder: 60,
+        mallId: mall.id,
+        approverRole: Role.LEGAL,
+        approverId: legalUser.id,
+        conditionType: 'DISCOUNT_PCT',
+        operator: '>=',
+        threshold: 0,
+        isRequired: true,
+        isActive: true,
+      },
+      {
+        code: 'FINANCE_AR_DEBT',
+        name: 'Finance Review if tenant has overdue AR',
+        stepName: 'Finance Risk Review',
+        stepOrder: 55,
+        mallId: mall.id,
+        approverRole: Role.FINANCE,
+        approverId: financeUser.id,
+        conditionType: 'HAS_AR_DEBT',
+        isRequired: false,
+        isActive: true,
+      },
+      // Price Deviation Rules
+      {
+        code: 'PRICE_BELOW_MIN_5',
+        name: 'Giá thấp hơn sàn 0-5%',
+        stepName: 'Leasing Manager Price Review',
+        stepOrder: 15,
+        mallId: mall.id,
+        approverRole: Role.LEASING_MANAGER,
+        approverId: leasingManager.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: 'BETWEEN',
+        threshold: 0,
+        matchValue: '5',
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'PRICE_BELOW_MIN_10',
+        name: 'Giá thấp hơn sàn 5-10%',
+        stepName: 'Mall Director Price Review',
+        stepOrder: 25,
+        mallId: mall.id,
+        approverRole: Role.MALL_DIRECTOR,
+        approverId: mallDirector.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: 'BETWEEN',
+        threshold: 5,
+        matchValue: '10',
+        isRequired: false,
+        isActive: true,
+      },
+      {
+        code: 'PRICE_BELOW_MIN_OVER_10',
+        name: 'Giá thấp hơn sàn >10%',
+        stepName: 'CEO Price Review',
+        stepOrder: 35,
+        mallId: mall.id,
+        approverRole: Role.CEO,
+        approverId: ceoUser.id,
+        conditionType: 'PRICE_DEVIATION_PCT',
+        operator: '>',
+        threshold: 10,
+        isRequired: false,
+        isActive: true,
+      },
+    ],
   });
 
   // Create Building
@@ -815,26 +861,26 @@ async function main() {
   const leadSources = [LeadSource.BROKER, LeadSource.WEBSITE, LeadSource.REFERRAL, LeadSource.WALK_IN, LeadSource.EXISTING_TENANT];
 
   const leadsData = [
-    { brandName: 'KFC Vietnam', company: 'KFC Vietnam Co., Ltd', contactName: 'Robert Brown', email: 'robert@kfc.com.vn', phone: '0291234567', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'F&B', expectedRent: 900000, expectedArea: 200, priority: LeadPriority.HOT, estimatedValue: 180000000, position: 0 },
-    { brandName: 'Zara Vietnam', company: 'Inditex Vietnam', contactName: 'Carlos Rodriguez', email: 'carlos@zara.com.vn', phone: '0291234568', status: LeadStatus.PROPOSAL, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 800000, expectedArea: 300, priority: LeadPriority.HOT, estimatedValue: 240000000, position: 0 },
-    { brandName: 'Starbucks', company: 'Starbucks Vietnam', contactName: 'Sarah Johnson', email: 'sarah@starbucks.com.vn', phone: '0291234569', status: LeadStatus.QUALIFIED, source: LeadSource.REFERRAL, category: 'F&B', expectedRent: 1100000, expectedArea: 150, priority: LeadPriority.HOT, estimatedValue: 165000000, position: 0 },
-    { brandName: 'H&M Vietnam', company: 'H&M Vietnam Co.', contactName: 'Erik Svensson', email: 'erik@hm.com.vn', phone: '0291234570', status: LeadStatus.CONTACTED, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 750000, expectedArea: 400, priority: LeadPriority.WARM, estimatedValue: 300000000, position: 0 },
-    { brandName: 'Pizza Hut', company: 'Pizza Hut Vietnam', contactName: 'David Lee', email: 'david@pizzahut.com.vn', phone: '0291234571', status: LeadStatus.NEW, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 850000, expectedArea: 180, priority: LeadPriority.WARM, estimatedValue: 153000000, position: 0 },
-    { brandName: 'Watsons', company: 'AS Watson Vietnam', contactName: 'Michelle Tan', email: 'michelle@watsons.com.vn', phone: '0291234572', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'Health & Beauty', expectedRent: 850000, expectedArea: 200, priority: LeadPriority.WARM, estimatedValue: 170000000, position: 1 },
-    { brandName: 'Vincom Retail', company: 'Vincom Retail JSC', contactName: 'Nguyen Van Binh', email: 'binh@vincom.vn', phone: '0291234573', status: LeadStatus.WON, source: LeadSource.EXISTING_TENANT, category: 'Entertainment', expectedRent: 500000, expectedArea: 1000, priority: LeadPriority.HOT, estimatedValue: 500000000, position: 0 },
-    { brandName: 'Butter Me Up', company: 'BMU Vietnam', contactName: 'Phan Thu Ha', email: 'ha@buttermeup.vn', phone: '0291234574', status: LeadStatus.LOST, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 900000, expectedArea: 80, priority: LeadPriority.COLD, estimatedValue: 72000000, position: 0, lostReason: 'Budget constraints - found cheaper alternative' },
-    { brandName: 'CellphoneS', company: 'CellphoneS JSC', contactName: 'Tran Minh Quan', email: 'quan@cellphones.com.vn', phone: '0291234575', status: LeadStatus.QUALIFIED, source: LeadSource.REFERRAL, category: 'Technology', expectedRent: 750000, expectedArea: 120, priority: LeadPriority.WARM, estimatedValue: 90000000, position: 1 },
-    { brandName: 'Phuc Long Coffee', company: 'Phuc Long Heritage', contactName: 'Le Quoc Hung', email: 'hung@phuclong.com.vn', phone: '0291234576', status: LeadStatus.PROPOSAL, source: LeadSource.BROKER, category: 'F&B', expectedRent: 950000, expectedArea: 160, priority: LeadPriority.HOT, estimatedValue: 152000000, position: 1 },
-    { brandName: 'ALDO', company: 'ALDO Vietnam', contactName: 'Michel Leblanc', email: 'michel@aldo.com.vn', phone: '0291234577', status: LeadStatus.NEW, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 800000, expectedArea: 100, priority: LeadPriority.COLD, estimatedValue: 80000000, position: 1 },
-    { brandName: 'Gym Master', company: 'Gym Master Vietnam', contactName: 'Vo Thanh Long', email: 'long@gymmaster.vn', phone: '0291234578', status: LeadStatus.CONTACTED, source: LeadSource.WALK_IN, category: 'Entertainment', expectedRent: 600000, expectedArea: 500, priority: LeadPriority.WARM, estimatedValue: 300000000, position: 1 },
-    { brandName: 'Paris Baguette', company: 'SPC Vietnam', contactName: 'Park Jin Soo', email: 'jinsoo@parisbaguette.vn', phone: '0291234579', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'F&B', expectedRent: 1000000, expectedArea: 130, priority: LeadPriority.HOT, estimatedValue: 130000000, position: 2 },
-    { brandName: 'Miniso', company: 'Miniso Vietnam', contactName: 'Zhang Wei', email: 'zhang@miniso.com.vn', phone: '0291234580', status: LeadStatus.QUALIFIED, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 700000, expectedArea: 200, priority: LeadPriority.COLD, estimatedValue: 140000000, position: 2 },
-    { brandName: 'Baskin Robbins', company: 'Baskin Robbins Vietnam', contactName: 'Tom Anderson', email: 'tom@baskinrobbins.com.vn', phone: '0291234581', status: LeadStatus.CONTACTED, source: LeadSource.REFERRAL, category: 'F&B', expectedRent: 850000, expectedArea: 60, priority: LeadPriority.COLD, estimatedValue: 51000000, position: 2 },
-    { brandName: 'Sephora', company: 'LVMH Beauty Vietnam', contactName: 'Isabelle Martin', email: 'isabelle@sephora.com.vn', phone: '0291234582', status: LeadStatus.PROPOSAL, source: LeadSource.BROKER, category: 'Health & Beauty', expectedRent: 950000, expectedArea: 250, priority: LeadPriority.HOT, estimatedValue: 237500000, position: 2 },
-    { brandName: 'CGV Cinemas', company: 'CJ CGV Vietnam', contactName: 'Kim Dong Hyun', email: 'donghyun@cgv.vn', phone: '0291234583', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'Entertainment', expectedRent: 450000, expectedArea: 2000, priority: LeadPriority.HOT, estimatedValue: 900000000, position: 3 },
-    { brandName: 'Tous Les Jours', company: 'CJ Foodville Vietnam', contactName: 'Park Soo Yeon', email: 'sooyeon@tousslesjours.vn', phone: '0291234584', status: LeadStatus.NEW, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 900000, expectedArea: 100, priority: LeadPriority.WARM, estimatedValue: 90000000, position: 2 },
-    { brandName: 'Nike Vietnam', company: 'Blue Lagoon Vietnam', contactName: 'Jason Miller', email: 'jason@nike.com.vn', phone: '0291234585', status: LeadStatus.LOST, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 850000, expectedArea: 300, priority: LeadPriority.HOT, estimatedValue: 255000000, position: 1, lostReason: 'Chose another location - AEON Mall' },
-    { brandName: 'Aeon MaxValu', company: 'Aeon Vietnam', contactName: 'Yamamoto Kenji', email: 'kenji@aeon.com.vn', phone: '0291234586', status: LeadStatus.QUALIFIED, source: LeadSource.BROKER, category: 'Supermarket', expectedRent: 350000, expectedArea: 3000, priority: LeadPriority.HOT, estimatedValue: 1050000000, position: 3 },
+    { brandName: 'KFC Vietnam', company: 'KFC Vietnam Co., Ltd', contactName: 'Robert Brown', email: 'robert@kfc.com.vn', phone: '0291234567', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'F&B', expectedRent: 900000, expectedArea: 200, priority: LeadPriority.HOT, estimatedValue: 180000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'Zara Vietnam', company: 'Inditex Vietnam', contactName: 'Carlos Rodriguez', email: 'carlos@zara.com.vn', phone: '0291234568', status: LeadStatus.PROPOSAL, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 800000, expectedArea: 300, priority: LeadPriority.HOT, estimatedValue: 240000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'Starbucks', company: 'Starbucks Vietnam', contactName: 'Sarah Johnson', email: 'sarah@starbucks.com.vn', phone: '0291234569', status: LeadStatus.QUALIFIED, source: LeadSource.REFERRAL, category: 'F&B', expectedRent: 1100000, expectedArea: 150, priority: LeadPriority.HOT, estimatedValue: 165000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'H&M Vietnam', company: 'H&M Vietnam Co.', contactName: 'Erik Svensson', email: 'erik@hm.com.vn', phone: '0291234570', status: LeadStatus.CONTACTED, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 750000, expectedArea: 400, priority: LeadPriority.WARM, estimatedValue: 300000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'Pizza Hut', company: 'Pizza Hut Vietnam', contactName: 'David Lee', email: 'david@pizzahut.com.vn', phone: '0291234571', status: LeadStatus.NEW, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 850000, expectedArea: 180, priority: LeadPriority.WARM, estimatedValue: 153000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'Watsons', company: 'AS Watson Vietnam', contactName: 'Michelle Tan', email: 'michelle@watsons.com.vn', phone: '0291234572', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'Health & Beauty', expectedRent: 850000, expectedArea: 200, priority: LeadPriority.WARM, estimatedValue: 170000000, currencyCode: 'VND', position: 1 },
+    { brandName: 'Vincom Retail', company: 'Vincom Retail JSC', contactName: 'Nguyen Van Binh', email: 'binh@vincom.vn', phone: '0291234573', status: LeadStatus.WON, source: LeadSource.EXISTING_TENANT, category: 'Entertainment', expectedRent: 500000, expectedArea: 1000, priority: LeadPriority.HOT, estimatedValue: 500000000, currencyCode: 'VND', position: 0 },
+    { brandName: 'Butter Me Up', company: 'BMU Vietnam', contactName: 'Phan Thu Ha', email: 'ha@buttermeup.vn', phone: '0291234574', status: LeadStatus.LOST, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 900000, expectedArea: 80, priority: LeadPriority.COLD, estimatedValue: 72000000, currencyCode: 'VND', position: 0, lostReason: 'Budget constraints - found cheaper alternative' },
+    { brandName: 'CellphoneS', company: 'CellphoneS JSC', contactName: 'Tran Minh Quan', email: 'quan@cellphones.com.vn', phone: '0291234575', status: LeadStatus.QUALIFIED, source: LeadSource.REFERRAL, category: 'Technology', expectedRent: 750000, expectedArea: 120, priority: LeadPriority.WARM, estimatedValue: 90000000, currencyCode: 'VND', position: 1 },
+    { brandName: 'Phuc Long Coffee', company: 'Phuc Long Heritage', contactName: 'Le Quoc Hung', email: 'hung@phuclong.com.vn', phone: '0291234576', status: LeadStatus.PROPOSAL, source: LeadSource.BROKER, category: 'F&B', expectedRent: 950000, expectedArea: 160, priority: LeadPriority.HOT, estimatedValue: 152000000, currencyCode: 'VND', position: 1 },
+    { brandName: 'ALDO', company: 'ALDO Vietnam', contactName: 'Michel Leblanc', email: 'michel@aldo.com.vn', phone: '0291234577', status: LeadStatus.NEW, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 800000, expectedArea: 100, priority: LeadPriority.COLD, estimatedValue: 80000000, currencyCode: 'VND', position: 1 },
+    { brandName: 'Gym Master', company: 'Gym Master Vietnam', contactName: 'Vo Thanh Long', email: 'long@gymmaster.vn', phone: '0291234578', status: LeadStatus.CONTACTED, source: LeadSource.WALK_IN, category: 'Entertainment', expectedRent: 600000, expectedArea: 500, priority: LeadPriority.WARM, estimatedValue: 300000000, currencyCode: 'VND', position: 1 },
+    { brandName: 'Paris Baguette', company: 'SPC Vietnam', contactName: 'Park Jin Soo', email: 'jinsoo@parisbaguette.vn', phone: '0291234579', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'F&B', expectedRent: 1000000, expectedArea: 130, priority: LeadPriority.HOT, estimatedValue: 130000000, currencyCode: 'VND', position: 2 },
+    { brandName: 'Miniso', company: 'Miniso Vietnam', contactName: 'Zhang Wei', email: 'zhang@miniso.com.vn', phone: '0291234580', status: LeadStatus.QUALIFIED, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 700000, expectedArea: 200, priority: LeadPriority.COLD, estimatedValue: 140000000, currencyCode: 'VND', position: 2 },
+    { brandName: 'Baskin Robbins', company: 'Baskin Robbins Vietnam', contactName: 'Tom Anderson', email: 'tom@baskinrobbins.com.vn', phone: '0291234581', status: LeadStatus.CONTACTED, source: LeadSource.REFERRAL, category: 'F&B', expectedRent: 850000, expectedArea: 60, priority: LeadPriority.COLD, estimatedValue: 51000000, currencyCode: 'VND', position: 2 },
+    { brandName: 'Sephora', company: 'LVMH Beauty Vietnam', contactName: 'Isabelle Martin', email: 'isabelle@sephora.com.vn', phone: '0291234582', status: LeadStatus.PROPOSAL, source: LeadSource.BROKER, category: 'Health & Beauty', expectedRent: 950000, expectedArea: 250, priority: LeadPriority.HOT, estimatedValue: 237500000, currencyCode: 'VND', position: 2 },
+    { brandName: 'CGV Cinemas', company: 'CJ CGV Vietnam', contactName: 'Kim Dong Hyun', email: 'donghyun@cgv.vn', phone: '0291234583', status: LeadStatus.NEGOTIATION, source: LeadSource.BROKER, category: 'Entertainment', expectedRent: 450000, expectedArea: 2000, priority: LeadPriority.HOT, estimatedValue: 900000000, currencyCode: 'VND', position: 3 },
+    { brandName: 'Tous Les Jours', company: 'CJ Foodville Vietnam', contactName: 'Park Soo Yeon', email: 'sooyeon@tousslesjours.vn', phone: '0291234584', status: LeadStatus.NEW, source: LeadSource.WALK_IN, category: 'F&B', expectedRent: 900000, expectedArea: 100, priority: LeadPriority.WARM, estimatedValue: 90000000, currencyCode: 'VND', position: 2 },
+    { brandName: 'Nike Vietnam', company: 'Blue Lagoon Vietnam', contactName: 'Jason Miller', email: 'jason@nike.com.vn', phone: '0291234585', status: LeadStatus.LOST, source: LeadSource.WEBSITE, category: 'Fashion', expectedRent: 34, expectedArea: 300, priority: LeadPriority.HOT, estimatedValue: 10200, currencyCode: 'USD', position: 1, lostReason: 'Chose another location - AEON Mall' },
+    { brandName: 'Aeon MaxValu', company: 'Aeon Vietnam', contactName: 'Yamamoto Kenji', email: 'kenji@aeon.com.vn', phone: '0291234586', status: LeadStatus.QUALIFIED, source: LeadSource.BROKER, category: 'Supermarket', expectedRent: 29000, expectedArea: 3000, priority: LeadPriority.HOT, estimatedValue: 87000000, currencyCode: 'MMK', position: 3 },
   ];
 
   const leads = [];
@@ -853,6 +899,7 @@ async function main() {
     const lead = await prisma.lead.create({
       data: {
         ...leadsData[i],
+        mallId: mall.id,
         assignedToId: i % 2 === 0 ? leasingExec.id : leasingManager.id,
         // Link first 10 leads to matching Customer profiles in CRM
         customerId: i < 10 ? customers[i % 10].id : null,
@@ -961,6 +1008,124 @@ async function main() {
 
   console.log('Unit bookings created');
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHORT-TERM SLOT BOOKINGS — demo data for the "booking ngắn hạn" pipeline:
+  // Customer/Lead → SlotBooking → (xác nhận) → Proposal → Approval → Contract.
+  // A SHORT-lease-term unit hosts several independently-booked slots (kiosk/
+  // pop-up), each convertible to its own Proposal/Contract without locking the
+  // whole unit — see SlotsService.convertToProposal() and the
+  // leaseTermType === 'SHORT' branches in ProposalsService/ContractsService.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const popupUnit = await prisma.unit.create({
+    data: {
+      mallId: mall.id,
+      buildingId: building.id,
+      floorId: floors[0].id,
+      code: 'GF-POPUP',
+      name: 'Khu vực Pop-up Tầng trệt',
+      areaGFA: 40,
+      areaNLA: 35,
+      category: 'F&B',
+      leaseTermType: 'SHORT',
+      status: UnitStatus.VACANT,
+      isActive: true,
+    },
+  });
+
+  const popupSlot1 = await prisma.unitSlot.create({
+    data: {
+      unitId: popupUnit.id,
+      code: 'P1',
+      name: 'Quầy Pop-up góc A',
+      area: 10,
+      slotType: 'FLEXIBLE',
+      pricePerDaySqm: 150000,
+      currencyCode: 'VND',
+      posX: 10, posY: 10, posW: 25, posH: 25,
+    },
+  });
+  const popupSlot2 = await prisma.unitSlot.create({
+    data: {
+      unitId: popupUnit.id,
+      code: 'P2',
+      name: 'Quầy Pop-up góc B',
+      area: 15,
+      slotType: 'FLEXIBLE',
+      pricePerHour: 200000,
+      currencyCode: 'VND',
+      posX: 45, posY: 10, posW: 25, posH: 25,
+    },
+  });
+
+  // Lead ngắn hạn dành riêng cho demo/test luồng Booking ngắn hạn — SlotsService.createBooking
+  // chỉ chấp nhận Lead có leaseTermType SHORT (Lead dài hạn bị từ chối), nên các Lead trong
+  // leadsData ở trên (mặc định LONG) không dùng gắn vào slot booking được.
+  const shortTermLead = await prisma.lead.create({
+    data: {
+      brandName: 'Mini Mart Express',
+      contactName: 'Đặng Thảo Vy',
+      phone: '0909111222',
+      email: 'vy@minimartexpress.vn',
+      category: 'F&B',
+      source: LeadSource.WALK_IN,
+      status: LeadStatus.NEW,
+      leaseTermType: 'SHORT',
+      notes: 'Lead demo cho booking ngắn hạn (pop-up)',
+    },
+  });
+
+  // PENDING — demo nút "Xác nhận" (lead ngắn hạn, chưa gắn Customer)
+  await prisma.slotBooking.create({
+    data: {
+      bookingRef: 'SB-2026-00001',
+      slotId: popupSlot1.id,
+      leadId: shortTermLead.id,
+      type: 'DAILY',
+      installationStartDatetime: new Date('2026-09-19T06:00:00Z'),
+      installationEndDatetime: new Date('2026-09-19T08:00:00Z'),
+      startDatetime: new Date('2026-09-19T08:00:00Z'),
+      endDatetime: new Date('2026-09-21T18:00:00Z'),
+      dismantlingStartDatetime: new Date('2026-09-21T18:00:00Z'),
+      dismantlingEndDatetime: new Date('2026-09-21T20:00:00Z'),
+      totalArea: 10,
+      baseAmount: 3_000_000,
+      discountPct: 0,
+      totalAmount: 3_000_000,
+      currencyCode: 'VND',
+      status: 'PENDING',
+      notes: 'Mini Mart Express — pop-up thử 2 ngày, đang chờ xác nhận',
+      createdById: leasingExec.id,
+    },
+  });
+
+  // CONFIRMED — demo nút "Lập Đề xuất (Proposal)": có sẵn lead + customer nên
+  // Proposal tạo ra có tenantId, đủ điều kiện tự tạo Hợp đồng khi duyệt xong.
+  await prisma.slotBooking.create({
+    data: {
+      bookingRef: 'SB-2026-00002',
+      slotId: popupSlot2.id,
+      leadId: shortTermLead.id,
+      customerId: customers[8].id, // Phúc Long Coffee (CUST-009)
+      type: 'HOURLY',
+      installationStartDatetime: new Date('2026-09-24T06:00:00Z'),
+      installationEndDatetime: new Date('2026-09-24T07:00:00Z'),
+      startDatetime: new Date('2026-09-24T07:00:00Z'),
+      endDatetime: new Date('2026-09-24T15:00:00Z'),
+      dismantlingStartDatetime: new Date('2026-09-24T15:00:00Z'),
+      dismantlingEndDatetime: new Date('2026-09-24T16:00:00Z'),
+      totalArea: 15,
+      baseAmount: 1_600_000,
+      discountPct: 0,
+      totalAmount: 1_600_000,
+      currencyCode: 'VND',
+      status: 'CONFIRMED',
+      notes: 'Phúc Long Coffee — pop-up 1 ngày, đã xác nhận, sẵn sàng Lập Đề xuất',
+      createdById: leasingExec.id,
+    },
+  });
+
+  console.log('Slot bookings (short-term) created');
+
   // Create Proposals (for qualified/proposal/negotiation leads)
   const proposals = [];
   const proposalLeads = leads.filter((l, i) => ([LeadStatus.PROPOSAL, LeadStatus.NEGOTIATION, LeadStatus.WON] as string[]).includes(leadsData[i].status));
@@ -996,7 +1161,10 @@ async function main() {
         rentPerSqm: rentPerSqm * currencyScale,
         camPerSqm: unit.camPerSqm * currencyScale,
         deposit: depositMonths,
-        rentFree: i % 3 === 0 ? 30 : 0,
+        // SEM-001 — MONTHS, never days. This used to seed 30, which billing
+        // reads as a 30-MONTH rent-free concession on a 36-month lease.
+        // 3 months also exercises the "> 2 months → Mall Director" policy rule.
+        rentFree: i % 3 === 0 ? 3 : 0,
         escalationPercent: 5,
         revenueSharePercent: 0,
         marketingFee: 0,
@@ -1029,7 +1197,15 @@ async function main() {
   const contracts = [];
   for (let i = 0; i < 15; i++) {
     const tenant = tenants[i % 10];
-    const unit = units[i < 10 ? i : i % 10];
+    // INT-002-SEED / CONTRACT-PERIOD-01: this used to be
+    // `units[i < 10 ? i : i % 10]`, which put contracts 10-14 back onto units
+    // 0-4 with overlapping effective periods — two live contracts on one unit,
+    // a state ContractsService.create() rejects but a direct seed write bypasses.
+    // Revenue-share then could not determine which contract (and which
+    // currency) governed a turnover row. Each contract now gets its own unit;
+    // there are 30 seeded units, so units 10-14 are free.
+    // A tenant legitimately holds several units, so `tenants[i % 10]` stays.
+    const unit = units[i];
     // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md): contract #1
     // and #2 carry over the USD/MMK currency of proposals[0]/proposals[1] above -- the
     // Proposal.rentCurrency -> Contract.currencyCode invariant must hold in seed data too,
@@ -1332,9 +1508,22 @@ async function main() {
     for (let i = 0; i < 10; i++) {
       const tenant = tenants[i];
       const unit = units[i];
-      const grossSales = Math.floor(Math.random() * 500000000) + 100000000;
-      const netSales = grossSales * 0.9;
       const [year, month] = period.split('-');
+
+      // CUR-001: turnover must be reported in the Contract's currency. The seed
+      // used to plant VND-scale figures against every tenant, including the USD
+      // and MMK contracts -- exactly the mismatch revenue-share billing now
+      // refuses to bill. Scale the figure to the contract's currency and record
+      // that currency explicitly.
+      const turnoverContract = await prisma.contract.findFirst({
+        where: { tenantId: tenant.id, unitId: unit.id, isActive: true, status: { in: ['ACTIVE', 'EXPIRING'] } },
+        select: { currencyCode: true },
+      });
+      const turnoverCurrency = turnoverContract?.currencyCode ?? 'VND';
+      const turnoverScale = turnoverCurrency === 'USD' ? 1 / 24000 : turnoverCurrency === 'MMK' ? 1 / 11 : 1;
+      const grossSalesVnd = Math.floor(Math.random() * 500000000) + 100000000;
+      const grossSales = Math.round(grossSalesVnd * turnoverScale * 100) / 100;
+      const netSales = Math.round(grossSales * 0.9 * 100) / 100;
 
       await prisma.salesTurnover.create({
         data: {
@@ -1344,6 +1533,7 @@ async function main() {
           period: period,
           grossSales: grossSales,
           netSales: netSales,
+          currencyCode: turnoverCurrency,
           transactions: Math.floor(Math.random() * 2000) + 500,
           recordedById: financeUser.id,
           notes: `Sales report for ${period}`,
@@ -1355,7 +1545,7 @@ async function main() {
   console.log('Sales turnover created');
 
   const approvalRules = await prisma.approvalPolicyRule.findMany({
-    where: { isActive: true },
+    where: { isActive: true, mallId: mall.id },
     orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
   });
 
@@ -1382,7 +1572,7 @@ async function main() {
 
       const steps = buildApprovalStepsFromRules(approvalRules, {
         discountPct: proposal.discount ?? 0,
-        rentFreeDays: proposal.rentFree ?? 0,
+        rentFreeMonths: proposal.rentFree ?? 0,
         industryTag: null,
         hasArDebt: false,
       });
@@ -1394,7 +1584,8 @@ async function main() {
             stepOrder: step.stepOrder,
             stepName: step.stepName,
             approverRole: step.approverRole,
-            approverId: roleUserMap[step.approverRole] ?? leasingManager.id,
+            // Người duyệt lấy thẳng từ quy tắc (ApprovalPolicyRule.approverId) thay vì tra theo role.
+            approverId: step.approverId,
             status: proposal.status === ProposalStatus.APPROVED ? 'APPROVED' : 'PENDING',
             comment: proposal.status === ProposalStatus.APPROVED ? 'Approved' : null,
             decidedAt: proposal.status === ProposalStatus.APPROVED ? new Date() : null,
@@ -1574,6 +1765,10 @@ async function main() {
         occupiedAreaSqm: occupiedArea,
         occupancyRate: baseOccupancy,
         revenuePerSqm: 400000 + Math.random() * 100000,
+        // MON-CUR-OCC-01: the seed authors these figures at VND magnitude, so it
+        // states the unit rather than planting currency-less money the way it
+        // did before.
+        revenuePerSqmCurrency: CurrencyCode.VND,
       },
     });
   }
@@ -1581,16 +1776,6 @@ async function main() {
 
   // ── Wave 6-7: New model seed data ──────────────────────────────────────────
 
-  // UserMallAccess — grant admin and CEO access to all malls
-  await prisma.userMallAccess.createMany({
-    data: [
-      { userId: adminUser.id, mallId: mall.id, role: Role.ADMIN, grantedById: adminUser.id },
-      { userId: ceoUser.id, mallId: mall.id, role: Role.CEO, grantedById: adminUser.id },
-      { userId: mallDirector.id, mallId: mall.id, role: Role.MALL_DIRECTOR, grantedById: adminUser.id },
-    ],
-    skipDuplicates: true,
-  });
-  console.log('UserMallAccess created');
 
   // MallAnnouncement — sample announcements
   await prisma.mallAnnouncement.createMany({
@@ -1738,6 +1923,31 @@ async function main() {
     },
   });
   console.log('MaintenanceSchedule created');
+
+  // ModulePermission -- default matrix for /admin?section=permissions (see
+  // MODULE_PERMISSION_DEFAULTS for the full rationale). Uses additive
+  // createMany({ skipDuplicates: true }) so re-running `db seed` never
+  // overwrites an Admin's live edits; it only fills rows that don't exist yet.
+  const GLOBAL_MALL_KEY = 'GLOBAL';
+  await prisma.modulePermission.createMany({
+    data: MODULE_PERMISSION_DEFAULTS.flatMap(({ module, roles }) =>
+      roles.map((role) => ({ module, role, mallId: GLOBAL_MALL_KEY, allowed: true })),
+    ),
+    skipDuplicates: true,
+  });
+  // Every existing Mall gets its own editable copy of the Global defaults
+  // (same as the auto-seed hook on Mall creation in SpacesService) instead of
+  // silently relying on Global fallback -- skipDuplicates keeps this safe to
+  // re-run without clobbering any per-Mall customization made via the admin UI.
+  const allMalls = await prisma.mall.findMany({ select: { id: true } });
+  for (const { id: mallId } of allMalls) {
+    const globalRows = await prisma.modulePermission.findMany({ where: { mallId: GLOBAL_MALL_KEY } });
+    await prisma.modulePermission.createMany({
+      data: globalRows.map((row) => ({ module: row.module, role: row.role, mallId, allowed: row.allowed })),
+      skipDuplicates: true,
+    });
+  }
+  console.log(`ModulePermission seeded (Global defaults + ${allMalls.length} Mall(s))`);
 
   console.log('Wave 4-5 seed data completed');
   console.log('Seed completed successfully!');

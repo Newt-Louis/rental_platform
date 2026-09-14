@@ -3,9 +3,11 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject, formatDateVN } from '../notifications/email-design-system';
 import { daysOverdue, policiesToApply } from './ar-dunning.util';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { formatMoneyWithCode } from '../../common/utils/format-money';
 
 @Injectable()
 export class ArDunningService {
@@ -91,7 +93,7 @@ export class ArDunningService {
             await this.notificationsService.create({
               userId: user.id,
               title: `[AR L${policy.level}] ${partyName}`,
-              body: `Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày — còn phải thu ${outstanding.toLocaleString('vi-VN')} VNĐ`,
+              body: `Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày — còn phải thu ${formatMoneyWithCode(outstanding, invoice.currencyCode)}`,
               type: 'AR_DUNNING',
               entityType: 'INVOICE',
               entityId: invoice.id,
@@ -102,15 +104,17 @@ export class ArDunningService {
         if (policy.notifyTenant && partyEmail) {
           await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
+              eventType: 'INVOICE_OVERDUE', entityType: 'Invoice', entityId: invoice.id, mallId: invoice.mallId,
               to: partyEmail,
-              subject: `[THISO] Nhắc thanh toán hóa đơn ${invoice.invoiceNumber} (L${policy.level})`,
+              subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày`),
               html: this.emailService.invoiceOverdueHtml({
                 tenantName: partyName,
                 invoiceNumber: invoice.invoiceNumber,
+                invoiceId: invoice.id,
                 totalAmount: outstanding,
-                dueDate: new Date(invoice.dueDate).toLocaleDateString('vi-VN'),
+                dueDate: formatDateVN(invoice.dueDate) ?? '',
                 daysOverdue: overdueDays,
-                contactEmail: process.env.SMTP_USER ?? 'finance@thiso.com.vn',
+                currencyCode: invoice.currencyCode ?? null,
               }),
             });
         }

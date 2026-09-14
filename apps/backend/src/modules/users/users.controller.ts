@@ -4,7 +4,9 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateSelfDto } from './dto/update-self.dto';
 import { ListUsersDto } from './dto/list-users.dto';
+import { AssignableUsersDto } from './dto/assignable-users.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -17,6 +19,12 @@ import { GlobalScope } from '../../common/decorators/scope.decorator';
 // CR-101 Phase 1: descriptive only. ADMIN-only class (RolesGuard bypasses this
 // role's own @Roles metadata anyway) -- self-consistently ADMIN-restricted, not
 // a Mall-scoping gap (see docs/architecture-review/15-CR-101-ROUTE-COVERAGE.md).
+// Exception: the /me routes below override this with @Roles(...ALL_ROLES) so any
+// authenticated account can edit its own limited profile fields / password —
+// bug report "Không cập nhật được thông tin tài khoản đã tạo" (self-service
+// Profile page hit this same ADMIN-only PATCH /:id and always 403'd).
+
+const ALL_ROLES = Object.values(Role);
 
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
@@ -43,6 +51,32 @@ export class UsersController {
   @ApiOperation({ summary: 'Create user' })
   create(@Body() dto: CreateUserDto, @CurrentUser() actor: any) {
     return this.usersService.create(dto, actor.id);
+  }
+
+  // Declared before ':id' for the same reason as the 'me' routes below --
+  // otherwise 'assignable' would be captured as an :id param.
+  @Get('assignable')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Lightweight staff picker (id/fullName/email/role only) for assignee dropdowns -- any authenticated role, unlike the full ADMIN-only list' })
+  findAssignable(@Query() query: AssignableUsersDto, @CurrentUser() user: any) {
+    return this.usersService.findAssignable(query, user.activeMallId);
+  }
+
+  // ─── Self-service (any authenticated role — declared before ':id' so 'me'
+  // isn't captured as an :id param) ───────────────────────────────────────────
+
+  @Patch('me')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Update own profile (fullName/phone only)' })
+  updateSelf(@Body() dto: UpdateSelfDto, @CurrentUser() actor: any) {
+    return this.usersService.update(actor.id, dto, actor.id);
+  }
+
+  @Post('me/change-password')
+  @Roles(...ALL_ROLES)
+  @ApiOperation({ summary: 'Change own password' })
+  changeOwnPassword(@Body() dto: ResetPasswordDto, @CurrentUser() actor: any) {
+    return this.usersService.resetPassword(actor.id, dto.newPassword);
   }
 
   @Get(':id')

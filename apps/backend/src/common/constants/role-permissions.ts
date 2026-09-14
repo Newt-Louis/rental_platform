@@ -23,7 +23,11 @@ export const MODULE_ROLES = {
   ],
   spacesManage: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER],
   crm: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
-  booking: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR],
+  // CR-BOOK-PRICE-APPROVAL-001: CEO added. The price policy escalates
+  // deviations above 10% to the CEO, but the CEO was not a member of this
+  // module, so every such escalation ended in a 403 for the only person
+  // authorised to clear it.
+  booking: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO],
   proposals: [Role.ADMIN, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.CEO],
   approvals: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.CEO, Role.OPERATION],
   contracts: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL],
@@ -36,6 +40,15 @@ export const MODULE_ROLES = {
     Role.LEGAL,
   ],
   fitout: [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
+  fitoutDossierView: [
+    Role.ADMIN,
+    Role.LEASING_MANAGER,
+    Role.LEASING_EXECUTIVE,
+    Role.MALL_DIRECTOR,
+    Role.FINANCE,
+    Role.LEGAL,
+    Role.FITOUT_BASIC_TEAM,
+  ],
   tickets: [Role.ADMIN, Role.OPERATION, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.TENANT],
   sales: [Role.ADMIN, Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.TENANT],
   // Xếp hạng theo tenant, tình trạng tuân thủ nộp báo cáo, duyệt/từ chối — lộ dữ liệu tên/doanh thu của
@@ -54,6 +67,7 @@ export const MODULE_ROLES = {
   admin: [Role.ADMIN],
   departments: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR],
   branding: [Role.ADMIN],
+  emailSettings: [Role.ADMIN],
   announcements: [Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION, Role.LEASING_MANAGER, Role.TENANT],
   categories: [Role.ADMIN],
   categoriesRead: [

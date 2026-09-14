@@ -9,6 +9,7 @@ import { PenaltyInterestService } from './penalty-interest.service';
 import { CollectionKpiService } from './collection-kpi.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { InvoiceAdjustmentType, InvoiceStatus, Role } from '@prisma/client';
@@ -26,7 +27,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('Billing & AR')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.billing)
+@ModuleRoles('billing')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'invoice' }, status: EnforcementStatus.ENFORCED })
 @Controller('billing')
 export class BillingController {

@@ -43,6 +43,15 @@ export const fitoutApi = {
   listFormTypes: () => api.get('/fitouts/form-types').then((r) => r.data),
   upsertFormType: (data: Record<string, unknown>) => api.post('/fitouts/form-types', data).then((r) => r.data),
   deactivateFormType: (code: string) => api.delete(`/fitouts/form-types/${code}`).then((r) => r.data),
+  // Cấu hình "ai duyệt" hồ sơ fitout — khai báo riêng cho từng mall, mỗi cấp một tài khoản.
+  listApproverCandidates: (mallId: string) =>
+    api.get('/fitouts/form-types/approver-candidates', { params: { mallId } }).then((r) => r.data),
+  countApprovalLevels: (mallId: string) =>
+    api.get('/fitouts/form-types/approval-levels', { params: { mallId } }).then((r) => r.data),
+  listApprovalLevels: (code: string, mallId: string) =>
+    api.get(`/fitouts/form-types/${code}/approval-levels`, { params: { mallId } }).then((r) => r.data),
+  replaceApprovalLevels: (code: string, mallId: string, levels: Array<{ stepName?: string; approverId: string }>) =>
+    api.put(`/fitouts/form-types/${code}/approval-levels`, { mallId, levels }).then((r) => r.data),
   listContractors: (projectId: string) => api.get(`/fitouts/${projectId}/contractors`).then((r) => r.data),
   createContractor: (projectId: string, data: Record<string, unknown>) => api.post(`/fitouts/${projectId}/contractors`, data).then((r) => r.data),
   updateContractor: (projectId: string, contractorId: string, data: Record<string, unknown>) => api.patch(`/fitouts/${projectId}/contractors/${contractorId}`, data).then((r) => r.data),

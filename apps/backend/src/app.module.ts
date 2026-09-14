@@ -37,6 +37,7 @@ import { SlotsModule } from './modules/slots/slots.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { BrandingModule } from './modules/branding/branding.module';
+import { EmailSettingsModule } from './modules/email-settings/email-settings.module';
 import { HealthController } from './health/health.controller';
 import { ServiceContractsModule } from './modules/service-contracts/service-contracts.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -46,6 +47,7 @@ import { ParkingModule } from "./modules/parking/parking.module";
 import { ParkingDashboardModule } from './modules/parking-dashboard/parking-dashboard.module';
 import { TelemetryModule } from './modules/telemetry/telemetry.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -92,6 +94,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     CategoriesModule,
     AuditLogModule,
     BrandingModule,
+    EmailSettingsModule,
     ServiceContractsModule,
     InventoryModule,
     WorkOrdersModule,
@@ -100,6 +103,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     ParkingModule,
     TelemetryModule,
     DepartmentsModule,
+    PermissionsModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -113,11 +117,11 @@ import { DepartmentsModule } from './modules/departments/departments.module';
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useClass: MallAccessGuard,
     },
     {
       provide: APP_GUARD,
-      useClass: MallAccessGuard,
+      useClass: RolesGuard,
     },
   ],
 })

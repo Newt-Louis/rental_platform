@@ -1,6 +1,8 @@
+import { formatSlotMoney } from '@/lib/slot-currency';
+import { CURRENCY_CODES } from '@/lib/currency';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { slotsApi, spacesApi } from '@/api';
+import { slotsApi, spacesApi, crmApi, customersApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -176,7 +178,7 @@ function SlotInfoPanel({
           <div className="flex justify-between">
             <span>Giá/ngày/m²:</span>
             <span className="font-medium text-gray-700">
-              {new Intl.NumberFormat('vi-VN').format(slot.pricePerDaySqm)} ₫
+              {formatSlotMoney(slot.pricePerDaySqm, slot.currencyCode)}
             </span>
           </div>
         )}
@@ -184,7 +186,7 @@ function SlotInfoPanel({
           <div className="flex justify-between">
             <span>Giá/giờ:</span>
             <span className="font-medium text-gray-700">
-              {new Intl.NumberFormat('vi-VN').format(slot.pricePerHour)} ₫
+              {formatSlotMoney(slot.pricePerHour, slot.currencyCode)}
             </span>
           </div>
         )}
@@ -192,7 +194,7 @@ function SlotInfoPanel({
           <div className="flex justify-between">
             <span>Giá/tháng/m²:</span>
             <span className="font-medium text-gray-700">
-              {new Intl.NumberFormat('vi-VN').format(slot.pricePerSqmMonth)} ₫
+              {formatSlotMoney(slot.pricePerSqmMonth, slot.currencyCode)}
             </span>
           </div>
         )}
@@ -277,7 +279,7 @@ function SlotFormDialog({
   const [form, setForm] = useState({
     code: '', name: '', area: '', description: '',
     slotType: 'FLEXIBLE',
-    pricePerDaySqm: '', pricePerHour: '', pricePerSqmMonth: '',
+    pricePerDaySqm: '', pricePerHour: '', pricePerSqmMonth: '', currencyCode: '',
     fillColor: '#3B82F6',
   });
 
@@ -292,6 +294,7 @@ function SlotFormDialog({
         pricePerDaySqm: slot?.pricePerDaySqm?.toString() ?? '',
         pricePerHour: slot?.pricePerHour?.toString() ?? '',
         pricePerSqmMonth: slot?.pricePerSqmMonth?.toString() ?? '',
+        currencyCode: slot?.currencyCode ?? '',
         fillColor: slot?.fillColor ?? '#3B82F6',
       });
     }
@@ -328,12 +331,23 @@ function SlotFormDialog({
       pricePerDaySqm: form.pricePerDaySqm ? Number(form.pricePerDaySqm) : undefined,
       pricePerHour: form.pricePerHour ? Number(form.pricePerHour) : undefined,
       pricePerSqmMonth: form.pricePerSqmMonth ? Number(form.pricePerSqmMonth) : undefined,
+      // RPT-CUR-006: the API rejects slot pricing with no currency.
+      currencyCode: form.currencyCode || undefined,
       fillColor: form.fillColor,
     });
   };
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [k]: e.target.value }));
+
+  // RPT-CUR-006 — surface the API's fail-closed rule in the form instead of
+  // letting the user hit a 400.
+  const priceEntered = Boolean(
+    (form.pricePerDaySqm && form.pricePerDaySqm.trim()) ||
+    (form.pricePerHour && form.pricePerHour.trim()) ||
+    (form.pricePerSqmMonth && form.pricePerSqmMonth.trim()),
+  );
+  const slotCurrencyMissing = priceEntered && !form.currencyCode;
 
   // Area warning logic
   const newArea = Number(form.area) || 0;
@@ -430,7 +444,7 @@ function SlotFormDialog({
                       value={form.pricePerDaySqm}
                       onChange={set('pricePerDaySqm')}
                       type="number"
-                      placeholder="0 ₫"
+                      placeholder="0"
                     />
                   </div>
                   <div>
@@ -439,7 +453,7 @@ function SlotFormDialog({
                       value={form.pricePerHour}
                       onChange={set('pricePerHour')}
                       type="number"
-                      placeholder="0 ₫"
+                      placeholder="0"
                     />
                   </div>
                 </>
@@ -451,10 +465,29 @@ function SlotFormDialog({
                     value={form.pricePerSqmMonth}
                     onChange={set('pricePerSqmMonth')}
                     type="number"
-                    placeholder="0 ₫"
+                    placeholder="0"
                   />
                 </div>
               )}
+              {/* RPT-CUR-006: the prices above are meaningless without this, and
+                  the API refuses them. Never defaulted to VND. */}
+              <div>
+                <label className="text-xs text-gray-600 mb-1 block">
+                  Đơn vị tiền tệ{priceEntered && <span className="text-red-500"> *</span>}
+                </label>
+                <select
+                  aria-label="Đơn vị tiền tệ giá thuê ô nhỏ"
+                  className={`w-full border rounded-md h-9 px-2 text-sm bg-white ${slotCurrencyMissing ? 'border-red-400' : 'border-gray-300'}`}
+                  value={form.currencyCode}
+                  onChange={(e) => setForm((prev) => ({ ...prev, currencyCode: e.target.value }))}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {slotCurrencyMissing && (
+                  <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập giá — hệ thống không mặc định VND.</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -638,6 +671,8 @@ function SlotBookingDialog({
   const [endHour, setEndHour] = useState('17');
   const [months, setMonths] = useState('1');
   const [notes, setNotes] = useState('');
+  const [clientType, setClientType] = useState<'lead' | 'customer'>('lead');
+  const [clientId, setClientId] = useState('');
   const [pricePreview, setPricePreview] = useState<{
     baseAmount: number;
     discountPct: number;
@@ -649,8 +684,27 @@ function SlotBookingDialog({
   useEffect(() => {
     if (open) {
       setSelectedSlot(initialSlot);
+      setClientType('lead');
+      setClientId('');
     }
   }, [open, initialSlot]);
+
+  const { data: leadsData } = useQuery({
+    queryKey: ['leads-for-slot-booking'],
+    // Booking ngắn hạn chỉ nhận Lead có leaseTermType SHORT — backend từ chối
+    // Lead dài hạn (xem SlotsService.createBooking). Lọc sẵn ở đây để tránh hiện
+    // Lead sẽ luôn báo lỗi khi bấm Tạo Booking.
+    queryFn: () => crmApi.listLeads({ limit: 100, leaseTermType: 'SHORT' }),
+    enabled: open && !!slot && clientType === 'lead',
+  });
+  const leadOptions: any[] = leadsData?.data ?? leadsData ?? [];
+
+  const { data: customersData } = useQuery({
+    queryKey: ['customers-for-slot-booking'],
+    queryFn: () => customersApi.listCustomers({ limit: 100 }),
+    enabled: open && !!slot && clientType === 'customer',
+  });
+  const customerOptions: any[] = customersData?.data ?? customersData ?? [];
 
   const getStartEnd = () => {
     if (!startDate) return { start: '', end: '' };
@@ -690,6 +744,8 @@ function SlotBookingDialog({
     mutationFn: () => {
       const { start, end } = getStartEnd();
       return slotsApi.createBooking(slot!.id, {
+        leadId: clientType === 'lead' ? clientId || undefined : undefined,
+        customerId: clientType === 'customer' ? clientId || undefined : undefined,
         type,
         startDatetime: start,
         endDatetime: end,
@@ -738,6 +794,44 @@ function SlotBookingDialog({
 
           {slot && (
           <>
+          {/* Khách hàng */}
+          <div>
+            <label className="text-xs font-medium text-gray-700 mb-2 block">Khách hàng</label>
+            <div className="flex gap-2 mb-2">
+              {(['lead', 'customer'] as const).map((t) => (
+                <button key={t} type="button"
+                  onClick={() => { setClientType(t); setClientId(''); }}
+                  className={`flex-1 py-1.5 text-sm rounded-lg border font-medium transition-colors ${
+                    clientType === t
+                      ? 'border-gray-900 bg-gray-50 text-gray-900'
+                      : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {t === 'lead' ? 'Lead (CRM)' : 'Customer profile'}
+                </button>
+              ))}
+            </div>
+            <Select value={clientId || '__none__'} onValueChange={(v) => setClientId(v === '__none__' ? '' : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder={clientType === 'lead' ? 'Chọn Lead (tuỳ chọn)' : 'Chọn Khách hàng (tuỳ chọn)'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">— Không chọn / Ẩn danh —</SelectItem>
+                {clientType === 'lead'
+                  ? leadOptions.map((l: any) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.brandName ?? l.companyName} {l.contactName ? `(${l.contactName})` : ''}
+                      </SelectItem>
+                    ))
+                  : customerOptions.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.companyName ?? c.brandName}
+                      </SelectItem>
+                    ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Type selector */}
           <div>
             <label className="text-xs font-medium text-gray-700 mb-2 block">Loại booking</label>

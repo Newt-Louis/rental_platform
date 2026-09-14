@@ -19,6 +19,9 @@ export const WorkOrdersPage = lazy(() => import("@/pages/work-orders/WorkOrdersP
 export const PatrolPage = lazy(() => import("@/pages/patrol/PatrolPage"));
 export const ParkingPage = lazy(() => import("@/pages/parking/ParkingPage"));
 export const FitoutPage = lazy(() => import("@/pages/fitout/FitoutPage"));
+export const FitoutDossiersPage = lazy(
+  () => import("@/pages/fitout/FitoutDossiersPage"),
+);
 export const FitoutApprovalsPage = lazy(
   () => import("@/pages/fitout/FitoutApprovalsPage"),
 );
@@ -57,6 +60,7 @@ export const CrossMallDashboard = lazy(
 );
 export const TenantsPage = lazy(() => import("@/pages/tenants/TenantsPage"));
 export const AuditLogPage = lazy(() => import("@/pages/audit-log/AuditLogPage"));
+export const EmailDeliveriesPage = lazy(() => import("@/pages/email-deliveries/EmailDeliveriesPage"));
 export const DealPipelinePage = lazy(() => import("@/pages/deals/DealPipelinePage"));
 export const BookingsPage = lazy(() => import("@/pages/bookings/BookingsPage"));
 export const SalesPipelineStatsPage = lazy(

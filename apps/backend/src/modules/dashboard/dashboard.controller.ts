@@ -1,8 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
@@ -13,7 +12,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 
 @ApiTags('Dashboard')
 @ApiBearerAuth('JWT-auth')
-@Roles(...MODULE_ROLES.dashboard)
+@ModuleRoles('dashboard')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
 @Controller('dashboard')
 export class DashboardController {
@@ -32,7 +31,7 @@ export class DashboardController {
   }
 
   @Get('cross-mall')
-  @Roles(...MODULE_ROLES.crossMall)
+  @ModuleRoles('cross-mall')
   @Scope({ type: ScopeType.MALL_SCOPED, crossMallRead: true, status: EnforcementStatus.ENFORCED })
   @ApiOperation({ summary: 'Cross-mall consolidation dashboard for CEO/ADMIN' })
   getCrossMallDashboard() {

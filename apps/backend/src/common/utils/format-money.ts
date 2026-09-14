@@ -17,3 +17,23 @@ export function formatMoney(amount: number, currencyCode: CurrencyCode, locale =
     maximumFractionDigits: meta.decimalPlaces,
   }).format(amount);
 }
+
+/**
+ * Amount + explicit ISO code ("1.200.000 VND", "25,00 USD") -- mirrors the
+ * frontend's formatMoneyWithCode(). Use this for emails, notification bodies
+ * and any generated text that used to hardcode a "VNĐ" suffix: those read as
+ * the wrong currency the moment the underlying Proposal/Invoice/Contract is
+ * USD or MMK.
+ */
+export function formatMoneyWithCode(amount: number, currencyCode: CurrencyCode, locale = 'vi-VN'): string {
+  // RPT-CUR-007: an unrecognised code is NOT silently formatted as VND. The
+  // amount is shown with the raw code attached, so an unknown unit stays
+  // visibly unknown instead of becoming a confident wrong label.
+  const meta = CURRENCIES[currencyCode];
+  if (!meta) return `${new Intl.NumberFormat(locale).format(amount)} ${currencyCode ?? '(?)'}`;
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: meta.decimalPlaces,
+    maximumFractionDigits: meta.decimalPlaces,
+  }).format(amount);
+  return `${formatted} ${currencyCode}`;
+}

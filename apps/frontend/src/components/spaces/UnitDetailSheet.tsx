@@ -17,13 +17,14 @@ import {
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 import {
-  STATUS_CONFIG, STATUS_ICONS, CATEGORIES, mediaUrl, fmtDate,
+  STATUS_CONFIG, STATUS_ICONS, mediaUrl, fmtDate,
 } from '@/pages/spaces/spaces.constants';
 import { UnitMediaTab } from './tabs/UnitMediaTab';
 import { SalesPipelineTab } from './tabs/SalesPipelineTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
 import { UnitFormFields } from './dialogs/UnitFormFields';
+import type { CategoryOption } from '@/lib/categoryHierarchy';
 import {
   UNIT_FORM_DEFAULT_VALUES,
   seedUnitFormValues,
@@ -135,7 +136,7 @@ export function UnitDetailSheet({
     queryFn: () => spacesApi.listZones({ mallId: unit!.mallId }),
     enabled: !!unit?.mallId,
   });
-  const { data: categoryOptions } = useQuery({
+  const { data: categoryOptionsData } = useQuery({
     queryKey: ['category-options'],
     queryFn: categoriesApi.getOptions,
     staleTime: 300_000,
@@ -197,10 +198,10 @@ export function UnitDetailSheet({
   const allZones: any[] = zonesData?.data ?? zonesData ?? [];
   const editFloorId = editWatch('floorId');
   const zones = editFloorId ? allZones.filter((z: any) => z.floorId === editFloorId) : allZones;
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
+  const categoryOptions: CategoryOption[] = useMemo(() => {
+    const opts = Array.isArray(categoryOptionsData) ? categoryOptionsData : (categoryOptionsData as any)?.data ?? [];
+    return opts.filter((c: any) => c?.id && c?.name);
+  }, [categoryOptionsData]);
 
   return (
     <Sheet
@@ -335,7 +336,7 @@ export function UnitDetailSheet({
                   errors={editErrors}
                   floors={floors}
                   zones={zones}
-                  categoryNames={categoryNames}
+                  categoryOptions={categoryOptions}
                 />
               </fieldset>
             </form>
@@ -353,14 +354,14 @@ export function UnitDetailSheet({
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs gap-1 border-violet-300 text-violet-700 hover:bg-violet-100"
-                  disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT'}
+                  disabled={splitMutation.isPending || d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT' || d.status === 'LIQUIDATED'}
                   onClick={() => setSplitConfirmOpen(true)}
                 >
                   <Scissors size={12} />
                   {splitMutation.isPending ? 'Đang tách...' : 'Tách sảnh'}
                 </Button>}
               </div>
-              {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT') && (
+              {(d.status === 'OCCUPIED' || d.status === 'CONTRACTED' || d.status === 'UNDER_FITOUT' || d.status === 'LIQUIDATED') && (
                 <p className="text-xs text-violet-500 px-3 pb-2">Không thể tách khi sảnh đang được sử dụng.</p>
               )}
             </SheetSection>
@@ -449,7 +450,7 @@ export function UnitDetailSheet({
             >
               <Save size={14} /> {updateInfoMutation.isPending ? 'Đang lưu...' : 'Lưu'}
             </Button>}
-            {canManageSales && (d.status === 'VACANT' || d.status === 'BOOKING') && (
+            {canManageSales && (d.status === 'VACANT' || d.status === 'OFFERING' || d.status === 'BOOKING') && (
               <Button
                 className="flex-1 gap-2 bg-amber-500 hover:bg-amber-600 text-white"
                 onClick={() => { setBookingOpen(true); }}

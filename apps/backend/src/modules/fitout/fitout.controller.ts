@@ -7,25 +7,27 @@ import { FitoutSlaService } from './fitout-sla.service';
 import { FitoutContractorService } from './fitout-contractor.service';
 import { FitoutStageConfigService } from './fitout-stage-config.service';
 import { FitoutFormTypeService } from './fitout-form-type.service';
+import { FitoutFormApprovalService } from './fitout-form-approval.service';
 import { FitoutIssueService } from './fitout-issue.service';
 import { FitoutDashboardService } from './fitout-dashboard.service';
 import { StorageService } from '../../storage/storage.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
+import { ReplaceFitoutApprovalLevelsDto } from './dto/fitout-form-approval.dto';
 
 // CR-101 Phase 1: descriptive only.
 
 @ApiTags('Fitout')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.fitout)
+@ModuleRoles('fitout')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'fitoutProject' }, status: EnforcementStatus.ENFORCED })
 @Controller('fitouts')
 export class FitoutController {
@@ -36,6 +38,7 @@ export class FitoutController {
     private readonly contractorService: FitoutContractorService,
     private readonly stageConfigService: FitoutStageConfigService,
     private readonly formTypeService: FitoutFormTypeService,
+    private readonly formApprovalService: FitoutFormApprovalService,
     private readonly issueService: FitoutIssueService,
     private readonly dashboardService: FitoutDashboardService,
     private readonly storageService: StorageService,
@@ -53,7 +56,7 @@ export class FitoutController {
 
   @Get()
   @ApiOperation({ summary: 'List fitout projects' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'tenantId', required: false })
   @ApiQuery({ name: 'page', required: false })
@@ -114,7 +117,7 @@ export class FitoutController {
   }
 
   @Get('stage-configs')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List fitout stage pipeline configuration' })
   listStageConfigs() {
     return this.stageConfigService.list();
@@ -135,7 +138,7 @@ export class FitoutController {
   }
 
   @Get('form-types')
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   @ApiOperation({ summary: 'List fitout form/document type configuration' })
   listFormTypes() {
     return this.formTypeService.list();
@@ -155,6 +158,41 @@ export class FitoutController {
     return this.formTypeService.deactivate(code);
   }
 
+  // ── Cấu hình cấp duyệt hồ sơ fitout (ai duyệt) ─────────────────────────────
+  // Khai báo riêng cho từng mall, mỗi cấp gắn đúng một tài khoản. MallAccessGuard đọc `mallId`
+  // trên query/body nên mọi route dưới đây đã được chặn theo quyền truy cập mall sẵn.
+
+  @Get('form-types/approver-candidates')
+  @ApiOperation({ summary: 'List accounts eligible to approve fitout dossiers at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  listApproverCandidates(@Query('mallId') mallId: string) {
+    return this.formApprovalService.listEligibleApprovers(mallId);
+  }
+
+  @Get('form-types/approval-levels')
+  @ApiOperation({ summary: 'Count configured approval levels per form type for a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  countApprovalLevels(@Query('mallId') mallId: string) {
+    return this.formApprovalService.countByFormType(mallId);
+  }
+
+  @Get('form-types/:code/approval-levels')
+  @ApiOperation({ summary: 'List the configured approval chain of a form type at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  @Roles(Role.ADMIN)
+  listApprovalLevels(@Param('code') code: string, @Query('mallId') mallId: string) {
+    return this.formApprovalService.listLevels(code, mallId);
+  }
+
+  @Put('form-types/:code/approval-levels')
+  @ApiOperation({ summary: 'Replace the approval chain of a form type at a Mall' })
+  @Roles(Role.ADMIN)
+  replaceApprovalLevels(@Param('code') code: string, @Body() body: ReplaceFitoutApprovalLevelsDto) {
+    return this.formApprovalService.replaceLevels(code, body.mallId, body.levels);
+  }
+
   @Get('dashboard/overview')
   @ApiOperation({ summary: 'Get fitout dashboard overview across all active projects' })
   async getDashboardOverview(@CurrentUser() user: any) {
@@ -166,7 +204,7 @@ export class FitoutController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get fitout project details' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async findOne(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.fitoutService.findOne(id, user);
@@ -174,7 +212,7 @@ export class FitoutController {
 
   @Put(':id/status')
   @ApiOperation({ summary: 'Advance fitout status' })
-  @Roles(Role.ADMIN, Role.MALL_DIRECTOR, Role.OPERATION)
+  @ModuleRoles('fitout', { roleCeiling: [Role.MALL_DIRECTOR, Role.OPERATION] })
   async advanceStatus(
     @Param('id') id: string,
     @Body() body: { status: string; override?: boolean; overrideReason?: string },
@@ -231,7 +269,7 @@ export class FitoutController {
 
   @Get(':id/documents')
   @ApiOperation({ summary: 'List fitout documents' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async listDocuments(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.documentsService.listDocuments(id);
@@ -307,7 +345,7 @@ export class FitoutController {
 
   @Get(':id/dashboard')
   @ApiOperation({ summary: 'Get aggregated dashboard for a single fitout project' })
-  @Roles(...MODULE_ROLES.fitout, Role.TENANT)
+  @ModuleRoles('fitout', { fixedRoles: [Role.TENANT] })
   async getProjectDashboard(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProject(user, id);
     return this.dashboardService.getProjectDashboard(id);

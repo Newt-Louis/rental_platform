@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
-import { EmailService } from '../notifications/email.service';
+import { EmailService, TrackedEmailOptions } from '../notifications/email.service';
+import { appUrl, emailSubject } from '../notifications/email-design-system';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -117,6 +118,223 @@ export class TenantsService {
     return tenant;
   }
 
+  async getFitoutArchive(
+    tenantId: string | undefined,
+    query: { search?: string; page?: number; limit?: number } = {},
+    mallIds?: string[],
+  ) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(query.limit) || 20));
+    const search = query.search?.trim().slice(0, 120);
+
+    if (tenantId) {
+      const tenantScope: any = { id: tenantId, deletedAt: null };
+      if (mallIds) {
+        tenantScope.OR = [
+          { fitoutProjects: { some: { unit: { mallId: { in: mallIds } } } } },
+          { contracts: { some: { isActive: true, deletedAt: null, unit: { mallId: { in: mallIds } } } } },
+          { proposals: { some: { isActive: true, unit: { mallId: { in: mallIds } } } } },
+          { occupiedUnits: { some: { mallId: { in: mallIds } } } },
+        ];
+      }
+      const tenant = await this.prisma.tenant.findFirst({ where: tenantScope, select: { id: true } });
+      if (!tenant) throw new ForbiddenException('Tenant is outside the authorized Fitout dossier scope');
+    }
+
+    const projectScope: any = {};
+    if (tenantId) projectScope.tenantId = tenantId;
+    if (mallIds) projectScope.unit = { mallId: { in: mallIds } };
+    const completedScope: any = {
+      project: projectScope,
+      status: { in: ['APPROVED', 'PUBLISHED'] },
+    };
+
+    // UnifiedDocument and EntityComment are polymorphic and have no Prisma relation.
+    // Resolve the authorized completed-submittal IDs FIRST, then search those IDs only;
+    // this prevents exact Mall-B filenames/comments from becoming a search inference channel.
+    const authorizedSubmittalIds = search
+      ? (await this.prisma.fitoutSubmittal.findMany({
+          where: completedScope,
+          select: { id: true },
+        })).map((submittal) => submittal.id)
+      : [];
+
+    const matchingDocumentEntityIds = search && authorizedSubmittalIds.length
+      ? (await this.prisma.unifiedDocument.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: authorizedSubmittalIds },
+            isActive: true,
+            fileName: { contains: search, mode: 'insensitive' },
+          },
+          select: { entityId: true },
+          distinct: ['entityId'],
+        })).map((document) => document.entityId)
+      : [];
+    const matchingCommentEntityIds = search && authorizedSubmittalIds.length
+      ? (await this.prisma.entityComment.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: authorizedSubmittalIds },
+            OR: [
+              { body: { contains: search, mode: 'insensitive' } },
+              { author: { fullName: { contains: search, mode: 'insensitive' } } },
+            ],
+          },
+          select: { entityId: true },
+          distinct: ['entityId'],
+        })).map((comment) => comment.entityId)
+      : [];
+
+    const where: any = { ...completedScope };
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { stageCode: { contains: search, mode: 'insensitive' } },
+        { submittedBy: { fullName: { contains: search, mode: 'insensitive' } } },
+        { formType: { code: { contains: search, mode: 'insensitive' } } },
+        { formType: { name: { contains: search, mode: 'insensitive' } } },
+        { project: { status: { contains: search, mode: 'insensitive' } } },
+        { project: { contract: { contractNumber: { contains: search, mode: 'insensitive' } } } },
+        { project: { unit: { code: { contains: search, mode: 'insensitive' } } } },
+        { project: { unit: { name: { contains: search, mode: 'insensitive' } } } },
+        { workflow: { steps: { some: { OR: [
+          { stepName: { contains: search, mode: 'insensitive' } },
+          { comment: { contains: search, mode: 'insensitive' } },
+          { approver: { fullName: { contains: search, mode: 'insensitive' } } },
+        ] } } } },
+        ...(matchingDocumentEntityIds.length ? [{ id: { in: matchingDocumentEntityIds } }] : []),
+        ...(matchingCommentEntityIds.length ? [{ id: { in: matchingCommentEntityIds } }] : []),
+      ];
+    }
+
+    const [submittals, total] = await Promise.all([
+      this.prisma.fitoutSubmittal.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          revisionNo: true,
+          status: true,
+          stageCode: true,
+          submittedAt: true,
+          updatedAt: true,
+          formType: { select: { id: true, code: true, name: true, category: true } },
+          submittedBy: { select: { id: true, fullName: true } },
+          project: {
+            select: {
+              id: true,
+              tenant: { select: { id: true, brandName: true } },
+              contract: { select: { id: true, contractNumber: true } },
+              unit: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  mallId: true,
+                  floor: { select: { id: true, name: true, level: true } },
+                },
+              },
+            },
+          },
+          workflow: {
+            select: {
+              id: true,
+              status: true,
+              steps: {
+                orderBy: { stepOrder: 'asc' },
+                select: {
+                  id: true,
+                  stepOrder: true,
+                  stepName: true,
+                  approverRole: true,
+                  status: true,
+                  comment: true,
+                  decidedAt: true,
+                  approver: { select: { id: true, fullName: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { revisionNo: 'desc' }],
+      }),
+      this.prisma.fitoutSubmittal.count({ where }),
+    ]);
+
+    const [attachments, comments] = submittals.length
+      ? await Promise.all([
+        this.prisma.unifiedDocument.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: submittals.map((submittal) => submittal.id) },
+            isActive: true,
+          },
+          select: {
+            id: true,
+            entityId: true,
+            category: true,
+            documentType: true,
+            fileName: true,
+            fileSize: true,
+            mimeType: true,
+            version: true,
+            isLatest: true,
+            uploadedAt: true,
+            retentionYear: true,
+          },
+          orderBy: [{ entityId: 'asc' }, { version: 'desc' }, { uploadedAt: 'desc' }],
+        }),
+        this.prisma.entityComment.findMany({
+          where: {
+            entityType: 'FITOUT_SUBMITTAL',
+            entityId: { in: submittals.map((submittal) => submittal.id) },
+          },
+          select: {
+            id: true,
+            entityId: true,
+            body: true,
+            createdAt: true,
+            author: { select: { id: true, fullName: true } },
+          },
+          orderBy: [{ entityId: 'asc' }, { createdAt: 'asc' }],
+        }),
+      ])
+      : [[], []];
+
+    const attachmentsBySubmittal = new Map<string, Omit<(typeof attachments)[number], 'entityId'>[]>();
+    for (const { entityId, ...attachment } of attachments) {
+      const items = attachmentsBySubmittal.get(entityId) ?? [];
+      items.push(attachment);
+      attachmentsBySubmittal.set(entityId, items);
+    }
+    const commentsBySubmittal = new Map<string, Omit<(typeof comments)[number], 'entityId'>[]>();
+    for (const { entityId, ...comment } of comments) {
+      const items = commentsBySubmittal.get(entityId) ?? [];
+      items.push(comment);
+      commentsBySubmittal.set(entityId, items);
+    }
+
+    return {
+      data: submittals.map((submittal) => {
+        const { tenant, ...project } = submittal.project;
+        return {
+          ...submittal,
+          project,
+          ...(!tenantId ? { tenant } : {}),
+          attachments: attachmentsBySubmittal.get(submittal.id) ?? [],
+          comments: commentsBySubmittal.get(submittal.id) ?? [],
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
   async create(dto: CreateTenantDto) {
     if (dto.taxCode) {
       const existing = await this.prisma.tenant.findUnique({ where: { taxCode: dto.taxCode } });
@@ -137,7 +355,7 @@ export class TenantsService {
     const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
     const tenantData = { ...dto, contactEmail: email, isPortalUser: true };
 
-    const tenant = await this.prisma.$transaction(async (tx) => {
+    const prepared = await this.prisma.$transaction(async (tx) => {
       const created = await tx.tenant.create({ data: tenantData });
       const portalUserData = {
         fullName: dto.contactName?.trim() || dto.brandName,
@@ -157,11 +375,20 @@ export class TenantsService {
       } else {
         await tx.user.create({ data: { email, ...portalUserData } });
       }
-      return created;
+      const mail = this.portalInvitationMail(
+        email,
+        invitation.rawToken,
+        dto.contactName || dto.brandName,
+        false,
+        created.id,
+        `portal-activation:${created.id}:${Date.now()}`,
+      );
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      return { tenant: created, mail, deliveryId: delivery.id };
     });
 
-    const emailSent = await this.sendPortalInvitation(email, invitation.rawToken, dto.contactName || dto.brandName);
-    return { ...tenant, portalAccount: { email, emailSent, activationExpiresAt: invitation.expiresAt } };
+    const emailSent = (await this.sendPreparedPortalInvitation(prepared.mail, prepared.deliveryId)).sent;
+    return { ...prepared.tenant, portalAccount: { email, emailSent, activationExpiresAt: invitation.expiresAt } };
   }
 
   async update(id: string, dto: Partial<CreateTenantDto>) {
@@ -175,17 +402,29 @@ export class TenantsService {
     const invitation = this.createInvitation();
     const randomPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
 
-    await this.prisma.user.update({
-      where: { id: portalUser.id },
-      data: {
-        password: randomPassword,
-        inviteTokenHash: invitation.tokenHash,
-        inviteExpiresAt: invitation.expiresAt,
-        mustChangePassword: true,
-        isActive: true,
-      },
+    const mail = this.portalInvitationMail(
+      portalUser.email,
+      invitation.rawToken,
+      tenant.contactName || tenant.brandName,
+      true,
+      tenant.id,
+      `portal-reset:${tenant.id}:${Date.now()}`,
+    );
+    const deliveryId = await this.prisma.$transaction(async (tx) => {
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      await tx.user.update({
+        where: { id: portalUser.id },
+        data: {
+          password: randomPassword,
+          inviteTokenHash: invitation.tokenHash,
+          inviteExpiresAt: invitation.expiresAt,
+          mustChangePassword: true,
+          isActive: true,
+        },
+      });
+      return delivery.id;
     });
-    const emailSent = await this.sendPortalInvitation(portalUser.email, invitation.rawToken, tenant.contactName || tenant.brandName, true);
+    const emailSent = (await this.sendPreparedPortalInvitation(mail, deliveryId)).sent;
     return { email: portalUser.email, emailSent, activationExpiresAt: invitation.expiresAt };
   }
 
@@ -219,12 +458,22 @@ export class TenantsService {
       mustChangePassword: true,
     };
 
-    await this.prisma.$transaction(async (tx) => {
+    const prepared = await this.prisma.$transaction(async (tx) => {
       await tx.tenant.update({ where: { id }, data: { isPortalUser: true, contactEmail: email } });
       if (existingUser) await tx.user.update({ where: { id: existingUser.id }, data: portalUserData });
       else await tx.user.create({ data: { email, ...portalUserData } });
+      const mail = this.portalInvitationMail(
+        email,
+        invitation.rawToken,
+        tenant.contactName || tenant.brandName,
+        false,
+        tenant.id,
+        `portal-activation:${tenant.id}:${Date.now()}`,
+      );
+      const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+      return { mail, deliveryId: delivery.id };
     });
-    const emailSent = await this.sendPortalInvitation(email, invitation.rawToken, tenant.contactName || tenant.brandName);
+    const emailSent = (await this.sendPreparedPortalInvitation(prepared.mail, prepared.deliveryId)).sent;
     return { email, emailSent, activationExpiresAt: invitation.expiresAt };
   }
 
@@ -276,18 +525,83 @@ export class TenantsService {
     return { tenant, portalUser };
   }
 
-  private async sendPortalInvitation(email: string, token: string, contactName: string, isReset = false) {
-    const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:8080'}/activate?token=${encodeURIComponent(token)}`;
+  async reissuePortalActivation(
+    tenantId: string,
+    originalDeliveryId: string,
+    operationId: string,
+    mallId?: string,
+  ) {
+    const { tenant, portalUser } = await this.getPortalAccount(tenantId);
+    if (!portalUser.mustChangePassword) {
+      throw new BadRequestException('TÃ i khoáº£n Tenant Portal Ä‘Ã£ Ä‘Æ°á»£c kÃ­ch hoáº¡t');
+    }
+    const normalizedOperationId = operationId?.trim();
+    if (!normalizedOperationId || normalizedOperationId.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(normalizedOperationId)) {
+      throw new BadRequestException('A valid Idempotency-Key is required');
+    }
+    const invitation = this.createInvitation();
+    const eventKey = `portal-activation:${tenant.id}:reissue:${normalizedOperationId}`;
+    const mail = this.portalInvitationMail(
+      portalUser.email,
+      invitation.rawToken,
+      tenant.contactName || tenant.brandName,
+      false,
+      tenant.id,
+      eventKey,
+      originalDeliveryId,
+      mallId,
+    );
+    let deliveryId: string;
     try {
-      const result = await this.emailService.sendMail({
-        to: email,
-        subject: isReset ? '[THISO] Đặt lại mật khẩu Tenant Portal' : '[THISO] Kích hoạt tài khoản Tenant Portal',
-        html: `<div style="font-family:Arial;max-width:600px;margin:auto"><h2>THISO Tenant Portal</h2><p>Xin chào ${contactName},</p><p>${isReset ? 'Quản trị viên đã yêu cầu đặt lại mật khẩu tài khoản của Quý khách.' : 'Tài khoản Portal của Quý khách đã được tạo tự động.'}</p><p><a href="${portalUrl}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px">${isReset ? 'Đặt mật khẩu mới' : 'Kích hoạt tài khoản'}</a></p><p>Liên kết có hiệu lực trong 72 giờ.</p></div>`,
+      deliveryId = await this.prisma.$transaction(async (tx) => {
+        const delivery = await this.emailService.prepareTrackedDelivery(tx, mail);
+        await tx.user.update({
+          where: { id: portalUser.id },
+          data: { inviteTokenHash: invitation.tokenHash, inviteExpiresAt: invitation.expiresAt },
+        });
+        return delivery.id;
       });
-      return !('skipped' in result);
+    } catch (error: any) {
+      if (error?.code !== 'P2002') throw error;
+      const existing = await this.prisma.emailDelivery.findUnique({ where: { eventKey } });
+      if (!existing) throw error;
+      return { sent: existing.status === 'SENT', deliveryId: existing.id, created: false, duplicate: true };
+    }
+    return { ...(await this.sendPreparedPortalInvitation(mail, deliveryId)), created: true };
+  }
+
+  private portalInvitationMail(
+    email: string,
+    token: string,
+    contactName: string,
+    isReset: boolean,
+    tenantId: string,
+    eventKey: string,
+    originalDeliveryId?: string,
+    mallId?: string,
+  ): TrackedEmailOptions {
+    const portalUrl = appUrl(`/activate?token=${encodeURIComponent(token)}`);
+    return {
+        to: email,
+        delivery: { eventKey, eventType: isReset ? 'PASSWORD_RESET' : 'TENANT_ACTIVATION', entityType: 'Tenant', entityId: tenantId, mallId, originalDeliveryId, resendOfId: originalDeliveryId },
+        subject: emailSubject(
+          isReset ? 'Đặt lại mật khẩu Tenant Portal' : 'Kích hoạt tài khoản Tenant Portal',
+        ),
+        html: this.emailService.portalInvitationHtml({ contactName, portalUrl, isReset }),
+      };
+  }
+
+  private async sendPreparedPortalInvitation(mail: TrackedEmailOptions, deliveryId: string) {
+    const email = Array.isArray(mail.to) ? mail.to.join(',') : mail.to;
+    try {
+      const result = await this.emailService.sendMail({ ...mail, preparedDeliveryId: deliveryId });
+      return {
+        sent: 'messageId' in result && Boolean(result.messageId),
+        deliveryId: result.deliveryId ?? deliveryId,
+      };
     } catch (error) {
       this.logger.warn(`Không thể gửi email Tenant Portal đến ${email}: ${error instanceof Error ? error.message : error}`);
-      return false;
+      return { sent: false, deliveryId: (error as Error & { deliveryId?: string }).deliveryId ?? deliveryId };
     }
   }
 }

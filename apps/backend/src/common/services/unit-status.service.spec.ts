@@ -52,6 +52,58 @@ describe('UnitStatusService lifecycle integrity', () => {
   });
 });
 
+// Business-lifecycle audit: OFFERING and LIQUIDATED eligibility/lock predicates and the
+// transition graph edges a live Contract's lifecycle actually depends on (a Contract goes
+// ACTIVE — and is therefore terminable — as soon as the Unit reaches CONTRACTED, well before
+// fit-out finishes, so LIQUIDATED must be reachable from CONTRACTED and UNDER_FITOUT too, not
+// only OCCUPIED).
+describe('UnitStatusService — OFFERING and LIQUIDATED invariants', () => {
+  const service = new UnitStatusService({} as any);
+
+  it('OFFERING is bookable: not committed to a tenant and not locked for booking', () => {
+    expect(service.isCommittedToTenant(UnitStatus.OFFERING)).toBe(false);
+    expect(service.isLockedForBooking(UnitStatus.OFFERING)).toBe(false);
+  });
+
+  it('LIQUIDATED is committed and fully locked for booking — the Contract is still live (TERMINATING)', () => {
+    expect(service.isCommittedToTenant(UnitStatus.LIQUIDATED)).toBe(true);
+    expect(service.isLockedForBooking(UnitStatus.LIQUIDATED)).toBe(true);
+  });
+
+  it.each([UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED])(
+    '%s can transition to LIQUIDATED — each is a state a live, terminable Contract can be in',
+    (from) => {
+      expect(service.canTransition(from, UnitStatus.LIQUIDATED)).toBe(true);
+    },
+  );
+
+  it.each([UnitStatus.CONTRACTED, UnitStatus.UNDER_FITOUT, UnitStatus.OCCUPIED, UnitStatus.VACANT])(
+    'LIQUIDATED can resolve to %s — cancel restores the captured prior state, complete moves to VACANT',
+    (to) => {
+      expect(service.canTransition(UnitStatus.LIQUIDATED, to)).toBe(true);
+    },
+  );
+
+  it.each([UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING, UnitStatus.NEGOTIATING, UnitStatus.MERGED])(
+    '%s cannot transition directly to LIQUIDATED — there is no live contract to terminate yet',
+    (from) => {
+      expect(service.canTransition(from, UnitStatus.LIQUIDATED)).toBe(false);
+    },
+  );
+
+  it('OFFERING behaves like VACANT for pre-commitment transitions (both directions)', () => {
+    expect(service.canTransition(UnitStatus.VACANT, UnitStatus.OFFERING)).toBe(true);
+    expect(service.canTransition(UnitStatus.OFFERING, UnitStatus.VACANT)).toBe(true);
+    expect(service.canTransition(UnitStatus.OFFERING, UnitStatus.BOOKING)).toBe(true);
+    expect(service.canTransition(UnitStatus.OFFERING, UnitStatus.NEGOTIATING)).toBe(true);
+  });
+
+  it('MERGED remains a terminal state — no outbound transitions at all, including to LIQUIDATED or VACANT', () => {
+    expect(service.canTransition(UnitStatus.MERGED, UnitStatus.VACANT)).toBe(false);
+    expect(service.canTransition(UnitStatus.MERGED, UnitStatus.LIQUIDATED)).toBe(false);
+  });
+});
+
 // CR-101 Phase 3E — INV-AUTH-006: the initiating business entity's Mall (when the
 // caller supplies one) must match the target Unit's actual Mall before any mutation.
 describe('UnitStatusService — INV-AUTH-006 expectedMallId', () => {

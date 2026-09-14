@@ -4,6 +4,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
@@ -21,7 +22,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('Reports')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.reports)
+@ModuleRoles('reports')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3G (BC-013)' })
 @Controller('reports')
 export class ReportsController {
@@ -101,7 +102,7 @@ export class ReportsController {
   // Trả về cả các dòng nhật ký lỗi thô — giữ đúng mức hạn chế ADMIN/CEO như màn Nhật ký hệ thống
   // (Phase 1), KHÔNG dùng MODULE_ROLES.reports rộng hơn ở class-level. Both roles reachable here
   // (ADMIN, CEO) are unrestricted under the approved Mall policy, so no Mall filter is needed.
-  @Roles(...MODULE_ROLES.auditLog)
+  @ModuleRoles('audit-log')
   @ApiQuery({ name: 'dateFrom', required: false })
   compliance(@Query('dateFrom') dateFrom?: string) {
     return this.reportsService.complianceReport({ dateFrom });

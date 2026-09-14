@@ -121,6 +121,7 @@
       "empty": "Chưa có kịch bản nào",
       "select": "Đánh dấu",
       "days": "ngày",
+      "months": "tháng",
       "simulationNotice": "Kịch bản chỉ dùng để mô phỏng và so sánh; không thay đổi số liệu chính thức của Đề xuất và không được dùng làm căn cứ phê duyệt.",
       "deleteTitle": "Xóa kịch bản tài chính?",
       "deleteDesc": "Kịch bản \"{{name}}\" sẽ bị xóa khỏi đề xuất. Các số liệu so sánh của kịch bản này sẽ không còn hiển thị.",
@@ -134,7 +135,7 @@
         "camPerSqm": "CAM / m²",
         "term": "Thời hạn (tháng)",
         "deposit": "Đặt cọc (tháng)",
-        "rentFree": "Miễn thuê (ngày)",
+        "rentFree": "Miễn thuê (tháng)",
         "discount": "Chiết khấu (%)",
         "escalation": "Tăng giá hàng năm (%)"
       },
@@ -305,7 +306,7 @@
       "proposed": "Đề xuất (VND/m²)",
       "ceiling": "Giá trần (VND/m²)",
       "deviation": "Lệch %",
-      "rentFreeDays": "{{count}} ngày miễn phí",
+      "rentFreeMonths": "{{count}} tháng miễn phí",
       "policyReasonTitle": "Lý do bước duyệt này áp dụng"
     },
     "actions": {

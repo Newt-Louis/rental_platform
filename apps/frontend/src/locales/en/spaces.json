@@ -85,12 +85,15 @@
   },
   "status": {
     "VACANT": "Vacant",
+    "OFFERING": "Offering for lease",
     "BOOKING": "Booking in progress",
     "NEGOTIATING": "Negotiating",
     "CONTRACTED": "Contracted",
     "UNDER_FITOUT": "Under fitout",
     "OCCUPIED": "Occupied",
+    "LIQUIDATED": "Being liquidated",
     "MERGED": "Merged",
+    "EXPIRING_SOON": "Expiring soon",
     "MAINTENANCE": "Maintenance",
     "RESERVED": "Reserved",
     "BOOKED": "Booked"

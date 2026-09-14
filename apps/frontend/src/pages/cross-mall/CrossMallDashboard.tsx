@@ -6,10 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Building2, TrendingUp, AlertTriangle, Ticket, DollarSign } from 'lucide-react';
 import { AsyncState } from '@/components/ui/async-state';
 import { useState } from 'react';
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
-}
+import { RevenueByCurrency } from '@/components/dashboard/RevenueByCurrency';
 
 function OccupancyBar({ rate }: { rate: number }) {
   const color = rate >= 90 ? 'bg-green-500' : rate >= 70 ? 'bg-yellow-400' : 'bg-red-400';
@@ -94,10 +91,16 @@ export default function CrossMallDashboard() {
           <Card>
             <CardContent className="pt-5">
               <div className="flex justify-between items-start">
+                {/* RPT-CUR-003/004: was "Doanh thu tháng tổng" showing a bare
+                    compact number that was in fact VND-only. There is no FX, so
+                    there is no system-wide total -- each currency stands alone. */}
                 <div>
-                  <p className="text-xs text-gray-500">Doanh thu tháng tổng</p>
-                  <p className="text-2xl font-bold mt-1">{fmt(totals.monthlyRevenue)}</p>
-                  <p className="text-xs text-gray-400">Thu: {fmt(totals.collectedRevenue)} ({totals.collectionRate}%)</p>
+                  <p className="text-xs text-gray-500">Doanh thu tháng theo đơn vị tiền tệ</p>
+                  <RevenueByCurrency
+                    buckets={totals.revenueByCurrency}
+                    currencyUnknown={totals.revenueCurrencyUnknown}
+                    unknownAmount={totals.monthlyRevenue}
+                  />
                 </div>
                 <div className="bg-green-50 text-green-600 p-2.5 rounded-lg"><TrendingUp size={18} /></div>
               </div>
@@ -174,16 +177,17 @@ export default function CrossMallDashboard() {
                     <OccupancyBar rate={m.occupancyRate} />
                     <div className="text-xs text-gray-400 mt-0.5">{m.leasedArea.toLocaleString()} / {m.totalArea.toLocaleString()} m²</div>
                   </div>
-                  <div>
-                    <div className="text-xs text-gray-500 mb-1">Doanh thu tháng</div>
-                    <div className="font-semibold">{fmt(m.monthlyRevenue)}</div>
-                    <div className="text-xs text-gray-400">Thu {fmt(m.collectedRevenue)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 mb-1">Tỷ lệ thu</div>
-                    <div className={`font-semibold ${m.collectionRate >= 80 ? 'text-green-600' : m.collectionRate >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
-                      {m.collectionRate}%
-                    </div>
+                  {/* Per-currency, per-mall. The collection rate lives inside each
+                      bucket because it is a ratio of two same-currency sums; a
+                      single cross-currency rate would be meaningless. */}
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-gray-500 mb-1">Doanh thu tháng / Tỷ lệ thu</div>
+                    <RevenueByCurrency
+                      buckets={m.revenueByCurrency}
+                      currencyUnknown={m.revenueCurrencyUnknown}
+                      unknownAmount={m.monthlyRevenue}
+                      compact={false}
+                    />
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Ticket mở</div>

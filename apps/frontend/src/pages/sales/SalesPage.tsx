@@ -28,8 +28,11 @@ function getPeriod(offset = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n) + ' VNĐ';
+// CUR-001: turnover carries its own currency; this used to append "VNĐ" to
+// every figure, mislabelling USD/MMK tenants on the ranking and summary views.
+function fmt(n: number, currencyCode?: string | null) {
+  const compact = new Intl.NumberFormat('vi-VN', { notation: 'compact' }).format(n);
+  return `${compact} ${currencyCode ?? '—'}`;
 }
 
 function AuditTrailDialog({ salesId, open, onClose }: { salesId: string; open: boolean; onClose: () => void }) {
@@ -76,7 +79,7 @@ export default function SalesPage() {
   const [period, setPeriod] = useState(getPeriod(0));
   const [auditSalesId, setAuditSalesId] = useState<string | null>(null);
   const [disputeSalesId, setDisputeSalesId] = useState<string | null>(null);
-  const [salesForm, setSalesForm] = useState({ unitId: '', grossSales: '', netSales: '', transactions: '', notes: '' });
+  const [salesForm, setSalesForm] = useState({ unitId: '', currencyCode: '', grossSales: '', netSales: '', transactions: '', notes: '' });
   const qc = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuthStore();
@@ -138,12 +141,14 @@ export default function SalesPage() {
       period,
       grossSales: Number(salesForm.grossSales),
       netSales: Number(salesForm.netSales),
+      // CUR-001 — required by the API; must equal the Contract currency.
+      currencyCode: salesForm.currencyCode,
       transactions: Number(salesForm.transactions || 0),
       notes: salesForm.notes.trim() || undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sales-summary', period] });
-      setSalesForm({ unitId: '', grossSales: '', netSales: '', transactions: '', notes: '' });
+      setSalesForm({ unitId: '', currencyCode: '', grossSales: '', netSales: '', transactions: '', notes: '' });
       toast({ title: 'Đã gửi báo cáo doanh thu', description: 'Số liệu được chuyển về trạng thái chờ kiểm tra.' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không thể gửi báo cáo doanh thu', variant: 'destructive' }),
@@ -189,12 +194,13 @@ export default function SalesPage() {
           <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><ReceiptText size={18} className="text-indigo-700" /> Nộp doanh thu kỳ {period}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div><Label>Mặt bằng *</Label><select value={salesForm.unitId} onChange={(e) => setSalesForm((f) => ({ ...f, unitId: e.target.value }))} className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Chọn mặt bằng...</option>{tenantUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select></div>
+              <div><Label>Mặt bằng *</Label><select value={salesForm.unitId} onChange={(e) => { const unitId = e.target.value; const picked = tenantUnits.find((u: any) => u.id === unitId); setSalesForm((f) => ({ ...f, unitId, currencyCode: picked?.contractCurrencyCode ?? '' })); }} className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Chọn mặt bằng...</option>{tenantUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select></div>
+              <div><Label>Đơn vị tiền tệ *</Label><select aria-label="Đơn vị tiền tệ" value={salesForm.currencyCode} onChange={(e) => setSalesForm((f) => ({ ...f, currencyCode: e.target.value }))} className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"><option value="">Chọn đơn vị...</option><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select><p className="mt-1 text-xs text-slate-500">Phải khai báo theo đúng đơn vị tiền tệ của hợp đồng. Hệ thống không quy đổi ngoại tệ.</p></div>
               <div><Label>Doanh thu gộp *</Label><Input className="mt-1" type="number" min="0" value={salesForm.grossSales} onChange={(e) => setSalesForm((f) => ({ ...f, grossSales: e.target.value }))} /></div>
               <div><Label>Doanh thu ròng *</Label><Input className="mt-1" type="number" min="0" value={salesForm.netSales} onChange={(e) => setSalesForm((f) => ({ ...f, netSales: e.target.value }))} /></div>
               <div><Label>Số giao dịch</Label><Input className="mt-1" type="number" min="0" value={salesForm.transactions} onChange={(e) => setSalesForm((f) => ({ ...f, transactions: e.target.value }))} /></div>
             </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end"><div><Label>Ghi chú đối soát</Label><Textarea rows={2} value={salesForm.notes} onChange={(e) => setSalesForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Giải thích điều chỉnh, chương trình khuyến mãi hoặc số liệu bất thường..." /></div><Button className="gap-2 bg-indigo-700 text-white hover:bg-indigo-800" disabled={!salesForm.unitId || !salesForm.grossSales || !salesForm.netSales || submitSalesMutation.isPending} onClick={() => submitSalesMutation.mutate()}><Store size={15} /> {submitSalesMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}</Button></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end"><div><Label>Ghi chú đối soát</Label><Textarea rows={2} value={salesForm.notes} onChange={(e) => setSalesForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Giải thích điều chỉnh, chương trình khuyến mãi hoặc số liệu bất thường..." /></div><Button className="gap-2 bg-indigo-700 text-white hover:bg-indigo-800" disabled={!salesForm.unitId || !salesForm.currencyCode || !salesForm.grossSales || !salesForm.netSales || submitSalesMutation.isPending} onClick={() => submitSalesMutation.mutate()}><Store size={15} /> {submitSalesMutation.isPending ? 'Đang gửi...' : 'Gửi báo cáo'}</Button></div>
           </CardContent>
         </Card>
       )}
@@ -317,7 +323,7 @@ export default function SalesPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
                         <span className="text-sm font-medium">{t.tenant?.brandName}</span>
-                        <span className="text-sm font-bold">{fmt(t.grossSales)}</span>
+                        <span className="text-sm font-bold">{fmt(t.grossSales, t.currencyCode)}</span>
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className="h-full bg-gray-500 rounded-full" style={{ width: `${pct}%` }} />

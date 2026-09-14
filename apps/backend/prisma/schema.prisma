@@ -16,17 +16,20 @@ enum Role {
   FINANCE
   LEGAL
   OPERATION
+  FITOUT_BASIC_TEAM
   TENANT
   CEO
 }
 
 enum UnitStatus {
   VACANT // Trng
+  OFFERING // Chao thue - dang marketing chu dong, chua co khach giu cho
   BOOKING // ang booking/gi ch
   NEGOTIATING // ang thng tho (proposal stage)
   CONTRACTED //  k hp ng, ch thi cng
   UNDER_FITOUT // ang thi cng
   OCCUPIED // ang thu
+  LIQUIDATED // Thanh ly - hop dong dang cham dut, cho ban giao xong moi ve Trong
   MERGED //  gp vo snh khc (n khi danh sch thng)
 }
 
@@ -110,6 +113,52 @@ enum LeadPriority {
   COLD
 }
 
+enum CrmBusinessEventType {
+  LEAD_CREATED
+  LEAD_UPDATED
+  LEAD_STATUS_CHANGED
+  LEAD_OWNER_CHANGED
+  LEAD_CATEGORY_CHANGED
+  LEAD_MALL_ASSIGNED
+  ACTIVITY_ADDED
+  FOLLOW_UP_CREATED
+  FOLLOW_UP_UPDATED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_CANCELLED
+  CUSTOMER_CREATED
+  CUSTOMER_LINKED
+  BOOKING_CREATED
+  BOOKING_LINKED
+  PROPOSAL_CREATED
+  PROPOSAL_SUBMITTED
+  PROPOSAL_APPROVED
+  PROPOSAL_REJECTED
+  LEAD_CONVERTED
+  LEAD_WON
+  LEAD_LOST
+  LEAD_REOPENED
+}
+
+enum CrmEventScope {
+  MALL
+  GLOBAL_UNASSIGNED
+}
+
+enum CrmActorType {
+  USER
+  SYSTEM
+}
+
+enum CrmEventSourceModule {
+  CRM
+  CUSTOMER
+  BOOKING
+  PROPOSAL
+  APPROVAL
+  CONTRACT
+  SYSTEM
+}
+
 enum CustomerStatus {
   PROSPECT
   NEGOTIATING
@@ -128,10 +177,22 @@ enum ActivityType {
   OTHER
 }
 
+enum CrmFollowUpStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
 enum PriceApprovalStatus {
+  // CR-BOOK-PRICE-APPROVAL-001: NOT_REQUIRED means the policy WAS evaluated and
+  // the price sits inside the band. It is distinct from NULL, which means no
+  // price has been proposed yet, or the unit carries no category so no band
+  // could be resolved. Proposal conversion is allowed on APPROVED and
+  // NOT_REQUIRED only -- never on NULL, which is an unevaluated price.
   PENDING
   APPROVED
   REJECTED
+  NOT_REQUIRED
 }
 
 // Multi-currency foundation (docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
@@ -184,7 +245,7 @@ model CategoryMallPricing {
   zoneId     String?
   zone       Zone?    @relation(fields: [zoneId], references: [id])
 
-  // Price range (VND/m2/month)
+  // Price range (per m2/month, in currencyCode)
   // Null on a floor/zone override means "inherit from the next applicable rule".
   // Mall-wide base rules are still required to provide min/max by service validation.
   minRentPerSqm Float? // Gi sn
@@ -193,6 +254,12 @@ model CategoryMallPricing {
 
   // CAM pricing
   camPerSqm Float? // Null = inherit; zero is an explicit free CAM value
+
+  // This master data previously had no currency at all (implicitly VND-only) --
+  // see the matching comment on Unit.currencyCode. A mall/category/floor/zone
+  // scope can now carry one rule per currency (part of the unique key below),
+  // e.g. a VND-quoted band alongside a USD-quoted one for the same category.
+  currencyCode CurrencyCode @default(VND)
 
   effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime? // Null = v thi hn
@@ -203,7 +270,7 @@ model CategoryMallPricing {
   createdById   String?
   createdBy     User?     @relation("CategoryPricingCreatedBy", fields: [createdById], references: [id])
 
-  @@unique([mallId, categoryId, floorId, zoneId, effectiveFrom])
+  @@unique([mallId, categoryId, floorId, zoneId, currencyCode, effectiveFrom], name: "CategoryMallPricing_scope_currency_effectiveFrom_key")
   @@index([mallId, categoryId, isActive])
   @@index([effectiveFrom, effectiveTo])
 }
@@ -305,6 +372,18 @@ enum ServiceContractValueBasis {
   ANNUAL
   PROJECT
   OTHER
+}
+
+// Record-level grant layered UNDER the Role/Mall checks, never over them: the
+// effective right is min(role ceiling, this grant). Cumulative by rank --
+// EDIT implies READ, DELETE implies EDIT. Everyone who already passes the Role
+// and Mall gates reads every contract in their Mall, so a READ row is an
+// explicit "shared, view only" marker rather than the thing that grants
+// visibility. Only ServiceContract.createdById may grant these (no re-sharing).
+enum ServiceContractSharePermission {
+  READ
+  EDIT
+  DELETE
 }
 
 enum BillingCycle {
@@ -441,6 +520,8 @@ model User {
 
   assignedLeads              Lead[]                     @relation("AssignedLeads")
   approvalSteps              ApprovalStep[]
+  fitoutFormApprovalLevels   FitoutFormApprovalLevel[]  @relation("FitoutFormApprover")
+  approvalPolicyRules        ApprovalPolicyRule[]       @relation("ApprovalPolicyApprover")
   ticketsAssigned            Ticket[]                   @relation("AssignedTickets")
   auditLogs                  AuditLog[]
   notifications              Notification[]
@@ -454,12 +535,18 @@ model User {
   contractEvents             ContractEvent[]
   mallAccess                 UserMallAccess[]
   followUpsAssigned          LeadFollowUp[]             @relation("FollowUpAssigned")
+  followUpsCreated           LeadFollowUp[]             @relation("FollowUpCreatedBy")
+  followUpsCompleted         LeadFollowUp[]             @relation("FollowUpCompletedBy")
+  followUpsCancelled         LeadFollowUp[]             @relation("FollowUpCancelledBy")
   uploadedDocuments          UnifiedDocument[]          @relation("DocumentUploadedBy")
   salesAudits                SalesAuditTrail[]          @relation("SalesAuditBy")
   announcements              MallAnnouncement[]         @relation("AnnouncementCreatedBy")
   createdBookings            UnitBooking[]              @relation("BookingCreatedBy")
   assignedBookings           UnitBooking[]              @relation("BookingAssignedTo")
   approvedBookingPrices      UnitBooking[]              @relation("BookingPriceApprover")
+  proposedBookingPrices      UnitBooking[]              @relation("BookingPriceProposer")
+  bookingPriceStepsToApprove BookingPriceApprovalStep[] @relation("BookingPriceStepApprover")
+  bookingPriceStepsDecided   BookingPriceApprovalStep[] @relation("BookingPriceStepDecider")
   bookingActivities          BookingActivity[]
   uploadedUnitMedia          UnitMedia[]
   unitHistoryChanges         UnitHistory[]              @relation("UnitHistoryChangedBy")
@@ -503,6 +590,9 @@ model User {
   parkingPaymentsCreated     ParkingDebtPayment[]       @relation("ParkingPaymentCreator")
   parkingDocumentsUploaded   ParkingContractDocument[]  @relation("ParkingDocumentUploader")
   periodicChargeAssignments  PeriodicChargeEntry[]      @relation("PeriodicChargeAssignee")
+  serviceContractShares      ServiceContractShare[]     @relation("ServiceContractShareGrantee")
+  serviceContractSharesGiven ServiceContractShare[]     @relation("ServiceContractShareGrantor")
+  crmBusinessEvents          CrmBusinessEvent[]         @relation("CrmBusinessEventActor")
 
   @@index([tenantId])
   @@index([inviteTokenHash])
@@ -526,37 +616,40 @@ model Mall {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  buildings             Building[]
-  floors                Floor[]
-  zones                 Zone[]
-  units                 Unit[]
-  floorPlans            FloorPlanAnalysis[]
-  occupancySnapshots    OccupancySnapshot[]
-  mallPolicy            MallPolicy?
-  userAccess            UserMallAccess[]
-  announcements         MallAnnouncement[]
-  maintenanceSchedules  MaintenanceSchedule[]
-  unifiedDocuments      UnifiedDocument[]
-  categoryPricings      CategoryMallPricing[]
-  servicePriceCatalog   ServicePriceCatalog[]
-  periodicChargeRates   PeriodicChargeRateConfig[]
-  activeUsers           User[]                     @relation("UserActiveMall")
-  leads                 Lead[]
-  inventoryCategories   InventoryCategory[]
-  inventoryItems        InventoryItem[]
-  inventoryTransactions InventoryTransaction[]
-  workOrders            WorkOrder[]
-  workOrderTemplates    WorkOrderTemplate[]
-  patrolRoutes          PatrolRoute[]
-  patrolShifts          PatrolShift[]
-  patrolSchedules       PatrolSchedule[]
-  parkingZones          ParkingZone[]
-  parkingShifts         ParkingShift[]
-  parkingIncidents      ParkingIncident[]
-  parkingContracts      ParkingCustomerContract[]
-  billingParties        BillingParty[]
-  invoices              Invoice[]
-  departments           Department[]
+  buildings                Building[]
+  floors                   Floor[]
+  zones                    Zone[]
+  units                    Unit[]
+  floorPlans               FloorPlanAnalysis[]
+  occupancySnapshots       OccupancySnapshot[]
+  mallPolicy               MallPolicy?
+  userAccess               UserMallAccess[]
+  announcements            MallAnnouncement[]
+  maintenanceSchedules     MaintenanceSchedule[]
+  unifiedDocuments         UnifiedDocument[]
+  categoryPricings         CategoryMallPricing[]
+  servicePriceCatalog      ServicePriceCatalog[]
+  periodicChargeRates      PeriodicChargeRateConfig[]
+  activeUsers              User[]                     @relation("UserActiveMall")
+  leads                    Lead[]
+  inventoryCategories      InventoryCategory[]
+  inventoryItems           InventoryItem[]
+  inventoryTransactions    InventoryTransaction[]
+  workOrders               WorkOrder[]
+  workOrderTemplates       WorkOrderTemplate[]
+  patrolRoutes             PatrolRoute[]
+  fitoutFormApprovalLevels FitoutFormApprovalLevel[]
+  approvalPolicyRules      ApprovalPolicyRule[]
+  patrolShifts             PatrolShift[]
+  patrolSchedules          PatrolSchedule[]
+  parkingZones             ParkingZone[]
+  parkingShifts            ParkingShift[]
+  parkingIncidents         ParkingIncident[]
+  parkingContracts         ParkingCustomerContract[]
+  billingParties           BillingParty[]
+  invoices                 Invoice[]
+  departments              Department[]
+  crmBusinessEvents        CrmBusinessEvent[]
 }
 
 // Mall-scoped organisational master data. User.department intentionally stays
@@ -1206,33 +1299,38 @@ model Zone {
 }
 
 model Unit {
-  id             String     @id @default(cuid())
+  id             String       @id @default(cuid())
   mallId         String
-  mall           Mall       @relation(fields: [mallId], references: [id])
+  mall           Mall         @relation(fields: [mallId], references: [id])
   buildingId     String?
-  building       Building?  @relation(fields: [buildingId], references: [id])
+  building       Building?    @relation(fields: [buildingId], references: [id])
   floorId        String?
-  floor          Floor?     @relation(fields: [floorId], references: [id])
+  floor          Floor?       @relation(fields: [floorId], references: [id])
   zoneId         String?
-  zone           Zone?      @relation(fields: [zoneId], references: [id])
+  zone           Zone?        @relation(fields: [zoneId], references: [id])
   code           String
   name           String?
   areaGFA        Float
-  areaNLA        Float      @default(0)
+  areaNLA        Float        @default(0)
   category       String? // Legacy: free text category
   categoryId     String? // NEW: FK to Category master
-  categoryRef    Category?  @relation(fields: [categoryId], references: [id])
-  baseRentPerSqm Float      @default(0)
-  camPerSqm      Float      @default(0)
-  status         UnitStatus @default(VACANT)
+  categoryRef    Category?    @relation(fields: [categoryId], references: [id])
+  baseRentPerSqm Float        @default(0)
+  camPerSqm      Float        @default(0)
+  // Currency for baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm --
+  // this master data previously had no currency at all (implicitly VND-only),
+  // unlike Proposal/Contract/Invoice which already carry a real currencyCode.
+  // See docs/program/MULTI_CURRENCY_ARCHITECTURE.md.
+  currencyCode   CurrencyCode @default(VND)
+  status         UnitStatus   @default(VACANT)
   tenantId       String?
-  tenant         Tenant?    @relation("OccupiedUnit", fields: [tenantId], references: [id])
+  tenant         Tenant?      @relation("OccupiedUnit", fields: [tenantId], references: [id])
   leaseStartDate DateTime?
   leaseEndDate   DateTime?
   description    String?
-  isActive       Boolean    @default(true)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   // Phase 1 & 2: New pricing fields
   marketRentPerSqm Float? // Market reference rent
@@ -1360,6 +1458,20 @@ model Lead {
   expectedRent      Float?
   expectedArea      Float?
   estimatedValue    Float?
+  // RPT-CUR-005 / CUR-002 (Lead subset): currency of expectedRent and
+  // estimatedValue. Deliberately NULLABLE with NO @default.
+  //
+  // Nullable because reconciliation proved a backfill cannot be derived: of 20
+  // active leads, 10 have money and no linked Proposal/UnitBooking at all, and
+  // 1 (Zara) links to an MMK Proposal and a VND UnitBooking simultaneously. A
+  // @default(VND) would stamp a fabricated unit onto figures that feed the CRM
+  // pipeline value, which is the exact defect being fixed.
+  //
+  // One currency per Lead: the aggregation treats estimatedValue and
+  // expectedRent*expectedArea as substitutable for the same quantity, so they
+  // cannot be in different currencies. NULL means "recorded before currency was
+  // captured" and is surfaced as UNKNOWN, never as VND.
+  currencyCode      CurrencyCode?
   expectedCloseDate DateTime?
   preferredCategory String?
   position          Int               @default(0)
@@ -1370,25 +1482,65 @@ model Lead {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  activities   LeadActivity[]
-  proposals    Proposal[]
-  followUps    LeadFollowUp[]
-  bookings     UnitBooking[]
-  slotBookings SlotBooking[]
+  activities     LeadActivity[]
+  proposals      Proposal[]
+  followUps      LeadFollowUp[]
+  bookings       UnitBooking[]
+  slotBookings   SlotBooking[]
+  businessEvents CrmBusinessEvent[]
 
   @@index([status, priority, position])
   @@index([mallId])
 }
 
 model LeadActivity {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   leadId      String
-  lead        Lead     @relation(fields: [leadId], references: [id])
+  lead        Lead      @relation(fields: [leadId], references: [id])
   type        String
   note        String
+  outcome     String?
+  source      String?
+  occurredAt  DateTime?
   createdById String
-  createdBy   User     @relation(fields: [createdById], references: [id])
-  createdAt   DateTime @default(now())
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+// CR-CRM-BUSINESS-EVENT-001: append-only evidence. Lead remains the source of
+// authoritative current state; this table is never used as full event sourcing.
+model CrmBusinessEvent {
+  id               String               @id @default(cuid())
+  leadId           String
+  lead             Lead                 @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  customerId       String?
+  customer         Customer?            @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  mallId           String?
+  mall             Mall?                @relation(fields: [mallId], references: [id], onDelete: Restrict)
+  scope            CrmEventScope
+  eventType        CrmBusinessEventType
+  occurredAt       DateTime
+  recordedAt       DateTime             @default(now())
+  actorType        CrmActorType
+  actorUserId      String?
+  actor            User?                @relation("CrmBusinessEventActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  sourceModule     CrmEventSourceModule
+  sourceEntityType String?
+  sourceEntityId   String?
+  fromStatus       LeadStatus?
+  toStatus         LeadStatus?
+  reasonCode       String?
+  reason           String?
+  comment          String?
+  metadataJson     Json?
+  idempotencyKey   String               @unique
+  payloadHash      String
+  createdAt        DateTime             @default(now())
+
+  @@index([leadId, occurredAt, id])
+  @@index([customerId, occurredAt, id])
+  @@index([mallId, occurredAt, id])
+  @@index([eventType, occurredAt, id])
 }
 
 model Proposal {
@@ -1459,6 +1611,8 @@ model Proposal {
 
   bookingId        String?            @unique
   booking          UnitBooking?       @relation(fields: [bookingId], references: [id])
+  slotBookingId    String?            @unique
+  slotBooking      SlotBooking?       @relation(fields: [slotBookingId], references: [id])
   approvalWorkflow ApprovalWorkflow?
   contract         Contract?
   versions         ProposalVersion[]
@@ -1553,13 +1707,45 @@ model ApprovalStep {
   updatedAt    DateTime         @updatedAt
 }
 
+// Ma tran quyen module dong -- Admin bat/tat qua UI (/admin?section=permissions),
+// co hieu luc ngay khong can deploy lai. Seed ban dau lay tu MODULE_ROLES
+// (common/constants/role-permissions.ts) de khong doi hanh vi luc ra mat.
+// allowed=true la 1 dong "cap quyen"; thieu dong = chua cau hinh (RolesGuard se
+// fallback ve rule tinh cu trong truong hop nay).
+// mallId dung sentinel "GLOBAL" thay vi NULL cho dong mac dinh -- Postgres coi
+// nhieu NULL la "khac nhau" trong unique index nen se khong chan duoc nhieu
+// dong mac dinh trung nhau cho cung (module, role). Mall moi tao duoc copy
+// nguyen mot ban tu cac dong "GLOBAL" (xem PermissionsService.seedDefaultsForMall).
+model ModulePermission {
+  id          String   @id @default(cuid())
+  module      String
+  role        Role
+  mallId      String   @default("GLOBAL")
+  allowed     Boolean  @default(true)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([module, role, mallId])
+  @@index([module, mallId])
+}
+
+// Quy tac sinh buoc duyet cho Proposal. Khai bao RIENG CHO TUNG MALL va chi dinh DICH DANH
+// nguoi duyet: truoc day quy tac chi co approverRole va khong co mallId, nen
+// buildApprovalStepsFromRules() sinh ApprovalStep voi approverId = null (ai cung role cung bam
+// duyet duoc) va mot bo nguong chiet khau duy nhat ap cho moi mall. approverId duoc copy thang
+// sang ApprovalStep.approverId khi submit, nen quyen bam duyet dung nguyen logic san co.
 model ApprovalPolicyRule {
   id            String   @id @default(cuid())
-  code          String   @unique
+  code          String
+  mallId        String
+  mall          Mall     @relation(fields: [mallId], references: [id], onDelete: Cascade)
   name          String
   stepName      String
   stepOrder     Int
-  approverRole  Role
+  approverRole  Role // phai trung User.role cua approver -- ApprovalStep gate theo ca hai
+  approverId    String
+  approver      User     @relation("ApprovalPolicyApprover", fields: [approverId], references: [id])
   conditionType String
   operator      String?
   threshold     Float?
@@ -1569,7 +1755,9 @@ model ApprovalPolicyRule {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@index([isActive, stepOrder])
+  @@unique([mallId, code])
+  @@index([mallId, isActive, stepOrder])
+  @@index([approverId])
 }
 
 model Contract {
@@ -1725,6 +1913,7 @@ model ServiceContract {
   payments   ServiceContractPayment[]
   checklist  ServiceContractChecklistItem[]
   milestones ServiceContractMilestone[]
+  shares     ServiceContractShare[]
 
   @@index([mallId, status])
   @@index([mallId, isDeleted, status, type, paymentDirection])
@@ -1834,6 +2023,26 @@ model ServiceContractEvent {
   createdAt   DateTime        @default(now())
 
   @@index([contractId, createdAt])
+}
+
+model ServiceContractShare {
+  id          String                         @id @default(cuid())
+  contractId  String
+  contract    ServiceContract                @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                           @relation("ServiceContractShareGrantee", fields: [userId], references: [id], onDelete: Cascade)
+  permission  ServiceContractSharePermission @default(READ)
+  // Always the contract's createdById (or an ADMIN acting on their behalf) --
+  // a grantee can never re-share, so this is not a chain, just an audit stamp.
+  grantedById String
+  grantedBy   User                           @relation("ServiceContractShareGrantor", fields: [grantedById], references: [id])
+  createdAt   DateTime                       @default(now())
+  updatedAt   DateTime                       @updatedAt
+
+  // One row per person: changing someone's level is an update, not a second grant.
+  @@unique([contractId, userId])
+  // Carries the "which contracts am I shared into" lookup done on every mutation.
+  @@index([userId])
 }
 
 model FitoutProject {
@@ -1951,16 +2160,40 @@ model FitoutFormType {
   name             String
   category         String   @default("OTHER")
   defaultStageCode String?
-  approvalLevels   Int      @default(1)
-  approverRoles    Json? // mng Role theo th t cp duyt, vd ["OPERATION","MALL_DIRECTOR"] --  di phi khp approvalLevels
   order            Int      @default(0)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  submittals FitoutSubmittal[]
+  submittals     FitoutSubmittal[]
+  approvalLevels FitoutFormApprovalLevel[]
 
   @@index([isActive, order])
+}
+
+// Cap duyet cua mot loai ho so fitout, khai bao RIENG CHO TUNG MALL (man hinh fitout/settings).
+// Thay cho FitoutFormType.approverRoles + approvalLevels cu: approverRoles la Json khong co
+// duong ghi nao tu API/UI nen luon null, khien moi cap duyet roi ve fallback OPERATION va
+// nguoi dung khong biet ai se duyet. Moi cap gan dung MOT tai khoan (approverId) -- duoc copy
+// thang sang ApprovalStep.approverId khi gui duyet, nen quyen bam duyet va hop thu cho duyet
+// dung nguyen logic san co cua approvals module.
+model FitoutFormApprovalLevel {
+  id           String         @id @default(cuid())
+  formTypeId   String
+  formType     FitoutFormType @relation(fields: [formTypeId], references: [id], onDelete: Cascade)
+  mallId       String
+  mall         Mall           @relation(fields: [mallId], references: [id], onDelete: Cascade)
+  level        Int // 1..n theo thu tu duyet
+  stepName     String
+  approverRole Role // phai trung User.role cua approver -- ApprovalStep gate theo ca hai
+  approverId   String
+  approver     User           @relation("FitoutFormApprover", fields: [approverId], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([formTypeId, mallId, level])
+  @@index([mallId, formTypeId])
+  @@index([approverId])
 }
 
 //  trnh (Submittal) -- Form 1-16 theo flowchart, a cp duyt (ti dng ApprovalWorkflow/ApprovalStep).
@@ -2168,6 +2401,15 @@ model SalesTurnover {
   period       String
   grossSales   Float
   netSales     Float
+  // CUR-001: currency of grossSales/netSales. Deliberately NULLABLE with NO
+  // @default. Turnover reported before this column existed has an unprovable
+  // unit (the seed shipped VND-scale figures against USD and MMK contracts),
+  // so defaulting to VND would stamp a wrong currency onto real money.
+  // NULL means "reported before currency was captured; reconcile before
+  // billing". Every application write path supplies it explicitly, and
+  // revenue-share generation fails closed on NULL or on a mismatch with the
+  // Contract currency. See docs/audit/CURRENCY_AUDIT.md.
+  currencyCode CurrencyCode?
   transactions Int                 @default(0)
   status       SalesApprovalStatus @default(PENDING)
   recordedById String?
@@ -2543,18 +2785,37 @@ model PeriodicChargeEntry {
 }
 
 model SapReconciliationRecord {
-  id             String    @id @default(cuid())
-  entityType     String
-  entityId       String
-  sapRef         String?
-  ourAmount      Float
-  sapAmount      Float?
-  status         String    @default("PENDING")
-  idempotencyKey String    @unique
-  notes          String?
-  reconciledAt   DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id              String        @id @default(cuid())
+  entityType      String
+  entityId        String
+  sapRef          String?
+  // SAP-004: our side of the comparison. NULLABLE because only entityType
+  // 'INVOICE' has a sourced amount; every other entity type used to persist a
+  // fabricated 0, which could then MATCH a SAP zero on two meaningless numbers.
+  ourAmount       Float?
+  // Currency of ourAmount. Provable: it is Invoice.currencyCode for the invoice
+  // the log points at. Nullable with NO default -- an unsourced side has no unit.
+  ourCurrencyCode CurrencyCode?
+  sapAmount       Float?
+  // Currency of sapAmount. DELIBERATELY NEVER POPULATED.
+  //
+  // log.response is the raw text of whatever the external SAP endpoint returned.
+  // There is no verified field carrying a currency, and no verified meaning for
+  // it either (document / transaction / local / company-code / group currency
+  // are different things in SAP). Copying Invoice.currencyCode here would assert
+  // that SAP answered in our currency, which is exactly the unproven assumption
+  // SAP-004 exists to remove.
+  //
+  // The column exists so the gap is visible in the data rather than implicit,
+  // and so the external contract has somewhere to land. Until SAP-004-EXT is
+  // answered it stays NULL and no record can be MATCHED.
+  sapCurrencyCode CurrencyCode?
+  status          String        @default("PENDING")
+  idempotencyKey  String        @unique
+  notes           String?
+  reconciledAt    DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([entityType, entityId])
   @@index([status])
@@ -2639,20 +2900,35 @@ model OutboxEvent {
 }
 
 model EmailDelivery {
-  id                String    @id @default(cuid())
-  eventKey          String    @unique
-  recipient         Json
-  payload           Json
-  status            String    @default("PENDING")
-  attempts          Int       @default(0)
-  nextAttemptAt     DateTime  @default(now())
-  providerMessageId String?
-  deliveredAt       DateTime?
-  lastError         String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                 String          @id @default(cuid())
+  eventKey           String          @unique
+  eventType          String?
+  entityType         String?
+  entityId           String?
+  mallId             String?
+  recipient          Json
+  payload            Json
+  status             String          @default("PENDING")
+  attempts           Int             @default(0)
+  nextAttemptAt      DateTime        @default(now())
+  providerMessageId  String?
+  deliveredAt        DateTime?
+  lastAttemptAt      DateTime?
+  sentAt             DateTime?
+  lastError          String?
+  originalDeliveryId String?
+  originalDelivery   EmailDelivery?  @relation("EmailDeliveryOriginal", fields: [originalDeliveryId], references: [id], onDelete: SetNull)
+  derivedDeliveries  EmailDelivery[] @relation("EmailDeliveryOriginal")
+  resendOfId         String?
+  resendOf           EmailDelivery?  @relation("EmailDeliveryResend", fields: [resendOfId], references: [id], onDelete: SetNull)
+  resends            EmailDelivery[] @relation("EmailDeliveryResend")
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@index([status, nextAttemptAt, createdAt])
+  @@index([mallId, createdAt])
+  @@index([originalDeliveryId])
+  @@index([resendOfId])
 }
 
 model Customer {
@@ -2676,6 +2952,20 @@ model Customer {
   expectedArea         Float?
   budgetMin            Float?
   budgetMax            Float?
+  // CUR-002-CUSTOMER: currency of budgetMin/budgetMax. Deliberately NULLABLE
+  // with NO @default.
+  //
+  // One currency covers both fields because they are the two ends of a single
+  // range for one quantity (expected rent per m2) -- a range cannot span two
+  // units of account.
+  //
+  // Nullable because reconciliation proved no backfill rule exists: all 10
+  // existing customers hold a budget, and for every one of them budgetMin
+  // differs from the linked Lead's expectedRent, so the budget was never copied
+  // from that Lead and the Lead's currency describes a different number. NULL
+  // means "recorded before currency was captured" and is surfaced as UNKNOWN,
+  // never as VND.
+  currencyCode         CurrencyCode?
   rating               Int?           @default(3)
   assignedToId         String?
   assignedTo           User?          @relation("AssignedCustomers", fields: [assignedToId], references: [id])
@@ -2692,11 +2982,12 @@ model Customer {
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
-  leads        Lead[]
-  activities   CustomerActivity[]
-  followUps    LeadFollowUp[]
-  bookings     UnitBooking[]
-  slotBookings SlotBooking[]
+  leads          Lead[]
+  activities     CustomerActivity[]
+  followUps      LeadFollowUp[]
+  businessEvents CrmBusinessEvent[]
+  bookings       UnitBooking[]
+  slotBookings   SlotBooking[]
 }
 
 model CustomerActivity {
@@ -2835,23 +3126,40 @@ model TicketEscalation {
 // ===============================================================================
 
 model OccupancySnapshot {
-  id              String            @id @default(cuid())
-  mallId          String
-  mall            Mall              @relation(fields: [mallId], references: [id])
-  floorId         String?
-  category        String?
-  leaseTermType   UnitLeaseTermType @default(LONG)
-  period          String
-  snapshotDate    DateTime
-  totalUnits      Int
-  occupiedUnits   Int
-  vacantUnits     Int
-  underFitout     Int               @default(0)
-  totalAreaSqm    Float
-  occupiedAreaSqm Float
-  occupancyRate   Float
-  revenuePerSqm   Float?
-  createdAt       DateTime          @default(now())
+  id                    String            @id @default(cuid())
+  mallId                String
+  mall                  Mall              @relation(fields: [mallId], references: [id])
+  floorId               String?
+  category              String?
+  leaseTermType         UnitLeaseTermType @default(LONG)
+  period                String
+  snapshotDate          DateTime
+  totalUnits            Int
+  occupiedUnits         Int
+  vacantUnits           Int
+  underFitout           Int               @default(0)
+  totalAreaSqm          Float
+  occupiedAreaSqm       Float
+  occupancyRate         Float
+  revenuePerSqm         Float?
+  // MON-CUR-OCC-01 (CUR-002, OccupancySnapshot subset): the unit of account that
+  // governed revenuePerSqm WHEN THE SNAPSHOT WAS TAKEN.
+  //
+  // OccupancySnapshot is a historical monthly series (one row per
+  // mall/floor/category/leaseTerm/period, appended each month), so the currency
+  // must be persisted rather than re-derived from current Mall/Unit
+  // configuration: a later configuration change must not relabel history.
+  //
+  // Deliberately NULLABLE with NO @default. The writer's source query is
+  // explicitly `currencyCode: 'VND'`-scoped, so rows it writes from now on carry
+  // VND; existing rows cannot be told apart from the seed's fabricated ones, so
+  // they stay NULL and are surfaced as UNKNOWN, never as VND.
+  //
+  // A SHORT-term snapshot has revenuePerSqm = 0 because SHORT revenue is not
+  // computed here at all, not because it earned zero VND. A zero has no unit of
+  // account, so it is left NULL.
+  revenuePerSqmCurrency CurrencyCode?
+  createdAt             DateTime          @default(now())
 
   @@unique([mallId, floorId, category, leaseTermType, period])
   @@index([mallId, period])
@@ -2922,21 +3230,34 @@ model UserMallAccess {
 
 // Reminder follow-up cho Lead/Customer
 model LeadFollowUp {
-  id           String    @id @default(cuid())
-  leadId       String?
-  lead         Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  customerId   String?
-  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  assignedToId String
-  assignedTo   User      @relation("FollowUpAssigned", fields: [assignedToId], references: [id])
-  dueDate      DateTime
-  note         String?
-  isDone       Boolean   @default(false)
-  completedAt  DateTime?
-  createdAt    DateTime  @default(now())
+  id                 String            @id @default(cuid())
+  leadId             String?
+  lead               Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customerId         String?
+  customer           Customer?         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedToId       String
+  assignedTo         User              @relation("FollowUpAssigned", fields: [assignedToId], references: [id])
+  createdById        String?
+  createdBy          User?             @relation("FollowUpCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  dueDate            DateTime
+  note               String?
+  status             CrmFollowUpStatus @default(OPEN)
+  isDone             Boolean           @default(false)
+  completedAt        DateTime?
+  completedById      String?
+  completedBy        User?             @relation("FollowUpCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  outcome            String?
+  completionComment  String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?             @relation("FollowUpCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancellationReason String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([assignedToId, isDone, dueDate])
   @@index([dueDate, isDone])
+  @@index([status, dueDate])
 }
 
 // Nhiu kch bn ti chnh cho mt Proposal
@@ -2957,27 +3278,31 @@ model ProposalScenario {
 
 // Quy trnh chm dt hp ng
 model ContractTermination {
-  id                String    @id @default(cuid())
-  contractId        String    @unique
-  contract          Contract  @relation(fields: [contractId], references: [id])
-  initiatedBy       String // 'THISO' | 'TENANT'
-  reason            String
-  effectiveDate     DateTime
-  noticePeriodDays  Int       @default(60)
-  depositRefund     Float?
-  penaltyAmount     Float?
-  handoverDate      DateTime?
-  handoverCondition String? // 'GOOD' | 'FAIR' | 'DAMAGED'
-  utilityFinalRead  Json? // { electricity, water, gas }
-  accessCardReturn  Boolean   @default(false)
-  signageRemoved    Boolean   @default(false)
-  keysReturned      Boolean   @default(false)
-  status            String    @default("INITIATED") // INITIATED | IN_PROGRESS | COMPLETED | CANCELLED
-  completedAt       DateTime?
-  notes             String?
-  createdById       String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                       String      @id @default(cuid())
+  contractId               String      @unique
+  contract                 Contract    @relation(fields: [contractId], references: [id])
+  initiatedBy              String // 'THISO' | 'TENANT'
+  reason                   String
+  effectiveDate            DateTime
+  noticePeriodDays         Int         @default(60)
+  depositRefund            Float?
+  penaltyAmount            Float?
+  handoverDate             DateTime?
+  handoverCondition        String? // 'GOOD' | 'FAIR' | 'DAMAGED'
+  utilityFinalRead         Json? // { electricity, water, gas }
+  accessCardReturn         Boolean     @default(false)
+  signageRemoved           Boolean     @default(false)
+  keysReturned             Boolean     @default(false)
+  status                   String      @default("INITIATED") // INITIATED | IN_PROGRESS | COMPLETED | CANCELLED
+  // Unit.status captured at initiate() time, before the Unit is moved to LIQUIDATED - a live
+  // Contract can be terminated while the Unit is CONTRACTED, UNDER_FITOUT, or OCCUPIED (fit-out
+  // hasn't necessarily finished). cancel() restores exactly this instead of assuming OCCUPIED.
+  preTerminationUnitStatus UnitStatus?
+  completedAt              DateTime?
+  notes                    String?
+  createdById              String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
 }
 
 // Nh thu thi cng cho Fitout
@@ -3213,7 +3538,7 @@ model UnitBooking {
   // khi convert sang Proposal (xem ConvertToProposalDto).
   serviceFeeSqm         Float?
   businessSupportFeeSqm Float?
-  priceApprovalStatus   PriceApprovalStatus? // PENDING, APPROVED, REJECTED
+  priceApprovalStatus   PriceApprovalStatus? // PENDING, APPROVED, REJECTED, NOT_REQUIRED
   priceApprovalNote     String? // Ghi ch ph duyt
   priceApprovedById     String?
   priceApprovedBy       User?                @relation("BookingPriceApprover", fields: [priceApprovedById], references: [id])
@@ -3221,6 +3546,18 @@ model UnitBooking {
   priceDeviationPercent Float? // % chnh lch so vi gi sn
   pricingRuleId         String? // Rule version used for the latest validation
   pricingSnapshot       Json? // Effective pricing values and inheritance sources
+
+  // CR-BOOK-PRICE-APPROVAL-001 -- separation of duties. Whoever put the number
+  // on the booking is recorded here so the approval path can refuse to let that
+  // same person sign it off. Nullable: bookings created before this, and
+  // bookings with no proposed price, have no proposer.
+  priceProposedById  String?
+  priceProposedBy    User?                      @relation("BookingPriceProposer", fields: [priceProposedById], references: [id])
+  priceProposedAt    DateTime?
+  // Resolved from ApprovalPolicyRule at evaluation time. Empty while a price
+  // needs approval means no policy rule matched -- the booking is held, never
+  // silently let through.
+  priceApprovalSteps BookingPriceApprovalStep[]
 
   createdById  String
   createdBy    User     @relation("BookingCreatedBy", fields: [createdById], references: [id])
@@ -3238,6 +3575,50 @@ model UnitBooking {
   @@index([customerId])
   @@index([status, expiresAt])
   @@index([priceApprovalStatus])
+}
+
+// CR-BOOK-PRICE-APPROVAL-001 -- the approver chain for one booking's proposed
+// price, resolved from ApprovalPolicyRule (mallId + PRICE_* conditionType) at
+// the moment the price is evaluated.
+//
+// This is deliberately NOT ApprovalWorkflow/ApprovalStep. Those are scoped by
+// `entityType` and every mall-scoping branch in ApprovalsService is written for
+// PROPOSAL and FITOUT_SUBMITTAL only; adding a third entity type there would
+// route booking rows through predicates that were never designed to filter
+// them. A dedicated table keeps the Mall boundary explicit via the booking's
+// own unit.
+//
+// Steps are sequential: the actionable step is the lowest stepOrder still
+// PENDING. A rejection at any step rejects the price outright.
+model BookingPriceApprovalStep {
+  id        String      @id @default(cuid())
+  bookingId String
+  booking   UnitBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  stepOrder      Int
+  stepName       String
+  approverRole   Role
+  // The policy names an account, not just a role -- carried straight through so
+  // the queue can address one person and the email has somewhere to go.
+  approverId     String
+  approver       User    @relation("BookingPriceStepApprover", fields: [approverId], references: [id])
+  // Which ApprovalPolicyRule produced this step. Kept for audit: a rule can be
+  // edited or deactivated after the fact, and the decision must still be
+  // explainable.
+  policyRuleCode String?
+
+  status      StepStatus @default(PENDING)
+  comment     String?
+  decidedAt   DateTime?
+  decidedById String?
+  decidedBy   User?      @relation("BookingPriceStepDecider", fields: [decidedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, stepOrder])
+  @@index([approverId, status])
+  @@index([bookingId, status])
 }
 
 // Lch s hot ng ca mt booking
@@ -3331,28 +3712,40 @@ enum SlotBookingStatus {
   CONFIRMED
   CANCELLED
   COMPLETED
+  CONVERTED
 }
 
 model UnitSlot {
-  id               String    @id @default(cuid())
+  id               String        @id @default(cuid())
   unitId           String
-  unit             Unit      @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unit             Unit          @relation(fields: [unitId], references: [id], onDelete: Cascade)
   code             String
   name             String
   area             Float
   description      String?
-  slotType         SlotType? @default(FLEXIBLE)
+  slotType         SlotType?     @default(FLEXIBLE)
   pricePerDaySqm   Float?
   pricePerHour     Float?
   pricePerSqmMonth Float?
-  posX             Float?    @default(10)
-  posY             Float?    @default(10)
-  posW             Float?    @default(20)
-  posH             Float?    @default(20)
+  // RPT-CUR-006 / CUR-002 (slot subset): currency of the three price fields
+  // above. Deliberately NULLABLE with NO @default.
+  //
+  // NOT derived from Unit.currencyCode. That column's own comment scopes it to
+  // baseRentPerSqm/camPerSqm/marketRentPerSqm/askingRentPerSqm -- the Unit's
+  // long-term rent -- and nothing in code ties slot pricing to it, so an
+  // inheritance rule would be an assumption rather than a proven invariant.
+  //
+  // NULL means "priced before currency was captured" and is surfaced as
+  // UNKNOWN, never as VND.
+  currencyCode     CurrencyCode?
+  posX             Float?        @default(10)
+  posY             Float?        @default(10)
+  posW             Float?        @default(20)
+  posH             Float?        @default(20)
   fillColor        String?
-  isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   pricingRules SlotPricingRule[]
   bookings     SlotBooking[]
@@ -3399,6 +3792,15 @@ model SlotBooking {
   baseAmount                Float?
   discountPct               Float?            @default(0)
   totalAmount               Float // Final amount after discount
+  // MON-CUR-SLOT-01: the currency that governed this booking's amount AT
+  // BOOKING TIME. A snapshot, not a lookup.
+  //
+  // It cannot be read from the slot at query time: updateSlot edits prices
+  // freely and deleteSlot is a soft delete that deliberately keeps booking
+  // history, so a later pricing change would silently relabel every historical
+  // booking. Deliberately NULLABLE with NO @default -- pre-existing rows were
+  // recorded before the currency was captured and stay UNKNOWN.
+  currencyCode              CurrencyCode?
   status                    SlotBookingStatus @default(PENDING)
   notes                     String?
   cancelReason              String?
@@ -3406,6 +3808,8 @@ model SlotBooking {
   createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
+
+  proposal Proposal?
 
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
@@ -3421,4 +3825,21 @@ model BrandingSettings {
   updatedById   String?
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
+}
+
+// Cau hinh SMTP de gui email -- bang singleton, luon chi 1 dong, service tu tao
+// dong dau tien neu chua co. smtpPassEncrypted luu dang ma hoa (AES-256-GCM,
+// xem EncryptionService) -- khong bao gio tra ve plaintext qua API.
+model EmailSettings {
+  id                String   @id @default(cuid())
+  isEnabled         Boolean  @default(false)
+  smtpHost          String?
+  smtpPort          Int      @default(587)
+  smtpSecure        Boolean  @default(false)
+  smtpUser          String?
+  smtpPassEncrypted String?
+  emailFrom         String?
+  updatedById       String?
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
 }

@@ -17,7 +17,6 @@ export class FitoutFormTypeService {
     name: string;
     category?: string;
     defaultStageCode?: string | null;
-    approvalLevels?: number;
     order?: number;
   }) {
     return this.prisma.fitoutFormType.upsert({
@@ -27,14 +26,12 @@ export class FitoutFormTypeService {
         name: data.name,
         category: data.category ?? 'OTHER',
         defaultStageCode: data.defaultStageCode ?? null,
-        approvalLevels: data.approvalLevels ?? 1,
         order: data.order ?? 0,
       },
       update: {
         name: data.name,
         category: data.category,
         defaultStageCode: data.defaultStageCode,
-        approvalLevels: data.approvalLevels,
         order: data.order,
       },
     });

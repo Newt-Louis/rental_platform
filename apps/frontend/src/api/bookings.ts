@@ -43,6 +43,14 @@ export const bookingApi = {
   getUnitQueue: (unitId: string) =>
     api.get(`/bookings/unit/${unitId}/queue`).then((r) => r.data),
   get: (id: string) => api.get(`/bookings/${id}`).then((r) => r.data),
+  /**
+   * CR-...-ALWAYS-WARN-004: evaluate a price without writing anything, so the
+   * warning is shown BEFORE the booking exists. The server is authoritative —
+   * the client never works out the deviation or the approver itself.
+   */
+  previewPricingDecision: (data: { unitId: string; proposedRentPerSqm: number; currencyCode?: string }) =>
+    api.post('/bookings/price-preview', data).then((r) => r.data),
+
   create: (data: Record<string, unknown>) =>
     api.post('/bookings', data).then((r) => r.data),
   update: (id: string, data: Record<string, unknown>) =>

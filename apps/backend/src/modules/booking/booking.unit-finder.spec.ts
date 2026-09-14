@@ -9,10 +9,36 @@ describe("BookingService.findUnits", () => {
     lead: { findUnique: jest.fn() },
   };
   const categories: any = { validateProposedPrice: jest.fn() };
+  const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
+  evaluate: jest.fn().mockResolvedValue({
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
+    deviationPercent: 0,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
+    message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
+} as any;
+  const notifications: any = { create: jest.fn() };
+  const emailService: any = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() };
+  const leadLifecycle: any = { transition: jest.fn() };
   const unitStatus: any = {
     isLockedForBooking: jest.fn(
       (status: UnitStatus) =>
-        !([UnitStatus.VACANT, UnitStatus.BOOKING] as UnitStatus[]).includes(
+        !([UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING] as UnitStatus[]).includes(
           status,
         ),
     ),
@@ -24,7 +50,7 @@ describe("BookingService.findUnits", () => {
     prisma.unit.findMany.mockResolvedValue([]);
     prisma.unit.count.mockResolvedValue(0);
     prisma.unitBooking.groupBy.mockResolvedValue([]);
-    service = new BookingService(prisma, categories, unitStatus);
+    service = new BookingService(prisma, categories, unitStatus, priceApprovalPolicy, notifications, emailService, leadLifecycle);
   });
 
   it("applies accessible Mall IDs at the Unit query boundary", async () => {
@@ -110,10 +136,11 @@ describe("BookingService.findUnits", () => {
   it("returns immediate, queue, and blocked eligibility from UnitStatusService", async () => {
     prisma.unit.findMany.mockResolvedValue([
       unit("vacant", UnitStatus.VACANT),
+      unit("offering", UnitStatus.OFFERING),
       unit("queued", UnitStatus.BOOKING),
       unit("locked", UnitStatus.CONTRACTED),
     ]);
-    prisma.unit.count.mockResolvedValue(3);
+    prisma.unit.count.mockResolvedValue(4);
     prisma.unitBooking.groupBy.mockResolvedValue([
       { unitId: "queued", _count: { _all: 2 } },
     ]);
@@ -126,13 +153,21 @@ describe("BookingService.findUnits", () => {
       reasonCode: null,
       queueCount: 0,
     });
+    // OFFERING (Chào thuê): actively marketed but no hold on it yet — must be just as
+    // immediately bookable as VACANT, not silently BLOCKED alongside real commitments.
     expect(result.data[1].currentEligibility).toEqual({
+      selectable: true,
+      mode: "IMMEDIATE",
+      reasonCode: null,
+      queueCount: 0,
+    });
+    expect(result.data[2].currentEligibility).toEqual({
       selectable: true,
       mode: "QUEUE",
       reasonCode: null,
       queueCount: 2,
     });
-    expect(result.data[2].currentEligibility).toEqual({
+    expect(result.data[3].currentEligibility).toEqual({
       selectable: false,
       mode: "BLOCKED",
       reasonCode: "UNIT_STATUS_CONTRACTED",

@@ -5,6 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
+import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 // CR-101 Phase 3E — INV-AUTH-006 caller-specific coverage: BookingService.update()'s
 // unit-reassignment branch is the one call site (of 12) where UnitStatusService.transition()
@@ -13,6 +17,41 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
 // Mall (a staff member can legitimately hold grants to several Malls) — it says nothing about
 // whether that Mall is consistent with the booking's own. This suite proves that consistency
 // is enforced, and enforced before any write.
+// CR-BOOK-PRICE-APPROVAL-001 — the price path now resolves its approver chain
+// from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
+// band" so tests that say nothing about price keep their old behaviour.
+const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
+  evaluate: jest.fn().mockResolvedValue({
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
+    deviationPercent: 0,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
+    message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
+} as any;
+const notifications = { create: jest.fn() } as any;
+const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+// CR-CRM-BUSINESS-EVENT: BookingService now routes the Lead status change
+// through LeadLifecycleService instead of writing tx.lead.update directly, so
+// the transition is recorded as a CRM business event. The double records the
+// call; the suites assert on it rather than on the raw write.
+const leadLifecycle = { transition: jest.fn().mockResolvedValue(undefined) } as any;
+
+
 describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reassignment', () => {
   let service: BookingService;
 
@@ -30,6 +69,7 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
     isActive: true,
     currencyCode: 'VND',
     proposedRentPerSqm: null,
+    createdById: 'user-1',
   };
 
   const prisma = {
@@ -41,6 +81,8 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
     },
     unit: { findUnique: jest.fn() },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((fn: any) => fn(prisma)),
   } as any;
 
@@ -68,6 +110,11 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: CategoriesService, useValue: categories },
+        // CR-BOOK-PRICE-APPROVAL-001 — price routing / notification collaborators.
+        { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EmailService, useValue: emailService },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(BookingService);

@@ -1,5 +1,7 @@
 export * from './auth';
 export * from './branding';
+export * from './email-settings';
+export * from './email-deliveries';
 export * from './spaces';
 export * from './crm';
 export * from './bookings';
@@ -33,3 +35,4 @@ export * from './work-orders';
 export * from "./patrol";
 export * from "./parking";
 export * from './parking-dashboard';
+export * from './permissions';

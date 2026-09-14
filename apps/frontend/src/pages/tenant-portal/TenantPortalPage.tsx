@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatMoney, formatMoneyAmount, type CurrencyCode } from '@/lib/currency';
 import { getFitoutPresentationLabel } from '@/pages/fitout/fitoutPresentation';
 import { groupPendingInvoiceAmounts } from './tenantPortalPresentation';
+import { usePaymentIntentKey } from '@/hooks/usePaymentIntentKey';
 import {
   File, Receipt, Ticket, Plus, Send, Building2,
   Calendar, DollarSign, MessageSquare, CheckCircle2, Hammer,
@@ -434,9 +435,14 @@ function RecordPaymentDialog({ invoice, onClose }: { invoice: any; onClose: () =
   const { register, handleSubmit, reset, setValue: setPayVal } = useForm({
     defaultValues: { amount: invoice?.totalAmount ?? '', paymentDate: new Date().toISOString().slice(0, 10), method: 'BANK_TRANSFER', reference: '' },
   });
+  // PAY-001 — this dialog used to send no idempotency key at all, so a
+  // double-click created two Payment rows for a single intent. One key per
+  // payment intent (see the hook: this component never unmounts, so a plain
+  // useState initialiser would reuse one key for the whole page session).
+  const idempotencyKey = usePaymentIntentKey(invoice?.id, !!invoice);
 
   const mutation = useMutation({
-    mutationFn: (data: any) => billingApi.recordPayment(invoice.id, data),
+    mutationFn: (data: any) => billingApi.recordPayment(invoice.id, data, idempotencyKey),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['portal-invoices'] });
       toast({ title: t('portalWorkspace.payment.success') });

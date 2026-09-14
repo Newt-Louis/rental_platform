@@ -12,7 +12,11 @@ export const approvalsApi = {
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
   reject: (id: string, comment: string = '') =>
     api.post(`/approvals/${id}/reject`, { comment }).then((r) => r.data),
-  listPolicyRules: () => api.get('/approvals/policy/rules').then((r) => r.data),
+  // Quy tắc duyệt khai báo riêng cho từng mall và chỉ định đích danh người duyệt.
+  listPolicyRules: (mallId?: string) =>
+    api.get('/approvals/policy/rules', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
+  listPolicyApproverCandidates: (mallId: string) =>
+    api.get('/approvals/policy/approver-candidates', { params: { mallId } }).then((r) => r.data),
   createPolicyRule: (data: Record<string, unknown>) =>
     api.post('/approvals/policy/rules', data).then((r) => r.data),
   updatePolicyRule: (id: string, data: Record<string, unknown>) =>

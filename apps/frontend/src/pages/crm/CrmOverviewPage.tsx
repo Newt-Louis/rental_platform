@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/auth.store';
 import { useMallStore } from '@/store/mall.store';
 import { AlertTriangle, ArrowRight, Bell, Clock, Flame, Sparkles, Target, TrendingUp, Users } from 'lucide-react';
-import { formatMoney } from '@/lib/currency';
+import { formatLeadBucket, type LeadCurrencyBucket } from '@/lib/lead-currency';
 
 const PRIORITY_CONFIG: Record<string, { className: string }> = {
   HOT: { className: 'bg-red-100 text-red-700' },
@@ -20,12 +20,13 @@ const PRIORITY_CONFIG: Record<string, { className: string }> = {
   COLD: { className: 'bg-gray-100 text-gray-600' },
 };
 
-// Money Domain Consolidation: totalPipelineValue is derived from Lead.expectedRent,
-// which has no currency field on the schema at all (currency-less by design, not
-// a mixing bug) -- VND is the platform's implicit unit for this field, made
-// explicit here per the KPI-tile disclosure rule.
-function formatFullVnd(value: number) {
-  return formatMoney(value, 'VND');
+// RPT-CUR-005: the note that used to sit here said Lead.expectedRent was
+// "currency-less by design" and that VND was the platform's implicit unit. That
+// is no longer true and was never safe -- Lead.currencyCode now exists, so the
+// pipeline value is rendered per currency with no combined total.
+function formatPipelineBuckets(buckets: LeadCurrencyBucket[]): string {
+  if (buckets.length === 0) return '—';
+  return buckets.map(formatLeadBucket).join('  ·  ');
 }
 
 function daysSince(value?: string | null) {
@@ -59,11 +60,15 @@ export default function CrmOverviewPage() {
   const tomorrow = new Date(today.getTime() + 86_400_000);
   const overdue = followUps.filter((item) => new Date(item.dueDate) < today);
   const dueToday = followUps.filter((item) => new Date(item.dueDate) >= today && new Date(item.dueDate) < tomorrow);
+  // RPT-CUR-005 — the authoritative pipeline figure from the API.
+  const pipelineBuckets: LeadCurrencyBucket[] = stats.pipelineValueByCurrency ?? [];
+  const historicalCoverage = stats.analyticsSemantics;
+  const winRate = stats.conversionRates?.overallWinRate;
   const kpis = [
     { label: t('overview.kpi.activeLeads'), value: summary.totalActive ?? 0, icon: Target, tone: 'text-blue-700 bg-blue-50' },
     { label: t('overview.kpi.newThisMonth'), value: summary.newThisMonth ?? 0, icon: TrendingUp, tone: 'text-violet-700 bg-violet-50' },
-    { label: t('overview.kpi.pipelineValue'), value: formatFullVnd(summary.totalPipelineValue ?? 0), valueTitle: formatFullVnd(summary.totalPipelineValue ?? 0), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
-    { label: t('overview.kpi.winRate'), value: `${(stats.conversionRates?.overallWinRate ?? 0).toFixed(1)}%`, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
+    { label: t('overview.kpi.pipelineValue'), value: formatPipelineBuckets(pipelineBuckets), valueTitle: pipelineBuckets.length > 1 ? 'Mỗi đơn vị tiền tệ tách riêng — không quy đổi tỷ giá' : formatPipelineBuckets(pipelineBuckets), icon: Flame, tone: 'text-amber-700 bg-amber-50' },
+    { label: `${t('overview.kpi.winRate')} (từ ngày kích hoạt)`, value: winRate == null ? 'Chưa đủ dữ liệu' : `${winRate.toFixed(1)}%`, valueTitle: historicalCoverage?.coverageMessage, icon: TrendingUp, tone: 'text-emerald-700 bg-emerald-50' },
     { label: t('overview.kpi.todayTasks'), value: overdue.length + dueToday.length, icon: Bell, tone: 'text-red-700 bg-red-50' },
   ];
   const funnel = [
@@ -105,6 +110,11 @@ export default function CrmOverviewPage() {
         onRetry={() => { statsQuery.refetch(); staleQuery.refetch(); followUpsQuery.refetch(); }}
         loading={<Skeleton className="h-20 rounded-lg" />}
       >
+        {historicalCoverage?.historicalCoverage === 'PARTIAL' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>Số liệu lịch sử chưa đầy đủ.</strong> {historicalCoverage.coverageMessage} Các thẻ Lead và pipeline là snapshot hiện tại; KPI chuyển đổi chỉ dùng event từ ngày kích hoạt.
+          </div>
+        )}
         <div className="grid overflow-hidden rounded-lg border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-5">
           {kpis.map(({ label, value, valueTitle, icon: Icon, tone }, index) => (
             <div key={label} className={`flex items-center gap-3 px-3 py-3 ${index > 0 ? 'border-t border-slate-100 sm:border-l sm:border-t-0' : ''} ${index === 2 || index === 4 ? 'sm:border-l-0 sm:border-t xl:border-l xl:border-t-0' : ''}`}>

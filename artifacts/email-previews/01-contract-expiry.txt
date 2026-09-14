@@ -1,0 +1,43 @@
+Hợp đồng sắp hết hạn
+
+Leasing Platform
+
+Hợp đồng
+
+Hợp đồng sắp hết hạn
+
+KHẨN CẤP
+
+Kính gửi Nguyễn Minh Anh, hợp đồng HD-2026-0088-VERY-LONG-CONTRACT-NUMBER của CÔNG TY CỔ PHẦN THƯƠNG MẠI VÀ DỊCH VỤ PHÁT TRIỂN KHÔNG GIAN BÁN LẺ ĐÔNG NAM Á sẽ hết hạn ngày 30/09/2026.
+
+25
+
+ngày còn lại
+
+Thông tin hợp đồng
+
+Khách thuê
+CÔNG TY CỔ PHẦN THƯƠNG MẠI VÀ DỊCH VỤ PHÁT TRIỂN KHÔNG GIAN BÁN LẺ ĐÔNG NAM Á
+
+Mã lô
+L1-023
+
+Số hợp đồng
+HD-2026-0088-VERY-LONG-CONTRACT-NUMBER
+
+Ngày hết hạn
+30/09/2026
+
+Trung tâm
+THISO Mall Sala
+
+Xem hợp đồng
+
+http://127.0.0.1:4173/contracts?id=contract-preview-1
+
+Vui lòng kiểm tra và thực hiện quy trình gia hạn hoặc xác nhận không gia hạn theo quy trình hiện hành.
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  StreamableFile,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -14,12 +15,12 @@ export interface Response<T> {
 
 @Injectable()
 export class TransformInterceptor<T>
-  implements NestInterceptor<T, Response<T>>
+  implements NestInterceptor<T, Response<T> | StreamableFile>
 {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<Response<T>> {
+  ): Observable<Response<T> | StreamableFile> {
     const request = context.switchToHttp().getRequest();
     const url = request.url as string;
 
@@ -30,6 +31,14 @@ export class TransformInterceptor<T>
 
     return next.handle().pipe(
       map((data) => {
+        // Binary file responses must reach Nest's HTTP adapter as the original
+        // StreamableFile. Wrapping one in the JSON API envelope turns the file
+        // object into JSON while leaving its PDF/image Content-Type in place,
+        // producing a successful HTTP 200 response that browsers cannot open.
+        if (data instanceof StreamableFile) {
+          return data;
+        }
+
         // If response is a paginated object (has data, total, limit), spread it with success flag
         // to avoid double wrapping: { data: [...], total, page, limit, totalPages }
         if (

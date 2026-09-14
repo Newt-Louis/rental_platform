@@ -11,6 +11,7 @@ import { CreateUnitDto } from './dto/create-unit.dto';
 import { UpdateUnitDto } from './dto/update-unit.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MallAccessService } from '../../common/services/mall-access.service';
@@ -28,7 +29,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('Spaces')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.spaces)
+@ModuleRoles('spaces')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.GAP, trackedAs: 'class default; see method-level overrides below for verified sections' })
 @Controller('spaces')
 export class SpacesController {

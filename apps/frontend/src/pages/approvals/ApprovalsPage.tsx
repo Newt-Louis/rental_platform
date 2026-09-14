@@ -21,7 +21,8 @@ import {
 } from 'lucide-react';
 import { usePermission } from '@/hooks/usePermission';
 import { useMallStore } from '@/store/mall.store';
-import { formatMoneyWithCode } from '@/lib/currency';
+import { useAuthStore } from '@/store/auth.store';
+import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
@@ -33,9 +34,15 @@ import {
 } from '../proposals/proposalApprovalPresentation';
 import { formatFitoutAttachmentSize, getFitoutAttachmentDownloadPath, getFitoutStageName, getFitoutSubmittalFromApproval } from './fitoutApprovalPresentation';
 
-function fmtPrice(n: number | null | undefined) {
+// The price-approval queue compares a booking's proposed rent against the
+// category floor/ceiling. Those figures used to render as bare numbers with no
+// currency at all, so a USD booking sat next to a VND band with nothing telling
+// the approver they weren't the same unit of account. The backend only ever
+// matches a pricing band in the booking's own currency, so one label per row is
+// accurate for all three columns.
+function fmtPrice(n: number | null | undefined, currencyCode?: CurrencyCode | null) {
   if (!n) return '—';
-  return new Intl.NumberFormat('vi-VN').format(n);
+  return formatMoneyWithCode(n, currencyCode ?? 'VND');
 }
 
 function fmtDateTime(value?: string | null, locale = 'vi-VN') {
@@ -262,7 +269,7 @@ function ApprovalDetailSheet({
               <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.rentCurrency && p.monthlyRent != null ? formatMoneyWithCode(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.rentCurrency && p.monthlyCAM != null ? formatMoneyWithCode(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
               <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.days')}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.months')}`} icon={CalendarDays} />
               <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.rentCurrency && p.totalContractValue != null ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
             </div>
             {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
@@ -331,8 +338,12 @@ export default function ApprovalsPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { role } = usePermission();
+  const { user } = useAuthStore();
   const { selectedMallId } = useMallStore();
-  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
+  // CR-BOOK-PRICE-APPROVAL-001 — CEO added: the price policy escalates
+  // deviations above 10% to the CEO, who previously could not even open the
+  // queue holding their own escalations.
+  const canApprovePrices = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR', 'CEO'].includes(role);
   const [view, setView] = useState<'proposals' | 'fitout' | 'prices' | 'history'>('proposals');
   const [proposalPage, setProposalPage] = useState(1);
   const [fitoutPage, setFitoutPage] = useState(1);
@@ -564,7 +575,7 @@ export default function ApprovalsPage() {
                             {proposal?.rentFree > 0 && (
                               <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-amber-600">
                                 <CalendarDays size={10} />
-                                {t('approvals.table.rentFreeDays', { count: proposal.rentFree })}
+                                {t('approvals.table.rentFreeMonths', { count: proposal.rentFree })}
                               </div>
                             )}
                           </td>
@@ -744,6 +755,7 @@ export default function ApprovalsPage() {
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.proposed')}</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.ceiling')}</th>
                       <th className="text-center px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">{t('approvals.table.deviation')}</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-500 text-xs tracking-wider">Bước duyệt</th>
                       <th className="px-3 py-3" />
                     </tr>
                   </thead>
@@ -754,6 +766,24 @@ export default function ApprovalsPage() {
                       const dev: number = booking.priceDeviationPercent ?? 0;
                       const devColor = dev > 10 ? 'text-red-600' : dev > 5 ? 'text-orange-500' : 'text-yellow-600';
                       const devBg = dev > 10 ? 'bg-red-50' : dev > 5 ? 'bg-orange-50' : 'bg-yellow-50';
+                      // CR-BOOK-PRICE-APPROVAL-001 — the backend routes each
+                      // price to the approver its Mall policy names, and refuses
+                      // anyone else plus the person who proposed the rate.
+                      // Mirror that here so the buttons say what will happen
+                      // instead of failing on click.
+                      const step = booking.currentPriceStep;
+                      const unrouted: boolean = booking.priceApprovalUnrouted;
+                      const isMyStep = step ? step.approverId === user?.id : user?.role === 'ADMIN';
+                      const isProposer =
+                        booking.priceProposedById === user?.id || booking.createdById === user?.id;
+                      const canDecide = isMyStep && !isProposer;
+                      const blockedReason = isProposer
+                        ? 'Bạn là người đề xuất mức giá này nên không thể tự phê duyệt'
+                        : unrouted
+                          ? 'Mall chưa cấu hình quy tắc duyệt giá cho mức lệch này — cần Admin hoặc khai báo chính sách'
+                          : !isMyStep && step
+                            ? `Bước "${step.stepName}" đã chỉ định cho ${step.approver?.fullName ?? 'người khác'}`
+                            : '';
                       return (
                         <tr key={booking.id}
                           className="transition-colors hover:bg-gray-50/60"
@@ -776,13 +806,13 @@ export default function ApprovalsPage() {
                             {unit?.category ?? unit?.categoryRef?.name ?? '—'}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-gray-700">
-                            {fmtPrice(cp?.minRentPerSqm)}
+                            {fmtPrice(cp?.minRentPerSqm, booking.currencyCode)}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
-                            <span className={`font-bold ${devColor}`}>{fmtPrice(booking.proposedRentPerSqm)}</span>
+                            <span className={`font-bold ${devColor}`}>{fmtPrice(booking.proposedRentPerSqm, booking.currencyCode)}</span>
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums text-green-700">
-                            {fmtPrice(cp?.maxRentPerSqm)}
+                            {fmtPrice(cp?.maxRentPerSqm, booking.currencyCode)}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${devBg} ${devColor}`}>
@@ -790,20 +820,41 @@ export default function ApprovalsPage() {
                               -{dev.toFixed(1)}%
                             </span>
                           </td>
+                          <td className="px-4 py-3">
+                            {unrouted ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-600">
+                                <AlertTriangle size={11} /> Chưa có chính sách duyệt
+                              </span>
+                            ) : step ? (
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium text-gray-700">{step.stepName}</div>
+                                <div className="truncate text-[11px] text-gray-400">
+                                  {step.approver?.fullName ?? '—'}
+                                  {booking.priceApprovalSteps?.length > 1 && (
+                                    <span className="ml-1">
+                                      · bước {step.stepOrder}/{booking.priceApprovalSteps.length}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
                           <td className="px-3 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 hover:border-red-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.rejectPrice')}
-                                disabled={anyPending}
+                                title={blockedReason || t('approvals.actions.rejectPrice')}
+                                disabled={anyPending || !canDecide}
                                 onClick={(e) => { e.stopPropagation(); setRejectDialog({ id: booking.id, type: 'price' }); }}
                               >
                                 <XCircle size={13} /> {t('approvals.actions.reject')}
                               </button>
                               <button
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 hover:border-green-300 transition-colors disabled:opacity-40"
-                                title={t('approvals.actions.approvePrice')}
-                                disabled={anyPending}
+                                title={blockedReason || t('approvals.actions.approvePrice')}
+                                disabled={anyPending || !canDecide}
                                 onClick={(e) => { e.stopPropagation(); setPriceApproveTarget(booking); }}
                               >
                                 {approvePriceMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
@@ -894,6 +945,7 @@ export default function ApprovalsPage() {
                 <tbody className="divide-y divide-gray-50">
                   {historySteps.map((step: any) => {
                     const proposal = step.workflow?.proposal;
+                    const party = getProposalParty(proposal);
                     return (
                       <tr key={step.id} className="cursor-pointer hover:bg-gray-50/60 transition-colors" tabIndex={0} aria-label={t('approvals.actions.reviewFile', { number: proposal?.proposalNumber ?? '' })} onClick={() => { setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }} onKeyDown={(e) => { if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key)) return; e.preventDefault(); setSelectedWorkflowId(step.workflowId); setSelectedDecisionStepId(null); }}>
                         <td className="px-4 py-3">
@@ -902,7 +954,7 @@ export default function ApprovalsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-sm">{proposal?.tenant?.brandName ?? '—'}</div>
+                          <div className="font-medium text-sm">{party.name}</div>
                           {proposal?.unit && (
                             <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                               <Building2 size={11} />
@@ -999,7 +1051,7 @@ export default function ApprovalsPage() {
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-y border-gray-100 py-3">
               <span className="text-gray-500">{t('approvals.table.bookingNo')}</span><span className="text-right font-mono font-medium">{priceApproveTarget?.bookingNumber ?? '—'}</span>
               <span className="text-gray-500">{t('approvals.table.unit')}</span><span className="text-right font-medium">{priceApproveTarget?.unit?.code ?? '—'}</span>
-              <span className="text-gray-500">{t('approvals.table.proposed')}</span><span className="text-right font-semibold tabular-nums">{fmtPrice(priceApproveTarget?.proposedRentPerSqm)}</span>
+              <span className="text-gray-500">{t('approvals.table.proposed')}</span><span className="text-right font-semibold tabular-nums">{fmtPrice(priceApproveTarget?.proposedRentPerSqm, priceApproveTarget?.currencyCode)}</span>
             </div>
           </div>
           <DialogFooter>

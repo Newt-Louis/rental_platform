@@ -19,6 +19,7 @@ describe('FitoutController.reviewDocument — CR-101 Phase 3C C4-01', () => {
     {} as any, // contractorService
     {} as any, // stageConfigService
     {} as any, // formTypeService
+    {} as any, // formApprovalService
     {} as any, // issueService
     {} as any, // dashboardService
     {} as any, // storageService

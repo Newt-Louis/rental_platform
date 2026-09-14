@@ -5,11 +5,13 @@ import { StorageService } from '../../storage/storage.service';
 import type { ApprovalWorkflowCompletedEvent, ApprovalWorkflowRejectedEvent, ApprovalWorkflowStepAdvancedEvent } from '../approvals/approvals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
+import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
+import { FitoutFormApprovalService } from './fitout-form-approval.service';
 import { Prisma, Role } from '@prisma/client';
 
 const ENTITY_TYPE = 'FITOUT_SUBMITTAL';
-const DEFAULT_APPROVER_ROLE = 'OPERATION';
 
 @Injectable()
 export class FitoutSubmittalService {
@@ -18,7 +20,9 @@ export class FitoutSubmittalService {
     private storageService: StorageService,
     private notifications: NotificationsService,
     private emailDelivery: EmailDeliveryService,
+    private emailService: EmailService,
     private accessPolicy: FitoutAccessPolicyService,
+    private formApproval: FitoutFormApprovalService,
   ) {}
 
   async list(projectId: string, query: { formTypeId?: string; status?: string } = {}) {
@@ -83,18 +87,6 @@ export class FitoutSubmittalService {
     return submittal;
   }
 
-  private buildApprovalSteps(formType: { approvalLevels: number; approverRoles: any; name: string }) {
-    const roles: string[] = Array.isArray(formType.approverRoles) && formType.approverRoles.length > 0
-      ? formType.approverRoles
-      : Array.from({ length: formType.approvalLevels || 1 }, () => DEFAULT_APPROVER_ROLE);
-
-    return roles.map((role, idx) => ({
-      stepName: `${formType.name} — Cấp ${idx + 1}`,
-      stepOrder: idx + 1,
-      approverRole: role,
-    }));
-  }
-
   /**
    * Tạo submittal ở trạng thái nháp (SUBMITTED, chưa có ApprovalWorkflow) — người phụ trách
    * còn phải đính kèm ít nhất 1 tệp rồi gọi submitForReview() thì hồ sơ mới thực sự vào hàng
@@ -140,7 +132,10 @@ export class FitoutSubmittalService {
 
     const formType = await this.prisma.fitoutFormType.findUnique({ where: { id: submittal.formTypeId } });
     if (!formType) throw new NotFoundException('Form type not found');
-    const steps = this.buildApprovalSteps(formType);
+    // Người duyệt được khai báo theo từng mall (Fitout → Cài đặt → Loại hồ sơ), nên phải
+    // resolve theo mall của dự án chứ không phải theo cấu hình toàn cục.
+    const { mallId } = await this.accessPolicy.getProjectContext(submittal.projectId);
+    const steps = await this.formApproval.buildApprovalSteps(formType.id, mallId, formType.name);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const workflow = await tx.approvalWorkflow.create({
@@ -382,14 +377,20 @@ export class FitoutSubmittalService {
 
     const submittal = await this.prisma.fitoutSubmittal.findUnique({
       where: { workflowId },
-      include: { formType: true, project: { include: { tenant: true, unit: { select: { code: true } } } } },
+      include: { formType: true, project: { include: { tenant: true, unit: { select: { code: true, mallId: true } } } } },
     });
     if (!submittal) return;
 
-    const approvers = await this.accessPolicy.findProjectMallRecipients(
-      submittal.project.id,
-      step.approverRole as Role,
-    );
+    // Cấp duyệt fitout giờ gắn đúng một tài khoản (FitoutFormApprovalLevel), nên báo thẳng cho
+    // người được giao thay vì broadcast cho toàn bộ user cùng role của mall cộng toàn bộ ADMIN
+    // hệ thống như trước. Workflow cũ (tạo trước khi có cấu hình cấp duyệt) không có approverId
+    // nên vẫn dùng đường broadcast theo role để không mất thông báo.
+    const approvers = step.approverId
+      ? await this.prisma.user.findMany({
+          where: { id: step.approverId, isActive: true },
+          select: { id: true, email: true, fullName: true, role: true },
+        })
+      : await this.accessPolicy.findProjectMallRecipients(submittal.project.id, step.approverRole as Role);
 
     for (const approver of approvers) {
       await this.notifications.create({
@@ -409,9 +410,16 @@ export class FitoutSubmittalService {
         // safely rather than sending a duplicate.
         await this.emailDelivery.enqueue(this.prisma, {
           eventKey: `fitout-submittal:${submittal.id}:step:${stepOrder}:approver:${approver.id}`,
+          eventType: 'FITOUT_SUBMITTAL_APPROVAL', entityType: 'FitoutSubmittal', entityId: submittal.id, mallId: submittal.project.unit.mallId,
           to: approver.email,
-          subject: `[Fitout] Submittal chờ duyệt — ${submittal.formType.name}`,
-          html: `<p>Kính gửi ${approver.fullName},</p><p>Submittal <strong>${submittal.title}</strong> của ${submittal.project.tenant.brandName} (${submittal.project.unit.code}) đang chờ bạn phê duyệt.</p>`,
+          subject: emailSubject(`Hồ sơ fitout chờ duyệt — ${submittal.formType.name}`),
+          html: this.emailService.fitoutSubmittalApprovalHtml({
+            approverName: approver.fullName,
+            submittalTitle: submittal.title,
+            formTypeName: submittal.formType.name,
+            tenantName: submittal.project.tenant.brandName,
+            unitCode: submittal.project.unit.code,
+          }),
         });
       }
     }

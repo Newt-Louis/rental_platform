@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -13,9 +14,11 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import {
   ServiceContractServiceCategory,
+  ServiceContractSharePermission,
   ServiceContractStatus,
   ServiceContractType,
   ServiceContractValueBasis,
@@ -25,6 +28,16 @@ const PAYMENT_DIRECTIONS = ['PAYABLE', 'RECEIVABLE'] as const;
 const PAYMENT_STATUSES = ['PENDING', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
 const MILESTONE_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE', 'CANCELLED'] as const;
 const RECURRING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const;
+
+/**
+ * Một dòng chia sẻ trong tab "Chia sẻ" của modal. Cả tab thông tin và tab chia
+ * sẻ được lưu trong cùng một lần bấm Lưu, nên nó đi kèm trong body của
+ * create/update chứ không có endpoint riêng.
+ */
+export class ServiceContractShareInputDto {
+  @IsString() @IsNotEmpty() userId: string;
+  @IsEnum(ServiceContractSharePermission) permission: ServiceContractSharePermission;
+}
 
 export class CreateServiceContractDto {
   @IsString() @IsNotEmpty() @MaxLength(100) contractNumber: string;
@@ -37,8 +50,8 @@ export class CreateServiceContractDto {
   @IsOptional() @IsString() @MaxLength(500) counterpartyAddress?: string;
   @IsOptional() @IsEnum(ServiceContractType) type?: ServiceContractType;
   @IsOptional() @IsDateString() signedDate?: string;
-  @IsOptional() @IsDateString() startDate?: string;
-  @IsOptional() @IsDateString() endDate?: string;
+  @IsDateString() startDate: string;
+  @IsDateString() endDate: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
   @IsOptional() @IsIn(PAYMENT_DIRECTIONS) paymentDirection?: string;
@@ -53,6 +66,8 @@ export class CreateServiceContractDto {
   @IsOptional() @IsString() ownerId?: string;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;
   @IsOptional() @IsString() @MaxLength(1000) tags?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ServiceContractShareInputDto)
+  shares?: ServiceContractShareInputDto[];
 }
 
 export class UpdateServiceContractDto {
@@ -81,6 +96,10 @@ export class UpdateServiceContractDto {
   @IsOptional() @IsString() ownerId?: string;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;
   @IsOptional() @IsString() @MaxLength(1000) tags?: string;
+  // Bỏ trống = không đụng tới danh sách chia sẻ hiện có. Gửi mảng rỗng = thu
+  // hồi toàn bộ. Người không phải người tạo gửi trường này sẽ bị từ chối.
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ServiceContractShareInputDto)
+  shares?: ServiceContractShareInputDto[];
 }
 
 export class UpdateServiceContractStatusDto {
@@ -157,7 +176,7 @@ export class UpdateMilestoneDto {
 export class RenewServiceContractDto {
   @IsString() @IsNotEmpty() @MaxLength(100) contractNumber: string;
   @IsOptional() @IsString() @MaxLength(250) title?: string;
-  @IsOptional() @IsDateString() startDate?: string;
+  @IsDateString() startDate: string;
   @IsDateString() endDate: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;

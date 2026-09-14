@@ -208,10 +208,10 @@ export class BillingAddInService {
   }
 
   /** Danh sách đơn giá đã cấu hình — dùng cho màn hình quản trị rate config. */
-  async listRates(mallId?: string, chargeType?: PeriodicChargeType) {
+  async listRates(mallId?: string, chargeType?: PeriodicChargeType, mallIds?: string[]) {
     return this.prisma.periodicChargeRateConfig.findMany({
       where: {
-        ...(mallId ? { mallId } : {}),
+        ...(mallId ? { mallId } : mallIds ? { mallId: { in: mallIds } } : {}),
         ...(chargeType ? { chargeType } : {}),
       },
       include: { mall: { select: { id: true, name: true, leaseCategory: true } } },

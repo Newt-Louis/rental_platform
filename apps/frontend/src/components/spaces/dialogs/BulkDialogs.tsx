@@ -6,8 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { STATUS_CONFIG, CATEGORIES } from '@/pages/spaces/spaces.constants';
+import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
 import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { flattenCategoryHierarchy, type CategoryOption } from '@/lib/categoryHierarchy';
 
 export function BulkStatusDialog({ open, count, onClose, onConfirm, loading }: {
   open: boolean;
@@ -51,15 +52,16 @@ export function BulkCategoryDialog({ open, count, onClose, onConfirm, loading }:
   open: boolean;
   count: number;
   onClose: () => void;
-  onConfirm: (category: string) => void;
+  onConfirm: (categoryId: string) => void;
   loading: boolean;
 }) {
-  const [category, setCategory] = useState('');
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : CATEGORIES;
-  }, [categoryOptions]);
+  const [categoryId, setCategoryId] = useState('');
+  const { data: categoryOptionsData } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000, enabled: open });
+  const categoryOptions: CategoryOption[] = useMemo(() => {
+    const opts = Array.isArray(categoryOptionsData) ? categoryOptionsData : (categoryOptionsData as any)?.data ?? [];
+    return opts.filter((c: any) => c?.id && c?.name);
+  }, [categoryOptionsData]);
+  const categoriesHierarchical = useMemo(() => flattenCategoryHierarchy(categoryOptions), [categoryOptions]);
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-sm">
@@ -67,20 +69,22 @@ export function BulkCategoryDialog({ open, count, onClose, onConfirm, loading }:
           <DialogTitle>Đổi ngành hàng {count} mặt bằng</DialogTitle>
         </DialogHeader>
         <div className="py-4">
-          <Select value={category} onValueChange={setCategory}>
+          <Select value={categoryId} onValueChange={setCategoryId}>
             <SelectTrigger>
               <SelectValue placeholder="Chọn ngành hàng mới" />
             </SelectTrigger>
             <SelectContent>
-              {categoryNames.map((c) => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
+              {categoriesHierarchical.map((c) => (
+                <SelectItem key={c.id} value={c.id} className={c.depth > 0 ? 'pl-6 text-gray-600' : undefined}>
+                  {c.depth > 0 && '↳ '}{c.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button onClick={() => onConfirm(category)} disabled={!category || loading}>
+          <Button onClick={() => onConfirm(categoryId)} disabled={!categoryId || loading}>
             {loading ? 'Đang cập nhật...' : 'Xác nhận'}
           </Button>
         </DialogFooter>

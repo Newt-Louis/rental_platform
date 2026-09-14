@@ -1,3 +1,4 @@
+import { formatSlotMoney, groupSlotRevenueByCurrency, formatSlotBucket } from '@/lib/slot-currency';
 import { Fragment, useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -22,10 +23,10 @@ import { ERPStatCard, ERPToolbar } from '@/components/erp';
 import {
   BookmarkCheck, Clock, BookmarkX, CalendarDays,
   Search, AlertTriangle, CheckSquare, Square, Trash2,
-  RotateCcw, Plus, Pencil, Ban, Loader2,
+  RotateCcw, Plus, Pencil, Ban, Loader2, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
-import { UNIT_STATUS_CONFIG, SLOT_STATUS_CONFIG, SLOT_TYPE_CONFIG, daysLeft, fmtDate, fmtDatetime, fmtMoney } from './bookings-constants';
+import { UNIT_STATUS_CONFIG, SLOT_STATUS_CONFIG, SLOT_TYPE_CONFIG, daysLeft, fmtDate, fmtDatetime, fmtDatetimeSec, fmtMoney } from './bookings-constants';
 import { BookingDetailSheet } from './BookingDetailSheet';
 import { SlotBookingDetailSheet } from './SlotBookingDetailSheet';
 import { CreateBookingDialog } from './CreateBookingDialog';
@@ -52,7 +53,12 @@ export function groupUnitBookings(bookings: UnitBooking[]) {
       group.bookings.push(booking);
     }
   }
-  return groups;
+
+  // Nhóm nào có booking vừa cập nhật gần đây nhất hiện lên trên cùng — thứ tự
+  // ưu tiên (queue) bên trong mỗi nhóm giữ nguyên như trên.
+  const latestUpdate = (group: { bookings: UnitBooking[] }) =>
+    Math.max(...group.bookings.map((b) => new Date(b.updatedAt).getTime()));
+  return groups.sort((a, b) => latestUpdate(b) - latestUpdate(a));
 }
 
 export function countUnitBookingStatuses(bookings: UnitBooking[]) {
@@ -225,6 +231,13 @@ export default function BookingsPage() {
   const [bookingSection, setBookingSection] = useState<string | undefined>();
   const [page, setPage] = useState(1);
   const [createUnitOpen, setCreateUnitOpen] = useState(false);
+  const [expandedUnitGroups, setExpandedUnitGroups] = useState<Set<string>>(new Set());
+  const toggleUnitGroup = (unitId: string) =>
+    setExpandedUnitGroups((prev) => {
+      const next = new Set(prev);
+      next.has(unitId) ? next.delete(unitId) : next.add(unitId);
+      return next;
+    });
 
   const urlFilterKey = searchParams.toString();
   useEffect(() => {
@@ -249,6 +262,13 @@ export default function BookingsPage() {
     setUnitApplied(next);
     setPage(1);
   }
+  // Đổi trạng thái từ dropdown trong thanh filter — áp dụng ngay (giống tab cũ), nhưng
+  // giữ nguyên các filter khác (search/tầng/ngày...) đang nhập, không reset như filterUnit().
+  function setUnitStatusFilter(status: string) {
+    setUnitDraft((f) => ({ ...f, status }));
+    setUnitApplied((f) => ({ ...f, status }));
+    setPage(1);
+  }
 
   // ── SlotBooking state ──
   const SLOT_EMPTY = { search: '', status: '', type: '', floorId: '', slotId: '' };
@@ -269,6 +289,12 @@ export default function BookingsPage() {
     const next = { ...SLOT_EMPTY, status };
     setSlotDraft(next);
     setSlotApplied(next);
+  }
+  // Đổi trạng thái từ dropdown — áp dụng ngay như tab, nhưng giữ nguyên các filter khác
+  // (search/loại/tầng/slot...) đang nhập, không reset như filterSlot().
+  function setSlotStatusFilter(status: string) {
+    setSlotDraft((f) => ({ ...f, status }));
+    setSlotApplied((f) => ({ ...f, status }));
   }
 
   useEffect(() => setSelectedUnitIds(new Set()), [unitApplied, page]);
@@ -338,8 +364,11 @@ export default function BookingsPage() {
     pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
+    converted: allSlotBookings.filter((b) => b.status === 'CONVERTED').length,
     cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
-    revenue: allSlotBookings.filter((b) => b.status === 'COMPLETED').reduce((sum, b) => sum + (b.totalAmount ?? 0), 0),
+    // RPT-CUR-006: was one cross-currency sum. Grouped now; there is no
+    // combined total because no FX rate exists.
+    revenueByCurrency: groupSlotRevenueByCurrency(allSlotBookings.filter((b: any) => b.status === 'COMPLETED')),
   };
 
   const floorOptions = Array.from(
@@ -414,24 +443,6 @@ export default function BookingsPage() {
               <Button variant="outline" size="sm" onClick={() => refetchStats()}>{t('actions.retry')}</Button>
             </div>
           )}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" aria-label={t('unitStats.all')}>
-            {[
-              { label: t('unitStats.all'), value: stats?.total ?? 0, status: '', urgent: false },
-              { label: t('unitStats.active'), value: stats?.active ?? 0, status: 'ACTIVE', urgent: false },
-              { label: t('unitStats.pending'), value: stats?.pending ?? 0, status: 'PENDING', urgent: false },
-              { label: t('unitStats.expiringSoon'), value: stats?.expiringSoon ?? 0, status: '', urgent: true, expiring: true },
-              { label: t('unitStats.converted'), value: stats?.converted ?? 0, status: 'CONVERTED', urgent: false },
-            ].map((item) => (
-              <ERPStatCard
-                key={item.label}
-                size="compact"
-                label={item.label}
-                value={item.value}
-                tone={item.urgent && item.value > 0 ? 'danger' : 'neutral'}
-                onClick={() => filterUnit(item.status, !!item.expiring)}
-              />
-            ))}
-          </div>
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
@@ -439,28 +450,36 @@ export default function BookingsPage() {
               className="inline-flex min-w-max items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/60 p-1 dark:border-amber-900/40 dark:bg-amber-950/20"
             >
               {[
-                { status: '', label: t('filterLabels.all'), count: stats?.total },
-                { status: 'ACTIVE', label: t('status.ACTIVE'), count: stats?.active },
-                { status: 'PENDING', label: t('status.PENDING'), count: stats?.pending },
-                { status: 'CONVERTED', label: t('status.CONVERTED'), count: stats?.converted },
-                { status: 'EXPIRED', label: t('status.EXPIRED') },
-                { status: 'CANCELLED', label: t('status.CANCELLED') },
+                { status: '', expiring: false, label: t('filterLabels.all'), count: stats?.total },
+                { status: 'ACTIVE', expiring: false, label: t('status.ACTIVE'), count: stats?.active },
+                { status: 'PENDING', expiring: false, label: t('status.PENDING'), count: stats?.pending },
+                // Sắp hết hạn — trước đây chỉ có ở card thống kê (ERPStatCard), gộp vào đây để
+                // bỏ card thống kê mà không mất khả năng lọc nhanh theo trạng thái này.
+                { status: '', expiring: true, label: t('unitStats.expiringSoon'), count: stats?.expiringSoon, urgent: true },
+                { status: 'CONVERTED', expiring: false, label: t('status.CONVERTED'), count: stats?.converted },
+                { status: 'EXPIRED', expiring: false, label: t('status.EXPIRED') },
+                { status: 'CANCELLED', expiring: false, label: t('status.CANCELLED') },
               ].map((item) => {
-                const selected = unitApplied.status === item.status && !unitApplied.expiringSoon;
+                const selected = unitApplied.status === item.status && !!unitApplied.expiringSoon === item.expiring;
+                const isUrgent = item.urgent && !!item.count;
                 return (
                   <button
-                    key={item.status || 'ALL'}
+                    key={`${item.status || 'ALL'}-${item.expiring}`}
                     type="button"
                     role="tab"
                     aria-selected={selected}
-                    onClick={() => filterUnit(item.status)}
+                    onClick={() => filterUnit(item.status, item.expiring)}
                     className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
-                      selected ? 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                      selected
+                        ? isUrgent ? 'bg-red-50 text-red-700 shadow-sm ring-1 ring-red-200' : 'bg-white text-amber-800 shadow-sm ring-1 ring-amber-200'
+                        : isUrgent ? 'text-red-600 hover:bg-white/70' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
                     }`}
                   >
                     {item.label}
                     {item.count !== undefined && (
-                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${selected ? 'bg-amber-100 text-amber-800' : 'bg-white text-gray-500'}`}>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                        selected ? (isUrgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800') : (isUrgent ? 'bg-red-50 text-red-600' : 'bg-white text-gray-500')
+                      }`}>
                         {item.count}
                       </span>
                     )}
@@ -479,7 +498,7 @@ export default function BookingsPage() {
                 onKeyDown={(e) => e.key === 'Enter' && applyUnit()}
               />
             </div>
-            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitField('status', v === 'ALL' ? '' : v)}>
+            <Select value={unitDraft.status || 'ALL'} onValueChange={(v) => setUnitStatusFilter(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-40">
                 <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
@@ -599,6 +618,9 @@ export default function BookingsPage() {
                   {unitBookingGroups.map((group) => {
                     const firstBooking = group.bookings[0];
                     const counts = countUnitBookingStatuses(group.bookings);
+                    const isExpanded = expandedUnitGroups.has(group.unitId);
+                    const hasMore = group.bookings.length > 1;
+                    const visibleBookings = isExpanded ? group.bookings : group.bookings.slice(0, 1);
                     return (
                       <Fragment key={group.unitId}>
                         <tr className="border-y border-slate-200 bg-slate-50/90">
@@ -623,10 +645,23 @@ export default function BookingsPage() {
                                 <span className="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
                                 {t('table.waitingCount', { count: counts.pending })}
                               </span>
+                              {hasMore && (
+                                <button
+                                  type="button"
+                                  className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                                  onClick={() => toggleUnitGroup(group.unitId)}
+                                >
+                                  {isExpanded ? (
+                                    <><ChevronUp size={13} /> {t('table.showLess')}</>
+                                  ) : (
+                                    <><ChevronDown size={13} /> {t('table.showMore', { count: group.bookings.length - 1 })}</>
+                                  )}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
-                        {group.bookings.map((b) => {
+                        {visibleBookings.map((b) => {
                     const cfg = UNIT_STATUS_CONFIG[b.status];
                     const dl = daysLeft(b.expiresAt);
                     const clientName = b.lead?.brandName ?? b.customer?.companyName ?? '—';
@@ -668,20 +703,22 @@ export default function BookingsPage() {
                         <td data-section="" className="px-4 py-3">
                           <Badge className={`border text-xs ${cfg?.color}`}>{cfg?.label}</Badge>
                         </td>
-                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
-                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDatetimeSec(b.createdAt)}</td>
+                        <td data-section="bs-timeline" className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDatetimeSec(b.updatedAt)}</td>
                         <td data-section="bs-assignee" className="px-4 py-3 text-xs text-gray-500">{b.assignedTo?.fullName ?? '—'}</td>
                         <td data-section="" className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
                             {['ACTIVE', 'PENDING'].includes(b.status) && (
                               <>
-                                <button
-                                  className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                                  title={t('edit')}
-                                  onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
-                                >
-                                  <Pencil size={13} />
-                                </button>
+                                {(isAdmin || (b as any).createdById === currentUser?.id) && (
+                                  <button
+                                    className="p-1 rounded text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                    title={t('edit')}
+                                    onClick={(e) => { e.stopPropagation(); setSelectedBooking(b); setEditDirectly(true); }}
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
                                 <button
                                   className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                                   title={t('actions.cancel')}
@@ -737,23 +774,21 @@ export default function BookingsPage() {
       {/* ══════════ SLOT BOOKING ══════════ */}
       {typeFilter === 'slot' && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
-            {[
-              { label: t('slotStats.pending'), value: slotStats.pending, status: 'PENDING' },
-              { label: t('slotStats.confirmed'), value: slotStats.confirmed, status: 'CONFIRMED' },
-              { label: t('slotStats.completed'), value: slotStats.completed, status: 'COMPLETED' },
-              { label: t('slotStats.revenue'), value: fmtMoney(slotStats.revenue), status: '' },
-            ].map((item) => (
-              <ERPStatCard
-                key={item.label}
-                size="compact"
-                label={item.label}
-                value={item.value}
-                tone="neutral"
-                onClick={() => filterSlot(item.status)}
-              />
-            ))}
-          </div>
+          {/* RPT-CUR-006: doanh thu tách riêng theo từng loại tiền tệ, không gộp thành 1 tổng — card này
+              không trùng với tab trạng thái bên dưới nên vẫn giữ lại. */}
+          {slotStats.revenueByCurrency.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4" aria-label={t('page.slotType')}>
+              {slotStats.revenueByCurrency.map((b) => (
+                <ERPStatCard
+                  key={b.currencyCode}
+                  size="compact"
+                  label={`${t('slotStats.revenue')} ${b.currencyCode}`}
+                  value={formatSlotBucket(b)}
+                  tone="neutral"
+                />
+              ))}
+            </div>
+          )}
           <div className="mb-4 overflow-x-auto pb-1">
             <div
               role="tablist"
@@ -765,6 +800,9 @@ export default function BookingsPage() {
                 { status: 'PENDING', label: t('slotStatus.PENDING'), count: slotStats.pending },
                 { status: 'CONFIRMED', label: t('slotStatus.CONFIRMED'), count: slotStats.confirmed },
                 { status: 'COMPLETED', label: t('slotStatus.COMPLETED'), count: slotStats.completed },
+                // Đã lập đề xuất — trước đây thiếu ở cả tab và card thống kê (bổ sung khi thêm luồng
+                // booking ngắn hạn → Proposal, xem SlotsService.convertToProposal()).
+                { status: 'CONVERTED', label: t('slotStatus.CONVERTED'), count: slotStats.converted },
                 { status: 'CANCELLED', label: t('slotStatus.CANCELLED'), count: slotStats.cancelled },
               ].map((item) => {
                 const selected = slotApplied.status === item.status;
@@ -798,7 +836,7 @@ export default function BookingsPage() {
                 onKeyDown={(e) => e.key === 'Enter' && applySlot()}
               />
             </div>
-            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotField('status', v === 'ALL' ? '' : v)}>
+            <Select value={slotDraft.status || 'ALL'} onValueChange={(v) => setSlotStatusFilter(v === 'ALL' ? '' : v)}>
               <SelectTrigger className="h-9 w-44">
                 <SelectValue placeholder={t('filters.status')} />
               </SelectTrigger>
@@ -954,7 +992,7 @@ export default function BookingsPage() {
                           <div className="text-gray-400">→ {fmtDatetime(b.endDatetime)}</div>
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-800">
-                          {fmtMoney(b.totalAmount)}
+                          {formatSlotMoney(b.totalAmount, b.currencyCode)}
                         </td>
                         <td className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>

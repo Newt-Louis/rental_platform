@@ -10,6 +10,7 @@ import { FitoutSlaService } from './fitout-sla.service';
 import { FitoutContractorService } from './fitout-contractor.service';
 import { FitoutStageConfigService } from './fitout-stage-config.service';
 import { FitoutFormTypeService } from './fitout-form-type.service';
+import { FitoutFormApprovalService } from './fitout-form-approval.service';
 import { FitoutSubmittalService } from './fitout-submittal.service';
 import { FitoutIssueService } from './fitout-issue.service';
 import { FitoutDailyReportService } from './fitout-daily-report.service';
@@ -38,6 +39,7 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutContractorService,
     FitoutStageConfigService,
     FitoutFormTypeService,
+    FitoutFormApprovalService,
     FitoutSubmittalService,
     FitoutIssueService,
     FitoutDailyReportService,
@@ -53,6 +55,7 @@ import { StorageModule } from '../../storage/storage.module';
     FitoutContractorService,
     FitoutStageConfigService,
     FitoutFormTypeService,
+    FitoutFormApprovalService,
     FitoutSubmittalService,
     FitoutIssueService,
     FitoutDailyReportService,

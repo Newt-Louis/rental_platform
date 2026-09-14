@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   canAccessModule,
   canAccessPath,
@@ -8,8 +8,11 @@ import {
   ROUTE_PERMISSIONS,
   TENANT_NAV,
 } from './permissions';
+import { usePermissionsStore } from '@/store/permissions.store';
 
 describe('route permissions', () => {
+  afterEach(() => usePermissionsStore.getState().reset());
+
   it('maps every navigation item to its declared path module', () => {
     const items = [...NAV_GROUPS.flatMap((group) => group.items), ...TENANT_NAV];
 
@@ -18,6 +21,16 @@ describe('route permissions', () => {
       expect(PATH_TO_MODULE[segment]).toBe(item.module);
       expect(ROUTE_PERMISSIONS[item.module]).toBeDefined();
     }
+  });
+
+  it('orders CRM before the unit-specific sales process', () => {
+    const groupKeys = NAV_GROUPS.map((group) => group.key);
+
+    expect(groupKeys.indexOf('crm')).toBe(groupKeys.indexOf('salesProcess') - 1);
+    expect(NAV_GROUPS.find((group) => group.key === 'crm')?.items.map((item) => item.path))
+      .toEqual(['/crm-overview', '/crm']);
+    expect(NAV_GROUPS.find((group) => group.key === 'salesProcess')?.items.map((item) => item.path))
+      .toEqual(['/bookings', '/proposals', '/approvals', '/contracts', '/tenants', '/pipeline-stats']);
   });
 
   it('only exposes tenant navigation entries allowed to TENANT', () => {
@@ -60,6 +73,15 @@ describe('route permissions', () => {
     expect(getDefaultHomePath('TENANT')).toBe('/tenant-portal');
     expect(getDefaultHomePath('ADMIN')).toBe('/dashboard');
     expect(getDefaultHomePath(undefined)).toBe('/dashboard');
+    expect(getDefaultHomePath('FITOUT_BASIC_TEAM')).toBe('/fitout-dossiers');
+  });
+
+  it('DOSSIER-013/014 grants only the dossier route to FITOUT_BASIC_TEAM', () => {
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout-dossiers')).toBe(true);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/tenants')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/fitout-approvals')).toBe(false);
+    expect(canAccessPath('FITOUT_BASIC_TEAM', '/billing')).toBe(false);
   });
 
   it('allows Department operators into Admin while keeping other roles out', () => {
@@ -67,6 +89,21 @@ describe('route permissions', () => {
     expect(canAccessPath('CEO', '/admin?tab=departments')).toBe(true);
     expect(canAccessPath('MALL_DIRECTOR', '/admin?tab=departments')).toBe(true);
     expect(canAccessPath('FINANCE', '/admin?tab=departments')).toBe(false);
+  });
+
+  it('PERM-FITOUT-EMPTY-001 hides and denies Fitout when the configured module set is empty', () => {
+    usePermissionsStore.getState().setAllowedModules([]);
+
+    expect(ROUTE_PERMISSIONS.fitout).toContain('OPERATION');
+    expect(canAccessModule('OPERATION', 'fitout')).toBe(false);
+    expect(canAccessPath('OPERATION', '/fitout')).toBe(false);
+  });
+
+  it('PERM-FITOUT-NOCONFIG-002 uses the documented static fallback before config loads', () => {
+    usePermissionsStore.getState().reset();
+
+    expect(canAccessModule('OPERATION', 'fitout')).toBe(true);
+    expect(canAccessPath('OPERATION', '/fitout')).toBe(true);
   });
 
   it('covers every RouteModule and keeps every navigation path unique (regression guard for the ' +

@@ -1,7 +1,7 @@
 import type { CurrencyCode } from '@/lib/currency';
 export type { CurrencyCode };
-export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'TENANT' | 'CEO';
-export type UnitStatus = 'VACANT' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED';
+export type Role = 'ADMIN' | 'LEASING_EXECUTIVE' | 'LEASING_MANAGER' | 'MALL_DIRECTOR' | 'FINANCE' | 'LEGAL' | 'OPERATION' | 'FITOUT_BASIC_TEAM' | 'TENANT' | 'CEO';
+export type UnitStatus = 'VACANT' | 'OFFERING' | 'BOOKING' | 'NEGOTIATING' | 'CONTRACTED' | 'UNDER_FITOUT' | 'OCCUPIED' | 'LIQUIDATED';
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
 export type LeadPriority = 'HOT' | 'WARM' | 'COLD';
 export type CustomerStatus = 'PROSPECT' | 'NEGOTIATING' | 'ACTIVE' | 'INACTIVE' | 'BLACKLISTED';
@@ -113,6 +113,7 @@ export interface CategoryMallPricing {
   maxRentPerSqm: number | null;
   suggestedRent?: number | null;
   camPerSqm: number | null;
+  currencyCode: string;
   effectiveFrom: string;
   effectiveTo?: string;
   notes?: string;
@@ -130,7 +131,9 @@ export interface PriceValidationResult {
   maxRentPerSqm: number;
   deviationPercent: number;
   requiresApproval: boolean;
-  approvalLevel: 'NONE' | 'MANAGER' | 'DIRECTOR' | 'CEO';
+  // CR-...-ALWAYS-WARN-004: removed. Approval authority is configuration
+  // (ApprovalPolicyRule); the pricing endpoint returns facts only, and the
+  // routing arrives as PricingDecision.approval.steps.
   message: string;
   sources?: Record<string, { ruleId: string; categoryId: string; scope: string } | null>;
 }
@@ -161,6 +164,7 @@ export interface Unit {
   categoryRef?: Category;
   baseRentPerSqm: number;
   camPerSqm: number;
+  currencyCode?: CurrencyCode;
   status: UnitStatus;
   spaceType?: string;
   tier?: string;
@@ -303,6 +307,9 @@ export interface UnitSlot {
   pricePerDaySqm?: number;
   pricePerHour?: number;
   pricePerSqmMonth?: number;
+  // RPT-CUR-006: currency of the three price fields. Optional because legacy
+  // rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   fillColor?: string;
   posX: number;
   posY: number;
@@ -327,7 +334,10 @@ export interface SlotBooking {
   startDatetime: string;
   endDatetime?: string;
   totalPrice?: number;
+  baseAmount?: number;
   totalAmount?: number;
+  // MON-CUR-SLOT-01: booking-time currency snapshot. Never read from the slot.
+  currencyCode?: CurrencyCode | null;
   leadId?: string;
   lead?: Lead;
   customerId?: string;
@@ -350,6 +360,14 @@ export interface UnitSlotSummary {
   vacantArea: number;
 }
 
+/** Authoritative category identity exposed alongside every CRM record. */
+export interface CategoryRef {
+  id: string;
+  code: string;
+  name: string;
+  isActive?: boolean;
+}
+
 export interface Lead {
   id: string;
   brandName: string;
@@ -357,7 +375,13 @@ export interface Lead {
   contactName: string;
   phone?: string;
   email?: string;
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — display snapshot only. Identity is
+   * `categoryId` / `categoryRef`; prefer `categoryRef.name` when rendering.
+   */
   category?: string;
+  categoryId?: string | null;
+  categoryRef?: CategoryRef | null;
   source: string;
   status: LeadStatus;
   priority: LeadPriority;
@@ -369,6 +393,9 @@ export interface Lead {
   expectedArea?: number;
   expectedRent?: number;
   estimatedValue?: number;
+  // RPT-CUR-005: currency of expectedRent/estimatedValue. Optional because
+  // legacy rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   expectedCloseDate?: string;
   position?: number;
   lastActivityAt?: string;
@@ -404,10 +431,16 @@ export interface Customer {
   website?: string;
   source: LeadSource;
   status: CustomerStatus;
+  /** CR-CRM-CATEGORY-MASTER-001 — display snapshot only, see Lead.category. */
   preferredCategory?: string;
+  preferredCategoryId?: string | null;
+  preferredCategoryRef?: CategoryRef | null;
   expectedArea?: number;
   budgetMin?: number;
   budgetMax?: number;
+  // CUR-002-CUSTOMER: currency of the budget range. Optional because legacy
+  // rows predate the column — null means UNKNOWN, never VND.
+  currencyCode?: CurrencyCode | null;
   rating?: number;
   assignedTo?: User;
   tenant?: { id: string; brandName: string; companyName: string };

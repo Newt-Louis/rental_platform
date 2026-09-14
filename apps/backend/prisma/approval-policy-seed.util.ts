@@ -2,7 +2,8 @@ import { Role } from '@prisma/client';
 
 type PolicyContext = {
   discountPct: number;
-  rentFreeDays: number;
+  /** SEM-001 — rent-free concession in whole MONTHS. Never days. */
+  rentFreeMonths: number;
   industryTag?: string | null;
   hasArDebt: boolean;
 };
@@ -11,6 +12,8 @@ type PolicyRuleLike = {
   stepName: string;
   stepOrder: number;
   approverRole: Role;
+  /** Tài khoản đích danh của quy tắc — mang thẳng sang ApprovalStep.approverId. */
+  approverId: string;
   conditionType: string;
   operator?: string | null;
   threshold?: number | null;
@@ -35,8 +38,11 @@ function matchesRule(rule: PolicyRuleLike, ctx: PolicyContext): boolean {
   switch (rule.conditionType) {
     case 'DISCOUNT_PCT':
       return compareNumber(ctx.discountPct, rule.operator, rule.threshold ?? 0);
+    case 'RENT_FREE_MONTHS':
+      return compareNumber(ctx.rentFreeMonths, rule.operator, rule.threshold ?? 0);
+    // SEM-001 legacy shim — mirrors approval-policy.util.ts. 30 days = 1 month.
     case 'RENT_FREE_DAYS':
-      return compareNumber(ctx.rentFreeDays, rule.operator, rule.threshold ?? 0);
+      return compareNumber(ctx.rentFreeMonths, rule.operator, (rule.threshold ?? 0) / 30);
     case 'INDUSTRY_TAG':
       return (ctx.industryTag ?? '').toLowerCase() === (rule.matchValue ?? '').toLowerCase();
     case 'HAS_AR_DEBT':
@@ -48,15 +54,16 @@ function matchesRule(rule: PolicyRuleLike, ctx: PolicyContext): boolean {
 
 export function buildApprovalStepsFromRules(rules: PolicyRuleLike[], ctx: PolicyContext) {
   const selected = rules.filter((rule) => matchesRule(rule, ctx));
-  const unique = new Map<string, { stepName: string; stepOrder: number; approverRole: Role }>();
+  const unique = new Map<string, { stepName: string; stepOrder: number; approverRole: Role; approverId: string }>();
 
   for (const rule of selected) {
-    const key = `${rule.stepOrder}-${rule.stepName}-${rule.approverRole}`;
+    const key = `${rule.stepOrder}-${rule.stepName}-${rule.approverRole}-${rule.approverId}`;
     if (!unique.has(key)) {
       unique.set(key, {
         stepName: rule.stepName,
         stepOrder: rule.stepOrder,
         approverRole: rule.approverRole,
+        approverId: rule.approverId,
       });
     }
   }

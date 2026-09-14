@@ -50,7 +50,7 @@ export function SalesPipelineTab({
   const historyBookings = bookings.filter((b) => !['ACTIVE','PENDING'].includes(b.status));
 
   // Mặt bằng đã có khách thuê chính thức — không cho tạo booking mới chồng lên (khớp chặn ở backend)
-  const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT'].includes(unit.status);
+  const isCommitted = ['OCCUPIED', 'CONTRACTED', 'UNDER_FITOUT', 'LIQUIDATED'].includes(unit.status);
 
   const fmtMoney = (n: number, currency?: CurrencyCode) => formatMoneyWithCode(n, currency ?? 'VND');
   const fmtDate = (d?: string | null) =>

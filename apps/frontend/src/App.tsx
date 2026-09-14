@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/lib/theme";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuthStore } from "@/store/auth.store";
+import { usePermissionsSync } from "@/hooks/usePermissionsSync";
 import Layout from "@/components/Layout";
 import { RoleRoute, HomeRedirect } from "@/components/RoleRoute";
 import { Navigate } from "react-router-dom";
@@ -24,6 +25,7 @@ import {
   PatrolPage,
   ParkingPage,
   FitoutPage,
+  FitoutDossiersPage,
   FitoutApprovalsPage,
   FitoutSettingsPage,
   FitoutDailyReportPage,
@@ -44,6 +46,7 @@ import {
   CrossMallDashboard,
   TenantsPage,
   AuditLogPage,
+  EmailDeliveriesPage,
   DealPipelinePage,
   BookingsPage,
   SalesPipelineStatsPage,
@@ -64,6 +67,7 @@ function AppHydrator({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     hydrate();
   }, []);
+  usePermissionsSync();
   if (!isHydrated) return <ContentLoading />;
   return <>{children}</>;
 }
@@ -224,6 +228,14 @@ export default function App() {
                     }
                   />
                   <Route
+                    path="fitout-dossiers"
+                    element={
+                      <RoleRoute>
+                        <FitoutDossiersPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
                     path="fitout-approvals"
                     element={
                       <RoleRoute>
@@ -372,6 +384,14 @@ export default function App() {
                     element={
                       <RoleRoute>
                         <AuditLogPage />
+                      </RoleRoute>
+                    }
+                  />
+                  <Route
+                    path="email-deliveries"
+                    element={
+                      <RoleRoute>
+                        <EmailDeliveriesPage />
                       </RoleRoute>
                     }
                   />

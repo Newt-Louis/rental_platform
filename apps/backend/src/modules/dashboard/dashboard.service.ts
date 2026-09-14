@@ -7,10 +7,12 @@ import {
   InvoiceStatus,
   TicketStatus,
   WorkflowStatus,
+  CurrencyCode,
 } from '@prisma/client';
 import {
   summarizeOccupancyByLeaseTerm,
   summarizeShortBookingPipeline,
+  mergeSlotRevenueBuckets,
 } from '../../common/utils/lease-term-analytics';
 
 const LEASING_ROLES = new Set([
@@ -26,6 +28,87 @@ const OPERATION_ROLES = new Set(['OPERATION', 'ADMIN']);
 const OVERVIEW_ROLES = new Set(['ADMIN', 'CEO', 'MALL_DIRECTOR']);
 
 const DASHBOARD_CACHE_TTL = 60;
+
+
+/**
+ * RPT-CUR-001 / RPT-CUR-003 — group monetary amounts by currency instead of
+ * summing across them.
+ *
+ * There is no FX engine in this platform, so VND + USD + MMK cannot become one
+ * number. Each currency gets its own bucket; `collectionRate` is a ratio of two
+ * same-currency sums and is therefore computed per bucket, never across them.
+ *
+ * Buckets are emitted in a stable order so a consumer can rely on it, and a
+ * currency with no invoices simply does not appear (rather than appearing as 0,
+ * which would imply the mall trades in it).
+ */
+export type RevenueCurrencyBucket = {
+  currencyCode: CurrencyCode;
+  monthlyRevenue: number;
+  collectedRevenue: number;
+  collectionRate: number;
+};
+
+const CURRENCY_BUCKET_ORDER: CurrencyCode[] = ['VND', 'USD', 'MMK'];
+
+export function groupRevenueByCurrency(
+  invoices: { totalAmount: number; currencyCode: CurrencyCode; status: string }[],
+): RevenueCurrencyBucket[] {
+  const byCurrency = new Map<CurrencyCode, { monthlyRevenue: number; collectedRevenue: number }>();
+  for (const invoice of invoices) {
+    let bucket = byCurrency.get(invoice.currencyCode);
+    if (!bucket) {
+      bucket = { monthlyRevenue: 0, collectedRevenue: 0 };
+      byCurrency.set(invoice.currencyCode, bucket);
+    }
+    bucket.monthlyRevenue += invoice.totalAmount;
+    if (invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID') {
+      bucket.collectedRevenue += invoice.totalAmount;
+    }
+  }
+
+  return sortBuckets(
+    [...byCurrency.entries()].map(([currencyCode, b]) => ({
+      currencyCode,
+      monthlyRevenue: b.monthlyRevenue,
+      collectedRevenue: b.collectedRevenue,
+      collectionRate: collectionRateOf(b.collectedRevenue, b.monthlyRevenue),
+    })),
+  );
+}
+
+/** Sum bucket lists across malls, still never mixing currencies. */
+export function mergeRevenueBuckets(lists: RevenueCurrencyBucket[][]): RevenueCurrencyBucket[] {
+  const merged = new Map<CurrencyCode, { monthlyRevenue: number; collectedRevenue: number }>();
+  for (const list of lists) {
+    for (const b of list) {
+      const acc = merged.get(b.currencyCode) ?? { monthlyRevenue: 0, collectedRevenue: 0 };
+      acc.monthlyRevenue += b.monthlyRevenue;
+      acc.collectedRevenue += b.collectedRevenue;
+      merged.set(b.currencyCode, acc);
+    }
+  }
+  return sortBuckets(
+    [...merged.entries()].map(([currencyCode, b]) => ({
+      currencyCode,
+      monthlyRevenue: b.monthlyRevenue,
+      collectedRevenue: b.collectedRevenue,
+      collectionRate: collectionRateOf(b.collectedRevenue, b.monthlyRevenue),
+    })),
+  );
+}
+
+function collectionRateOf(collected: number, billed: number): number {
+  return billed > 0 ? +((collected / billed) * 100).toFixed(1) : 0;
+}
+
+function sortBuckets(buckets: RevenueCurrencyBucket[]): RevenueCurrencyBucket[] {
+  const rank = (c: CurrencyCode) => {
+    const i = CURRENCY_BUCKET_ORDER.indexOf(c);
+    return i === -1 ? 99 : i;
+  };
+  return [...buckets].sort((a, b) => rank(a.currencyCode) - rank(b.currencyCode));
+}
 
 @Injectable()
 export class DashboardService {
@@ -263,6 +346,8 @@ export class DashboardService {
           startDatetime: true,
           endDatetime: true,
           totalAmount: true,
+          // RPT-CUR-006: the booking-time currency snapshot.
+          currencyCode: true,
           slot: { select: { id: true, unitId: true, area: true } },
         },
       }),
@@ -345,8 +430,17 @@ export class DashboardService {
           ...occupancyByLeaseTerm.SHORT,
           leasedArea: occupancyByLeaseTerm.SHORT.occupiedArea,
           bookingStats: shortBookingStats,
-          monthlyRevenue: shortBookingStats.revenue,
-          collectedRevenue: shortBookingStats.revenue,
+          // RPT-CUR-006 — `revenueByCurrency` is the AUTHORITATIVE figure.
+          revenueByCurrency: shortBookingStats.revenueByCurrency,
+          revenueCurrencyUnknown: shortBookingStats.revenueCurrencyUnknown,
+          revenueCurrencyMixed: shortBookingStats.revenueCurrencyMixed,
+          // The scalar used to be VND + USD + UNKNOWN added together. A number
+          // like that has no unit of account and cannot be labelled, so it is
+          // NOT emitted as money: it is null whenever more than one currency (or
+          // an unknown one) is present, and carries its scope otherwise.
+          monthlyRevenue: shortBookingStats.revenueScalar,
+          collectedRevenue: shortBookingStats.revenueScalar,
+          revenueScalarCurrency: shortBookingStats.revenueScalarCurrency,
           expiringIn30: 0,
           expiringIn90: 0,
         },
@@ -379,17 +473,21 @@ export class DashboardService {
         const occupancyRate = totalArea > 0 ? (leasedArea / totalArea) * 100 : 0;
 
         const [invoices, overdueCount, openTickets, expiringIn30, slotBookings] = await Promise.all([
-          // See the currency note on the main dashboard's invoice.findMany above --
-          // same unsafe-SUM guard applies here for the per-mall revenue breakdown.
+          // RPT-CUR-003 / RPT-CUR-004: this used to carry `currencyCode: 'VND'`,
+          // which kept the arithmetic safe but made USD/MMK revenue invisible to
+          // the CEO screen with nothing disclosing the omission. The filter is
+          // gone; the currency is selected and carried through aggregation so
+          // amounts are GROUPED by currency instead of being excluded. No FX
+          // conversion is performed anywhere.
           this.prisma.invoice.findMany({
             where: {
               isActive: true,
               period: { startsWith: currentMonth },
-              currencyCode: 'VND',
               contract: { unit: { floor: { mallId: mall.id } } },
             },
             select: {
               totalAmount: true,
+              currencyCode: true,
               status: true,
               contract: { select: { unit: { select: { leaseTermType: true } } } },
             },
@@ -425,6 +523,8 @@ export class DashboardService {
               startDatetime: true,
               endDatetime: true,
               totalAmount: true,
+              // RPT-CUR-006: the booking-time currency snapshot.
+              currencyCode: true,
               slot: { select: { id: true, unitId: true, area: true } },
             },
           }),
@@ -433,15 +533,20 @@ export class DashboardService {
         const occupancyByLeaseTerm = summarizeOccupancyByLeaseTerm(units, slotBookings);
         const shortBookingStats = summarizeShortBookingPipeline(slotBookings);
         const longInvoices = invoices.filter((invoice) => invoice.contract?.unit.leaseTermType === 'LONG');
-        const longMonthlyRevenue = longInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
-        const longCollectedRevenue = longInvoices
-          .filter((invoice) => invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID')
-          .reduce((sum, invoice) => sum + invoice.totalAmount, 0);
 
-        const monthlyRevenue = invoices.reduce((s, i) => s + i.totalAmount, 0);
-        const collectedRevenue = invoices
-          .filter((i) => i.status === 'PAID' || i.status === 'PARTIALLY_PAID')
-          .reduce((s, i) => s + i.totalAmount, 0);
+        const revenueByCurrency = groupRevenueByCurrency(invoices);
+        const longRevenueByCurrency = groupRevenueByCurrency(longInvoices);
+
+        // RPT-CUR-004: the legacy scalars are retained for backward compatibility
+        // but are VND-ONLY and must never be presented as an all-currency total.
+        // `revenueScalarCurrency` makes that scope machine-readable so a consumer
+        // cannot mistake them for a consolidated figure.
+        const vndBucket = revenueByCurrency.find((b) => b.currencyCode === 'VND');
+        const monthlyRevenue = vndBucket?.monthlyRevenue ?? 0;
+        const collectedRevenue = vndBucket?.collectedRevenue ?? 0;
+        const longVndBucket = longRevenueByCurrency.find((b) => b.currencyCode === 'VND');
+        const longMonthlyRevenue = longVndBucket?.monthlyRevenue ?? 0;
+        const longCollectedRevenue = longVndBucket?.collectedRevenue ?? 0;
 
         return {
           mall: { id: mall.id, name: mall.name, code: mall.code, city: mall.city },
@@ -450,6 +555,11 @@ export class DashboardService {
           leasedArea,
           vacantArea,
           unitCount: units.length,
+          // RPT-CUR-001/003 — the authoritative monetary contract.
+          revenueByCurrency,
+          // RPT-CUR-004 — legacy scalars, VND-ONLY. Kept for backward
+          // compatibility; never present these as an all-currency total.
+          revenueScalarCurrency: 'VND' as CurrencyCode,
           monthlyRevenue,
           collectedRevenue,
           collectionRate: monthlyRevenue > 0 ? +((collectedRevenue / monthlyRevenue) * 100).toFixed(1) : 0,
@@ -460,6 +570,8 @@ export class DashboardService {
             LONG: {
               ...occupancyByLeaseTerm.LONG,
               leasedArea: occupancyByLeaseTerm.LONG.occupiedArea,
+              revenueByCurrency: longRevenueByCurrency,
+              revenueScalarCurrency: 'VND' as CurrencyCode,
               monthlyRevenue: longMonthlyRevenue,
               collectedRevenue: longCollectedRevenue,
               collectionRate: longMonthlyRevenue > 0 ? +((longCollectedRevenue / longMonthlyRevenue) * 100).toFixed(1) : 0,
@@ -469,16 +581,31 @@ export class DashboardService {
             SHORT: {
               ...occupancyByLeaseTerm.SHORT,
               leasedArea: occupancyByLeaseTerm.SHORT.occupiedArea,
-              monthlyRevenue: shortBookingStats.revenue,
-              collectedRevenue: shortBookingStats.revenue,
+              // RPT-CUR-006 — FIXED in Wave 5. `SlotBooking.currencyCode` now
+              // exists as a booking-time snapshot, so SHORT revenue is grouped
+              // by it instead of being declared wholly unknown. A booking
+              // recorded before the column existed lands in the UNKNOWN bucket
+              // and is still never counted as VND.
+              revenueByCurrency: shortBookingStats.revenueByCurrency,
+              revenueCurrencyUnknown: shortBookingStats.revenueCurrencyUnknown,
+              revenueCurrencyMixed: shortBookingStats.revenueCurrencyMixed,
+              // See buildDashboard: never a cross-currency sum.
+              monthlyRevenue: shortBookingStats.revenueScalar,
+              collectedRevenue: shortBookingStats.revenueScalar,
+              revenueScalarCurrency: shortBookingStats.revenueScalarCurrency,
               bookingStats: shortBookingStats,
-              collectionRate: shortBookingStats.revenue > 0 ? 100 : 0,
+              collectionRate: (shortBookingStats.revenueScalar ?? 0) > 0 ? 100 : 0,
               unitCount: occupancyByLeaseTerm.SHORT.total,
               expiringIn30: 0,
             },
           },
         };
       }),
+    );
+
+    const totalsRevenueByCurrency = mergeRevenueBuckets(mallData.map((m) => m.revenueByCurrency));
+    const totalsLongRevenueByCurrency = mergeRevenueBuckets(
+      mallData.map((m) => m.byLeaseTerm.LONG.revenueByCurrency),
     );
 
     const totals = mallData.reduce(
@@ -505,8 +632,12 @@ export class DashboardService {
             occupiedArea: acc.byLeaseTerm.SHORT.occupiedArea + m.byLeaseTerm.SHORT.occupiedArea,
             total: acc.byLeaseTerm.SHORT.total + m.byLeaseTerm.SHORT.total,
             occupied: acc.byLeaseTerm.SHORT.occupied + m.byLeaseTerm.SHORT.occupied,
-            monthlyRevenue: acc.byLeaseTerm.SHORT.monthlyRevenue + m.byLeaseTerm.SHORT.monthlyRevenue,
-            collectedRevenue: acc.byLeaseTerm.SHORT.collectedRevenue + m.byLeaseTerm.SHORT.collectedRevenue,
+            // RPT-CUR-006: SHORT scalars are null unless a single currency
+            // governs them, and summing them across malls would rebuild exactly
+            // the mixed number this wave removed. The per-currency merge below
+            // is the only SHORT total.
+            monthlyRevenue: null as number | null,
+            collectedRevenue: null as number | null,
             expiringIn30: 0,
           },
         },
@@ -516,7 +647,7 @@ export class DashboardService {
         overdueCount: 0, openTickets: 0, expiringIn30: 0,
         byLeaseTerm: {
           LONG: { totalArea: 0, occupiedArea: 0, total: 0, occupied: 0, monthlyRevenue: 0, collectedRevenue: 0, expiringIn30: 0 },
-          SHORT: { totalArea: 0, occupiedArea: 0, total: 0, occupied: 0, monthlyRevenue: 0, collectedRevenue: 0, expiringIn30: 0 },
+          SHORT: { totalArea: 0, occupiedArea: 0, total: 0, occupied: 0, monthlyRevenue: null as number | null, collectedRevenue: null as number | null, expiringIn30: 0 },
         },
       },
     );
@@ -525,9 +656,18 @@ export class DashboardService {
       malls: mallData,
       totals: {
         ...totals,
+        // RPT-CUR-001/003 — the authoritative cross-mall monetary contract. Each
+        // currency stands on its own; there is no consolidated total because
+        // producing one would require FX the platform does not have.
+        revenueByCurrency: totalsRevenueByCurrency,
+        // RPT-CUR-004 — the scalars above (`monthlyRevenue`, `collectedRevenue`,
+        // `collectionRate`) are VND-ONLY. Declared, not implied.
+        revenueScalarCurrency: 'VND' as CurrencyCode,
         byLeaseTerm: {
           LONG: {
             ...totals.byLeaseTerm.LONG,
+            revenueByCurrency: totalsLongRevenueByCurrency,
+            revenueScalarCurrency: 'VND' as CurrencyCode,
             leasedArea: totals.byLeaseTerm.LONG.occupiedArea,
             vacantArea: Math.max(0, totals.byLeaseTerm.LONG.totalArea - totals.byLeaseTerm.LONG.occupiedArea),
             collectionRate: totals.byLeaseTerm.LONG.monthlyRevenue > 0
@@ -541,8 +681,13 @@ export class DashboardService {
             ...totals.byLeaseTerm.SHORT,
             leasedArea: totals.byLeaseTerm.SHORT.occupiedArea,
             vacantArea: Math.max(0, totals.byLeaseTerm.SHORT.totalArea - totals.byLeaseTerm.SHORT.occupiedArea),
-            collectionRate: totals.byLeaseTerm.SHORT.monthlyRevenue > 0
-              ? +((totals.byLeaseTerm.SHORT.collectedRevenue / totals.byLeaseTerm.SHORT.monthlyRevenue) * 100).toFixed(1)
+            revenueByCurrency: mergeSlotRevenueBuckets(
+              mallData.map((m) => m.byLeaseTerm.SHORT.revenueByCurrency),
+            ),
+            revenueCurrencyMixed: mallData.some((m) => m.byLeaseTerm.SHORT.revenueCurrencyMixed),
+            revenueCurrencyUnknown: mallData.some((m) => m.byLeaseTerm.SHORT.revenueCurrencyUnknown),
+            collectionRate: (totals.byLeaseTerm.SHORT.monthlyRevenue ?? 0) > 0
+              ? +(((totals.byLeaseTerm.SHORT.collectedRevenue ?? 0) / (totals.byLeaseTerm.SHORT.monthlyRevenue ?? 1)) * 100).toFixed(1)
               : 0,
             occupancyRate: totals.byLeaseTerm.SHORT.totalArea > 0
               ? +((totals.byLeaseTerm.SHORT.occupiedArea / totals.byLeaseTerm.SHORT.totalArea) * 100).toFixed(1)

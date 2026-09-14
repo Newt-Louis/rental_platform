@@ -17,11 +17,13 @@ type Pt = [number, number];
 
 const STATUS_COLOR: Record<string, { fill: string; stroke: string; label: string }> = {
   VACANT:       { fill: '#ef4444', stroke: '#dc2626', label: 'Trống' },
+  OFFERING:     { fill: '#eab308', stroke: '#ca8a04', label: 'Chào thuê' },
   BOOKING:      { fill: '#f59e0b', stroke: '#d97706', label: 'Booking' },
   NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', label: 'Thương thảo' },
   CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', label: 'Hợp đồng' },
   UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', label: 'Thi công' },
   OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', label: 'Đang thuê' },
+  LIQUIDATED:   { fill: '#f43f5e', stroke: '#e11d48', label: 'Thanh lý' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

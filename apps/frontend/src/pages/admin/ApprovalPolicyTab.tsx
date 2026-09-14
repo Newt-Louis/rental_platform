@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Edit3, Plus, RefreshCw } from 'lucide-react';
-import { approvalsApi } from '@/api';
+import { approvalsApi, spacesApi } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,7 +16,11 @@ type PolicyRule = {
   name: string;
   stepName: string;
   stepOrder: number;
+  mallId: string;
   approverRole: string;
+  approverId: string;
+  approver?: { id: string; fullName: string; email: string; role: string; isActive: boolean };
+  mall?: { id: string; name: string; code: string };
   conditionType: string;
   operator?: string | null;
   threshold?: number | null;
@@ -28,15 +32,34 @@ type PolicyRule = {
 const ROLE_LABELS: Record<string, string> = {
   LEASING_MANAGER: 'Leasing Manager', MALL_DIRECTOR: 'Mall Director', CEO: 'CEO', FINANCE: 'Finance', LEGAL: 'Legal',
 };
+// Hiển thị — bao gồm cả loại điều kiện đã ngừng dùng, để quy tắc cũ đang lưu
+// trong DB vẫn đọc được tên thay vì hiện mã thô.
 export const CONDITION_LABELS: Record<string, string> = {
   DISCOUNT_PCT: 'Tỷ lệ chiết khấu',
-  RENT_FREE_DAYS: 'Thời gian miễn tiền thuê',
+  RENT_FREE_MONTHS: 'Thời gian miễn tiền thuê (tháng)',
+  // SEM-001 — không tạo mới được, chỉ để hiển thị bản ghi cũ.
+  RENT_FREE_DAYS: 'Thời gian miễn tiền thuê (ngày — đã ngừng dùng)',
   INDUSTRY_TAG: 'Ngành hàng',
   HAS_AR_DEBT: 'Có công nợ quá hạn',
   PRICE_BELOW_MIN: 'Giá thuê thấp hơn giá tối thiểu',
   PRICE_DEVIATION_PCT: 'Mức giá thấp hơn giá tối thiểu',
 };
-const NUMERIC_CONDITIONS = new Set(['DISCOUNT_PCT', 'RENT_FREE_DAYS', 'PRICE_DEVIATION_PCT']);
+
+/** SEM-001 — RENT_FREE_DAYS bị loại khỏi danh sách tạo mới. Backend cũng từ chối. */
+export const DEPRECATED_CONDITIONS = new Set(['RENT_FREE_DAYS']);
+const CREATABLE_CONDITION_LABELS = Object.fromEntries(
+  Object.entries(CONDITION_LABELS).filter(([value]) => !DEPRECATED_CONDITIONS.has(value)),
+);
+
+const NUMERIC_CONDITIONS = new Set([
+  'DISCOUNT_PCT', 'RENT_FREE_MONTHS', 'RENT_FREE_DAYS', 'PRICE_DEVIATION_PCT',
+]);
+/** Đơn vị hiển thị theo loại điều kiện. Quy tắc cũ vẫn hiện 'ngày' đúng như đã lưu. */
+function conditionUnit(conditionType: string): string {
+  if (conditionType === 'RENT_FREE_MONTHS') return ' tháng';
+  if (conditionType === 'RENT_FREE_DAYS') return ' ngày';
+  return '%';
+}
 const TEXT_CONDITIONS = new Set(['INDUSTRY_TAG']);
 const BOOLEAN_CONDITIONS = new Set(['HAS_AR_DEBT', 'PRICE_BELOW_MIN']);
 const OPERATORS = ['>', '>=', '<', '<=', '='];
@@ -44,7 +67,7 @@ const OPERATOR_LABELS: Record<string, string> = {
   '>': 'lớn hơn (>)', '>=': 'lớn hơn hoặc bằng (>=)', '<': 'nhỏ hơn (<)', '<=': 'nhỏ hơn hoặc bằng (<=)', '=': 'bằng (=)',
 };
 const EMPTY_FORM = {
-  code: '', name: '', stepName: '', stepOrder: 10, approverRole: 'LEASING_MANAGER',
+  code: '', name: '', stepName: '', stepOrder: 10, mallId: '', approverId: '',
   conditionType: 'DISCOUNT_PCT', operator: '>', threshold: 5, matchValue: '', isRequired: false,
 };
 
@@ -52,7 +75,7 @@ export function ruleCondition(rule: PolicyRule) {
   if (rule.isRequired) return 'Áp dụng cho mọi hồ sơ';
   const condition = CONDITION_LABELS[rule.conditionType] ?? rule.conditionType;
   if (NUMERIC_CONDITIONS.has(rule.conditionType)) {
-    const unit = rule.conditionType === 'RENT_FREE_DAYS' ? ' ngày' : '%';
+    const unit = conditionUnit(rule.conditionType);
     return rule.operator === 'BETWEEN'
       ? `${condition}: từ ${rule.threshold ?? '—'}${unit} đến ${rule.matchValue ?? '—'}${unit}`
       : `${condition} ${OPERATOR_LABELS[rule.operator ?? '='] ?? rule.operator ?? '='} ${rule.threshold ?? '—'}${unit}`;
@@ -69,14 +92,38 @@ export function ApprovalPolicyTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [validationError, setValidationError] = useState('');
+  // Quy tắc khai báo riêng theo mall, nên danh sách và ứng viên duyệt đều phụ thuộc mall đang xem.
+  const [selectedMallId, setSelectedMallId] = useState('');
 
-  const query = useQuery({ queryKey: ['approval-policy-rules'], queryFn: approvalsApi.listPolicyRules });
+  const mallsQuery = useQuery({ queryKey: ['spaces-malls'], queryFn: spacesApi.listMalls });
+  const malls = useMemo<Array<{ id: string; name: string }>>(() => {
+    const raw = mallsQuery.data as any;
+    const list = raw?.data ?? raw ?? [];
+    return Array.isArray(list) ? list : [];
+  }, [mallsQuery.data]);
+
+  const query = useQuery({
+    queryKey: ['approval-policy-rules', selectedMallId],
+    queryFn: () => approvalsApi.listPolicyRules(selectedMallId || undefined),
+  });
+
+  // Ứng viên duyệt lấy theo mall đang chọn trong hộp thoại, không phải mall đang lọc danh sách.
+  const candidatesQuery = useQuery({
+    queryKey: ['approval-policy-approver-candidates', form.mallId],
+    queryFn: () => approvalsApi.listPolicyApproverCandidates(form.mallId),
+    enabled: Boolean(form.mallId),
+  });
+  const candidates = useMemo<Array<{ id: string; fullName: string; role: string }>>(() => {
+    const raw = candidatesQuery.data as any;
+    const list = raw?.data ?? raw ?? [];
+    return Array.isArray(list) ? list : [];
+  }, [candidatesQuery.data]);
   const rules = useMemo<PolicyRule[]>(() => {
     const raw = query.data as any;
     const list = raw?.data ?? raw ?? [];
     return Array.isArray(list) ? [...list].sort((a, b) => a.stepOrder - b.stepOrder) : [];
   }, [query.data]);
-  const conditionPreview = ruleCondition({ ...form, id: editingId ?? '', isActive: true });
+  const conditionPreview = ruleCondition({ ...form, id: editingId ?? '', approverRole: '', isActive: true } as PolicyRule);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -107,17 +154,26 @@ export function ApprovalPolicyTab() {
     onError: (error: any) => toast({ title: error?.response?.data?.message ?? 'Không thể đổi trạng thái', variant: 'destructive' }),
   });
 
-  const openCreate = () => { setEditingId(null); setForm(EMPTY_FORM); setValidationError(''); setOpen(true); };
+  const openCreate = () => {
+    setEditingId(null);
+    // Mall đang lọc là mặc định hợp lý cho quy tắc mới.
+    setForm({ ...EMPTY_FORM, mallId: selectedMallId || malls[0]?.id || '' });
+    setValidationError('');
+    setOpen(true);
+  };
   const openEdit = (rule: PolicyRule) => {
     setEditingId(rule.id);
     setForm({
       code: rule.code, name: rule.name, stepName: rule.stepName, stepOrder: rule.stepOrder,
-      approverRole: rule.approverRole, conditionType: rule.conditionType, operator: rule.operator ?? '>',
+      mallId: rule.mallId, approverId: rule.approverId,
+      conditionType: rule.conditionType, operator: rule.operator ?? '>',
       threshold: rule.threshold ?? 0, matchValue: rule.matchValue ?? '', isRequired: rule.isRequired,
     });
     setValidationError(''); setOpen(true);
   };
   const submit = () => {
+    if (!form.mallId) return setValidationError('Vui lòng chọn mall áp dụng.');
+    if (!form.approverId) return setValidationError('Vui lòng chọn người duyệt đích danh.');
     if (!form.code.trim() || !form.name.trim() || !form.stepName.trim()) return setValidationError('Vui lòng nhập mã, tên quy tắc và tên bước duyệt.');
     if (form.stepOrder < 1) return setValidationError('Thứ tự bước phải lớn hơn hoặc bằng 1.');
     if (!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && (!Number.isFinite(Number(form.threshold)) || Number(form.threshold) < 0)) return setValidationError('Ngưỡng phải là số không âm.');
@@ -126,7 +182,7 @@ export function ApprovalPolicyTab() {
       return setValidationError('Giá trị kết thúc phải là số lớn hơn giá trị bắt đầu.');
     }
     if (!form.isRequired && TEXT_CONDITIONS.has(form.conditionType) && !form.matchValue.trim()) return setValidationError('Vui lòng nhập giá trị điều kiện.');
-    if (rules.some((rule) => rule.code.toUpperCase() === form.code.trim().toUpperCase() && rule.id !== editingId)) return setValidationError('Mã quy tắc đã tồn tại.');
+    if (rules.some((rule) => rule.mallId === form.mallId && rule.code.toUpperCase() === form.code.trim().toUpperCase() && rule.id !== editingId)) return setValidationError('Mã quy tắc đã tồn tại trong mall này.');
     setValidationError(''); saveMutation.mutate();
   };
 
@@ -134,7 +190,21 @@ export function ApprovalPolicyTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="font-semibold text-slate-900">Quy trình phê duyệt</h2><p className="text-sm text-slate-500">Nguồn cấu hình duy nhất được sử dụng khi gửi proposal để phê duyệt.</p></div>
-        <Button size="sm" className="gap-1" onClick={openCreate}><Plus size={14} /> Thêm quy tắc</Button>
+        <div className="flex items-end gap-2">
+          <div>
+            <Label htmlFor="policy-mall-filter" className="text-xs text-slate-500">Mall</Label>
+            <select
+              id="policy-mall-filter"
+              className="mt-1 h-9 rounded-md border bg-background px-3 text-sm text-foreground"
+              value={selectedMallId}
+              onChange={(e) => setSelectedMallId(e.target.value)}
+            >
+              <option value="">Tất cả mall</option>
+              {malls.map((mall) => <option key={mall.id} value={mall.id}>{mall.name}</option>)}
+            </select>
+          </div>
+          <Button size="sm" className="gap-1" onClick={openCreate}><Plus size={14} /> Thêm quy tắc</Button>
+        </div>
       </div>
 
       {query.isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-12" />)}</div> : query.isError ? (
@@ -143,8 +213,8 @@ export function ApprovalPolicyTab() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800"><strong>Chưa có quy tắc hoạt động.</strong><p className="mt-1">Proposal sẽ không thể gửi duyệt cho đến khi Admin cấu hình ít nhất một quy tắc.</p></div>
       ) : (
         <div className="overflow-x-auto rounded-xl border bg-white">
-          <table className="w-full min-w-[800px] text-sm"><thead className="border-b bg-slate-50"><tr><th className="px-4 py-3 text-left">Quy tắc</th><th className="px-4 py-3 text-left">Bước duyệt</th><th className="px-4 py-3 text-left">Người duyệt</th><th className="px-4 py-3 text-left">Điều kiện</th><th className="px-4 py-3 text-left">Trạng thái</th><th className="px-4 py-3" /></tr></thead>
-          <tbody className="divide-y">{rules.map((rule) => <tr key={rule.id} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-medium text-slate-900">{rule.name}</div><div className="font-mono text-xs text-slate-500">{rule.code}</div></td><td className="px-4 py-3"><span className="mr-2 rounded-full bg-slate-100 px-2 py-1 text-xs">{rule.stepOrder}</span>{rule.stepName}</td><td className="px-4 py-3">{ROLE_LABELS[rule.approverRole] ?? rule.approverRole}</td><td className="px-4 py-3 text-slate-600">{ruleCondition(rule)}</td><td className="px-4 py-3"><Badge className={rule.isActive ? 'border-0 bg-emerald-100 text-emerald-700' : 'border-0 bg-slate-100 text-slate-600'}>{rule.isActive ? 'Đang áp dụng' : 'Đã tắt'}</Badge></td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button size="sm" variant="ghost" className="h-8 gap-1" onClick={() => openEdit(rule)}><Edit3 size={13} /> Sửa</Button><Button size="sm" variant="outline" className="h-8" disabled={toggleMutation.isPending} onClick={() => toggleMutation.mutate({ id: rule.id, isActive: !rule.isActive })}>{rule.isActive ? 'Tắt' : 'Bật'}</Button></div></td></tr>)}</tbody></table>
+          <table className="w-full min-w-[800px] text-sm"><thead className="border-b bg-slate-50"><tr><th className="px-4 py-3 text-left">Quy tắc</th><th className="px-4 py-3 text-left">Mall</th><th className="px-4 py-3 text-left">Bước duyệt</th><th className="px-4 py-3 text-left">Người duyệt</th><th className="px-4 py-3 text-left">Điều kiện</th><th className="px-4 py-3 text-left">Trạng thái</th><th className="px-4 py-3" /></tr></thead>
+          <tbody className="divide-y">{rules.map((rule) => <tr key={rule.id} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-medium text-slate-900">{rule.name}</div><div className="font-mono text-xs text-slate-500">{rule.code}</div></td><td className="px-4 py-3 text-slate-600">{rule.mall?.name ?? '—'}</td><td className="px-4 py-3"><span className="mr-2 rounded-full bg-slate-100 px-2 py-1 text-xs">{rule.stepOrder}</span>{rule.stepName}</td><td className="px-4 py-3"><div className="font-medium text-slate-900">{rule.approver?.fullName ?? '—'}</div><div className="text-xs text-slate-500">{ROLE_LABELS[rule.approverRole] ?? rule.approverRole}{rule.approver && !rule.approver.isActive && <span className="ml-1 text-red-600">· đã khoá</span>}</div></td><td className="px-4 py-3 text-slate-600">{ruleCondition(rule)}</td><td className="px-4 py-3"><Badge className={rule.isActive ? 'border-0 bg-emerald-100 text-emerald-700' : 'border-0 bg-slate-100 text-slate-600'}>{rule.isActive ? 'Đang áp dụng' : 'Đã tắt'}</Badge></td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><Button size="sm" variant="ghost" className="h-8 gap-1" onClick={() => openEdit(rule)}><Edit3 size={13} /> Sửa</Button><Button size="sm" variant="outline" className="h-8" disabled={toggleMutation.isPending} onClick={() => toggleMutation.mutate({ id: rule.id, isActive: !rule.isActive })}>{rule.isActive ? 'Tắt' : 'Bật'}</Button></div></td></tr>)}</tbody></table>
         </div>
       )}
 
@@ -152,9 +222,9 @@ export function ApprovalPolicyTab() {
         {validationError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{validationError}</div>}
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="policy-code">Mã quy tắc</Label><Input id="policy-code" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="DISCOUNT_MANAGER" /></div><div><Label htmlFor="policy-name">Tên quy tắc</Label><Input id="policy-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div></div>
         <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="step-name">Tên bước duyệt</Label><Input id="step-name" value={form.stepName} onChange={(e) => setForm({ ...form, stepName: e.target.value })} /></div><div><Label htmlFor="step-order">Thứ tự bước</Label><Input id="step-order" type="number" min={1} value={form.stepOrder} onChange={(e) => setForm({ ...form, stepOrder: Number(e.target.value) })} /></div></div>
-        <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="approver-role">Vai trò phê duyệt</Label><select id="approver-role" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.approverRole} onChange={(e) => setForm({ ...form, approverRole: e.target.value })}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><Label htmlFor="application-scope">Phạm vi áp dụng</Label><select id="application-scope" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.isRequired ? 'ALWAYS' : 'CONDITIONAL'} onChange={(e) => setForm({ ...form, isRequired: e.target.value === 'ALWAYS' })}><option value="CONDITIONAL">Khi thỏa điều kiện</option><option value="ALWAYS">Mọi hồ sơ (không điều kiện)</option></select></div></div>
-        {!form.isRequired && <div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value, operator: '>', threshold: 0, matchValue: '' })}>{Object.entries(CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>}
-        {!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && <div className={`grid gap-3 ${form.operator === 'BETWEEN' ? 'sm:grid-cols-3' : 'grid-cols-[220px_1fr]'}`}><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value, matchValue: e.target.value === 'BETWEEN' ? form.matchValue : '' })}>{[...OPERATORS, ...(form.conditionType === 'PRICE_DEVIATION_PCT' ? ['BETWEEN'] : [])].map((operator) => <option key={operator} value={operator}>{operator === 'BETWEEN' ? 'Trong khoảng' : OPERATOR_LABELS[operator]}</option>)}</select></div><div><Label htmlFor="threshold">{form.operator === 'BETWEEN' ? `Từ (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})` : `Ngưỡng (${form.conditionType === 'RENT_FREE_DAYS' ? 'ngày' : '%'})`}</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div>{form.operator === 'BETWEEN' && <div><Label htmlFor="range-maximum">Đến (%)</Label><Input id="range-maximum" type="number" min={0} value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}</div>}
+        <div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="policy-mall">Mall áp dụng</Label><select id="policy-mall" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.mallId} onChange={(e) => setForm({ ...form, mallId: e.target.value, approverId: '' })}><option value="">— Chọn mall —</option>{malls.map((mall) => <option key={mall.id} value={mall.id}>{mall.name}</option>)}</select></div><div><Label htmlFor="policy-approver">Người duyệt</Label><select id="policy-approver" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.approverId} disabled={!form.mallId} onChange={(e) => setForm({ ...form, approverId: e.target.value })}><option value="">— Chọn tài khoản —</option>{candidates.map((user) => <option key={user.id} value={user.id}>{user.fullName} · {ROLE_LABELS[user.role] ?? user.role}</option>)}</select>{form.mallId && !candidatesQuery.isLoading && candidates.length === 0 && <p className="mt-1 text-xs text-red-600">Mall này chưa có tài khoản nào đủ quyền duyệt đề xuất. Cấp quyền truy cập mall cho tài khoản tương ứng trong phần Người dùng trước.</p>}</div></div><div className="grid gap-3 sm:grid-cols-2"><div><Label htmlFor="application-scope">Phạm vi áp dụng</Label><select id="application-scope" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.isRequired ? 'ALWAYS' : 'CONDITIONAL'} onChange={(e) => setForm({ ...form, isRequired: e.target.value === 'ALWAYS' })}><option value="CONDITIONAL">Khi thỏa điều kiện</option><option value="ALWAYS">Mọi hồ sơ (không điều kiện)</option></select></div></div>
+        {!form.isRequired && <div><Label htmlFor="condition-type">Loại điều kiện</Label><select id="condition-type" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.conditionType} onChange={(e) => setForm({ ...form, conditionType: e.target.value, operator: '>', threshold: 0, matchValue: '' })}>{Object.entries(CREATABLE_CONDITION_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>}
+        {!form.isRequired && NUMERIC_CONDITIONS.has(form.conditionType) && <div className={`grid gap-3 ${form.operator === 'BETWEEN' ? 'sm:grid-cols-3' : 'grid-cols-[220px_1fr]'}`}><div><Label htmlFor="operator">Phép so sánh</Label><select id="operator" className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value, matchValue: e.target.value === 'BETWEEN' ? form.matchValue : '' })}>{[...OPERATORS, ...(form.conditionType === 'PRICE_DEVIATION_PCT' ? ['BETWEEN'] : [])].map((operator) => <option key={operator} value={operator}>{operator === 'BETWEEN' ? 'Trong khoảng' : OPERATOR_LABELS[operator]}</option>)}</select></div><div><Label htmlFor="threshold">{form.operator === 'BETWEEN' ? `Từ (${conditionUnit(form.conditionType).trim()})` : `Ngưỡng (${conditionUnit(form.conditionType).trim()})`}</Label><Input id="threshold" type="number" min={0} value={form.threshold} onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })} /></div>{form.operator === 'BETWEEN' && <div><Label htmlFor="range-maximum">Đến (%)</Label><Input id="range-maximum" type="number" min={0} value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}</div>}
         {!form.isRequired && TEXT_CONDITIONS.has(form.conditionType) && <div><Label htmlFor="match-value">Giá trị điều kiện</Label><Input id="match-value" value={form.matchValue} onChange={(e) => setForm({ ...form, matchValue: e.target.value })} /></div>}
         {!form.isRequired && BOOLEAN_CONDITIONS.has(form.conditionType) && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">Điều kiện này tự động áp dụng khi hồ sơ thỏa trạng thái “{CONDITION_LABELS[form.conditionType]}”, không cần nhập thêm giá trị.</div>}
         <div className="rounded-lg border bg-muted/40 p-3 text-sm"><div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Hiển thị trên danh sách</div><div className="font-medium text-foreground">{conditionPreview}</div></div>

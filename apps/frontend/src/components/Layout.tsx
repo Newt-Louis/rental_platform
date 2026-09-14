@@ -42,8 +42,6 @@ import {
   GitBranch,
   UserCircle,
   ChevronDown,
-  Sun,
-  Moon,
   Menu,
   X,
   Warehouse,
@@ -51,8 +49,8 @@ import {
   ScanLine,
   ShieldCheck,
   Car,
+  Mail,
 } from "lucide-react";
-import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +67,7 @@ import { NotificationCenter } from "@/components/NotificationCenter";
 import { TenantBottomNav } from "@/components/TenantBottomNav";
 import { ErpProcessGuide } from "@/components/ErpProcessGuide";
 import { NAV_GROUPS, TENANT_NAV, canAccessModule } from "@/lib/permissions";
+import { usePermissionsStore } from "@/store/permissions.store";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   "/dashboard": LayoutDashboard,
@@ -99,6 +98,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   "/announcements": Megaphone,
   "/tenant-portal": ShoppingBag,
   "/audit-log": FileText,
+  "/email-deliveries": Mail,
   "/admin": Settings,
   "/parking-report": ParkingCircle,
   "/parking-transaction": ScanLine,
@@ -160,7 +160,6 @@ function SidebarNavLink({
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
   const { t } = useTranslation("nav");
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -187,6 +186,7 @@ export default function Layout() {
   }, [collapsed]);
   const isTenant = user?.role === "TENANT";
   const role = user?.role;
+  usePermissionsStore((state) => state.allowedModules);
 
   const handleLogout = async () => {
     await logout();
@@ -275,19 +275,6 @@ export default function Layout() {
           )}
 
           <LanguageSwitcher />
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={toggleTheme}
-            title={theme === "light" ? t("ui.darkMode") : t("ui.lightMode")}
-            aria-label={
-              theme === "light" ? t("ui.enableDark") : t("ui.enableLight")
-            }
-          >
-            {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
-          </Button>
 
           <Button
             variant="ghost"

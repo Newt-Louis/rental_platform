@@ -1,6 +1,60 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { calculateDealScore } from './deal-scoring.util';
+import { CurrencyCode } from '@prisma/client';
+
+/**
+ * CRM-SCORE-CUR-001 — financial-capacity scoring is currency-scale dependent.
+ *
+ * The reference scale (a budget of 1,000,000,000 = full marks) is denominated in
+ * VND. Applying it to another currency is a cross-currency comparison: a 40,000
+ * USD budget — a large one — scored 0.004 and dragged the deal grade down.
+ *
+ * This function fixes the ARITHMETIC defect only, by refusing to apply a VND
+ * scale to a non-VND amount. It does NOT establish a foreign-currency scoring
+ * policy, and no USD/MMK threshold is invented here.
+ *
+ * ⚠ WHAT THE NEUTRAL VALUE MEANS
+ * `FINANCIAL_CAPACITY_NEUTRAL` (50) means **"financial capacity was not
+ * evaluated for this currency"**. It does NOT mean "medium financial capacity,
+ * proven". A USD or MMK customer therefore contributes nothing informative to
+ * this criterion, and a deal grade that leans on it is weaker than it looks.
+ * Defining a real per-currency scale is a BUSINESS DECISION, still pending —
+ * see CRM-SCORE-CUR-001 in docs/audit/ISSUE_REGISTER.md. It is a scale question,
+ * not an FX question: do not resolve it with an exchange rate.
+ *
+ * Exported for testing, and so the rule is visible rather than buried in a
+ * ternary.
+ */
+export const FINANCIAL_CAPACITY_SCALE_CURRENCY: CurrencyCode = 'VND';
+export const FINANCIAL_CAPACITY_FULL_MARK = 1_000_000_000;
+/** "Not evaluated for this currency" — NOT "medium capacity proven". */
+export const FINANCIAL_CAPACITY_NEUTRAL = 50;
+
+export function scoreFinancialCapacity(
+  budgetMax: number | null | undefined,
+  currencyCode: CurrencyCode | null | undefined,
+): number {
+  if (!budgetMax) return FINANCIAL_CAPACITY_NEUTRAL;
+  if (currencyCode !== FINANCIAL_CAPACITY_SCALE_CURRENCY) return FINANCIAL_CAPACITY_NEUTRAL;
+  return Math.min(100, (budgetMax / FINANCIAL_CAPACITY_FULL_MARK) * 100);
+}
+
+/**
+ * CR-CRM-CATEGORY-MASTER-001 — industry fit compares Category identity first.
+ * Falls back to the legacy text snapshot only when either side has not been
+ * linked to the Category master yet.
+ */
+export function matchesIndustry(
+  unit: { categoryId?: string | null; category?: string | null } | null | undefined,
+  customer: { preferredCategoryId?: string | null; preferredCategory?: string | null } | null | undefined,
+): boolean {
+  if (!unit || !customer) return false;
+  if (unit.categoryId && customer.preferredCategoryId) {
+    return unit.categoryId === customer.preferredCategoryId;
+  }
+  return Boolean(unit.category) && unit.category === customer.preferredCategory;
+}
 
 @Injectable()
 export class DealScoringService {
@@ -59,12 +113,19 @@ export class DealScoringService {
     const result = calculateDealScore(criteria, {
       customerRating: customer?.rating ?? 3,
       brandStrength: customer?.rating ? customer.rating * 20 : 60,
-      financialCapacity: customer?.budgetMax
-        ? Math.min(100, (customer.budgetMax / 1_000_000_000) * 100)
-        : 50,
-      industryFit: proposal.unit?.category === customer?.preferredCategory ? 90 : 65,
+      // CRM-SCORE-CUR-001: the VND-scale divisor is applied only to a VND
+      // budget. A non-VND or unknown currency yields "not evaluated" (50), which
+      // is a mitigation, not a foreign-currency scoring policy -- see the note
+      // on scoreFinancialCapacity.
+      financialCapacity: scoreFinancialCapacity(customer?.budgetMax, customer?.currencyCode),
+      // CR-CRM-CATEGORY-MASTER-001: match on canonical Category identity when
+      // both sides carry it. The free-text fallback is kept only for rows that
+      // predate the backfill -- text equality alone used to score a Unit
+      // "Beauty & Wellness" against a Customer "Health & Beauty" as a mismatch
+      // even though both mean the same master category.
+      industryFit: matchesIndustry(proposal.unit, customer) ? 90 : 65,
       discountPct: proposal.discount ?? 0,
-      rentFreeDays: proposal.rentFree ?? 0,
+      rentFreeMonths: proposal.rentFree ?? 0,
     });
 
     return this.prisma.proposalDealScore.upsert({

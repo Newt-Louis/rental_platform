@@ -1,0 +1,45 @@
+Đề xuất chờ phê duyệt
+
+Leasing Platform
+
+Phê duyệt
+
+Đề xuất chờ phê duyệt
+
+CHỜ DUYỆT
+
+Kính gửi Trần Hoàng Nam, đề xuất PROP-2026-0102 đang chờ phê duyệt của bạn.
+
+Thông tin đề xuất
+
+Số đề xuất
+PROP-2026-0102
+
+Khách thuê
+Công ty TNHH ABC International
+
+Mã lô
+L3-C01
+
+Giá thuê/m²
+25,00 USD
+
+Tiền thuê/tháng
+2.500,00 USD
+
+Chiết khấu
+8%
+
+Người lập
+Lê Thu Hà
+
+Xem đề xuất
+
+http://127.0.0.1:4173/proposals?id=proposal-preview-1
+
+Vui lòng đăng nhập hệ thống để xem chi tiết và thực hiện phê duyệt.
+
+THISO Leasing Platform
+
+Email được gửi tự động từ hệ thống. Vui lòng không trả lời email này.
+Môi trường PREVIEW — dữ liệu không phải dữ liệu thật.

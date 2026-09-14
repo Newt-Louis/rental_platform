@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatVndAmount,
   formatVndRate,
+  formatRatePerSqm,
   getUnitStatusLabel,
   humanizeWorkflowValue,
   UNIT_STATUSES,
@@ -9,11 +10,13 @@ import {
 
 const labels: Record<string, string> = {
   VACANT: 'Trống',
+  OFFERING: 'Chào thuê',
   BOOKING: 'Đang giữ chỗ',
   NEGOTIATING: 'Đang thương thảo',
   CONTRACTED: 'Đã ký hợp đồng',
   UNDER_FITOUT: 'Đang thi công',
   OCCUPIED: 'Đang thuê',
+  LIQUIDATED: 'Đang thanh lý',
   MERGED: 'Đã gộp',
   unknownValue: 'Không xác định',
 };
@@ -39,5 +42,16 @@ describe('space presentation', () => {
     expect(formatVndAmount(3_165_855_000)).toBe('3.165.855.000 VND');
     expect(formatVndRate(3_165_855_000)).toBe('3.165.855.000 VND/m²');
     expect(formatVndAmount(3_165_855_000)).not.toMatch(/tỷ|tr|[KMB]/i);
+  });
+
+  // Regression: a Unit's own baseRentPerSqm can be quoted in USD/MMK, not just
+  // VND (docs/program/MULTI_CURRENCY_ARCHITECTURE.md) -- formatVndRate() always
+  // labels the value VND regardless of the unit's actual currencyCode, so
+  // editing a unit's rent to e.g. USD still displayed "... VND" on the Spaces
+  // grid card / mall map. formatRatePerSqm() takes the unit's currency instead.
+  it('labels a rate with the unit\'s own currency, not a hardcoded VND', () => {
+    expect(formatRatePerSqm(25, 'USD')).toBe('25,00 USD/m²');
+    expect(formatRatePerSqm(450000)).toBe('450.000 VND/m²');
+    expect(formatRatePerSqm(450000, 'VND')).toBe('450.000 VND/m²');
   });
 });

@@ -19,7 +19,8 @@ describe('SpacesService hierarchy data-integrity safeguards (CR-101 Phase 3B)', 
   };
   const unitStatus: any = { transition: jest.fn() };
   const mallAccess: any = { assertMallAccess: jest.fn(), getAccessibleMallIds: jest.fn() };
-  const service = new SpacesService(prisma, unitStatus, mallAccess);
+  const permissions: any = { seedDefaultsForMall: jest.fn() };
+  const service = new SpacesService(prisma, unitStatus, mallAccess, permissions);
 
   beforeEach(() => jest.clearAllMocks());
 

@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { CategoriesService } from './categories.service';
-import { Role } from '@prisma/client';
+import { Role, CurrencyCode } from '@prisma/client';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import {
@@ -128,12 +128,14 @@ export class CategoriesController {
   @ApiQuery({ name: 'categoryId', required: true })
   @ApiQuery({ name: 'floorId', required: false })
   @ApiQuery({ name: 'zoneId', required: false })
+  @ApiQuery({ name: 'currencyCode', required: false, enum: CurrencyCode })
   async getApplicablePricing(
     @Req() req: any,
     @Query('mallId') mallId: string,
     @Query('categoryId') categoryId: string,
     @Query('floorId') floorId?: string,
     @Query('zoneId') zoneId?: string,
+    @Query('currencyCode') currencyCode?: CurrencyCode,
   ) {
     await this.mallAccess.assertMallAccess(req.user.id, req.user.role, mallId);
     const pricing = await this.categoriesService.getApplicablePricing({
@@ -141,6 +143,7 @@ export class CategoriesController {
       categoryId,
       floorId,
       zoneId,
+      currencyCode,
     });
 
     if (!pricing) {
@@ -161,6 +164,7 @@ export class CategoriesController {
       floorId: dto.floorId,
       zoneId: dto.zoneId,
       proposedRentPerSqm: dto.proposedRentPerSqm,
+      currencyCode: dto.currencyCode,
     });
   }
 

@@ -29,6 +29,7 @@ describe('FilesController — authenticated, authorized document downloads', () 
   // behavior should change). The new "Mall access (CR-101 Phase 3C C2)" describe
   // blocks below override this per-test to prove the DENY path.
   const mallAccess: any = { extractAndValidateMallAccess: jest.fn(), assertMallAccess: jest.fn() };
+  const fitoutDossierAccess: any = { assertCompletedDossierFileAccess: jest.fn() };
   let controller: FilesController;
 
   beforeEach(() => {
@@ -36,7 +37,8 @@ describe('FilesController — authenticated, authorized document downloads', () 
     storage.getFileStream.mockReturnValue(Readable.from(['file-bytes']));
     mallAccess.extractAndValidateMallAccess.mockResolvedValue(undefined);
     mallAccess.assertMallAccess.mockResolvedValue(undefined);
-    controller = new FilesController(prisma, storage, mallAccess);
+    fitoutDossierAccess.assertCompletedDossierFileAccess.mockResolvedValue(undefined);
+    controller = new FilesController(prisma, storage, mallAccess, fitoutDossierAccess);
   });
 
   describe('contracts/:fileId', () => {
@@ -125,6 +127,39 @@ describe('FilesController — authenticated, authorized document downloads', () 
       await expect(
         controller.downloadUnifiedDocument('d3', { id: 'u1', role: 'TENANT', tenantId: 'tenant-A' }, fakeRes()),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('DOSSIER-007/008 streams an authenticated historical dossier version after dedicated authorization', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({
+        id: 'document-v1', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1',
+        isActive: true, isLatest: false, version: 1, fileName: 'drawing-v1.pdf',
+        mimeType: 'application/pdf', filePath: 'fitout-submittal/s-1/drawing-v1.pdf',
+      });
+
+      await expect(controller.downloadUnifiedDocument(
+        'document-v1', { id: 'basic-1', role: 'FITOUT_BASIC_TEAM' }, fakeRes(),
+      )).resolves.toBeInstanceOf(StreamableFile);
+
+      expect(fitoutDossierAccess.assertCompletedDossierFileAccess).toHaveBeenCalledWith(
+        's-1', { id: 'basic-1', role: 'FITOUT_BASIC_TEAM' },
+      );
+      expect(prisma.unifiedDocument.update).toHaveBeenCalledTimes(1);
+      expect(storage.getFileStream).toHaveBeenCalledWith('fitout-submittal/s-1/drawing-v1.pdf');
+    });
+
+    it('DOSSIER-010/015 creates zero file side effects when Mall or completion authorization is denied', async () => {
+      prisma.unifiedDocument.findUnique.mockResolvedValue({
+        id: 'document-v1', entityType: 'FITOUT_SUBMITTAL', entityId: 's-1',
+        isActive: true, fileName: 'drawing-v1.pdf', filePath: 'fitout-submittal/s-1/drawing-v1.pdf',
+      });
+      fitoutDossierAccess.assertCompletedDossierFileAccess.mockRejectedValueOnce(new ForbiddenException());
+
+      await expect(controller.downloadUnifiedDocument(
+        'document-v1', { id: 'basic-1', role: 'FITOUT_BASIC_TEAM' }, fakeRes(),
+      )).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.unifiedDocument.update).not.toHaveBeenCalled();
+      expect(storage.getFileStream).not.toHaveBeenCalled();
     });
 
     it('allows OPERATION on fitout issue documents', async () => {

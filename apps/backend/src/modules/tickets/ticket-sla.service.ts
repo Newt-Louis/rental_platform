@@ -5,6 +5,7 @@ import { TicketType, TicketPriority, Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 
 @Injectable()
@@ -77,6 +78,7 @@ export class TicketSlaService {
       include: {
         tenant: { select: { brandName: true } },
         assignedTo: { select: { id: true, fullName: true } },
+        unit: { select: { mallId: true } },
         escalations: { orderBy: { level: 'desc' }, take: 1 },
       },
     });
@@ -131,10 +133,18 @@ export class TicketSlaService {
           try {
             await this.emailService.sendMail({
               to: mgr.email,
-              subject: `[THISO] Ticket SLA L${nextLevel} — ${ticket.ticketNumber}`,
+              delivery: {
+                eventKey: `ticket-sla:${ticket.id}:level:${nextLevel}:manager:${mgr.id}`,
+                eventType: 'TICKET_SLA',
+                entityType: 'Ticket',
+                entityId: ticket.id,
+                mallId: ticket.unit.mallId,
+              },
+              subject: emailSubject(`Ticket ${ticket.ticketNumber} vượt SLA (L${nextLevel})`),
               html: this.emailService.ticketSlaHtml({
                 managerName: mgr.fullName,
                 ticketNumber: ticket.ticketNumber,
+                ticketId: ticket.id,
                 subject: ticket.subject,
                 tenantName: ticket.tenant.brandName,
                 level: nextLevel,

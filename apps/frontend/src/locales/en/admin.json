@@ -4,7 +4,7 @@
   "systemConfigDesc": "Centralized administration of identity, base data and control processes.",
   "erpControlCenter": "ERP Control Center",
   "superAdmin": "Super Admin · Full Access",
-  "readOnlyNote": "This table is read-only — it accurately reflects the live permission configuration (not a separate hardcoded copy). To change a role's permissions, update the configuration in code and redeploy.",
+  "permissionsEditNote": "Click a cell to toggle access instantly — takes effect live, no redeploy needed. The Super Admin column is always allowed and cannot be turned off.",
   "selectConfigArea": "Select configuration area",
   "commonError": "Unable to complete the action",
   "tabs": {
@@ -123,6 +123,7 @@
       "FINANCE": "Finance",
       "LEGAL": "Legal",
       "OPERATION": "Operations",
+      "FITOUT_BASIC_TEAM": "Fitout Basic Team",
       "TENANT": "Tenant"
     },
     "roleDescriptions": {
@@ -134,6 +135,7 @@
       "FINANCE": "Invoices, receivables and financial reporting",
       "LEGAL": "Legal document preparation and review",
       "OPERATION": "Mall operations and technical work management",
+      "FITOUT_BASIC_TEAM": "View completed Fitout dossiers only for assigned Malls",
       "TENANT": "Access to the tenant self-service portal"
     },
     "mallScope": {
@@ -248,7 +250,17 @@
   },
   "permissions": {
     "title": "Permissions",
-    "feature": "Feature"
+    "feature": "Feature",
+    "scopeGlobal": "System-wide default (Global)",
+    "selectScope": "View/edit a specific Mall",
+    "inherited": "Inherited from Global",
+    "frontendOnly": "UI-only — this module's API isn't gated by this setting yet",
+    "toastUpdated": "Permission updated",
+    "toastError": "Could not update permission",
+    "resetToDefault": "Reset to default",
+    "resetToDefaultMessage": "Reset all permissions for \"{{scope}}\" back to the original defaults? Any customization made to this scope will be discarded and cannot be undone.",
+    "toastReset": "Permissions reset to default",
+    "toastResetError": "Could not reset permissions"
   },
   "branding": {
     "title": "Branding",

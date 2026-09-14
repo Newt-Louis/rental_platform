@@ -1,3 +1,4 @@
+import { formatSlotMoney } from '@/lib/slot-currency';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { slotsApi, crmApi, customersApi, spacesApi } from '@/api';
@@ -65,8 +66,11 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
   const slots: any[] = Array.isArray(slotsData) ? slotsData : (slotsData?.data ?? []);
 
   const { data: leadsData } = useQuery({
-    queryKey: ['leads-for-booking'],
-    queryFn: () => crmApi.listLeads({ limit: 100 }),
+    queryKey: ['leads-for-slot-booking-dialog'],
+    // Booking ngắn hạn chỉ nhận Lead có leaseTermType SHORT — backend từ chối
+    // Lead dài hạn (xem SlotsService.createBooking). Lọc sẵn ở đây để tránh hiện
+    // Lead sẽ luôn báo lỗi khi bấm Tạo Booking.
+    queryFn: () => crmApi.listLeads({ limit: 100, leaseTermType: 'SHORT' }),
     enabled: open && form.clientType === 'lead',
   });
   const leads: any[] = leadsData?.data ?? leadsData ?? [];
@@ -129,7 +133,9 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     && !mutation.isPending;
 
   const selectedSlot = slots.find((s) => s.id === form.slotId);
-  const fmtM = (n?: number) => n != null ? new Intl.NumberFormat('vi-VN').format(Math.round(n)) + ' ₫' : '—';
+  // RPT-CUR-006: the '₫' here was printed over a price the model could not
+  // prove was VND. The currency now comes from the slot.
+  const fmtM = (n?: number) => formatSlotMoney(n, selectedSlot?.currencyCode);
 
   const priceHints = selectedSlot ? [
     form.type === 'DAILY' && selectedSlot.pricePerDaySqm && `${fmtM(selectedSlot.pricePerDaySqm)}/m²/ngày`,

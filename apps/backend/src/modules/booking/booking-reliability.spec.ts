@@ -5,6 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { CategoriesService } from '../categories/categories.service';
 import { BookingStatus, UnitStatus } from '@prisma/client';
+import { PriceApprovalPolicyService } from '../approvals/price-approval-policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EmailService } from '../notifications/email.service';
+import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
 /**
  * Phase 6 hardening (docs/program/RELIABILITY_BACKLOG.md items 1-3,
@@ -14,6 +18,41 @@ import { BookingStatus, UnitStatus } from '@prisma/client';
  * cover the Serializable-transaction + P2034-retry hardening added this phase, mirroring the
  * pattern already proven in contract-activation.spec.ts / proposals.service.spec.ts.
  */
+// CR-BOOK-PRICE-APPROVAL-001 — the price path now resolves its approver chain
+// from the Mall's ApprovalPolicyRule and notifies them. Default to "inside the
+// band" so tests that say nothing about price keep their old behaviour.
+const priceApprovalPolicy = {
+  // CR-...-ALWAYS-WARN-004: the contract is a PricingDecision, and the service
+  // asks the policy service to turn it into the persisted snapshot.
+  evaluate: jest.fn().mockResolvedValue({
+    status: 'NOT_REQUIRED',
+    severity: 'INFO',
+    requiresAcknowledgement: false,
+    blocking: false,
+    basis: 'CATEGORY_BAND',
+    proposedRentPerSqm: 0,
+    reference: { minRentPerSqm: 0, maxRentPerSqm: 0, currency: 'VND' },
+    deviationPercent: 0,
+    approval: { required: false, policyConfigured: true, steps: [] },
+    categoryPricingId: null,
+    warningCode: 'PRICE_NOT_REQUIRED',
+    message: 'ok',
+    evaluatedAt: new Date().toISOString(),
+    fingerprint: 'fp',
+  }),
+  resolveSteps: jest.fn().mockResolvedValue({ steps: [], ambiguous: false, ambiguousDetail: '' }),
+  snapshotOf: jest.fn((d: any) => ({ status: d.status, basis: d.basis })),
+  fingerprint: jest.fn(() => 'fp'),
+} as any;
+const notifications = { create: jest.fn() } as any;
+const emailService = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() } as any;
+// CR-CRM-BUSINESS-EVENT: BookingService now routes the Lead status change
+// through LeadLifecycleService instead of writing tx.lead.update directly, so
+// the transition is recorded as a CRM business event. The double records the
+// call; the suites assert on it rather than on the raw write.
+const leadLifecycle = { transition: jest.fn().mockResolvedValue(undefined) } as any;
+
+
 describe('BookingService reliability — create/update/cancel atomicity, idempotency, concurrency', () => {
   let service: BookingService;
 
@@ -32,6 +71,8 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
       update: jest.fn(),
     },
     bookingActivity: { create: jest.fn() },
+    // CR-BOOK-PRICE-APPROVAL-001 — the policy-resolved approver chain.
+    bookingPriceApprovalStep: { deleteMany: jest.fn(), createMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
 
@@ -69,6 +110,11 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
         { provide: PrismaService, useValue: prisma },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: CategoriesService, useValue: categories },
+        // CR-BOOK-PRICE-APPROVAL-001 — price routing / notification collaborators.
+        { provide: PriceApprovalPolicyService, useValue: priceApprovalPolicy },
+        { provide: NotificationsService, useValue: notifications },
+        { provide: EmailService, useValue: emailService },
+        { provide: LeadLifecycleService, useValue: leadLifecycle },
       ],
     }).compile();
     service = module.get(BookingService);
@@ -97,6 +143,39 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
       expect(result.priority).toBe(2); // correctly queued behind the winner, not erroring
       expect(result.status).toBe(BookingStatus.PENDING);
+    });
+
+    it('resolves a lost concurrent-same-unit race the same way when the Unit starts OFFERING, not just VACANT', async () => {
+      // OFFERING (Chào thuê) was added alongside LIQUIDATED for the ERP status-pipeline work —
+      // this proves the pre-existing Serializable+P2034-retry concurrency guarantee covers it
+      // too, not only the two statuses this suite originally shipped with.
+      prisma.unit.findUnique.mockResolvedValue({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.OFFERING, isActive: true });
+      prisma.unitBooking.aggregate.mockResolvedValue({ _max: { priority: 1 } });
+      prisma.$transaction
+        .mockImplementationOnce(() => Promise.reject({ code: 'P2034' })) // lost the race
+        .mockImplementationOnce((fn: any) => fn(prisma)); // retry succeeds
+
+      const result = await service.create(dto, 'user-1');
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(result.priority).toBe(2); // correctly queued behind the winner, not erroring
+      expect(result.status).toBe(BookingStatus.PENDING);
+    });
+
+    it('rejects a concurrent booking attempt against a Unit a termination just moved to LIQUIDATED', async () => {
+      // Mirrors "rejects a Unit that becomes locked after discovery but before the transaction"
+      // (CONTRACTED) — same race, but for the newly-added LIQUIDATED state: a
+      // ContractTerminationService.initiate() call commits between this request's pre-check and
+      // its transaction, and the in-transaction re-read must still catch it.
+      prisma.unit.findUnique
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.OCCUPIED, isActive: true, leaseTermType: 'LONG' })
+        .mockResolvedValueOnce({ id: 'unit-1', mallId: 'mall-1', status: UnitStatus.LIQUIDATED, isActive: true, leaseTermType: 'LONG' });
+      unitStatus.isLockedForBooking
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+
+      await expect(service.create(dto, 'user-1')).rejects.toThrow('không còn đủ điều kiện');
+      expect(prisma.unitBooking.create).not.toHaveBeenCalled();
     });
 
     it('propagates a genuine (non-race) transaction failure without retrying', async () => {
@@ -143,8 +222,14 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
         expect.objectContaining({ userId: 'user-1' }),
         prisma, // the tx client (== prisma in this mock harness)
       );
-      expect(prisma.lead.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'lead-1' }, data: { status: 'PROPOSAL' } }),
+      // The invariant is unchanged -- the Lead moves inside the SAME transaction
+      // as the booking create -- but the write now goes through
+      // LeadLifecycleService so it is captured as a CRM business event. Asserting
+      // on the transition (and on the tx it was handed) keeps the atomicity
+      // guarantee under test instead of quietly dropping it.
+      expect(leadLifecycle.transition).toHaveBeenCalledWith(
+        expect.objectContaining({ leadId: 'lead-1', targetStatus: 'PROPOSAL' }),
+        expect.anything(),
       );
     });
   });
@@ -255,7 +340,7 @@ describe('BookingService reliability — create/update/cancel atomicity, idempot
   describe('update() — unit-change path', () => {
     const existingBooking = {
       id: 'b1', unitId: 'unit-old', leadId: null, status: BookingStatus.ACTIVE, isActive: true,
-      proposedRentPerSqm: null,
+      proposedRentPerSqm: null, createdById: 'user-1',
     };
 
     beforeEach(() => {

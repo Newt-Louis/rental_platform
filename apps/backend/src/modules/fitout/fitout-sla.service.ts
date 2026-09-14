@@ -6,6 +6,7 @@ import { Prisma, Role } from '@prisma/client';
 type Db = PrismaService | Prisma.TransactionClient;
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
+import { emailSubject } from '../notifications/email-design-system';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
@@ -103,7 +104,7 @@ export class FitoutSlaService {
         project: {
           include: {
             tenant: true,
-            unit: { select: { code: true } },
+            unit: { select: { code: true, mallId: true } },
             operationManager: true,
           },
         },
@@ -151,8 +152,9 @@ export class FitoutSlaService {
         if (milestone.project.operationManager.email) {
           await this.emailDelivery.enqueue(this.prisma, {
             eventKey: `fitout-sla:${milestone.id}:manager:${milestone.project.operationManagerId}`,
+            eventType: 'FITOUT_SLA', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
             to: milestone.project.operationManager.email,
-            subject: `⚠️ Fitout SLA breach — ${milestone.project.tenant.brandName}`,
+            subject: emailSubject(`Fitout trễ SLA — ${milestone.project.tenant.brandName}`),
             html: this.emailService.fitoutSlaHtml({
               managerName: milestone.project.operationManager.fullName,
               tenantName: milestone.project.tenant.brandName,
@@ -160,6 +162,7 @@ export class FitoutSlaService {
               stageName,
               targetDate: targetDateStr,
               isEscalation: false,
+              projectId: milestone.projectId,
             }),
           });
         }
@@ -183,8 +186,9 @@ export class FitoutSlaService {
           if (mgr.email) {
             await this.emailDelivery.enqueue(this.prisma, {
               eventKey: `fitout-sla:${milestone.id}:escalation:${mgr.id}`,
+              eventType: 'FITOUT_SLA_ESCALATION', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
               to: mgr.email,
-              subject: `🚨 Fitout escalation — ${milestone.project.tenant.brandName}`,
+              subject: emailSubject(`Fitout leo thang SLA — ${milestone.project.tenant.brandName}`),
               html: this.emailService.fitoutSlaHtml({
                 managerName: mgr.fullName,
                 tenantName: milestone.project.tenant.brandName,
@@ -192,6 +196,7 @@ export class FitoutSlaService {
                 stageName,
                 targetDate: targetDateStr,
                 isEscalation: true,
+                projectId: milestone.projectId,
               }),
             });
           }

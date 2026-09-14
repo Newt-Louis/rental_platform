@@ -13,7 +13,8 @@ export type DealScoreInput = {
   financialCapacity?: number | null;
   industryFit?: number | null;
   discountPct: number;
-  rentFreeDays: number;
+  /** SEM-001 — rent-free concession in whole MONTHS. Never days. */
+  rentFreeMonths: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -31,7 +32,12 @@ function scoreFromSource(source: string, input: DealScoreInput): number {
     case 'INDUSTRY_FIT':
       return clamp(input.industryFit ?? 70, 0, 100);
     case 'DISCOUNT_RISK':
-      return clamp(100 - input.discountPct * 3 - input.rentFreeDays * 0.2, 0, 100);
+      // SEM-001: this penalty was written as 0.2 per rent-free DAY while the
+      // value passed in was already months. Re-expressed per MONTH at the
+      // equivalent weight (0.2 × 30 = 6) so the scoring behaviour a 30-day
+      // concession used to produce is preserved under the corrected unit,
+      // rather than collapsing to a negligible 0.2 penalty per month.
+      return clamp(100 - input.discountPct * 3 - input.rentFreeMonths * 6, 0, 100);
     default:
       return 50;
   }

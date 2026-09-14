@@ -1,6 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SapStatus } from '@prisma/client';
+import {
+  resolveSapInvoiceContext,
+  serializeSapInvoicePayload,
+  type SapInvoiceFinanceContext,
+} from './sap-invoice-payload';
 
 @Injectable()
 export class SapService {
@@ -80,33 +85,45 @@ export class SapService {
     return this.callSapApi({ method: 'POST', endpoint, payload, entityType: 'TENANT', entityId: tenantId });
   }
 
-  async syncInvoice(invoiceId: string) {
+  /** Everything the SAP invoice mapper needs, in one place so every caller agrees. */
+  private static readonly INVOICE_SAP_INCLUDE = {
+    tenant: true,
+    billingParty: true,
+    lines: true,
+    // SAP-001: Invoice.mallId is nullable and two reachable creation paths
+    // (manual create, revenue-share) leave it null, so the owning mall must be
+    // derivable through the contract's unit.
+    contract: { select: { id: true, unit: { select: { mallId: true } } } },
+  } as const;
+
+  /**
+   * Resolve the outbound financial context for an invoice, or fail closed.
+   *
+   * Fails BEFORE any network transmission and BEFORE writing a log row, so a
+   * rejected posting never leaves a misleading SUCCESS entry behind.
+   */
+  private async buildInvoicePayload(invoiceId: string): Promise<{ payload: string; context: SapInvoiceFinanceContext }> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: invoiceId },
-      include: { tenant: true, billingParty: true, lines: true },
+      include: SapService.INVOICE_SAP_INCLUDE,
     });
     if (!invoice) throw new Error('Invoice not found');
     if (!invoice.issuedAt || ['DRAFT', 'CANCELLED'].includes(invoice.status)) {
       throw new Error('Only issued and active invoices can be synchronized to SAP');
     }
 
+    const resolution = resolveSapInvoiceContext(invoice as any);
+    if (!resolution.ok) {
+      this.logger.error(JSON.stringify({ event: 'sap.invoice.context_rejected', ...resolution }));
+      throw new BadRequestException({ ...resolution, ok: undefined });
+    }
+
+    return { payload: serializeSapInvoicePayload(resolution.context), context: resolution.context };
+  }
+
+  async syncInvoice(invoiceId: string) {
     const endpoint = '/AccountingDocumentItem';
-    const payload = JSON.stringify({
-      action: 'CREATE_INVOICE',
-      data: {
-        invoiceNumber: invoice.invoiceNumber,
-        customerId: invoice.tenantId || invoice.billingPartyId,
-        customerName: invoice.counterpartyName || invoice.tenant?.companyName || invoice.billingParty?.name,
-        taxCode: invoice.counterpartyTaxCode || invoice.tenant?.taxCode || invoice.billingParty?.taxCode,
-        mallId: invoice.mallId,
-        amount: invoice.totalAmount + invoice.adjustmentAmount,
-        vatAmount: invoice.vatAmount,
-        period: invoice.period,
-        dueDate: invoice.dueDate,
-        legalInvoiceNumber: invoice.legalInvoiceNumber,
-        lines: invoice.lines.map((line) => ({ description: line.description, quantity: line.qty, unitPrice: line.unitPrice, amount: line.amount })),
-      },
-    });
+    const { payload } = await this.buildInvoicePayload(invoiceId);
 
     if (!this.enabled) {
       this.logger.warn(`SAP syncInvoice skipped (disabled) for invoice ${invoiceId}`);
@@ -342,10 +359,22 @@ export class SapService {
     let retried = 0;
     for (const log of pending) {
       try {
+        // SAP-001 — REBUILD the payload for invoices instead of replaying the
+        // stored string. SAP is disabled by default, so every syncInvoice call
+        // made so far queued a PENDING log holding a payload built by the OLD,
+        // currency-less mapper. Replaying those verbatim once SAP is enabled
+        // would silently defeat this fix for every already-queued invoice, and
+        // would re-send a null mallId. Rebuilding also re-applies the
+        // fail-closed checks, so a log whose invoice is still incomplete is
+        // skipped rather than posted.
+        const payload = log.entityType === 'INVOICE' && log.entityId
+          ? (await this.buildInvoicePayload(log.entityId)).payload
+          : log.payload ?? '{}';
+
         await this.callSapApi({
           method: 'POST',
           endpoint: log.endpoint,
-          payload: log.payload ?? '{}',
+          payload,
           entityType: log.entityType,
           entityId: log.entityId ?? '',
         });

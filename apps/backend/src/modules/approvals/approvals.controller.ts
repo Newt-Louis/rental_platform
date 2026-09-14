@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { ApprovalsService } from './approvals.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
@@ -18,7 +18,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('Approvals')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.approvals)
+@ModuleRoles('approvals')
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'approvalStepOrWorkflow' }, status: EnforcementStatus.ENFORCED })
 @Controller('approvals')
 export class ApprovalsController {
@@ -91,8 +91,17 @@ export class ApprovalsController {
   @Get('policy/rules')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List approval policy rules' })
-  getPolicyRules() {
-    return this.approvalsService.listPolicyRules();
+  @ApiQuery({ name: 'mallId', required: false, description: 'Lọc theo mall; bỏ trống = mọi mall' })
+  getPolicyRules(@Query('mallId') mallId?: string) {
+    return this.approvalsService.listPolicyRules(mallId);
+  }
+
+  @Get('policy/approver-candidates')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'List accounts eligible to approve proposals at a Mall' })
+  @ApiQuery({ name: 'mallId', required: true })
+  getPolicyApproverCandidates(@Query('mallId') mallId: string) {
+    return this.approvalsService.listPolicyApproverCandidates(mallId);
   }
 
   @Post('policy/rules')

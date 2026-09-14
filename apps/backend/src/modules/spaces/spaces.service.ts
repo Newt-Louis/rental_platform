@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { avgRentByCurrency } from '../../common/utils/avg-rent-currency';
 import { CreateMallDto } from './dto/create-mall.dto';
 import { CreateUnitDto } from './dto/create-unit.dto';
 import { UnitStatus, UnitHistoryType, Prisma } from '@prisma/client';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { PermissionsService } from '../../common/services/permissions.service';
 import * as path from 'path';
 import * as fs from 'fs';
 import sharp from 'sharp';
@@ -96,6 +98,7 @@ export class SpacesService {
     private prisma: PrismaService,
     private unitStatus: UnitStatusService,
     private mallAccess: MallAccessService,
+    private permissions: PermissionsService,
   ) {}
 
   private assertVacantForModification(unit: { code?: string; status: UnitStatus }) {
@@ -160,23 +163,55 @@ export class SpacesService {
       },
       include: {
         _count: {
-          select: { units: true, buildings: true, floors: true },
+          select: {
+            units: { where: { isActive: true } },
+            buildings: { where: { isActive: true } },
+            floors: { where: { isActive: true } },
+          },
         },
       },
       orderBy: { name: 'asc' },
     });
   }
 
+  // A "deleted" Mall is soft-deleted (isActive: false) -- its row, and its
+  // unique `code`, stay in the table. Recreating a Mall with the same code
+  // must therefore reactivate that row instead of hitting Prisma's raw P2002
+  // (which previously surfaced as an opaque "Unique constraint failed" error
+  // and left the code permanently unusable).
+  private async resolveMallCodeConflict(code: string) {
+    const existing = await this.prisma.mall.findUnique({ where: { code } });
+    if (existing && existing.isActive) {
+      throw new ConflictException(`Mã Mall "${code}" đã tồn tại`);
+    }
+    return existing;
+  }
+
+  // Mall + its default permission matrix are one unit of work, same reasoning
+  // as User + UserMallAccess in UsersService.create: a Mall with no
+  // ModulePermission rows would silently fall back to the Global template
+  // forever instead of getting its own editable copy.
   async createMall(dto: CreateMallDto) {
-    return this.prisma.mall.create({ data: dto });
+    const existing = await this.resolveMallCodeConflict(dto.code);
+    return this.prisma.$transaction(async (tx) => {
+      const mall = existing
+        ? await tx.mall.update({ where: { id: existing.id }, data: { ...dto, isActive: true } })
+        : await tx.mall.create({ data: dto });
+      await this.permissions.seedDefaultsForMall(mall.id, tx);
+      return mall;
+    });
   }
 
   async setupMall(data: {
     mall: CreateMallDto;
     floors?: Array<{ name: string; level: string; sortOrder?: number; zones?: Array<{ name: string; code?: string }> }>;
   }) {
+    const existing = await this.resolveMallCodeConflict(data.mall.code);
     return this.prisma.$transaction(async (tx) => {
-      const mall = await tx.mall.create({ data: data.mall });
+      const mall = existing
+        ? await tx.mall.update({ where: { id: existing.id }, data: { ...data.mall, isActive: true } })
+        : await tx.mall.create({ data: data.mall });
+      await this.permissions.seedDefaultsForMall(mall.id, tx);
       for (const floorInput of data.floors ?? []) {
         const { zones, ...floorData } = floorInput;
         const floor = await tx.floor.create({
@@ -470,6 +505,29 @@ export class SpacesService {
     return unit;
   }
 
+  // Unit.category (legacy free text) and Unit.categoryId (FK to the Category
+  // master data managed in Admin > Ngành hàng) used to be set independently --
+  // the Spaces "Ngành hàng" select only ever wrote the free-text name, so
+  // categoryId stayed null for every Unit created through the app. That silently
+  // broke everything keyed on categoryId: CategoryMallPricing lookups (Admin's
+  // per-mall price bands) and the proposal price-deviation check in
+  // ProposalsService (`proposal.unit?.categoryId` gates the whole check) never
+  // matched a real Unit. categoryId is now the source of truth; `category` is
+  // derived from it here so existing string-based filters/exports/analytics
+  // keep working unchanged.
+  private async resolveUnitCategoryFields(
+    categoryId: string | null | undefined,
+  ): Promise<{ categoryId?: string | null; category?: string | null }> {
+    if (categoryId === undefined) return {};
+    if (!categoryId) return { categoryId: null, category: null };
+    const category = await this.prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: { name: true },
+    });
+    if (!category) throw new BadRequestException('Ngành hàng không tồn tại hoặc đã ngừng sử dụng');
+    return { categoryId, category: category.name };
+  }
+
   async createUnit(dto: CreateUnitDto) {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
@@ -481,8 +539,10 @@ export class SpacesService {
     });
     if (existing) throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
 
+    const categoryFields = await this.resolveUnitCategoryFields(dto.categoryId);
+
     return this.prisma.unit.create({
-      data: { ...dto, mallId: dto.mallId } as Prisma.UnitUncheckedCreateInput,
+      data: { ...dto, mallId: dto.mallId, ...categoryFields } as Prisma.UnitUncheckedCreateInput,
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -505,9 +565,12 @@ export class SpacesService {
         throw new ConflictException(`Mã mặt bằng "${dto.code}" đã tồn tại trong mall này`);
       }
     }
+    const categoryFields = Object.prototype.hasOwnProperty.call(dto, 'categoryId')
+      ? await this.resolveUnitCategoryFields(dto.categoryId)
+      : {};
     return this.prisma.unit.update({
       where: { id },
-      data: sanitizeUnitDto(dto),
+      data: sanitizeUnitDto({ ...dto, ...categoryFields }),
       include: {
         floor: { select: { id: true, name: true, level: true } },
         zone: { select: { id: true, name: true, code: true } },
@@ -517,6 +580,15 @@ export class SpacesService {
   }
 
   async updateUnitStatus(id: string, status: UnitStatus, userId?: string) {
+    // LIQUIDATED must stay paired with the linked Contract's TERMINATING state — setting it
+    // here would move the Unit without ever touching the Contract, leaving them desynced with
+    // no way back except another manual override. Only ContractTerminationService.initiate()
+    // (and its cancel/complete counterparts) may drive this transition.
+    if (status === UnitStatus.LIQUIDATED) {
+      throw new BadRequestException(
+        'LIQUIDATED chỉ được thiết lập tự động khi khởi tạo thanh lý hợp đồng (Contract Termination), không thể đổi thủ công.',
+      );
+    }
     await this.getUnit(id);
     return this.unitStatus.transition(id, status, { userId, reason: 'Manual status update' });
   }
@@ -566,15 +638,17 @@ export class SpacesService {
     if (mallId) where.mallId = mallId;
     else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
 
-    const [total, vacant, booking, negotiating, contracted, underFitout, occupied] =
+    const [total, vacant, offering, booking, negotiating, contracted, underFitout, occupied, liquidated] =
       await Promise.all([
         this.prisma.unit.count({ where }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.VACANT } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.OFFERING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.BOOKING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.NEGOTIATING } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.CONTRACTED } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.UNDER_FITOUT } }),
         this.prisma.unit.count({ where: { ...where, status: UnitStatus.OCCUPIED } }),
+        this.prisma.unit.count({ where: { ...where, status: UnitStatus.LIQUIDATED } }),
       ]);
 
     const units = await this.prisma.unit.findMany({
@@ -615,11 +689,13 @@ export class SpacesService {
     return {
       total,
       vacant,
+      offering,
       booking,
       negotiating,
       contracted,
       underFitout,
       occupied,
+      liquidated,
       occupancyRate: totalArea > 0 ? ((leasedArea / totalArea) * 100).toFixed(1) : '0',
       totalArea,
       vacantArea,
@@ -807,21 +883,34 @@ export class SpacesService {
     }
 
     // Calculate comparison metrics
-    const avgRent = units.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / units.length;
+    // RPT-CUR-002: comparing units whose rents are in different currencies has
+    // no answer without FX. The average exists only when one known currency
+    // contributes, and `rentVsAvg` below is null whenever it does not -- a
+    // percentage against a currency-less mean is not a smaller error than the
+    // mean itself.
+    const compareRent = avgRentByCurrency(units);
+    const avgRent = compareRent.avgRentPerSqm;
     const avgArea = units.reduce((sum, u) => sum + u.areaNLA, 0) / units.length;
 
     return {
       units: units.map((u) => ({
         ...u,
         totalMonthlyRent: (u.baseRentPerSqm + u.camPerSqm) * u.areaNLA,
-        rentVsAvg: avgRent > 0 ? ((u.baseRentPerSqm - avgRent) / avgRent * 100).toFixed(1) : '0',
+        rentVsAvg:
+          avgRent !== null && avgRent > 0 && u.currencyCode === compareRent.avgRentPerSqmCurrency
+            ? ((u.baseRentPerSqm - avgRent) / avgRent * 100).toFixed(1)
+            : null,
         areaVsAvg: avgArea > 0 ? ((u.areaNLA - avgArea) / avgArea * 100).toFixed(1) : '0',
       })),
       summary: {
-        avgRent: avgRent.toFixed(0),
+        ...compareRent,
+        avgRent,
         avgArea: avgArea.toFixed(1),
-        minRent: Math.min(...units.map((u) => u.baseRentPerSqm)),
-        maxRent: Math.max(...units.map((u) => u.baseRentPerSqm)),
+        // RPT-CUR-002: min/max across currencies is a comparison, not an
+        // aggregate, and is equally meaningless without FX. Emitted only under
+        // a single known currency.
+        minRent: compareRent.avgRentPerSqmCurrency ? Math.min(...units.map((u) => u.baseRentPerSqm)) : null,
+        maxRent: compareRent.avgRentPerSqmCurrency ? Math.max(...units.map((u) => u.baseRentPerSqm)) : null,
         minArea: Math.min(...units.map((u) => u.areaNLA)),
         maxArea: Math.max(...units.map((u) => u.areaNLA)),
       },
@@ -1069,6 +1158,10 @@ export class SpacesService {
         id: true,
         areaNLA: true,
         baseRentPerSqm: true,
+        // RPT-CUR-002: without this the rent analytics grouped every unit as
+        // UNKNOWN, because the select never fetched the currency the rents are
+        // denominated in.
+        currencyCode: true,
         marketRentPerSqm: true,
         askingRentPerSqm: true,
         camPerSqm: true,
@@ -1081,9 +1174,10 @@ export class SpacesService {
 
     // Calculate overall stats
     const occupiedUnits = units.filter((u) => u.status === UnitStatus.OCCUPIED);
-    const avgRent = occupiedUnits.length > 0
-      ? occupiedUnits.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupiedUnits.length
-      : 0;
+    // RPT-CUR-002: this averaged baseRentPerSqm across whatever currencies the
+    // occupied units carried and the UI rendered the result as VND. The scalar
+    // now exists only when exactly one known currency contributes.
+    const overallRent = avgRentByCurrency(occupiedUnits);
 
     // Group by floor
     const byFloor = new Map<string, { name: string; units: typeof units; totalArea: number; totalRent: number }>();
@@ -1120,9 +1214,12 @@ export class SpacesService {
         unitCount: data.units.length,
         occupiedCount: occupied.length,
         totalArea: data.totalArea,
-        avgRent: occupied.length > 0
-          ? occupied.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupied.length
-          : 0,
+        // RPT-CUR-002: same rule per category. `avgRent` is null unless one
+        // known currency contributes; `avgRentPerSqmByCurrency` is authoritative.
+        ...(() => {
+          const c = avgRentByCurrency(occupied);
+          return { avgRent: c.avgRentPerSqm, ...c };
+        })(),
         occupancyRate: ((occupied.length / data.units.length) * 100).toFixed(1),
       };
     }).sort((a, b) => b.totalArea - a.totalArea);
@@ -1136,9 +1233,11 @@ export class SpacesService {
         unitCount: data.units.length,
         occupiedCount: occupied.length,
         totalArea: data.totalArea,
-        avgRent: occupied.length > 0
-          ? occupied.reduce((sum, u) => sum + u.baseRentPerSqm, 0) / occupied.length
-          : 0,
+        // RPT-CUR-002: same rule per floor.
+        ...(() => {
+          const c = avgRentByCurrency(occupied);
+          return { avgRent: c.avgRentPerSqm, ...c };
+        })(),
         totalMonthlyRevenue: data.totalRent,
         occupancyRate: ((occupied.length / data.units.length) * 100).toFixed(1),
       };
@@ -1148,7 +1247,7 @@ export class SpacesService {
       summary: {
         totalUnits: units.length,
         occupiedUnits: occupiedUnits.length,
-        avgRentPerSqm: avgRent.toFixed(0),
+        ...overallRent,
         totalArea: units.reduce((sum, u) => sum + u.areaNLA, 0),
         leasedArea: occupiedUnits.reduce((sum, u) => sum + u.areaNLA, 0),
         totalMonthlyRevenue: occupiedUnits.reduce((sum, u) => sum + (u.baseRentPerSqm + u.camPerSqm) * u.areaNLA, 0),
@@ -1299,6 +1398,7 @@ export class SpacesService {
     updates: {
       status?: UnitStatus;
       category?: string;
+      categoryId?: string;
       baseRentPerSqm?: number;
       camPerSqm?: number;
       condition?: string;
@@ -1357,7 +1457,11 @@ export class SpacesService {
     if (updates.status !== undefined) {
       throw new BadRequestException('Trạng thái mặt bằng được cập nhật tự động theo Booking, Hợp đồng và Fit-out; không thể đổi hàng loạt.');
     }
-    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.categoryId !== undefined) {
+      Object.assign(updateData, await this.resolveUnitCategoryFields(updates.categoryId));
+    } else if (updates.category !== undefined) {
+      updateData.category = updates.category;
+    }
     if (updates.baseRentPerSqm !== undefined) updateData.baseRentPerSqm = updates.baseRentPerSqm;
     if (updates.camPerSqm !== undefined) updateData.camPerSqm = updates.camPerSqm;
     if (updates.condition !== undefined) updateData.condition = updates.condition;
@@ -1390,8 +1494,8 @@ export class SpacesService {
       if (updates.camPerSqm !== undefined && updates.camPerSqm !== unit.camPerSqm) {
         changes.push({ field: 'camPerSqm', oldVal: unit.camPerSqm, newVal: updates.camPerSqm, type: UnitHistoryType.RENT_CHANGE });
       }
-      if (updates.category !== undefined && updates.category !== unit.category) {
-        changes.push({ field: 'category', oldVal: unit.category, newVal: updates.category, type: UnitHistoryType.INFO_UPDATE });
+      if (updateData.category !== undefined && updateData.category !== unit.category) {
+        changes.push({ field: 'category', oldVal: unit.category, newVal: updateData.category, type: UnitHistoryType.INFO_UPDATE });
       }
       if (updates.condition !== undefined && updates.condition !== unit.condition) {
         changes.push({ field: 'condition', oldVal: unit.condition, newVal: updates.condition, type: UnitHistoryType.CONDITION_CHANGE });

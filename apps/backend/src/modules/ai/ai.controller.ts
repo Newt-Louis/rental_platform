@@ -10,8 +10,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nes
 import { AiService } from './ai.service';
 import { FloorPlanService } from './floor-plan.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -33,7 +32,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 @ApiTags('AI Assistant')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.ai)
+@ModuleRoles('ai')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3D' })
 @Controller('ai')
 export class AiController {

@@ -1,12 +1,12 @@
 import {
-  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Patch,
+  Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Patch, Headers,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, CreateCustomerActivityDto } from './dto/create-customer.dto';
+import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { MODULE_ROLES } from '../../common/constants/role-permissions';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomerStatus } from '@prisma/client';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -18,7 +18,7 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @ApiTags('Customers')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.crm)
+@ModuleRoles('crm')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.PENDING_BUSINESS_CONFIRMATION, trackedAs: 'BC-016' })
 @Controller('crm/customers')
 export class CustomersController {
@@ -31,6 +31,7 @@ export class CustomersController {
   @ApiQuery({ name: 'assignedToId', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'preferredCategoryId', required: false, description: 'Category.id — lọc theo ngành hàng chuẩn (không lọc theo tên)' })
   findAll(@Query() query: any) {
     return this.customersService.findAll(query);
   }
@@ -55,14 +56,26 @@ export class CustomersController {
 
   @Put(':id')
   @ApiOperation({ summary: 'Update customer info or status' })
-  update(@Param('id') id: string, @Body() dto: any) {
-    return this.customersService.update(id, dto);
+  update(
+    @Param('id') id: string,
+    // Typed so the global ValidationPipe's whitelist actually has something to
+    // whitelist against: with `any`, every field in the body reached Prisma.
+    @Body() dto: UpdateCustomerDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    return this.customersService.update(
+      id,
+      dto,
+      { userId: user.id, role: user.role },
+      idempotencyKey,
+    );
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft delete customer' })
-  remove(@Param('id') id: string) {
-    return this.customersService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.customersService.remove(id, { userId: user.id, role: user.role });
   }
 
   @Post(':id/activities')
@@ -72,12 +85,12 @@ export class CustomersController {
     @Body() dto: CreateCustomerActivityDto,
     @CurrentUser() user: any,
   ) {
-    return this.customersService.addActivity(id, dto as any, user.id);
+    return this.customersService.addActivity(id, dto as any, user.id, { userId: user.id, role: user.role });
   }
 
   @Patch(':id/link-tenant')
   @ApiOperation({ summary: 'Link customer to a tenant (mark as ACTIVE)' })
-  linkTenant(@Param('id') id: string, @Body('tenantId') tenantId: string) {
-    return this.customersService.linkTenant(id, tenantId);
+  linkTenant(@Param('id') id: string, @Body('tenantId') tenantId: string, @CurrentUser() user: any) {
+    return this.customersService.linkTenant(id, tenantId, { userId: user.id, role: user.role });
   }
 }

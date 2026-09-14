@@ -37,10 +37,14 @@ export class ProposalPdfService {
         const today = fmtDateFull(new Date());
 
         const isUSD = (proposal.rentCurrency ?? 'VND') === 'USD';
+        // Any currency other than USD used to fall through to a hardcoded "VND"
+        // label, so an MMK proposal printed its amounts as VND on a document the
+        // customer signs off. Label with the proposal's real currency instead.
         const fmtMoney = (v: number, currency?: string) => {
           const cur = currency ?? proposal.rentCurrency ?? 'VND';
           if (cur === 'USD') return `$${v?.toLocaleString('en-US', { minimumFractionDigits: 0 })} USD`;
-          return `${v?.toLocaleString('vi-VN')} VND`;
+          if (cur === 'VND') return `${v?.toLocaleString('vi-VN')} VND`;
+          return `${v?.toLocaleString('vi-VN')} ${cur}`;
         };
         const fmtRent = (v: number) => fmtMoney(v, proposal.rentCurrency ?? 'VND');
 

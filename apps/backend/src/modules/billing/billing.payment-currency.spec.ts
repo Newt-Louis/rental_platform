@@ -41,10 +41,19 @@ describe('BillingService.recordPayment currency invariant', () => {
       payments: [],
     });
 
+    tx.invoice.findUnique.mockResolvedValue({
+      id: 'invoice-usd', tenantId: 'tenant-1', status: InvoiceStatus.ISSUED,
+      currencyCode: 'USD', totalAmount: 100, issuedAt: new Date(), dueDate: new Date(),
+      payments: [],
+    });
+
     await expect(
       service.recordPayment('invoice-usd', { amount: 100, currencyCode: 'MMK' as any }),
     ).rejects.toThrow(BadRequestException);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // BILL-001 / TX-03: this precondition moved INSIDE the serializable
+    // transaction so it is re-evaluated on every retry. The transaction opens
+    // and then rolls back without writing anything.
+    expect(tx.payment.create).not.toHaveBeenCalled();
   });
 
   it('accepts a payment whose explicit currencyCode matches the invoice', async () => {
@@ -58,7 +67,8 @@ describe('BillingService.recordPayment currency invariant', () => {
     });
     tx.payment.create.mockResolvedValue({ id: 'payment-1', amount: 100, currencyCode: 'USD' });
     tx.invoice.findUnique.mockResolvedValue({
-      id: 'invoice-usd', totalAmount: 100, status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+      id: 'invoice-usd', tenantId: 'tenant-1', totalAmount: 100, status: InvoiceStatus.ISSUED,
+      currencyCode: 'USD', issuedAt: new Date(), dueDate: new Date(), payments: [],
     });
     tx.payment.findMany.mockResolvedValue([{ amount: 100 }]);
 
@@ -82,7 +92,8 @@ describe('BillingService.recordPayment currency invariant', () => {
     });
     tx.payment.create.mockResolvedValue({ id: 'payment-2', amount: 500, currencyCode: 'MMK' });
     tx.invoice.findUnique.mockResolvedValue({
-      id: 'invoice-mmk', totalAmount: 500, status: InvoiceStatus.ISSUED, issuedAt: new Date(),
+      id: 'invoice-mmk', tenantId: 'tenant-1', totalAmount: 500, status: InvoiceStatus.ISSUED,
+      currencyCode: 'MMK', issuedAt: new Date(), dueDate: new Date(), payments: [],
     });
     tx.payment.findMany.mockResolvedValue([{ amount: 500 }]);
 

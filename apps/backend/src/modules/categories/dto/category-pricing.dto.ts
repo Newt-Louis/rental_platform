@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsNumber, IsDateString, Min, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsDateString, Min, IsBoolean, IsEnum } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CurrencyCode } from '@prisma/client';
 
 export class CreateCategoryPricingDto {
   @ApiProperty({ description: 'Mall ID' })
@@ -20,29 +21,34 @@ export class CreateCategoryPricingDto {
   @IsOptional()
   zoneId?: string;
 
-  @ApiPropertyOptional({ description: 'Minimum rent per sqm (VND). Required for mall-wide base rules; null inherits on overrides.', example: 400000 })
+  @ApiPropertyOptional({ description: 'Minimum rent per sqm. Required for mall-wide base rules; null inherits on overrides.', example: 400000 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   minRentPerSqm?: number | null;
 
-  @ApiPropertyOptional({ description: 'Maximum rent per sqm (VND). Required for mall-wide base rules; null inherits on overrides.', example: 800000 })
+  @ApiPropertyOptional({ description: 'Maximum rent per sqm. Required for mall-wide base rules; null inherits on overrides.', example: 800000 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   maxRentPerSqm?: number | null;
 
-  @ApiPropertyOptional({ description: 'Suggested rent per sqm (VND)', example: 550000 })
+  @ApiPropertyOptional({ description: 'Suggested rent per sqm', example: 550000 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   suggestedRent?: number | null;
 
-  @ApiPropertyOptional({ description: 'CAM per sqm (VND)', example: 80000, default: 0 })
+  @ApiPropertyOptional({ description: 'CAM per sqm', example: 80000, default: 0 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   camPerSqm?: number | null;
+
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Currency for min/max/suggested/CAM rent. Defaults to VND. Part of the uniqueness scope, so the same mall/category/floor/zone can carry one rule per currency.' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional({ description: 'Effective from date' })
   @IsDateString()
@@ -119,6 +125,11 @@ export class PriceLookupDto {
   @IsString()
   @IsOptional()
   zoneId?: string;
+
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Defaults to VND when omitted.' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 }
 
 export class ValidatePriceDto {
@@ -140,8 +151,13 @@ export class ValidatePriceDto {
   @IsOptional()
   zoneId?: string;
 
-  @ApiProperty({ description: 'Proposed rent per sqm (VND)' })
+  @ApiProperty({ description: 'Proposed rent per sqm, in currencyCode' })
   @IsNumber()
   @Min(0)
   proposedRentPerSqm: number;
+
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Currency of proposedRentPerSqm. Defaults to VND. Only a pricing rule in this same currency is used for comparison.' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 }

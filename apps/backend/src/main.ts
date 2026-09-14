@@ -145,7 +145,10 @@ async function bootstrap() {
   log.log(`THISO Leasing Platform running on port ${port}`);
   log.log(`Environment: ${process.env.NODE_ENV}`);
   log.log(`AI Chat: ${process.env.ANTHROPIC_API_KEY ? 'ENABLED' : 'DISABLED (no API key)'}`);
-  log.log(`Email: ${process.env.SMTP_USER ? 'ENABLED' : 'DISABLED (no SMTP config)'}`);
+  const dbEmailSettings = await app.get(PrismaService).emailSettings.findFirst().catch(() => null);
+  const emailEnabled = !!(dbEmailSettings?.isEnabled && dbEmailSettings.smtpHost && dbEmailSettings.smtpPassEncrypted)
+    || !!process.env.SMTP_USER;
+  log.log(`Email: ${emailEnabled ? 'ENABLED' : 'DISABLED (no SMTP config)'}`);
   log.log(`SAP: ${process.env.SAP_ENABLED === 'true' ? `ENABLED (${process.env.SAP_BASE_URL})` : 'DISABLED'}`);
 }
 

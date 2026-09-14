@@ -11,9 +11,9 @@ vi.mock("@/api", () => ({
   bookingApi: { create: (...args: any[]) => create(...args) },
   spacesApi: { listMalls: vi.fn().mockResolvedValue([]) },
   usersApi: {
-    listUsers: vi
+    listAssignableUsers: vi
       .fn()
-      .mockResolvedValue({ data: [{ id: "user-1", fullName: "Lan" }] }),
+      .mockResolvedValue([{ id: "user-1", fullName: "Lan" }]),
   },
 }));
 

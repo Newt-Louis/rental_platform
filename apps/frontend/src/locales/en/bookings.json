@@ -51,6 +51,7 @@
     "PENDING": "Awaiting confirmation",
     "CONFIRMED": "Confirmed",
     "COMPLETED": "Completed",
+    "CONVERTED": "Converted to proposal",
     "CANCELLED": "Cancelled"
   },
   "fields": {
@@ -179,7 +180,9 @@
     "unitSlot": "Unit / Slot",
     "slot": "Slot",
     "timeRange": "Time",
-    "amount": "Amount"
+    "amount": "Amount",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less"
   },
   "unitStats": {
     "all": "All",
@@ -219,7 +222,7 @@
     "editing": "Editing",
     "customer": "CUSTOMER",
     "unit": "SPACE",
-    "customerRequest": "CUSTOMER REQUEST",
+    "customerRequest": "BOOKING DETAILS",
     "timeline": "TIMELINE",
     "assignee": "ASSIGNED TO",
     "history": "HISTORY",
@@ -336,7 +339,7 @@
     "rentPerSqm": "Rent (₫/m²) *",
     "camPerSqm": "CAM fee (₫/m²)",
     "depositMonths": "Deposit (months)",
-    "rentFree": "Rent-free (days)",
+    "rentFree": "Rent-free (months)",
     "escalation": "Escalation (%/year)",
     "notes": "Notes",
     "estimatedMonthly": "Estimated/month: ",

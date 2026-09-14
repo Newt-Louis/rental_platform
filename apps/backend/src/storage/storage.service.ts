@@ -79,6 +79,28 @@ export class StorageService {
     }
   }
 
+  /**
+   * Xoá cả một thư mục con của uploads (dùng khi một hồ sơ bị xoá cứng và cả
+   * thư mục riêng của nó không còn ý nghĩa). Đi qua cùng một bước chặn path
+   * traversal như deleteFile, nên không thể trỏ ra ngoài uploadDir.
+   */
+  async deleteDirectory(subfolder: string): Promise<boolean> {
+    const fullPath = this.resolveWithinUploadDir(subfolder);
+    // Chặn `subfolder` rỗng/'.' — nó sẽ giải ra chính uploadDir và xoá sạch kho file.
+    if (!fullPath || fullPath === path.resolve(this.uploadDir)) return false;
+    try {
+      if (fs.existsSync(fullPath)) {
+        fs.rmSync(fullPath, { recursive: true, force: true });
+        this.logger.log(`Directory deleted: ${fullPath}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.logger.error(`Error deleting directory: ${error.message}`);
+      return false;
+    }
+  }
+
   getFileStream(filePath: string): fs.ReadStream | null {
     const fullPath = this.resolveWithinUploadDir(filePath);
     if (!fullPath) return null;

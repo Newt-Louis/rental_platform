@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { crmApi, customersApi, usersApi, categoriesApi, followUpApi } from '@/api';
+import { crmApi, customersApi, usersApi, followUpApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,14 @@ import { ConfirmDialog } from '@/components/spaces/dialogs/ConfirmDialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPToolbar } from '@/components/erp';
 import { useAuthStore } from '@/store/auth.store';
-import { formatMoney, type CurrencyCode } from '@/lib/currency';
+import { formatMoney, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
+import { formatBudgetRange } from '@/lib/customer-currency';
+import {
+  formatLeadMoney,
+  formatLeadMoneyCompact,
+  formatLeadBucket,
+  groupLeadValueByCurrency,
+} from '@/lib/lead-currency';
 import {
   DndContext,
   DragOverlay,
@@ -44,6 +51,13 @@ import {
   BookmarkCheck, GitBranch, Pencil,
 } from 'lucide-react';
 import { LeadEditDialog } from '@/components/crm';
+import {
+  CategorySelect,
+  categoryIdForCreate,
+  categoryIdForUpdate,
+  initialCategoryValue,
+} from '@/components/crm/CategorySelect';
+import { CustomerEditDialog } from '@/components/crm/CustomerEditDialog';
 import { useMallStore } from '@/store/mall.store';
 import { DealTimelineSheet } from '@/components/DealTimeline';
 import type { Lead, Customer, CustomerActivity, ActivityType, LeadStatus, LeadPriority } from '@/types';
@@ -134,27 +148,25 @@ const LEAD_SOURCES = [
   { key: 'EXISTING_TENANT', label: 'KH hiện tại' },
 ];
 
-const LEAD_CATEGORIES = [
-  'F&B - Ẩm thực',
-  'Café & Trà',
-  'Thời trang',
-  'Giày dép & Túi xách',
-  'Phụ kiện & Trang sức',
-  'Làm đẹp & Spa',
-  'Điện tử & Công nghệ',
-  'Giải trí & Vui chơi',
-  'Thể thao & Fitness',
-  'Siêu thị & FMCG',
-  'Cửa hàng tiện lợi',
-  'Trang trí nội thất',
-  'Giáo dục & Trẻ em',
-  'Sức khỏe & Dược phẩm',
-  'Dịch vụ tài chính',
-  'Du lịch & Dịch vụ',
-  'Sách & Văn phòng phẩm',
-  'Thú cưng',
-  'Khác',
-];
+
+/**
+ * CR-CRM-CATEGORY-MASTER-001 — always prefer the authoritative Category
+ * relation. The free-text column is a snapshot that can go stale if a Category
+ * is renamed, and on un-backfilled rows it is the only value there is.
+ */
+function categoryLabel(record: {
+  categoryRef?: { name?: string } | null;
+  category?: string | null;
+}): string | null {
+  return record.categoryRef?.name ?? record.category ?? null;
+}
+
+function preferredCategoryLabel(record: {
+  preferredCategoryRef?: { name?: string } | null;
+  preferredCategory?: string | null;
+}): string | null {
+  return record.preferredCategoryRef?.name ?? record.preferredCategory ?? null;
+}
 
 const PROPOSAL_STATUS: Record<string, { label: string; color: string }> = {
   DRAFT:        { label: 'Bản nháp', color: 'bg-gray-100 text-gray-600' },
@@ -206,18 +218,20 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
   const [mode, setMode] = useState<'lead' | 'customer'>('lead');
   const [form, setForm] = useState({
     brandName: '', companyName: '', contactName: '', contactTitle: '',
-    phone: '', email: '', category: '', expectedArea: '',
+    phone: '', email: '', categoryId: '', expectedArea: '',
     source: 'WALK_IN', notes: '', website: '',
-    budgetMin: '', budgetMax: '', rating: '3',
+    budgetMin: '', budgetMax: '', currencyCode: '', rating: '3',
     leaseTermType: 'LONG',
   });
-  const { data: usersData } = useQuery({ queryKey: ['users-list'], queryFn: () => usersApi.listUsers({ limit: 100 }) });
-  const users: any[] = usersData?.data ?? usersData ?? [];
-  const { data: categoryOptions } = useQuery({ queryKey: ['category-options'], queryFn: categoriesApi.getOptions, staleTime: 300_000 });
-  const categoryNames: string[] = useMemo(() => {
-    const fromApi = (categoryOptions as any[])?.map((c: any) => c.name).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : LEAD_CATEGORIES;
-  }, [categoryOptions]);
+  // CUR-002-CUSTOMER — the API rejects a budget with no currency; surface it in
+  // the form rather than letting the user hit a 400.
+  const budgetEntered = Boolean(
+    (form.budgetMin && form.budgetMin.trim()) || (form.budgetMax && form.budgetMax.trim()),
+  );
+  const budgetCurrencyMissing = budgetEntered && !form.currencyCode;
+
+  const { data: usersData } = useQuery({ queryKey: ['users-picker'], queryFn: () => usersApi.listAssignableUsers() });
+  const users: any[] = usersData ?? [];
   const [assignedToId, setAssignedToId] = useState(user?.id ?? '');
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
@@ -239,7 +253,8 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactName: lead.contactName || current.contactName,
       phone: lead.phone || current.phone,
       email: lead.email || current.email,
-      category: lead.category || current.category,
+      // CR-CRM-CATEGORY-MASTER-001 — carry the canonical id, not the label.
+      categoryId: lead.categoryId || current.categoryId,
       expectedArea: lead.expectedArea != null ? String(lead.expectedArea) : current.expectedArea,
       budgetMin: lead.expectedRent != null ? String(lead.expectedRent) : current.budgetMin,
       source: lead.source || current.source,
@@ -255,7 +270,7 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactName: form.contactName,
       phone: form.phone || undefined,
       email: form.email || undefined,
-      category: form.category || undefined,
+      categoryId: categoryIdForCreate(form.categoryId),
       expectedArea: form.expectedArea ? +form.expectedArea : undefined,
       source: form.source as any,
       notes: form.notes || undefined,
@@ -284,13 +299,14 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
       contactTitle: form.contactTitle || undefined,
       phone: form.phone || undefined,
       email: form.email || undefined,
-      preferredCategory: form.category || undefined,
+      preferredCategoryId: categoryIdForCreate(form.categoryId),
       expectedArea: form.expectedArea ? +form.expectedArea : undefined,
       source: form.source as any,
       notes: form.notes || undefined,
       assignedToId: assignedToId || undefined,
       website: form.website || undefined,
       budgetMin: form.budgetMin ? +form.budgetMin : undefined,
+      currencyCode: form.currencyCode || undefined,
       budgetMax: form.budgetMax ? +form.budgetMax : undefined,
       rating: form.rating ? +form.rating : undefined,
     }),
@@ -408,17 +424,15 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldIndustry')}</Label>
-              <Select value={form.category || '_none'} onValueChange={(v) => set('category', v === '_none' ? '' : v)}>
-                <SelectTrigger className="mt-1 h-9">
-                  <SelectValue placeholder={t('addDialog.fieldIndustryPlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">{t('addDialog.fieldIndustryNone')}</SelectItem>
-                  {categoryNames.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="mt-1">
+                <CategorySelect
+                  value={form.categoryId}
+                  onChange={(v) => set('categoryId', v)}
+                  enabled={open}
+                  placeholder={t('addDialog.fieldIndustryPlaceholder')}
+                  clearLabel={t('addDialog.fieldIndustryNone')}
+                />
+              </div>
             </div>
             <div>
               <Label className="text-xs">{t('addDialog.fieldArea')}</Label>
@@ -445,6 +459,21 @@ export function UnifiedAddDialog({ open, onClose }: { open: boolean; onClose: ()
               <div>
                 <Label className="text-xs">{t('addDialog.fieldBudgetMax')}</Label>
                 <Input type="number" step="0.1" value={form.budgetMax} onChange={(e) => set('budgetMax', e.target.value)} placeholder="2.0" className="mt-1 h-9" />
+              </div>
+              {/* CUR-002-CUSTOMER: the budget range above is meaningless
+                  without this; the API rejects money with no currency. */}
+              <div>
+                <Label className="text-xs">Đơn vị tiền tệ{budgetEntered && <span className="text-red-500"> *</span>}</Label>
+                <select
+                  aria-label="Đơn vị tiền tệ ngân sách"
+                  className={`mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm text-foreground ${budgetCurrencyMissing ? 'border-red-400' : 'border-input'}`}
+                  value={form.currencyCode}
+                  onChange={(e) => set('currencyCode', e.target.value)}
+                >
+                  <option value="">— Chưa chọn —</option>
+                  {CURRENCY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {budgetCurrencyMissing && <p className="text-[11px] text-red-500 mt-0.5">Bắt buộc khi đã nhập ngân sách.</p>}
               </div>
               <div>
                 <Label className="text-xs">{t('addDialog.fieldRating')}</Label>
@@ -515,6 +544,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<'profile' | 'pipeline' | 'activities'>('profile');
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -541,13 +571,18 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   }, [lead?.id]);
 
   const displayLead: any = fullLead ?? lead;
+  // Leasing Executive can see every lead in their malls but may only edit
+  // (contact info, pipeline stage, activities, customer profile) their own.
+  const canEdit = user?.role !== 'LEASING_EXECUTIVE' || displayLead?.assignedTo?.id === user?.id;
   const customer: any = fullLead?.customer ?? null;
   const stage = LEAD_STAGES.find((s) => s.key === displayLead?.status);
   const nextStageKey = displayLead?.status ? NEXT_STAGE[displayLead.status] : null;
   const nextStage = nextStageKey ? LEAD_STAGES.find((s) => s.key === nextStageKey) : null;
   const proposals: any[] = fullLead?.proposals ?? [];
   const bookings: any[] = fullLead?.bookings ?? [];
-  const activities: any[] = customer?.activities ?? [];
+  // Lead activity is authoritative for the Lead experience and works before a
+  // Customer profile exists. CustomerActivity remains customer-scoped (BC-016).
+  const activities: any[] = fullLead?.activities ?? [];
   const followUps: any[] = followUpsData?.data ?? followUpsData ?? [];
 
   const invalidateFollowUps = () => qc.invalidateQueries({ queryKey: ['lead-followups', lead?.id] });
@@ -563,14 +598,14 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
   });
 
   const completeFollowUpMutation = useMutation({
-    mutationFn: (id: string) => followUpApi.complete(id),
+    mutationFn: ({ id, outcome, comment }: { id: string; outcome?: string; comment?: string }) => followUpApi.complete(id, { outcome, comment }),
     onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.completeFollowUp') }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
-  const deleteFollowUpMutation = useMutation({
-    mutationFn: (id: string) => followUpApi.delete(id),
-    onSuccess: () => { invalidateFollowUps(); toast({ title: t('sheet.deleteFollowUp') }); },
+  const cancelFollowUpMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => followUpApi.cancel(id, reason),
+    onSuccess: () => { invalidateFollowUps(); toast({ title: 'Đã huỷ follow-up và giữ lại lịch sử' }); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
   });
 
@@ -653,7 +688,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 {customer && (
                   <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-mono">{customer.customerCode}</span>
                 )}
-                {displayLead.category && <Badge variant="outline" className="text-xs">{displayLead.category}</Badge>}
+                {categoryLabel(displayLead) && <Badge variant="outline" className="text-xs">{categoryLabel(displayLead)}</Badge>}
                 {displayLead.source && <span className="text-xs text-gray-400">{SOURCE_LABELS[displayLead.source]}</span>}
               </div>
             </div>
@@ -680,12 +715,14 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   label={t('leadSheet.contact')}
                   className="bg-gray-50"
                   action={
-                    <button
-                      onClick={() => setLeadEditOpen(true)}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      <Pencil size={11} /> {t('leadSheet.edit')}
-                    </button>
+                    canEdit ? (
+                      <button
+                        onClick={() => setLeadEditOpen(true)}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil size={11} /> {t('leadSheet.edit')}
+                      </button>
+                    ) : undefined
                   }
                 >
                   <SheetRow label={t('leadSheet.fieldBrand')} value={displayLead.brandName} icon={Building2} />
@@ -707,17 +744,22 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                     {customer.address && <SheetRow label={t('leadSheet.fieldAddress')} value={customer.address} icon={MapPin} />}
                     {customer.website && <SheetRow label={t('leadSheet.fieldWebsite')} value={customer.website} icon={Globe} />}
                     {customer.contactTitle && <SheetRow label={t('leadSheet.fieldTitle')} value={customer.contactTitle} icon={UserCheck} />}
+                    {/* CUR-002-CUSTOMER: 'tr' (triệu đồng) is a VND unit word
+                        that was printed over a currency-less budget. The
+                        currency now comes from the Customer. */}
                     {(customer.budgetMin || customer.budgetMax) && (
-                      <SheetRow label={t('leadSheet.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />
+                      <SheetRow label={t('leadSheet.fieldBudget')} value={formatBudgetRange(customer.budgetMin, customer.budgetMax, customer.currencyCode)} icon={TrendingUp} />
                     )}
                   </SheetSection>
                 )}
 
                 {/* Yêu cầu thuê */}
                 <SheetSection label={t('leadSheet.rentRequirements')} className="bg-gray-50">
-                  {displayLead.category && <SheetRow label={t('leadSheet.fieldCategory')} value={displayLead.category} icon={Tag} />}
+                  {categoryLabel(displayLead) && <SheetRow label={t('leadSheet.fieldCategory')} value={categoryLabel(displayLead)!} icon={Tag} />}
                   {displayLead.expectedArea && <SheetRow label={t('leadSheet.fieldArea')} value={`${displayLead.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatMoney(displayLead.expectedRent, 'VND')}/m²`} icon={TrendingUp} />}
+                  {/* RPT-CUR-005: was hardcoded 'VND'. The currency now comes
+                      from the Lead; a legacy row with none says so. */}
+                  {displayLead.expectedRent && <SheetRow label={t('leadSheet.fieldExpRent')} value={`${formatLeadMoney(displayLead.expectedRent, displayLead.currencyCode)}/m²`} icon={TrendingUp} />}
                   <SheetRow label={t('leadSheet.fieldCreated')} value={fmtDate(displayLead.createdAt)} icon={Calendar} />
                 </SheetSection>
 
@@ -742,7 +784,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   </div>
                 )}
 
-                {!customer && (
+                {!customer && canEdit && (
                   <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
                     <div className="text-sm font-semibold text-blue-900">{t('leadSheet.noLinkedCustomer')}</div>
                     <p className="text-xs text-blue-700">{t('leadSheet.createCustomerProfileHint')}</p>
@@ -753,7 +795,7 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                 )}
 
                 {/* Pipeline advance actions */}
-                {!['WON', 'LOST'].includes(displayLead.status) && (
+                {!['WON', 'LOST'].includes(displayLead.status) && canEdit && (
                   <div className="space-y-2 pt-1">
                     {nextStage && (() => {
                       const needsApprovedProposal = nextStage.key === 'WON'
@@ -938,28 +980,39 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                     <Bell size={12} /> {t('leadSheet.followUpsSection')}
                   </div>
                   <div className="space-y-2 mb-2">
-                    {followUps.filter((f: any) => !f.isDone).map((f: any) => (
+                    {followUps.map((f: any) => {
+                      const status = f.status ?? (f.isDone ? 'COMPLETED' : 'OPEN');
+                      return (
                       <div key={f.id} className="flex items-start justify-between gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                         <div className="min-w-0">
-                          <div className="text-xs font-medium text-amber-800">{fmtDate(f.dueDate)}</div>
+                          <div className="flex items-center gap-2"><span className="text-xs font-medium text-amber-800">{fmtDate(f.dueDate)}</span><Badge variant="outline" className="text-[10px]">{status}</Badge></div>
                           {f.note && <div className="text-xs text-amber-700 truncate">{f.note}</div>}
                           <div className="text-[11px] text-amber-500">{f.assignedTo?.fullName}</div>
+                          {f.outcome && <div className="text-[11px] text-green-700">Kết quả: {f.outcome}</div>}
+                          {f.cancellationReason && <div className="text-[11px] text-red-700">Lý do huỷ: {f.cancellationReason}</div>}
                         </div>
-                        <div className="flex gap-1 shrink-0">
+                        {status === 'OPEN' && <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600 hover:bg-green-100"
                             title={t('followUpsWorkspace.complete')} disabled={completeFollowUpMutation.isPending}
-                            onClick={() => completeFollowUpMutation.mutate(f.id)}>
+                            onClick={() => {
+                              const outcome = window.prompt('Kết quả follow-up (có thể để trống)') ?? undefined;
+                              const comment = window.prompt('Ghi chú hoàn thành (có thể để trống)') ?? undefined;
+                              completeFollowUpMutation.mutate({ id: f.id, outcome, comment });
+                            }}>
                             <CheckCircle size={13} />
                           </Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500 hover:bg-red-100"
-                            title={t('lead.delete')} disabled={deleteFollowUpMutation.isPending}
-                            onClick={() => deleteFollowUpMutation.mutate(f.id)}>
+                            title="Huỷ follow-up" disabled={cancelFollowUpMutation.isPending}
+                            onClick={() => {
+                              const reason = window.prompt('Lý do huỷ follow-up');
+                              if (reason?.trim()) cancelFollowUpMutation.mutate({ id: f.id, reason });
+                            }}>
                             <X size={13} />
                           </Button>
-                        </div>
+                        </div>}
                       </div>
-                    ))}
-                    {followUps.filter((f: any) => !f.isDone).length === 0 && (
+                    )})}
+                    {followUps.length === 0 && (
                       <p className="text-xs text-gray-400">{t('leadSheet.noFollowUps')}</p>
                     )}
                   </div>
@@ -975,21 +1028,10 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
                   </div>
                 </div>
 
-                {customer ? (
-                  <>
-                    <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>
-                      <Plus size={13} /> {t('leadSheet.addActivity')}
-                    </Button>
-                    <ActivityTimeline activities={activities} />
-                  </>
-                ) : (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    <Activity size={28} className="mx-auto mb-2 opacity-20" />
-                    {t('leadSheet.noCustomerProfile')}
-                    <br />
-                    <span className="text-xs">{t('leadSheet.noCustomerProfileHint')}</span>
-                  </div>
-                )}
+                <Button size="sm" variant="outline" className="w-full gap-2" onClick={() => setShowAddActivity(true)}>
+                  <Plus size={13} /> {t('leadSheet.addActivity')}
+                </Button>
+                <ActivityTimeline activities={activities} />
               </div>
             )}
 
@@ -997,9 +1039,9 @@ function LeadDetailSheet({ lead, onClose, onOpenCustomer }: { lead: Lead | null;
         )}
       </Sheet>
 
-      {customer && (
-        <AddActivityDialog
-          customerId={customer.id}
+      {lead?.id && (
+        <AddLeadActivityDialog
+          leadId={lead.id}
           open={showAddActivity}
           onClose={() => {
             setShowAddActivity(false);
@@ -1093,8 +1135,8 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
         </div>
 
         {/* Category */}
-        {lead.category && (
-          <div className="text-[10px] text-gray-500 mt-1">{lead.category}</div>
+        {categoryLabel(lead) && (
+          <div className="text-[10px] text-gray-500 mt-1">{categoryLabel(lead)}</div>
         )}
 
         {/* Footer: Days + Deal value + Activity warning */}
@@ -1107,7 +1149,7 @@ function LeadCardContent({ lead, onClick, isDragging, isSelected, onSelect, sele
             {dealValue && (
               <span className="text-[10px] text-green-600 font-medium">
                 <DollarSign size={9} className="inline" />
-                {formatCompactValue(dealValue)}
+                {formatLeadMoneyCompact(dealValue, lead.currencyCode)}
               </span>
             )}
           </div>
@@ -1235,7 +1277,13 @@ function DroppableColumn({ stage, leads, total, hasMore, isLoading, onAddNew, on
 interface PipelineFilters {
   status?: string;
   assignedTo?: string;
-  category?: string;
+  /**
+   * CR-CRM-CATEGORY-MASTER-001 — Category.id, never a display label. Filtering
+   * by name broke the moment a Category was renamed, and the old hard-coded
+   * Vietnamese label list matched no stored value at all, so this filter
+   * always returned zero rows.
+   */
+  categoryId?: string;
   source?: string;
   priority?: string;
   quickFilter?: 'my-leads' | 'hot-leads' | 'stale-leads' | 'unassigned' | null;
@@ -1273,7 +1321,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
   const filters: PipelineFilters = useMemo(() => ({
     status: searchParams.get('status') || undefined,
     assignedTo: searchParams.get('assignedTo') || undefined,
-    category: searchParams.get('category') || undefined,
+    categoryId: searchParams.get('categoryId') || undefined,
     source: searchParams.get('source') || undefined,
     priority: searchParams.get('priority') || undefined,
     quickFilter: (searchParams.get('quickFilter') as PipelineFilters['quickFilter']) || null,
@@ -1304,8 +1352,8 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
 
   // Fetch users for filter
   const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => usersApi.listUsers(),
+    queryKey: ['users-picker'],
+    queryFn: () => usersApi.listAssignableUsers(),
   });
 
   // Pipeline data
@@ -1393,8 +1441,8 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
       if (filters.assignedTo) {
         leads = leads.filter(l => l.assignedTo?.id === filters.assignedTo);
       }
-      if (filters.category) {
-        leads = leads.filter(l => l.category === filters.category);
+      if (filters.categoryId) {
+        leads = leads.filter(l => l.categoryId === filters.categoryId);
       }
       if (filters.source) {
         leads = leads.filter(l => l.source === filters.source);
@@ -1442,8 +1490,11 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
     [allLeads, listPage, LIST_PAGE_SIZE],
   );
 
-  const totalValue = allLeads.filter((l) => l.expectedRent && l.expectedArea)
-    .reduce((s, l) => s + (l.expectedRent ?? 0) * (l.expectedArea ?? 0), 0);
+  // RPT-CUR-005: this was one cross-currency sum rendered as VND. Grouped now;
+  // there is no combined total because no FX rate exists.
+  const pipelineBuckets = groupLeadValueByCurrency(
+    allLeads.filter((l) => l.expectedRent && l.expectedArea),
+  );
   const allUnfilteredLeads = useMemo(() => Object.values(pipelineData).flatMap(v => v.leads), [pipelineData]);
   const discoveryStats = {
     mine: allUnfilteredLeads.filter((lead) => lead.assignedTo?.id === currentUserId).length,
@@ -1602,9 +1653,17 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
             <Users size={13} /> {t('toolbar.customerProfiles')}
           </button>
         </div>
-        {totalValue > 0 && (
-          <div className="text-xs text-gray-500 ml-auto">
-            {t('toolbar.pipelineValue')} <span className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>{formatMoney(totalValue, 'VND')}</span>
+        {pipelineBuckets.length > 0 && (
+          <div className="text-xs text-gray-500 ml-auto flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span>{t('toolbar.pipelineValue')}</span>
+            {pipelineBuckets.map((b) => (
+              <span key={b.currencyCode} className="font-semibold tabular-nums text-gray-700" title={t('toolbar.pipelineValueDisclosure')}>
+                {formatLeadBucket(b)}
+              </span>
+            ))}
+            {pipelineBuckets.length > 1 && (
+              <span className="text-[11px] text-gray-400">Không quy đổi tỷ giá</span>
+            )}
           </div>
         )}
       </ERPToolbar>
@@ -1731,17 +1790,14 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
                 ))}
               </SelectContent>
             </Select>
-            <Select value={filters.category || '_all'} onValueChange={(v) => updateFilter('category', v === '_all' ? null : v)}>
-              <SelectTrigger className="w-36 h-8 text-xs">
-                <SelectValue placeholder={t('toolbar.industry')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_all">{t('toolbar.allValues')}</SelectItem>
-                {LEAD_CATEGORIES.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-40">
+              <CategorySelect
+                value={filters.categoryId || ''}
+                onChange={(v) => updateFilter('categoryId', v || null)}
+                placeholder={t('toolbar.industry')}
+                clearLabel={t('toolbar.allValues')}
+              />
+            </div>
             <Select value={filters.source || '_all'} onValueChange={(v) => updateFilter('source', v === '_all' ? null : v)}>
               <SelectTrigger className="w-32 h-8 text-xs">
                 <SelectValue placeholder={t('toolbar.source')} />
@@ -1880,7 +1936,7 @@ function PipelineView({ onAddNew, onOpenCustomers, onOpenCustomer }: { onAddNew:
                       <div className="text-gray-700">{lead.contactName}</div>
                       {lead.phone && <div className="text-xs text-gray-400">{lead.phone}</div>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{lead.category ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{categoryLabel(lead) ?? '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-500 text-xs">{lead.expectedArea ? `${lead.expectedArea.toLocaleString()} m²` : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
@@ -1983,9 +2039,18 @@ function PipelineAnalytics() {
   const winLossBySource = stats?.winLossBySource ?? {};
   const winLossByCategory = stats?.winLossByCategory ?? {};
   const byPriority = stats?.byPriority ?? {};
+  const historicalCoverage = stats?.analyticsSemantics;
+  const historicalValue = (value: number | null | undefined, suffix = '') => value == null
+    ? 'Không đủ dữ liệu lịch sử'
+    : `${value.toFixed(1)}${suffix}`;
 
   return (
     <div className="space-y-6">
+      {historicalCoverage?.historicalCoverage === 'PARTIAL' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <strong>Phạm vi dữ liệu lịch sử: PARTIAL.</strong> {historicalCoverage.coverageMessage} Snapshot hiện tại và KPI lịch sử được trình bày riêng; hệ thống không suy luận từ <code>updatedAt</code>.
+        </div>
+      )}
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="bg-white rounded-xl border p-4">
@@ -2005,12 +2070,12 @@ function PipelineAnalytics() {
           <div className="text-xs text-gray-500">{t('analytics.lost')}</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
-          <div className="text-2xl font-bold text-purple-600">{(conversionRates.overallWinRate ?? 0).toFixed(1)}%</div>
-          <div className="text-xs text-gray-500">{t('analytics.winRate')}</div>
+          <div className="text-base font-bold text-purple-600">{historicalValue(conversionRates.overallWinRate, '%')}</div>
+          <div className="text-xs text-gray-500">{t('analytics.winRate')} · từ ngày kích hoạt</div>
         </div>
         <div className="bg-white rounded-xl border p-4">
-          <div className="text-2xl font-bold text-orange-600">{summary.avgDaysToWin ?? 0}</div>
-          <div className="text-xs text-gray-500">{t('analytics.avgDaysToWin')}</div>
+          <div className="text-base font-bold text-orange-600">{historicalValue(summary.avgDaysToWin)}</div>
+          <div className="text-xs text-gray-500">{t('analytics.avgDaysToWin')} · từ ngày kích hoạt</div>
         </div>
       </div>
 
@@ -2052,10 +2117,10 @@ function PipelineAnalytics() {
               <div key={item.label}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-600">{item.label}</span>
-                  <span className="font-medium">{(item.value ?? 0).toFixed(1)}%</span>
+                  <span className="font-medium">{historicalValue(item.value, '%')}</span>
                 </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${Math.min(item.value ?? 0, 100)}%` }} />
+                  <div className="h-full bg-gray-500 rounded-full transition-all" style={{ width: `${item.value == null ? 0 : Math.min(item.value, 100)}%` }} />
                 </div>
               </div>
             ))}
@@ -2267,17 +2332,59 @@ function AddActivityDialog({ customerId, open, onClose }: { customerId: string; 
   );
 }
 
+function AddLeadActivityDialog({ leadId, open, onClose }: { leadId: string; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation('crm');
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [form, setForm] = useState({ type: 'CALL', note: '', outcome: '', occurredAt: '', source: 'CRM' });
+  const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const mutation = useMutation({
+    mutationFn: () => crmApi.addActivity(leadId, {
+      ...form,
+      occurredAt: form.occurredAt ? new Date(form.occurredAt).toISOString() : undefined,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['lead-detail', leadId] });
+      qc.invalidateQueries({ queryKey: ['lead-timeline', leadId] });
+      toast({ title: t('addActivity.success') });
+      setForm({ type: 'CALL', note: '', outcome: '', occurredAt: '', source: 'CRM' });
+      onClose();
+    },
+    onError: (error: any) => toast({ title: error?.response?.data?.message ?? t('addActivity.error'), variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>{t('addActivity.title')}</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div><Label className="text-xs">{t('addActivity.type')}</Label><select className="mt-1 h-9 w-full rounded-md border px-2 text-sm" value={form.type} onChange={(event) => set('type', event.target.value)}>{ACTIVITY_TYPES.map((activity) => <option key={activity.key} value={activity.key}>{t(`activityTypes.${activity.key}`, { defaultValue: activity.label })}</option>)}</select></div>
+          <div><Label className="text-xs">Thời điểm tương tác</Label><Input type="datetime-local" className="mt-1 h-9" value={form.occurredAt} onChange={(event) => set('occurredAt', event.target.value)} /></div>
+          <div><Label className="text-xs">{t('addActivity.content')}</Label><textarea className="mt-1 h-20 w-full resize-none rounded-md border p-2 text-sm" value={form.note} onChange={(event) => set('note', event.target.value)} placeholder={t('addActivity.contentPlaceholder')} /></div>
+          <div><Label className="text-xs">{t('addActivity.result')}</Label><Input className="mt-1 h-9" value={form.outcome} onChange={(event) => set('outcome', event.target.value)} placeholder={t('addActivity.resultPlaceholder')} /></div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>{t('addActivity.cancel')}</Button><Button disabled={!form.note || mutation.isPending} onClick={() => mutation.mutate()}>{t('addActivity.save')}</Button></div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CustomerDetailSheet({ customerId, onClose }: { customerId: string | null; onClose: () => void }) {
   const { t } = useTranslation('crm');
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [detailTab, setDetailTab] = useState<'overview' | 'activities' | 'leads'>('overview');
   const [showActivity, setShowActivity] = useState(false);
   const [showInactiveReason, setShowInactiveReason] = useState(false);
   const [inactiveReason, setInactiveReason] = useState('');
   const [showLeadSync, setShowLeadSync] = useState(false);
   const [syncLeadId, setSyncLeadId] = useState('');
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState('');
+  // CR-CRM-CUSTOMER-PROFILE-EDIT — the profile was read-only once created.
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ['customer', customerId],
@@ -2287,6 +2394,8 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
   });
 
   const customer: Customer | undefined = raw;
+  // Leasing Executive can view every customer but may only edit (status, activities) their own.
+  const canEdit = user?.role !== 'LEASING_EXECUTIVE' || customer?.assignedTo?.id === user?.id;
   const statusInfo = CUSTOMER_STATUSES.find((s) => s.key === customer?.status);
   const nextStatusKey = customer?.status === 'PROSPECT' ? 'NEGOTIATING' : customer?.status === 'NEGOTIATING' ? 'ACTIVE' : null;
   const nextStatusInfo = nextStatusKey ? CUSTOMER_STATUSES.find((s) => s.key === nextStatusKey) : null;
@@ -2321,6 +2430,24 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
         title: t('customerDetail.advanceStatus', { label: statusLabel }),
         description: leadsCount > 0 && syncLabel ? t('customerDetail.leadsSyncHint', { count: leadsCount, label: syncLabel }) : undefined,
       });
+    },
+  });
+
+  // CR-CRM-CATEGORY-MASTER-001 — sends only the category, so nothing else on
+  // the customer can be touched by this edit.
+  const categoryMutation = useMutation({
+    mutationFn: () =>
+      customersApi.updateCustomer(customer!.id, {
+        preferredCategoryId: categoryIdForUpdate(categoryDraft),
+      }),
+    onSuccess: () => {
+      invalidateAll();
+      setEditingCategory(false);
+      toast({ title: t('customerDetail.categoryUpdated', 'Đã cập nhật ngành hàng') });
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.message;
+      toast({ title: Array.isArray(msg) ? msg.join(' | ') : msg ?? t('checkInfo'), variant: 'destructive' });
     },
   });
 
@@ -2360,6 +2487,16 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
               {statusInfo && <Badge className={`${statusInfo.color} border-0`}>{statusInfo.label}</Badge>}
               <RatingStars value={customer.rating} />
               {customer.source && <span className="text-xs text-gray-400">{SOURCE_LABELS[customer.source]}</span>}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-7 gap-1.5 text-xs"
+                  onClick={() => setShowEditProfile(true)}
+                >
+                  <Pencil size={12} /> Sửa hồ sơ
+                </Button>
+              )}
             </div>
 
             {/* Inline tabs */}
@@ -2395,9 +2532,57 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                 </SheetSection>
 
                 <SheetSection label={t('customerDetail.colRent')} className="bg-purple-50">
-                  {customer.preferredCategory && <SheetRow label={t('customerDetail.fieldCategory')} value={customer.preferredCategory} icon={Tag} />}
+                  {/* CR-CRM-CATEGORY-MASTER-001 — preferred category used to be
+                      write-once (set at creation or copied on conversion) with
+                      no way to correct it afterwards. */}
+                  <div className="py-1">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <Tag size={11} /> {t('customerDetail.fieldCategory')}
+                      </span>
+                      {canEdit && !editingCategory && (
+                        <button
+                          className="text-[11px] text-blue-600 hover:underline"
+                          onClick={() => {
+                            setCategoryDraft(initialCategoryValue({
+                              categoryId: (customer as any).preferredCategoryId,
+                              category: customer.preferredCategory,
+                            }));
+                            setEditingCategory(true);
+                          }}
+                        >
+                          {preferredCategoryLabel(customer) ? t('common:actions.edit', 'Sửa') : t('common:actions.add', 'Chọn')}
+                        </button>
+                      )}
+                    </div>
+                    {editingCategory ? (
+                      <div className="space-y-2">
+                        <CategorySelect
+                          value={categoryDraft}
+                          onChange={setCategoryDraft}
+                          legacyText={(customer as any).preferredCategoryId ? null : customer.preferredCategory}
+                          currentCategory={(customer as any).preferredCategoryRef ?? null}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="h-7 text-xs" disabled={categoryMutation.isPending} onClick={() => categoryMutation.mutate()}>
+                            {categoryMutation.isPending ? t('saving') : t('update')}
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingCategory(false)}>
+                            {t('common:actions.cancel', 'Hủy')}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm">
+                        {preferredCategoryLabel(customer) ?? <span className="text-gray-400">—</span>}
+                        {!(customer as any).preferredCategoryId && customer.preferredCategory && (
+                          <span className="ml-2 text-[11px] text-amber-600">(Chưa ánh xạ)</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   {customer.expectedArea && <SheetRow label={t('customerDetail.fieldArea')} value={`${customer.expectedArea.toLocaleString()} m²`} icon={Building2} />}
-                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={`${customer.budgetMin ?? 0}–${customer.budgetMax ?? '?'} tr/m²`} icon={TrendingUp} />}
+                  {(customer.budgetMin || customer.budgetMax) && <SheetRow label={t('customerDetail.fieldBudget')} value={formatBudgetRange(customer.budgetMin, customer.budgetMax, customer.currencyCode)} icon={TrendingUp} />}
                 </SheetSection>
 
                 {customer.assignedTo && (
@@ -2436,7 +2621,7 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
                   </div>
                 )}
 
-                {!['INACTIVE', 'BLACKLISTED'].includes(customer.status) && (
+                {!['INACTIVE', 'BLACKLISTED'].includes(customer.status) && canEdit && (
                   <div className="space-y-2">
                     {nextStatusInfo && (() => {
                       const leadsCount = (customer.leads ?? []).length;
@@ -2504,6 +2689,15 @@ function CustomerDetailSheet({ customerId, onClose }: { customerId: string | nul
           </div>
         ) : null}
       </Sheet>
+
+      {customer && (
+        <CustomerEditDialog
+          customer={customer}
+          open={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          onSaved={invalidateAll}
+        />
+      )}
 
       {/* Dialogs */}
       {customer && <AddActivityDialog customerId={customer.id} open={showActivity} onClose={() => setShowActivity(false)} />}
@@ -2642,7 +2836,7 @@ function CustomersView({ onAddNew, requestedCustomerId, onCustomerClosed }: { on
                       <div className="text-gray-700 text-sm">{c.contactName}</div>
                       {c.phone && <div className="text-xs text-gray-400">{c.phone}</div>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500">{c.preferredCategory ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500">{preferredCategoryLabel(c) ?? '—'}</td>
                     <td className="px-4 py-2.5 text-right text-xs text-gray-500">{c.expectedArea ? `${c.expectedArea.toLocaleString()} m²` : '—'}</td>
                     <td className="px-4 py-2.5">
                       <div className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${s?.color}`}>
@@ -2807,6 +3001,14 @@ function FollowUpsWorkspace() {
     },
     onError: () => toast({ title: t('followUpsWorkspace.completeError'), variant: 'destructive' }),
   });
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => followUpApi.cancel(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['follow-ups'] });
+      toast({ title: 'Đã huỷ follow-up và giữ lại lịch sử' });
+    },
+    onError: () => toast({ title: 'Không thể huỷ follow-up', variant: 'destructive' }),
+  });
 
   const items: any[] = Array.isArray(data) ? data : [];
   const today = new Date();
@@ -2853,9 +3055,15 @@ function FollowUpsWorkspace() {
                   {item.note && <p className="mt-1 text-xs text-gray-600">{item.note}</p>}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-gray-400">{t('followUpsWorkspace.dueDate', { date: fmtDate(item.dueDate) })}</span>
-                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
-                      <CheckCircle size={12} className="mr-1" /> {t('followUpsWorkspace.complete')}
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={completeMutation.isPending} onClick={() => completeMutation.mutate(item.id)}>
+                        <CheckCircle size={12} className="mr-1" /> {t('followUpsWorkspace.complete')}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" disabled={cancelMutation.isPending} onClick={() => {
+                        const reason = window.prompt('Lý do huỷ follow-up');
+                        if (reason?.trim()) cancelMutation.mutate({ id: item.id, reason });
+                      }}><X size={12} className="mr-1" /> Huỷ</Button>
+                    </div>
                   </div>
                 </article>
                 );

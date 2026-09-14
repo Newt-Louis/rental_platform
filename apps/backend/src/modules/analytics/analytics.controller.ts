@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Body, Query, UseGuards, Param, ForbiddenExc
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { ModuleRoles } from '../../common/decorators/module-roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
 import { Role } from '@prisma/client';
 import { OccupancyAnalyticsService } from './occupancy-analytics.service';
@@ -24,7 +25,7 @@ const ANALYTICS_CONFIG_WRITE_ROLES = MODULE_ROLES.analytics.filter((r) => r !== 
 @ApiTags('Analytics')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Roles(...MODULE_ROLES.analytics)
+@ModuleRoles('analytics')
 @Scope({ type: ScopeType.MALL_SCOPED, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3G (BC-013)' })
 @Controller('analytics')
 export class AnalyticsController {
