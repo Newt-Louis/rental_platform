@@ -6,6 +6,7 @@ import { SchedulerLockService } from '../../common/services/scheduler-lock.servi
 import { EmailService } from './email.service';
 import { toPlainText } from './email-design-system';
 import { MallAccessService } from '../../common/services/mall-access.service';
+import { EmailAttachmentRegistry, StoredEmailAttachment } from './email-attachments';
 
 export interface EmailDeliveryRequest {
   eventKey: string;
@@ -18,6 +19,8 @@ export interface EmailDeliveryRequest {
   entityType?: string;
   entityId?: string;
   mallId?: string;
+  /** Metadata + source only; bytes are regenerated when the email is sent. */
+  attachments?: StoredEmailAttachment[];
 }
 
 @Injectable()
@@ -29,6 +32,7 @@ export class EmailDeliveryService {
     private readonly email: EmailService,
     private readonly schedulerLock: SchedulerLockService,
     private readonly mallAccess?: MallAccessService,
+    private readonly attachmentRegistry?: EmailAttachmentRegistry,
   ) {}
 
   enqueue(
@@ -49,7 +53,8 @@ export class EmailDeliveryService {
           subject: request.subject,
           html: request.html,
           text: request.text ?? toPlainText(request.html),
-        },
+          ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+        } as unknown as Prisma.InputJsonValue,
       },
     });
   }
@@ -76,14 +81,21 @@ export class EmailDeliveryService {
         to: string | string[];
         cc?: string | string[] | null;
       };
-      const payload = delivery.payload as { subject: string; html: string; text?: string };
+      const payload = delivery.payload as unknown as { subject: string; html: string; text?: string; attachments?: StoredEmailAttachment[] };
       try {
+        if (payload.attachments?.length && !this.attachmentRegistry) {
+          throw new Error('Email attachments cannot be resolved in this context');
+        }
+        const attachments = payload.attachments?.length
+          ? await this.attachmentRegistry!.resolve(payload.attachments)
+          : undefined;
         const result = await this.email.sendMail({
           to: recipient.to,
           cc: recipient.cc ?? undefined,
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
+          attachments,
         });
         await this.prisma.emailDelivery.update({
           where: { id: delivery.id },
