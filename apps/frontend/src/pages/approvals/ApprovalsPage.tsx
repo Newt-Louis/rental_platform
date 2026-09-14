@@ -26,6 +26,8 @@ import { formatMoneyWithCode, type CurrencyCode } from '@/lib/currency';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
 import { openAuthenticatedFile } from '@/lib/downloadFile';
+import { exportOfficialProposalPdf } from '@/pages/proposals/proposalPdf';
+import type { ProposalDocumentModel } from '@/pages/proposals/proposalDocument.types';
 import {
   PROPOSAL_STATUS_TONES,
   WORKFLOW_STATUS_TONES,
@@ -50,6 +52,19 @@ function fmtDateTime(value?: string | null, locale = 'vi-VN') {
   return new Date(value).toLocaleString(locale, {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+}
+
+/**
+ * A decided step names who decided as they were named at that moment; today's
+ * User row is only the assignee of a step still pending.
+ */
+function decidedActorName(step: any): string {
+  const decided = step.status === 'APPROVED' || step.status === 'REJECTED';
+  return (decided && step.decidedByDisplayName) || step.approver?.fullName || '—';
+}
+
+function isLegacyDecision(step: any): boolean {
+  return (step.status === 'APPROVED' || step.status === 'REJECTED') && !step.decidedByDisplayName;
 }
 
 function isRecent(value: string) { return Date.now() - new Date(value).getTime() < 24 * 60 * 60 * 1000; }
@@ -85,6 +100,19 @@ function ApprovalDetailSheet({
   });
   const w: any = workflow;
   const p: any = w?.proposal;
+  const { user: currentUser } = useAuthStore();
+  // CR-PROPOSAL-DOCUMENT-FINALIZATION: an approver reviews the version bound to
+  // this workflow. Business facts shown below come from that version, not from
+  // today's Proposal, Tenant or Mall records.
+  const proposalId: string | null = p?.id ?? w?.documentVersion?.proposalId ?? (w?.entityType === 'PROPOSAL' ? w?.entityId : null);
+  const documentVersionId: string | null = w?.documentVersionId ?? null;
+  const { data: versionDoc } = useQuery({
+    queryKey: ['approval-document-version', proposalId, documentVersionId],
+    queryFn: () => approvalsApi.getWorkflowDocument(workflowId!) as Promise<ProposalDocumentModel>,
+    enabled: !!workflowId && !!documentVersionId,
+  });
+  const vf: any = versionDoc?.facts;
+  const isPreparer = !!currentUser?.id && !!p?.createdById && p.createdById === currentUser.id;
   const fitout = getFitoutSubmittalFromApproval(w);
   const steps: any[] = w?.steps ?? [];
   const completed = w?.status === 'APPROVED';
@@ -130,20 +158,16 @@ function ApprovalDetailSheet({
   });
 
   const getPdf = async (mode: 'open' | 'download') => {
-    if (!p?.id) return;
+    if (!proposalId) return;
     try {
-      const blob = await proposalsApi.exportPdf(p.id);
-      const url = URL.createObjectURL(blob);
-      if (mode === 'open') {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } else {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `proposal-${p.proposalNumber}.pdf`;
-        link.click();
-        URL.revokeObjectURL(url);
-      }
+      // The workflow-bound version, never the live Proposal (CR-PROPOSAL-DOCUMENT-FINALIZATION).
+      await exportOfficialProposalPdf({
+        id: proposalId,
+        proposalNumber: versionDoc?.proposalNumber ?? p?.proposalNumber ?? '',
+        documentVersionId,
+        versionNumber: versionDoc?.version?.versionNumber ?? w?.documentVersion?.versionNumber ?? null,
+        approvalWorkflowId: documentVersionId ? workflowId : null,
+      }, mode);
     } catch {
       toast({ title: t('approvals.workflow.errorPdf'), variant: 'destructive' });
     }
@@ -211,37 +235,60 @@ function ApprovalDetailSheet({
               <div key={step.id} className="relative flex gap-3 pb-4 last:pb-0">
                 {index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}
                 <span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : decisionStep?.id === step.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span>
-                <div className="min-w-0 flex-1 border-b border-slate-100 pb-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepRole', { order: step.stepOrder, role: t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole }) })}</p><p className="mt-0.5 text-xs text-slate-500">{step.stepName}</p></div><ERPStatusBadge tone={step.status === 'APPROVED' ? 'success' : step.status === 'REJECTED' ? 'danger' : decisionStep?.id === step.id ? 'brand' : 'neutral'}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : decisionStep?.id === step.id ? t('approvals.decision.current') : t('approvals.workflow.step.pending')}</ERPStatusBadge></div>{step.approver && <p className="mt-2 text-xs text-slate-600">{step.approver.fullName} · {fmtDateTime(step.decidedAt, i18n.language)}</p>}{step.comment && <p className="mt-2 border-l-2 border-slate-200 pl-2 text-xs text-slate-700">{step.comment}</p>}</div>
+                <div className="min-w-0 flex-1 border-b border-slate-100 pb-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepRole', { order: step.stepOrder, role: t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole }) })}</p><p className="mt-0.5 text-xs text-slate-500">{step.stepName}</p></div><ERPStatusBadge tone={step.status === 'APPROVED' ? 'success' : step.status === 'REJECTED' ? 'danger' : decisionStep?.id === step.id ? 'brand' : 'neutral'}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : decisionStep?.id === step.id ? t('approvals.decision.current') : t('approvals.workflow.step.pending')}</ERPStatusBadge></div>{step.approver && <p className="mt-2 text-xs text-slate-600">{decidedActorName(step)} · {fmtDateTime(step.decidedAt, i18n.language)}</p>}{step.comment && <p className="mt-2 border-l-2 border-slate-200 pl-2 text-xs text-slate-700">{step.comment}</p>}</div>
               </div>
             ))}</div>
           </section>
 
           {decisionStep && <div className="sticky bottom-0 -mx-6 flex gap-2 border-t bg-white px-6 pt-4"><Button variant="outline" className="flex-1 gap-2 border-red-200 text-red-700 hover:bg-red-50" onClick={() => setRejectOpen(true)}><XCircle size={15} /> {t('approvals.actions.reject')}</Button><Button className="flex-1 gap-2 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setApproveOpen(true)}><CheckCircle size={15} /> {t('approvals.actions.approve')}</Button></div>}
         </div>
-      ) : w && p ? (
+      ) : w && (p || versionDoc) ? (
         <div className="space-y-5 p-6">
+          {documentVersionId && (
+            <div data-testid="approval-document-version" className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">
+                  Tờ trình phiên bản {versionDoc?.version?.versionNumber ?? w?.documentVersion?.versionNumber ?? '—'}
+                </span>
+                <span className="flex gap-2">
+                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => getPdf('open')}><Eye size={13} /> Xem PDF phiên bản này</Button>
+                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => getPdf('download')}><Download size={13} /></Button>
+                </span>
+              </div>
+              <div className="mt-1 grid gap-1 sm:grid-cols-3">
+                <span>Trình lúc: {fmtDateTime(versionDoc?.version?.submittedAt ?? w?.documentVersion?.submittedAt, i18n.language)}</span>
+                <span>Người lập: {versionDoc?.facts.preparedBy.fullName ?? '—'}</span>
+                <span>Bước hiện tại: {position.state === 'CURRENT' ? `${position.current}/${position.total}` : '—'}</span>
+              </div>
+              {versionDoc?.version?.liveDiffers && (
+                <p role="alert" className="mt-2 border-l-2 border-amber-400 pl-2 text-amber-800">
+                  Dữ liệu Proposal hiện tại đã thay đổi sau thời điểm trình duyệt. Bạn đang duyệt phiên bản đã được trình ngày {fmtDateTime(versionDoc.version.submittedAt, i18n.language)}.
+                </p>
+              )}
+            </div>
+          )}
           <div className="border-b border-slate-200 pb-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <ERPStatusBadge tone={WORKFLOW_STATUS_TONES[w.status] ?? 'neutral'}>{String(t(`approvals.workflow.statusValues.${w.status}`, { defaultValue: w.status }))}</ERPStatusBadge>
-                  {p.status && <ERPStatusBadge tone={PROPOSAL_STATUS_TONES[p.status] ?? 'neutral'}>{String(t(`proposals.status.${p.status}`, { defaultValue: p.status }))}</ERPStatusBadge>}
+                  {p?.status && <ERPStatusBadge tone={PROPOSAL_STATUS_TONES[p?.status] ?? 'neutral'}>{String(t(`proposals.status.${p?.status}`, { defaultValue: p?.status }))}</ERPStatusBadge>}
                 </div>
                 <p className="mt-2 text-base font-semibold text-slate-900">{party.name}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{p.unit?.code ?? '—'}{p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''} · {Number(p.area ?? 0).toLocaleString('vi-VN')} m²</p>
+                <p className="mt-0.5 text-xs text-slate-500">{p?.unit?.code ?? '—'}{p?.unit?.floor?.name ? ` · ${p?.unit.floor.name}` : ''} · {Number(p?.area ?? 0).toLocaleString('vi-VN')} m²</p>
                 {position.state === 'CURRENT' && <p className="mt-2 text-xs font-medium text-blue-700">{t('approvals.decision.currentStep', { current: position.current, total: position.total })}</p>}
                 <p className="mt-1 text-[11px] text-slate-400">{t('approvals.workflow.timestamps', { created: fmtDateTime(w.createdAt), updated: fmtDateTime(w.updatedAt) })}</p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-[11px] uppercase tracking-wide text-slate-400">{t('approvals.workflow.fields.contractValue')}</p>
-                <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">{p.rentCurrency ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : '—'}</p>
+                <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">{p?.rentCurrency ? formatMoneyWithCode(p?.totalContractValue, p?.rentCurrency) : '—'}</p>
                 <p className="mt-1 text-xs text-slate-500">{t('approvals.workflow.completedSteps', { done: approvedStepCount, total: steps.length })}</p>
               </div>
             </div>
-            {p.id && (
+            {p?.id && (
               <button
                 className="mt-3 flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
-                onClick={() => { onClose(); navigate(`/proposals?id=${p.id}`); }}
+                onClick={() => { onClose(); navigate(`/proposals?id=${p?.id}`); }}
               >
                 <FileText size={12} /> {t('approvals.workflow.viewProposal')} <ChevronRight size={12} />
               </button>
@@ -250,39 +297,43 @@ function ApprovalDetailSheet({
 
           <SheetSection label={t('approvals.workflow.section.proposalInfo')} className="rounded-none border-b border-slate-200 bg-transparent px-0">
             <div className="grid gap-x-4 sm:grid-cols-2">
-              <SheetRow label={t('approvals.workflow.fields.tenantBrand')} value={p.tenant?.brandName ?? p.lead?.brandName} icon={User} />
-              <SheetRow label={t('approvals.workflow.fields.company')} value={p.tenant?.companyName ?? p.lead?.company} icon={Building2} />
-              <SheetRow label={t('approvals.workflow.fields.unit')} value={`${p.unit?.code ?? '—'}${p.unit?.floor?.name ? ` · ${p.unit.floor.name}` : ''}`} icon={Building2} />
-              <SheetRow label={t('approvals.workflow.fields.area')} value={p.area ? `${Number(p.area).toLocaleString('vi-VN')} m²` : null} icon={Building2} />
-              <SheetRow label={t('approvals.workflow.fields.term')} value={p.term ? `${p.term} tháng` : null} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.dateRange')} value={`${p.startDate ? new Date(p.startDate).toLocaleDateString('vi-VN') : '—'} – ${p.endDate ? new Date(p.endDate).toLocaleDateString('vi-VN') : '—'}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.tenantBrand')} value={vf ? vf.party.brandName : (p?.tenant?.brandName ?? p?.lead?.brandName)} icon={User} />
+              <SheetRow label={t('approvals.workflow.fields.company')} value={vf ? vf.party.companyName : (p?.tenant?.companyName ?? p?.lead?.company)} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.unit')} value={vf ? `${vf.unit?.code ?? '—'}${vf.unit?.floorName ? ` · ${vf.unit.floorName}` : ''}` : `${p?.unit?.code ?? '—'}${p?.unit?.floor?.name ? ` · ${p?.unit.floor.name}` : ''}`} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.area')} value={(vf?.area ?? p?.area) ? `${Number(vf?.area ?? p?.area).toLocaleString('vi-VN')} m²` : null} icon={Building2} />
+              <SheetRow label={t('approvals.workflow.fields.term')} value={(vf?.termMonths ?? p?.term) ? `${vf?.termMonths ?? p?.term} tháng` : null} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.dateRange')} value={`${p?.startDate ? new Date(p?.startDate).toLocaleDateString('vi-VN') : '—'} – ${p?.endDate ? new Date(p?.endDate).toLocaleDateString('vi-VN') : '—'}`} icon={CalendarDays} />
             </div>
           </SheetSection>
 
           <SheetSection
             label={t('approvals.workflow.section.financial')}
             className="rounded-none border-b border-slate-200 bg-transparent px-0"
-            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p.rentCurrency ?? '—'}</span>}
+            action={<span className="text-xs font-mono font-semibold text-gray-500 border border-gray-300 rounded px-1.5 py-0.5">{p?.rentCurrency ?? '—'}</span>}
           >
             <div className="grid gap-x-4 sm:grid-cols-2">
-              <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={p.rentCurrency && p.rentPerSqm != null ? formatMoneyWithCode(p.rentPerSqm, p.rentCurrency) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p.rentCurrency && p.monthlyRent != null ? formatMoneyWithCode(p.monthlyRent, p.rentCurrency) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p.rentCurrency && p.monthlyCAM != null ? formatMoneyWithCode(p.monthlyCAM, p.rentCurrency) : null} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p.discount ?? 0}%`} icon={DollarSign} />
-              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p.rentFree ?? 0} ${t('proposals.scenarios.months')}`} icon={CalendarDays} />
-              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p.rentCurrency && p.totalContractValue != null ? formatMoneyWithCode(p.totalContractValue, p.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.rentPerSqm')} value={vf ? formatMoneyWithCode(vf.rentPerSqm, vf.currency) : (p?.rentCurrency && p?.rentPerSqm != null ? formatMoneyWithCode(p?.rentPerSqm, p?.rentCurrency) : null)} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.monthlyRent')} value={p?.rentCurrency && p?.monthlyRent != null ? formatMoneyWithCode(p?.monthlyRent, p?.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.camFee')} value={p?.rentCurrency && p?.monthlyCAM != null ? formatMoneyWithCode(p?.monthlyCAM, p?.rentCurrency) : null} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.discount')} value={`${p?.discount ?? 0}%`} icon={DollarSign} />
+              <SheetRow label={t('approvals.workflow.fields.rentFree')} value={`${p?.rentFree ?? 0} ${t('proposals.scenarios.months')}`} icon={CalendarDays} />
+              <SheetRow label={t('approvals.workflow.fields.contractValue')} value={p?.rentCurrency && p?.totalContractValue != null ? formatMoneyWithCode(p?.totalContractValue, p?.rentCurrency) : null} icon={DollarSign} />
             </div>
-            {(p.specialConditions || p.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p.specialConditions ?? p.notes}</div>}
+            {(p?.specialConditions || p?.notes) && <div className="mt-3 rounded-lg border bg-white p-3 text-sm"><span className="font-semibold">{t('approvals.workflow.fields.conditionsNotes')}: </span>{p?.specialConditions ?? p?.notes}</div>}
           </SheetSection>
 
           <section>
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wider text-slate-500"><ShieldCheck size={15} /> {t('approvals.workflow.section.log')}</div>
             <div className="space-y-0">
-              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-4 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : decisionStep?.id === step.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 border-b border-slate-100 pb-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepRole', { order: step.stepOrder, role: t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole }) })}</p><p className="mt-0.5 text-xs text-slate-500">{t('approvals.workflow.step.position', { order: step.stepOrder, total: steps.length })}</p></div><ERPStatusBadge tone={step.status === 'APPROVED' ? 'success' : step.status === 'REJECTED' ? 'danger' : decisionStep?.id === step.id ? 'brand' : 'neutral'}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : decisionStep?.id === step.id ? t('approvals.decision.current') : t('approvals.workflow.step.pending')}</ERPStatusBadge></div>{step.approver && <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{step.approver.fullName} · {step.approver.departmentInfo?.name ?? t('missingInformation', { ns: 'departments' })}</span><span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 border-l-2 border-slate-200 pl-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
+              {steps.map((step, index) => <div key={step.id} className="relative flex gap-3 pb-4 last:pb-0">{index < steps.length - 1 && <span className="absolute left-[15px] top-8 h-[calc(100%-24px)] w-px bg-slate-200" />}<span className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${step.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : step.status === 'REJECTED' ? 'bg-red-100 text-red-700' : decisionStep?.id === step.id ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{step.status === 'APPROVED' ? <CheckCircle size={16} /> : step.status === 'REJECTED' ? <XCircle size={16} /> : <Clock3 size={15} />}</span><div className="min-w-0 flex-1 border-b border-slate-100 pb-3"><div className="flex items-start justify-between gap-2"><div><p className="text-sm font-semibold">{t('approvals.workflow.step.stepRole', { order: step.stepOrder, role: t(`approvals.roles.${step.approverRole}`, { defaultValue: step.approverRole }) })}</p><p className="mt-0.5 text-xs text-slate-500">{t('approvals.workflow.step.position', { order: step.stepOrder, total: steps.length })}</p></div><ERPStatusBadge tone={step.status === 'APPROVED' ? 'success' : step.status === 'REJECTED' ? 'danger' : decisionStep?.id === step.id ? 'brand' : 'neutral'}>{step.status === 'APPROVED' ? t('approvals.workflow.step.approved') : step.status === 'REJECTED' ? t('approvals.workflow.step.rejected') : decisionStep?.id === step.id ? t('approvals.decision.current') : t('approvals.workflow.step.pending')}</ERPStatusBadge></div>{step.approver && <div className="mt-2 grid gap-1 text-xs text-slate-600 sm:grid-cols-2"><span><User size={12} className="mr-1 inline" />{decidedActorName(step)} · {step.approver.departmentInfo?.name ?? t('missingInformation', { ns: 'departments' })}</span>{isLegacyDecision(step) && <span className="sm:col-span-2 text-[11px] italic text-slate-400">Dữ liệu lịch sử chưa được snapshot</span>}<span><Clock3 size={12} className="mr-1 inline" />{fmtDateTime(step.decidedAt)}</span>{step.approver.email && <span className="sm:col-span-2">{step.approver.email}</span>}</div>}{step.comment && <div className="mt-2 border-l-2 border-slate-200 pl-2 text-xs text-slate-700"><MessageSquare size={12} className="mr-1 inline" />{step.comment}</div>}</div></div>)}
             </div>
           </section>
 
-          {decisionStep ? (
+          {decisionStep && isPreparer ? (
+            <div role="alert" data-testid="approval-sod-notice" className="sticky bottom-0 -mx-6 border-t bg-amber-50 px-6 py-3 text-sm text-amber-900">
+              Bạn là người lập Proposal này nên không thể tự phê duyệt.
+            </div>
+          ) : decisionStep ? (
             <div className="sticky bottom-0 -mx-6 flex gap-2 border-t bg-white px-6 pt-4">
               <Button variant="outline" className="flex-1 gap-2 border-red-200 text-red-700 hover:bg-red-50" onClick={() => setRejectOpen(true)}><XCircle size={15} /> {t('approvals.actions.reject')}</Button>
               <Button className="flex-1 gap-2 bg-blue-600 text-white hover:bg-blue-700" onClick={() => setApproveOpen(true)}><CheckCircle size={15} /> {t('approvals.actions.approve')}</Button>

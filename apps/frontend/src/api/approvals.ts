@@ -8,6 +8,10 @@ export const approvalsApi = {
   history: (params?: { page?: number; limit?: number; status?: string; mallId?: string; floorId?: string; unitId?: string; search?: string; leaseTermType?: string }) =>
     api.get('/approvals/history', { params }).then((r) => r.data),
   getWorkflow: (id: string) => api.get(`/approvals/${id}`).then((r) => r.data),
+  /** The proposal document version this workflow decides on (readable by every approver of it). */
+  getWorkflowDocument: (workflowId: string) => api.get(`/approvals/workflows/${workflowId}/document`).then((r) => r.data),
+  exportWorkflowDocumentPdf: (workflowId: string) =>
+    api.get(`/approvals/workflows/${workflowId}/document/pdf`, { responseType: 'blob' }).then((r) => r.data),
   approve: (id: string, comment?: string) =>
     api.post(`/approvals/${id}/approve`, { comment }).then((r) => r.data),
   reject: (id: string, comment: string = '') =>
