@@ -45,7 +45,7 @@ export const proposalsApi = {
     api.get(`/proposals/${id}/document-versions/${versionId}`).then((r) => r.data),
   exportVersionPdf: (id: string, versionId: string) =>
     api.get(`/proposals/${id}/document-versions/${versionId}/pdf`, { responseType: 'blob' }).then((r) => r.data),
-  startRevision: (id: string) => api.post(`/proposals/${id}/revise`).then((r) => r.data),
+  startRevision: (id: string, reason?: string) => api.post(`/proposals/${id}/revise`, reason ? { reason } : {}).then((r) => r.data),
   getSendContext: (id: string): Promise<ProposalSendContext> =>
     api.get(`/proposals/${id}/send-context`).then((r) => r.data),
   sendDocument: (id: string, body: SendProposalDocumentPayload, idempotencyKey: string): Promise<ProposalDocumentSend> =>

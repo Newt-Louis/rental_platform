@@ -7,7 +7,7 @@ import { ProposalsService } from './proposals.service';
 import { ProposalPdfService } from './proposal-pdf.service';
 import { ProposalScenarioService } from './proposal-scenario.service';
 import { ProposalDocumentService } from './document/proposal-document.service';
-import { SaveProposalDocumentContentDto, SendProposalDocumentDto, SubmitProposalDto } from './dto/proposal-document-content.dto';
+import { ReviseProposalDto, SaveProposalDocumentContentDto, SendProposalDocumentDto, SubmitProposalDto } from './dto/proposal-document-content.dto';
 import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { CreateProposalDto, RejectProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -197,13 +197,17 @@ export class ProposalsController {
     await this.sendPdf(res, await this.documents.getVersionDocument(id, versionId));
   }
 
-  /** Starts a new document cycle for a rejected Proposal; old evidence stays with its version. */
+  /**
+   * Re-opens the Tờ trình for changes: withdraws a pending submission, replaces
+   * an approved version not yet turned into a contract, or restarts after a
+   * rejection. Old evidence stays with its version.
+   */
   @Post(':id/revise')
   @Roles(...PROPOSAL_EDIT_ROLES)
-  @ApiOperation({ summary: 'Create a new document revision for a rejected proposal' })
-  async revise(@Param('id') id: string, @CurrentUser() user: any) {
+  @ApiOperation({ summary: 'Re-open the proposal document as a draft (withdraw, replace approved, or after rejection)' })
+  async revise(@Param('id') id: string, @Body() dto: ReviseProposalDto, @CurrentUser() user: any) {
     await this.validateProposal(user, id);
-    return this.documents.startRevision(id, user.id);
+    return this.documents.startRevision(id, user.id, dto?.reason);
   }
 
   @Get(':id/send-context')

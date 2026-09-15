@@ -182,26 +182,7 @@ describe('Submitted document version', () => {
     expect(prisma.proposalDocumentVersion.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'dv-of-prop-2', proposalId: 'prop-1' } }));
   });
 
-  it('only a REJECTED Proposal can start a revision, and the old workflow stays bound to its version', async () => {
-    const tx: any = {
-      $queryRaw: jest.fn().mockResolvedValue([{ status: 'REJECTED' }]),
-      approvalWorkflow: { findUnique: jest.fn().mockResolvedValue({ id: 'wf-1', documentVersionId: 'dv-1' }), update: jest.fn() },
-      proposal: { update: jest.fn() },
-      auditLog: { create: jest.fn() },
-    };
-    const prisma: any = { $transaction: jest.fn((fn: any) => fn(tx)) };
-    const result = await new ProposalDocumentService(prisma).startRevision('prop-1', 'user-author');
-
-    expect(result).toEqual({ proposalId: 'prop-1', previousDocumentVersionId: 'dv-1' });
-    expect(tx.approvalWorkflow.update).toHaveBeenCalledWith({ where: { id: 'wf-1' }, data: { proposalId: null } });
-    expect(tx.approvalWorkflow.update.mock.calls[0][0].data).not.toHaveProperty('documentVersionId');
-    expect(tx.proposal.update).toHaveBeenCalledWith({ where: { id: 'prop-1' }, data: { status: 'DRAFT' } });
-
-    tx.$queryRaw.mockResolvedValue([{ status: 'SUBMITTED' }]);
-    tx.approvalWorkflow.update.mockClear();
-    await expect(new ProposalDocumentService(prisma).startRevision('prop-1', 'u')).rejects.toBeInstanceOf(BadRequestException);
-    expect(tx.approvalWorkflow.update).not.toHaveBeenCalled();
-  });
+  // Re-opening a Tờ trình in every status is covered in proposal-document.revision.spec.ts.
 });
 
 describe('PROP-FINAL-012 approval PDF uses the workflow-bound version', () => {

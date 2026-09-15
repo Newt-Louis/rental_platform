@@ -43,15 +43,7 @@ import { usePermissionsStore } from '@/store/permissions.store';
 import { useMallStore } from '@/store/mall.store';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
-import {
-  PROPOSAL_STATUS_TONES,
-  WORKFLOW_STATUS_TONES,
-  canEditProposalDocument,
-  getApprovalPosition,
-  getContractHandoff,
-  getProposalParty,
-  getProposalRoleCapabilities,
-} from './proposalApprovalPresentation';
+import { PROPOSAL_STATUS_TONES, WORKFLOW_STATUS_TONES, canEditProposalDocument, getApprovalPosition, getContractHandoff, getProposalParty, getProposalRoleCapabilities, getRevisionMode, REVISION_COPY } from './proposalApprovalPresentation';
 
 function fmtFull(n: number, currencyCode?: CurrencyCode) {
   return currencyCode ? formatMoneyWithCode(n, currencyCode) : '—';
@@ -425,16 +417,22 @@ function ProposalDetailSheet({
   const { role: currentRole } = usePermission();
   const allowedModules = usePermissionsStore((s) => s.allowedModules);
   const canSendExternal = useMemo(() => canPerformAction(currentRole, 'proposal-send-external'), [currentRole, allowedModules]);
+  const [showRevise, setShowRevise] = useState(false);
+  const [reviseReason, setReviseReason] = useState('');
+  const reviseMode = getRevisionMode(p, canEdit);
+  const reviseCopy = reviseMode ? REVISION_COPY[reviseMode] : null;
   const reviseMutation = useMutation({
-    mutationFn: () => proposalsApi.startRevision(p!.id),
+    mutationFn: () => proposalsApi.startRevision(p!.id, reviseReason.trim() || undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['proposals'] });
       qc.invalidateQueries({ queryKey: ['proposal-detail', p!.id] });
       qc.invalidateQueries({ queryKey: ['proposal-document', p!.id] });
-      toast({ title: 'Đã tạo bản tờ trình mới' });
+      toast({ title: 'Tờ trình đã trở về bản nháp để chỉnh sửa' });
+      setShowRevise(false);
+      setReviseReason('');
       setShowEditor(true);
     },
-    onError: (e) => toast({ title: proposalErrorMessage(e, 'Không thể tạo bản tờ trình mới'), variant: 'destructive' }),
+    onError: (e) => toast({ title: proposalErrorMessage(e, 'Không thể lập lại tờ trình'), variant: 'destructive' }),
   });
 
   const rejectMutation = useMutation({
@@ -541,6 +539,38 @@ function ProposalDetailSheet({
                     disabled={!rejectReason.trim() || rejectMutation.isPending}
                     onClick={() => rejectMutation.mutate()}
                   >{t('proposals.actions.rejectConfirm')}</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showRevise && !!reviseCopy} onOpenChange={setShowRevise}>
+            <DialogContent className="max-w-md">
+              <DialogHeader><DialogTitle className="flex items-center gap-2"><PenSquare size={16} className="text-amber-600" />{reviseCopy?.title}</DialogTitle></DialogHeader>
+              <div className="space-y-3 text-sm">
+                <p className="text-gray-600">{reviseCopy?.description}</p>
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-700">
+                    Lý do lập lại {reviseCopy?.reasonRequired ? <span className="text-red-600">*</span> : <span className="text-gray-400">(không bắt buộc)</span>}
+                  </span>
+                  <textarea
+                    aria-label="Lý do lập lại tờ trình"
+                    className="mt-1 w-full border rounded-md p-2 text-sm resize-none h-24"
+                    placeholder="Ví dụ: khách thuê đề nghị đổi diện tích / thời hạn thuê"
+                    maxLength={1000}
+                    value={reviseReason}
+                    onChange={(e) => setReviseReason(e.target.value)}
+                  />
+                </label>
+                {reviseCopy?.reasonRequired && reviseReason.trim().length > 0 && reviseReason.trim().length < 5 && (
+                  <p className="text-xs text-red-600">Lý do cần tối thiểu 5 ký tự.</p>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowRevise(false)}>{t('common:actions.cancel')}</Button>
+                  <Button
+                    disabled={reviseMutation.isPending || (!!reviseCopy?.reasonRequired && reviseReason.trim().length < 5)}
+                    onClick={() => reviseMutation.mutate()}
+                  >{reviseCopy?.confirm}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -771,14 +801,15 @@ function ProposalDetailSheet({
                   <FileText size={15} /> {t('proposals.actions.convert')}
                 </Button>
               )}
-              {canEdit && p.status === 'REJECTED' && (
+              {reviseCopy && (
                 <Button
                   variant="outline"
                   className="w-full gap-2"
-                  onClick={() => reviseMutation.mutate()}
+                  data-testid="revise-proposal"
+                  onClick={() => { setReviseReason(''); setShowRevise(true); }}
                   disabled={reviseMutation.isPending}
                 >
-                  <PenSquare size={15} /> Tạo bản tờ trình mới
+                  <PenSquare size={15} /> {reviseCopy.action}
                 </Button>
               )}
               {['APPROVED', 'CONVERTED'].includes(p.status) && canSendExternal && (

@@ -157,6 +157,18 @@ export class SubmitProposalDto {
   reviewedFingerprint?: string;
 }
 
+/**
+ * Re-opening a Tờ trình. Required when it takes a document back from approvers
+ * (pending) or replaces an approved one; optional after a rejection.
+ */
+export class ReviseProposalDto {
+  @ApiPropertyOptional({ maxLength: 1000 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
+}
+
 /** CR-PROPOSAL-DOCUMENT-FINALIZATION — sending an approved Tờ trình outside the company. */
 export class SendProposalDocumentDto {
   @ApiProperty()

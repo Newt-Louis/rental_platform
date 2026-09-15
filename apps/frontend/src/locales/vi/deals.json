@@ -394,7 +394,8 @@
         "PENDING": "Chờ bắt đầu",
         "IN_PROGRESS": "Đang phê duyệt",
         "APPROVED": "Đã duyệt",
-        "REJECTED": "Đã từ chối"
+        "REJECTED": "Đã từ chối",
+        "WITHDRAWN": "Đã thu hồi"
       },
       "viewProposal": "Xem đề xuất gốc",
       "section": {
