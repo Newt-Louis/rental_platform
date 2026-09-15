@@ -7,7 +7,7 @@ import {
   X, FileDown, Save, Upload, Image, Lock, RotateCcw, AlertTriangle, RefreshCw,
   Eye, EyeOff, Maximize2, Minimize2, GripVertical,
 } from 'lucide-react';
-import { exportOfficialProposalPdf, proposalErrorMessage } from './proposalPdf';
+import { exportOfficialProposalPdf, proposalErrorMessage, ROUTING_REASON_LABELS } from './proposalPdf';
 import type {
   ProposalDocumentItemKey,
   ProposalDocumentModel,
@@ -806,21 +806,50 @@ const PRESENTATION_LABEL = {
   SKIPPED: { text: 'Bỏ qua', cls: 'text-gray-400' },
 } as const;
 
+/** Same wording as the official PDF (proposal-pdf.service approvalNotice). */
+export function approvalNotice(approval: ProposalDocumentModel['approval']): string | null {
+  if (approval.state === 'WITHDRAWN') return 'Tờ trình đã được thu hồi để chỉnh sửa — phiên bản này không còn hiệu lực phê duyệt.';
+  if (approval.state !== 'NOT_SUBMITTED') return null;
+  if (!approval.steps.length) {
+    return approval.preview && !approval.preview.policyConfigured
+      ? 'Chưa trình duyệt — Mall chưa cấu hình quy trình phê duyệt.'
+      : 'Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.';
+  }
+  return 'Chưa trình duyệt — quy trình phê duyệt dự kiến theo cấu hình hiện tại, được chốt khi trình duyệt.';
+}
+
+const UNASSIGNED_APPROVER = 'Chưa có người phụ trách';
+
+function RouteIssues({ model }: { model: ProposalDocumentModel }) {
+  const issues = model.approval.preview?.issues ?? [];
+  if (!issues.length) return null;
+  return (
+    <div role="alert" data-testid="route-preview-issues" className="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900">
+      <div className="font-semibold">Chưa thể trình duyệt với cấu hình hiện tại:</div>
+      <ul className="mt-1 list-disc pl-4">
+        {issues.map((issue, i) => (
+          <li key={i}>{issue.stepOrder ? `Bước ${issue.stepOrder}${issue.stepName ? ` (${issue.stepName})` : ''}: ` : ''}{ROUTING_REASON_LABELS[issue.reason] ?? issue.reason}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ApprovalList({ model }: { model: ProposalDocumentModel }) {
+  const notice = approvalNotice(model.approval);
   return (
     <ol className="space-y-2">
       <li className="border rounded p-2">
         <div className="text-[11px] font-semibold text-gray-500">NGƯỜI LẬP</div>
         <div className="font-medium">{model.facts.preparedBy.fullName ?? 'Không xác định'}</div>
       </li>
-      {model.approval.state === 'NOT_SUBMITTED' && (
-        <li className="text-xs italic text-gray-500">Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.</li>
-      )}
+      {notice && <li data-testid="approval-notice" className="text-xs italic text-gray-500">{notice}</li>}
+      <li className="list-none"><RouteIssues model={model} /></li>
       {model.approval.steps.map((s) => (
         <li key={`${s.stepOrder}-${s.stepName}`} data-testid={`approval-step-${s.stepOrder}`} className="border rounded p-2">
           <div className="text-[11px] font-semibold text-gray-500">{s.stepOrder}. {s.stepName}</div>
           <div className={`text-[11px] ${PRESENTATION_LABEL[s.presentation].cls}`}>{PRESENTATION_LABEL[s.presentation].text}</div>
-          <div className="font-medium">{s.approverName ?? 'Chưa phân công'}</div>
+          <div className="font-medium">{s.approverName ?? UNASSIGNED_APPROVER}</div>
           {s.decidedAt && <div className="text-[11px] text-gray-500">{formatDateTime(s.decidedAt)}</div>}
           {s.comment && <div className="text-[11px] italic text-gray-500">Ý kiến: {s.comment}</div>}
         </li>
@@ -830,24 +859,26 @@ function ApprovalList({ model }: { model: ProposalDocumentModel }) {
 }
 
 function ApprovalBlock({ model }: { model: ProposalDocumentModel }) {
+  const notice = approvalNotice(model.approval);
+  const hasSteps = model.approval.steps.length > 0;
   return (
     <div data-testid="document-approval-block">
-      <div className="font-bold mb-1" style={{ fontSize: '9pt' }}>NGƯỜI LẬP VÀ QUÁ TRÌNH PHÊ DUYỆT</div>
+      {notice && hasSteps && <div className="mb-1 italic text-gray-500" style={{ fontSize: '8pt' }}>{notice}</div>}
       <div className="grid grid-cols-4 border-l border-t" style={{ borderColor: '#999', fontSize: '8pt' }}>
         <div className="border-r border-b p-2 text-center" style={{ borderColor: '#999' }}>
           <div className="font-bold">NGƯỜI LẬP</div>
           <div className="mt-6 font-bold" style={{ fontSize: '9pt' }}>{model.facts.preparedBy.fullName ?? 'Không xác định'}</div>
         </div>
-        {model.approval.state === 'NOT_SUBMITTED' && (
+        {notice && !hasSteps && (
           <div className="col-span-3 border-r border-b p-2 text-center italic text-gray-500" style={{ borderColor: '#999' }}>
-            Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.
+            {notice}
           </div>
         )}
         {model.approval.steps.map((s) => (
           <div key={`${s.stepOrder}-${s.stepName}`} className="border-r border-b p-2 text-center" style={{ borderColor: '#999' }}>
             <div className="font-bold uppercase">{s.stepName}</div>
             <div className={PRESENTATION_LABEL[s.presentation].cls}>{PRESENTATION_LABEL[s.presentation].text}</div>
-            <div className="mt-3" style={{ fontSize: '9pt' }}>{s.approverName ?? 'Chưa phân công'}</div>
+            <div className="mt-3" style={{ fontSize: '9pt' }}>{s.approverName ?? UNASSIGNED_APPROVER}</div>
             {s.decidedAt && <div className="text-gray-500">{formatDateTime(s.decidedAt)}</div>}
             {s.comment && <div className="italic text-gray-500">Ý kiến: {s.comment}</div>}
           </div>

@@ -12,11 +12,12 @@ import { CrmModule } from '../crm/crm.module';
 import { BillingModule } from '../billing/billing.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { CategoriesModule } from '../categories/categories.module';
+import { ProposalApprovalRouteService } from './proposal-approval-route.service';
 
 @Module({
   imports: [CrmModule, BillingModule, NotificationsModule, CategoriesModule],
   controllers: [ProposalsController, DealScoringController, ProposalApprovalDocumentController],
-  providers: [ProposalsService, ProposalPdfService, DealScoringService, ProposalScenarioService, ProposalDocumentService, ProposalDocumentDeliveryService],
+  providers: [ProposalsService, ProposalPdfService, DealScoringService, ProposalScenarioService, ProposalDocumentService, ProposalDocumentDeliveryService, ProposalApprovalRouteService],
   exports: [ProposalsService, DealScoringService, ProposalScenarioService, ProposalDocumentService, ProposalPdfService],
 })
 export class ProposalsModule {}

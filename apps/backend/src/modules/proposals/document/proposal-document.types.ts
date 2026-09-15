@@ -135,10 +135,23 @@ export interface ProposalDocumentApprovalStep {
   identitySource: 'DECISION_SNAPSHOT' | 'LEGACY_UNSNAPSHOTTED' | 'ASSIGNED_APPROVER';
 }
 
+export interface ProposalDocumentRoutePreview {
+  /** When the route was worked out (ISO). It follows configuration until submit. */
+  evaluatedAt: string;
+  policyConfigured: boolean;
+  /** What would block a submit today, e.g. a position with no holder. */
+  issues: Array<{ stepOrder: number | null; stepName: string | null; reason: string }>;
+}
+
 export interface ProposalDocumentApproval {
-  /** NOT_SUBMITTED means routing has not happened yet; nothing is invented. */
-  state: 'NOT_SUBMITTED' | 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'REJECTED';
+  /**
+   * NOT_SUBMITTED means routing has not happened yet. Its steps, when present,
+   * are the route the Proposal would get if submitted now (`preview`); they are
+   * expected approvers, never signatures.
+   */
+  state: 'NOT_SUBMITTED' | 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
   steps: ProposalDocumentApprovalStep[];
+  preview?: ProposalDocumentRoutePreview | null;
 }
 
 /** What an author may store. Everything else is recomputed. */

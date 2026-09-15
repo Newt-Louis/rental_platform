@@ -470,6 +470,35 @@ export function buildApproval(src: ProposalDocumentSource): ProposalDocumentAppr
 type WorkflowEvidence = NonNullable<ProposalDocumentSource['approvalWorkflow']>;
 
 /**
+ * A DRAFT's expected route: every step the configuration would create today,
+ * each named with the current holder of its position. Nothing here is a
+ * decision, so every step is an expected approver.
+ */
+export function approvalFromRoutePreview(preview: {
+  evaluatedAt: string;
+  policyConfigured: boolean;
+  steps: Array<{ stepOrder: number; stepName: string; approverRole: string; approverId: string | null; approverName: string | null }>;
+  issues: Array<{ stepOrder: number | null; stepName: string | null; reason: string }>;
+}): ProposalDocumentApproval {
+  return {
+    state: 'NOT_SUBMITTED',
+    steps: preview.steps.map((s) => ({
+      stepOrder: s.stepOrder,
+      stepName: s.stepName,
+      approverRole: s.approverRole,
+      approverId: s.approverId,
+      approverName: s.approverName,
+      identitySource: 'ASSIGNED_APPROVER',
+      status: 'PENDING',
+      presentation: 'EXPECTED_APPROVER',
+      decidedAt: null,
+      comment: null,
+    })),
+    preview: { evaluatedAt: preview.evaluatedAt, policyConfigured: preview.policyConfigured, issues: preview.issues },
+  };
+}
+
+/**
  * Approval evidence from one workflow's steps. With `asOf`, a decision made
  * after that instant is shown as still pending, so a PDF rendered for an email
  * or a send is reproducible byte-for-byte later.

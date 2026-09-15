@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { Prisma, ProposalStatus } from '@prisma/client';
+import { Prisma, ProposalStatus, StepStatus, WorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { recordProposalVersion } from '../proposal-version.recorder';
 import { SaveProposalDocumentContentDto } from '../dto/proposal-document-content.dto';
@@ -20,7 +22,9 @@ import {
   ProposalDocumentVersionRow,
   buildVersionDocument,
   snapshotForVersion,
+  approvalFromRoutePreview,
 } from './proposal-document.mapper';
+import { ProposalApprovalRouteService } from '../proposal-approval-route.service';
 import {
   PROPOSAL_DOCUMENT_SCHEMA_VERSION,
   ProposalDocumentEditableContent,
@@ -42,7 +46,12 @@ type Client = PrismaService | Prisma.TransactionClient;
  */
 @Injectable()
 export class ProposalDocumentService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ProposalDocumentService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly routes?: ProposalApprovalRouteService,
+  ) {}
 
   /** Overridable clock so draft dating is testable. */
   protected now(): Date {
@@ -139,11 +148,27 @@ export class ProposalDocumentService {
     if (versionId) return this.getVersionDocument(id, versionId, client, opts);
 
     const live = await this.getLiveDocument(id, client);
-    if (proposal.status !== ProposalStatus.DRAFT) {
+    if (proposal.status === ProposalStatus.DRAFT) {
+      await this.attachRoutePreview(live);
+    } else {
       live.warnings = [...live.warnings, 'Proposal được trình trước khi có phiên bản tờ trình; nội dung hiển thị theo dữ liệu hiện tại.'];
       live.warningCodes = [...live.warningCodes, 'LEGACY_SUBMISSION_UNVERSIONED'];
     }
     return live;
+  }
+
+  /**
+   * The draft shows the full route it would get if submitted now, named with
+   * the current position holders. A preview failure never hides the document:
+   * the approval block then says the route could not be worked out.
+   */
+  private async attachRoutePreview(live: ProposalDocumentModel) {
+    if (!this.routes || live.approval.steps.length) return;
+    try {
+      live.approval = approvalFromRoutePreview(await this.routes.preview(live.proposalId));
+    } catch (error: any) {
+      this.logger.warn(JSON.stringify({ event: 'proposal.route.preview.failed', proposalId: live.proposalId, error: error?.message }));
+    }
   }
 
   private readonly versionInclude = {
@@ -231,45 +256,148 @@ export class ProposalDocumentService {
   }
 
   /**
-   * Starts a new document cycle for a REJECTED Proposal. The rejected workflow
-   * is detached from the Proposal but stays bound to the version it decided on,
-   * so its evidence is never mixed into the next version.
+   * Re-opens the Tờ trình as a DRAFT so the author can change it and route it
+   * again. The previous workflow is detached from the Proposal but stays bound
+   * to the version it was deciding on, so its evidence is never mixed into the
+   * next version.
+   *
+   *  - SUBMITTED / UNDER_REVIEW: the submission is withdrawn. Steps nobody has
+   *    decided are SKIPPED, the workflow becomes WITHDRAWN and the version
+   *    SUPERSEDED. Approvers who already signed keep their signature on it.
+   *  - APPROVED, no contract yet: the approved version is SUPERSEDED. The new
+   *    version needs a complete approval from the start.
+   *  - REJECTED: as before.
+   *  - CONVERTED, or any Proposal a contract was created from: refused.
+   *
+   * Serializable, so it cannot interleave with an approval decision on the same
+   * workflow: one of the two commits and the other gets a conflict.
    */
-  async startRevision(proposalId: string, actorId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ status: string }>>(Prisma.sql`
-        SELECT status::text AS status FROM "Proposal" WHERE id = ${proposalId} FOR UPDATE
-      `);
-      if (!locked.length) throw new NotFoundException('Proposal not found');
-      if (locked[0].status !== ProposalStatus.REJECTED) {
-        throw new BadRequestException({
-          code: 'PROPOSAL_REVISION_NOT_ALLOWED',
-          message: 'Chỉ tạo bản tờ trình mới cho Proposal đã bị từ chối.',
+  async startRevision(proposalId: string, actorId: string, reason?: string | null) {
+    const note = reason?.trim() || null;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const locked = await tx.$queryRaw<Array<{ status: string; proposalNumber: string }>>(Prisma.sql`
+          SELECT status::text AS status, "proposalNumber" FROM "Proposal" WHERE id = ${proposalId} FOR UPDATE
+        `);
+        if (!locked.length) throw new NotFoundException('Proposal not found');
+        const status = locked[0].status as ProposalStatus;
+
+        if (status === ProposalStatus.DRAFT) {
+          throw new BadRequestException({
+            code: 'PROPOSAL_ALREADY_DRAFT',
+            message: 'Tờ trình đang ở trạng thái nháp và có thể chỉnh sửa trực tiếp.',
+          });
+        }
+        const contract = await tx.contract.findFirst({ where: { proposalId }, select: { contractNumber: true } });
+        if (status === ProposalStatus.CONVERTED || contract) {
+          throw new BadRequestException({
+            code: 'PROPOSAL_REVISION_NOT_ALLOWED',
+            message: contract
+              ? `Proposal đã tạo hợp đồng ${contract.contractNumber}; không thể lập lại tờ trình.`
+              : 'Proposal đã chuyển hợp đồng; không thể lập lại tờ trình.',
+          });
+        }
+        const withdrawing = status === ProposalStatus.SUBMITTED || status === ProposalStatus.UNDER_REVIEW;
+        if ((withdrawing || status === ProposalStatus.APPROVED) && (!note || note.length < 5)) {
+          throw new BadRequestException({
+            code: 'PROPOSAL_REVISION_REASON_REQUIRED',
+            message: 'Vui lòng nhập lý do lập lại tờ trình (tối thiểu 5 ký tự).',
+          });
+        }
+
+        const workflow = await tx.approvalWorkflow.findUnique({
+          where: { proposalId },
+          select: {
+            id: true, status: true, documentVersionId: true,
+            steps: { where: { status: StepStatus.PENDING }, select: { approverId: true } },
+          },
+        });
+
+        // The workflow already reached its outcome but the Proposal has not
+        // caught up yet (the outcome event is still being processed).
+        const settled = !!workflow && (
+          (withdrawing && workflow.status !== WorkflowStatus.IN_PROGRESS)
+          || (status === ProposalStatus.APPROVED && workflow.status !== WorkflowStatus.APPROVED)
+          || (status === ProposalStatus.REJECTED && workflow.status !== WorkflowStatus.REJECTED)
+        );
+        if (settled) {
+          throw new ConflictException({
+            code: 'PROPOSAL_REVISION_CONFLICT',
+            message: 'Kết quả phê duyệt vừa được cập nhật. Vui lòng tải lại Proposal rồi thử lại.',
+          });
+        }
+
+        let skippedSteps = 0;
+        if (workflow) {
+          if (withdrawing) {
+            skippedSteps = (await tx.approvalStep.updateMany({
+              where: { workflowId: workflow.id, status: StepStatus.PENDING },
+              data: { status: StepStatus.SKIPPED },
+            })).count;
+            await tx.approvalWorkflow.update({
+              where: { id: workflow.id },
+              data: { status: WorkflowStatus.WITHDRAWN, proposalId: null },
+            });
+          } else {
+            await tx.approvalWorkflow.update({ where: { id: workflow.id }, data: { proposalId: null } });
+          }
+          if (workflow.documentVersionId && status !== ProposalStatus.REJECTED) {
+            await tx.proposalDocumentVersion.updateMany({
+              where: { id: workflow.documentVersionId, status: { in: ['SUBMITTED', 'APPROVED'] } },
+              data: { status: 'SUPERSEDED' },
+            });
+          }
+          // Approvers still waiting on this document are told it was taken back.
+          if (withdrawing) {
+            const recipients = [...new Set(workflow.steps.map((s) => s.approverId).filter((id): id is string => !!id))];
+            for (const userId of recipients) {
+              await tx.notification.create({
+                data: {
+                  userId,
+                  title: `Tờ trình ${locked[0].proposalNumber} đã được thu hồi`,
+                  body: `Người lập đã thu hồi tờ trình để chỉnh sửa. Lý do: ${note}`,
+                  type: 'APPROVAL_WITHDRAWN',
+                  entityType: 'PROPOSAL',
+                  entityId: proposalId,
+                },
+              });
+            }
+          }
+        }
+
+        await tx.proposal.update({ where: { id: proposalId }, data: { status: ProposalStatus.DRAFT } });
+        await tx.auditLog.create({
+          data: {
+            userId: actorId,
+            action: 'PROPOSAL_DOCUMENT_REVISION_STARTED',
+            entityType: 'PROPOSAL',
+            entityId: proposalId,
+            payload: JSON.stringify({
+              previousStatus: status,
+              reason: note,
+              previousWorkflowId: workflow?.id ?? null,
+              previousDocumentVersionId: workflow?.documentVersionId ?? null,
+              skippedSteps,
+            }),
+            status: 'SUCCESS',
+          },
+        });
+        return {
+          proposalId,
+          previousStatus: status,
+          previousDocumentVersionId: workflow?.documentVersionId ?? null,
+          skippedSteps,
+        };
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error: any) {
+      if (error?.code === 'P2034') {
+        throw new ConflictException({
+          code: 'PROPOSAL_REVISION_CONFLICT',
+          message: 'Tờ trình vừa có thao tác phê duyệt khác. Vui lòng tải lại Proposal rồi thử lại.',
         });
       }
-      const workflow = await tx.approvalWorkflow.findUnique({
-        where: { proposalId },
-        select: { id: true, documentVersionId: true },
-      });
-      if (workflow) {
-        await tx.approvalWorkflow.update({ where: { id: workflow.id }, data: { proposalId: null } });
-      }
-      await tx.proposal.update({ where: { id: proposalId }, data: { status: ProposalStatus.DRAFT } });
-      await tx.auditLog.create({
-        data: {
-          userId: actorId,
-          action: 'PROPOSAL_DOCUMENT_REVISION_STARTED',
-          entityType: 'PROPOSAL',
-          entityId: proposalId,
-          payload: JSON.stringify({
-            previousWorkflowId: workflow?.id ?? null,
-            previousDocumentVersionId: workflow?.documentVersionId ?? null,
-          }),
-          status: 'SUCCESS',
-        },
-      });
-      return { proposalId, previousDocumentVersionId: workflow?.documentVersionId ?? null };
-    });
+      throw error;
+    }
   }
 
   async saveContent(id: string, dto: SaveProposalDocumentContentDto, actorId: string): Promise<ProposalDocumentModel> {

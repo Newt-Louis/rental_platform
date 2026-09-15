@@ -8,7 +8,6 @@ import {
 } from '@prisma/client';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { buildApprovalStepsFromRules } from '../approvals/approval-policy.util';
 import { assertApprovalRoutable } from '../approvals/approval-routing.validator';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { computeContractValue } from '../../common/finance/rent-calculation.util';
@@ -24,6 +23,7 @@ import {
 import { recordProposalVersion } from './proposal-version.recorder';
 import { ProposalDocumentService } from './document/proposal-document.service';
 import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
+import { ProposalApprovalRouteService } from './proposal-approval-route.service';
 import { CustomersService } from '../crm/customers.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
 import { BillingScheduleService } from '../billing/billing-schedule.service';
@@ -52,6 +52,7 @@ export class ProposalsService {
     private documents: ProposalDocumentService,
     private outbox: OutboxService,
     private delivery: ProposalDocumentDeliveryService,
+    private routes: ProposalApprovalRouteService,
   ) {}
 
   private generateProposalNumber() {
@@ -338,65 +339,13 @@ export class ProposalsService {
       throw new BadRequestException('Proposal is not in DRAFT status');
     }
 
-    const hasArDebt = proposal.tenantId
-      ? (await this.prisma.invoice.count({
-          where: { tenantId: proposal.tenantId, status: 'OVERDUE', isActive: true },
-        })) > 0
-      : false;
-
-    // Quy tắc duyệt khai báo riêng cho từng mall (admin?section=approval): trước đây truy vấn này
-    // nạp toàn bộ quy tắc active bất kể mall, nên một bộ ngưỡng chiết khấu duy nhất áp cho mọi mall.
-    const proposalMallId = proposal.unit?.mallId;
-    if (!proposalMallId) {
-      throw new BadRequestException('Không xác định được mall của đề xuất để áp quy tắc duyệt');
-    }
-    // Proposal governance: approval rules are read, built into steps and validated
-    // inside the submit transaction below, after the document review gate, so a
-    // workflow is never created from a configuration read at a different moment
-    // than the one it is committed with.
-
-    // Tính % lệch giá so với bảng giá ngành hàng (master data) NGAY TẠI THỜI ĐIỂM submit — trước đây
-    // luồng này không truyền priceDeviationPct nên các rule PRICE_DEVIATION_PCT (Director/CEO price
-    // review) không bao giờ khớp được, dù booking gốc đã bị flag lệch giá lớn.
-    let priceDeviationPct = 0;
-    let pricingRuleId: string | null = null;
-    let pricingSnapshot: Prisma.InputJsonValue | undefined;
-    // CategoryPricing now carries its own currencyCode (previously a plain VND-denominated
-    // Float with no currency field at all -- docs/program/MULTI_CURRENCY_ARCHITECTURE.md).
-    // validateProposedPrice() only matches a pricing rule in the SAME currency as the
-    // proposal, so a USD/MMK proposal is no longer silently skipped (which previously let
-    // large USD/MMK deviations bypass CEO/Director review entirely) -- it's now checked
-    // against a same-currency band where one exists, and otherwise falls through to the
-    // "no pricing rule configured" CEO-escalation path below, same as a VND proposal would.
-    if (proposal.unit?.categoryId) {
-      const validation = await this.categoriesService.validateProposedPrice({
-        mallId: proposal.unit.mallId,
-        categoryId: proposal.unit.categoryId,
-        floorId: proposal.unit.floorId ?? undefined,
-        zoneId: proposal.unit.zoneId ?? undefined,
-        proposedRentPerSqm: proposal.rentPerSqm,
-        currencyCode: proposal.rentCurrency,
-      });
-      priceDeviationPct = validation.deviationPercent;
-      pricingRuleId = validation.categoryPricing?.id ?? null;
-      pricingSnapshot = {
-        evaluatedAt: new Date().toISOString(),
-        proposedRentPerSqm: proposal.rentPerSqm,
-        minRentPerSqm: validation.minRentPerSqm,
-        maxRentPerSqm: validation.maxRentPerSqm,
-        suggestedRent: validation.categoryPricing?.suggestedRent ?? null,
-        camPerSqm: validation.categoryPricing?.camPerSqm ?? null,
-        sources: validation.categoryPricing?.sources ?? null,
-      };
-    }
-
-    const policyContext = {
-      discountPct: proposal.discount ?? 0,
-      rentFreeMonths: proposal.rentFree ?? 0,
-      industryTag: proposal.unit?.category ?? proposal.tenant?.category ?? null,
-      hasArDebt,
-      priceDeviationPct,
-    };
+    // Policy facts (discount, rent-free, overdue AR, deviation from the category
+    // price band) at this moment. The rules themselves, and who currently holds
+    // the positions they name, are read inside the submit transaction below,
+    // after the document review gate, so a workflow is never created from a
+    // configuration read at a different moment than the one it commits with.
+    const { mallId: proposalMallId, policyContext, pricingRuleId, pricingSnapshot } =
+      await this.routes.evaluatePolicy(proposal as any);
 
     let workflow: { id: string };
     const startedAt = Date.now();
@@ -418,18 +367,15 @@ export class ProposalsService {
 
         // Routing pre-flight: an approval workflow that no one can complete must
         // fail here, before any version, workflow, outbox or audit row exists.
-        const rules = await tx.approvalPolicyRule.findMany({
-          where: { isActive: true, mallId: proposalMallId },
-          orderBy: [{ stepOrder: 'asc' }, { createdAt: 'asc' }],
-        });
-        if (!rules.length) {
+        const route = await this.routes.buildSteps(tx, proposalMallId, policyContext);
+        if (!route.policyConfigured) {
           throw new BadRequestException({
             code: 'APPROVAL_ROUTING_INVALID',
             message: 'Mall này chưa cấu hình quy tắc phê duyệt Proposal. Vui lòng cấu hình trước khi trình.',
             errors: [{ stepOrder: null, stepName: null, reason: 'NO_ACTIVE_POLICY' }],
           });
         }
-        const steps = buildApprovalStepsFromRules(rules, policyContext);
+        const steps = route.steps;
         await assertApprovalRoutable(tx, steps, {
           creatorId: current.createdById,
           mallId: proposalMallId,
@@ -563,6 +509,9 @@ export class ProposalsService {
     if (payload.entityType !== 'PROPOSAL') return;
     const proposalId = payload.entityId;
 
+    // Only the workflow still bound to the Proposal decides its outcome; one
+    // detached by a revision must not pull the Proposal out of its new draft.
+    if (!(await this.isCurrentWorkflow(payload.workflowId, proposalId))) return;
     await this.prisma.proposal.update({
       where: { id: proposalId },
       data: { status: ProposalStatus.APPROVED },
@@ -598,11 +547,23 @@ export class ProposalsService {
   @OnEvent('approval.workflow.rejected', { suppressErrors: false })
   async onApprovalWorkflowRejected(payload: ApprovalWorkflowRejectedEvent) {
     if (payload.entityType !== 'PROPOSAL') return;
+    if (!(await this.isCurrentWorkflow(payload.workflowId, payload.entityId))) return;
     await this.prisma.proposal.update({
       where: { id: payload.entityId },
       data: { status: ProposalStatus.REJECTED },
     });
     await this.markDocumentVersion(payload.workflowId, 'REJECTED');
+  }
+
+  private async isCurrentWorkflow(workflowId: string, proposalId: string) {
+    const bound = await this.prisma.approvalWorkflow.findFirst({
+      where: { id: workflowId, proposalId },
+      select: { id: true },
+    });
+    if (!bound) {
+      this.logger.warn(JSON.stringify({ event: 'proposal.workflow.outcome.ignored', proposalId, workflowId, reason: 'DETACHED' }));
+    }
+    return !!bound;
   }
 
   /** Only `status` of a document version may change; the trigger enforces it. */

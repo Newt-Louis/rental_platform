@@ -90,11 +90,11 @@ export function routingErrorCode(issues: RoutingIssue[]) {
  * structured 400 when routing cannot produce a usable workflow. The response
  * carries step numbers, step names and reasons only — no approver identities.
  */
-export async function assertApprovalRoutable(
+export async function loadRoutingIssues(
   tx: Prisma.TransactionClient,
   steps: RoutingStep[],
   ctx: { creatorId: string; mallId: string; eligibleRoles: readonly Role[] },
-) {
+): Promise<RoutingIssue[]> {
   const ids = [...new Set(steps.map((s) => s.approverId).filter((id): id is string => !!id))];
   const users = ids.length
     ? await tx.user.findMany({
@@ -108,7 +108,15 @@ export async function assertApprovalRoutable(
   const approvers = new Map<string, RoutingApprover>(users.map((u) => [u.id, {
     id: u.id, role: u.role, isActive: u.isActive, deletedAt: u.deletedAt, hasMallAccess: u.mallAccess.length > 0,
   }]));
-  const issues = findRoutingIssues(steps, { creatorId: ctx.creatorId, approvers, eligibleRoles: ctx.eligibleRoles });
+  return findRoutingIssues(steps, { creatorId: ctx.creatorId, approvers, eligibleRoles: ctx.eligibleRoles });
+}
+
+export async function assertApprovalRoutable(
+  tx: Prisma.TransactionClient,
+  steps: RoutingStep[],
+  ctx: { creatorId: string; mallId: string; eligibleRoles: readonly Role[] },
+) {
+  const issues = await loadRoutingIssues(tx, steps, ctx);
   if (!issues.length) return;
   const code = routingErrorCode(issues);
   throw new BadRequestException({ code, message: ROUTING_MESSAGES[code], errors: issues });

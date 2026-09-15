@@ -4,7 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { buildProposalDocDefinition, ProposalPdfService } from './proposal-pdf.service';
-import { buildProposalDocument, buildFacts, computeSourceFingerprint } from './document/proposal-document.mapper';
+import { buildProposalDocument, buildFacts, computeSourceFingerprint, approvalFromRoutePreview } from './document/proposal-document.mapper';
 import { proposalDocumentSource } from './document/proposal-document.fixture';
 import { PROPOSAL_DOCUMENT_SCHEMA_VERSION } from './document/proposal-document.types';
 
@@ -100,6 +100,39 @@ describe('Official proposal PDF', () => {
     const all = texts(buildProposalDocDefinition(buildProposalDocument(proposalDocumentSource(), NOW))).join('\n');
     expect(all).toContain('Chưa trình duyệt');
     expect(all).not.toContain('ĐÃ DUYỆT');
+  });
+
+  it('PROP-ROUTE-PREVIEW-001 a draft shows a box for every expected step, named with the position holder, and never as a signature', () => {
+    const doc = buildProposalDocument(proposalDocumentSource(), NOW);
+    doc.approval = approvalFromRoutePreview({
+      evaluatedAt: NOW.toISOString(),
+      policyConfigured: true,
+      steps: [
+        { stepOrder: 1, stepName: 'Leasing Manager Approval', approverRole: 'LEASING_MANAGER', approverId: 'u-m', approverName: 'Tran Thi B' },
+        { stepOrder: 2, stepName: 'Finance Review', approverRole: 'FINANCE', approverId: 'u-f', approverName: 'Pham Thi D' },
+        { stepOrder: 3, stepName: 'Legal Review', approverRole: 'LEGAL', approverId: null, approverName: null },
+      ],
+      issues: [{ stepOrder: 3, stepName: 'Legal Review', reason: 'STEP_UNASSIGNED' }],
+    });
+    const all = texts(buildProposalDocDefinition(doc)).join('\n');
+    expect(all).toContain('quy trình phê duyệt dự kiến theo cấu hình hiện tại');
+    for (const text of ['LEASING MANAGER APPROVAL', 'FINANCE REVIEW', 'LEGAL REVIEW', 'Tran Thi B', 'Pham Thi D', 'Chưa có người phụ trách']) {
+      expect(all).toContain(text);
+    }
+    expect(all.match(/NGƯỜI DUYỆT DỰ KIẾN — CHƯA DUYỆT/g)).toHaveLength(3);
+    expect(all).not.toContain('ĐÃ DUYỆT');
+  });
+
+  it('PROP-ROUTE-PREVIEW-002 a Mall without approval rules says so on the draft', () => {
+    const doc = buildProposalDocument(proposalDocumentSource(), NOW);
+    doc.approval = approvalFromRoutePreview({ evaluatedAt: NOW.toISOString(), policyConfigured: false, steps: [], issues: [{ stepOrder: null, stepName: null, reason: 'NO_ACTIVE_POLICY' }] });
+    expect(texts(buildProposalDocDefinition(doc)).join('\n')).toContain('Mall chưa cấu hình quy trình phê duyệt');
+  });
+
+  it('PROP-REVISE-PDF a withdrawn version says it no longer carries approval', () => {
+    const doc = documentWithHistory();
+    doc.approval = { ...doc.approval, state: 'WITHDRAWN' };
+    expect(texts(buildProposalDocDefinition(doc)).join('\n')).toContain('Tờ trình đã được thu hồi');
   });
 
   it('renders a real PDF including the saved logo and layout image', async () => {

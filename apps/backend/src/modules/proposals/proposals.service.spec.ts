@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { ProposalsService } from './proposals.service';
+import { ProposalApprovalRouteService } from './proposal-approval-route.service';
 import { ProposalDocumentService } from './document/proposal-document.service';
 import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -69,6 +70,7 @@ describe('ProposalsService integration (mocked DB)', () => {
         { provide: CategoriesService, useValue: categories },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
         { provide: LeadLifecycleService, useValue: { transition: jest.fn() } },
+        ProposalApprovalRouteService,
       ],
     }).compile();
     service = module.get(ProposalsService);
@@ -327,6 +329,7 @@ describe('ProposalsService.submit — governance gates run before anything is wr
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn() } },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
         { provide: LeadLifecycleService, useValue: { transition: jest.fn() } },
+        ProposalApprovalRouteService,
       ],
     }).compile();
     return { service: module.get(ProposalsService), writes, prisma, documents };

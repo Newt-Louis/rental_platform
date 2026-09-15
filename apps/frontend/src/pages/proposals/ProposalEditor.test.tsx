@@ -284,5 +284,30 @@ describe('ProposalEditorDialog', () => {
     expect(await screen.findByTestId('review-state')).toHaveTextContent('CẦN KIỂM TRA LẠI');
     expect(screen.getByTestId('document-status')).toHaveTextContent('đã thay đổi — cần kiểm tra lại');
   });
-});
+  it('PROP-ROUTE-PREVIEW UX: a draft shows every expected approval box with the person in charge, and what would block submit', async () => {
+    const step = (stepOrder: number, stepName: string, approverName: string | null) => ({
+      stepOrder, stepName, approverRole: 'LEGAL', approverId: approverName ? `u-${stepOrder}` : null, approverName,
+      status: 'PENDING' as const, presentation: 'EXPECTED_APPROVER' as const, decidedAt: null, comment: null, identitySource: 'ASSIGNED_APPROVER' as const,
+    });
+    open(model({
+      approval: {
+        state: 'NOT_SUBMITTED',
+        steps: [step(1, 'Leasing Manager Approval', 'Trần Thị B'), step(2, 'Finance Review', 'Phạm Thị D'), step(3, 'Legal Review', 'Hoàng Văn E')],
+        preview: { evaluatedAt: '2026-09-14T01:00:00.000Z', policyConfigured: true, issues: [{ stepOrder: 3, stepName: 'Legal Review', reason: 'APPROVER_INACTIVE' }] },
+      },
+    }));
+    const block = await screen.findByTestId('document-approval-block');
 
+    expect(block).toHaveTextContent('quy trình phê duyệt dự kiến theo cấu hình hiện tại');
+    for (const name of ['Leasing Manager Approval', 'Finance Review', 'Legal Review', 'Trần Thị B', 'Phạm Thị D', 'Hoàng Văn E']) {
+      expect(block).toHaveTextContent(name);
+    }
+    expect(within(block).getAllByText('Người duyệt dự kiến — chưa duyệt')).toHaveLength(3);
+    expect(within(block).queryByText('Đã duyệt')).toBeNull();
+  });
+
+  it('PROP-ROUTE-PREVIEW UX: a Mall without approval rules says so instead of empty boxes', async () => {
+    open(model({ approval: { state: 'NOT_SUBMITTED', steps: [], preview: { evaluatedAt: '2026-09-14T01:00:00.000Z', policyConfigured: false, issues: [{ stepOrder: null, stepName: null, reason: 'NO_ACTIVE_POLICY' }] } } }));
+    expect(await screen.findByTestId('document-approval-block')).toHaveTextContent('Mall chưa cấu hình quy trình phê duyệt');
+  });
+});

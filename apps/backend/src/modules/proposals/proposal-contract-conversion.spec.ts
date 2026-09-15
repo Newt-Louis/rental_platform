@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { ProposalsService } from './proposals.service';
+import { ProposalApprovalRouteService } from './proposal-approval-route.service';
 import { ProposalDocumentService } from './document/proposal-document.service';
 import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -86,6 +87,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
         { provide: LeadLifecycleService, useValue: leadLifecycle },
+        ProposalApprovalRouteService,
       ],
     }).compile();
     service = module.get(ProposalsService);

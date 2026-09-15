@@ -55,12 +55,12 @@ export const SUBMIT_BLOCK_LABELS: Record<string, string> = {
   PROPOSAL_DOCUMENT_NOT_REVIEWED: 'Tờ trình chưa được xác nhận nội dung.',
   PROPOSAL_DOCUMENT_STALE: 'Dữ liệu Proposal đã thay đổi. Vui lòng kiểm tra lại tờ trình.',
   APPROVAL_ROUTING_SELF_CONFLICT: 'Quy trình phê duyệt đang giao người lập làm người duyệt — cần điều chỉnh cấu hình phê duyệt.',
-  APPROVAL_STEP_UNASSIGNED: 'Quy trình phê duyệt còn bước chưa gán người phê duyệt — cần hoàn tất cấu hình.',
+  APPROVAL_STEP_UNASSIGNED: 'Quy trình phê duyệt còn bước chưa có người phụ trách — cần hoàn tất cấu hình.',
   APPROVAL_ROUTING_INVALID: 'Cấu hình người phê duyệt không hợp lệ — cần kiểm tra lại quy trình phê duyệt.',
 };
 
 export const ROUTING_REASON_LABELS: Record<string, string> = {
-  STEP_UNASSIGNED: 'chưa gán người phê duyệt',
+  STEP_UNASSIGNED: 'chưa có người phụ trách',
   SELF_APPROVAL: 'đang giao cho người lập Proposal',
   APPROVER_NOT_FOUND: 'người phê duyệt không còn tồn tại',
   APPROVER_INACTIVE: 'tài khoản người phê duyệt đang bị khoá',

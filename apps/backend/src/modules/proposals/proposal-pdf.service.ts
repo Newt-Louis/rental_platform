@@ -19,8 +19,22 @@ const PRESENTATION_LABEL: Record<ProposalDocumentApprovalStep['presentation'], s
   APPROVED_BY: 'ĐÃ DUYỆT',
   REJECTED_BY: 'TỪ CHỐI',
   EXPECTED_APPROVER: 'NGƯỜI DUYỆT DỰ KIẾN — CHƯA DUYỆT',
-  SKIPPED: 'BỎ QUA',
+  SKIPPED: 'KHÔNG CÒN HIỆU LỰC',
 };
+
+/** What the approval block says above the step boxes. */
+export function approvalNotice(approval: ProposalDocumentModel['approval']): string | null {
+  if (approval.state === 'WITHDRAWN') {
+    return 'Tờ trình đã được thu hồi để chỉnh sửa — phiên bản này không còn hiệu lực phê duyệt.';
+  }
+  if (approval.state !== 'NOT_SUBMITTED') return null;
+  if (!approval.steps.length) {
+    return approval.preview && !approval.preview.policyConfigured
+      ? 'Chưa trình duyệt — Mall chưa cấu hình quy trình phê duyệt.'
+      : 'Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.';
+  }
+  return 'Chưa trình duyệt — quy trình phê duyệt dự kiến theo cấu hình hiện tại, được chốt khi trình duyệt.';
+}
 
 function formatVnDateTime(iso: string): string {
   return new Intl.DateTimeFormat('vi-VN', {
@@ -190,9 +204,11 @@ function approvalBlock(model: ProposalDocumentModel, audience: 'INTERNAL' | 'EXT
     ],
   }];
 
-  if (model.approval.state === 'NOT_SUBMITTED') {
+  const notice = approvalNotice(model.approval);
+  // Without steps the notice fills the row; with steps it is printed above the boxes.
+  if (notice && !model.approval.steps.length) {
     cells.push({
-      text: 'Chưa trình duyệt — quy trình phê duyệt được xác định khi Proposal được trình.',
+      text: notice,
       fontSize: 8, italics: true, color: '#555', alignment: 'center', margin: [0, 16, 0, 0] as Margin,
     });
   }
@@ -208,7 +224,7 @@ function approvalBlock(model: ProposalDocumentModel, audience: 'INTERNAL' | 'EXT
           text: PRESENTATION_LABEL[step.presentation], fontSize: 7, alignment: 'center', margin: [0, 2, 0, 0] as Margin,
           color: approved ? '#1b5e20' : rejected ? '#b71c1c' : '#777',
         },
-        { text: step.approverName ?? 'Chưa phân công', fontSize: 9, bold: approved || rejected, alignment: 'center', margin: [0, 14, 0, 0] as Margin },
+        { text: step.approverName ?? 'Chưa có người phụ trách', fontSize: 9, bold: approved || rejected, alignment: 'center', margin: [0, 14, 0, 0] as Margin },
         ...(step.decidedAt
           ? [{ text: `${rejected ? 'Từ chối' : 'Duyệt'} lúc ${formatVnDateTime(step.decidedAt)}`, fontSize: 7, color: '#555', alignment: 'center', margin: [0, 2, 0, 0] as Margin }]
           : []),
@@ -230,7 +246,9 @@ function approvalBlock(model: ProposalDocumentModel, audience: 'INTERNAL' | 'EXT
   return {
     unbreakable: cells.length <= perRow,
     stack: [
-      { text: 'NGƯỜI LẬP VÀ QUÁ TRÌNH PHÊ DUYỆT', bold: true, fontSize: 9, margin: [0, 0, 0, 4] as Margin },
+      ...(notice && model.approval.steps.length
+        ? [{ text: notice, fontSize: 8, italics: true, color: '#555', margin: [0, 0, 0, 4] as Margin }]
+        : []),
       {
         table: { widths: body[0].map(() => '*'), body },
         layout: tableLayout(8),

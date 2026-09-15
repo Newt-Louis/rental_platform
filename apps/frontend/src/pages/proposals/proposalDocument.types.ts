@@ -65,8 +65,17 @@ export interface ProposalDocumentModel {
   closingLine: string;
   presentation: { logoDataUrl: string | null; layoutImageDataUrl: string | null; primaryColor: string };
   approval: {
-    state: 'NOT_SUBMITTED' | 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'REJECTED';
+    state: 'NOT_SUBMITTED' | 'PENDING' | 'IN_PROGRESS' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
     steps: ProposalDocumentApprovalStep[];
+    /**
+     * On a DRAFT: the route it would get if submitted now, from the Mall's rules
+     * and current position holders. Steps are expected approvers, never signatures.
+     */
+    preview?: {
+      evaluatedAt: string;
+      policyConfigured: boolean;
+      issues: Array<{ stepOrder: number | null; stepName: string | null; reason: string }>;
+    } | null;
   };
   /** Set when this is a submitted, immutable version; null for a live DRAFT. */
   version: ProposalDocumentVersionInfo | null;
