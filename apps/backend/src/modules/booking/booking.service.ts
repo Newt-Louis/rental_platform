@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus,
@@ -961,9 +962,9 @@ export class BookingService {
       await this.emailService.sendMail({
         to: step.approver.email,
         delivery: {
-          // Keyed on the step, so a retry of the same step cannot double-send
-          // while a genuinely new chain (new price) gets its own key.
-          eventKey: `booking-price-approval:${booking.id}:${step.id}`,
+          // Keyed on the step and its approver, so a retry cannot double-send
+          // while a new chain (new price) or a new position holder gets its own key.
+          eventKey: `booking-price-approval:${booking.id}:${step.id}:${step.approverId}`,
           eventType: 'BOOKING_PRICE_APPROVAL',
           entityType: 'UnitBooking',
           entityId: booking.id,
@@ -988,6 +989,15 @@ export class BookingService {
     } catch (e: any) {
       this.logger.warn(`Price approval email failed for ${step.approverId}: ${e.message}`);
     }
+  }
+
+  /**
+   * The approval position holder changed and the current price step moved to
+   * the new holder (ApprovalPositionService.assignHolder, via the outbox).
+   */
+  @OnEvent('booking.price-approval.reassigned', { suppressErrors: false })
+  async onPriceApprovalReassigned(payload: { bookingId: string }) {
+    await this.notifyPriceApprovalPending(payload.bookingId);
   }
 
   /** Tell the proposer what happened to the price they submitted. */

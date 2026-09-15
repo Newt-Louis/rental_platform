@@ -206,7 +206,7 @@ describe('PROP-HIST historical decision identity', () => {
     expect(doc.approval.steps[0]).toMatchObject({ approverName: 'Trần Thị B', identitySource: 'LEGACY_UNSNAPSHOTTED' });
   });
 
-  it('PROP-HIST-010 no runtime path writes approval steps except the PENDING claim', () => {
+  it('PROP-HIST-010 no runtime path rewrites a decided approval step', () => {
     const root = path.join(__dirname, '..', '..');
     const offenders: string[] = [];
     const walk = (dir: string) => {
@@ -221,7 +221,18 @@ describe('PROP-HIST historical decision identity', () => {
       }
     };
     walk(root);
-    expect(offenders).toEqual([`approvals${path.sep}approvals.service.ts:1`]);
+    // Besides the decision claim, only two writers touch steps, and both are
+    // limited to steps still PENDING: moving a pending step to a replacement
+    // approver, and skipping pending steps when a submission is withdrawn.
+    expect(offenders.sort()).toEqual([
+      `approvals${path.sep}approver-replacement.service.ts:1`,
+      `approvals${path.sep}approvals.service.ts:1`,
+      `proposals${path.sep}document${path.sep}proposal-document.service.ts:1`,
+    ].sort());
+    const position = fs.readFileSync(path.join(root, 'approvals', 'approver-replacement.service.ts'), 'utf8');
+    expect(position).toMatch(/approvalStep\.updateMany\(\{\s*where: \{ id: step\.id, status: StepStatus\.PENDING \}/);
+    const revision = fs.readFileSync(path.join(root, 'proposals', 'document', 'proposal-document.service.ts'), 'utf8');
+    expect(revision).toMatch(/approvalStep\.updateMany\(\{\s*where: \{ workflowId: workflow\.id, status: StepStatus\.PENDING \}/);
     const approvals = fs.readFileSync(path.join(root, 'approvals', 'approvals.service.ts'), 'utf8');
     expect(approvals).toMatch(/where: \{ id: stepId, status: StepStatus\.PENDING \}/);
   });

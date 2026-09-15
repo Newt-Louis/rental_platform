@@ -9,6 +9,8 @@ import { Role, WorkflowStatus } from '@prisma/client';
 import { CreateApprovalPolicyRuleDto } from './dto/create-approval-policy-rule.dto';
 import { UpdateApprovalPolicyRuleDto } from './dto/update-approval-policy-rule.dto';
 import { ApproveDecisionDto, RejectDecisionDto } from './dto/approval-decision.dto';
+import { ReplaceApproverDto } from './dto/replace-approver.dto';
+import { ApproverReplacementService } from './approver-replacement.service';
 import { MallAccessService } from '../../common/services/mall-access.service';
 import { Scope } from '../../common/decorators/scope.decorator';
 import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types';
@@ -22,7 +24,11 @@ import { ScopeType, EnforcementStatus } from '../../common/constants/scope.types
 @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'approvalStepOrWorkflow' }, status: EnforcementStatus.ENFORCED })
 @Controller('approvals')
 export class ApprovalsController {
-  constructor(private readonly approvalsService: ApprovalsService, private readonly mallAccess: MallAccessService) {}
+  constructor(
+    private readonly approvalsService: ApprovalsService,
+    private readonly mallAccess: MallAccessService,
+    private readonly replacement: ApproverReplacementService,
+  ) {}
 
   private async mallIds(user: any, requestedMallId?: string): Promise<string[] | undefined> {
     const mallId: string | undefined = requestedMallId ?? user.activeMallId ?? undefined;
@@ -102,6 +108,22 @@ export class ApprovalsController {
   @ApiQuery({ name: 'mallId', required: true })
   getPolicyApproverCandidates(@Query('mallId') mallId: string) {
     return this.approvalsService.listPolicyApproverCandidates(mallId);
+  }
+
+  @Get('policy/approvers')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'People the Mall approvals depend on (rules and pending steps)' })
+  @ApiQuery({ name: 'mallId', required: true })
+  getApproversInUse(@Query('mallId') mallId: string) {
+    if (!mallId) throw new BadRequestException('mallId is required');
+    return this.replacement.listApproversInUse(mallId);
+  }
+
+  @Post('policy/replace-approver')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Replace the person in charge: rules and pending steps move to the new person' })
+  replaceApprover(@Body() dto: ReplaceApproverDto, @CurrentUser() user: any) {
+    return this.replacement.replace(dto, user.id);
   }
 
   @Post('policy/rules')

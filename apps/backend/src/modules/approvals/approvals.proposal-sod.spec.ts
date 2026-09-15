@@ -174,7 +174,7 @@ describe('Proposal approval — Mall isolation at the controller', () => {
   it('PROP-SOD-008 a Mall A approver cannot decide a Mall B step; the service is never reached', async () => {
     const service = { approve: jest.fn(), reject: jest.fn() };
     const mallAccess = { extractAndValidateMallAccess: jest.fn().mockRejectedValue(new ForbiddenException('No access to this mall')) };
-    const controller = new ApprovalsController(service as any, mallAccess as any);
+    const controller = new ApprovalsController(service as any, mallAccess as any, {} as any);
     const user = { id: 'mall-a-approver', role: 'LEASING_MANAGER' };
 
     await expect(controller.approve('step-mall-b', { comment: 'x' } as any, user)).rejects.toBeInstanceOf(ForbiddenException);

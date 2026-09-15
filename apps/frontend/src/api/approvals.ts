@@ -21,6 +21,11 @@ export const approvalsApi = {
     api.get('/approvals/policy/rules', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
   listPolicyApproverCandidates: (mallId: string) =>
     api.get('/approvals/policy/approver-candidates', { params: { mallId } }).then((r) => r.data),
+  // Thay người phụ trách: mọi quy tắc và bước đang chờ của người cũ chuyển sang người mới.
+  listApproversInUse: (mallId: string) =>
+    api.get('/approvals/policy/approvers', { params: { mallId } }).then((r) => r.data),
+  replaceApprover: (data: { mallId: string; fromUserId: string; toUserId: string }) =>
+    api.post('/approvals/policy/replace-approver', data).then((r) => r.data),
   createPolicyRule: (data: Record<string, unknown>) =>
     api.post('/approvals/policy/rules', data).then((r) => r.data),
   updatePolicyRule: (id: string, data: Record<string, unknown>) =>
