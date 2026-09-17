@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import { PageHeader } from '@/components/ui/page-header';
 import { AsyncState } from '@/components/ui/async-state';
 import { ERPStatCard, ERPToolbar } from '@/components/erp';
@@ -157,8 +158,7 @@ export default function BookingsPage() {
   const reinstateListMutation = useMutation({
     mutationFn: (id: string) => bookingApi.reinstate(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setConfirmReinstateId(null);
       toast({ title: t('reinstateSuccess') });
     },
@@ -171,8 +171,7 @@ export default function BookingsPage() {
   const softDeleteMutation = useMutation({
     mutationFn: (id: string) => bookingApi.softDelete(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setConfirmDeleteId(null);
       toast({ title: t('deleteSuccess') });
     },
@@ -185,7 +184,7 @@ export default function BookingsPage() {
   const deleteSlotMutation = useMutation({
     mutationFn: (id: string) => slotsApi.deleteSlotBooking(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
+      refreshLeasingLifecycle(qc);
       setConfirmDeleteSlotId(null);
       toast({ title: t('deleteSlotSuccess') });
     },
@@ -203,8 +202,7 @@ export default function BookingsPage() {
         return { ok, fail };
       }),
     onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setSelectedUnitIds(new Set());
       setConfirmCancelIds(null);
       setCancelReason('');

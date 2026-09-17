@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { LeadEditDialog } from '@/components/crm';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import {
   Building2, User, ArrowRight,
   X, FileText, Activity, Clock, Pencil, RotateCcw,
@@ -164,8 +165,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const cancelMutation = useMutation({
     mutationFn: () => bookingApi.cancel(activeId!, 'Hủy từ trang Booking'),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã hủy booking' });
       onClose();
     },
@@ -175,9 +175,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const reinstateMutation = useMutation({
     mutationFn: () => bookingApi.reinstate(activeId!),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã khôi phục booking' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi khôi phục booking', variant: 'destructive' }),
@@ -203,9 +201,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       return bookingApi.update(activeId!, payload);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã cập nhật booking' });
       setIsEditing(false);
     },
@@ -249,6 +245,9 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   // ở BookingController.update (backend từ chối người khác dù có quyền mall).
   const canEditInfo = canEdit && !!d && (isAdmin || (d as any).createdById === currentUser?.id);
   const canReinstate = d?.status === 'CANCELLED';
+  // Its Proposal was deleted: nothing holds the Unit any more, so the booking
+  // can be cancelled to release it (or converted again).
+  const orphanedConversion = d?.status === 'CONVERTED' && !d?.proposal;
 
   return (
     <Sheet open={!!booking} onClose={onClose} title={d?.bookingNumber ?? ''} subtitle={`${d?.unit?.code ?? ''} · ${clientName}`}
@@ -579,6 +578,17 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                   <ArrowRight size={12} className="text-green-500" />
                 </div>
               </button>
+            )}
+
+            {orphanedConversion && (
+              <div role="alert" data-testid="orphaned-conversion" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="font-medium">Đề xuất của booking này đã bị xóa.</div>
+                <div className="mt-1 text-xs">Booking vẫn đang giữ mặt bằng. Hủy booking để trả mặt bằng về trạng thái trống, hoặc lập đề xuất mới.</div>
+                <Button variant="outline" className="mt-2 h-8 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                  <X size={14} /> Hủy booking, trả mặt bằng
+                </Button>
+              </div>
             )}
 
             {canEdit && (

@@ -1025,15 +1025,64 @@ export class ProposalsService {
     };
   }
 
-  async remove(id: string) {
+  /**
+   * Soft-deletes a Proposal and hands its Booking back.
+   *
+   * A Proposal created from a Booking puts that Booking in CONVERTED, which is
+   * what the Booking screen shows as "Đã lập đề xuất" and what stops it from
+   * being cancelled. Deleting the Proposal used to leave the Booking there
+   * forever: the screen kept claiming a Proposal existed, and because a
+   * CONVERTED Booking cannot be cancelled, its Unit stayed BOOKING with nothing
+   * holding it. The Booking now returns to ACTIVE — it holds the Unit again,
+   * can be converted again, or cancelled to release the Unit.
+   */
+  async remove(id: string, actorId?: string) {
     const proposal = await this.findOne(id);
     if (!['DRAFT', 'REJECTED'].includes(proposal.status)) {
       throw new BadRequestException('Chỉ có thể xóa đề xuất ở trạng thái DRAFT hoặc REJECTED');
     }
-    await this.prisma.proposal.update({
-      where: { id },
-      data: { isActive: false, deletedAt: new Date() },
-    });
-    return { message: 'Đề xuất đã được xóa' };
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.proposal.findUniqueOrThrow({
+        where: { id },
+        select: { id: true, status: true, isActive: true, bookingId: true, proposalNumber: true },
+      });
+      // Idempotent: a retry of a delete that already succeeded is not an error.
+      if (!current.isActive) return { message: 'Đề xuất đã được xóa', bookingRestored: null as string | null };
+      if (!['DRAFT', 'REJECTED'].includes(current.status)) {
+        throw new BadRequestException('Chỉ có thể xóa đề xuất ở trạng thái DRAFT hoặc REJECTED');
+      }
+
+      // Proposal.bookingId is unique: a deleted Proposal that kept the link
+      // would block the Booking from ever being converted again. The link lives
+      // on in the Booking's own history entry below.
+      await tx.proposal.update({ where: { id }, data: { isActive: false, deletedAt: new Date(), bookingId: null } });
+
+      let bookingRestored: string | null = null;
+      if (current.bookingId) {
+        const booking = await tx.unitBooking.findUnique({
+          where: { id: current.bookingId },
+          select: { id: true, status: true, bookingNumber: true, isActive: true },
+        });
+        if (booking?.isActive && booking.status === BookingStatus.CONVERTED) {
+          await tx.unitBooking.update({
+            where: { id: booking.id },
+            data: { status: BookingStatus.ACTIVE, convertedAt: null },
+          });
+          await tx.bookingActivity.create({
+            data: {
+              bookingId: booking.id,
+              type: 'NOTE_ADDED',
+              note: `Đề xuất ${current.proposalNumber} đã bị xóa — booking trở lại trạng thái đang giữ chỗ.`,
+              metadata: { proposalId: id, proposalNumber: current.proposalNumber },
+              performedById: actorId ?? undefined,
+            },
+          });
+          bookingRestored = booking.bookingNumber;
+        }
+      }
+
+      return { message: 'Đề xuất đã được xóa', bookingRestored };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 }

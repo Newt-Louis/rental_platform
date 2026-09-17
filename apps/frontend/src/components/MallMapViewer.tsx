@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
@@ -7,23 +7,34 @@ import { Button } from '@/components/ui/button';
 import {
   X, MapPin, Building2, Image as ImageIcon,
   ChevronLeft, ChevronRight, Maximize2, Minimize2,
+  ZoomIn, ZoomOut, Locate,
 } from 'lucide-react';
 import type { FloorMapData, Unit, Floor } from '@/types';
 import { cn } from '@/lib/utils';
 import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import {
+  clampPan, detailLevel, focusOn, INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM, unitScreenSize, ZOOM_STEP, zoomAt,
+  type MapDetail, type MapView,
+} from './mallMapView';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
+/**
+ * Status colours. The map draws them on a white card rather than as a wash over
+ * the floor plan: a translucent fill took its colour from whatever the plan had
+ * underneath, so the same status read differently in different parts of the
+ * floor and never matched the legend.
+ */
 const STATUS_CFG: Record<string, {
   fill: string; stroke: string; fillOpacity: number;
   badgeClass: string;
 }> = {
-  VACANT:       { fill: '#ef4444', stroke: '#dc2626', fillOpacity: 0.55, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
-  BOOKING:      { fill: '#f59e0b', stroke: '#d97706', fillOpacity: 0.55, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
-  NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', fillOpacity: 0.55, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
-  CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', fillOpacity: 0.55, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
-  UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', fillOpacity: 0.5, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
-  OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', fillOpacity: 0.55, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
+  VACANT:       { fill: '#ef4444', stroke: '#dc2626', fillOpacity: 0.16, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
+  BOOKING:      { fill: '#f59e0b', stroke: '#d97706', fillOpacity: 0.16, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
+  NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', fillOpacity: 0.16, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
+  CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', fillOpacity: 0.16, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
+  UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', fillOpacity: 0.16, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
+  OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', fillOpacity: 0.16, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,12 +151,22 @@ function UnitInfoPopup({
         <div className="space-y-1.5 text-xs text-gray-600 mb-4">
           <div className="flex justify-between">
             <span className="text-gray-400">{t('map.areaNLA')}</span>
-            <span className="font-semibold text-gray-800">{unit.areaNLA.toLocaleString('vi-VN')} m²</span>
+            <span className="font-semibold text-gray-800">
+              {unit.areaNLA.toLocaleString('vi-VN')} m²
+              {unit.areaGFA > 0 && unit.areaGFA !== unit.areaNLA && (
+                <span className="ml-1 font-normal text-gray-400">(GFA {unit.areaGFA.toLocaleString('vi-VN')})</span>
+              )}
+            </span>
           </div>
-          {unit.zone && <div className="flex justify-between"><span className="text-gray-400">{t('map.zone')}</span><span>{unit.zone.name}</span></div>}
+          {(unit.floor || unit.zone) && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Vị trí:</span>
+              <span className="truncate ml-2 text-right">{[unit.floor?.name, unit.zone?.name].filter(Boolean).join(' · ')}</span>
+            </div>
+          )}
           {unit.category && (
             <div className="flex justify-between">
-              <span className="text-gray-400">Loại:</span>
+              <span className="text-gray-400">Ngành hàng:</span>
               <span className="truncate ml-2 text-right">{(unit as any).categoryRef?.name ?? unit.category}</span>
             </div>
           )}
@@ -155,10 +176,28 @@ function UnitInfoPopup({
               <span className="font-medium text-gray-800 tabular-nums">{formatRatePerSqm(unit.askingRentPerSqm ?? unit.baseRentPerSqm, unit.currencyCode)}</span>
             </div>
           )}
+          {unit.camPerSqm > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Phí quản lý:</span>
+              <span className="tabular-nums">{formatRatePerSqm(unit.camPerSqm, unit.currencyCode)}</span>
+            </div>
+          )}
+          {(unit.minLeaseTerm || unit.maxLeaseTerm) && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Thời hạn thuê:</span>
+              <span>{[unit.minLeaseTerm, unit.maxLeaseTerm].filter(Boolean).join('–')} tháng</span>
+            </div>
+          )}
           {unit.leaseEndDate && (
             <div className="flex justify-between">
               <span className="text-gray-400">HĐ đến:</span>
               <span>{new Date(unit.leaseEndDate).toLocaleDateString('vi-VN')}</span>
+            </div>
+          )}
+          {unit.status === 'VACANT' && unit.vacantSince && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Trống từ:</span>
+              <span>{new Date(unit.vacantSince).toLocaleDateString('vi-VN')}</span>
             </div>
           )}
         </div>
@@ -174,6 +213,75 @@ function UnitInfoPopup({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Unit card on the map ─────────────────────────────────────────────────────
+
+/**
+ * What a unit shows on the plan. A card stays the same size on screen however
+ * far the map is zoomed; zooming in buys room for more of the unit's facts
+ * rather than bigger letters.
+ */
+export function UnitCard({ unit, detail, selected, hovered, scale, t }: {
+  unit: Unit;
+  detail: MapDetail;
+  selected: boolean;
+  hovered: boolean;
+  scale: number;
+  t: (key: string, opts?: any) => string;
+}) {
+  const cfg = STATUS_CFG[unit.status] ?? STATUS_CFG.VACANT;
+  const statusLabel = getUnitStatusLabel(t, unit.status);
+  const tenantName = unit.tenant?.brandName;
+  const rent = unit.askingRentPerSqm ?? unit.baseRentPerSqm;
+
+  if (detail === 'DOT') {
+    return (
+      <span
+        data-testid={`map-dot-${unit.code}`}
+        title={`${unit.code} · ${statusLabel}`}
+        style={{
+          display: 'block', width: 11, height: 11, borderRadius: 9999,
+          background: cfg.fill, border: '2px solid white',
+          boxShadow: selected || hovered ? `0 0 0 3px ${cfg.stroke}66` : '0 1px 3px rgba(0,0,0,0.45)',
+          transform: `scale(${scale})`,
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      data-testid={`map-card-${unit.code}`}
+      style={{
+        transform: `scale(${scale})`,
+        transformOrigin: 'center',
+        borderLeft: `4px solid ${cfg.fill}`,
+        boxShadow: selected ? `0 6px 18px rgba(15,23,42,0.35), 0 0 0 2px ${cfg.stroke}` : hovered ? '0 5px 14px rgba(15,23,42,0.28)' : '0 2px 6px rgba(15,23,42,0.18)',
+      }}
+      className="rounded-lg bg-white/95 backdrop-blur-[1px] px-2 py-1 text-left"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-[13px] font-bold leading-tight text-gray-900 whitespace-nowrap">{unit.code}</span>
+        {detail === 'FULL' && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: cfg.stroke }}>
+            {statusLabel}
+          </span>
+        )}
+      </div>
+      {detail !== 'CODE' && (
+        <div className="text-[11px] leading-tight text-gray-600 whitespace-nowrap">
+          {unit.areaNLA.toLocaleString('vi-VN')} m²
+          {detail === 'FULL' && rent > 0 && <span className="text-gray-400"> · {formatRatePerSqm(rent, unit.currencyCode)}</span>}
+        </div>
+      )}
+      {detail === 'FULL' && (
+        <div className="text-[11px] leading-tight font-medium whitespace-nowrap" style={{ color: tenantName ? '#111827' : cfg.stroke }}>
+          {tenantName ?? statusLabel}
+        </div>
+      )}
     </div>
   );
 }
@@ -240,6 +348,72 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   const [imageRatio, setImageRatio] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tick, setTick] = useState(0);
+  const [view, setView] = useState<MapView>(INITIAL_VIEW);
+  const [frame, setFrame] = useState({ width: 0, height: 0 });
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const panRef = useRef<{ pointerX: number; pointerY: number; view: MapView } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+
+  // The frame's pixel size decides both the pan limits and how much of a unit
+  // fits on screen, so it is measured rather than assumed.
+  const attachFrame = useCallback((node: HTMLDivElement | null) => {
+    frameRef.current = node;
+    if (!node) return;
+    const measure = () => setFrame({ width: node.clientWidth, height: node.clientHeight });
+    measure();
+    // ResizeObserver is missing in older browsers and in jsdom; the window
+    // resize event is enough to keep the frame size honest there.
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const zoomBy = useCallback((factor: number) => {
+    setView((v) => zoomAt(v, factor, frame.width / 2, frame.height / 2, frame.width, frame.height));
+  }, [frame.width, frame.height]);
+
+  const resetView = useCallback(() => setView(INITIAL_VIEW), []);
+
+  const focusUnit = useCallback((u: Unit) => {
+    const poly = getUnitPolygon(u);
+    if (!poly || !frame.width) return;
+    const [cx, cy] = centroid(poly);
+    const { width } = unitScreenSize(poly, frame.width, frame.height, 1);
+    // Zoom until the unit is about a third of the frame, within the allowed range.
+    const target = width > 0 ? Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (frame.width / 3) / width)) : 2;
+    setView(focusOn(cx, cy, target, frame.width, frame.height));
+  }, [frame.width, frame.height]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!frameRef.current) return;
+    e.preventDefault();
+    const rect = frameRef.current.getBoundingClientRect();
+    const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    setView((v) => zoomAt(v, factor, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height));
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (view.zoom <= MIN_ZOOM) return;
+    panRef.current = { pointerX: e.clientX, pointerY: e.clientY, view };
+    setIsPanning(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const start = panRef.current;
+    if (!start) return;
+    setView(clampPan({
+      zoom: start.view.zoom,
+      x: start.view.x + (e.clientX - start.pointerX),
+      y: start.view.y + (e.clientY - start.pointerY),
+    }, frame.width, frame.height));
+  };
+
+  const endPan = () => { panRef.current = null; setIsPanning(false); };
 
   const currentIdx = sortedFloors.findIndex((f) => f.id === activeFloorId);
 
@@ -264,7 +438,8 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     enabled: !!activeFloorId,
   });
 
-  useEffect(() => { setImageRatio(null); setSelectedUnit(null); }, [activeFloorId]);
+  useEffect(() => { setImageRatio(null); setSelectedUnit(null); setView(INITIAL_VIEW); }, [activeFloorId]);
+  useEffect(() => { setView(INITIAL_VIEW); }, [isFullscreen]);
 
   // Close popup on ESC, fullscreen on F
   useEffect(() => {
@@ -274,12 +449,15 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
         setSelectedUnit(null);
       }
       if (e.key === 'f' || e.key === 'F') setIsFullscreen((v) => !v);
+      if (e.key === '+' || e.key === '=') zoomBy(ZOOM_STEP);
+      if (e.key === '-' || e.key === '_') zoomBy(1 / ZOOM_STEP);
+      if (e.key === '0') resetView();
       if (e.key === 'ArrowLeft') prevFloor();
       if (e.key === 'ArrowRight') nextFloor();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isFullscreen, currentIdx, sortedFloors]);
+  }, [isFullscreen, currentIdx, sortedFloors, zoomBy, resetView]);
 
   const units = floor?.units ?? [];
   const placedUnits = units.filter(isPlaced);
@@ -347,123 +525,176 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
           paddingTop: `${(1 / ratio) * 100}%`,
         };
 
-    return (
-      <div style={containerStyle}>
-        {/* Floor plan image */}
-        <img
-          src={resolveFileUrl(floor.floorPlanUrl)}
-          alt={`Floor plan ${floor.level}`}
-          className={cn('absolute inset-0 w-full h-full select-none pointer-events-none', !fullscreen && 'rounded-2xl')}
-          style={{ objectFit: 'fill' }}
-          draggable={false}
-          onLoad={(e) => {
-            const img = e.currentTarget;
-            if (img.naturalWidth && img.naturalHeight) {
-              setImageRatio(img.naturalWidth / img.naturalHeight);
-            }
-          }}
-        />
+    const scale = 1 / view.zoom;
+    const wrapperStyle: React.CSSProperties = {
+      position: 'absolute', inset: 0,
+      transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+      transformOrigin: '0 0',
+      willChange: 'transform',
+    };
 
-        {/* SVG polygon overlay — viewBox 0 0 100 100 = % coords */}
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
-          <defs>
-            <pattern id="stripe-fitout" width="1.5" height="1.5" patternUnits="userSpaceOnUse"
-              patternTransform={`rotate(45) translate(${tick % 2 === 0 ? 0 : 0.75})`}>
-              <line x1="0" y1="0" x2="0" y2="1.5" stroke="rgba(168,85,247,0.45)" strokeWidth="0.55" />
-            </pattern>
-          </defs>
-          {/* Transparent background — click here to deselect unit */}
-          <rect x="0" y="0" width="100" height="100" fill="transparent"
-            onClick={() => setSelectedUnit(null)} />
+    return (
+      <div
+        ref={attachFrame}
+        style={{ ...containerStyle, overflow: 'hidden', touchAction: 'none', cursor: isPanning ? 'grabbing' : view.zoom > MIN_ZOOM ? 'grab' : 'default' }}
+        className={cn(!fullscreen && 'rounded-2xl')}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endPan}
+        onPointerLeave={endPan}
+        data-testid="mall-map-frame"
+      >
+        <div style={wrapperStyle}>
+          {/* Floor plan image */}
+          <img
+            src={resolveFileUrl(floor.floorPlanUrl)}
+            alt={`Floor plan ${floor.level}`}
+            className="absolute inset-0 w-full h-full select-none pointer-events-none"
+            style={{ objectFit: 'fill' }}
+            draggable={false}
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth && img.naturalHeight) {
+                setImageRatio(img.naturalWidth / img.naturalHeight);
+              }
+            }}
+          />
+
+          {/* SVG polygon overlay — viewBox 0 0 100 100 = % coords. The fill is
+              deliberately faint: the status colour is carried by the card, where
+              the floor plan cannot tint it. */}
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+            <defs>
+              <pattern id="stripe-fitout" width="1.5" height="1.5" patternUnits="userSpaceOnUse"
+                patternTransform={`rotate(45) translate(${tick % 2 === 0 ? 0 : 0.75})`}>
+                <line x1="0" y1="0" x2="0" y2="1.5" stroke="rgba(168,85,247,0.4)" strokeWidth="0.55" />
+              </pattern>
+            </defs>
+            {/* Transparent background — click here to deselect unit */}
+            <rect x="0" y="0" width="100" height="100" fill="transparent"
+              onClick={() => setSelectedUnit(null)} />
+            {filteredUnits.map((u) => {
+              const poly = getUnitPolygon(u);
+              if (!poly) return null;
+              const cfg = STATUS_CFG[u.status] ?? STATUS_CFG.VACANT;
+              const isHovered = u.id === hoveredUnitId;
+              const isSelected = u.id === selectedUnit?.id;
+              const dimmed = filterStatus !== null && u.status !== filterStatus;
+              const opacity = dimmed ? 0.05 : isSelected ? 0.34 : isHovered ? 0.28 : cfg.fillOpacity;
+              const ptStr = poly.map(([x, y]) => `${x},${y}`).join(' ');
+              return (
+                <g key={u.id} style={{ cursor: 'pointer' }}>
+                  <polygon points={ptStr} fill={cfg.fill} fillOpacity={opacity}
+                    stroke={isSelected ? '#0f172a' : cfg.stroke}
+                    strokeWidth={isSelected ? 3 : isHovered ? 2.4 : 1.8}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                    style={{ transition: 'fill-opacity 0.15s, stroke-width 0.1s' }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedUnit((prev) => prev?.id === u.id ? null : u); }}
+                    onDoubleClick={(e) => { e.stopPropagation(); focusUnit(u); }}
+                    onMouseEnter={() => setHoveredUnitId(u.id)}
+                    onMouseLeave={() => setHoveredUnitId(null)}
+                  />
+                  {u.status === 'UNDER_FITOUT' && !dimmed && (
+                    <polygon points={ptStr} fill="url(#stripe-fitout)" style={{ pointerEvents: 'none' }} />
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Unit cards — HTML so the text keeps its shape, counter-scaled so it
+              keeps its size on screen however far the map is zoomed. */}
           {filteredUnits.map((u) => {
             const poly = getUnitPolygon(u);
             if (!poly) return null;
-            const cfg = STATUS_CFG[u.status] ?? STATUS_CFG.VACANT;
-            const isHovered = u.id === hoveredUnitId;
+            if (filterStatus !== null && u.status !== filterStatus) return null;
+            const [cx, cy] = centroid(poly);
+            const size = unitScreenSize(poly, frame.width, frame.height, view.zoom);
             const isSelected = u.id === selectedUnit?.id;
-            const dimmed = filterStatus !== null && u.status !== filterStatus;
-            const opacity = dimmed ? 0.12 : isSelected ? 0.8 : isHovered ? 0.75 : cfg.fillOpacity;
-            const ptStr = poly.map(([x, y]) => `${x},${y}`).join(' ');
+            const detail = isSelected ? 'FULL' : detailLevel(size.width, size.height);
             return (
-              <g key={u.id} style={{ cursor: 'pointer' }}>
-                <polygon points={ptStr} fill={cfg.fill} fillOpacity={opacity}
-                  stroke={isSelected ? '#1d4ed8' : cfg.stroke}
-                  strokeWidth={isSelected ? 2 : isHovered ? 1.8 : 1.3}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ transition: 'fill-opacity 0.15s, stroke-width 0.1s' }}
-                  onClick={(e) => { e.stopPropagation(); setSelectedUnit((prev) => prev?.id === u.id ? null : u); }}
-                  onMouseEnter={() => setHoveredUnitId(u.id)}
-                  onMouseLeave={() => setHoveredUnitId(null)}
-                />
-                {u.status === 'UNDER_FITOUT' && !dimmed && (
-                  <polygon points={ptStr} fill="url(#stripe-fitout)" style={{ pointerEvents: 'none' }} />
-                )}
-              </g>
+              <div
+                key={`card-${u.id}`}
+                style={{
+                  position: 'absolute', left: `${cx}%`, top: `${cy}%`,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: isSelected ? 30 : u.id === hoveredUnitId ? 25 : 10,
+                  cursor: 'pointer',
+                }}
+                onClick={(e) => { e.stopPropagation(); setSelectedUnit((prev) => prev?.id === u.id ? null : u); }}
+                onDoubleClick={(e) => { e.stopPropagation(); focusUnit(u); }}
+                onMouseEnter={() => setHoveredUnitId(u.id)}
+                onMouseLeave={() => setHoveredUnitId(null)}
+              >
+                <UnitCard unit={u} detail={detail} selected={isSelected} hovered={u.id === hoveredUnitId} scale={scale} t={t} />
+              </div>
             );
           })}
-        </svg>
 
-        {/* Unit labels as HTML divs (no SVG text distortion) */}
-        {filteredUnits.map((u) => {
-          const poly = getUnitPolygon(u);
-          if (!poly) return null;
-          const dimmed = filterStatus !== null && u.status !== filterStatus;
-          if (dimmed) return null;
-          const area = polygonArea(poly);
-          if (area < 12) return null;
-          const [cx, cy] = centroid(poly);
-          return (
-            <div key={`lbl-${u.id}`} style={{
-              position: 'absolute', left: `${cx}%`, top: `${cy}%`,
-              transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none', userSelect: 'none', textAlign: 'center', lineHeight: 1.2,
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.85)', whiteSpace: 'nowrap' }}>
-                {u.code}
-              </div>
-              {area > 40 && u.tenant && (
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap', marginTop: 1 }}>
-                  {u.tenant.brandName.length > 12 ? u.tenant.brandName.slice(0, 10) + '…' : u.tenant.brandName}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Fitout issue pins (D-Map) — badge at unit centroid, count + highest severity color */}
-        {issuePins && issuePins.length > 0 && filteredUnits.map((u) => {
-          const pinsForUnit = issuePins.filter((p) => p.unitId === u.id);
-          if (pinsForUnit.length === 0) return null;
-          const poly = getUnitPolygon(u);
-          if (!poly) return null;
-          const [cx, cy] = centroid(poly);
-          const topSeverity = pinsForUnit.reduce(
-            (top, p) => (PIN_SEVERITY_RANK[p.severity] ?? 0) > (PIN_SEVERITY_RANK[top] ?? 0) ? p.severity : top,
-            pinsForUnit[0].severity,
-          );
-          return (
-            <div key={`pin-${u.id}`} style={{
-              position: 'absolute', left: `${cx}%`, top: `${cy}%`,
-              transform: 'translate(-50%, -150%)', pointerEvents: 'none', zIndex: 20,
-            }}>
-              <div style={{
-                background: PIN_SEVERITY_COLOR[topSeverity] ?? '#6b7280', color: 'white', borderRadius: 9999,
-                width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 700, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+          {/* Fitout issue pins (D-Map) — badge at unit centroid, count + highest severity color */}
+          {issuePins && issuePins.length > 0 && filteredUnits.map((u) => {
+            const pinsForUnit = issuePins.filter((pin) => pin.unitId === u.id);
+            if (pinsForUnit.length === 0) return null;
+            const poly = getUnitPolygon(u);
+            if (!poly) return null;
+            const [cx, cy] = centroid(poly);
+            const topSeverity = pinsForUnit.reduce(
+              (top, pin) => (PIN_SEVERITY_RANK[pin.severity] ?? 0) > (PIN_SEVERITY_RANK[top] ?? 0) ? pin.severity : top,
+              pinsForUnit[0].severity,
+            );
+            return (
+              <div key={`pin-${u.id}`} style={{
+                position: 'absolute', left: `${cx}%`, top: `${cy}%`,
+                transform: `translate(-50%, -50%) scale(${scale}) translate(0, -220%)`,
+                pointerEvents: 'none', zIndex: 35,
               }}>
-                {pinsForUnit.length}
+                <div style={{
+                  background: PIN_SEVERITY_COLOR[topSeverity] ?? '#6b7280', color: 'white', borderRadius: 9999,
+                  width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 700, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                }}>
+                  {pinsForUnit.length}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Unit info popup — smart positioning: flips above/below based on centroid Y */}
+          {selectedUnit && popupPos && (
+            <div
+              style={{ ...getPopupStyle(popupPos.cx, popupPos.cy), zIndex: 60 }}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <div style={{ transform: `scale(${scale})`, transformOrigin: popupPos.cy < 42 ? 'top center' : 'bottom center' }}>
+                <UnitInfoPopup unit={selectedUnit} onClose={() => setSelectedUnit(null)}
+                  onViewDetail={onUnitClick} onBook={onBookUnit} />
               </div>
             </div>
-          );
-        })}
+          )}
+        </div>
 
-        {/* Unit info popup — smart positioning: flips above/below based on centroid Y */}
-        {selectedUnit && popupPos && (
-          <div style={getPopupStyle(popupPos.cx, popupPos.cy)} onClick={(e) => e.stopPropagation()}>
-            <UnitInfoPopup unit={selectedUnit} onClose={() => setSelectedUnit(null)}
-              onViewDetail={onUnitClick} onBook={onBookUnit} />
-          </div>
-        )}
+        {/* Zoom controls — stay put while the map moves under them */}
+        <div className="absolute bottom-3 right-3 z-40 flex flex-col items-stretch gap-1 rounded-xl bg-white/95 p-1 shadow-lg ring-1 ring-black/5">
+          <button type="button" aria-label={t('map.zoomIn')} title={`${t('map.zoomIn')} (+)`}
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            disabled={view.zoom >= MAX_ZOOM} onClick={() => zoomBy(ZOOM_STEP)}>
+            <ZoomIn size={16} />
+          </button>
+          <div className="text-center text-[10px] font-semibold tabular-nums text-gray-500">{Math.round(view.zoom * 100)}%</div>
+          <button type="button" aria-label={t('map.zoomOut')} title={`${t('map.zoomOut')} (−)`}
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            disabled={view.zoom <= MIN_ZOOM} onClick={() => zoomBy(1 / ZOOM_STEP)}>
+            <ZoomOut size={16} />
+          </button>
+          <button type="button" aria-label={t('map.resetZoom')} title={`${t('map.resetZoom')} (0)`}
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            disabled={view.zoom === MIN_ZOOM && view.x === 0 && view.y === 0} onClick={resetView}>
+            <Locate size={16} />
+          </button>
+        </div>
 
         {placedUnits.length === 0 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/70 text-white text-xs px-4 py-2 rounded-full">
