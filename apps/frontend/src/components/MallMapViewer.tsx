@@ -353,6 +353,14 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   const frameRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef<{ pointerX: number; pointerY: number; view: MapView } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
+  const [showWheelHint, setShowWheelHint] = useState(false);
+
+  // The hint is an answer to what the reader just tried, so it fades on its own.
+  useEffect(() => {
+    if (!showWheelHint) return;
+    const id = setTimeout(() => setShowWheelHint(false), 1600);
+    return () => clearTimeout(id);
+  }, [showWheelHint]);
 
   // The frame's pixel size decides both the pan limits and how much of a unit
   // fits on screen, so it is measured rather than assumed.
@@ -388,8 +396,17 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     setView(focusOn(cx, cy, target, frame.width, frame.height));
   }, [frame.width, frame.height]);
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  /**
+   * Inside the page the wheel belongs to the page: scrolling past the map used
+   * to zoom it instead of scrolling, and the reader lost their place. Zooming
+   * asks for Ctrl (or ⌘) and says so; in fullscreen the map owns the wheel.
+   */
+  const handleWheel = useCallback((e: React.WheelEvent, fullscreen: boolean) => {
     if (!frameRef.current) return;
+    if (!fullscreen && !e.ctrlKey && !e.metaKey) {
+      setShowWheelHint(true);
+      return;
+    }
     e.preventDefault();
     const rect = frameRef.current.getBoundingClientRect();
     const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
@@ -538,7 +555,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
         ref={attachFrame}
         style={{ ...containerStyle, overflow: 'hidden', touchAction: 'none', cursor: isPanning ? 'grabbing' : view.zoom > MIN_ZOOM ? 'grab' : 'default' }}
         className={cn(!fullscreen && 'rounded-2xl')}
-        onWheel={handleWheel}
+        onWheel={(e) => handleWheel(e, fullscreen)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endPan}
@@ -695,6 +712,16 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
             <Locate size={16} />
           </button>
         </div>
+
+        {showWheelHint && !fullscreen && (
+          <div
+            role="status"
+            data-testid="map-wheel-hint"
+            className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-gray-900/45 text-center text-sm font-medium text-white backdrop-blur-[1px]"
+          >
+            <span className="rounded-full bg-gray-900/80 px-4 py-2">{t('map.wheelHint')}</span>
+          </div>
+        )}
 
         {placedUnits.length === 0 && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/70 text-white text-xs px-4 py-2 rounded-full">

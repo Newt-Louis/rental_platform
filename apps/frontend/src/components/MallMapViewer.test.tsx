@@ -4,7 +4,7 @@
  * code, and tinted the status colour with whatever the floor plan had underneath.
  */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -95,6 +95,27 @@ describe('MallMapViewer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Về khung ban đầu' }));
 
     await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
+  });
+
+  it('leaves the page scroll alone: a plain wheel does not zoom, and says what does', async () => {
+    renderMap([unit()]);
+    const frame = await screen.findByTestId('mall-map-frame');
+
+    fireEvent.wheel(frame, { deltaY: -200 });
+
+    // The page keeps scrolling; the map stays where it was.
+    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(await screen.findByTestId('map-wheel-hint')).toHaveTextContent('Ctrl');
+  });
+
+  it('zooms when the reader asks for it with Ctrl', async () => {
+    renderMap([unit()]);
+    const frame = await screen.findByTestId('mall-map-frame');
+
+    fireEvent.wheel(frame, { deltaY: -200, ctrlKey: true });
+
+    await waitFor(() => expect(screen.getByText('140%')).toBeInTheDocument());
+    expect(screen.queryByTestId('map-wheel-hint')).toBeNull();
   });
 
   it('draws a card per placed unit', async () => {
