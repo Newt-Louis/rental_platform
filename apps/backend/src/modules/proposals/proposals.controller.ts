@@ -120,7 +120,7 @@ export class ProposalsController {
   @ApiOperation({ summary: 'Soft-delete a DRAFT proposal' })
   async remove(@Param('id') id: string, @CurrentUser() user: any) {
     await this.validateProposal(user, id);
-    return this.proposalsService.remove(id);
+    return this.proposalsService.remove(id, user.id);
   }
 
   @Post(':id/reject')
