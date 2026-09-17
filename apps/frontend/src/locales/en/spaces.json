@@ -192,11 +192,12 @@
     "areaNLA": "NLA area:",
     "zone": "Zone:",
     "rent": "Rent:",
-    "clickHint": "Click a unit for details · Scroll to zoom · Drag to pan · Double-click to zoom to a unit · F = fullscreen · ← → change floor",
+    "clickHint": "Click a unit for details · Ctrl + scroll to zoom · Drag to pan · Double-click to zoom to a unit · F = fullscreen · ← → change floor",
     "noMallSelected": "Please select a specific mall in the header (not \"All Malls\")",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "resetZoom": "Reset view"
+    "resetZoom": "Reset view",
+    "wheelHint": "Hold Ctrl (or ⌘) and scroll to zoom the map"
   },
   "bulk": {
     "selected": "{{count}} spaces selected",
