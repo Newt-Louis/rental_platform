@@ -79,6 +79,7 @@ interface ParkingTransactionRow {
   totalTime?: string;
   durationDisplay?: string;
   voucherCode?: string;
+  voucherTypeName?: string;
   parkingFee: number;
   inFee?: number;
   outFee?: number;
@@ -319,20 +320,10 @@ export default function ParkingTransactionPage() {
     },
     { accessorKey: 'entryTime', header: t('transaction.col.entryTime', 'Giờ vào'), meta: { sortField: 'check_in_time' } },
     { accessorKey: 'exitTime', header: t('transaction.col.exitTime', 'Giờ ra'), meta: { sortField: 'check_out_time' } },
-    {
-      id: 'lane',
-      header: t('transaction.col.lane', 'Làn (vào/ra)'),
-      cell: ({ row }) => (
-        <span className="flex flex-col leading-tight">
-          <span>{row.original.checkInLaneId ?? '—'}</span>
-          <span>{row.original.checkOutLaneId ?? '—'}</span>
-        </span>
-      ),
-    },
     { accessorKey: 'durationDisplay', header: t('transaction.col.duration', 'Thời gian đỗ'), meta: { sortField: 'duration' } },
     {
       id: 'voucherCode',
-      header: t('transaction.col.voucherCode', 'Mã voucher'),
+      header: t('transaction.col.voucherType', 'Loại voucher'),
       cell: ({ row }) => {
         const rowData = row.original;
         if (!rowData.voucherCode) return <span className="flex justify-center">—</span>;
@@ -340,11 +331,12 @@ export default function ParkingTransactionPage() {
           <Popover open={hoveredVoucherRowId === row.id} onOpenChange={(open) => setHoveredVoucherRowId(open ? row.id : null)}>
             <PopoverTrigger asChild>
               <span
-                className="flex justify-center"
+                className="flex items-center justify-center gap-1 text-blue-600"
                 onMouseEnter={() => setHoveredVoucherRowId(row.id)}
                 onMouseLeave={() => setHoveredVoucherRowId(null)}
               >
-                <Tag size={16} className="text-blue-600" />
+                <Tag size={16} />
+                {rowData.voucherTypeName && <span className="text-xs">{rowData.voucherTypeName}</span>}
               </span>
             </PopoverTrigger>
             <PopoverContent
