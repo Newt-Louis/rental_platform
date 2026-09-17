@@ -392,7 +392,8 @@
         "PENDING": "Pending start",
         "IN_PROGRESS": "In approval",
         "APPROVED": "Approved",
-        "REJECTED": "Rejected"
+        "REJECTED": "Rejected",
+        "WITHDRAWN": "Withdrawn"
       },
       "viewProposal": "View source proposal",
       "section": {

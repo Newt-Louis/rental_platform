@@ -11,7 +11,7 @@ describe('ApprovalsController mall access', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mallAccess.getAccessibleMallIds.mockResolvedValue(['mall-1']);
-    controller = new ApprovalsController(service, mallAccess);
+    controller = new ApprovalsController(service, mallAccess, {} as any);
   });
 
   it('uses and validates the mall selected in the request instead of stale active mall context', async () => {

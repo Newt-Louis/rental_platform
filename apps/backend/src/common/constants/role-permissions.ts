@@ -40,6 +40,9 @@ export const MODULE_ROLES = {
     Role.LEGAL,
   ],
   fitout: [Role.ADMIN, Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
+  // CR-PROPOSAL-DOCUMENT-FINALIZATION — sending an approved Tờ trình outside the
+  // company. Deliberately narrower than `proposals`: executives prepare, managers send.
+  proposalSendExternal: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
   fitoutDossierView: [
     Role.ADMIN,
     Role.LEASING_MANAGER,

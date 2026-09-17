@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma, Role, StepStatus, WorkflowStatus } from '@prisma/client';
@@ -337,6 +337,10 @@ export class ApprovalsService {
             lead: true,
           },
         },
+        // CR-PROPOSAL-DOCUMENT-FINALIZATION: the approver reviews this version.
+        documentVersion: {
+          select: { id: true, proposalId: true, versionNumber: true, status: true, submittedAt: true, submittedById: true },
+        },
         fitoutSubmittal: {
           select: {
             id: true, title: true, revisionNo: true, status: true, stageCode: true,
@@ -493,6 +497,80 @@ export class ApprovalsService {
     if (!access) throw new ForbiddenException('You do not have access to this Fitout project Mall');
   }
 
+  /**
+   * PROP-SOD-01 and approval authority for Proposal workflows.
+   *
+   * Authority is the assignment on the step, not a role: the configured approver
+   * and nobody else, ADMIN included, since no emergency-override policy exists.
+   * The Proposal's preparer may never decide a step of their own Proposal, even
+   * when a rule routes a step to them.
+   */
+  private assertProposalDecisionAuthority(
+    workflow: {
+      documentVersionId?: string | null;
+      proposal?: { id: string; createdById: string } | null;
+      documentVersion?: { id: string; status: string; proposal: { id: string; createdById: string } } | null;
+    },
+    step: { approverId: string | null },
+    userId: string,
+  ) {
+    const proposal = workflow.proposal ?? workflow.documentVersion?.proposal ?? null;
+    if (!proposal) throw new ForbiddenException('Proposal approval context is unresolved');
+    if (workflow.documentVersion && workflow.documentVersion.status !== 'SUBMITTED') {
+      throw new BadRequestException('Phiên bản tờ trình của bước duyệt này không còn chờ phê duyệt');
+    }
+    if (proposal.createdById === userId) {
+      throw new ForbiddenException({
+        code: 'APPROVAL_SOD_SELF_DECISION',
+        message: 'Bạn là người lập Proposal này nên không thể tự phê duyệt hoặc từ chối.',
+      });
+    }
+    if (!step.approverId) {
+      throw new ForbiddenException({
+        code: 'APPROVAL_STEP_UNASSIGNED',
+        message: 'Bước duyệt chưa được gán người duyệt cụ thể; không thể duyệt theo vai trò.',
+      });
+    }
+    if (step.approverId !== userId) {
+      throw new ForbiddenException({
+        code: 'APPROVAL_STEP_NOT_ASSIGNEE',
+        message: 'Bước duyệt này được giao cho người khác.',
+      });
+    }
+  }
+
+  /** Exactly one decision per step, even when two requests arrive together. */
+  private async claimPendingStep(
+    tx: Prisma.TransactionClient,
+    stepId: string,
+    data: { status: StepStatus; approverId: string; comment?: string; decidedAt: Date },
+  ) {
+    // Decision evidence is captured in the same statement that claims the step,
+    // so a decided step always carries who decided it as they were named then.
+    const actor = await tx.user.findUnique({ where: { id: data.approverId }, select: { fullName: true } });
+    const claimed = await tx.approvalStep.updateMany({
+      where: { id: stepId, status: StepStatus.PENDING },
+      data: { ...data, decidedByUserId: data.approverId, decidedByDisplayName: actor?.fullName ?? null },
+    });
+    if (claimed.count !== 1) {
+      throw new ConflictException({
+        code: 'APPROVAL_STEP_ALREADY_DECIDED',
+        message: 'Bước duyệt vừa được xử lý bởi một yêu cầu khác.',
+      });
+    }
+  }
+
+  /** A Serializable loser (P2034) is the same race as a lost claim. */
+  private asDecisionConflict(error: any): never {
+    if (error?.code === 'P2034') {
+      throw new ConflictException({
+        code: 'APPROVAL_STEP_ALREADY_DECIDED',
+        message: 'Bước duyệt vừa được xử lý bởi một yêu cầu khác.',
+      });
+    }
+    throw error;
+  }
+
   async approve(stepId: string, userId: string, userRole: string, comment?: string) {
     const result = await this.prisma.$transaction(async (tx) => {
       const step = await tx.approvalStep.findUnique({
@@ -509,6 +587,8 @@ export class ApprovalsService {
                   },
                 },
               },
+              proposal: { select: { id: true, createdById: true } },
+              documentVersion: { select: { id: true, status: true, proposal: { select: { id: true, createdById: true } } } },
             },
           },
         },
@@ -519,11 +599,15 @@ export class ApprovalsService {
       if (step.workflow.status !== WorkflowStatus.IN_PROGRESS) {
         throw new BadRequestException('Workflow is not in progress');
       }
-      if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) {
-        throw new ForbiddenException('Not authorized for this step');
-      }
-      if (userRole !== 'ADMIN' && step.approverId && step.approverId !== userId) {
-        throw new ForbiddenException('This approval step is assigned to another user');
+      if (step.workflow.entityType === 'PROPOSAL') {
+        this.assertProposalDecisionAuthority(step.workflow, step, userId);
+      } else {
+        if (userRole !== 'ADMIN' && step.approverRole !== (userRole as any)) {
+          throw new ForbiddenException('Not authorized for this step');
+        }
+        if (userRole !== 'ADMIN' && step.approverId && step.approverId !== userId) {
+          throw new ForbiddenException('This approval step is assigned to another user');
+        }
       }
       await this.assertFitoutDecisionMallAccess(tx, step.workflow, userId, userRole);
 
@@ -534,10 +618,7 @@ export class ApprovalsService {
         throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
       }
 
-      await tx.approvalStep.update({
-        where: { id: stepId },
-        data: { status: StepStatus.APPROVED, approverId: userId, comment, decidedAt: new Date() },
-      });
+      await this.claimPendingStep(tx, stepId, { status: StepStatus.APPROVED, approverId: userId, comment, decidedAt: new Date() });
 
       const completed = step.workflow.steps
         .filter((s) => s.id !== step.id)
@@ -566,19 +647,28 @@ export class ApprovalsService {
         (s) => s.stepOrder === step.stepOrder + 1 && s.status === StepStatus.PENDING,
       );
 
+      // Durable with the decision itself. This used to be emitted in-process after
+      // commit, so a crash in between left the next approver never notified.
+      // The eventKey makes a replay or a concurrent duplicate a single intent.
+      if (nextStep) {
+        await this.outbox.enqueue(tx, {
+          eventKey: `approval:${step.workflowId}:step-advanced:${nextStep.stepOrder}`,
+          eventName: 'approval.workflow.step-advanced',
+          aggregateType: 'APPROVAL_WORKFLOW',
+          aggregateId: step.workflowId,
+          payload: {
+            workflowId: step.workflowId,
+            entityType: step.workflow.entityType,
+            entityId: step.workflow.entityId,
+            nextStepOrder: nextStep.stepOrder,
+          } satisfies ApprovalWorkflowStepAdvancedEvent as unknown as Record<string, unknown>,
+        });
+      }
+
       return { step, completed, nextStepOrder: nextStep?.stepOrder };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error) => this.asDecisionConflict(error));
 
-    if (!result.completed && result.nextStepOrder !== undefined) {
-      this.eventEmitter.emit('approval.workflow.step-advanced', {
-        workflowId: result.step.workflowId,
-        entityType: result.step.workflow.entityType,
-        entityId: result.step.workflow.entityId,
-        nextStepOrder: result.nextStepOrder,
-      } satisfies ApprovalWorkflowStepAdvancedEvent);
-    }
-
-    return { message: 'Step approved successfully' };
+    return { message: 'Step approved successfully', completed: result.completed, nextStepOrder: result.nextStepOrder ?? null };
   }
 
   async reject(stepId: string, userId: string, userRole: string, comment?: string) {
@@ -597,6 +687,8 @@ export class ApprovalsService {
                   },
                 },
               },
+              proposal: { select: { id: true, createdById: true } },
+              documentVersion: { select: { id: true, status: true, proposal: { select: { id: true, createdById: true } } } },
             },
           },
         },
@@ -607,11 +699,15 @@ export class ApprovalsService {
       if (current.workflow.status !== WorkflowStatus.IN_PROGRESS) {
         throw new BadRequestException('Workflow is not in progress');
       }
-      if (userRole !== 'ADMIN' && current.approverRole !== (userRole as any)) {
-        throw new ForbiddenException('Not authorized for this step');
-      }
-      if (userRole !== 'ADMIN' && current.approverId && current.approverId !== userId) {
-        throw new ForbiddenException('This approval step is assigned to another user');
+      if (current.workflow.entityType === 'PROPOSAL') {
+        this.assertProposalDecisionAuthority(current.workflow, current, userId);
+      } else {
+        if (userRole !== 'ADMIN' && current.approverRole !== (userRole as any)) {
+          throw new ForbiddenException('Not authorized for this step');
+        }
+        if (userRole !== 'ADMIN' && current.approverId && current.approverId !== userId) {
+          throw new ForbiddenException('This approval step is assigned to another user');
+        }
       }
       await this.assertFitoutDecisionMallAccess(tx, current.workflow, userId, userRole);
       const unapprovedEarlierStep = (current.workflow.steps ?? []).find(
@@ -621,10 +717,7 @@ export class ApprovalsService {
         throw new BadRequestException(`Step ${unapprovedEarlierStep.stepOrder} (${unapprovedEarlierStep.stepName}) must be approved first`);
       }
 
-      await tx.approvalStep.update({
-        where: { id: stepId },
-        data: { status: StepStatus.REJECTED, approverId: userId, comment, decidedAt: new Date() },
-      });
+      await this.claimPendingStep(tx, stepId, { status: StepStatus.REJECTED, approverId: userId, comment, decidedAt: new Date() });
 
       await tx.approvalWorkflow.update({
         where: { id: current.workflowId },
@@ -645,7 +738,7 @@ export class ApprovalsService {
       });
 
       return current;
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error) => this.asDecisionConflict(error));
 
     return { message: 'Step rejected' };
   }

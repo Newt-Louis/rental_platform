@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
+import { ApproverReplacementPanel } from './ApproverReplacementPanel';
 
 type PolicyRule = {
   id: string;
@@ -142,6 +143,7 @@ export function ApprovalPolicyTab() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['approval-policy-rules'] });
+      qc.invalidateQueries({ queryKey: ['approval-approvers-in-use'] });
       toast({ title: editingId ? 'Đã cập nhật quy tắc' : 'Đã tạo quy tắc' });
       setOpen(false);
     },
@@ -206,6 +208,8 @@ export function ApprovalPolicyTab() {
           <Button size="sm" className="gap-1" onClick={openCreate}><Plus size={14} /> Thêm quy tắc</Button>
         </div>
       </div>
+
+      <ApproverReplacementPanel mallId={selectedMallId} mallName={malls.find((m) => m.id === selectedMallId)?.name} />
 
       {query.isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-12" />)}</div> : query.isError ? (
         <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><span className="flex items-center gap-2"><AlertCircle size={16} /> Không thể tải cấu hình phê duyệt.</span><Button size="sm" variant="outline" onClick={() => query.refetch()}>Thử lại</Button></div>

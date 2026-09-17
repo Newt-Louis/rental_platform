@@ -6,12 +6,13 @@ import { EmailService } from './email.service';
 import { ContractExpiryScheduler } from './contract-expiry.scheduler';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { EmailDeliveryService } from './email-delivery.service';
+import { EmailAttachmentRegistry } from './email-attachments';
 import { CommonModule } from '../../common/common.module';
 
 @Module({
   imports: [PrismaModule, CommonModule, forwardRef(() => TenantsModule)],
   controllers: [NotificationsController],
-  providers: [NotificationsService, EmailService, EmailDeliveryService, ContractExpiryScheduler],
-  exports: [NotificationsService, EmailService, EmailDeliveryService],
+  providers: [NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry, ContractExpiryScheduler],
+  exports: [NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry],
 })
 export class NotificationsModule {}

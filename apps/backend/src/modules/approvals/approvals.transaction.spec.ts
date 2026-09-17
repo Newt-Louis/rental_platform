@@ -6,8 +6,9 @@ describe('ApprovalsService transactional decisions', () => {
   const eventEmitter = { emit: jest.fn() };
   const outbox = { enqueue: jest.fn() };
   const tx = {
-    approvalStep: { findUnique: jest.fn(), update: jest.fn() },
+    approvalStep: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     approvalWorkflow: { update: jest.fn() },
+    user: { findUnique: jest.fn().mockResolvedValue({ fullName: 'Người duyệt' }) },
   };
   const prisma = {
     $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
@@ -17,6 +18,7 @@ describe('ApprovalsService transactional decisions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     outbox.enqueue.mockResolvedValue({ id: 'outbox-1' });
+    tx.approvalStep.updateMany.mockResolvedValue({ count: 1 });
     service = new ApprovalsService(prisma as any, eventEmitter as any, outbox as any);
   });
 
@@ -26,11 +28,13 @@ describe('ApprovalsService transactional decisions', () => {
       workflowId: 'workflow-1',
       status: StepStatus.PENDING,
       approverRole: 'LEGAL',
+      approverId: 'user-1',
       stepOrder: 1,
       workflow: {
         status: WorkflowStatus.IN_PROGRESS,
         entityType: 'PROPOSAL',
         entityId: 'proposal-1',
+        proposal: { id: 'proposal-1', createdById: 'author-1' },
         steps: [{ id: 'step-1', stepOrder: 1, status: StepStatus.PENDING }],
       },
     });
@@ -41,7 +45,7 @@ describe('ApprovalsService transactional decisions', () => {
       expect.any(Function),
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
-    expect(tx.approvalStep.update).toHaveBeenCalled();
+    expect(tx.approvalStep.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'step-1', status: StepStatus.PENDING } }));
     expect(tx.approvalWorkflow.update).toHaveBeenCalledWith({
       where: { id: 'workflow-1' },
       data: { status: WorkflowStatus.APPROVED },
@@ -64,13 +68,14 @@ describe('ApprovalsService transactional decisions', () => {
     tx.approvalStep.findUnique.mockResolvedValue({
       id: 'step-1', workflowId: 'workflow-1', status: 'PENDING', approverRole: 'FINANCE',
       approverId: 'other-user', stepOrder: 1,
-      workflow: { status: 'IN_PROGRESS', entityType: 'PROPOSAL', entityId: 'proposal-1', steps: [] },
+      workflow: { status: 'IN_PROGRESS', entityType: 'PROPOSAL', entityId: 'proposal-1', proposal: { id: 'proposal-1', createdById: 'author-1' }, steps: [] },
     });
 
     await expect(service.approve('step-1', 'user-1', 'FINANCE')).rejects.toThrow(
-      'This approval step is assigned to another user',
+      'Bước duyệt này được giao cho người khác.',
     );
     expect(tx.approvalStep.update).not.toHaveBeenCalled();
+    expect(tx.approvalStep.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not emit when the transaction fails', async () => {
@@ -103,10 +108,12 @@ describe('ApprovalsService transactional decisions', () => {
       workflowId: 'workflow-1',
       status: StepStatus.PENDING,
       approverRole: 'LEGAL',
+      approverId: 'user-1',
       workflow: {
         status: WorkflowStatus.IN_PROGRESS,
         entityType: 'PROPOSAL',
         entityId: 'proposal-1',
+        proposal: { id: 'proposal-1', createdById: 'author-1' },
       },
     });
 

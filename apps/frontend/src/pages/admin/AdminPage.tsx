@@ -1,4 +1,4 @@
-import { useDeferredValue, useState, useEffect, useRef } from 'react';
+import { Fragment, useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi, permissionsApi } from '@/api';
@@ -27,7 +27,7 @@ import { DepartmentsTab } from './DepartmentsTab';
 import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
-import { ROUTE_PERMISSIONS, NAV_GROUPS } from '@/lib/permissions';
+import { ROUTE_PERMISSIONS, NAV_GROUPS, ACTION_PERMISSIONS, ACTION_PERMISSION_META, type ActionPermission } from '@/lib/permissions';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
 import { getApiErrorMessage } from '@/lib/api-error';
@@ -58,6 +58,15 @@ const PERMISSIONS: { module: string; label: string; roles: string[] }[] = Object
 );
 
 const ROLE_KEYS = Object.keys(ROLE_MAP);
+
+// Action permissions live in the same Mall-scoped matrix as modules but grant a
+// specific operation, not access to a screen, so they are listed separately.
+const ACTION_PERMISSION_ROWS: { module: ActionPermission; label: string; description: string; roles: string[] }[] =
+  (Object.keys(ACTION_PERMISSIONS) as ActionPermission[]).map((module) => ({
+    module,
+    ...ACTION_PERMISSION_META[module],
+    roles: ACTION_PERMISSIONS[module],
+  }));
 
 // Modules with no MODULE_ROLES counterpart on the backend (gated by local
 // per-controller role consts instead) -- toggling them here only changes
@@ -1341,7 +1350,7 @@ function SpaceStructureTab() {
 
 // ─── Tab 4: Permissions Matrix ────────────────────────────────────────────────
 
-function PermissionsTab() {
+export function PermissionsTab() {
   const { t } = useTranslation('admin');
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -1437,12 +1446,21 @@ function PermissionsTab() {
             </tr>
           </thead>
           <tbody>
-            {PERMISSIONS.map((perm, i) => {
+            {[...PERMISSIONS.map((p) => ({ ...p, description: null as string | null, kind: 'module' as const })),
+              ...ACTION_PERMISSION_ROWS.map((p) => ({ ...p, kind: 'action' as const }))].map((perm, i, all) => {
               const cell = matrix?.[perm.module];
               const cellRoles: string[] = cell?.roles ?? (isLoading ? perm.roles : []);
               const isInherited = scope !== 'GLOBAL' && cell?.source === 'global';
               return (
-                <tr key={perm.module} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                <Fragment key={perm.module}>
+                {perm.kind === 'action' && all[i - 1]?.kind !== 'action' && (
+                  <tr>
+                    <td colSpan={roles.length + 1} className="px-3 py-2 border-b bg-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      Quyền thao tác (không phải quyền truy cập màn hình)
+                    </td>
+                  </tr>
+                )}
+                <tr data-permission={perm.module} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                   <td className="px-3 py-2 border-b border-r font-medium text-gray-700 sticky left-0 bg-inherit">
                     <div className="flex items-center gap-1">
                       {perm.label}
@@ -1450,6 +1468,7 @@ function PermissionsTab() {
                         <span className="text-amber-500" title={t('permissions.frontendOnly')}>●</span>
                       )}
                     </div>
+                    {perm.description && <div className="max-w-56 text-[10px] font-normal text-gray-500">{perm.description}</div>}
                     {isInherited && <div className="text-[10px] font-normal text-gray-400">{t('permissions.inherited')}</div>}
                   </td>
                   {roles.map((role) => {
@@ -1467,6 +1486,8 @@ function PermissionsTab() {
                           type="button"
                           disabled={isLoading || updateMutation.isPending}
                           onClick={() => updateMutation.mutate({ module: perm.module, role, allowed: !hasAccess })}
+                          aria-label={`${perm.label} — ${role}: ${hasAccess ? 'đang cho phép' : 'đang chặn'}`}
+                          aria-pressed={hasAccess}
                           className="mx-auto flex w-full items-center justify-center disabled:opacity-40"
                         >
                           {hasAccess
@@ -1478,6 +1499,7 @@ function PermissionsTab() {
                     );
                   })}
                 </tr>
+                </Fragment>
               );
             })}
           </tbody>

@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { ProposalsService } from './proposals.service';
+import { ProposalApprovalRouteService } from './proposal-approval-route.service';
+import { ProposalDocumentService } from './document/proposal-document.service';
+import { ProposalDocumentDeliveryService } from './document/proposal-document-delivery.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../crm/customers.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
@@ -10,6 +13,7 @@ import { EmailService } from '../notifications/email.service';
 import { CategoriesService } from '../categories/categories.service';
 import { OperationalMetricsService } from '../../common/services/operational-metrics.service';
 import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
+import { OutboxService } from '../../common/services/outbox.service';
 import { ProposalStatus, UnitStatus } from '@prisma/client';
 
 /**
@@ -66,6 +70,15 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
       providers: [
         ProposalsService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: ProposalDocumentService,
+          useValue: {
+            assertSubmittable: jest.fn().mockResolvedValue({ proposalId: 'p1' }),
+            createSubmittedVersion: jest.fn().mockResolvedValue({ id: 'dv1', versionNumber: 1, sourceFingerprint: 'f'.repeat(64) }),
+          },
+        },
+        { provide: OutboxService, useValue: { enqueue: jest.fn() } },
+        { provide: ProposalDocumentDeliveryService, useValue: { notifyApprovalStep: jest.fn() } },
         { provide: CustomersService, useValue: customersService },
         { provide: UnitStatusService, useValue: unitStatus },
         { provide: BillingScheduleService, useValue: { buildScheduleForContract: jest.fn() } },
@@ -74,6 +87,7 @@ describe('ProposalsService.createContractFromProposal — atomicity & idempotenc
         { provide: CategoriesService, useValue: { validateProposedPrice: jest.fn().mockResolvedValue({ deviationPercent: 0 }) } },
         { provide: OperationalMetricsService, useValue: { increment: jest.fn() } },
         { provide: LeadLifecycleService, useValue: leadLifecycle },
+        ProposalApprovalRouteService,
       ],
     }).compile();
     service = module.get(ProposalsService);

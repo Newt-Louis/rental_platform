@@ -65,6 +65,39 @@ export const SERVICE_CONTRACT_EDIT_ROLES: AppRole[] = [
   "OPERATION",
 ];
 
+/**
+ * Action-level permissions that are not routes, so they stay out of
+ * ROUTE_PERMISSIONS (every entry there must be a navigable module). Mirrors the
+ * backend MODULE_ROLES fallback; the API enforces the Mall-scoped matrix.
+ */
+export const ACTION_PERMISSIONS = {
+  // CR-PROPOSAL-DOCUMENT-FINALIZATION — send an approved Tờ trình outside the company.
+  "proposal-send-external": ["ADMIN", "LEASING_MANAGER", "MALL_DIRECTOR"] as AppRole[],
+};
+
+export type ActionPermission = keyof typeof ACTION_PERMISSIONS;
+
+/** Labels for the Admin permission matrix; an action is not module access. */
+export const ACTION_PERMISSION_META: Record<ActionPermission, { label: string; description: string }> = {
+  "proposal-send-external": {
+    label: "Gửi tờ trình ra bên ngoài",
+    description: "Cho phép người dùng gửi phiên bản tờ trình đã được phê duyệt đến khách thuê hoặc địa chỉ bên ngoài.",
+  },
+};
+
+/**
+ * Same source as canAccessModule: the live, Mall-scoped matrix for the current
+ * user (refetched on Mall switch, cleared on logout), falling back to the static
+ * default only before it has loaded. The API still enforces every action.
+ */
+export function canPerformAction(role: string | undefined, action: ActionPermission): boolean {
+  if (!role) return false;
+  if (role === "ADMIN") return true;
+  const dynamic = usePermissionsStore.getState().allowedModules;
+  if (dynamic) return dynamic.has(action);
+  return ACTION_PERMISSIONS[action].includes(role as AppRole);
+}
+
 export const ROUTE_PERMISSIONS: Record<RouteModule, AppRole[]> = {
   dashboard: [
     "ADMIN",

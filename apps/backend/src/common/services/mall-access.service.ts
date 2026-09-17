@@ -304,10 +304,13 @@ export class MallAccessService {
           where: { id: workflowId },
           select: {
             proposal: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } },
+            // A workflow detached by a revision still belongs to its document version's Proposal.
+            documentVersion: { select: { proposal: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } } },
             fitoutSubmittal: { select: { project: { select: { unit: { select: { mallId: true, floor: { select: { mallId: true } } } } } } } },
           },
         });
         mallId = workflow?.proposal?.unit?.mallId ?? workflow?.proposal?.unit?.floor?.mallId
+          ?? workflow?.documentVersion?.proposal?.unit?.mallId ?? workflow?.documentVersion?.proposal?.unit?.floor?.mallId
           ?? workflow?.fitoutSubmittal?.project?.unit?.mallId ?? workflow?.fitoutSubmittal?.project?.unit?.floor?.mallId;
       }
     }

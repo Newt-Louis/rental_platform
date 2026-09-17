@@ -11,6 +11,7 @@ import {
   toPlainText,
   type EmailSeverity,
 } from './email-design-system';
+import { describeAttachment, EmailAttachment } from './email-attachments';
 
 interface ResolvedSmtpConfig {
   host: string;
@@ -37,6 +38,11 @@ export interface TrackedEmailOptions {
     resendOfId?: string;
   };
   preparedDeliveryId?: string;
+  /**
+   * Sent with the message. The ledger stores only metadata and each
+   * attachment's `source`, so retry/resend can regenerate identical bytes.
+   */
+  attachments?: EmailAttachment[];
 }
 
 // Nguồn cấu hình SMTP ưu tiên: DB (EmailSettings, admin tự cấu hình qua UI) --
@@ -104,7 +110,8 @@ export class EmailService {
         subject: opts.subject,
         html: opts.html,
         text: opts.text ?? toPlainText(opts.html),
-      },
+        ...(opts.attachments?.length ? { attachments: opts.attachments.map(describeAttachment) } : {}),
+      } as unknown as Prisma.InputJsonValue,
       status,
     };
   }
@@ -187,6 +194,16 @@ export class EmailService {
           subject: opts.subject,
           html: opts.html,
           text: opts.text ?? toPlainText(opts.html),
+          ...(opts.attachments?.length
+            ? {
+                attachments: opts.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: a.content,
+                  ...(a.contentType ? { contentType: a.contentType } : {}),
+                  ...(a.cid ? { cid: a.cid } : {}),
+                })),
+              }
+            : {}),
         });
         accepted = { messageId: info.messageId };
         break;
@@ -296,6 +313,107 @@ export class EmailService {
   }
 
   /** APPROVAL — a proposal waiting on this recipient's decision. */
+  /**
+   * CR-PROPOSAL-DOCUMENT-FINALIZATION — a Tờ trình waiting on this approver.
+   *
+   * Carries what the approver needs to decide without guessing: which document
+   * version, the commercial summary as submitted, and every decision already
+   * taken on it. Only recorded decisions are listed; a pending step is never
+   * shown as signed. The official PDF of that version is attached by the caller.
+   */
+  proposalApprovalRequestHtml(data: {
+    approverName: string;
+    stepName: string;
+    proposalId: string;
+    proposalNumber: string;
+    documentVersionNumber: number | null;
+    mallName: string | null;
+    tenantName: string | null;
+    unitCode: string | null;
+    area: number | null;
+    termMonths: number | null;
+    rentPerSqm: number | null;
+    currencyCode: CurrencyCode | null;
+    preparedBy: string | null;
+    submittedAt: string | null;
+    previousDecisions: Array<{ stepName: string; approverName: string | null; decision: 'APPROVED' | 'REJECTED'; decidedAt: string | null; comment: string | null }>;
+    attachmentFilename: string | null;
+  }): string {
+    const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '');
+    const history = data.previousDecisions.length
+      ? `<p style="margin:0 0 6px 0;font-weight:600;">Lịch sử phê duyệt</p>
+<table role="presentation" width="100%" cellpadding="6" cellspacing="0" border="0" style="border-collapse:collapse;font-size:13px;">
+<tr><th align="left" style="border-bottom:1px solid #E5E7EB;">Bước</th><th align="left" style="border-bottom:1px solid #E5E7EB;">Người duyệt</th><th align="left" style="border-bottom:1px solid #E5E7EB;">Quyết định</th><th align="left" style="border-bottom:1px solid #E5E7EB;">Thời điểm</th><th align="left" style="border-bottom:1px solid #E5E7EB;">Ý kiến</th></tr>
+${data.previousDecisions.map((d) => `<tr><td style="border-bottom:1px solid #F1F2F4;">${esc(d.stepName)}</td><td style="border-bottom:1px solid #F1F2F4;">${esc(d.approverName ?? '—')}</td><td style="border-bottom:1px solid #F1F2F4;">${d.decision === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}</td><td style="border-bottom:1px solid #F1F2F4;">${esc(when(d.decidedAt))}</td><td style="border-bottom:1px solid #F1F2F4;">${esc(d.comment ?? '')}</td></tr>`).join('\n')}
+</table>`
+      : '<p style="margin:0;">Đây là bước phê duyệt đầu tiên; chưa có quyết định nào trước đó.</p>';
+    const attachment = data.attachmentFilename
+      ? `<p style="margin:12px 0 0 0;">Đính kèm: <strong>${esc(data.attachmentFilename)}</strong> — tờ trình chính thức của phiên bản đang chờ duyệt.</p>`
+      : '<p style="margin:12px 0 0 0;">Proposal này được trình trước khi có phiên bản tờ trình nên không có tệp đính kèm.</p>';
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.proposalNumber}${data.documentVersionNumber ? ` · phiên bản ${data.documentVersionNumber}` : ''} · ${data.tenantName ?? ''}`,
+      eyebrow: 'Phê duyệt Tờ trình',
+      title: 'Tờ trình chờ phê duyệt',
+      badgeLabel: 'CHỜ DUYỆT',
+      description: `Kính gửi ${esc(data.approverName)}, tờ trình <strong>${esc(data.proposalNumber)}</strong> đang chờ bạn phê duyệt ở bước <strong>${esc(data.stepName)}</strong>.`,
+      info: {
+        title: 'Thông tin tờ trình',
+        rows: [
+          { label: 'Số đề xuất', value: data.proposalNumber },
+          { label: 'Phiên bản tờ trình', value: data.documentVersionNumber ? String(data.documentVersionNumber) : null },
+          { label: 'Mall', value: data.mallName },
+          { label: 'Khách thuê', value: data.tenantName },
+          { label: 'Mặt bằng', value: data.unitCode },
+          { label: 'Diện tích', value: data.area != null ? `${data.area.toLocaleString('vi-VN')} m²` : null },
+          { label: 'Thời hạn thuê', value: data.termMonths != null ? `${data.termMonths} tháng` : null },
+          { label: 'Giá thuê/m²/tháng', value: data.rentPerSqm != null ? money(data.rentPerSqm, data.currencyCode) : null, emphasis: true },
+          { label: 'Người lập', value: data.preparedBy },
+          { label: 'Ngày trình', value: data.submittedAt ? when(data.submittedAt) : null },
+        ],
+      },
+      cta: { label: 'Mở tờ trình để phê duyệt', url: appUrl(`/approvals?proposalId=${encodeURIComponent(data.proposalId)}`) },
+      note: history + attachment,
+    });
+  }
+
+  /**
+   * CR-PROPOSAL-DOCUMENT-FINALIZATION — an approved Tờ trình sent outside the
+   * company. The sender's message is user text and is escaped; no internal
+   * notes or approval comments appear here.
+   */
+  proposalExternalSendHtml(data: {
+    proposalNumber: string;
+    documentVersionNumber: number;
+    mallName: string | null;
+    unitCode: string | null;
+    message: string | null;
+    senderName: string | null;
+    attachmentFilename: string;
+  }): string {
+    const message = data.message?.trim()
+      ? `<p style="margin:0 0 12px 0;white-space:pre-line;">${esc(data.message.trim())}</p>`
+      : '';
+    return renderEmail({
+      severity: 'INFO',
+      preheader: `${data.proposalNumber} · ${data.mallName ?? ''}`,
+      eyebrow: 'Tờ trình',
+      title: 'Tờ trình đề xuất thuê mặt bằng',
+      description: `Tờ trình <strong>${esc(data.proposalNumber)}</strong> được gửi kèm email này.`,
+      info: {
+        title: 'Thông tin',
+        rows: [
+          { label: 'Số đề xuất', value: data.proposalNumber },
+          { label: 'Phiên bản', value: String(data.documentVersionNumber) },
+          { label: 'Trung tâm thương mại', value: data.mallName },
+          { label: 'Mặt bằng', value: data.unitCode },
+          { label: 'Người gửi', value: data.senderName },
+        ],
+      },
+      note: `${message}<p style="margin:0;">Đính kèm: <strong>${esc(data.attachmentFilename)}</strong></p>`,
+    });
+  }
+
   proposalApprovalHtml(data: {
     approverName: string;
     proposalNumber: string;

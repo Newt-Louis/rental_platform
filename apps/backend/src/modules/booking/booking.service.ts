@@ -6,6 +6,7 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus,
@@ -511,11 +512,14 @@ export class BookingService {
           include: { performedBy: { select: { id: true, fullName: true } } },
           orderBy: { createdAt: 'desc' },
         },
-        proposal: { select: { id: true, proposalNumber: true, status: true } },
+        proposal: { select: { id: true, proposalNumber: true, status: true, isActive: true } },
       },
     });
     if (!booking) throw new NotFoundException('Booking không tồn tại');
-    return booking;
+    // A deleted Proposal is not a Proposal: showing it kept the booking looking
+    // converted and hid the actions that release the Unit.
+    const { proposal, ...rest } = booking;
+    return { ...rest, proposal: proposal?.isActive ? { id: proposal.id, proposalNumber: proposal.proposalNumber, status: proposal.status } : null };
   }
 
   // ─── Cập nhật thông tin booking ───────────────────────────────────────────
@@ -961,9 +965,9 @@ export class BookingService {
       await this.emailService.sendMail({
         to: step.approver.email,
         delivery: {
-          // Keyed on the step, so a retry of the same step cannot double-send
-          // while a genuinely new chain (new price) gets its own key.
-          eventKey: `booking-price-approval:${booking.id}:${step.id}`,
+          // Keyed on the step and its approver, so a retry cannot double-send
+          // while a new chain (new price) or a new position holder gets its own key.
+          eventKey: `booking-price-approval:${booking.id}:${step.id}:${step.approverId}`,
           eventType: 'BOOKING_PRICE_APPROVAL',
           entityType: 'UnitBooking',
           entityId: booking.id,
@@ -988,6 +992,15 @@ export class BookingService {
     } catch (e: any) {
       this.logger.warn(`Price approval email failed for ${step.approverId}: ${e.message}`);
     }
+  }
+
+  /**
+   * The approval position holder changed and the current price step moved to
+   * the new holder (ApprovalPositionService.assignHolder, via the outbox).
+   */
+  @OnEvent('booking.price-approval.reassigned', { suppressErrors: false })
+  async onPriceApprovalReassigned(payload: { bookingId: string }) {
+    await this.notifyPriceApprovalPending(payload.bookingId);
   }
 
   /** Tell the proposer what happened to the price they submitted. */
@@ -1456,7 +1469,11 @@ export class BookingService {
     if (existing.status === BookingStatus.CANCELLED) {
       return { message: 'Booking đã được hủy' }; // idempotent replay — safe retry after success
     }
-    if (existing.status !== BookingStatus.ACTIVE && existing.status !== BookingStatus.PENDING) {
+    // A CONVERTED booking whose Proposal was deleted holds its Unit with nothing
+    // to show for it. Cancelling is then the only way to release the Unit, so it
+    // is allowed — but only while no Proposal of this booking is alive.
+    if (existing.status !== BookingStatus.ACTIVE && existing.status !== BookingStatus.PENDING
+      && !(await this.isOrphanedConversion(existing))) {
       throw new BadRequestException(
         `Booking đang ở trạng thái ${existing.status}, không thể thực hiện hành động này`,
       );
@@ -1465,6 +1482,9 @@ export class BookingService {
     await this.runSerializable(async (tx) => {
       const current = await tx.unitBooking.findUniqueOrThrow({ where: { id } });
       if (current.status === BookingStatus.CANCELLED) return; // idempotent replay (lost race)
+      if (current.status === BookingStatus.CONVERTED && !(await this.isOrphanedConversion(current, tx))) {
+        throw new BadRequestException('Booking đã được convert thành Proposal, không thể hủy');
+      }
 
       await tx.unitBooking.update({
         where: { id },
@@ -1479,9 +1499,13 @@ export class BookingService {
         note: dto.reason ? `Hủy booking. Lý do: ${dto.reason}` : 'Hủy booking',
       }, tx);
 
-      // Promote next in queue — only meaningful if this booking held priority 1; harmless
-      // no-op otherwise (promoteNextInQueue only acts on the unit's current PENDING queue).
-      await this.promoteNextInQueue(existing.unitId, userId, tx);
+      // Only the booking that actually held the Unit hands it over. Promoting on
+      // the cancellation of a PENDING booking used to raise the next one in the
+      // queue to ACTIVE while the real holder was still ACTIVE — two owners for
+      // one Unit, and a Unit that could no longer be released.
+      if (this.holdsUnit(current.status)) {
+        await this.promoteNextInQueue(existing.unitId, userId, tx);
+      }
     });
 
     return { message: 'Booking đã được hủy' };
@@ -1552,6 +1576,10 @@ export class BookingService {
     }).totalContractValue;
 
     const proposal = await this.prisma.$transaction(async (tx) => {
+      // Bookings converted and un-converted before deletion released the link
+      // still carry a deleted Proposal on the unique bookingId. Let it go here
+      // so those bookings can be converted again.
+      await tx.proposal.updateMany({ where: { bookingId: id, isActive: false }, data: { bookingId: null } });
       const proposal = await tx.proposal.create({
         data: {
           proposalNumber,
@@ -1786,6 +1814,20 @@ export class BookingService {
   }
 
   // Khi priority 1 bị cancel/expire → promote booking priority 2 lên thành ACTIVE
+  /** Which booking states actually hold the Unit; a queued PENDING one does not. */
+  private holdsUnit(status: BookingStatus) {
+    return status === BookingStatus.ACTIVE || status === BookingStatus.CONVERTED;
+  }
+
+  /** A CONVERTED booking with no Proposal left: the conversion no longer exists. */
+  private async isOrphanedConversion(
+    booking: { id: string; status: BookingStatus },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    if (booking.status !== BookingStatus.CONVERTED) return false;
+    return (await db.proposal.count({ where: { bookingId: booking.id, isActive: true } })) === 0;
+  }
+
   private async promoteNextInQueue(
     unitId: string,
     promotedById: string,
@@ -1913,9 +1955,16 @@ export class BookingService {
       throw new BadRequestException('Chỉ có thể xóa booking đã hủy hoặc hết hạn');
     }
 
-    await this.prisma.unitBooking.update({
-      where: { id },
-      data: { isActive: false },
+    // A booking that still held its Unit must hand it over on the way out:
+    // deleting it used to leave the Unit BOOKING with no booking behind it. A
+    // queued booking holds nothing, so deleting it must leave the Unit alone.
+    await this.runSerializable(async (tx) => {
+      const current = await tx.unitBooking.findUniqueOrThrow({ where: { id } });
+      if (!current.isActive) return; // idempotent replay
+      await tx.unitBooking.update({ where: { id }, data: { isActive: false } });
+      if (this.holdsUnit(current.status)) {
+        await this.promoteNextInQueue(current.unitId, user?.id ?? current.createdById, tx);
+      }
     });
     return { message: 'Booking đã được xóa' };
   }
