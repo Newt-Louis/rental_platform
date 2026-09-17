@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { bookingApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -181,9 +182,7 @@ export function ProposalConversionForm({
         notes: str(data.notes),
       }),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã tạo đề xuất thành công' });
       onClose();
       onSuccess?.(result);

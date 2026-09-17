@@ -192,8 +192,11 @@
     "areaNLA": "Diện tích NLA:",
     "zone": "Khu vực:",
     "rent": "Giá thuê:",
-    "clickHint": "Click unit để xem thông tin · F = toàn màn hình · ← → chuyển tầng",
-    "noMallSelected": "Vui lòng chọn một mall cụ thể ở header trước (không phải \"Tất cả Mall\")"
+    "clickHint": "Click mặt bằng để xem chi tiết · Lăn chuột để phóng to · Kéo để di chuyển · Nhấp đúp để phóng vào mặt bằng · F = toàn màn hình · ← → chuyển tầng",
+    "noMallSelected": "Vui lòng chọn một mall cụ thể ở header trước (không phải \"Tất cả Mall\")",
+    "zoomIn": "Phóng to",
+    "zoomOut": "Thu nhỏ",
+    "resetZoom": "Về khung ban đầu"
   },
   "bulk": {
     "selected": "{{count}} mặt bằng đã chọn",

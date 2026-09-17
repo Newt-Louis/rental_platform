@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { LeadEditDialog } from '@/components/crm';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import {
   Building2, User, ArrowRight,
   X, FileText, Activity, Clock, Pencil, RotateCcw,
@@ -164,8 +165,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const cancelMutation = useMutation({
     mutationFn: () => bookingApi.cancel(activeId!, 'Hủy từ trang Booking'),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã hủy booking' });
       onClose();
     },
@@ -175,9 +175,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
   const reinstateMutation = useMutation({
     mutationFn: () => bookingApi.reinstate(activeId!),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã khôi phục booking' });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi khôi phục booking', variant: 'destructive' }),
@@ -203,9 +201,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       return bookingApi.update(activeId!, payload);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-detail', activeId] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã cập nhật booking' });
       setIsEditing(false);
     },
