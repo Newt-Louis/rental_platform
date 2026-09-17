@@ -326,11 +326,11 @@ export const NAV_GROUPS = [
     label: "Khách hàng tiềm năng (CRM)",
     items: [
       {
-        label: "Điều hành CRM",
+        label: "Tổng quan CRM",
         path: "/crm-overview",
         module: "crm-overview" as RouteModule,
       },
-      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
+      { label: "Danh mục khách hàng", path: "/crm", module: "crm" as RouteModule },
     ],
   },
   {
