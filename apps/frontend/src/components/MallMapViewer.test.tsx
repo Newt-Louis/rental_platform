@@ -118,6 +118,25 @@ describe('MallMapViewer', () => {
     expect(screen.queryByTestId('map-wheel-hint')).toBeNull();
   });
 
+  it('paints the status on an opaque base, so the floor plan cannot mix into the colour', async () => {
+    renderMap([unit()]);
+
+    const base = await waitFor(() => {
+      const el = document.querySelector('[data-testid="map-base-L2-01"]');
+      if (!el) throw new Error('not rendered yet');
+      return el;
+    });
+    const fill = document.querySelector('[data-testid="map-fill-L2-01"]')!;
+
+    // White underneath at near-full opacity, then the status colour on top.
+    expect(base.getAttribute('fill')).toBe('#ffffff');
+    expect(Number(base.getAttribute('fill-opacity'))).toBeGreaterThanOrEqual(0.9);
+    expect(fill.getAttribute('fill')).toBe('#ef4444');
+    expect(Number(fill.getAttribute('fill-opacity'))).toBeGreaterThanOrEqual(0.8);
+    // The base is drawn first; painting it over the colour would hide it.
+    expect(base.compareDocumentPosition(fill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('draws a card per placed unit', async () => {
     renderMap([unit(), unit({ id: 'u2', code: 'L2-02', status: 'OCCUPIED', tenant: { brandName: 'Zara' }, mapPolygon: [[40, 10], [70, 10], [70, 40], [40, 40]] })]);
 
