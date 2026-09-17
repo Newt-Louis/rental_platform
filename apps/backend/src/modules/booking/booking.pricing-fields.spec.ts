@@ -16,7 +16,7 @@ describe('BookingService — budget/exchange-rate/service-fee pricing fields', (
     unit: { findUnique: jest.fn() },
     lead: { findUnique: jest.fn(), update: jest.fn() },
     customer: { findUnique: jest.fn() },
-    proposal: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+    proposal: { count: jest.fn().mockResolvedValue(0), create: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     unitBooking: {
       findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), findUniqueOrThrow: jest.fn(),
       aggregate: jest.fn(), count: jest.fn(), create: jest.fn(), update: jest.fn(),
