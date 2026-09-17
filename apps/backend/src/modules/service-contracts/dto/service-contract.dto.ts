@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -15,19 +15,31 @@ import {
   MaxLength,
   Min,
   ValidateNested,
-} from 'class-validator';
+} from "class-validator";
 import {
   ServiceContractServiceCategory,
   ServiceContractSharePermission,
   ServiceContractStatus,
   ServiceContractType,
   ServiceContractValueBasis,
-} from '@prisma/client';
+} from "@prisma/client";
 
-const PAYMENT_DIRECTIONS = ['PAYABLE', 'RECEIVABLE'] as const;
-const PAYMENT_STATUSES = ['PENDING', 'PARTIAL', 'PAID', 'OVERDUE', 'CANCELLED'] as const;
-const MILESTONE_STATUSES = ['PENDING', 'IN_PROGRESS', 'DONE', 'CANCELLED'] as const;
-const RECURRING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const;
+const PAYMENT_DIRECTIONS = ["PAYABLE", "RECEIVABLE"] as const;
+const PAYMENT_STATUSES = [
+  "PENDING",
+  "PARTIAL",
+  "PAID",
+  "OVERDUE",
+  "CANCELLED",
+] as const;
+const PAYMENT_ADJUSTMENT_DIRECTIONS = ["INCREASE", "DECREASE"] as const;
+const MILESTONE_STATUSES = [
+  "PENDING",
+  "IN_PROGRESS",
+  "DONE",
+  "CANCELLED",
+] as const;
+const RECURRING_FREQUENCIES = ["MONTHLY", "QUARTERLY", "ANNUALLY"] as const;
 
 /**
  * Một dòng chia sẻ trong tab "Chia sẻ" của modal. Cả tab thông tin và tab chia
@@ -36,7 +48,8 @@ const RECURRING_FREQUENCIES = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const;
  */
 export class ServiceContractShareInputDto {
   @IsString() @IsNotEmpty() userId: string;
-  @IsEnum(ServiceContractSharePermission) permission: ServiceContractSharePermission;
+  @IsEnum(ServiceContractSharePermission)
+  permission: ServiceContractSharePermission;
 }
 
 export class CreateServiceContractDto {
@@ -52,13 +65,31 @@ export class CreateServiceContractDto {
   @IsOptional() @IsDateString() signedDate?: string;
   @IsDateString() startDate: string;
   @IsDateString() endDate: string;
+  @Type(() => Number) @IsNumber() @Min(0) initialValue: number;
+  @Type(() => Number) @IsNumber() @Min(0) @Max(100) VAT: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
   @IsOptional() @IsIn(PAYMENT_DIRECTIONS) paymentDirection?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) invoiceLeadDays?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) defaultVatRate?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) paymentTermDays?: number;
-  @IsEnum(ServiceContractServiceCategory) serviceCategory: ServiceContractServiceCategory;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  invoiceLeadDays?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  defaultVatRate?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  paymentTermDays?: number;
+  @IsEnum(ServiceContractServiceCategory)
+  serviceCategory: ServiceContractServiceCategory;
   @IsEnum(ServiceContractValueBasis) valueBasis: ServiceContractValueBasis;
   @IsOptional() @IsString() @MaxLength(250) productName?: string;
   @IsOptional() @IsString() @MaxLength(100) workflowStage?: string;
@@ -66,7 +97,10 @@ export class CreateServiceContractDto {
   @IsOptional() @IsString() ownerId?: string;
   @IsOptional() @IsString() @MaxLength(5000) notes?: string;
   @IsOptional() @IsString() @MaxLength(1000) tags?: string;
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ServiceContractShareInputDto)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceContractShareInputDto)
   shares?: ServiceContractShareInputDto[];
 }
 
@@ -82,14 +116,35 @@ export class UpdateServiceContractDto {
   @IsOptional() @IsDateString() signedDate?: string;
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsDateString() endDate?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) initialValue?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) VAT?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) totalValue?: number;
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
   @IsOptional() @IsIn(PAYMENT_DIRECTIONS) paymentDirection?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) invoiceLeadDays?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) defaultVatRate?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) paymentTermDays?: number;
-  @IsOptional() @IsEnum(ServiceContractServiceCategory) serviceCategory?: ServiceContractServiceCategory;
-  @IsOptional() @IsEnum(ServiceContractValueBasis) valueBasis?: ServiceContractValueBasis;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  invoiceLeadDays?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  defaultVatRate?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  paymentTermDays?: number;
+  @IsOptional()
+  @IsEnum(ServiceContractServiceCategory)
+  serviceCategory?: ServiceContractServiceCategory;
+  @IsOptional()
+  @IsEnum(ServiceContractValueBasis)
+  valueBasis?: ServiceContractValueBasis;
   @IsOptional() @IsString() @MaxLength(250) productName?: string;
   @IsOptional() @IsString() @MaxLength(100) workflowStage?: string;
   @IsOptional() @IsString() @MaxLength(30) workflowColor?: string;
@@ -98,7 +153,10 @@ export class UpdateServiceContractDto {
   @IsOptional() @IsString() @MaxLength(1000) tags?: string;
   // Bỏ trống = không đụng tới danh sách chia sẻ hiện có. Gửi mảng rỗng = thu
   // hồi toàn bộ. Người không phải người tạo gửi trường này sẽ bị từ chối.
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ServiceContractShareInputDto)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceContractShareInputDto)
   shares?: ServiceContractShareInputDto[];
 }
 
@@ -112,9 +170,19 @@ export class CreateServiceContractPaymentDto {
   @IsDateString() dueDate: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) subtotal?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) vatRate?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  vatRate?: number;
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) reminderDays?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  reminderDays?: number;
   @IsOptional() @IsString() @MaxLength(30) periodType?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) periodNumber?: number;
   @IsOptional() @IsDateString() periodStart?: string;
@@ -128,10 +196,23 @@ export class UpdateServiceContractPaymentDto {
   @IsOptional() @IsString() @MaxLength(250) milestone?: string;
   @IsOptional() @IsDateString() dueDate?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.000000001)
+  adjustmentAmount?: number;
+  @IsOptional()
+  @IsIn(PAYMENT_ADJUSTMENT_DIRECTIONS)
+  adjustmentDirection?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) paidAmount?: number;
   @IsOptional() @IsDateString() paidDate?: string;
   @IsOptional() @IsIn(PAYMENT_STATUSES) status?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) reminderDays?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  reminderDays?: number;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
@@ -140,11 +221,12 @@ export class CreateRecurringPaymentsDto {
   @IsIn(RECURRING_FREQUENCIES) frequency: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(120) count: number;
   @IsString() @MaxLength(200) milestonePrefix: string;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) amount?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) subtotal?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) vatRate?: number;
-  @IsOptional() @IsString() @MaxLength(10) currency?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(365) reminderDays?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  reminderDays?: number;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 

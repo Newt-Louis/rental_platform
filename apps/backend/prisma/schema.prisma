@@ -1906,6 +1906,8 @@ model ServiceContract {
   startDate             DateTime?
   endDate               DateTime?
   terminatedDate        DateTime?
+  initialValue          Float?
+  VAT                   Float?
   totalValue            Float                          @default(0)
   currency              String                         @default("VND")
   paymentDirection      String                         @default("PAYABLE")
@@ -1984,6 +1986,7 @@ model ServiceContractPayment {
   vatRate                Float?
   vatAmount              Float?
   totalAmount            Float?
+  amountBreakdown        Json?
   transferredToBillingAt DateTime?
   billingError           String?
   periodType             String?
