@@ -29,12 +29,12 @@ const STATUS_CFG: Record<string, {
   fill: string; stroke: string; fillOpacity: number;
   badgeClass: string;
 }> = {
-  VACANT:       { fill: '#ef4444', stroke: '#dc2626', fillOpacity: 0.16, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
-  BOOKING:      { fill: '#f59e0b', stroke: '#d97706', fillOpacity: 0.16, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
-  NEGOTIATING:  { fill: '#f97316', stroke: '#ea580c', fillOpacity: 0.16, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
-  CONTRACTED:   { fill: '#3b82f6', stroke: '#2563eb', fillOpacity: 0.16, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
-  UNDER_FITOUT: { fill: '#a855f7', stroke: '#9333ea', fillOpacity: 0.16, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
-  OCCUPIED:     { fill: '#22c55e', stroke: '#16a34a', fillOpacity: 0.16, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
+  VACANT:       { fill: '#ef4444', stroke: '#b91c1c', fillOpacity: 0.82, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
+  BOOKING:      { fill: '#f59e0b', stroke: '#b45309', fillOpacity: 0.82, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
+  NEGOTIATING:  { fill: '#f97316', stroke: '#c2410c', fillOpacity: 0.82, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
+  CONTRACTED:   { fill: '#3b82f6', stroke: '#1d4ed8', fillOpacity: 0.82, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
+  UNDER_FITOUT: { fill: '#a855f7', stroke: '#7e22ce', fillOpacity: 0.82, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
+  OCCUPIED:     { fill: '#22c55e', stroke: '#15803d', fillOpacity: 0.82, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -585,7 +585,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
             <defs>
               <pattern id="stripe-fitout" width="1.5" height="1.5" patternUnits="userSpaceOnUse"
                 patternTransform={`rotate(45) translate(${tick % 2 === 0 ? 0 : 0.75})`}>
-                <line x1="0" y1="0" x2="0" y2="1.5" stroke="rgba(168,85,247,0.4)" strokeWidth="0.55" />
+                <line x1="0" y1="0" x2="0" y2="1.5" stroke="rgba(255,255,255,0.75)" strokeWidth="0.55" />
               </pattern>
             </defs>
             {/* Transparent background — click here to deselect unit */}
@@ -598,11 +598,22 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
               const isHovered = u.id === hoveredUnitId;
               const isSelected = u.id === selectedUnit?.id;
               const dimmed = filterStatus !== null && u.status !== filterStatus;
-              const opacity = dimmed ? 0.05 : isSelected ? 0.34 : isHovered ? 0.28 : cfg.fillOpacity;
+              const opacity = dimmed ? 0.12 : isSelected ? 0.94 : isHovered ? 0.9 : cfg.fillOpacity;
               const ptStr = poly.map(([x, y]) => `${x},${y}`).join(' ');
               return (
                 <g key={u.id} style={{ cursor: 'pointer' }}>
+                  {/* Opaque base: without it the floor plan shows through and
+                      mixes into the status colour, so the same status reads
+                      differently across the floor and against the legend. */}
+                  <polygon
+                    points={ptStr}
+                    fill="#ffffff"
+                    fillOpacity={dimmed ? 0.5 : 0.96}
+                    data-testid={`map-base-${u.code}`}
+                    style={{ pointerEvents: 'none' }}
+                  />
                   <polygon points={ptStr} fill={cfg.fill} fillOpacity={opacity}
+                    data-testid={`map-fill-${u.code}`}
                     stroke={isSelected ? '#0f172a' : cfg.stroke}
                     strokeWidth={isSelected ? 3 : isHovered ? 2.4 : 1.8}
                     strokeLinejoin="round"
