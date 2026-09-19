@@ -359,13 +359,17 @@ export class HandoverReadinessService {
     return out;
   }
 
-  /** Mall-scoped analytics list + KPIs. */
-  async list(actor: HandoverActor, mallId?: string | null, today: Date = businessToday()) {
+  /**
+   * Mall-scoped analytics list + KPIs, optionally narrowed to one floor. The
+   * floor only narrows WITHIN the authorized Malls (a foreign floorId yields
+   * nothing), and KPIs are computed on the narrowed set.
+   */
+  async list(actor: HandoverActor, mallId?: string | null, floorId?: string | null, today: Date = businessToday()) {
     const mallIds = await this.access.authorizedMallIds(actor, 'view', mallId || null);
     const rows = await this.prisma.unitHandoverReadiness.findMany({
       where: {
         lifecycleStatus: { in: [HandoverReadinessLifecycle.TRACKING, HandoverReadinessLifecycle.CONFIRMED] },
-        unit: { isActive: true },
+        unit: { isActive: true, ...(floorId ? { floorId } : {}) },
         ...(mallIds ? { mallId: { in: mallIds } } : {}),
       },
       include: readinessInclude,

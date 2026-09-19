@@ -10,10 +10,21 @@ import { HandoverStatusBadge, handoverDaysLabel } from './handoverPresentation';
  * urgency (OVERDUE -> AT_RISK -> TRACKING -> CONFIRMED, then days remaining)
  * and already evaluated; this component only renders.
  */
-export function HandoverAnalyticsSection({ mallId, onOpenUnit }: { mallId?: string | null; onOpenUnit?: (unitId: string) => void }) {
+export function HandoverAnalyticsSection({
+  mallId,
+  floorId,
+  floorName,
+  onOpenUnit,
+}: {
+  mallId?: string | null;
+  /** The floor chosen in the Spaces floor bar; list AND KPIs are narrowed server-side. */
+  floorId?: string | null;
+  floorName?: string | null;
+  onOpenUnit?: (unitId: string) => void;
+}) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['handover-list', mallId ?? null],
-    queryFn: () => handoverReadinessApi.list(mallId),
+    queryKey: ['handover-list', mallId ?? null, floorId ?? null],
+    queryFn: () => handoverReadinessApi.list(mallId, floorId),
     retry: false,
   });
 
@@ -34,6 +45,12 @@ export function HandoverAnalyticsSection({ mallId, onOpenUnit }: { mallId?: stri
         <h3 className="mb-3 flex items-center gap-2 font-semibold">
           <ClipboardCheck size={16} className="text-gray-400" />
           Bàn giao mặt bằng từ Ban dự án
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${floorId ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}
+            data-testid="handover-analytics-scope"
+          >
+            {floorId ? (floorName ?? 'Tầng đã chọn') : 'Tất cả tầng'}
+          </span>
           {data?.asOf && <span className="text-xs font-normal text-gray-400">· tính đến {fmtBusinessDate(data.asOf)}</span>}
         </h3>
 
@@ -47,7 +64,9 @@ export function HandoverAnalyticsSection({ mallId, onOpenUnit }: { mallId?: stri
         </div>
 
         {!isLoading && (data?.items.length ?? 0) === 0 ? (
-          <p className="py-6 text-center text-sm text-gray-400">Chưa có mặt bằng nào đang được theo dõi bàn giao.</p>
+          <p className="py-6 text-center text-sm text-gray-400">
+            {floorId ? 'Tầng này chưa có mặt bằng nào đang được theo dõi bàn giao.' : 'Chưa có mặt bằng nào đang được theo dõi bàn giao.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">

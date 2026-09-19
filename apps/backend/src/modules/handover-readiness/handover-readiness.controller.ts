@@ -75,9 +75,10 @@ export class HandoverReadinessController {
   @Get('handover-readiness')
   @ApiOperation({ summary: 'Danh sách + KPI theo dõi bàn giao MB (Mall-scoped)' })
   @ApiQuery({ name: 'mallId', required: false })
+  @ApiQuery({ name: 'floorId', required: false, description: 'Chỉ các mặt bằng thuộc tầng này (trong các Mall được phép)' })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: SERVICE_ENFORCED })
-  list(@Query('mallId') mallId: string | undefined, @CurrentUser() user: any) {
-    return this.service.list(user, mallId);
+  list(@Query('mallId') mallId: string | undefined, @Query('floorId') floorId: string | undefined, @CurrentUser() user: any) {
+    return this.service.list(user, mallId, floorId);
   }
 
   // ─── Readiness-scoped ──────────────────────────────────────────────────────

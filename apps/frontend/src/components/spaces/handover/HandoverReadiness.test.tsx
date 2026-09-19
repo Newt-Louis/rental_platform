@@ -27,6 +27,7 @@ vi.mock('@/components/ui/authenticated-image', () => ({
 import { HandoverReadinessTab } from './HandoverReadinessTab';
 import { HandoverCardBadge, matchesHandoverFilter } from './handoverPresentation';
 import { SpacesAlerts } from '../SpacesAlerts';
+import { HandoverAnalyticsSection } from './HandoverAnalyticsSection';
 import { fmtBusinessDate, businessDaysBetween } from '@/api/handover-readiness';
 import { useAuthStore } from '@/store/auth.store';
 
@@ -223,5 +224,35 @@ describe('grid badge, filter and alerts', () => {
     expect(screen.getByTestId('handover-alert-overdue')).toHaveTextContent('2 mặt bằng đã quá hạn bàn giao');
     await userEvent.click(screen.getByTestId('handover-alert-overdue'));
     expect(open).toHaveBeenCalled();
+  });
+});
+
+describe('analytics section narrowed by floor', () => {
+  const list = (items: any[]) => ({ items, asOf: '2026-09-19', kpis: { tracking: items.length, dueWithin30: 0, dueWithin7: 0, overdue: 0, atRisk: 0, conflicts: 0, highRisks: 0, confirmed: 0 } });
+  const renderSection = (props: Record<string, unknown>) => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(<QueryClientProvider client={qc}><HandoverAnalyticsSection mallId="m1" {...props} /></QueryClientProvider>);
+  };
+
+  it('HANDOVER-UI-013 asks the server for the selected floor only and labels the scope', async () => {
+    api.list.mockResolvedValue(list([{ ...detail({ id: 'r1', unitCode: 'L2-05', floorName: 'Tầng 2' }) }]));
+    renderSection({ floorId: 'f2', floorName: 'Tầng 2' });
+    expect(await screen.findByText('L2-05')).toBeInTheDocument();
+    expect(api.list).toHaveBeenCalledWith('m1', 'f2');
+    expect(screen.getByTestId('handover-analytics-scope')).toHaveTextContent('Tầng 2');
+  });
+
+  it('HANDOVER-UI-014 without a floor it shows the whole Mall', async () => {
+    api.list.mockResolvedValue(list([]));
+    renderSection({});
+    expect(await screen.findByText('Chưa có mặt bằng nào đang được theo dõi bàn giao.')).toBeInTheDocument();
+    expect(api.list).toHaveBeenCalledWith('m1', undefined);
+    expect(screen.getByTestId('handover-analytics-scope')).toHaveTextContent('Tất cả tầng');
+  });
+
+  it('HANDOVER-UI-015 empty floor says so explicitly', async () => {
+    api.list.mockResolvedValue(list([]));
+    renderSection({ floorId: 'f9', floorName: 'Tầng 9' });
+    expect(await screen.findByText('Tầng này chưa có mặt bằng nào đang được theo dõi bàn giao.')).toBeInTheDocument();
   });
 });

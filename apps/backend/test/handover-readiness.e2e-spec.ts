@@ -89,6 +89,7 @@ maybeDescribe('CR-UNIT-HANDOVER-READINESS -- real PostgreSQL', () => {
     await prisma.auditLog.deleteMany({ where: { entityType: 'UnitHandoverReadiness', entityId: { in: rIds } } });
     await prisma.proposal.deleteMany({ where: { unitId: { in: [ids.unitA, ids.unitA2, ids.unitA3, ids.unitB] } } });
     await prisma.unit.deleteMany({ where: { mallId: { in: malls } } });
+    await prisma.floor.deleteMany({ where: { mallId: { in: malls } } });
     await prisma.modulePermission.deleteMany({ where: { mallId: { in: malls } } });
     await prisma.userMallAccess.deleteMany({ where: { mallId: { in: malls } } });
     await prisma.user.deleteMany({ where: { id: { in: Object.values(ids).filter((v) => v.startsWith('hr-user')) } } });
@@ -669,6 +670,38 @@ maybeDescribe('CR-UNIT-HANDOVER-READINESS -- real PostgreSQL', () => {
     const all = await service.list(ADMIN());
     expect(all.items.map((i) => i.mallId)).toEqual(expect.arrayContaining([ids.mallA, ids.mallB]));
     await expect(service.list(actor(ids.financeA, Role.FINANCE))).resolves.toMatchObject({ items: [] });
+  });
+
+  it('HANDOVER-034b analytics narrowed to one floor: only that floor, KPIs recomputed, no cross-Mall floor leak', async () => {
+    const f1 = await prisma.floor.create({ data: { mallId: ids.mallA, name: 'Tầng 1', level: '1' } });
+    const f2 = await prisma.floor.create({ data: { mallId: ids.mallA, name: 'Tầng 2', level: '2' } });
+    const fb = await prisma.floor.create({ data: { mallId: ids.mallB, name: 'Tầng B1', level: '1' } });
+    try {
+      await prisma.unit.update({ where: { id: ids.unitA }, data: { floorId: f1.id } });
+      await prisma.unit.update({ where: { id: ids.unitA2 }, data: { floorId: f2.id } });
+      await prisma.unit.update({ where: { id: ids.unitB }, data: { floorId: fb.id } });
+      await startA(dateIn(5));                              // floor 1, <=7 days
+      await startA(dateIn(-3), LM_A(), ids.unitA2);         // floor 2, overdue
+      await service.start(LM_B(), ids.unitB, { targetReadyDate: dateIn(1) });
+
+      const floor1 = await service.list(LM_A(), ids.mallA, f1.id);
+      expect(floor1.items.map((i) => i.unitId)).toEqual([ids.unitA]);
+      expect(floor1.items[0].floorName).toBe('Tầng 1');
+      expect(floor1.kpis).toMatchObject({ tracking: 1, dueWithin7: 1, overdue: 0 });
+
+      const floor2 = await service.list(LM_A(), ids.mallA, f2.id);
+      expect(floor2.items.map((i) => i.unitId)).toEqual([ids.unitA2]);
+      expect(floor2.kpis).toMatchObject({ tracking: 1, overdue: 1, dueWithin7: 0 });
+
+      // Mall B's floor id through Mall A's authority returns nothing.
+      expect((await service.list(LM_A(), null, fb.id)).items).toEqual([]);
+      expect((await service.list(LM_A(), ids.mallA, fb.id)).items).toEqual([]);
+      // Without a floor: whole authorized Mall, as before.
+      expect((await service.list(LM_A())).items).toHaveLength(2);
+    } finally {
+      await prisma.unit.updateMany({ where: { id: { in: [ids.unitA, ids.unitA2, ids.unitB] } }, data: { floorId: null } });
+      await prisma.floor.deleteMany({ where: { id: { in: [f1.id, f2.id, fb.id] } } });
+    }
   });
 
   it('HANDOVER-035 cancel tracking preserves Unit.status', async () => {
