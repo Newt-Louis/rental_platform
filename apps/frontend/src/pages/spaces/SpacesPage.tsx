@@ -141,6 +141,9 @@ export default function SpacesPage() {
   });
 
   const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
+  // The page floor bar is the ONLY floor selector. In the floor-plan view a floor
+  // must always be shown, so an empty selection means the first floor.
+  const activeFloorId = view === 'floor' ? (floorFilter || floors[0]?.id || '') : floorFilter;
   const unitIds = units.map((u) => u.id);
 
   // CR-UNIT-HANDOVER-READINESS -- Mall-scoped, server-evaluated readiness for
@@ -283,26 +286,29 @@ export default function SpacesPage() {
       {(floors.length > 0 || (isAdmin && selectedMallId)) && (
         <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
           <Layers size={14} className="text-gray-400 shrink-0" />
-          <button
-            onClick={() => setFloorFilter('')}
-            className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-              ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-          >
-            {t('floor.allFloors')}
-          </button>
+          {/* A floor plan always shows exactly one floor -- no "all floors" there. */}
+          {view !== 'floor' && (
+            <button
+              onClick={() => setFloorFilter('')}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
+                ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+            >
+              {t('floor.allFloors')}
+            </button>
+          )}
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
               <button
-                onClick={() => setFloorFilter(floorFilter === f.id ? '' : f.id)}
+                onClick={() => setFloorFilter(view === 'floor' ? f.id : floorFilter === f.id ? '' : f.id)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-                  ${floorFilter === f.id
+                  ${activeFloorId === f.id
                     ? 'bg-gray-900 text-white border-gray-900'
                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}
                   ${isAdmin ? 'pr-8' : ''}`}
               >
                 {f.name}
                 {f._count?.units > 0 && (
-                  <span className={`ml-1.5 ${floorFilter === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
+                  <span className={`ml-1.5 ${activeFloorId === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
                     {f._count.units}
                   </span>
                 )}
@@ -313,7 +319,7 @@ export default function SpacesPage() {
                     <button
                       type="button"
                       onClick={(e) => e.stopPropagation()}
-                      className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-100 transition-opacity hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-black/10 data-[state=open]:opacity-100 ${floorFilter === f.id ? 'text-white' : 'text-gray-500'}`}
+                      className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-100 transition-opacity hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-black/10 data-[state=open]:opacity-100 ${activeFloorId === f.id ? 'text-white' : 'text-gray-500'}`}
                       title={`${t('floor.edit')} / ${t('floor.delete')}`}
                       aria-label={`${t('floor.edit')} / ${t('floor.delete')}`}
                     >
@@ -410,6 +416,9 @@ export default function SpacesPage() {
           selectedUnitId={selectedUnit?.id}
           slotSummaries={slotSummaries}
           allFloors={floors}
+          // Controlled only when the page floor bar exists (a Mall is selected);
+          // with no Mall the plan keeps its own tabs derived from the units.
+          activeFloorLevel={floors.length > 0 ? floors.find((f: any) => f.id === activeFloorId)?.level ?? '' : undefined}
           isAdmin={isAdmin}
           onCreateFloor={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
           onEditFloor={(f: any) => { setEditingFloor(f); setFloorDialogOpen(true); }}
