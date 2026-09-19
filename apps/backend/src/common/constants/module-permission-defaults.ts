@@ -35,6 +35,12 @@ export const MODULE_PERMISSION_DEFAULTS: Array<{ module: string; roles: Role[] }
   { module: 'tenants', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
   { module: 'fitout', roles: [Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
   { module: 'proposal-send-external', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
+  // CR-UNIT-HANDOVER-READINESS action permissions (see role-permissions.ts).
+  { module: 'handover-readiness-view', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.OPERATION] },
+  { module: 'handover-readiness-manage', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER] },
+  { module: 'handover-readiness-risk-manage', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.OPERATION] },
+  { module: 'handover-readiness-confirm', roles: [Role.OPERATION] },
+  { module: 'handover-readiness-reopen', roles: [Role.MALL_DIRECTOR] },
   { module: 'fitout-dossier-view', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL, Role.FITOUT_BASIC_TEAM] },
   { module: 'tickets', roles: [Role.OPERATION, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.TENANT] },
   { module: 'sales', roles: [Role.FINANCE, Role.MALL_DIRECTOR, Role.CEO, Role.TENANT] },

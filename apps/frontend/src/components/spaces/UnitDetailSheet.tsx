@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Building2, User, Mail, Phone, FileText, Trash2,
   BookmarkPlus, TrendingUp, Users,
-  Calendar, Image, LayoutList, Scissors, GitMerge, Save,
+  Calendar, Image, LayoutList, Scissors, GitMerge, Save, ClipboardCheck,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
 import {
@@ -21,6 +21,7 @@ import {
 } from '@/pages/spaces/spaces.constants';
 import { UnitMediaTab } from './tabs/UnitMediaTab';
 import { SalesPipelineTab } from './tabs/SalesPipelineTab';
+import { HandoverReadinessTab } from './handover/HandoverReadinessTab';
 import { CreateBookingDialog } from './dialogs/CreateBookingDialog';
 import { ConvertBookingDialog } from './dialogs/ConvertBookingDialog';
 import { UnitFormFields } from './dialogs/UnitFormFields';
@@ -53,7 +54,7 @@ export function UnitDetailSheet({
   const canManageSpaces = ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER'].includes(user?.role ?? '');
   const canManageSales = ['ADMIN', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'LEASING_EXECUTIVE'].includes(user?.role ?? '');
   const [bookingOpen, setBookingOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'sales' | 'media' | 'slots'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'sales' | 'media' | 'slots' | 'handover'>('info');
   const [convertBooking, setConvertBooking] = useState<any | null>(null);
   const [cancelBookingId, setCancelBookingId] = useState<string | null>(null);
   const [splitConfirmOpen, setSplitConfirmOpen] = useState(false);
@@ -229,6 +230,7 @@ export function UnitDetailSheet({
               ['sales', 'Bán hàng', TrendingUp],
               ['media', 'Media', Image],
               ['slots', 'Booking Slot', BookmarkPlus],
+              ['handover', 'Bàn giao MB', ClipboardCheck],
             ] as const).map(([tab, label, Icon]) => {
               const hasBadge = tab === 'sales' && (
                 (d.bookings?.filter((b: any) => ['ACTIVE', 'PENDING'].includes(b.status)).length ?? 0) +
@@ -253,6 +255,9 @@ export function UnitDetailSheet({
 
           {/* Media tab */}
           {activeTab === 'media' && <UnitMediaTab unitId={d.id} />}
+
+          {/* CR-UNIT-HANDOVER-READINESS -- Project -> Leasing/Operation handover */}
+          {activeTab === 'handover' && <HandoverReadinessTab unitId={d.id} />}
 
           {/* Slots tab */}
           {activeTab === 'slots' && (

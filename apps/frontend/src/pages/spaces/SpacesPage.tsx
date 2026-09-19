@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spacesApi, categoriesApi, slotsApi } from '@/api';
+import { spacesApi, categoriesApi, slotsApi, handoverReadinessApi } from '@/api';
+import { canPerformAction } from '@/lib/permissions';
+import { matchesHandoverFilter, type HandoverFilter } from '@/components/spaces/handover/handoverPresentation';
 import { useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
@@ -68,6 +70,7 @@ export default function SpacesPage() {
     spaceTypeFilter,
     tierFilter,
     leaseTermFilter, setLeaseTermFilter,
+    handoverFilter,
   } = useSpacesFilters();
   const rentalZone = leaseTermFilter === 'SHORT' ? 'SHORT' : 'LONG';
 
@@ -139,6 +142,24 @@ export default function SpacesPage() {
 
   const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
   const unitIds = units.map((u) => u.id);
+
+  // CR-UNIT-HANDOVER-READINESS -- Mall-scoped, server-evaluated readiness for
+  // grid badges, the handover filter and the alert banner.
+  const canViewHandover = canPerformAction(user?.role, 'handover-readiness-view');
+  const { data: handoverList } = useQuery({
+    queryKey: ['handover-list', selectedMallId],
+    queryFn: () => handoverReadinessApi.list(selectedMallId),
+    enabled: canViewHandover,
+    retry: false,
+    refetchInterval: 60_000,
+  });
+  const handoverByUnit = useMemo(
+    () => Object.fromEntries((handoverList?.items ?? []).map((item) => [item.unitId, item])),
+    [handoverList],
+  );
+  const gridUnits = handoverFilter
+    ? units.filter((u) => matchesHandoverFilter(handoverByUnit[u.id], handoverFilter as HandoverFilter))
+    : units;
 
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({
     queryKey: ['slot-summaries', unitIds.join(',')],
@@ -332,7 +353,13 @@ export default function SpacesPage() {
       )}
 
       {/* Alerts */}
-      {view !== 'analytics' && <SpacesAlerts mallId={selectedMallId} />}
+      {view !== 'analytics' && (
+        <SpacesAlerts
+          mallId={selectedMallId}
+          handoverKpis={canViewHandover ? handoverList?.kpis : undefined}
+          onOpenHandover={() => setView('analytics')}
+        />
+      )}
 
       {isError && view !== 'analytics' && (
         <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
@@ -343,16 +370,26 @@ export default function SpacesPage() {
       )}
 
       {/* Analytics View */}
-      {view === 'analytics' && <AnalyticsView mallId={selectedMallId} />}
+      {view === 'analytics' && (
+        <AnalyticsView
+          mallId={selectedMallId}
+          onOpenUnit={async (unitId) => {
+            const loaded = units.find((u) => u.id === unitId);
+            if (loaded) { setSelectedUnit(loaded); return; }
+            try { setSelectedUnit(await spacesApi.getUnit(unitId)); } catch { /* unit no longer reachable */ }
+          }}
+        />
+      )}
 
       {/* Filters (grid view only) */}
-      {view === 'grid' && <SpacesFilters categoryNames={categoryNames} />}
+      {view === 'grid' && <SpacesFilters categoryNames={categoryNames} showHandoverFilter={canViewHandover} />}
 
       {/* Grid view */}
       {view === 'grid' && !isError && (
         <SpacesGrid
-          units={units}
+          units={gridUnits}
           slotSummaries={slotSummaries}
+          handoverByUnit={handoverByUnit}
           isLoading={isLoading}
           isAdmin={isAdmin}
           mallId={selectedMallId}
