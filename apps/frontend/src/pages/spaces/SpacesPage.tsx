@@ -373,6 +373,8 @@ export default function SpacesPage() {
       {view === 'analytics' && (
         <AnalyticsView
           mallId={selectedMallId}
+          floorId={floorFilter || null}
+          floorName={floors.find((f: any) => f.id === floorFilter)?.name ?? null}
           onOpenUnit={async (unitId) => {
             const loaded = units.find((u) => u.id === unitId);
             if (loaded) { setSelectedUnit(loaded); return; }

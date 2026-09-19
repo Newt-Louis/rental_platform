@@ -153,8 +153,10 @@ export const handoverReadinessApi = {
     api.get(`/spaces/units/${unitId}/handover-readiness/candidates`).then((r) => r.data),
   start: (unitId: string, data: { targetReadyDate: string; projectOwnerId?: string; projectOwnerName?: string; note?: string }): Promise<HandoverDetail> =>
     api.post(`/spaces/units/${unitId}/handover-readiness`, data).then((r) => r.data),
-  list: (mallId?: string | null): Promise<HandoverList> =>
-    api.get('/handover-readiness', { params: mallId ? { mallId } : undefined }).then((r) => r.data),
+  list: (mallId?: string | null, floorId?: string | null): Promise<HandoverList> =>
+    api.get('/handover-readiness', {
+      params: mallId || floorId ? { ...(mallId ? { mallId } : {}), ...(floorId ? { floorId } : {}) } : undefined,
+    }).then((r) => r.data),
   changeTargetDate: (id: string, data: { targetReadyDate: string; reason: string; expectedVersion?: number }): Promise<HandoverDetail> =>
     api.patch(`/handover-readiness/${id}/target-date`, data).then((r) => r.data),
   addRisk: (id: string, data: { title: string; description?: string; severity: HandoverRiskSeverity; ownerId?: string; dueDate?: string }): Promise<HandoverDetail> =>
