@@ -1473,9 +1473,15 @@ export function PermissionsTab() {
                   </td>
                   {roles.map((role) => {
                     if (role === 'ADMIN') {
+                      // ADMIN is never stored in the matrix. Modules: platform bypass.
+                      // Actions: only where the action explicitly grants ADMIN (e.g.
+                      // handover-readiness-confirm deliberately does not).
+                      const adminAllowed = perm.kind !== 'action' || perm.roles.includes('ADMIN');
                       return (
-                        <td key={role} className="px-2 py-2 border-b border-r text-center">
-                          <CheckCircle size={15} className="text-green-500 mx-auto" />
+                        <td key={role} className="px-2 py-2 border-b border-r text-center" data-admin-allowed={adminAllowed}>
+                          {adminAllowed
+                            ? <CheckCircle size={15} className="text-green-500 mx-auto" />
+                            : <span className="text-gray-300" title="ADMIN không có quyền này (quy tắc cố định)">—</span>}
                         </td>
                       );
                     }

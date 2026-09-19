@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 
-const FILTER_KEYS = ['search', 'status', 'floor', 'minArea', 'maxArea', 'minRent', 'maxRent', 'category', 'spaceType', 'tier', 'leaseTerm'] as const;
+const FILTER_KEYS = ['search', 'status', 'floor', 'minArea', 'maxArea', 'minRent', 'maxRent', 'category', 'spaceType', 'tier', 'leaseTerm', 'handover'] as const;
 
 function set1(setSearchParams: ReturnType<typeof useSearchParams>[1], key: string, value: string) {
   setSearchParams((prev) => {
@@ -25,6 +25,8 @@ export function useSpacesFilters() {
   const spaceTypeFilter = searchParams.get('spaceType')  ?? '';
   const tierFilter      = searchParams.get('tier')       ?? '';
   const leaseTermFilter = searchParams.get('leaseTerm')  ?? '';
+  // CR-UNIT-HANDOVER-READINESS -- bucket of the server-evaluated readiness status.
+  const handoverFilter  = searchParams.get('handover')   ?? '';
 
   const hasAdvancedFilters = !!(minArea || maxArea || minRent || maxRent || categoryFilter || spaceTypeFilter || tierFilter);
 
@@ -46,6 +48,7 @@ export function useSpacesFilters() {
     spaceTypeFilter, setSpaceTypeFilter: (v: string) => set1(setSearchParams, 'spaceType', v),
     tierFilter,      setTierFilter:      (v: string) => set1(setSearchParams, 'tier',       v),
     leaseTermFilter, setLeaseTermFilter: (v: string) => set1(setSearchParams, 'leaseTerm', v),
+    handoverFilter,  setHandoverFilter:  (v: string) => set1(setSearchParams, 'handover',  v),
     hasAdvancedFilters,
     clearFilters,
   };

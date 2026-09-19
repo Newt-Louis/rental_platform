@@ -584,6 +584,15 @@ model User {
   workOrderEvents            WorkOrderEvent[]
   workOrderChecklistDone     WorkOrderChecklistItem[]   @relation("WorkOrderChecklistCompletedBy")
   workOrderEvidence          WorkOrderEvidence[]
+  handoverReadinessOwned     UnitHandoverReadiness[] @relation("HandoverReadinessProjectOwner")
+  handoverReadinessRecorded  UnitHandoverReadiness[] @relation("HandoverReadinessRecordedBy")
+  handoverReadinessConfirmed UnitHandoverReadiness[] @relation("HandoverReadinessConfirmedBy")
+  handoverReadinessCreated   UnitHandoverReadiness[] @relation("HandoverReadinessCreatedBy")
+  handoverReadinessEvents    UnitHandoverReadinessEvent[] @relation("HandoverReadinessEventActor")
+  handoverRisksOwned         UnitHandoverRisk[]         @relation("HandoverRiskOwner")
+  handoverRisksCreated       UnitHandoverRisk[]         @relation("HandoverRiskCreatedBy")
+  handoverFollowing          UnitHandoverFollower[]     @relation("HandoverFollowerUser")
+  handoverEvidenceUploaded   UnitHandoverEvidence[]     @relation("HandoverEvidenceUploadedBy")
   workOrderComments          WorkOrderComment[]
   workOrderTemplatesCreated  WorkOrderTemplate[]        @relation("WorkOrderTemplateCreator")
   workOrderTemplatesAssigned WorkOrderTemplate[]        @relation("WorkOrderTemplateAssignee")
@@ -659,6 +668,7 @@ model Mall {
   invoices                 Invoice[]
   departments              Department[]
   crmBusinessEvents        CrmBusinessEvent[]
+  handoverReadiness        UnitHandoverReadiness[]
 }
 
 // Mall-scoped organisational master data. User.department intentionally stays
@@ -1395,6 +1405,7 @@ model Unit {
   slots                UnitSlot[]
   fitoutIssues         FitoutIssue[]
   workOrders           WorkOrder[]
+  handoverReadiness    UnitHandoverReadiness[]
 
   @@unique([mallId, code])
   @@index([mallId, status])
@@ -3707,6 +3718,189 @@ model UnitHistory {
 
   @@index([unitId, createdAt])
   @@index([changeType])
+}
+
+// --- Unit Handover Readiness (Project -> Leasing/Operation) --------------------
+// CR-UNIT-HANDOVER-READINESS. Tracks when the Project team delivers the physical
+// space in a condition Leasing/Operation can accept. NOT tenant handover: that is
+// Proposal.handoverDate / FitoutProject.handoverDate, which this lifecycle only
+// READS (commitment-conflict warning). Orthogonal to Unit.status by design
+// (HANDOVER-READY-01) -- nothing here writes Unit/Booking/Proposal/Contract/Fitout.
+
+// Persisted lifecycle only. AT_RISK / OVERDUE are derived by
+// HandoverReadinessEvaluator (handover-readiness.policy.ts) and never stored.
+enum HandoverReadinessLifecycle {
+  TRACKING
+  CONFIRMED
+  CANCELLED
+}
+
+enum HandoverReadinessEventType {
+  TRACKING_STARTED
+  TARGET_DATE_CHANGED
+  RISK_ADDED
+  RISK_RESOLVED
+  FOLLOWER_ADDED
+  FOLLOWER_REMOVED
+  EVIDENCE_ADDED
+  EVIDENCE_REMOVED
+  REMINDER_SENT
+  COMMITMENT_CONFLICT_DETECTED
+  CONFIRMED
+  REOPENED
+  CANCELLED
+}
+
+enum HandoverRiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum HandoverRiskStatus {
+  OPEN
+  RESOLVED
+}
+
+model UnitHandoverReadiness {
+  id                 String                     @id @default(cuid())
+  // Denormalized from Unit.mallId at creation -- the authoritative Mall for
+  // every authorization decision on this record and its children.
+  mallId             String
+  mall               Mall                       @relation(fields: [mallId], references: [id])
+  unitId             String
+  unit               Unit                       @relation(fields: [unitId], references: [id])
+  // = unitId while the record is not CANCELLED, NULL afterwards. The unique
+  // constraint is the DB-level "at most one active readiness per Unit" rule.
+  activeUnitId       String?                    @unique
+  lifecycleStatus    HandoverReadinessLifecycle @default(TRACKING)
+  // Business DATEs (no time component). originalTargetDate is never updated.
+  originalTargetDate DateTime                   @db.Date
+  targetReadyDate    DateTime                   @db.Date
+  // Responsible Project contact: a User when they have an account, otherwise a
+  // free-text name. Never used as the actor of any change.
+  projectOwnerId     String?
+  projectOwner       User?                      @relation("HandoverReadinessProjectOwner", fields: [projectOwnerId], references: [id])
+  projectOwnerName   String?
+  // The authenticated user who last set the authoritative target date (start or
+  // date change). HANDOVER-SOD-01 compares the confirmer against this.
+  recordedById       String
+  recordedBy         User                       @relation("HandoverReadinessRecordedBy", fields: [recordedById], references: [id])
+  note               String?
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?                      @relation("HandoverReadinessConfirmedBy", fields: [confirmedById], references: [id])
+  confirmNote        String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelReason       String?
+  // Incremented by every mutation; lets a client detect it acted on stale state.
+  version            Int                        @default(0)
+  createdAt          DateTime                   @default(now())
+  createdById        String
+  createdBy          User                       @relation("HandoverReadinessCreatedBy", fields: [createdById], references: [id])
+  updatedAt          DateTime                   @updatedAt
+  updatedById        String?
+
+  events    UnitHandoverReadinessEvent[]
+  risks     UnitHandoverRisk[]
+  followers UnitHandoverFollower[]
+  evidence  UnitHandoverEvidence[]
+
+  @@index([mallId, lifecycleStatus])
+  @@index([unitId, createdAt])
+}
+
+// Append-only business evidence. UPDATE/DELETE are rejected by a DB trigger
+// (see the migration); dedupeKey makes system events (reminders, conflict
+// detection) idempotent across retries and concurrent scheduler instances.
+model UnitHandoverReadinessEvent {
+  id          String                     @id @default(cuid())
+  readinessId String
+  readiness   UnitHandoverReadiness      @relation(fields: [readinessId], references: [id])
+  // Monotonic insertion order. Every event of one readiness is inserted under
+  // that readiness row's lock, so this is the authoritative timeline order
+  // (occurredAt defaults to transaction start time, which is not commit order).
+  sequence    Int                        @default(autoincrement())
+  eventType   HandoverReadinessEventType
+  // NULL only for system events (REMINDER_SENT, COMMITMENT_CONFLICT_DETECTED).
+  actorId     String?
+  actor       User?                      @relation("HandoverReadinessEventActor", fields: [actorId], references: [id])
+  occurredAt  DateTime                   @default(now())
+  reason      String?
+  oldDate     DateTime?                  @db.Date
+  newDate     DateTime?                  @db.Date
+  riskId      String?
+  metadata    Json?
+  dedupeKey   String?                    @unique
+
+  confirmationEvidence UnitHandoverEvidence[] @relation("HandoverEvidenceConfirmation")
+
+  @@index([readinessId, sequence])
+  @@index([readinessId, eventType])
+}
+
+model UnitHandoverRisk {
+  id             String                @id @default(cuid())
+  readinessId    String
+  readiness      UnitHandoverReadiness @relation(fields: [readinessId], references: [id])
+  title          String
+  description    String?
+  severity       HandoverRiskSeverity
+  status         HandoverRiskStatus    @default(OPEN)
+  ownerId        String?
+  owner          User?                 @relation("HandoverRiskOwner", fields: [ownerId], references: [id])
+  dueDate        DateTime?             @db.Date
+  createdAt      DateTime              @default(now())
+  createdById    String
+  createdBy      User                  @relation("HandoverRiskCreatedBy", fields: [createdById], references: [id])
+  updatedAt      DateTime              @updatedAt
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolutionNote String?
+
+  @@index([readinessId, status, severity])
+}
+
+model UnitHandoverFollower {
+  id          String                @id @default(cuid())
+  readinessId String
+  readiness   UnitHandoverReadiness @relation(fields: [readinessId], references: [id])
+  userId      String
+  user        User                  @relation("HandoverFollowerUser", fields: [userId], references: [id])
+  addedById   String
+  createdAt   DateTime              @default(now())
+
+  @@unique([readinessId, userId])
+  @@index([userId])
+}
+
+// Confirmation photos. Stored through StorageService under the PRIVATE
+// `handover-readiness/` subpath (not on main.ts's public static mount, unlike
+// UnitMedia) and streamed only through the authorized evidence route.
+// confirmationEventId links a photo to the CONFIRMED event that consumed it;
+// once set the row is immutable and undeletable (DB trigger).
+model UnitHandoverEvidence {
+  id                  String                      @id @default(cuid())
+  readinessId         String
+  readiness           UnitHandoverReadiness       @relation(fields: [readinessId], references: [id])
+  mallId              String
+  fileName            String
+  filePath            String
+  fileSize            Int
+  mimeType            String
+  sha256              String
+  caption             String?
+  uploadedById        String
+  uploadedBy          User                        @relation("HandoverEvidenceUploadedBy", fields: [uploadedById], references: [id])
+  createdAt           DateTime                    @default(now())
+  confirmationEventId String?
+  confirmationEvent   UnitHandoverReadinessEvent? @relation("HandoverEvidenceConfirmation", fields: [confirmationEventId], references: [id])
+  // Soft delete for photos that were never used in a confirmation.
+  deletedAt           DateTime?
+  deletedById         String?
+
+  @@index([readinessId, confirmationEventId])
 }
 
 // Log import d liu unit hng lot (upload CSV/Excel)
