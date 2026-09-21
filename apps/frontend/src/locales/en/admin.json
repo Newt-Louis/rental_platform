@@ -16,6 +16,7 @@
     "categories": "Categories & Pricing",
     "permissions": "Permissions",
     "approval": "Approval Policy",
+    "notificationRouting": "Notification recipients",
     "system": "System",
     "approvalPolicy": "Approval policy",
     "branding": "Branding"

@@ -15,7 +15,7 @@ import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
 import {
-  Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
+  Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2, Bell,
   KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, X,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
   SquareStack, Info, GitBranch, ExternalLink, RotateCcw,
@@ -28,6 +28,7 @@ import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS, ACTION_PERMISSIONS, ACTION_PERMISSION_META, type ActionPermission } from '@/lib/permissions';
+import { NotificationRoutingTab } from './NotificationRoutingTab';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
 import { getApiErrorMessage } from '@/lib/api-error';
@@ -1794,6 +1795,7 @@ const TABS = [
   { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
   { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
   { id: 'approval',    labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'notification-routing', labelKey: 'tabs.notificationRouting', icon: Bell },
   { id: 'system',      labelKey: 'tabs.system',      icon: Settings },
 ];
 
@@ -1802,7 +1804,7 @@ const TAB_GROUPS = [
   { labelKey: 'tabGroups.orgMall', ids: ['malls', 'departments', 'structure'] },
   { labelKey: 'tabGroups.categories', ids: ['categories'] },
   { labelKey: 'tabGroups.process', ids: ['approval'] },
-  { labelKey: 'tabGroups.platform', ids: ['system'] },
+  { labelKey: 'tabGroups.platform', ids: ['notification-routing', 'system'] },
 ];
 
 export default function AdminPage() {
@@ -1889,6 +1891,7 @@ export default function AdminPage() {
             {activeTab === 'structure'   && <SpaceStructureTab />}
             {activeTab === 'categories'  && <CategoriesTab />}
             {activeTab === 'permissions' && <PermissionsTab />}
+            {activeTab === 'notification-routing' && <NotificationRoutingTab />}
             {activeTab === 'approval'    && <ApprovalPolicyTab />}
             {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><EmailSettingsCard /><OperationalSystemTab /></div>}
           </div>
