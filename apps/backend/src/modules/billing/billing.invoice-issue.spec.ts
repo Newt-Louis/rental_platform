@@ -48,7 +48,8 @@ describe('BillingService.issueInvoice — notifyTenantOnIssue enforcement & idem
       emailService as any,
       emailDelivery as any,
       metrics as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
     jest.spyOn(service, 'findOneInvoice').mockResolvedValue(DRAFT_INVOICE as any);
     jest.spyOn(service as any, 'recomputeInvoiceStatusFromPayments').mockResolvedValue(undefined);
   });

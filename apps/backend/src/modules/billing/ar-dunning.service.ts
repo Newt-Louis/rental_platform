@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { EmailService } from '../notifications/email.service';
 import { emailSubject, formatDateVN } from '../notifications/email-design-system';
 import { daysOverdue, policiesToApply } from './ar-dunning.util';
@@ -19,6 +20,7 @@ export class ArDunningService {
     private emailService: EmailService,
     private emailDelivery: EmailDeliveryService,
     private schedulerLock: SchedulerLockService,
+    private routing: NotificationRoutingService,
   ) {}
 
   async listPolicies() {
@@ -102,10 +104,18 @@ export class ArDunningService {
         }
 
         if (policy.notifyTenant && partyEmail) {
+          // Debtor address stays authoritative; internal copies only.
+          const plan = await this.routing.plan({
+            eventKey: 'INVOICE_OVERDUE',
+            mallId: invoice.mallId,
+            resourceId: invoice.id,
+            defaults: [{ email: partyEmail, keySuffix: 'tenant' }],
+          });
+          for (const recipient of plan.recipients) {
           await this.emailDelivery.enqueue(this.prisma, {
-              eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:tenant`,
+              eventKey: `ar-dunning:${invoice.id}:policy:${policy.id}:${recipient.keySuffix}`,
               eventType: 'INVOICE_OVERDUE', entityType: 'Invoice', entityId: invoice.id, mallId: invoice.mallId,
-              to: partyEmail,
+              to: recipient.email,
               subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} quá hạn ${overdueDays} ngày`),
               html: this.emailService.invoiceOverdueHtml({
                 tenantName: partyName,
@@ -117,6 +127,7 @@ export class ArDunningService {
                 currencyCode: invoice.currencyCode ?? null,
               }),
             });
+          }
         }
 
         await this.prisma.arDunningLog.create({

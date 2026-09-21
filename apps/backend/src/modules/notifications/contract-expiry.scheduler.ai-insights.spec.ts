@@ -26,6 +26,7 @@ describe('ContractExpiryScheduler — AI proactive insights Mall partitioning (C
     {} as any, // emailService
     {} as any, // emailDelivery
     {} as any, // schedulerLock
+    { plan: jest.fn(async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults.map((d: any) => ({ ...d, kind: 'TO', keySuffix: d.keySuffix })), diagnostics: [] })) } as any, // routing
   );
 
   let fetchSpy: jest.SpyInstance;

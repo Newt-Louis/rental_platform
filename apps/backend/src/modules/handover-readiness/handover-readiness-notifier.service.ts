@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { appUrl, EmailDocument, emailSubject, esc, EmailSeverity, InfoRow, renderEmail } from '../notifications/email-design-system';
 import { HandoverReadinessAccessService } from './handover-readiness-access.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { formatBusinessDate, ReadinessEvaluation } from './handover-readiness.policy';
 
 type Db = PrismaService | Prisma.TransactionClient;
@@ -104,6 +105,7 @@ export class HandoverReadinessNotifierService {
     private readonly prisma: PrismaService,
     private readonly emailDelivery: EmailDeliveryService,
     private readonly access: HandoverReadinessAccessService,
+    private readonly routing: NotificationRoutingService,
   ) {}
 
   /**
@@ -160,11 +162,23 @@ export class HandoverReadinessNotifierService {
   ): Promise<number> {
     const recipients = (await this.recipients(db, ctx.id, ctx.mallId, ctx.projectOwnerId))
       .filter((r) => r.id !== opts.excludeUserId);
-    if (recipients.length === 0) return 0;
+    // CR-NOTIFICATION-RECIPIENT-ROUTING: the list above is this event's DEFAULT
+    // rule; an administrator may have replaced or extended it for this Mall.
+    const plan = await this.routing.plan({
+      eventKey: 'HANDOVER_READINESS_EVENT',
+      mallId: ctx.mallId,
+      resourceId: ctx.id,
+      defaults: recipients.map((r) => ({ email: r.email, userId: r.id, fullName: r.fullName, keySuffix: r.id })),
+    }, db);
+    if (plan.failClosed) {
+      this.logger.error(`Handover notification ${baseKey} withheld: configured recipients are no longer eligible`);
+      return 0;
+    }
+    if (plan.recipients.length === 0) return 0;
     const content = this.compose(ctx, event);
-    for (const recipient of recipients) {
+    for (const recipient of plan.recipients) {
       await this.emailDelivery.enqueue(db, {
-        eventKey: `${baseKey}:${recipient.id}`,
+        eventKey: `${baseKey}:${recipient.keySuffix}`,
         eventType: `HANDOVER_READINESS_${event.kind}`,
         entityType: 'UnitHandoverReadiness',
         entityId: ctx.id,
@@ -173,9 +187,10 @@ export class HandoverReadinessNotifierService {
         subject: content.subject,
         html: content.html,
       });
+      if (!recipient.userId) continue;
       await db.notification.create({
         data: {
-          userId: recipient.id,
+          userId: recipient.userId,
           type: `HANDOVER_READINESS_${event.kind}`,
           title: content.notificationTitle,
           body: content.notificationBody,
@@ -184,7 +199,7 @@ export class HandoverReadinessNotifierService {
         },
       });
     }
-    return recipients.length;
+    return plan.recipients.length;
   }
 
   private baseRows(ctx: ReadinessNotifyContext): InfoRow[] {

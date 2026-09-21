@@ -71,7 +71,7 @@ describe('TicketsService — the formerly-GAP routes check the owning Tenant', (
       ticketEscalation: { findMany: jest.fn().mockResolvedValue([]) },
       ticketRating: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
     };
-    return { service: new TicketsService(prisma as any, {} as any, {} as any, {} as any, {} as any), prisma };
+    return { service: new TicketsService(prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any), prisma };
   }
 
   const foreignTicket = { id: 'tkt-1', tenantId: 'tenant-highlands', comments: [] };

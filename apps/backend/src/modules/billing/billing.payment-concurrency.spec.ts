@@ -210,6 +210,7 @@ function buildService(prisma: any) {
     { invoiceIssuedHtml: jest.fn() } as any,
     { enqueue: jest.fn() } as any,
     { increment: jest.fn() } as any,
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
   );
 }
 
