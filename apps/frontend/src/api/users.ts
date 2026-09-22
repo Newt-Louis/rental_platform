@@ -5,8 +5,15 @@ export const usersApi = {
   // Lightweight picker (id/fullName/email/role) open to any authenticated
   // role, unlike listUsers() which is ADMIN-only -- use this for assignee
   // dropdowns (CRM/Tickets/Bookings/Patrol/Fitout).
+  //
+  // Always resolves to an array. Every caller treats the result as one and
+  // maps or filters it straight away, so a paginated envelope arriving here --
+  // from this endpoint changing shape, or from a cache entry another caller
+  // wrote under the same key -- takes the whole screen down rather than
+  // showing an empty picker.
   listAssignableUsers: (params?: Record<string, unknown>) =>
-    api.get('/users/assignable', { params }).then((r) => r.data),
+    api.get('/users/assignable', { params })
+      .then((r) => (Array.isArray(r.data) ? r.data : (r.data?.data ?? []))),
   getStats: () => api.get('/users/stats').then((r) => r.data),
   getUser: (id: string) => api.get(`/users/${id}`).then((r) => r.data),
   updateUser: (id: string, data: Record<string, unknown>) =>

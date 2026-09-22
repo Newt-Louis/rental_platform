@@ -32,6 +32,22 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
 
+/**
+ * CR-BOOK-CURRENCY-EDIT-001 — every amount a Booking stores, all of them
+ * denominated in its currencyCode. They are listed here so that changing the
+ * currency has one place to check: a figure left behind would keep its digits
+ * and quietly change what it is worth.
+ */
+const MONEY_FIELDS = [
+  'budgetRentMin',
+  'budgetRentMax',
+  'expectedRent',
+  'proposedRentPerSqm',
+  'proposedCamPerSqm',
+  'serviceFeeSqm',
+  'businessSupportFeeSqm',
+] as const;
+
 @Injectable()
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
@@ -588,6 +604,35 @@ export class BookingService {
     const targetUnitId = targetNewUnitId ?? booking.unitId;
     const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId } });
 
+    // ── Đổi đơn vị tiền tệ (CR-BOOK-CURRENCY-EDIT-001) ───────────────────────
+    //
+    // Currency is not a label on the money, it IS the money: every amount on
+    // this booking is denominated in it, and the approval band is resolved in
+    // it. So a change is only a correction of a wrong pick at creation, never a
+    // re-pricing, and it is refused once somebody has approved a price -- that
+    // approval was given for figures in the old currency and cannot be made to
+    // cover new ones.
+    const currencyChanged = dto.currencyCode !== undefined && dto.currencyCode !== booking.currencyCode;
+    if (currencyChanged) {
+      if (booking.priceApprovalStatus === PriceApprovalStatus.APPROVED) {
+        throw new BadRequestException(
+          'Giá của booking này đã được duyệt nên không đổi được đơn vị tiền tệ. '
+          + 'Hãy tạo booking mới với đơn vị tiền tệ đúng.',
+        );
+      }
+      // Re-entering the amounts is the point of the rule: carrying a number
+      // across a currency change would silently restate 650.000 ₫ as 650.000 $.
+      const stillInOldCurrency = MONEY_FIELDS.filter(
+        (field) => booking[field] !== null && booking[field] !== undefined && dto[field] === undefined,
+      );
+      if (stillInOldCurrency.length > 0) {
+        throw new BadRequestException(
+          `Đổi đơn vị tiền tệ thì phải nhập lại toàn bộ các mức giá. Còn thiếu: ${stillInOldCurrency.join(', ')}`,
+        );
+      }
+    }
+    const effectiveCurrency = currencyChanged ? dto.currencyCode! : booking.currencyCode;
+
     // CR-BOOK-PRICE-APPROVAL-001 — re-evaluate through the same policy service
     // as create(). A changed price invalidates any decision already made on the
     // old figure, so the chain is rebuilt from scratch below.
@@ -595,14 +640,17 @@ export class BookingService {
     let priceApprovalTouched = false;
 
     if (dto.proposedRentPerSqm !== undefined && unit) {
-      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
+      // A currency change re-prices the booking even when the digits are the
+      // same: 28 USD and 28 VND are not the same offer, and the band they are
+      // measured against is not the same band.
+      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId || currencyChanged) {
         priceEvaluation = await this.priceApprovalPolicy.evaluate({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
           floorId: unit.floorId,
           zoneId: unit.zoneId,
           proposedRentPerSqm: dto.proposedRentPerSqm,
-          currencyCode: booking.currencyCode,
+          currencyCode: effectiveCurrency,
           unitBaseRentPerSqm: unit.baseRentPerSqm,
           unitCurrencyCode: unit.currencyCode,
         });
@@ -651,7 +699,12 @@ export class BookingService {
           budgetRentMin: dto.budgetRentMin,
           budgetRentMax: dto.budgetRentMax,
           expectedRent: dto.expectedRent,
-          exchangeRate: dto.exchangeRate,
+          ...(currencyChanged && { currencyCode: dto.currencyCode }),
+          // A rate is "VND per <currency>"; once the currency IS VND there is
+          // nothing left for it to convert.
+          ...(currencyChanged && dto.currencyCode === CurrencyCode.VND
+            ? { exchangeRate: null }
+            : { exchangeRate: dto.exchangeRate }),
           proposedRentPerSqm: dto.proposedRentPerSqm,
           proposedCamPerSqm: dto.proposedCamPerSqm,
           serviceFeeSqm: dto.serviceFeeSqm,
@@ -691,7 +744,17 @@ export class BookingService {
         await this.replacePriceApproval(tx, id, priceEvaluation);
       }
 
-      await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' }, tx);
+      await this.logActivity(
+        id,
+        BookingActivityType.NOTE_ADDED,
+        userId,
+        {
+          note: currencyChanged
+            ? `Cập nhật thông tin booking — đổi đơn vị tiền tệ ${booking.currencyCode} sang ${dto.currencyCode}, nhập lại toàn bộ mức giá`
+            : 'Cập nhật thông tin booking',
+        },
+        tx,
+      );
       return updated;
     });
 

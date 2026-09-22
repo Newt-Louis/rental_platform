@@ -17,7 +17,7 @@ import {
   X, FileText, Activity, Clock, Pencil, RotateCcw,
 } from 'lucide-react';
 import type { UnitBooking } from '@/types';
-import { formatMoney, CURRENCIES } from '@/lib/currency';
+import { formatMoney, CURRENCIES, CURRENCY_CODES, type CurrencyCode } from '@/lib/currency';
 import { UNIT_STATUS_CONFIG, daysLeft, fmtDate } from './bookings-constants';
 import { ConvertToProposalDialog } from './ConvertToProposalDialog';
 import { ExtendDialog } from './ExtendDialog';
@@ -66,6 +66,7 @@ const EMPTY_EF = {
   unitId: '', unitLabel: '', unitSearch: '',
   leadId: '', leadLabel: '',
   requestedArea: '', requestedTerm: '', expectedRent: '',
+  currencyCode: 'VND' as CurrencyCode,
   budgetRentMin: '', budgetRentMax: '', exchangeRate: '',
   proposedRentPerSqm: '', proposedCamPerSqm: '',
   serviceFeeSqm: '', businessSupportFeeSqm: '',
@@ -111,6 +112,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       unitSearch: '',
       leadId: src.leadId ?? '',
       leadLabel: cName,
+      currencyCode: (src.currencyCode ?? 'VND') as CurrencyCode,
       requestedArea: String(src.requestedArea ?? ''),
       requestedTerm: String(src.requestedTerm ?? ''),
       expectedRent: String(src.expectedRent ?? ''),
@@ -152,9 +154,15 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
     queryFn: () => authApi.me(),
   });
   const isAdmin = currentUser?.role === 'ADMIN';
+  // The assignee picker, like every other one in the app (CRM, Tickets,
+  // Patrol, Fitout), reads /users/assignable. It used to call the ADMIN-only
+  // paginated /users under this same cache key, so opening a booking for
+  // editing filled ['users-picker'] with { data, total, page } -- and every
+  // other screen sharing that key then tried to map over the envelope and
+  // white-screened. Both endpoints return the same 19 people here.
   const { data: usersData } = useQuery({
     queryKey: ['users-picker'],
-    queryFn: () => usersApi.listUsers({ limit: 100, isActive: 'true' }),
+    queryFn: () => usersApi.listAssignableUsers(),
     enabled: isEditing && isAdmin,
     staleTime: 60000,
   });
@@ -187,6 +195,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       if (d && ef.unitId && ef.unitId !== d.unitId) payload.unitId = ef.unitId;
       if (d && ef.leadId !== (d.leadId ?? '')) payload.leadId = ef.leadId || null;
       if (d && ef.assignedToId !== ((d as any).assignedToId ?? '')) payload.assignedToId = ef.assignedToId || null;
+      if (ef.currencyCode !== ((d as any)?.currencyCode ?? 'VND')) payload.currencyCode = ef.currencyCode;
       if (ef.requestedArea) payload.requestedArea = Number(ef.requestedArea);
       if (ef.requestedTerm) payload.requestedTerm = Number(ef.requestedTerm);
       if (ef.expectedRent) payload.expectedRent = Number(ef.expectedRent);
@@ -210,6 +219,53 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
 
   const d = (detail?.data ?? detail ?? booking ?? lastBooking) as UnitBooking | null;
 
+  // ── Đơn vị tiền tệ đang sửa (CR-BOOK-CURRENCY-EDIT-001) ──────────────────
+  const editCurrency: CurrencyCode = ef.currencyCode;
+  // Looked up defensively: an unrecognised code used to reach `.symbol` on
+  // undefined and take the whole sheet down with it.
+  const currencyMeta = CURRENCIES[editCurrency];
+  const currencySymbol = currencyMeta?.symbol ?? editCurrency;
+  // A price already signed off was signed off in the old currency; it cannot
+  // be made to cover new figures, so the backend refuses the change too.
+  const currencyLocked = (d as any)?.priceApprovalStatus === 'APPROVED';
+
+  /**
+   * Switching currency empties the amounts on purpose.
+   *
+   * They are stored in the currency being left behind, and the backend rejects
+   * an update that keeps any of them. Blanking the inputs makes that rule
+   * visible at the moment of the choice rather than as an error on save.
+   */
+  /** The amounts, and what each is called on screen. */
+  const MONEY_FIELDS: Array<[keyof typeof ef, string]> = [
+    ['budgetRentMin', 'Giá ngân sách — thấp nhất'],
+    ['budgetRentMax', 'Giá ngân sách — cao nhất'],
+    ['expectedRent', 'Giá kỳ vọng'],
+    ['proposedRentPerSqm', 'Giá thuê đề xuất'],
+    ['proposedCamPerSqm', 'CAM đề xuất'],
+    ['serviceFeeSqm', 'Phí Dịch vụ'],
+    ['businessSupportFeeSqm', 'Phí hỗ trợ Kinh doanh'],
+  ];
+
+  const currencyChanged = editCurrency !== ((d as any)?.currencyCode ?? 'VND');
+  // The server refuses a currency change that leaves an old figure behind. Say
+  // which ones are still blank here, in the words on the labels, rather than
+  // letting the reader discover a list of field names after pressing save.
+  const amountsStillBlank = currencyChanged
+    ? MONEY_FIELDS.filter(([key]) => (d as any)?.[key] != null && !String(ef[key] ?? '').trim()).map(([, label]) => label)
+    : [];
+
+  const changeCurrency = (next: CurrencyCode) => setEf((f) => (
+    next === f.currencyCode ? f : {
+      ...f,
+      currencyCode: next,
+      budgetRentMin: '', budgetRentMax: '', expectedRent: '',
+      proposedRentPerSqm: '', proposedCamPerSqm: '',
+      serviceFeeSqm: '', businessSupportFeeSqm: '',
+      exchangeRate: next === 'VND' ? '' : f.exchangeRate,
+    }
+  ));
+
   const startEditing = () => {
     if (!d) return;
     const cName = d.lead?.brandName ?? d.customer?.companyName ?? '';
@@ -219,6 +275,7 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
       unitSearch: '',
       leadId: d.leadId ?? '',
       leadLabel: cName,
+      currencyCode: ((d as any).currencyCode ?? 'VND') as CurrencyCode,
       requestedArea: String(d.requestedArea ?? ''),
       requestedTerm: String(d.requestedTerm ?? ''),
       expectedRent: String(d.expectedRent ?? ''),
@@ -357,50 +414,81 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
                 </Field>
               </div>
 
-              {/* Đơn vị tiền tệ được đặt khi tạo booking và không thể sửa ở đây. */}
+              {/*
+                CR-BOOK-CURRENCY-EDIT-001 — the currency can be corrected while
+                nobody has approved a price. Every amount below is denominated
+                in it, so switching clears them: the backend refuses a change
+                that leaves a figure behind, and carrying 650.000 from đồng to
+                dollars would restate the offer rather than correct it.
+              */}
               <Field label="Đơn vị tiền tệ">
-                <p className="text-sm text-gray-600 h-9 flex items-center px-3 rounded-md bg-muted border border-input">
-                  {d.currencyCode ?? 'VND'}{CURRENCIES[d.currencyCode ?? 'VND'] ? ` (${CURRENCIES[d.currencyCode ?? 'VND'].name})` : ''}
-                </p>
+                {currencyLocked ? (
+                  <>
+                    <p className="text-sm text-gray-600 h-9 flex items-center px-3 rounded-md bg-muted border border-input">
+                      {editCurrency}{currencyMeta ? ` (${currencyMeta.name})` : ''}
+                    </p>
+                    <p className="text-[11px] text-gray-400">
+                      Giá đã được duyệt nên không đổi được đơn vị tiền tệ. Tạo booking mới nếu cần đơn vị khác.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      aria-label="Đơn vị tiền tệ"
+                      className="w-full border rounded-md h-9 px-2 text-sm border-input bg-background"
+                      value={editCurrency}
+                      onChange={(e) => changeCurrency(e.target.value as CurrencyCode)}
+                    >
+                      {CURRENCY_CODES.map((code) => (
+                        <option key={code} value={code}>{code} ({CURRENCIES[code].name})</option>
+                      ))}
+                    </select>
+                    {editCurrency !== (d.currencyCode ?? 'VND') && (
+                      <p className="text-[11px] text-amber-600">
+                        Đã đổi đơn vị tiền tệ — nhập lại toàn bộ các mức giá bên dưới theo {editCurrency}.
+                      </p>
+                    )}
+                  </>
+                )}
               </Field>
-              {d.currencyCode && d.currencyCode !== 'VND' && (
-                <Field label={`Tỷ giá áp dụng (VND/${d.currencyCode})`}>
+              {editCurrency !== 'VND' && (
+                <Field label={`Tỷ giá áp dụng (VND/${editCurrency})`}>
                   <Input type="number" value={ef.exchangeRate} onChange={setEfField('exchangeRate')} placeholder="24500" />
                 </Field>
               )}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label={`Giá ngân sách — thấp nhất (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)`}>
+                <Field label={`Giá ngân sách — thấp nhất (${currencySymbol}/m²)`}>
                   <Input type="number" value={ef.budgetRentMin} onChange={setEfField('budgetRentMin')} placeholder="600000" />
-                  {fxHint(ef.budgetRentMin, d.currencyCode, ef.exchangeRate) && (
-                    <p className="text-[11px] text-gray-400">{fxHint(ef.budgetRentMin, d.currencyCode, ef.exchangeRate)}</p>
+                  {fxHint(ef.budgetRentMin, editCurrency, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400">{fxHint(ef.budgetRentMin, editCurrency, ef.exchangeRate)}</p>
                   )}
                 </Field>
-                <Field label={`Giá ngân sách — cao nhất (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)`}>
+                <Field label={`Giá ngân sách — cao nhất (${currencySymbol}/m²)`}>
                   <Input type="number" value={ef.budgetRentMax} onChange={setEfField('budgetRentMax')} placeholder="700000" />
-                  {fxHint(ef.budgetRentMax, d.currencyCode, ef.exchangeRate) && (
-                    <p className="text-[11px] text-gray-400">{fxHint(ef.budgetRentMax, d.currencyCode, ef.exchangeRate)}</p>
+                  {fxHint(ef.budgetRentMax, editCurrency, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400">{fxHint(ef.budgetRentMax, editCurrency, ef.exchangeRate)}</p>
                   )}
                 </Field>
-                <Field label={`Giá kỳ vọng (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)`}>
+                <Field label={`Giá kỳ vọng (${currencySymbol}/m²)`}>
                   <Input type="number" value={ef.expectedRent} onChange={setEfField('expectedRent')} placeholder="680000" />
-                  {fxHint(ef.expectedRent, d.currencyCode, ef.exchangeRate) && (
-                    <p className="text-[11px] text-gray-400">{fxHint(ef.expectedRent, d.currencyCode, ef.exchangeRate)}</p>
+                  {fxHint(ef.expectedRent, editCurrency, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400">{fxHint(ef.expectedRent, editCurrency, ef.exchangeRate)}</p>
                   )}
                 </Field>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label={`Giá thuê đề xuất — chào thuê (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)`}>
+                <Field label={`Giá thuê đề xuất — chào thuê (${currencySymbol}/m²)`}>
                   <Input type="number" value={ef.proposedRentPerSqm} onChange={setEfField('proposedRentPerSqm')} placeholder="650000" />
-                  {fxHint(ef.proposedRentPerSqm, d.currencyCode, ef.exchangeRate) && (
-                    <p className="text-[11px] text-gray-400">{fxHint(ef.proposedRentPerSqm, d.currencyCode, ef.exchangeRate)}</p>
+                  {fxHint(ef.proposedRentPerSqm, editCurrency, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400">{fxHint(ef.proposedRentPerSqm, editCurrency, ef.exchangeRate)}</p>
                   )}
                 </Field>
-                <Field label={`CAM đề xuất (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²)`}>
+                <Field label={`CAM đề xuất (${currencySymbol}/m²)`}>
                   <Input type="number" value={ef.proposedCamPerSqm} onChange={setEfField('proposedCamPerSqm')} placeholder="50000" />
-                  {fxHint(ef.proposedCamPerSqm, d.currencyCode, ef.exchangeRate) && (
-                    <p className="text-[11px] text-gray-400">{fxHint(ef.proposedCamPerSqm, d.currencyCode, ef.exchangeRate)}</p>
+                  {fxHint(ef.proposedCamPerSqm, editCurrency, ef.exchangeRate) && (
+                    <p className="text-[11px] text-gray-400">{fxHint(ef.proposedCamPerSqm, editCurrency, ef.exchangeRate)}</p>
                   )}
                 </Field>
               </div>
@@ -408,16 +496,16 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
               {/* Phí Dịch vụ / Phí hỗ trợ Kinh doanh — riêng cho mall thuộc loại Văn phòng (leaseCategory = MALL), thêm vào chứ không thay thế CAM ở trên. */}
               {d.unit?.mall?.leaseCategory === 'MALL' && (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label={`Phí Dịch vụ (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²/tháng)`}>
+                  <Field label={`Phí Dịch vụ (${currencySymbol}/m²/tháng)`}>
                     <Input type="number" value={ef.serviceFeeSqm} onChange={setEfField('serviceFeeSqm')} placeholder="0.5" />
-                    {fxHint(ef.serviceFeeSqm, d.currencyCode, ef.exchangeRate) && (
-                      <p className="text-[11px] text-gray-400">{fxHint(ef.serviceFeeSqm, d.currencyCode, ef.exchangeRate)}</p>
+                    {fxHint(ef.serviceFeeSqm, editCurrency, ef.exchangeRate) && (
+                      <p className="text-[11px] text-gray-400">{fxHint(ef.serviceFeeSqm, editCurrency, ef.exchangeRate)}</p>
                     )}
                   </Field>
-                  <Field label={`Phí hỗ trợ Kinh doanh (${CURRENCIES[d.currencyCode ?? 'VND'].symbol}/m²/tháng)`}>
+                  <Field label={`Phí hỗ trợ Kinh doanh (${currencySymbol}/m²/tháng)`}>
                     <Input type="number" value={ef.businessSupportFeeSqm} onChange={setEfField('businessSupportFeeSqm')} placeholder="0.3" />
-                    {fxHint(ef.businessSupportFeeSqm, d.currencyCode, ef.exchangeRate) && (
-                      <p className="text-[11px] text-gray-400">{fxHint(ef.businessSupportFeeSqm, d.currencyCode, ef.exchangeRate)}</p>
+                    {fxHint(ef.businessSupportFeeSqm, editCurrency, ef.exchangeRate) && (
+                      <p className="text-[11px] text-gray-400">{fxHint(ef.businessSupportFeeSqm, editCurrency, ef.exchangeRate)}</p>
                     )}
                   </Field>
                 </div>
@@ -449,11 +537,20 @@ export function BookingDetailSheet({ booking, onClose, scrollTo, initialEditing 
             </FormSection>
 
             {/* Save / Cancel */}
+            {amountsStillBlank.length > 0 && (
+              <p className="text-xs text-amber-600" role="alert">
+                Đổi sang {editCurrency} thì phải nhập lại: {amountsStillBlank.join(', ')}.
+              </p>
+            )}
             <div className="flex gap-2 pt-2">
               <Button variant="outline" className="flex-1 gap-2" onClick={() => setIsEditing(false)}>
                 <X size={13} /> Hủy
               </Button>
-              <Button className="flex-1 gap-2" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+              <Button
+                className="flex-1 gap-2"
+                onClick={() => updateMutation.mutate()}
+                disabled={updateMutation.isPending || amountsStillBlank.length > 0}
+              >
                 <Pencil size={13} /> {updateMutation.isPending ? 'Đang lưu...' : 'Lưu thay đổi'}
               </Button>
             </div>

@@ -108,6 +108,17 @@ export class UpdateBookingDto {
   @IsString()
   leadId?: string;
 
+  /**
+   * CR-BOOK-CURRENCY-EDIT-001 — correcting a currency picked wrongly at
+   * creation. Every stored amount is denominated in it and the price-approval
+   * band is resolved in it, so the service accepts this only while no price has
+   * been approved, and only when the amounts are re-entered in the same request.
+   */
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Đổi đơn vị tiền tệ — chỉ khi giá chưa được duyệt, và phải nhập lại toàn bộ các mức giá' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
+
   @ApiPropertyOptional({ description: 'Chuyển sang mặt bằng khác (chỉ cho PENDING booking)' })
   @IsOptional()
   @IsString()
