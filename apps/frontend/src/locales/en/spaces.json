@@ -197,7 +197,38 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset view",
-    "wheelHint": "Hold Ctrl (or ⌘) and scroll to zoom the map"
+    "wheelHint": "Hold Ctrl (or ⌘) and scroll to zoom the map",
+    "planFailed": "Could not load this floor's plan image",
+    "noFilterMatch": "No space on this floor matches the filter",
+    "filteredCount": "Filtered: {{shown}}/{{total}} spaces on this floor",
+    "unfilteredCount": "{{total}} spaces on this floor",
+    "kpi": {
+      "total": "Total spaces",
+      "occupied": "Occupied",
+      "vacant": "Vacant",
+      "area": "Total area",
+      "occupancy": "Occupancy"
+    },
+    "panel": {
+      "title": "Space detail {{code}}",
+      "close": "Close detail panel",
+      "information": "Information",
+      "area": "NLA area",
+      "areaGFA": "GFA area",
+      "rent": "Asking rent",
+      "leaseType": "Lease type",
+      "lease": {
+        "LONG": "Long-term",
+        "SHORT": "Short-term"
+      },
+      "floor": "Floor",
+      "category": "Category",
+      "cam": "CAM fee",
+      "term": "Lease term",
+      "months": "months",
+      "leaseEnd": "Lease ends",
+      "vacantSince": "Vacant since"
+    }
   },
   "bulk": {
     "selected": "{{count}} spaces selected",

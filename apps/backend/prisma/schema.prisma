@@ -593,6 +593,7 @@ model User {
   handoverRisksCreated       UnitHandoverRisk[]         @relation("HandoverRiskCreatedBy")
   handoverFollowing          UnitHandoverFollower[]     @relation("HandoverFollowerUser")
   handoverEvidenceUploaded   UnitHandoverEvidence[]     @relation("HandoverEvidenceUploadedBy")
+  notificationRoutingRecipient NotificationEventRecipient[] @relation("NotificationRoutingRecipient")
   workOrderComments          WorkOrderComment[]
   workOrderTemplatesCreated  WorkOrderTemplate[]        @relation("WorkOrderTemplateCreator")
   workOrderTemplatesAssigned WorkOrderTemplate[]        @relation("WorkOrderTemplateAssignee")
@@ -4050,6 +4051,69 @@ model BrandingSettings {
 // Cau hinh SMTP de gui email -- bang singleton, luon chi 1 dong, service tu tao
 // dong dau tien neu chua co. smtpPassEncrypted luu dang ma hoa (AES-256-GCM,
 // xem EncryptionService) -- khong bao gio tra ve plaintext qua API.
+// --- Notification recipient routing governance (CR-NOTIFICATION-RECIPIENT-ROUTING) ---
+// Admin-declared recipients per notification event. Configuration is only a
+// CANDIDATE list: NotificationRecipientEligibilityService re-proves Mall access
+// and permission for every candidate at send time (NOTIF-ROUTE-01), so a row
+// here can never grant access to business data.
+//
+// The event catalogue itself lives in code
+// (notifications/routing/notification-event-registry.ts), not in the database:
+// events exist because a producer emits them, so the code is the truth and an
+// unknown eventKey is rejected rather than silently created.
+
+enum NotificationRoutingMode {
+  DEFAULT // producer's own recipient rule, unchanged
+  REPLACE // configured recipients replace the default ones (Group A only)
+  DEFAULT_PLUS_CC // default recipients kept, configured internal users added as CC
+}
+
+enum NotificationRecipientType {
+  TO
+  CC
+}
+
+model NotificationEventRoutingConfig {
+  id      String @id @default(cuid())
+  // Registry key, e.g. HANDOVER_READINESS_WEEKLY_DIGEST. Stable identity: never
+  // renamed, so configuration and audit history stay interpretable.
+  eventKey String
+  // Mall id, or the literal 'GLOBAL' for platform-wide events -- same sentinel
+  // convention as ModulePermission. A nullable column could not carry a real
+  // unique constraint here, since Postgres treats NULLs as distinct.
+  mallId   String
+  mode     NotificationRoutingMode @default(DEFAULT)
+  // Optimistic concurrency: two admins editing the same event/Mall conflict
+  // instead of silently overwriting each other.
+  version  Int                     @default(0)
+
+  createdAt   DateTime @default(now())
+  createdById String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  recipients NotificationEventRecipient[]
+
+  @@unique([eventKey, mallId])
+  @@index([mallId])
+}
+
+model NotificationEventRecipient {
+  id              String                         @id @default(cuid())
+  routingConfigId String
+  routingConfig   NotificationEventRoutingConfig @relation(fields: [routingConfigId], references: [id], onDelete: Cascade)
+  // Reference the User, never a copied email address: the authoritative address
+  // is read from the active account at send time.
+  userId          String
+  user            User                           @relation("NotificationRoutingRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  recipientType   NotificationRecipientType
+  addedById       String
+  createdAt       DateTime                       @default(now())
+
+  @@unique([routingConfigId, userId, recipientType])
+  @@index([userId])
+}
+
 model EmailSettings {
   id                String   @id @default(cuid())
   isEnabled         Boolean  @default(false)

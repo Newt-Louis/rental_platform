@@ -12,6 +12,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { MallAccessService } from '../../../common/services/mall-access.service';
 import { PermissionsService } from '../../../common/services/permissions.service';
 import { MODULE_ROLES } from '../../../common/constants/role-permissions';
+import { NotificationRoutingService } from '../../notifications/routing/notification-routing.service';
 import { EmailDeliveryService } from '../../notifications/email-delivery.service';
 import { EmailService } from '../../notifications/email.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -60,6 +61,7 @@ export class ProposalDocumentDeliveryService implements OnModuleInit {
     private readonly attachments: EmailAttachmentRegistry,
     private readonly permissions: PermissionsService,
     private readonly mallAccess: MallAccessService,
+    private readonly routing: NotificationRoutingService,
   ) {}
 
   protected now(): Date {
@@ -301,7 +303,20 @@ export class ProposalDocumentDeliveryService implements OnModuleInit {
     await this.assertSendPermission(user, proposal.unit.mallId);
 
     const to = this.normalizeEmails(input.to);
-    const cc = this.normalizeEmails(input.cc).filter((e) => !to.includes(e));
+    const senderCc = this.normalizeEmails(input.cc).filter((e) => !to.includes(e));
+    // CR-NOTIFICATION-RECIPIENT-ROUTING: the external TO stays exactly what the
+    // sender chose; an administrator may only add internal copies.
+    const routed = await this.routing.plan({
+      eventKey: 'PROPOSAL_EXTERNAL_SEND',
+      mallId: proposal.unit.mallId,
+      resourceId: proposalId,
+      defaults: to.map((email) => ({ email, keySuffix: 'to' })),
+    });
+    const configuredCc = routed.recipients
+      .filter((r) => r.kind === 'CC')
+      .map((r) => r.email)
+      .filter((e) => !to.includes(e) && !senderCc.includes(e));
+    const cc = [...senderCc, ...configuredCc];
     if (!to.length) throw new BadRequestException('Cần ít nhất một người nhận');
 
     const replay = await this.findSend(proposalId, key);

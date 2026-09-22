@@ -26,7 +26,8 @@ describe('BillingService receivables workbench', () => {
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
   });
 
   it('returns balance, overdue days and summary calculated across all matching invoices', async () => {

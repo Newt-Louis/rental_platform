@@ -197,7 +197,38 @@
     "zoomIn": "Phóng to",
     "zoomOut": "Thu nhỏ",
     "resetZoom": "Về khung ban đầu",
-    "wheelHint": "Giữ Ctrl (hoặc ⌘) và lăn chuột để phóng to bản đồ"
+    "wheelHint": "Giữ Ctrl (hoặc ⌘) và lăn chuột để phóng to bản đồ",
+    "planFailed": "Không tải được ảnh sơ đồ tầng này",
+    "noFilterMatch": "Không có mặt bằng nào khớp bộ lọc trên tầng này",
+    "filteredCount": "Đang lọc: {{shown}}/{{total}} mặt bằng trên tầng",
+    "unfilteredCount": "{{total}} mặt bằng trên tầng",
+    "kpi": {
+      "total": "Tổng mặt bằng",
+      "occupied": "Đang thuê",
+      "vacant": "Trống",
+      "area": "Tổng diện tích",
+      "occupancy": "Tỷ lệ lấp đầy"
+    },
+    "panel": {
+      "title": "Chi tiết mặt bằng {{code}}",
+      "close": "Đóng bảng chi tiết",
+      "information": "Thông tin",
+      "area": "Diện tích NLA",
+      "areaGFA": "Diện tích GFA",
+      "rent": "Giá chào",
+      "leaseType": "Loại thuê",
+      "lease": {
+        "LONG": "Dài hạn",
+        "SHORT": "Ngắn hạn"
+      },
+      "floor": "Tầng",
+      "category": "Ngành hàng",
+      "cam": "Phí quản lý",
+      "term": "Thời hạn thuê",
+      "months": "tháng",
+      "leaseEnd": "Hợp đồng đến",
+      "vacantSince": "Trống từ"
+    }
   },
   "bulk": {
     "selected": "{{count}} mặt bằng đã chọn",

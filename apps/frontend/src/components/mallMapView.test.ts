@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  clampPan, clampZoom, detailLevel, focusOn, INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM, unitScreenSize, zoomAt,
+  clampPan, clampZoom, detailLevel, focusOn, INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM, moreDetail, unitScreenSize, zoomAt,
 } from './mallMapView';
 
 const FRAME = { w: 1000, h: 600 };
@@ -73,5 +73,18 @@ describe('how much a unit can say', () => {
     const at4 = unitScreenSize(poly, FRAME.w, FRAME.h, 4);
     expect(detailLevel(at1.width, at1.height)).toBe('DOT');
     expect(detailLevel(at4.width, at4.height)).toBe('FULL');
+  });
+});
+
+describe('detail for the unit being worked on', () => {
+  it('gains one step, not every fact it knows', () => {
+    // A selected 9 m2 kiosk used to print four lines across its neighbours.
+    expect(moreDetail('DOT')).toBe('CODE');
+    expect(moreDetail('CODE')).toBe('COMPACT');
+    expect(moreDetail('COMPACT')).toBe('FULL');
+  });
+
+  it('stops at the top rather than running off the end', () => {
+    expect(moreDetail('FULL')).toBe('FULL');
   });
 });

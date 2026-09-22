@@ -43,11 +43,17 @@ interface FloorPlanProps {
   onCreateFloor?: () => void;
   onEditFloor?: (floor: FloorMeta) => void;
   onDeleteFloor?: (floor: FloorMeta) => void;
+  /**
+   * Controlled mode: the page's floor bar is the single floor selector. When
+   * set, this floor is shown and the internal floor tabs are not rendered, so
+   * the user never sees two floor pickers that can disagree.
+   */
+  activeFloorLevel?: string;
 }
 
 export function FloorPlan({
   units, onUnitClick, selectedUnitId, slotSummaries = {},
-  allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor,
+  allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor, activeFloorLevel,
 }: FloorPlanProps) {
   const { t } = useTranslation('spaces');
   const floors = useMemo<FloorMeta[]>(() => {
@@ -67,7 +73,9 @@ export function FloorPlan({
     return Array.from(seen.values()).sort((a, b) => a.sortOrder - b.sortOrder);
   }, [units, allFloors]);
 
-  const [activeFloor, setActiveFloor] = useState<string>(() => floors[0]?.level ?? 'GF');
+  const [internalFloor, setActiveFloor] = useState<string>(() => floors[0]?.level ?? 'GF');
+  const controlled = activeFloorLevel !== undefined;
+  const activeFloor = controlled ? activeFloorLevel : internalFloor;
 
   const floorUnits = useMemo(() => units.filter(u => u.floor?.level === activeFloor), [units, activeFloor]);
 
@@ -105,8 +113,8 @@ export function FloorPlan({
 
   return (
     <div className="space-y-4">
-      {/* Floor tabs */}
-      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
+      {/* Floor tabs (uncontrolled mode only) */}
+      {!controlled && <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
         {floors.map(f => {
           const count = units.filter(u => u.floor?.level === f.level).length;
           return (
@@ -168,7 +176,7 @@ export function FloorPlan({
             <Plus size={12} /> {t('floor.create')}
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Stats row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">

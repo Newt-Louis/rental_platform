@@ -35,6 +35,10 @@ export const MODULE_PERMISSION_DEFAULTS: Array<{ module: string; roles: Role[] }
   { module: 'tenants', roles: [Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.MALL_DIRECTOR, Role.FINANCE, Role.LEGAL] },
   { module: 'fitout', roles: [Role.OPERATION, Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
   { module: 'proposal-send-external', roles: [Role.LEASING_MANAGER, Role.MALL_DIRECTOR] },
+  // CR-NOTIFICATION-RECIPIENT-ROUTING action permissions (see role-permissions.ts).
+  { module: 'notification-routing-view', roles: [Role.MALL_DIRECTOR] },
+  { module: 'notification-routing-manage', roles: [Role.MALL_DIRECTOR] },
+  { module: 'notification-routing-test', roles: [] },
   // CR-UNIT-HANDOVER-READINESS action permissions (see role-permissions.ts).
   { module: 'handover-readiness-view', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.OPERATION] },
   { module: 'handover-readiness-manage', roles: [Role.MALL_DIRECTOR, Role.LEASING_MANAGER] },

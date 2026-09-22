@@ -43,6 +43,12 @@ export const MODULE_ROLES = {
   // CR-PROPOSAL-DOCUMENT-FINALIZATION — sending an approved Tờ trình outside the
   // company. Deliberately narrower than `proposals`: executives prepare, managers send.
   proposalSendExternal: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
+  // CR-NOTIFICATION-RECIPIENT-ROUTING -- who may govern notification recipients.
+  // Test-send is deliberately narrower (ADMIN only by default): it is an
+  // outbound-mail primitive, not a read.
+  notificationRoutingView: [Role.ADMIN, Role.MALL_DIRECTOR],
+  notificationRoutingManage: [Role.ADMIN, Role.MALL_DIRECTOR],
+  notificationRoutingTest: [Role.ADMIN],
   fitoutDossierView: [
     Role.ADMIN,
     Role.LEASING_MANAGER,

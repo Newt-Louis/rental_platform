@@ -8,11 +8,21 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { EmailDeliveryService } from './email-delivery.service';
 import { EmailAttachmentRegistry } from './email-attachments';
 import { CommonModule } from '../../common/common.module';
+import { NotificationRoutingController } from './routing/notification-routing.controller';
+import { NotificationRoutingConfigService } from './routing/notification-routing-config.service';
+import { NotificationRoutingService } from './routing/notification-routing.service';
+import { NotificationRecipientEligibilityService } from './routing/notification-recipient-eligibility.service';
 
 @Module({
   imports: [PrismaModule, CommonModule, forwardRef(() => TenantsModule)],
-  controllers: [NotificationsController],
-  providers: [NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry, ContractExpiryScheduler],
-  exports: [NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry],
+  controllers: [NotificationsController, NotificationRoutingController],
+  providers: [
+    NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry, ContractExpiryScheduler,
+    NotificationRecipientEligibilityService, NotificationRoutingService, NotificationRoutingConfigService,
+  ],
+  exports: [
+    NotificationsService, EmailService, EmailDeliveryService, EmailAttachmentRegistry,
+    NotificationRoutingService, NotificationRecipientEligibilityService,
+  ],
 })
 export class NotificationsModule {}

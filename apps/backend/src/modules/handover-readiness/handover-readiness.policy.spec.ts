@@ -132,7 +132,7 @@ describe('CR-UNIT-HANDOVER-READINESS policy', () => {
 
   describe('email content', () => {
     it('escapes business strings and never renders storage paths', () => {
-      const notifier = new HandoverReadinessNotifierService({} as any, {} as any, {} as any);
+      const notifier = new HandoverReadinessNotifierService({} as any, {} as any, {} as any, {} as any);
       const evaluation = evaluateReadiness(base, d('2026-11-01'));
       const out = notifier.compose({
         id: 'r1', mallId: 'm1', mallName: 'Mall <b>X</b>', unitId: 'u1', unitCode: 'A-<script>', unitName: null,
@@ -149,7 +149,7 @@ describe('CR-UNIT-HANDOVER-READINESS policy', () => {
       process.env.FRONTEND_URL = 'http://insecure.example';
       delete process.env.APP_ENV;
       try {
-        const notifier = new HandoverReadinessNotifierService({} as any, {} as any, {} as any);
+        const notifier = new HandoverReadinessNotifierService({} as any, {} as any, {} as any, {} as any);
         const evaluation = evaluateReadiness({ ...base, lifecycleStatus: HandoverReadinessLifecycle.CONFIRMED }, d('2026-11-01'));
         const ctx = { id: 'r1', mallId: 'm1', mallName: 'Mall', unitId: 'u1', unitCode: 'A-1', unitName: null,
           targetReadyDate: d('2026-12-01'), originalTargetDate: d('2026-12-01'), projectOwnerId: null, projectOwnerLabel: null, evaluation };

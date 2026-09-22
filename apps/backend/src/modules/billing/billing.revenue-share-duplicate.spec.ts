@@ -174,6 +174,7 @@ function build(opts: {
     { invoiceIssuedHtml: jest.fn() } as any,
     { enqueue: jest.fn() } as any,
     { increment: jest.fn() } as any,
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
   );
   return { service, prisma };
 }
@@ -504,7 +505,8 @@ describe('BILL-002 — T12: the application layer does not merely lean on the DB
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
   }
 
   it('with the index disabled, the in-transaction check + retry still commits exactly one', async () => {

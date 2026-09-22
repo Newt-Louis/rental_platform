@@ -58,3 +58,17 @@
   body { @apply bg-background text-foreground; }
   main > div { @apply px-6; }
 }
+
+/*
+ * CR-SPACES-FLOOR-MAP-UX-001 -- keyboard focus on a leasing unit.
+ *
+ * The ring is a CSS :focus-visible rule rather than React state so it appears
+ * for a reader tabbing through the floor and stays out of the way of one who
+ * clicked: a dashed ring drawn on every mouse click competed with the selected
+ * unit's own navy outline. The colour comes from the map's token, passed in.
+ */
+.map-unit-hit:focus-visible {
+  stroke: var(--map-focus-outline);
+  stroke-width: 3;
+  stroke-dasharray: 4 3;
+}

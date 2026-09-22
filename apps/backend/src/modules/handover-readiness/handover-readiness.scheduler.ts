@@ -6,6 +6,7 @@ import { SchedulerLockService } from '../../common/services/scheduler-lock.servi
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { HandoverReadinessService } from './handover-readiness.service';
 import { HandoverReadinessNotifierService } from './handover-readiness-notifier.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { businessToday, dueReminderSlot, formatBusinessDate, HANDOVER_TIME_ZONE, isoWeekKey } from './handover-readiness.policy';
 
 const include = {
@@ -40,6 +41,7 @@ export class HandoverReadinessScheduler {
     private readonly readiness: HandoverReadinessService,
     private readonly notifier: HandoverReadinessNotifierService,
     private readonly emailDelivery: EmailDeliveryService,
+    private readonly routing: NotificationRoutingService,
   ) {}
 
   @Cron('5 8 * * *', { name: 'handover-readiness-reminders', timeZone: HANDOVER_TIME_ZONE })
@@ -124,10 +126,21 @@ export class HandoverReadinessScheduler {
       const evaluations = await this.readiness.evaluateRows(this.prisma, rows, today);
       const kpis = this.readiness.kpis([...evaluations.values()].map((v) => v.evaluation));
       const recipients = await this.notifier.validRecipients(this.prisma, mallId, await this.notifier.mallManagerIds(this.prisma, mallId));
+      // Admin-governed recipients for this Mall's digest, default = Mall managers.
+      const plan = await this.routing.plan({
+        eventKey: 'HANDOVER_READINESS_WEEKLY_DIGEST',
+        mallId,
+        resourceId: mallId,
+        defaults: recipients.map((r) => ({ email: r.email, userId: r.id, fullName: r.fullName, keySuffix: r.id })),
+      });
+      if (plan.failClosed) {
+        this.logger.error(`Weekly handover digest for ${mallId} withheld: configured recipients are no longer eligible`);
+        continue;
+      }
       const content = this.notifier.composeDigest(mall.name, weekKey, kpis);
-      for (const r of recipients) {
+      for (const r of plan.recipients) {
         await this.emailDelivery.enqueue(this.prisma, {
-          eventKey: `handover-digest:${mallId}:${weekKey}:${r.id}`,
+          eventKey: `handover-digest:${mallId}:${weekKey}:${r.keySuffix}`,
           eventType: 'HANDOVER_READINESS_WEEKLY_DIGEST',
           entityType: 'Mall',
           entityId: mallId,

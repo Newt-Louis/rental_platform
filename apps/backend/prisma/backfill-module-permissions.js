@@ -41,6 +41,8 @@ const MODULE_PERMISSION_DEFAULTS = [
   { module: 'handover-readiness-risk-manage', roles: ['MALL_DIRECTOR', 'LEASING_MANAGER', 'OPERATION'] },
   { module: 'handover-readiness-confirm', roles: ['OPERATION'] },
   { module: 'handover-readiness-reopen', roles: ['MALL_DIRECTOR'] },
+  { module: 'notification-routing-view', roles: ['MALL_DIRECTOR'] },
+  { module: 'notification-routing-manage', roles: ['MALL_DIRECTOR'] },
   { module: 'tickets', roles: ['OPERATION', 'MALL_DIRECTOR', 'LEASING_MANAGER', 'TENANT'] },
   { module: 'sales', roles: ['FINANCE', 'MALL_DIRECTOR', 'CEO', 'TENANT'] },
   { module: 'billing', roles: ['FINANCE', 'MALL_DIRECTOR', 'TENANT'] },

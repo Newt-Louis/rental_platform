@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../../storage/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { EmailService } from '../notifications/email.service';
 import { emailSubject } from '../notifications/email-design-system';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -41,6 +42,7 @@ export class TicketsService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private schedulerLock: SchedulerLockService,
+    private routing: NotificationRoutingService,
   ) {}
 
   async listMyUnits(currentUser: CurrentUser) {
@@ -224,10 +226,19 @@ export class TicketsService {
     }
 
     if (ticket.tenant.contactEmail) {
+      // The tenant address is business data and cannot be replaced; internal
+      // staff may be configured to receive their own copy.
+      const plan = await this.routing.plan({
+        eventKey: 'TICKET_INSPECTION_TENANT',
+        mallId: ticket.unit.mallId,
+        resourceId: ticket.id,
+        defaults: [{ email: ticket.tenant.contactEmail, keySuffix: 'tenant' }],
+      });
+      for (const recipient of plan.recipients) {
       await this.emailService.sendMail({
-        to: ticket.tenant.contactEmail,
+        to: recipient.email,
         delivery: {
-          eventKey: `ticket-inspection:${ticket.id}:tenant`,
+          eventKey: `ticket-inspection:${ticket.id}:${recipient.keySuffix}`,
           eventType: 'TICKET_INSPECTION',
           entityType: 'Ticket',
           entityId: ticket.id,
@@ -241,6 +252,7 @@ export class TicketsService {
           unitCode: ticket.unit.code,
         }),
       });
+      }
     }
   }
 

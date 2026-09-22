@@ -83,7 +83,7 @@ describe('Tickets aggregate and Tenant scope predicates', () => {
         groupBy: jest.fn().mockResolvedValue([]),
       },
     };
-    const service = new TicketSlaService(prisma, {} as any, {} as any, {} as any);
+    const service = new TicketSlaService(prisma, {} as any, {} as any, {} as any, {} as any);
 
     await service.getStats(['mall-1']);
 
@@ -100,7 +100,7 @@ describe('Tickets aggregate and Tenant scope predicates', () => {
     const prisma: any = {
       ticketRating: { groupBy: jest.fn().mockResolvedValue([]) },
     };
-    const service = new TicketsService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const service = new TicketsService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
 
     await service.getCsatSummary(['mall-1']);
 
@@ -120,7 +120,7 @@ describe('Tickets aggregate and Tenant scope predicates', () => {
       },
       ticketRating: { findUnique: jest.fn() },
     };
-    const service = new TicketsService(prisma, {} as any, {} as any, {} as any, {} as any);
+    const service = new TicketsService(prisma, {} as any, {} as any, {} as any, {} as any, {} as any);
 
     await expect(service.getTicketRating('ticket-1', {
       id: 'tenant-user',

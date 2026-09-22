@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import * as crypto from 'crypto';
+import { NotificationRoutingService } from './routing/notification-routing.service';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from './email-delivery.service';
 import { emailSubject } from './email-design-system';
@@ -18,6 +19,7 @@ export class ContractExpiryScheduler {
     private emailService: EmailService,
     private emailDelivery: EmailDeliveryService,
     private schedulerLock: SchedulerLockService,
+    private routing: NotificationRoutingService,
   ) {}
 
   // Chạy lúc 8:00 sáng mỗi ngày
@@ -75,12 +77,24 @@ export class ContractExpiryScheduler {
           });
         }
 
-        // Email cho manager phụ trách
-        if (contract.managedBy?.email) {
+        // Email cho manager phụ trách — người nhận mặc định, quản trị có thể
+        // đổi/CC qua cấu hình định tuyến (CR-NOTIFICATION-RECIPIENT-ROUTING).
+        const internalPlan = await this.routing.plan({
+          eventKey: 'CONTRACT_EXPIRY_INTERNAL',
+          mallId: contract.unit.mallId,
+          resourceId: contract.id,
+          defaults: contract.managedBy?.email
+            ? [{ email: contract.managedBy.email, userId: contract.managedBy.id, fullName: contract.managedBy.fullName, keySuffix: 'manager' }]
+            : [],
+        });
+        if (internalPlan.failClosed) {
+          this.logger.error(`Contract expiry internal mail for ${contract.id} withheld: configured recipients ineligible`);
+        }
+        for (const recipient of internalPlan.recipients) {
           await this.emailDelivery.enqueue(this.prisma, {
-              eventKey: `contract-expiry:${contract.id}:${daysLeft}:manager`,
+              eventKey: `contract-expiry:${contract.id}:${daysLeft}:${recipient.keySuffix}`,
               eventType: 'CONTRACT_EXPIRY', entityType: 'Contract', entityId: contract.id, mallId: contract.unit.mallId,
-              to: contract.managedBy.email,
+              to: recipient.email,
               subject: emailSubject(`Hợp đồng ${contract.contractNumber} sắp hết hạn trong ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({
                 tenantName: contract.tenant.brandName,
@@ -88,20 +102,28 @@ export class ContractExpiryScheduler {
                 contractNumber: contract.contractNumber,
                 endDate: endDateStr,
                 daysLeft,
-                contactName: contract.managedBy.fullName,
+                contactName: recipient.fullName ?? contract.managedBy?.fullName ?? '',
                 contractId: contract.id,
                 mallName: contract.unit.mall?.name ?? null,
-                managerName: contract.managedBy.fullName,
+                managerName: recipient.fullName ?? contract.managedBy?.fullName ?? '',
               }),
             });
         }
 
-        // Email cho khách thuê (nếu có email)
+        // Email cho khách thuê (nếu có email). Người nhận chính là dữ liệu
+        // nghiệp vụ và KHÔNG thể bị thay; cấu hình chỉ thêm bản sao nội bộ.
         if (contract.tenant.contactEmail && daysLeft <= 60) {
+          const tenantPlan = await this.routing.plan({
+            eventKey: 'CONTRACT_EXPIRY_TENANT',
+            mallId: contract.unit.mallId,
+            resourceId: contract.id,
+            defaults: [{ email: contract.tenant.contactEmail, keySuffix: 'tenant' }],
+          });
+          for (const recipient of tenantPlan.recipients) {
           await this.emailDelivery.enqueue(this.prisma, {
-              eventKey: `contract-expiry:${contract.id}:${daysLeft}:tenant`,
+              eventKey: `contract-expiry:${contract.id}:${daysLeft}:${recipient.keySuffix}`,
               eventType: 'CONTRACT_EXPIRY', entityType: 'Contract', entityId: contract.id, mallId: contract.unit.mallId,
-              to: contract.tenant.contactEmail,
+              to: recipient.email,
               subject: emailSubject(`Hợp đồng thuê mặt bằng của ${contract.tenant.brandName} còn ${daysLeft} ngày`),
               html: this.emailService.contractExpiryHtml({
                 tenantName: contract.tenant.brandName,
@@ -115,6 +137,7 @@ export class ContractExpiryScheduler {
                 managerName: contract.managedBy?.fullName ?? null,
               }),
             });
+          }
         }
 
         this.logger.log(`Notified: contract ${contract.contractNumber} expires in ${daysLeft} days (${contract.tenant.brandName})`);

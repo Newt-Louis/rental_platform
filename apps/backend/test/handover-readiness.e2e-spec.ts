@@ -28,6 +28,8 @@ import { HandoverReadinessCommitmentsService } from '../src/modules/handover-rea
 import { HandoverReadinessNotifierService } from '../src/modules/handover-readiness/handover-readiness-notifier.service';
 import { HandoverReadinessService } from '../src/modules/handover-readiness/handover-readiness.service';
 import { HandoverReadinessScheduler } from '../src/modules/handover-readiness/handover-readiness.scheduler';
+import { NotificationRecipientEligibilityService } from '../src/modules/notifications/routing/notification-recipient-eligibility.service';
+import { NotificationRoutingService } from '../src/modules/notifications/routing/notification-routing.service';
 import { businessToday, formatBusinessDate } from '../src/modules/handover-readiness/handover-readiness.policy';
 
 const DB_URL = process.env.HANDOVER_TEST_DATABASE_URL;
@@ -142,9 +144,16 @@ maybeDescribe('CR-UNIT-HANDOVER-READINESS -- real PostgreSQL', () => {
     const access = new HandoverReadinessAccessService(prisma as any, mallAccess, permissions);
     const commitments = new HandoverReadinessCommitmentsService(prisma as any);
     const emailDelivery = new EmailDeliveryService(prisma as any, { sendMail: jest.fn() } as any, {} as any);
-    const notifier = new HandoverReadinessNotifierService(prisma as any, emailDelivery, access);
+    // The real routing service is wired in: with no configuration rows these
+    // tests also prove CR-NOTIFICATION-RECIPIENT-ROUTING keeps handover mail
+    // exactly as it was (default recipients, unchanged delivery keys).
+    const routing = new NotificationRoutingService(
+      prisma as any,
+      new NotificationRecipientEligibilityService(prisma as any, mallAccess, permissions),
+    );
+    const notifier = new HandoverReadinessNotifierService(prisma as any, emailDelivery, access, routing);
     service = new HandoverReadinessService(prisma as any, access, commitments, notifier, new StorageService());
-    scheduler = new HandoverReadinessScheduler(prisma as any, {} as any, service, notifier, emailDelivery);
+    scheduler = new HandoverReadinessScheduler(prisma as any, {} as any, service, notifier, emailDelivery, routing);
     await purge();
   });
 
