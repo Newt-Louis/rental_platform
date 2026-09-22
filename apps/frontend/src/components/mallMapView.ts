@@ -91,3 +91,16 @@ export function unitScreenSize(
     height: ((Math.max(...ys) - Math.min(...ys)) / 100) * frameHeight * zoom,
   };
 }
+
+const DETAIL_ORDER: MapDetail[] = ['DOT', 'CODE', 'COMPACT', 'FULL'];
+
+/**
+ * One step more detail, for the unit currently being worked on.
+ *
+ * A selected unit used to jump straight to everything it knows, which on a 9 m²
+ * kiosk printed four lines across its neighbours. Its full record is in the
+ * panel beside the map; on the plan it only has to become easier to pick out.
+ */
+export function moreDetail(detail: MapDetail): MapDetail {
+  return DETAIL_ORDER[Math.min(DETAIL_ORDER.indexOf(detail) + 1, DETAIL_ORDER.length - 1)];
+}

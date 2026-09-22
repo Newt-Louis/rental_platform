@@ -1,41 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { spacesApi } from '@/api';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  X, MapPin, Building2, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Maximize2, Minimize2,
-  ZoomIn, ZoomOut, Locate,
+  MapPin, ChevronLeft, ChevronRight, Maximize2, Minimize2,
+  ZoomIn, ZoomOut, Locate, ImageOff, SearchX,
 } from 'lucide-react';
 import type { FloorMapData, Unit, Floor } from '@/types';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 import {
-  clampPan, detailLevel, focusOn, INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM, unitScreenSize, ZOOM_STEP, zoomAt,
+  clampPan, detailLevel, focusOn, INITIAL_VIEW, MAX_ZOOM, MIN_ZOOM, moreDetail, unitScreenSize, ZOOM_STEP, zoomAt,
   type MapDetail, type MapView,
 } from './mallMapView';
-
-// ─── Status config ────────────────────────────────────────────────────────────
-
-/**
- * Status colours. The map draws them on a white card rather than as a wash over
- * the floor plan: a translucent fill took its colour from whatever the plan had
- * underneath, so the same status read differently in different parts of the
- * floor and never matched the legend.
- */
-const STATUS_CFG: Record<string, {
-  fill: string; stroke: string; fillOpacity: number;
-  badgeClass: string;
-}> = {
-  VACANT:       { fill: '#ef4444', stroke: '#b91c1c', fillOpacity: 0.82, badgeClass: 'bg-red-100 text-red-700 border-red-300' },
-  BOOKING:      { fill: '#f59e0b', stroke: '#b45309', fillOpacity: 0.82, badgeClass: 'bg-amber-100 text-amber-700 border-amber-300' },
-  NEGOTIATING:  { fill: '#f97316', stroke: '#c2410c', fillOpacity: 0.82, badgeClass: 'bg-orange-100 text-orange-700 border-orange-300' },
-  CONTRACTED:   { fill: '#3b82f6', stroke: '#1d4ed8', fillOpacity: 0.82, badgeClass: 'bg-blue-100 text-blue-700 border-blue-300' },
-  UNDER_FITOUT: { fill: '#a855f7', stroke: '#7e22ce', fillOpacity: 0.82, badgeClass: 'bg-purple-100 text-purple-700 border-purple-300' },
-  OCCUPIED:     { fill: '#22c55e', stroke: '#15803d', fillOpacity: 0.82, badgeClass: 'bg-green-100 text-green-700 border-green-300' },
-};
+import {
+  elevationLevel, presentationOrder, shadowGeometry, statusToken,
+  MAP_CAD, MAP_ELEVATION, MAP_FOCUS_OUTLINE, MAP_MOTION_MS,
+  MAP_SELECTED_OUTLINE, MAP_STATUS_ORDER,
+  type ElevationLevel, type ShadowGeometry,
+} from './mallMapTheme';
+import { MallMapUnitPanel } from './MallMapUnitPanel';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -60,179 +46,106 @@ function centroid(pts: Pt[]): Pt {
   ];
 }
 
-function polygonArea(pts: Pt[]) {
-  let area = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % pts.length];
-    area += x1 * y2 - x2 * y1;
-  }
-  return Math.abs(area / 2);
-}
-
 function getUnitPolygon(u: Unit): Pt[] | null {
   if (u.mapPolygon) return u.mapPolygon;
   if (u.mapPosX != null) {
     const { mapPosX: x, mapPosY: y, mapPosW: w, mapPosH: h } = u;
-    return [[x!, y!], [x!+w!, y!], [x!+w!, y!+h!], [x!, y!+h!]];
+    return [[x!, y!], [x! + w!, y!], [x! + w!, y! + h!], [x!, y! + h!]];
   }
   return null;
 }
 
 const isPlaced = (u: Unit) => u.mapPolygon != null || u.mapPosX != null;
 
-// ─── Unit Info Popup ──────────────────────────────────────────────────────────
+const pointsOf = (poly: Pt[]) => poly.map(([x, y]) => `${x},${y}`).join(' ');
 
-function UnitInfoPopup({
-  unit, onClose, onViewDetail, onBook,
-}: {
-  unit: Unit & { media?: { fileUrl: string; mimeType?: string }[] };
-  onClose: () => void;
-  onViewDetail?: (u: Unit) => void;
-  onBook?: (u: Unit) => void;
-}) {
-  const { t } = useTranslation('spaces');
-  const [mediaIdx, setMediaIdx] = useState(0);
-  const cfg = STATUS_CFG[unit.status] ?? STATUS_CFG.VACANT;
-  const photos = (unit.media ?? []).filter((m) => m.mimeType?.startsWith('image'));
+/** How far a press has to travel before the map treats it as a drag, not a click. */
+const DRAG_THRESHOLD_PX = 4;
 
-  return (
-    <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-72 overflow-hidden">
-      {photos.length > 0 ? (
-        <div className="relative h-36 bg-gray-100">
-          <img src={resolveFileUrl(photos[mediaIdx]?.fileUrl)} alt="" className="w-full h-full object-cover" />
-          {photos.length > 1 && (
-            <>
-              <button className="absolute left-1.5 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full p-1"
-                onClick={(e) => { e.stopPropagation(); setMediaIdx((i) => (i - 1 + photos.length) % photos.length); }}>
-                <ChevronLeft size={14} />
-              </button>
-              <button className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full p-1"
-                onClick={(e) => { e.stopPropagation(); setMediaIdx((i) => (i + 1) % photos.length); }}>
-                <ChevronRight size={14} />
-              </button>
-              <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
-                {photos.map((_, i) => <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === mediaIdx ? 'bg-white' : 'bg-white/50'}`} />)}
-              </div>
-            </>
-          )}
-          <button className="absolute top-2 right-2 bg-black/40 hover:bg-black/60 text-white rounded-full p-1" onClick={onClose}>
-            <X size={12} />
-          </button>
-        </div>
-      ) : (
-        <div className="h-20 bg-gray-50 flex items-center justify-center relative">
-          <ImageIcon size={28} className="text-gray-200" />
-          <button className="absolute top-2 right-2 text-gray-400 hover:text-gray-600" onClick={onClose}>
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-2 mb-3">
-          <div>
-            <div className="font-bold text-gray-900 text-base">{unit.code}</div>
-            {unit.name && <div className="text-xs text-gray-500 mt-0.5">{unit.name}</div>}
-          </div>
-          <Badge className={cn('text-xs border shrink-0', cfg.badgeClass)}>{getUnitStatusLabel(t, unit.status)}</Badge>
-        </div>
-
-        {unit.tenant && (
-          <div className="flex items-center gap-2 bg-green-50 rounded-lg px-2.5 py-2 mb-3">
-            <Building2 size={13} className="text-green-600 shrink-0" />
-            <div>
-              <div className="text-xs font-semibold text-green-800">{unit.tenant.brandName}</div>
-              <div className="text-[11px] text-green-600">{unit.tenant.companyName}</div>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-1.5 text-xs text-gray-600 mb-4">
-          <div className="flex justify-between">
-            <span className="text-gray-400">{t('map.areaNLA')}</span>
-            <span className="font-semibold text-gray-800">
-              {unit.areaNLA.toLocaleString('vi-VN')} m²
-              {unit.areaGFA > 0 && unit.areaGFA !== unit.areaNLA && (
-                <span className="ml-1 font-normal text-gray-400">(GFA {unit.areaGFA.toLocaleString('vi-VN')})</span>
-              )}
-            </span>
-          </div>
-          {(unit.floor || unit.zone) && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">Vị trí:</span>
-              <span className="truncate ml-2 text-right">{[unit.floor?.name, unit.zone?.name].filter(Boolean).join(' · ')}</span>
-            </div>
-          )}
-          {unit.category && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">Ngành hàng:</span>
-              <span className="truncate ml-2 text-right">{(unit as any).categoryRef?.name ?? unit.category}</span>
-            </div>
-          )}
-          {(unit.baseRentPerSqm > 0 || unit.askingRentPerSqm) && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">{t('map.rent')}</span>
-              <span className="font-medium text-gray-800 tabular-nums">{formatRatePerSqm(unit.askingRentPerSqm ?? unit.baseRentPerSqm, unit.currencyCode)}</span>
-            </div>
-          )}
-          {unit.camPerSqm > 0 && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">Phí quản lý:</span>
-              <span className="tabular-nums">{formatRatePerSqm(unit.camPerSqm, unit.currencyCode)}</span>
-            </div>
-          )}
-          {(unit.minLeaseTerm || unit.maxLeaseTerm) && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">Thời hạn thuê:</span>
-              <span>{[unit.minLeaseTerm, unit.maxLeaseTerm].filter(Boolean).join('–')} tháng</span>
-            </div>
-          )}
-          {unit.leaseEndDate && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">HĐ đến:</span>
-              <span>{new Date(unit.leaseEndDate).toLocaleDateString('vi-VN')}</span>
-            </div>
-          )}
-          {unit.status === 'VACANT' && unit.vacantSince && (
-            <div className="flex justify-between">
-              <span className="text-gray-400">Trống từ:</span>
-              <span>{new Date(unit.vacantSince).toLocaleDateString('vi-VN')}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          {onBook && unit.status === 'VACANT' && (
-            <Button size="sm" className="flex-1 text-xs gap-1 h-8" onClick={() => onBook(unit)}>Booking</Button>
-          )}
-          {onViewDetail && (
-            <Button size="sm" variant="outline" className="flex-1 text-xs gap-1 h-8" onClick={() => onViewDetail(unit)}>
-              {t('detail.viewDetail')}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Unit card on the map ─────────────────────────────────────────────────────
+// ─── Unit polygon ─────────────────────────────────────────────────────────────
 
 /**
- * What a unit shows on the plan. A card stays the same size on screen however
- * far the map is zoomed; zooming in buys room for more of the unit's facts
- * rather than bigger letters.
+ * CR-SPACES-FLOOR-MAP-UX-001 — one leasing unit, floating above the plan.
+ *
+ * Three nodes, in paint order: a blurred copy of the same shape dropped below
+ * it (the shadow that makes it read as raised), a white underlay that keeps the
+ * status hue from taking colour off whatever the plan draws underneath, and the
+ * status surface itself. None of them take the pointer — a separate hit layer
+ * does, so the visual lift can never move the click target.
+ *
+ * The geometry is the unit's real stored polygon, used verbatim. Elevation is a
+ * render transform on top of it and never changes a coordinate.
  */
-export function UnitCard({ unit, detail, selected, hovered, scale, t }: {
+const UnitPolygon = React.memo(function UnitPolygon({
+  points, status, level, geo, filterId, stripeId, motion,
+}: {
+  points: string;
+  status: string;
+  level: ElevationLevel;
+  geo: ShadowGeometry;
+  filterId: string;
+  stripeId: string;
+  motion: string;
+}) {
+  const token = statusToken(status);
+  const elev = MAP_ELEVATION[level];
+  const lifted = geo.lift > 0 ? `translate(0 ${-geo.lift})` : undefined;
+
+  return (
+    <>
+      <polygon
+        points={points}
+        fill="#0f172a"
+        fillOpacity={elev.shadowOpacity}
+        filter={`url(#${filterId})`}
+        transform={`translate(${geo.dx} ${geo.dy - geo.lift})`}
+        style={{ pointerEvents: 'none', transition: motion }}
+        data-elevation={level}
+      />
+      <g transform={lifted} style={{ pointerEvents: 'none', transition: motion }}>
+        <polygon
+          points={points}
+          fill="#ffffff"
+          fillOpacity={elev.baseOpacity}
+        />
+        <polygon
+          points={points}
+          fill={token.surface}
+          fillOpacity={elev.surfaceOpacity}
+          stroke={level === 'selected' ? MAP_SELECTED_OUTLINE : token.border}
+          strokeWidth={elev.strokeWidth}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          style={{ transition: motion }}
+        />
+        {status === 'UNDER_FITOUT' && (
+          <polygon points={points} fill={`url(#${stripeId})`} />
+        )}
+      </g>
+    </>
+  );
+});
+
+// ─── Unit label ───────────────────────────────────────────────────────────────
+
+/**
+ * What a unit says on the plan.
+ *
+ * The label is ink on the unit's own surface, not a white sticker laid over the
+ * drawing: a floor of stickers hid the architecture the map exists to show. It
+ * stays the same size on screen however far the map is zoomed, and zooming in
+ * buys room for more of the unit's facts rather than bigger letters.
+ */
+export function UnitLabel({ unit, detail, selected, hovered, scale, liftPx, t }: {
   unit: Unit;
   detail: MapDetail;
   selected: boolean;
   hovered: boolean;
   scale: number;
+  liftPx: number;
   t: (key: string, opts?: any) => string;
 }) {
-  const cfg = STATUS_CFG[unit.status] ?? STATUS_CFG.VACANT;
+  const token = statusToken(unit.status);
   const statusLabel = getUnitStatusLabel(t, unit.status);
   const tenantName = unit.tenant?.brandName;
   const rent = unit.askingRentPerSqm ?? unit.baseRentPerSqm;
@@ -244,76 +157,95 @@ export function UnitCard({ unit, detail, selected, hovered, scale, t }: {
         title={`${unit.code} · ${statusLabel}`}
         style={{
           display: 'block', width: 11, height: 11, borderRadius: 9999,
-          background: cfg.fill, border: '2px solid white',
-          boxShadow: selected || hovered ? `0 0 0 3px ${cfg.stroke}66` : '0 1px 3px rgba(0,0,0,0.45)',
-          transform: `scale(${scale})`,
+          background: token.swatch, border: '2px solid rgba(255,255,255,0.9)',
+          boxShadow: selected || hovered ? `0 0 0 3px ${token.border}55` : '0 1px 3px rgba(15,23,42,0.4)',
+          transform: `scale(${scale}) translateY(${-liftPx}px)`,
         }}
       />
     );
   }
 
+  // A soft white halo rather than a filled card: it lifts the text off the
+  // surface without covering the plan around the words.
+  const halo = '0 1px 2px rgba(255,255,255,0.95), 0 0 7px rgba(255,255,255,0.8)';
+
   return (
     <div
       data-testid={`map-card-${unit.code}`}
       style={{
-        transform: `scale(${scale})`,
+        transform: `scale(${scale}) translateY(${-liftPx}px)`,
         transformOrigin: 'center',
-        borderLeft: `4px solid ${cfg.fill}`,
-        boxShadow: selected ? `0 6px 18px rgba(15,23,42,0.35), 0 0 0 2px ${cfg.stroke}` : hovered ? '0 5px 14px rgba(15,23,42,0.28)' : '0 2px 6px rgba(15,23,42,0.18)',
+        textShadow: halo,
       }}
-      className="rounded-lg bg-white/95 backdrop-blur-[1px] px-2 py-1 text-left"
+      className="text-center leading-tight"
     >
-      <div className="flex items-center gap-1.5">
-        <span className="text-[13px] font-bold leading-tight text-gray-900 whitespace-nowrap">{unit.code}</span>
-        {detail === 'FULL' && (
-          <span className="text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: cfg.stroke }}>
-            {statusLabel}
-          </span>
-        )}
-      </div>
+      <div className="whitespace-nowrap text-[13px] font-bold text-slate-900">{unit.code}</div>
       {detail !== 'CODE' && (
-        <div className="text-[11px] leading-tight text-gray-600 whitespace-nowrap">
+        <div className="whitespace-nowrap text-[11px] font-medium text-slate-600 tabular-nums">
           {unit.areaNLA.toLocaleString('vi-VN')} m²
-          {detail === 'FULL' && rent > 0 && <span className="text-gray-400"> · {formatRatePerSqm(rent, unit.currencyCode)}</span>}
         </div>
       )}
-      {detail === 'FULL' && (
-        <div className="text-[11px] leading-tight font-medium whitespace-nowrap" style={{ color: tenantName ? '#111827' : cfg.stroke }}>
-          {tenantName ?? statusLabel}
+      {detail !== 'CODE' && (
+        <div className="whitespace-nowrap text-[10px] font-semibold" style={{ color: token.ink }}>
+          {detail === 'FULL' && tenantName ? tenantName : statusLabel}
+        </div>
+      )}
+      {detail === 'FULL' && rent > 0 && (
+        <div className="whitespace-nowrap text-[10px] text-slate-500 tabular-nums">
+          {formatRatePerSqm(rent, unit.currencyCode)}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Stats Bar ────────────────────────────────────────────────────────────────
+// ─── KPI strip ────────────────────────────────────────────────────────────────
 
-function StatsBar({ units }: { units: Unit[] }) {
+/** Compact numbers that support the map; the map stays the workspace. */
+/**
+ * SPACE-MAP-KPI-01 -- these numbers describe the units actually drawn on the
+ * map, never the whole floor behind a filter. A strip reading "12 spaces" over
+ * a map showing four is how a reader ends up quoting the wrong availability.
+ */
+function KpiStrip({ visible, floorPlaced, floorTotal, filtered }: {
+  visible: Unit[];
+  floorPlaced: Unit[];
+  floorTotal: number;
+  filtered: boolean;
+}) {
   const { t } = useTranslation('spaces');
-  const placed = units.filter(isPlaced);
-  const byStatus = Object.entries(STATUS_CFG)
-    .map(([key, cfg]) => ({ key, cfg, count: placed.filter((u) => u.status === key).length }))
-    .filter((x) => x.count > 0);
+  const placed = visible;
+  const occupied = placed.filter((u) => u.status === 'OCCUPIED');
+  const vacant = placed.filter((u) => u.status === 'VACANT');
   const totalArea = placed.reduce((s, u) => s + u.areaNLA, 0);
-  const occupiedArea = placed.filter((u) => u.status === 'OCCUPIED').reduce((s, u) => s + u.areaNLA, 0);
+  const occupiedArea = occupied.reduce((s, u) => s + u.areaNLA, 0);
   const occupancyPct = totalArea > 0 ? Math.round((occupiedArea / totalArea) * 100) : 0;
 
+  const cells: Array<[string, string]> = [
+    [t('map.kpi.total'), String(placed.length)],
+    [t('map.kpi.occupied'), String(occupied.length)],
+    [t('map.kpi.vacant'), String(vacant.length)],
+    [t('map.kpi.area'), `${Math.round(totalArea).toLocaleString('vi-VN')} m²`],
+    [t('map.kpi.occupancy'), `${occupancyPct}%`],
+  ];
+
   return (
-    <div className="flex items-center gap-4 flex-wrap text-xs">
-      <div className="font-semibold text-gray-700">{t('map.placedCount', { placed: placed.length, total: units.length })}</div>
-      <div className="h-3 w-px bg-gray-200" />
-      {byStatus.map(({ key, cfg, count }) => (
-        <span key={key} className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.fill }} />
-          <span style={{ color: cfg.stroke }}>{count} {getUnitStatusLabel(t, key).toLowerCase()}</span>
-        </span>
-      ))}
-      {totalArea > 0 && (
-        <div className="ml-auto text-gray-400">
-          {t('map.occupancy')}: <span className="font-semibold text-gray-700">{occupancyPct}%</span>
-          <span className="ml-1 text-gray-300">({occupiedArea.toLocaleString()} / {totalArea.toLocaleString()} m²)</span>
+    <div data-testid="map-kpi-strip" className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-gray-200 bg-white px-3 py-2">
+      {cells.map(([label, value]) => (
+        <div key={label} className="flex items-baseline gap-1.5">
+          <span className="text-[11px] text-gray-400">{label}</span>
+          <span className="text-sm font-semibold tabular-nums text-gray-900">{value}</span>
         </div>
-      )}
+      ))}
+      {filtered ? (
+        <span className="ml-auto text-[11px] text-gray-400" data-testid="map-kpi-filtered-note">
+          {t('map.filteredCount', { shown: visible.length, total: floorPlaced.length })}
+        </span>
+      ) : floorPlaced.length < floorTotal ? (
+        <span className="ml-auto text-[11px] text-gray-400">
+          {t('map.placedCount', { placed: floorPlaced.length, total: floorTotal })}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -331,21 +263,48 @@ const PIN_SEVERITY_COLOR: Record<string, string> = { CRITICAL: '#dc2626', HIGH: 
 interface MallMapViewerProps {
   floors: Floor[];
   initialFloorId?: string;
+  /**
+   * Set by a page that owns the floor selector itself. When present the map
+   * does not draw a second one -- two floor pickers on one screen was the
+   * single most reported confusion on this page.
+   */
+  activeFloorId?: string;
+  onFloorChange?: (floorId: string) => void;
+  /**
+   * Identities of the units the owning page's filters resolved to, for this
+   * floor. Given this, the map draws exactly that population and hides its own
+   * status pills -- the page's filter bar is the single control. Omitted by
+   * embedded uses that have no filter bar, which keep the local pills.
+   */
+  activeUnitIds?: Set<string>;
+  filtersActive?: boolean;
+  onClearFilters?: () => void;
   onUnitClick?: (unit: Unit) => void;
   onBookUnit?: (unit: Unit) => void;
   /** Ghim vị trí vấn đề/khiếm khuyết fitout (D-Map) — tuỳ chọn, không có thì không đổi hành vi hiện tại. */
   issuePins?: IssuePin[];
 }
 
-export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit, issuePins }: MallMapViewerProps) {
+export function MallMapViewer({
+  floors, initialFloorId, activeFloorId: controlledFloorId, onFloorChange,
+  activeUnitIds, filtersActive, onClearFilters,
+  onUnitClick, onBookUnit, issuePins,
+}: MallMapViewerProps) {
   const { t } = useTranslation('spaces');
+  const uid = useId().replace(/:/g, '');
+  const reducedMotion = useReducedMotion();
   const sortedFloors = [...floors].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-  const [activeFloorId, setActiveFloorId] = useState<string>(initialFloorId ?? sortedFloors[0]?.id ?? '');
+  const isControlled = controlledFloorId !== undefined;
+  const [ownFloorId, setOwnFloorId] = useState<string>(initialFloorId ?? sortedFloors[0]?.id ?? '');
+  const activeFloorId = isControlled ? controlledFloorId : ownFloorId;
+
   const [hoveredUnitId, setHoveredUnitId] = useState<string | null>(null);
+  const [focusedUnitId, setFocusedUnitId] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [imageRatio, setImageRatio] = useState<number | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tick, setTick] = useState(0);
   const [view, setView] = useState<MapView>(INITIAL_VIEW);
@@ -355,6 +314,8 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   const [isPanning, setIsPanning] = useState(false);
   const [showWheelHint, setShowWheelHint] = useState(false);
 
+  const motion = reducedMotion ? 'none' : `transform ${MAP_MOTION_MS}ms ease-out, fill-opacity ${MAP_MOTION_MS}ms ease-out, stroke-width ${MAP_MOTION_MS}ms ease-out`;
+
   // The hint is an answer to what the reader just tried, so it fades on its own.
   useEffect(() => {
     if (!showWheelHint) return;
@@ -362,12 +323,22 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     return () => clearTimeout(id);
   }, [showWheelHint]);
 
-  // The frame's pixel size decides both the pan limits and how much of a unit
-  // fits on screen, so it is measured rather than assumed.
+  // The frame's pixel size decides the pan limits, how much of a unit fits on
+  // screen, and how many map units a pixel of shadow is worth -- so it is
+  // measured rather than assumed.
+  //
+  // The measurement lives in an effect rather than in the ref callback: React
+  // 18 discards anything a callback ref returns, so a cleanup written there is
+  // never run and the observer outlives the element it watched.
+  const [frameNode, setFrameNode] = useState<HTMLDivElement | null>(null);
   const attachFrame = useCallback((node: HTMLDivElement | null) => {
     frameRef.current = node;
-    if (!node) return;
-    const measure = () => setFrame({ width: node.clientWidth, height: node.clientHeight });
+    setFrameNode(node);
+  }, []);
+
+  useEffect(() => {
+    if (!frameNode) return;
+    const measure = () => setFrame({ width: frameNode.clientWidth, height: frameNode.clientHeight });
     measure();
     // ResizeObserver is missing in older browsers and in jsdom; the window
     // resize event is enough to keep the frame size honest there.
@@ -376,9 +347,9 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
       return () => window.removeEventListener('resize', measure);
     }
     const observer = new ResizeObserver(measure);
-    observer.observe(node);
+    observer.observe(frameNode);
     return () => observer.disconnect();
-  }, []);
+  }, [frameNode]);
 
   const zoomBy = useCallback((factor: number) => {
     setView((v) => zoomAt(v, factor, frame.width / 2, frame.height / 2, frame.width, frame.height));
@@ -413,20 +384,41 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     setView((v) => zoomAt(v, factor, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height));
   }, []);
 
+  /**
+   * Panning must not cost the reader their clicks.
+   *
+   * Capturing the pointer the moment a press lands retargets the rest of the
+   * gesture to the frame, so as soon as the map was zoomed in at all, every
+   * press -- on a unit, and on the zoom buttons themselves -- was swallowed by
+   * the pan: the map stuck at 140% and stopped responding entirely. A press is
+   * a drag only once it has actually travelled.
+   */
   const handlePointerDown = (e: React.PointerEvent) => {
     if (view.zoom <= MIN_ZOOM) return;
+    // Secondary buttons open menus, they do not drag the map. Environments with
+    // no PointerEvent leave button undefined, which means the primary one.
+    if ((e.button ?? 0) !== 0) return;
+    // A press that starts on a control belongs to that control, not to the map.
+    if ((e.target as Element | null)?.closest?.('button')) return;
     panRef.current = { pointerX: e.clientX, pointerY: e.clientY, view };
-    setIsPanning(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     const start = panRef.current;
     if (!start) return;
+    const dx = e.clientX - start.pointerX;
+    const dy = e.clientY - start.pointerY;
+    if (!isPanning) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      setIsPanning(true);
+      // Absent on SVG targets in some engines, and in jsdom: panning still works
+      // through the frame's own move handler, so this is an enhancement, not a need.
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
     setView(clampPan({
       zoom: start.view.zoom,
-      x: start.view.x + (e.clientX - start.pointerX),
-      y: start.view.y + (e.clientY - start.pointerY),
+      x: start.view.x + dx,
+      y: start.view.y + dy,
     }, frame.width, frame.height));
   };
 
@@ -435,17 +427,15 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   const currentIdx = sortedFloors.findIndex((f) => f.id === activeFloorId);
 
   const goToFloor = useCallback((id: string) => {
-    setActiveFloorId(id);
-    setSelectedUnit(null);
-    setFilterStatus(null);
-    setImageRatio(null);
-  }, []);
+    if (isControlled) onFloorChange?.(id);
+    else setOwnFloorId(id);
+  }, [isControlled, onFloorChange]);
 
   const prevFloor = () => currentIdx > 0 && goToFloor(sortedFloors[currentIdx - 1].id);
   const nextFloor = () => currentIdx < sortedFloors.length - 1 && goToFloor(sortedFloors[currentIdx + 1].id);
 
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 800);
+    const id = setInterval(() => setTick((n) => n + 1), 800);
     return () => clearInterval(id);
   }, []);
 
@@ -455,12 +445,31 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
     enabled: !!activeFloorId,
   });
 
-  useEffect(() => { setImageRatio(null); setSelectedUnit(null); setView(INITIAL_VIEW); }, [activeFloorId]);
+  // A new floor is a new drawing and a new set of units: nothing carried over
+  // from the previous one is still true.
+  useEffect(() => {
+    setImageRatio(null);
+    setImageFailed(false);
+    setSelectedUnit(null);
+    setHoveredUnitId(null);
+    setFocusedUnitId(null);
+    setFilterStatus(null);
+    setView(INITIAL_VIEW);
+  }, [activeFloorId]);
   useEffect(() => { setView(INITIAL_VIEW); }, [isFullscreen]);
 
   // Close popup on ESC, fullscreen on F
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // These shortcuts belong to the map, not to whoever happens to be typing.
+      // The filter bar now sits beside the map, and a search for "B1-01" was
+      // reaching the "0" binding and throwing the reader's zoom away; "f" in a
+      // brand name threw them into fullscreen.
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
       if (e.key === 'Escape') {
         if (isFullscreen) { setIsFullscreen(false); return; }
         setSelectedUnit(null);
@@ -477,31 +486,57 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   }, [isFullscreen, currentIdx, sortedFloors, zoomBy, resetView]);
 
   const units = floor?.units ?? [];
-  const placedUnits = units.filter(isPlaced);
-  const filteredUnits = filterStatus ? placedUnits.filter((u) => u.status === filterStatus) : placedUnits;
+  const floorPlaced = useMemo(() => units.filter(isPlaced), [units]);
+
+  /**
+   * SPACE-MAP-FILTER-01 -- which units this map is showing.
+   *
+   * When the page owns the filters it hands down the identities it resolved,
+   * and the map simply draws those. No filter rule -- area, rent, category,
+   * lease type, readiness -- is evaluated a second time here, so the map cannot
+   * drift from the list beside it. Embedded uses that pass no population (the
+   * Fitout D-Map) keep the map's own status pills, exactly as before.
+   */
+  const pageOwnsFilters = activeUnitIds !== undefined;
+  const matchesFilter = useCallback(
+    (u: Unit) => (pageOwnsFilters
+      ? activeUnitIds!.has(u.id)
+      : filterStatus === null || u.status === filterStatus),
+    [pageOwnsFilters, activeUnitIds, filterStatus],
+  );
+  const visibleUnits = useMemo(() => floorPlaced.filter(matchesFilter), [floorPlaced, matchesFilter]);
+
+  // Nothing filtered out may stay behind as live state: not the unit in the
+  // panel, not a raised polygon under a pointer that has nothing to point at.
+  useEffect(() => {
+    if (selectedUnit && !matchesFilter(selectedUnit)) setSelectedUnit(null);
+    if (hoveredUnitId && !visibleUnits.some((u) => u.id === hoveredUnitId)) setHoveredUnitId(null);
+    if (focusedUnitId && !visibleUnits.some((u) => u.id === focusedUnitId)) setFocusedUnitId(null);
+  }, [visibleUnits, selectedUnit, hoveredUnitId, focusedUnitId, matchesFilter]);
+
+  // Paint order, not data order: a selected unit has to be drawn after its
+  // neighbours or their surfaces cover the shadow that promotes it.
+  const paintOrder = useMemo(
+    () => presentationOrder(visibleUnits, hoveredUnitId, selectedUnit?.id),
+    [visibleUnits, hoveredUnitId, selectedUnit?.id],
+  );
+
+  const geo = useMemo(() => ({
+    rest: shadowGeometry('rest', frame.width, frame.height, view.zoom),
+    hover: shadowGeometry('hover', frame.width, frame.height, view.zoom),
+    selected: shadowGeometry('selected', frame.width, frame.height, view.zoom),
+  }), [frame.width, frame.height, view.zoom]);
 
   // Use server-stored ratio first, fall back to client-measured
   const ratio = floor?.floorPlanRatio ?? imageRatio ?? 16 / 9;
 
-  const popupPos = selectedUnit ? (() => {
-    const poly = getUnitPolygon(selectedUnit);
-    if (!poly) return null;
-    const [cx, cy] = centroid(poly);
-    return { cx, cy };
-  })() : null;
+  const selectUnit = useCallback((u: Unit) => {
+    setSelectedUnit((prev) => (prev?.id === u.id ? null : u));
+  }, []);
 
-  // Smart popup positioning: flip above/below based on centroid Y, clamp X to stay in-view
-  const getPopupStyle = (cx: number, cy: number): React.CSSProperties => {
-    const clampedLeft = Math.max(20, Math.min(cx, 80));   // keep popup horizontally in-view
-    const showBelow = cy < 42;                             // flip below if unit is in upper area
-    return {
-      position: 'absolute',
-      left: `${clampedLeft}%`,
-      top: showBelow ? `${cy + 2}%` : `${cy}%`,
-      transform: showBelow ? 'translateX(-50%)' : 'translateX(-50%) translateY(-100%)',
-      zIndex: 100,
-    };
-  };
+  const coverUrl = selectedUnit
+    ? resolveFileUrl((selectedUnit as any).media?.find((m: any) => m.mimeType?.startsWith('image'))?.fileUrl)
+    : undefined;
 
   // ── Map inner content (shared between normal and fullscreen) ──────────────
 
@@ -554,7 +589,7 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
       <div
         ref={attachFrame}
         style={{ ...containerStyle, overflow: 'hidden', touchAction: 'none', cursor: isPanning ? 'grabbing' : view.zoom > MIN_ZOOM ? 'grab' : 'default' }}
-        className={cn(!fullscreen && 'rounded-2xl')}
+        className={cn('bg-white', !fullscreen && 'rounded-2xl')}
         onWheel={(e) => handleWheel(e, fullscreen)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -563,106 +598,157 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
         data-testid="mall-map-frame"
       >
         <div style={wrapperStyle}>
-          {/* Floor plan image */}
-          <img
-            src={resolveFileUrl(floor.floorPlanUrl)}
-            alt={`Floor plan ${floor.level}`}
-            className="absolute inset-0 w-full h-full select-none pointer-events-none"
-            style={{ objectFit: 'fill' }}
-            draggable={false}
-            onLoad={(e) => {
-              const img = e.currentTarget;
-              if (img.naturalWidth && img.naturalHeight) {
-                setImageRatio(img.naturalWidth / img.naturalHeight);
-              }
-            }}
-          />
+          {/* Layer 0 — the architectural drawing, held back to context so the
+              leasing objects above it are what the eye lands on first. Still
+              legible: corridors, escalators and entrances must stay readable. */}
+          {imageFailed ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-50 text-gray-300">
+              <ImageOff size={32} />
+              <p className="text-xs text-gray-400">{t('map.planFailed')}</p>
+            </div>
+          ) : (
+            <img
+              src={resolveFileUrl(floor.floorPlanUrl)}
+              alt={`Floor plan ${floor.level}`}
+              data-testid="map-cad-layer"
+              className="pointer-events-none absolute inset-0 h-full w-full select-none"
+              style={{ objectFit: 'fill', opacity: MAP_CAD.opacity, filter: MAP_CAD.filter }}
+              draggable={false}
+              onError={() => setImageFailed(true)}
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                if (img.naturalWidth && img.naturalHeight) {
+                  setImageRatio(img.naturalWidth / img.naturalHeight);
+                }
+              }}
+            />
+          )}
 
-          {/* SVG polygon overlay — viewBox 0 0 100 100 = % coords. The fill is
-              deliberately faint: the status colour is carried by the card, where
-              the floor plan cannot tint it. */}
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+          {/* Layers 1 and 2 — the leasing units. viewBox 0 0 100 100 = % coords. */}
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            className="absolute inset-0 h-full w-full"
+            style={{ ['--map-focus-outline' as any]: MAP_FOCUS_OUTLINE }}
+          >
             <defs>
-              <pattern id="stripe-fitout" width="1.5" height="1.5" patternUnits="userSpaceOnUse"
+              <pattern id={`${uid}-stripe`} width="1.5" height="1.5" patternUnits="userSpaceOnUse"
                 patternTransform={`rotate(45) translate(${tick % 2 === 0 ? 0 : 0.75})`}>
                 <line x1="0" y1="0" x2="0" y2="1.5" stroke="rgba(255,255,255,0.75)" strokeWidth="0.55" />
               </pattern>
+              {(['rest', 'hover', 'selected'] as const).map((level) => (
+                <filter
+                  key={level}
+                  id={`${uid}-shadow-${level}`}
+                  x="-60%" y="-60%" width="220%" height="220%"
+                  colorInterpolationFilters="sRGB"
+                >
+                  {/* Two deviations: the viewBox is stretched to the frame, so a
+                      single value would blur more on one axis than the other. */}
+                  <feGaussianBlur stdDeviation={`${geo[level].blurX} ${geo[level].blurY}`} />
+                </filter>
+              ))}
             </defs>
-            {/* Transparent background — click here to deselect unit */}
+
+            {/* Click the plan itself to put the current unit down. */}
             <rect x="0" y="0" width="100" height="100" fill="transparent"
               onClick={() => setSelectedUnit(null)} />
-            {filteredUnits.map((u) => {
+
+            {paintOrder.map((u) => {
               const poly = getUnitPolygon(u);
               if (!poly) return null;
-              const cfg = STATUS_CFG[u.status] ?? STATUS_CFG.VACANT;
-              const isHovered = u.id === hoveredUnitId;
-              const isSelected = u.id === selectedUnit?.id;
-              const dimmed = filterStatus !== null && u.status !== filterStatus;
-              const opacity = dimmed ? 0.12 : isSelected ? 0.94 : isHovered ? 0.9 : cfg.fillOpacity;
-              const ptStr = poly.map(([x, y]) => `${x},${y}`).join(' ');
+              const selected = u.id === selectedUnit?.id;
+              const hovered = u.id === hoveredUnitId || u.id === focusedUnitId;
+              const level = elevationLevel(selected, hovered);
               return (
-                <g key={u.id} style={{ cursor: 'pointer' }}>
-                  {/* Opaque base: without it the floor plan shows through and
-                      mixes into the status colour, so the same status reads
-                      differently across the floor and against the legend. */}
-                  <polygon
-                    points={ptStr}
-                    fill="#ffffff"
-                    fillOpacity={dimmed ? 0.5 : 0.96}
-                    data-testid={`map-base-${u.code}`}
-                    style={{ pointerEvents: 'none' }}
+                <g key={u.id} data-testid={`map-unit-${u.code}`}>
+                  <UnitPolygon
+                    points={pointsOf(poly)}
+                    status={u.status}
+                    level={level}
+                    geo={geo[level]}
+                    filterId={`${uid}-shadow-${level}`}
+                    stripeId={`${uid}-stripe`}
+                    motion={motion}
                   />
-                  <polygon points={ptStr} fill={cfg.fill} fillOpacity={opacity}
-                    data-testid={`map-fill-${u.code}`}
-                    stroke={isSelected ? '#0f172a' : cfg.stroke}
-                    strokeWidth={isSelected ? 3 : isHovered ? 2.4 : 1.8}
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                    style={{ transition: 'fill-opacity 0.15s, stroke-width 0.1s' }}
-                    onClick={(e) => { e.stopPropagation(); setSelectedUnit((prev) => prev?.id === u.id ? null : u); }}
-                    onDoubleClick={(e) => { e.stopPropagation(); focusUnit(u); }}
-                    onMouseEnter={() => setHoveredUnitId(u.id)}
-                    onMouseLeave={() => setHoveredUnitId(null)}
-                  />
-                  {u.status === 'UNDER_FITOUT' && !dimmed && (
-                    <polygon points={ptStr} fill="url(#stripe-fitout)" style={{ pointerEvents: 'none' }} />
-                  )}
                 </g>
+              );
+            })}
+
+            {/* Hit layer — never moves, never blurs, never reorders. The visible
+                polygon may lift by a couple of pixels; the target it is clicked
+                by must not, or the pointer would fall off its own hover. */}
+            {visibleUnits.map((u) => {
+              const poly = getUnitPolygon(u);
+              if (!poly) return null;
+              return (
+                <polygon
+                  key={`hit-${u.id}`}
+                  points={pointsOf(poly)}
+                  data-testid={`map-hit-${u.code}`}
+                  // The focus ring is a :focus-visible rule (index.css), so it
+                  // answers a reader tabbing through the floor without drawing
+                  // itself over every unit somebody merely clicked.
+                  className="map-unit-hit"
+                  fill="transparent"
+                  stroke="transparent"
+                  vectorEffect="non-scaling-stroke"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${u.code} — ${getUnitStatusLabel(t, u.status)} — ${u.areaNLA.toLocaleString('vi-VN')} m²`}
+                  style={{ cursor: 'pointer', outline: 'none' }}
+                  onClick={(e) => { e.stopPropagation(); selectUnit(u); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); focusUnit(u); }}
+                  onMouseEnter={() => setHoveredUnitId(u.id)}
+                  onMouseLeave={() => setHoveredUnitId(null)}
+                  onFocus={() => setFocusedUnitId(u.id)}
+                  onBlur={() => setFocusedUnitId(null)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); selectUnit(u); }
+                  }}
+                />
               );
             })}
           </svg>
 
-          {/* Unit cards — HTML so the text keeps its shape, counter-scaled so it
-              keeps its size on screen however far the map is zoomed. */}
-          {filteredUnits.map((u) => {
+          {/* Labels — HTML so the text keeps its shape under a stretched viewBox,
+              counter-scaled so it keeps its size on screen. They take no pointer
+              events: the SVG hit layer underneath is the single click target. */}
+          {visibleUnits.map((u) => {
             const poly = getUnitPolygon(u);
             if (!poly) return null;
-            if (filterStatus !== null && u.status !== filterStatus) return null;
             const [cx, cy] = centroid(poly);
             const size = unitScreenSize(poly, frame.width, frame.height, view.zoom);
-            const isSelected = u.id === selectedUnit?.id;
-            const detail = isSelected ? 'FULL' : detailLevel(size.width, size.height);
+            const selected = u.id === selectedUnit?.id;
+            const hovered = u.id === hoveredUnitId || u.id === focusedUnitId;
+            const fits = detailLevel(size.width, size.height);
+            const detail = selected ? moreDetail(fits) : fits;
+            const level = elevationLevel(selected, hovered);
             return (
               <div
-                key={`card-${u.id}`}
+                key={`label-${u.id}`}
                 style={{
                   position: 'absolute', left: `${cx}%`, top: `${cy}%`,
                   transform: 'translate(-50%, -50%)',
-                  zIndex: isSelected ? 30 : u.id === hoveredUnitId ? 25 : 10,
-                  cursor: 'pointer',
+                  zIndex: selected ? 30 : hovered ? 25 : 10,
+                  pointerEvents: 'none',
                 }}
-                onClick={(e) => { e.stopPropagation(); setSelectedUnit((prev) => prev?.id === u.id ? null : u); }}
-                onDoubleClick={(e) => { e.stopPropagation(); focusUnit(u); }}
-                onMouseEnter={() => setHoveredUnitId(u.id)}
-                onMouseLeave={() => setHoveredUnitId(null)}
               >
-                <UnitCard unit={u} detail={detail} selected={isSelected} hovered={u.id === hoveredUnitId} scale={scale} t={t} />
+                <UnitLabel
+                  unit={u}
+                  detail={detail}
+                  selected={selected}
+                  hovered={hovered}
+                  scale={scale}
+                  liftPx={MAP_ELEVATION[level].lift}
+                  t={t}
+                />
               </div>
             );
           })}
 
           {/* Fitout issue pins (D-Map) — badge at unit centroid, count + highest severity color */}
-          {issuePins && issuePins.length > 0 && filteredUnits.map((u) => {
+          {issuePins && issuePins.length > 0 && visibleUnits.map((u) => {
             const pinsForUnit = issuePins.filter((pin) => pin.unitId === u.id);
             if (pinsForUnit.length === 0) return null;
             const poly = getUnitPolygon(u);
@@ -688,30 +774,16 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
               </div>
             );
           })}
-
-          {/* Unit info popup — smart positioning: flips above/below based on centroid Y */}
-          {selectedUnit && popupPos && (
-            <div
-              style={{ ...getPopupStyle(popupPos.cx, popupPos.cy), zIndex: 60 }}
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <div style={{ transform: `scale(${scale})`, transformOrigin: popupPos.cy < 42 ? 'top center' : 'bottom center' }}>
-                <UnitInfoPopup unit={selectedUnit} onClose={() => setSelectedUnit(null)}
-                  onViewDetail={onUnitClick} onBook={onBookUnit} />
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Zoom controls — stay put while the map moves under them */}
+        {/* Map controls — one stack, fixed to the frame while the map moves under it */}
         <div className="absolute bottom-3 right-3 z-40 flex flex-col items-stretch gap-1 rounded-xl bg-white/95 p-1 shadow-lg ring-1 ring-black/5">
           <button type="button" aria-label={t('map.zoomIn')} title={`${t('map.zoomIn')} (+)`}
             className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
             disabled={view.zoom >= MAX_ZOOM} onClick={() => zoomBy(ZOOM_STEP)}>
             <ZoomIn size={16} />
           </button>
-          <div className="text-center text-[10px] font-semibold tabular-nums text-gray-500">{Math.round(view.zoom * 100)}%</div>
+          <div data-testid="map-zoom-level" className="text-center text-[10px] font-semibold tabular-nums text-gray-500">{Math.round(view.zoom * 100)}%</div>
           <button type="button" aria-label={t('map.zoomOut')} title={`${t('map.zoomOut')} (−)`}
             className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
             disabled={view.zoom <= MIN_ZOOM} onClick={() => zoomBy(1 / ZOOM_STEP)}>
@@ -721,6 +793,12 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
             className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
             disabled={view.zoom === MIN_ZOOM && view.x === 0 && view.y === 0} onClick={resetView}>
             <Locate size={16} />
+          </button>
+          <button type="button" aria-label={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
+            title={`${fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')} (F)`}
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100"
+            onClick={() => setIsFullscreen(!fullscreen)}>
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
 
@@ -734,117 +812,175 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
           </div>
         )}
 
-        {placedUnits.length === 0 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/70 text-white text-xs px-4 py-2 rounded-full">
+        {floorPlaced.length === 0 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-gray-900/70 px-4 py-2 text-xs text-white">
             {t('map.noPositions')}
+          </div>
+        )}
+
+        {floorPlaced.length > 0 && visibleUnits.length === 0 && (
+          <div
+            data-testid="map-empty-filter"
+            className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-gray-900/75 px-4 py-2 text-xs text-white"
+          >
+            <SearchX size={13} /> {t('map.noFilterMatch')}
+            {onClearFilters && (
+              <button
+                type="button"
+                onClick={onClearFilters}
+                className="ml-1 underline underline-offset-2 hover:no-underline"
+              >
+                {t('filters.clearAll')}
+              </button>
+            )}
           </div>
         )}
       </div>
     );
   };
 
-  // ── Floor navigation bar ──────────────────────────────────────────────────
+  // ── Floor navigation (only when the page has not taken it over) ───────────
 
   const renderFloorNav = (dark: boolean) => (
-    <div className={cn('flex items-center gap-2', dark ? 'text-white' : '')}>
-      {/* Prev */}
+    <div className={cn('flex items-center gap-2', dark ? 'text-white' : '')} data-testid="map-floor-nav">
       <button
         onClick={prevFloor}
         disabled={currentIdx <= 0}
         className={cn(
-          'p-1.5 rounded-lg transition-all disabled:opacity-30',
-          dark
-            ? 'hover:bg-white/20 text-white'
-            : 'hover:bg-gray-100 text-gray-600 border border-gray-200',
+          'rounded-lg p-1.5 transition-all disabled:opacity-30',
+          dark ? 'text-white hover:bg-white/20' : 'border border-gray-200 text-gray-600 hover:bg-gray-100',
         )}
         title="Tầng trước (←)"
       >
         <ChevronLeft size={16} />
       </button>
 
-      {/* Floor tabs */}
-      <div className={cn('flex items-center gap-1 p-1 rounded-lg', dark ? 'bg-white/10' : 'bg-gray-100')}>
+      <div className={cn('flex items-center gap-1 rounded-lg p-1', dark ? 'bg-white/10' : 'bg-gray-100')}>
         {sortedFloors.map((f) => (
           <button
             key={f.id}
             onClick={() => goToFloor(f.id)}
             className={cn(
-              'px-3 py-1.5 text-sm font-medium rounded-md transition-all',
+              'rounded-md px-3 py-1.5 text-sm font-medium transition-all',
               f.id === activeFloorId
-                ? dark ? 'bg-white text-gray-900' : 'bg-white shadow-sm text-gray-900'
-                : dark ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-800',
+                ? dark ? 'bg-white text-gray-900' : 'bg-white text-gray-900 shadow-sm'
+                : dark ? 'text-white/70 hover:bg-white/10 hover:text-white' : 'text-gray-500 hover:text-gray-800',
             )}
           >
             {f.level}
-            {!f.floorPlanUrl && !dark && <span className="ml-1 text-[10px] text-gray-300">(chưa có sơ đồ)</span>}
+            {!f.floorPlanUrl && !dark && <span className="ml-1 text-[10px] text-gray-300">({t('map.floorHint')})</span>}
           </button>
         ))}
       </div>
 
-      {/* Next */}
       <button
         onClick={nextFloor}
         disabled={currentIdx >= sortedFloors.length - 1}
         className={cn(
-          'p-1.5 rounded-lg transition-all disabled:opacity-30',
-          dark
-            ? 'hover:bg-white/20 text-white'
-            : 'hover:bg-gray-100 text-gray-600 border border-gray-200',
+          'rounded-lg p-1.5 transition-all disabled:opacity-30',
+          dark ? 'text-white hover:bg-white/20' : 'border border-gray-200 text-gray-600 hover:bg-gray-100',
         )}
         title="Tầng tiếp (→)"
       >
         <ChevronRight size={16} />
       </button>
 
-      {/* Floor counter */}
       <span className={cn('text-xs tabular-nums', dark ? 'text-white/60' : 'text-gray-400')}>
         {currentIdx + 1} / {sortedFloors.length}
       </span>
     </div>
   );
 
+  /**
+   * Fullscreen hides the page's filter bar, so it says what the filters are
+   * currently doing and offers to lift them. It deliberately does NOT offer a
+   * second set of filter controls: the page owns that state, and a duplicate
+   * copy here is how the map and the list drifted apart in the first place.
+   */
+  const renderActiveFilterSummary = () => (
+    <div className="flex items-center gap-2 text-xs" data-testid="map-filter-summary">
+      <span className="text-white/70">
+        {filtersActive
+          ? t('map.filteredCount', { shown: visibleUnits.length, total: floorPlaced.length })
+          : t('map.unfilteredCount', { total: floorPlaced.length })}
+      </span>
+      {filtersActive && onClearFilters && (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="rounded-full border border-white/30 px-2.5 py-1 font-medium text-white hover:bg-white/10"
+        >
+          {t('filters.clearAll')}
+        </button>
+      )}
+    </div>
+  );
+
+  // ── Status filter pills ────────────────────────────────────────────────────
+
+  const renderStatusFilters = (dark: boolean) => {
+    const present = MAP_STATUS_ORDER
+      .map((key) => ({ key, token: statusToken(key), count: floorPlaced.filter((u) => u.status === key).length }))
+      .filter((s) => s.count > 0);
+    if (present.length === 0) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="map-status-filters">
+        <button onClick={() => setFilterStatus(null)}
+          className={cn('rounded-full border px-2.5 py-1 text-xs font-medium transition-all',
+            !filterStatus
+              ? dark ? 'border-white bg-white text-gray-900' : 'border-gray-800 bg-gray-800 text-white'
+              : dark ? 'border-white/20 text-white/60 hover:border-white/40' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-400')}>
+          {t('filters.all')} ({floorPlaced.length})
+        </button>
+        {present.map(({ key, token, count }) => (
+          <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)}
+            className={cn('rounded-full border px-2.5 py-1 text-xs font-medium transition-all',
+              filterStatus === key
+                ? 'border-transparent text-white'
+                : dark ? 'border-white/20 text-white/70 hover:border-white/40' : 'border-gray-200 bg-white hover:border-gray-400')}
+            style={filterStatus === key
+              ? { background: token.swatch, borderColor: token.border }
+              : dark ? {} : { color: token.ink }}>
+            {getUnitStatusLabel(t, key)} ({count})
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const panel = selectedUnit ? (
+    <MallMapUnitPanel
+      unit={selectedUnit}
+      coverUrl={coverUrl}
+      floorName={floor?.name}
+      onClose={() => setSelectedUnit(null)}
+      onViewDetail={onUnitClick}
+      onBook={onBookUnit}
+    />
+  ) : null;
+
   // ── Fullscreen modal ───────────────────────────────────────────────────────
 
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col">
-        {/* Fullscreen toolbar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+      <div className="fixed inset-0 z-50 flex flex-col bg-gray-950">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-gray-800 bg-gray-900 px-4 py-3">
+          {/* Fullscreen hides the page chrome, so the floor selector belongs
+              here even when the page owns it in the normal view. */}
           {renderFloorNav(true)}
-
-          <div className="flex items-center gap-3 ml-4">
-            {/* Status filter chips (compact) */}
-            <div className="flex items-center gap-1">
-              <button onClick={() => setFilterStatus(null)}
-                className={cn('px-2 py-0.5 rounded-full text-xs font-medium border transition-all',
-                  !filterStatus ? 'bg-white text-gray-900 border-white' : 'text-white/60 border-white/20 hover:border-white/40')}>
-                {t('filters.all')}
-              </button>
-              {Object.entries(STATUS_CFG).map(([key, cfg]) => {
-                const count = placedUnits.filter((u) => u.status === key).length;
-                if (count === 0) return null;
-                return (
-                  <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)}
-                    className={cn('px-2 py-0.5 rounded-full text-xs font-medium border transition-all',
-                      filterStatus === key ? 'text-white border-transparent' : 'text-white/60 border-white/20 hover:border-white/40')}
-                    style={filterStatus === key ? { background: cfg.fill, borderColor: cfg.stroke } : {}}>
-                    {getUnitStatusLabel(t, key)} ({count})
-                  </button>
-                );
-              })}
-            </div>
-
+          <div className="flex items-center gap-3">
+            {pageOwnsFilters ? renderActiveFilterSummary() : renderStatusFilters(true)}
             <Button size="sm" variant="outline"
-              className="gap-1.5 text-xs h-8 text-white border-white/30 bg-transparent hover:bg-white/10"
+              className="h-8 gap-1.5 border-white/30 bg-transparent text-xs text-white hover:bg-white/10"
               onClick={() => setIsFullscreen(false)}>
               <Minimize2 size={13} /> {t('map.exitFullscreen')}
             </Button>
           </div>
         </div>
 
-        {/* Map area — no overflow-hidden so popup can extend outside container bounds */}
-        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-          {renderMap(true)}
+        <div className="flex min-h-0 flex-1 gap-3 p-4">
+          <div className="flex min-w-0 flex-1 items-center justify-center">{renderMap(true)}</div>
+          {panel}
         </div>
       </div>
     );
@@ -853,60 +989,47 @@ export function MallMapViewer({ floors, initialFloorId, onUnitClick, onBookUnit,
   // ── Normal view ────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-3">
-      {/* Floor navigation + fullscreen button */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {renderFloorNav(false)}
+    <div className="space-y-2.5">
+      {/* Row 1 — floor selector, only when the page has not provided one */}
+      {!isControlled && (
+        <div className="flex flex-wrap items-center gap-3">{renderFloorNav(false)}</div>
+      )}
 
-        <button
-          onClick={() => setIsFullscreen(true)}
-          className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-400 px-2.5 py-1.5 rounded-lg transition-all"
-          title="Toàn màn hình (F)"
-        >
-          <Maximize2 size={13} /> {t('map.fullscreen')}
-        </button>
-      </div>
+      {/* Row 2 — business filters, only where this map owns them */}
+      {!pageOwnsFilters && renderStatusFilters(false)}
 
-      {/* Stats */}
-      {!isLoading && <StatsBar units={units} />}
+      {/* Row 3 — compact KPI strip supporting the map */}
+      {!isLoading && (
+        <KpiStrip
+          visible={visibleUnits}
+          floorPlaced={floorPlaced}
+          floorTotal={units.length}
+          filtered={visibleUnits.length !== floorPlaced.length}
+        />
+      )}
 
-      {/* Status filter pills */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <button onClick={() => setFilterStatus(null)}
-          className={cn('px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
-            !filterStatus ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400')}>
-          {t('filters.all')} ({placedUnits.length})
-        </button>
-        {Object.entries(STATUS_CFG).map(([key, cfg]) => {
-          const count = placedUnits.filter((u) => u.status === key).length;
-          if (count === 0) return null;
-          return (
-            <button key={key} onClick={() => setFilterStatus(filterStatus === key ? null : key)}
-              className={cn('px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
-                filterStatus === key ? 'text-white border-transparent' : 'bg-white border-gray-200 hover:border-gray-400')}
-              style={filterStatus === key ? { background: cfg.fill, borderColor: cfg.stroke } : { color: cfg.stroke }}>
-              {getUnitStatusLabel(t, key)} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Map canvas — no overflow-hidden so the popup can extend above/below without clipping */}
-      <div className="relative w-full rounded-2xl border border-gray-200 shadow-inner bg-gray-50">
-        {renderMap(false)}
+      {/* Workspace — map, with the current unit opened beside it */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white shadow-sm">
+          {renderMap(false)}
+        </div>
+        {panel}
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500 pt-1">
-        <span className="font-semibold text-gray-400 tracking-wide uppercase text-[10px]">{t('map.legend')}</span>
-        {Object.entries(STATUS_CFG).map(([key, cfg]) => (
-          <span key={key} className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded border-2 inline-block"
-              style={{ background: cfg.fill, borderColor: cfg.stroke, opacity: 0.85 }} />
-            {getUnitStatusLabel(t, key)}
-          </span>
-        ))}
-        <span className="ml-auto text-gray-400 text-[11px]">{t('map.clickHint')}</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 pt-1 text-xs text-gray-500">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('map.legend')}</span>
+        {MAP_STATUS_ORDER.filter((key) => visibleUnits.some((u) => u.status === key)).map((key) => {
+          const token = statusToken(key);
+          return (
+            <span key={key} className="flex items-center gap-1.5">
+              <span className="inline-block h-3.5 w-3.5 rounded border-2"
+                style={{ background: `${token.surface}66`, borderColor: token.border }} />
+              {getUnitStatusLabel(t, key)}
+            </span>
+          );
+        })}
+        <span className="ml-auto text-[11px] text-gray-400">{t('map.clickHint')}</span>
       </div>
     </div>
   );
