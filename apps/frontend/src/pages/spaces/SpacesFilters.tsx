@@ -56,11 +56,11 @@ export function SpacesFilters({ categoryNames, showHandoverFilter = false }: { c
         </Select>
         {showHandoverFilter && (
           <Select value={handoverFilter || 'ALL'} onValueChange={(value) => setHandoverFilter(value === 'ALL' ? '' : value)}>
-            <SelectTrigger className="w-full sm:w-52" aria-label="Lọc theo bàn giao mặt bằng">
-              <SelectValue placeholder="Bàn giao MB: tất cả" />
+            <SelectTrigger className="w-full sm:w-52" aria-label="Lọc theo BDA dự kiến bàn giao mặt bằng">
+              <SelectValue placeholder="BDA bàn giao: tất cả" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">Bàn giao MB: tất cả</SelectItem>
+              <SelectItem value="ALL">BDA bàn giao: tất cả</SelectItem>
               {HANDOVER_FILTER_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}

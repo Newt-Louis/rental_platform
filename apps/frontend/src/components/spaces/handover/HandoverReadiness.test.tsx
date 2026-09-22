@@ -74,7 +74,7 @@ describe('HandoverReadinessTab', () => {
     api.getForUnit.mockResolvedValue(state(null));
     api.start.mockResolvedValue(detail());
     renderTab();
-    const tick = await screen.findByRole('checkbox', { name: 'Theo dõi đủ điều kiện bàn giao MB' });
+    const tick = await screen.findByRole('checkbox', { name: 'Theo dõi ngày BDA dự kiến bàn giao mặt bằng' });
     await userEvent.click(tick);
     const submit = screen.getByRole('button', { name: 'Bắt đầu theo dõi' });
     expect(submit).toBeDisabled();
@@ -198,7 +198,7 @@ describe('grid badge, filter and alerts', () => {
 
   it('HANDOVER-UI-010 compact card badge from server evaluation', () => {
     render(<HandoverCardBadge summary={summary({ daysRemaining: 12 })} />);
-    expect(screen.getByTestId('handover-card-badge')).toHaveTextContent('MB: Còn 12 ngày');
+    expect(screen.getByTestId('handover-card-badge')).toHaveTextContent('BDA dự kiến bàn giao: Còn 12 ngày');
   });
 
   it('HANDOVER-UI-011 filter buckets use only server fields', () => {

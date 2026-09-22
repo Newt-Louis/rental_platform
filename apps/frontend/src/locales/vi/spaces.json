@@ -213,6 +213,7 @@
       "title": "Chi tiết mặt bằng {{code}}",
       "close": "Đóng bảng chi tiết",
       "information": "Thông tin",
+      "bookingHolder": "Khách booking",
       "area": "Diện tích NLA",
       "areaGFA": "Diện tích GFA",
       "rent": "Giá chào",

@@ -230,7 +230,7 @@ export function UnitDetailSheet({
               ['sales', 'Bán hàng', TrendingUp],
               ['media', 'Media', Image],
               ['slots', 'Booking Slot', BookmarkPlus],
-              ['handover', 'Bàn giao MB', ClipboardCheck],
+              ['handover', 'BDA bàn giao MB', ClipboardCheck],
             ] as const).map(([tab, label, Icon]) => {
               const hasBadge = tab === 'sales' && (
                 (d.bookings?.filter((b: any) => ['ACTIVE', 'PENDING'].includes(b.status)).length ?? 0) +

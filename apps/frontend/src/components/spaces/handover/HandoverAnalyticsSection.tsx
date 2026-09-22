@@ -44,7 +44,7 @@ export function HandoverAnalyticsSection({
       <CardContent className="pt-4">
         <h3 className="mb-3 flex items-center gap-2 font-semibold">
           <ClipboardCheck size={16} className="text-gray-400" />
-          Bàn giao mặt bằng từ Ban dự án
+          BDA dự kiến bàn giao mặt bằng
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-medium ${floorId ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}
             data-testid="handover-analytics-scope"

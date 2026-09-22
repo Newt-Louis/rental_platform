@@ -184,14 +184,14 @@ export function HandoverReadinessTab({ unitId }: { unitId: string }) {
   if (!r) {
     return (
       <div className="space-y-3" data-testid="handover-tab">
-        <Section title="BÀN GIAO MẶT BẰNG TỪ BAN DỰ ÁN" icon={CalendarClock}>
+        <Section title="BDA DỰ KIẾN BÀN GIAO MẶT BẰNG" icon={CalendarClock}>
           {data.canStart ? (
             <div className="space-y-3">
               <label className="flex items-start gap-2 text-sm">
-                <Checkbox checked={tick} onCheckedChange={(v) => setTick(v === true)} aria-label="Theo dõi đủ điều kiện bàn giao MB" />
+                <Checkbox checked={tick} onCheckedChange={(v) => setTick(v === true)} aria-label="Theo dõi ngày BDA dự kiến bàn giao mặt bằng" />
                 <span>
-                  <span className="font-medium">Theo dõi đủ điều kiện bàn giao MB</span>
-                  <span className="block text-xs text-gray-500">Theo dõi ngày Ban dự án bàn giao mặt bằng cho Leasing/Vận hành. Không thay đổi trạng thái mặt bằng.</span>
+                  <span className="font-medium">Theo dõi ngày BDA dự kiến bàn giao mặt bằng</span>
+                  <span className="block text-xs text-gray-500">Ngày Ban dự án (BDA) dự kiến bàn giao mặt bằng cho Leasing/Vận hành. Không thay đổi trạng thái mặt bằng.</span>
                 </span>
               </label>
               {tick && (

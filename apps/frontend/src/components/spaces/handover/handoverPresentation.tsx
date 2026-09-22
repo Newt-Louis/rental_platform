@@ -63,6 +63,16 @@ export function HandoverStatusBadge({ status, className = '' }: { status: Handov
   );
 }
 
+/**
+ * The date the Project Board (Ban dự án) expects to hand the space over to
+ * Leasing/Operations.
+ *
+ * The badge used to read "MB: Còn 12 ngày", which readers could not place: "MB"
+ * is the space itself, not the handover, and nothing on the badge said whose
+ * date it was. It now names the party and the event.
+ */
+export const HANDOVER_LABEL = 'BDA dự kiến bàn giao mặt bằng';
+
 /** Compact grid-card badge. Deliberately one line so the card is not overloaded. */
 export function HandoverCardBadge({ summary }: { summary: HandoverSummary }) {
   const e = summary.evaluation;
@@ -71,10 +81,10 @@ export function HandoverCardBadge({ summary }: { summary: HandoverSummary }) {
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
-      title={`Bàn giao MB từ Ban dự án · ${meta.label}`}
+      title={`${HANDOVER_LABEL} · ${meta.label}`}
       data-testid="handover-card-badge"
     >
-      MB: {handoverDaysLabel(e)}{risky ? ' · Rủi ro' : ''}
+      BDA dự kiến bàn giao: {handoverDaysLabel(e)}{risky ? ' · Rủi ro' : ''}
     </span>
   );
 }
@@ -83,11 +93,11 @@ export function HandoverCardBadge({ summary }: { summary: HandoverSummary }) {
 export type HandoverFilter = '' | 'TRACKED' | 'DUE_30' | 'OVERDUE' | 'AT_RISK' | 'CONFIRMED';
 
 export const HANDOVER_FILTER_OPTIONS: Array<{ value: Exclude<HandoverFilter, ''>; label: string }> = [
-  { value: 'TRACKED', label: 'Đang theo dõi bàn giao' },
-  { value: 'DUE_30', label: 'Bàn giao ≤30 ngày' },
-  { value: 'OVERDUE', label: 'Bàn giao quá hạn' },
-  { value: 'AT_RISK', label: 'Bàn giao có rủi ro' },
-  { value: 'CONFIRMED', label: 'Đã xác nhận đủ điều kiện' },
+  { value: 'TRACKED', label: 'BDA đang theo dõi bàn giao' },
+  { value: 'DUE_30', label: 'BDA bàn giao ≤30 ngày' },
+  { value: 'OVERDUE', label: 'BDA bàn giao quá hạn' },
+  { value: 'AT_RISK', label: 'BDA bàn giao có rủi ro' },
+  { value: 'CONFIRMED', label: 'Đã xác nhận đủ điều kiện bàn giao' },
 ];
 
 export function matchesHandoverFilter(summary: HandoverSummary | undefined, filter: HandoverFilter): boolean {

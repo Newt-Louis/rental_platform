@@ -578,9 +578,24 @@ describe('SPACE-MAP-UX-020 the map still behaves like the map', () => {
     await waitFor(() => expect(screen.getByText('100%')).toBeInTheDocument());
   });
 
-  it('offers fullscreen from inside the map controls', async () => {
+  it('offers exactly one way into fullscreen, and it is labelled', async () => {
+    // Two controls with the same accessible name read as one control repeated.
     renderMap([unit()]);
-    expect(await screen.findByRole('button', { name: 'Toàn màn hình' })).toBeInTheDocument();
+    await findHit('L2-01');
+
+    const ways = screen.getAllByRole('button', { name: 'Toàn màn hình' });
+    expect(ways).toHaveLength(1);
+    expect(ways[0]).toHaveTextContent('Toàn màn hình');
+  });
+
+  it('keeps the fullscreen button reachable when the page owns the floor selector', async () => {
+    // The button used to live in the floor-nav row, which this mode hides.
+    renderMap([unit()], { activeFloorId: 'f1', onFloorChange: vi.fn() });
+    await findHit('L2-01');
+
+    expect(screen.queryByTestId('map-floor-nav')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Toàn màn hình' }));
+    expect(await screen.findByRole('button', { name: /Thoát toàn màn hình/ })).toBeInTheDocument();
   });
 });
 

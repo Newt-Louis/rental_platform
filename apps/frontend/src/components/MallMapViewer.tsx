@@ -7,7 +7,9 @@ import {
   MapPin, ChevronLeft, ChevronRight, Maximize2, Minimize2,
   ZoomIn, ZoomOut, Locate, ImageOff, SearchX,
 } from 'lucide-react';
-import type { FloorMapData, Unit, Floor } from '@/types';
+import type { FloorMapData, Unit, Floor, UnitSlotSummary } from '@/types';
+import type { HandoverSummary } from '@/api/handover-readiness';
+import { bookingHolderLabel, type UnitBookingSummary } from '@/components/spaces/unitBookingSummary';
 import { cn } from '@/lib/utils';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
@@ -136,8 +138,10 @@ const UnitPolygon = React.memo(function UnitPolygon({
  * stays the same size on screen however far the map is zoomed, and zooming in
  * buys room for more of the unit's facts rather than bigger letters.
  */
-export function UnitLabel({ unit, detail, selected, hovered, scale, liftPx, t }: {
+export function UnitLabel({ unit, bookingName, detail, selected, hovered, scale, liftPx, t }: {
   unit: Unit;
+  /** Who is holding the space, when one of the larger label sizes has room. */
+  bookingName?: string;
   detail: MapDetail;
   selected: boolean;
   hovered: boolean;
@@ -189,6 +193,11 @@ export function UnitLabel({ unit, detail, selected, hovered, scale, liftPx, t }:
         <div className="whitespace-nowrap text-[10px] font-semibold" style={{ color: token.ink }}>
           {detail === 'FULL' && tenantName ? tenantName : statusLabel}
         </div>
+      )}
+      {/* A held space says whose hold it is -- "Đang giữ chỗ" with no name is
+          what sent readers to the Bookings screen to find out. */}
+      {detail === 'FULL' && !tenantName && bookingName && (
+        <div className="whitespace-nowrap text-[10px] font-medium text-amber-700">{bookingName}</div>
       )}
       {detail === 'FULL' && rent > 0 && (
         <div className="whitespace-nowrap text-[10px] text-slate-500 tabular-nums">
@@ -279,6 +288,13 @@ interface MallMapViewerProps {
   activeUnitIds?: Set<string>;
   filtersActive?: boolean;
   onClearFilters?: () => void;
+  /**
+   * The same facts the list and the floor plan show for a space. Supplied by
+   * the page so all three views describe a space identically.
+   */
+  slotSummaries?: Record<string, UnitSlotSummary>;
+  handoverByUnit?: Record<string, HandoverSummary>;
+  bookingByUnit?: Record<string, UnitBookingSummary>;
   onUnitClick?: (unit: Unit) => void;
   onBookUnit?: (unit: Unit) => void;
   /** Ghim vị trí vấn đề/khiếm khuyết fitout (D-Map) — tuỳ chọn, không có thì không đổi hành vi hiện tại. */
@@ -288,6 +304,7 @@ interface MallMapViewerProps {
 export function MallMapViewer({
   floors, initialFloorId, activeFloorId: controlledFloorId, onFloorChange,
   activeUnitIds, filtersActive, onClearFilters,
+  slotSummaries = {}, handoverByUnit = {}, bookingByUnit = {},
   onUnitClick, onBookUnit, issuePins,
 }: MallMapViewerProps) {
   const { t } = useTranslation('spaces');
@@ -736,6 +753,7 @@ export function MallMapViewer({
               >
                 <UnitLabel
                   unit={u}
+                  bookingName={bookingHolderLabel(bookingByUnit[u.id]) ?? undefined}
                   detail={detail}
                   selected={selected}
                   hovered={hovered}
@@ -793,12 +811,6 @@ export function MallMapViewer({
             className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40"
             disabled={view.zoom === MIN_ZOOM && view.x === 0 && view.y === 0} onClick={resetView}>
             <Locate size={16} />
-          </button>
-          <button type="button" aria-label={fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')}
-            title={`${fullscreen ? t('map.exitFullscreen') : t('map.fullscreen')} (F)`}
-            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-100"
-            onClick={() => setIsFullscreen(!fullscreen)}>
-            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
 
@@ -953,6 +965,9 @@ export function MallMapViewer({
       unit={selectedUnit}
       coverUrl={coverUrl}
       floorName={floor?.name}
+      slotSummary={slotSummaries[selectedUnit.id]}
+      handover={handoverByUnit[selectedUnit.id]}
+      booking={bookingByUnit[selectedUnit.id]}
       onClose={() => setSelectedUnit(null)}
       onViewDetail={onUnitClick}
       onBook={onBookUnit}
@@ -990,10 +1005,24 @@ export function MallMapViewer({
 
   return (
     <div className="space-y-2.5">
-      {/* Row 1 — floor selector, only when the page has not provided one */}
-      {!isControlled && (
-        <div className="flex flex-wrap items-center gap-3">{renderFloorNav(false)}</div>
-      )}
+      {/*
+        Row 1 — the floor selector when the page has not provided one, and a
+        fullscreen button that is always offered. Folding fullscreen into the
+        corner control stack left it as an unlabelled icon, and on a page that
+        owns the floor selector this whole row disappeared with it: readers
+        could no longer find the one control that makes a floor plan legible.
+      */}
+      <div className="flex flex-wrap items-center gap-3">
+        {!isControlled && renderFloorNav(false)}
+        <button
+          type="button"
+          onClick={() => setIsFullscreen(true)}
+          title={`${t('map.fullscreen')} (F)`}
+          className="ml-auto flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 transition-all hover:border-gray-400 hover:text-gray-900"
+        >
+          <Maximize2 size={13} /> {t('map.fullscreen')}
+        </button>
+      </div>
 
       {/* Row 2 — business filters, only where this map owns them */}
       {!pageOwnsFilters && renderStatusFilters(false)}

@@ -8,6 +8,8 @@ import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPrese
 import type { Unit, UnitSlotSummary } from '@/types';
 import type { HandoverSummary } from '@/api/handover-readiness';
 import { HandoverCardBadge } from './handover/handoverPresentation';
+import { UnitOccupancyLines } from './UnitFacts';
+import type { UnitBookingSummary } from './unitBookingSummary';
 
 export function UnitCard({
   unit,
@@ -17,6 +19,7 @@ export function UnitCard({
   onToggleSelect,
   slotSummary,
   handover,
+  booking,
 }: {
   unit: Unit;
   onClick: () => void;
@@ -26,6 +29,7 @@ export function UnitCard({
   slotSummary?: UnitSlotSummary | null;
   /** CR-UNIT-HANDOVER-READINESS: server-evaluated readiness, when tracked. */
   handover?: HandoverSummary;
+  booking?: UnitBookingSummary;
 }) {
   const { t } = useTranslation('spaces');
   const cfg = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.VACANT;
@@ -88,7 +92,9 @@ export function UnitCard({
           </div>
           {unit.category && <div className="text-gray-700">{unit.category}</div>}
           <SlotSummaryBadge summary={slotSummary} compact />
-          {unit.tenant && <div className="font-medium text-gray-700 pt-1">{unit.tenant.brandName}</div>}
+          {/* Tenant and booking holder, written exactly as the floor plan and
+              the mall map write them. */}
+          <UnitOccupancyLines unit={unit} booking={booking} className="pt-1" />
         </div>
       </CardContent>
     </Card>

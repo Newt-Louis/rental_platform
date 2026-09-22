@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spacesApi, categoriesApi, slotsApi, handoverReadinessApi } from '@/api';
+import { spacesApi, categoriesApi, slotsApi, handoverReadinessApi, bookingApi } from '@/api';
 import { canPerformAction } from '@/lib/permissions';
 import { matchesHandoverFilter, type HandoverFilter } from '@/components/spaces/handover/handoverPresentation';
+import { buildUnitBookingIndex } from '@/components/spaces/unitBookingSummary';
 import { useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
@@ -193,6 +194,19 @@ export default function SpacesPage() {
     [gridUnits, activeFloorId],
   );
   const businessFiltersActive = !!(search || statusFilter || handoverFilter || hasAdvancedFilters);
+
+  /**
+   * Who is holding each space. The list, the floor plan and the map all show
+   * it, so it is resolved once here rather than three times with three
+   * different answers.
+   */
+  const { data: bookingsData } = useQuery({
+    queryKey: ['unit-booking-summary', selectedMallId],
+    queryFn: () => bookingApi.list({ mallId: selectedMallId ?? undefined, limit: 300 }),
+    enabled: !!selectedMallId,
+    staleTime: 30_000,
+  });
+  const bookingByUnit = useMemo(() => buildUnitBookingIndex(bookingsData), [bookingsData]);
 
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({
     queryKey: ['slot-summaries', unitIds.join(',')],
@@ -430,6 +444,7 @@ export default function SpacesPage() {
           units={gridUnits}
           slotSummaries={slotSummaries}
           handoverByUnit={handoverByUnit}
+          bookingByUnit={bookingByUnit}
           isLoading={isLoading}
           isAdmin={isAdmin}
           mallId={selectedMallId}
@@ -447,6 +462,8 @@ export default function SpacesPage() {
           onUnitClick={setSelectedUnit}
           selectedUnitId={selectedUnit?.id}
           slotSummaries={slotSummaries}
+          handoverByUnit={handoverByUnit}
+          bookingByUnit={bookingByUnit}
           allFloors={floors}
           // Controlled only when the page floor bar exists (a Mall is selected);
           // with no Mall the plan keeps its own tabs derived from the units.
@@ -549,6 +566,9 @@ export default function SpacesPage() {
                 onFloorChange={setFloorFilter}
                 // SPACE-MAP-FILTER-01: the map draws what this page resolved.
                 activeUnitIds={mapUnitIds}
+                slotSummaries={slotSummaries}
+                handoverByUnit={handoverByUnit}
+                bookingByUnit={bookingByUnit}
                 filtersActive={businessFiltersActive}
                 onClearFilters={clearFilters}
                 onUnitClick={(u) => setSelectedUnit(u)}

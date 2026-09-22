@@ -2,7 +2,10 @@ import { useTranslation } from 'react-i18next';
 import { X, Building2, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { Unit } from '@/types';
+import type { Unit, UnitSlotSummary } from '@/types';
+import type { HandoverSummary } from '@/api/handover-readiness';
+import { UnitBadges, UnitBookingLine } from './spaces/UnitFacts';
+import type { UnitBookingSummary } from './spaces/unitBookingSummary';
 import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 import { statusToken } from './mallMapTheme';
 
@@ -38,11 +41,15 @@ function Kpi({ label, value }: { label: string; value: string }) {
 }
 
 export function MallMapUnitPanel({
-  unit, coverUrl, floorName, onClose, onViewDetail, onBook,
+  unit, coverUrl, floorName, slotSummary, handover, booking,
+  onClose, onViewDetail, onBook,
 }: {
   unit: Unit;
   coverUrl?: string;
   floorName?: string;
+  slotSummary?: UnitSlotSummary;
+  handover?: HandoverSummary;
+  booking?: UnitBookingSummary;
   onClose: () => void;
   onViewDetail?: (u: Unit) => void;
   onBook?: (u: Unit) => void;
@@ -97,6 +104,15 @@ export function MallMapUnitPanel({
           <Kpi label={t('map.panel.rent')} value={rent > 0 ? formatRatePerSqm(rent, unit.currencyCode) : '—'} />
           <Kpi label={t('map.panel.leaseType')} value={leaseTerm ?? '—'} />
         </div>
+
+        <UnitBadges handover={handover} slotSummary={slotSummary} className="px-4 pt-3" />
+
+        {booking && (
+          <div className="mx-4 mt-3 rounded-lg bg-amber-50 px-2.5 py-2">
+            <div className="text-[10px] uppercase tracking-wide text-amber-700/70">{t('map.panel.bookingHolder')}</div>
+            <UnitBookingLine booking={booking} className="text-amber-800" />
+          </div>
+        )}
 
         {unit.tenant && (
           <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg bg-green-50 px-2.5 py-2">
