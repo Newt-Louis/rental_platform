@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { spacesApi, categoriesApi, slotsApi, handoverReadinessApi } from '@/api';
 import { canPerformAction } from '@/lib/permissions';
 import { matchesHandoverFilter, type HandoverFilter } from '@/components/spaces/handover/handoverPresentation';
@@ -71,6 +71,8 @@ export default function SpacesPage() {
     tierFilter,
     leaseTermFilter, setLeaseTermFilter,
     handoverFilter,
+    hasAdvancedFilters,
+    clearFilters,
   } = useSpacesFilters();
   const rentalZone = leaseTermFilter === 'SHORT' ? 'SHORT' : 'LONG';
 
@@ -118,13 +120,23 @@ export default function SpacesPage() {
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
+  // The page floor bar is the ONLY floor selector. A plan -- floor view or map
+  // view -- always shows exactly one floor, so an empty selection there means
+  // the first floor.
+  const showsOneFloor = view === 'floor' || view === 'map';
+  const activeFloorId = showsOneFloor ? (floorFilter || floors[0]?.id || '') : floorFilter;
+  // A plan view asks the server for exactly the floor it draws. Fetching every
+  // floor and discarding the rest let the page limit truncate the one floor the
+  // reader is actually looking at.
+  const queryFloorId = showsOneFloor ? activeFloorId : floorFilter;
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone }],
+    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: queryFloorId, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone }],
     queryFn: () => spacesApi.listUnits({
       search: search || undefined,
       status: statusFilter || undefined,
       mallId: selectedMallId || undefined,
-      floorId: floorFilter || undefined,
+      floorId: queryFloorId || undefined,
       minArea: minArea || undefined,
       maxArea: maxArea || undefined,
       minRent: minRent || undefined,
@@ -138,12 +150,14 @@ export default function SpacesPage() {
     }),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    // Changing a filter changes the query key, and without this the page falls
+    // back to its loading state and tears the view down: the map was rebuilt
+    // from scratch on every keystroke, losing the reader's zoom and pan, and
+    // the grid flashed a skeleton between every result.
+    placeholderData: keepPreviousData,
   });
 
   const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
-  // The page floor bar is the ONLY floor selector. In the floor-plan view a floor
-  // must always be shown, so an empty selection means the first floor.
-  const activeFloorId = view === 'floor' ? (floorFilter || floors[0]?.id || '') : floorFilter;
   const unitIds = units.map((u) => u.id);
 
   // CR-UNIT-HANDOVER-READINESS -- Mall-scoped, server-evaluated readiness for
@@ -163,6 +177,22 @@ export default function SpacesPage() {
   const gridUnits = handoverFilter
     ? units.filter((u) => matchesHandoverFilter(handoverByUnit[u.id], handoverFilter as HandoverFilter))
     : units;
+
+  /**
+   * CR-SPACES-FLOOR-MAP-UX-001 SPACE-MAP-FILTER-01 -- the map and the grid show
+   * the same units.
+   *
+   * The map used to fetch the whole floor and ignore every filter on this page,
+   * so "Trống, 50-200 m2" could list four spaces and draw forty. It now renders
+   * the population this page already resolved. Only the identities cross over:
+   * the map keeps its own richer records (geometry, cover photo) and no filter
+   * rule is re-implemented inside it.
+   */
+  const mapUnitIds = useMemo(
+    () => new Set(gridUnits.filter((u) => u.floorId === activeFloorId).map((u) => u.id)),
+    [gridUnits, activeFloorId],
+  );
+  const businessFiltersActive = !!(search || statusFilter || handoverFilter || hasAdvancedFilters);
 
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({
     queryKey: ['slot-summaries', unitIds.join(',')],
@@ -287,7 +317,7 @@ export default function SpacesPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
           <Layers size={14} className="text-gray-400 shrink-0" />
           {/* A floor plan always shows exactly one floor -- no "all floors" there. */}
-          {view !== 'floor' && (
+          {!showsOneFloor && (
             <button
               onClick={() => setFloorFilter('')}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
@@ -299,7 +329,7 @@ export default function SpacesPage() {
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
               <button
-                onClick={() => setFloorFilter(view === 'floor' ? f.id : floorFilter === f.id ? '' : f.id)}
+                onClick={() => setFloorFilter(showsOneFloor ? f.id : floorFilter === f.id ? '' : f.id)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
                   ${activeFloorId === f.id
                     ? 'bg-gray-900 text-white border-gray-900'
@@ -389,8 +419,10 @@ export default function SpacesPage() {
         />
       )}
 
-      {/* Filters (grid view only) */}
-      {view === 'grid' && <SpacesFilters categoryNames={categoryNames} showHandoverFilter={canViewHandover} />}
+      {/* Filters -- one bar, one state, for both the grid and the map */}
+      {(view === 'grid' || view === 'map') && (
+        <SpacesFilters categoryNames={categoryNames} showHandoverFilter={canViewHandover} />
+      )}
 
       {/* Grid view */}
       {view === 'grid' && !isError && (
@@ -511,6 +543,14 @@ export default function SpacesPage() {
             floors.length > 0 ? (
               <MallMapViewer
                 floors={floors}
+                // The page floor bar above is the one selector; the map must not
+                // draw a second, independently-tracked one.
+                activeFloorId={activeFloorId}
+                onFloorChange={setFloorFilter}
+                // SPACE-MAP-FILTER-01: the map draws what this page resolved.
+                activeUnitIds={mapUnitIds}
+                filtersActive={businessFiltersActive}
+                onClearFilters={clearFilters}
                 onUnitClick={(u) => setSelectedUnit(u)}
                 onBookUnit={(u) => setSelectedUnit(u)}
               />
