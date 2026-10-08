@@ -36,6 +36,8 @@ describe("BookingService.findUnits", () => {
   const emailService: any = { sendMail: jest.fn(), bookingPriceApprovalHtml: jest.fn() };
   const leadLifecycle: any = { transition: jest.fn() };
   const unitStatus: any = {
+    isCommittedToTenant: jest.fn().mockReturnValue(false),
+
     isLockedForBooking: jest.fn(
       (status: UnitStatus) =>
         !([UnitStatus.VACANT, UnitStatus.OFFERING, UnitStatus.BOOKING] as UnitStatus[]).includes(

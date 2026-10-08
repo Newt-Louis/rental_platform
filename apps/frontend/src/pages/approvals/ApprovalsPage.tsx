@@ -399,6 +399,7 @@ export default function ApprovalsPage() {
   const [proposalPage, setProposalPage] = useState(1);
   const [fitoutPage, setFitoutPage] = useState(1);
   const [pricePage, setPricePage] = useState(1);
+  const [priceHistoryPage, setPriceHistoryPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyStatus, setHistoryStatus] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(searchParams.get('workflowId'));
@@ -420,7 +421,7 @@ export default function ApprovalsPage() {
   const units: any[] = unitsResponse?.data ?? unitsResponse ?? [];
 
   useEffect(() => {
-    setProposalPage(1); setFitoutPage(1); setHistoryPage(1); setSelectedWorkflowId(null); setSelectedDecisionStepId(null);
+    setProposalPage(1); setFitoutPage(1); setHistoryPage(1); setPriceHistoryPage(1); setSelectedWorkflowId(null); setSelectedDecisionStepId(null);
     setSearch(''); setFloorId(''); setUnitId(''); setLeaseTermType('');
   }, [selectedMallId]);
 
@@ -461,6 +462,22 @@ export default function ApprovalsPage() {
     enabled: canApprovePrices,
   });
 
+  // Booking price decisions live in their own table, so the History tab needs its own query.
+  const { data: priceHistoryData } = useQuery({
+    queryKey: ['approvals-price-history', priceHistoryPage, historyStatus, selectedMallId, leaseTermType],
+    queryFn: () => bookingApi.getPriceApprovalHistory({
+      page: priceHistoryPage,
+      limit: 25,
+      status: historyStatus === 'ALL' ? undefined : historyStatus,
+      mallId: selectedMallId || undefined,
+      leaseTermType: leaseTermType || undefined,
+    }),
+    enabled: canApprovePrices,
+  });
+  const priceHistory: any[] = priceHistoryData?.data ?? [];
+  const priceHistoryTotal: number = priceHistoryData?.total ?? 0;
+  const priceHistoryTotalPages: number = priceHistoryData?.totalPages ?? 1;
+
   const steps: any[] = data?.data ?? [];
   const proposalTotalPages: number = data?.totalPages ?? 1;
   const proposalTotal: number = data?.total ?? 0;
@@ -477,12 +494,12 @@ export default function ApprovalsPage() {
   // ── Booking price mutations — individual only ──
   const approvePriceMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) => bookingApi.approvePrice(id, note),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.approvePriceSuccess') }); setPriceApproveTarget(null); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-price-history'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.approvePriceSuccess') }); setPriceApproveTarget(null); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
   const rejectPriceMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingApi.rejectPrice(id, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.rejectPriceSuccess'), variant: 'destructive' }); closeRejectDialog(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['pending-price-approvals'] }); qc.invalidateQueries({ queryKey: ['approvals-price-history'] }); qc.invalidateQueries({ queryKey: ['bookings'] }); toast({ title: t('approvals.rejectPriceSuccess'), variant: 'destructive' }); closeRejectDialog(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('common:messages.error'), variant: 'destructive' }),
   });
 
@@ -531,7 +548,7 @@ export default function ApprovalsPage() {
           onClick={() => { setView('history'); setHistoryPage(1); }}
           className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'history' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
         >
-          {t('approvals.views.history')} <span className="ml-1 tabular-nums opacity-80">{historyTotal}</span>
+          {t('approvals.views.history')} <span className="ml-1 tabular-nums opacity-80">{historyTotal + priceHistoryTotal}</span>
         </button>
       </div>
 
@@ -942,7 +959,7 @@ export default function ApprovalsPage() {
             {(['ALL', 'APPROVED', 'REJECTED'] as const).map((s) => (
               <button
                 key={s}
-                onClick={() => { setHistoryStatus(s); setHistoryPage(1); }}
+                onClick={() => { setHistoryStatus(s); setHistoryPage(1); setPriceHistoryPage(1); }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
                   historyStatus === s
                     ? s === 'APPROVED' ? 'bg-green-50 border-green-300 text-green-700'
@@ -974,7 +991,7 @@ export default function ApprovalsPage() {
               ))}
             </div>
           ) : historySteps.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
+            priceHistory.length === 0 && <div className="text-center py-20 text-gray-400">
               <History size={48} className="mx-auto mb-3 opacity-30" />
               <p className="text-lg font-medium">{t('approvals.history.empty')}</p>
               <p className="text-sm mt-1">{t('approvals.history.emptyDesc')}</p>
@@ -1064,6 +1081,58 @@ export default function ApprovalsPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {canApprovePrices && priceHistory.length > 0 && (
+            <div className="mt-6">
+              <h3 className="mb-2 text-sm font-semibold text-gray-700">{t('approvals.history.priceTitle', { defaultValue: 'Lịch sử duyệt giá booking' })}</h3>
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/60">
+                      {[t('approvals.table.bookingNo'), t('approvals.table.unit'), t('approvals.table.customer'), t('approvals.table.proposed'), t('approvals.history.table.step'), t('approvals.history.table.approver'), t('approvals.history.table.time'), t('approvals.history.table.comment'), t('approvals.history.table.result')].map((h, i) => (
+                        <th key={i} className="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {priceHistory.map((row: any) => {
+                      const b = row.booking;
+                      const customer = b?.customer?.brandName || b?.customer?.companyName || b?.lead?.brandName || '—';
+                      return (
+                        <tr key={row.id}>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-600">{b?.bookingNumber ?? '—'}</td>
+                          <td className="px-4 py-3 text-xs">{b?.unit?.code ?? '—'}{b?.unit?.floor?.name && ` · ${b.unit.floor.name}`}</td>
+                          <td className="px-4 py-3 text-sm font-medium">{customer}</td>
+                          <td className="px-4 py-3 tabular-nums">{fmtPrice(b?.proposedRentPerSqm, b?.currencyCode)}</td>
+                          <td className="px-4 py-3"><div className="text-sm font-medium text-gray-800">{row.stepName}</div><span className="text-xs text-gray-400">{t('approvals.table.step', { order: row.stepOrder })}</span></td>
+                          <td className="px-4 py-3 text-sm">{row.decidedBy?.fullName ?? '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">{row.decidedAt ? new Date(row.decidedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                          <td className="max-w-[200px] px-4 py-3">{row.comment ? <span className={`rounded px-2 py-1 text-xs ${row.status === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{row.comment}</span> : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-center">
+                            {row.status === 'APPROVED' ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"><CheckCircle size={12} /> {t('approvals.workflow.step.approved')}</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700"><XCircle size={12} /> {t('approvals.workflow.step.rejected')}</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {priceHistoryTotalPages > 1 && (
+                <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
+                  <span>{t('approvals.history.records', { count: priceHistoryTotal })}</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" disabled={priceHistoryPage === 1} onClick={() => setPriceHistoryPage(p => p - 1)}><ChevronLeft size={14} /></Button>
+                    <span className="px-2 py-1 text-xs">{t('proposals.page', { current: priceHistoryPage, total: priceHistoryTotalPages })}</span>
+                    <Button variant="outline" size="sm" disabled={priceHistoryPage >= priceHistoryTotalPages} onClick={() => setPriceHistoryPage(p => p + 1)}><ChevronRight size={14} /></Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

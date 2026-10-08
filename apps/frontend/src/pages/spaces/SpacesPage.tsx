@@ -72,6 +72,7 @@ export default function SpacesPage() {
     tierFilter,
     leaseTermFilter, setLeaseTermFilter,
     handoverFilter,
+    asOfDate,
     hasAdvancedFilters,
     clearFilters,
   } = useSpacesFilters();
@@ -132,8 +133,9 @@ export default function SpacesPage() {
   const queryFloorId = showsOneFloor ? activeFloorId : floorFilter;
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: queryFloorId, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone }],
+    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: queryFloorId, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone, asOfDate }],
     queryFn: () => spacesApi.listUnits({
+      asOfDate,
       search: search || undefined,
       status: statusFilter || undefined,
       mallId: selectedMallId || undefined,

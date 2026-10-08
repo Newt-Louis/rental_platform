@@ -18,11 +18,19 @@ export function usePermissionsSync() {
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const selectedMallId = useMallStore((s) => s.selectedMallId);
   const setAllowedModules = usePermissionsStore((s) => s.setAllowedModules);
+  const setModuleActions = usePermissionsStore((s) => s.setModuleActions);
   const reset = usePermissionsStore((s) => s.reset);
 
   const { data } = useQuery({
     queryKey: ['permissions-effective', selectedMallId],
     queryFn: () => permissionsApi.getEffective(selectedMallId),
+    enabled: isHydrated && !!token,
+    refetchInterval: 30_000,
+  });
+
+  const { data: actions } = useQuery({
+    queryKey: ['permissions-effective-actions', selectedMallId],
+    queryFn: () => permissionsApi.getEffectiveActions(selectedMallId),
     enabled: isHydrated && !!token,
     refetchInterval: 30_000,
   });
@@ -33,5 +41,6 @@ export function usePermissionsSync() {
       return;
     }
     if (data?.modules) setAllowedModules(data.modules);
-  }, [token, data, setAllowedModules, reset]);
+    if (actions) setModuleActions(actions);
+  }, [token, data, actions, setAllowedModules, setModuleActions, reset]);
 }

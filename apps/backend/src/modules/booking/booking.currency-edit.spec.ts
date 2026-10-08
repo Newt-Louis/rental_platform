@@ -66,6 +66,7 @@ describe('BookingService.update() — changing the currency', () => {
 
   const unitStatus = {
     isCommittedToTenant: jest.fn().mockReturnValue(false),
+
     isLockedForBooking: jest.fn().mockReturnValue(false),
     transition: jest.fn().mockResolvedValue({}),
   } as any;

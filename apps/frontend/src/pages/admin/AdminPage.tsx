@@ -29,6 +29,7 @@ import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPre
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS, ACTION_PERMISSIONS, ACTION_PERMISSION_META, type ActionPermission } from '@/lib/permissions';
 import { NotificationRoutingTab } from './NotificationRoutingTab';
+import { PermissionsCrudTab } from './PermissionsCrudTab';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
 import { getApiErrorMessage } from '@/lib/api-error';
@@ -1393,6 +1394,10 @@ export function PermissionsTab() {
 
   return (
     <div>
+      <h3 className="mb-2 text-sm font-semibold text-slate-900">{t('permissionsCrud.sectionCrud')}</h3>
+      <PermissionsCrudTab />
+
+      <h3 className="mb-2 mt-8 border-t border-slate-200 pt-4 text-sm font-semibold text-slate-900">{t('permissionsCrud.sectionAccess')}</h3>
       <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <Info size={14} className="shrink-0" />
         {t('permissionsEditNote')}
@@ -1794,7 +1799,7 @@ const TABS = [
   { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
   { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
   { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
-  { id: 'approval',    labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'approval',   labelKey: 'tabs.approval',    icon: GitBranch },
   { id: 'notification-routing', labelKey: 'tabs.notificationRouting', icon: Bell },
   { id: 'system',      labelKey: 'tabs.system',      icon: Settings },
 ];
@@ -1890,8 +1895,7 @@ export default function AdminPage() {
             {activeTab === 'departments' && <DepartmentsTab />}
             {activeTab === 'structure'   && <SpaceStructureTab />}
             {activeTab === 'categories'  && <CategoriesTab />}
-            {activeTab === 'permissions' && <PermissionsTab />}
-            {activeTab === 'notification-routing' && <NotificationRoutingTab />}
+            {activeTab === 'permissions' && <PermissionsTab />}            {activeTab === 'notification-routing' && <NotificationRoutingTab />}
             {activeTab === 'approval'    && <ApprovalPolicyTab />}
             {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><EmailSettingsCard /><OperationalSystemTab /></div>}
           </div>

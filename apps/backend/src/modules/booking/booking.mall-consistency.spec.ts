@@ -87,6 +87,8 @@ describe('BookingService.update() — INV-AUTH-006 mall consistency on unit reas
   } as any;
 
   const unitStatus = {
+    isCommittedToTenant: jest.fn().mockReturnValue(false),
+
     isLockedForBooking: jest.fn().mockReturnValue(false),
     transition: jest.fn(),
   } as any;

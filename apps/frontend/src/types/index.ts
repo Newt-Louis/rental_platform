@@ -278,6 +278,8 @@ export interface UnitBooking {
   businessSupportFeeSqm?: number;
   pricingSnapshot?: Record<string, unknown>;
   priceApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  bookingStartDate?: string | null;
+  bookingEndDate?: string | null;
   holdDays: number;
   expiresAt?: string;
   activatedAt?: string;

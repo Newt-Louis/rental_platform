@@ -20,7 +20,7 @@ vi.mock("@/api", () => ({
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast }) }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "vi" } }),
 }));
 
 vi.mock("./UnitFinder", () => ({

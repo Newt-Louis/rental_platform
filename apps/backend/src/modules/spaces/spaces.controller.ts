@@ -182,6 +182,7 @@ export class SpacesController {
   @ApiQuery({ name: 'spaceType', required: false, description: 'GAP #4 — filter by space type' })
   @ApiQuery({ name: 'tier', required: false, description: 'GAP #6 — filter by tier (A/B/C)' })
   @ApiQuery({ name: 'leaseTermType', required: false, description: 'GAP #3 — filter by lease term type (LONG/SHORT)' })
+  @ApiQuery({ name: 'asOfDate', required: false, description: 'yyyy-MM-dd — trạng thái mặt bằng tại ngày này (mặc định: hiện tại)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })

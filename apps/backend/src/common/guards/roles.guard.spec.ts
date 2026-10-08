@@ -21,6 +21,8 @@ describe('RolesGuard', () => {
   };
   const permissions = {
     getAllowedRoles: jest.fn(),
+    getUserDecision: jest.fn(),
+    isRoleActionAllowed: jest.fn(),
   };
   const context = {
     getHandler: jest.fn(() => HANDLER),
@@ -31,6 +33,8 @@ describe('RolesGuard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    permissions.getUserDecision.mockResolvedValue(null);
+    permissions.isRoleActionAllowed.mockResolvedValue(true);
     (context.getHandler as jest.Mock).mockReturnValue(HANDLER);
     (context.getClass as jest.Mock).mockReturnValue(CLASS);
     guard = new RolesGuard(reflector as unknown as Reflector, permissions as unknown as PermissionsService);
@@ -271,6 +275,55 @@ describe('RolesGuard', () => {
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
       expect(permissions.getAllowedRoles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('CRUD rights (view/create/update/delete)', () => {
+    function request(method: string, user: { id?: string; role: Role } = { id: 'u1', role: Role.LEASING_MANAGER }) {
+      reflector.getAllAndOverride.mockReturnValueOnce(false);
+      mockMetadata({
+        [ROLES_KEY]: { class: [Role.LEASING_MANAGER] },
+        [MODULE_KEY]: { class: 'crm' },
+      });
+      (context.switchToHttp as jest.Mock).mockReturnValue({
+        getRequest: () => ({ method, user, query: {}, body: {}, params: {} }),
+      });
+    }
+
+    it.each([
+      ['GET', 'view'], ['POST', 'create'], ['PUT', 'update'], ['PATCH', 'update'], ['DELETE', 'delete'],
+    ])('maps %s to the %s right', async (method, action) => {
+      request(method);
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.LEASING_MANAGER]));
+
+      await guard.canActivate(context);
+
+      expect(permissions.isRoleActionAllowed).toHaveBeenCalledWith(Role.LEASING_MANAGER, 'crm', action, undefined);
+    });
+
+    it('denies a role that may view but not delete', async () => {
+      request('DELETE');
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.LEASING_MANAGER]));
+      permissions.isRoleActionAllowed.mockResolvedValue(false);
+
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('lets a per-user grant override a role that is not allowed', async () => {
+      request('POST', { id: 'u1', role: Role.FINANCE });
+      permissions.getUserDecision.mockResolvedValue(true);
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(permissions.getUserDecision).toHaveBeenCalledWith('u1', 'crm', 'create', undefined);
+      expect(permissions.getAllowedRoles).not.toHaveBeenCalled();
+    });
+
+    it('lets a per-user denial override a role that is allowed', async () => {
+      request('GET');
+      permissions.getUserDecision.mockResolvedValue(false);
+      permissions.getAllowedRoles.mockResolvedValue(new Set([Role.LEASING_MANAGER]));
+
+      await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
     });
   });
 });

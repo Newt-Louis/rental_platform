@@ -258,13 +258,13 @@ describe("ServiceContractsPage all-mall view", () => {
       { target: { value: "MAINTENANCE" } },
     );
     await user.type(
-      within(createForm).getByLabelText(/^Giá trị ban đầu/),
+      within(createForm).getByLabelText(/^Giá trị hợp đồng/),
       "100000000",
     );
     await user.clear(within(createForm).getByLabelText(/^VAT/));
     await user.type(within(createForm).getByLabelText(/^VAT/), "20");
     expect(
-      within(createForm).getByText("Giá trị hợp đồng này:", { exact: false }),
+      within(createForm).getByText("Giá trị hợp đồng bao gồm VAT:", { exact: false }),
     ).toHaveTextContent("120.000.000");
     fireEvent.change(within(createForm).getByLabelText(/^Cơ sở giá trị/), {
       target: { value: "ANNUAL" },

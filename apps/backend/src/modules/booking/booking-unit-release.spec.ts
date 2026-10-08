@@ -20,13 +20,14 @@ function harness(opts: { booking: any; activeProposals?: number; queued?: any })
     },
     proposal: { count: jest.fn().mockResolvedValue(opts.activeProposals ?? 0) },
     bookingActivity: { create: jest.fn() },
+    unit: { findUnique: jest.fn().mockResolvedValue({ status: 'VACANT' }) },
   };
   const prisma: any = {
     unitBooking: { findUnique: jest.fn().mockResolvedValue(opts.booking) },
     proposal: { count: jest.fn().mockResolvedValue(opts.activeProposals ?? 0) },
     $transaction: jest.fn((fn: any) => fn(tx)),
   };
-  const unitStatus = { transition: jest.fn() };
+  const unitStatus = { transition: jest.fn(), isCommittedToTenant: jest.fn().mockReturnValue(false) };
   const service = new BookingService(prisma, {} as any, unitStatus as any, {} as any, { create: jest.fn() } as any, {} as any, {} as any);
   return { service, prisma, tx, unitStatus };
 }

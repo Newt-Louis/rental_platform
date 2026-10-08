@@ -353,10 +353,13 @@ export class SpacesService {
     spaceType?: string;
     tier?: string;
     leaseTermType?: string;
+    /** yyyy-MM-dd. Thiếu = trạng thái hiện tại; có = trạng thái mặt bằng tại ngày đó. */
+    asOfDate?: string;
     page?: number;
     limit?: number;
   }, accessibleMallIds?: string[] | null) {
-    const { search, ...filters } = query;
+    const { search, asOfDate, ...filters } = query;
+    const asOf = this.parseAsOfDate(asOfDate);
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
     const skip = (page - 1) * limit;
@@ -366,7 +369,8 @@ export class SpacesService {
     if (filters.zoneId) where.zoneId = filters.zoneId;
     if (filters.mallId) where.mallId = filters.mallId;
     else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
-    if (filters.status) where.status = filters.status;
+    // Với asOfDate, status lọc theo trạng thái suy ra tại ngày đó (áp sau khi truy vấn).
+    if (filters.status && !asOf) where.status = filters.status;
     if (filters.category) where.category = filters.category;
     if (filters.tenantId) where.tenantId = filters.tenantId;
     // GAP #3 / #4 / #6
@@ -393,23 +397,42 @@ export class SpacesService {
       ];
     }
 
+    const include = {
+      floor: { select: { id: true, name: true, level: true } },
+      zone: { select: { id: true, name: true, code: true } },
+      tenant: {
+        select: {
+          id: true,
+          brandName: true,
+          companyName: true,
+          contactName: true,
+        },
+      },
+    };
+
+    if (asOf) {
+      // Trạng thái tại một ngày khác hôm nay không có sẵn trong DB nên phải suy ra trước,
+      // rồi mới lọc theo status và phân trang.
+      const all = await this.prisma.unit.findMany({ where, include, orderBy: { code: 'asc' } });
+      const statusById = await this.deriveStatusesAsOf(all, asOf);
+      const withStatus = all
+        .map((u) => ({ ...u, currentStatus: u.status, status: statusById.get(u.id) ?? u.status, asOfDate }))
+        .filter((u) => !filters.status || u.status === filters.status);
+      return {
+        data: withStatus.slice(skip, skip + +limit),
+        total: withStatus.length,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(withStatus.length / +limit),
+      };
+    }
+
     const [units, total] = await Promise.all([
       this.prisma.unit.findMany({
         where,
         skip,
         take: +limit,
-        include: {
-          floor: { select: { id: true, name: true, level: true } },
-          zone: { select: { id: true, name: true, code: true } },
-          tenant: {
-            select: {
-              id: true,
-              brandName: true,
-              companyName: true,
-              contactName: true,
-            },
-          },
-        },
+        include,
         orderBy: { code: 'asc' },
       }),
       this.prisma.unit.count({ where }),
@@ -422,6 +445,63 @@ export class SpacesService {
       limit: +limit,
       totalPages: Math.ceil(total / +limit),
     };
+  }
+
+  private parseAsOfDate(value?: string): { start: Date; end: Date } | null {
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequestException('asOfDate phải có dạng yyyy-MM-dd');
+    }
+    const start = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) throw new BadRequestException('asOfDate không hợp lệ');
+    return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1) };
+  }
+
+  /**
+   * Trạng thái mặt bằng tại một ngày: đang có hợp đồng hiệu lực phủ ngày đó → OCCUPIED;
+   * có booking (có thời gian booking) phủ ngày đó → BOOKING; còn lại → VACANT
+   * (giữ OFFERING nếu mặt bằng đang được chào thuê, MERGED luôn giữ nguyên).
+   */
+  private async deriveStatusesAsOf(
+    units: { id: string; status: UnitStatus }[],
+    day: { start: Date; end: Date },
+  ): Promise<Map<string, UnitStatus>> {
+    const ids = units.map((u) => u.id);
+    const result = new Map<string, UnitStatus>();
+    if (!ids.length) return result;
+
+    const [contracts, bookings] = await Promise.all([
+      this.prisma.contract.findMany({
+        where: {
+          unitId: { in: ids },
+          isActive: true,
+          status: { in: ['ACTIVE', 'EXPIRING', 'TERMINATING'] },
+          startDate: { lte: day.end },
+          endDate: { gte: day.start },
+        },
+        select: { unitId: true },
+      }),
+      this.prisma.unitBooking.findMany({
+        where: {
+          unitId: { in: ids },
+          isActive: true,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          bookingStartDate: { lte: day.end },
+          bookingEndDate: { gte: day.start },
+        },
+        select: { unitId: true },
+      }),
+    ]);
+    const leased = new Set(contracts.map((c) => c.unitId));
+    const booked = new Set(bookings.map((b) => b.unitId));
+
+    for (const u of units) {
+      if (u.status === UnitStatus.MERGED) result.set(u.id, UnitStatus.MERGED);
+      else if (leased.has(u.id)) result.set(u.id, UnitStatus.OCCUPIED);
+      else if (booked.has(u.id)) result.set(u.id, UnitStatus.BOOKING);
+      else result.set(u.id, u.status === UnitStatus.OFFERING ? UnitStatus.OFFERING : UnitStatus.VACANT);
+    }
+    return result;
   }
 
   async getUnit(id: string) {

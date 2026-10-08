@@ -26,6 +26,7 @@ export function SpacesFilters({ categoryNames, showHandoverFilter = false }: { c
     spaceTypeFilter, setSpaceTypeFilter,
     tierFilter, setTierFilter,
     handoverFilter, setHandoverFilter,
+    dateFilter, setDateFilter, isDateCustom,
     hasAdvancedFilters,
     clearFilters,
   } = useSpacesFilters();
@@ -41,6 +42,17 @@ export function SpacesFilters({ categoryNames, showHandoverFilter = false }: { c
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="spaces-as-of-date" className="text-xs font-medium text-gray-500 whitespace-nowrap">Thời gian</label>
+          <Input
+            id="spaces-as-of-date"
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            title="Trạng thái mặt bằng tại ngày này (mặc định hôm nay)"
+            className="w-full sm:w-40"
           />
         </div>
         <Select value={statusFilter || 'ALL'} onValueChange={(value) => setStatusFilter(value === 'ALL' ? '' : value)}>
@@ -77,7 +89,7 @@ export function SpacesFilters({ categoryNames, showHandoverFilter = false }: { c
           {t('filters.advanced')}
           {hasAdvancedFilters && <span className="w-2 h-2 bg-gray-500 rounded-full" />}
         </Button>
-        {(statusFilter || floorFilter || search || hasAdvancedFilters || handoverFilter) && (
+        {(statusFilter || floorFilter || search || hasAdvancedFilters || handoverFilter || isDateCustom) && (
           <Button variant="outline" size="sm" onClick={clearFilters}>
             <X size={14} className="mr-1" /> {t('filters.clearAll')}
           </Button>

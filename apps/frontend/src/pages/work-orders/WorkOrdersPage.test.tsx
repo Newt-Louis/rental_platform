@@ -116,7 +116,7 @@ describe('WorkOrdersPage departments and images', () => {
 
   it('scopes both assignment pickers to the active Mall', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider></MemoryRouter>);
 
     await screen.findByText('WO-001');
     await waitFor(() => expect(workOrdersApi.assignmentDepartments)
@@ -128,7 +128,7 @@ describe('WorkOrdersPage departments and images', () => {
   it('narrows the assignee list to the chosen department and clears a stale assignee', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider></MemoryRouter>);
 
     await screen.findByText('WO-001');
     await user.click(screen.getByRole('button', { name: 'Tạo công việc' }));
@@ -148,7 +148,7 @@ describe('WorkOrdersPage departments and images', () => {
   it('fills the department back in when the assignee is picked first', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider></MemoryRouter>);
 
     await screen.findByText('WO-001');
     await user.click(screen.getByRole('button', { name: 'Tạo công việc' }));
@@ -168,7 +168,7 @@ describe('WorkOrdersPage departments and images', () => {
   it('searches departments and assignees on the server', async () => {
     const user = userEvent.setup();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider>);
+    render(<MemoryRouter><QueryClientProvider client={client}><WorkOrdersPage /></QueryClientProvider></MemoryRouter>);
 
     await screen.findByText('WO-001');
     await user.click(screen.getByRole('button', { name: 'Tạo công việc' }));

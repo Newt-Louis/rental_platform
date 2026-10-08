@@ -528,6 +528,7 @@ model User {
   activeMall   Mall?   @relation("UserActiveMall", fields: [activeMallId], references: [id])
 
   assignedLeads              Lead[]                     @relation("AssignedLeads")
+  modulePermissions          UserModulePermission[]
   approvalSteps              ApprovalStep[]
   fitoutFormApprovalLevels   FitoutFormApprovalLevel[]  @relation("FitoutFormApprover")
   approvalPolicyRules        ApprovalPolicyRule[]       @relation("ApprovalPolicyApprover")
@@ -1755,13 +1756,40 @@ model ModulePermission {
   module      String
   role        Role
   mallId      String   @default("GLOBAL")
+  // `allowed` is the VIEW right (module access). Create/Update/Delete are only
+  // meaningful while it is true; they default to true so rows that predate the
+  // CRUD matrix keep their exact behaviour.
   allowed     Boolean  @default(true)
+  canCreate   Boolean  @default(true)
+  canUpdate   Boolean  @default(true)
+  canDelete   Boolean  @default(true)
   updatedById String?
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 
   @@unique([module, role, mallId])
   @@index([module, mallId])
+}
+
+// Per-user override of the role matrix. Each flag is tri-state: null = inherit
+// from the user's role, true = grant, false = deny. Scoped like ModulePermission
+// (a Mall, or GLOBAL for every Mall).
+model UserModulePermission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module      String
+  mallId      String   @default("GLOBAL")
+  canView     Boolean?
+  canCreate   Boolean?
+  canUpdate   Boolean?
+  canDelete   Boolean?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, module, mallId])
+  @@index([userId, mallId])
 }
 
 // Quy tac sinh buoc duyet cho Proposal. Khai bao RIENG CHO TUNG MALL va chi dinh DICH DANH
@@ -3559,6 +3587,10 @@ model UnitBooking {
   // P.CT TTTM, KHNG dng  tnh ton/lu gi tr  cho Hp ng/Billing (xem
   // docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- h thng khng c FX engine).
   exchangeRate  Float?
+  // Booking period. Lets a unit that is currently leased be booked for a window that does
+  // not overlap the existing lease. Both null = legacy open-ended booking.
+  bookingStartDate DateTime?
+  bookingEndDate   DateTime?
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE

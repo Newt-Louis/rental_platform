@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsEnum,
+  IsDateString,
   IsInt,
   IsNumber,
   IsOptional,
@@ -15,6 +16,14 @@ export class UnitFinderQueryDto {
   @IsOptional()
   @IsString()
   mallId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  bookingStartDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  bookingEndDate?: string;
 
   @IsOptional()
   @IsString()

@@ -8,7 +8,7 @@ import {
   MODULE_KEY,
   MODULE_ROLE_CEILING_KEY,
 } from '../decorators/module-roles.decorator';
-import { PermissionsService } from '../services/permissions.service';
+import { PermissionsService, actionForMethod } from '../services/permissions.service';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -72,9 +72,18 @@ export class RolesGuard implements CanActivate {
       const mallId = req.authorizationMallId
         ?? req.query?.mallId ?? req.body?.mallId ?? req.params?.mallId
         ?? user.activeMallId;
+      // HTTP verb decides which right is needed: GET=view, POST=create,
+      // PUT/PATCH=update, DELETE=delete. A per-user override beats the role.
+      const action = actionForMethod(req.method);
+      const userDecision = await this.permissions.getUserDecision(user.id, moduleKey, action, mallId);
+      if (userDecision !== null) {
+        if (!userDecision) throw new ForbiddenException('Insufficient permissions for this action');
+        return true;
+      }
+
       const dynamic = await this.permissions.getAllowedRoles(moduleKey, mallId);
       if (dynamic) {
-        if (!dynamic.has(user.role)) {
+        if (!dynamic.has(user.role) || !(await this.permissions.isRoleActionAllowed(user.role, moduleKey, action, mallId))) {
           throw new ForbiddenException('Insufficient permissions for this action');
         }
         return true;

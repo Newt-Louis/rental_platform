@@ -41,6 +41,9 @@ const UNIT_STATUSES = [
 interface UnitFinderProps {
   mallId?: string;
   initialUnitId?: string;
+  /** Thời gian booking (yyyy-MM-dd). Có đủ 2 ngày thì mặt bằng đang thuê vẫn chọn được nếu không trùng thời gian Đang thuê. */
+  bookingStartDate?: string;
+  bookingEndDate?: string;
   selectedUnit: BookingUnitFinderRow | null;
   onSelect: (unit: BookingUnitFinderRow) => void;
 }
@@ -48,9 +51,15 @@ interface UnitFinderProps {
 export function UnitFinder({
   mallId,
   initialUnitId,
+  bookingStartDate,
+  bookingEndDate,
   selectedUnit,
   onSelect,
 }: UnitFinderProps) {
+  const period =
+    bookingStartDate && bookingEndDate
+      ? { bookingStartDate, bookingEndDate }
+      : {};
   const { t } = useTranslation("bookings");
   const [search, setSearch] = useState("");
   const [floorId, setFloorId] = useState("ALL");
@@ -82,6 +91,7 @@ export function UnitFinder({
       status: status === "ALL" ? undefined : status,
       minArea: debouncedMinArea === "" ? undefined : Number(debouncedMinArea),
       maxArea: debouncedMaxArea === "" ? undefined : Number(debouncedMaxArea),
+      ...period,
       page,
       limit: PAGE_SIZE,
     }),
@@ -94,6 +104,8 @@ export function UnitFinder({
       page,
       status,
       zoneId,
+      bookingStartDate,
+      bookingEndDate,
     ],
   );
 
@@ -104,15 +116,19 @@ export function UnitFinder({
   });
 
   const initialQuery = useQuery({
-    queryKey: ["booking-unit-finder-initial", mallId, initialUnitId],
+    queryKey: ["booking-unit-finder-initial", mallId, initialUnitId, bookingStartDate, bookingEndDate],
     queryFn: () =>
       bookingApi.findUnits({
         mallId,
         unitId: initialUnitId,
+        ...period,
         page: 1,
         limit: 1,
       }),
-    enabled: !!mallId && !!initialUnitId && selectedUnit?.id !== initialUnitId,
+    enabled:
+      !!mallId &&
+      !!initialUnitId &&
+      (selectedUnit?.id !== initialUnitId || !!period.bookingStartDate),
   });
 
   useEffect(() => {
@@ -389,8 +405,15 @@ export function UnitFinder({
                             id={`unit-blocked-${unit.id}`}
                             className="max-w-44 text-[11px] leading-snug text-muted-foreground"
                           >
-                            Không thể chọn vì mặt bằng đang ở trạng thái{" "}
-                            {unitStatusLabel(unit.status, t)}.
+                            {unit.currentEligibility.reasonCode ===
+                            "LEASE_PERIOD_OVERLAP"
+                              ? "Không thể chọn vì thời gian booking trùng thời gian Đang thuê."
+                              : (
+                                  <>
+                                    Không thể chọn vì mặt bằng đang ở trạng thái{" "}
+                                    {unitStatusLabel(unit.status, t)}.
+                                  </>
+                                )}
                           </div>
                         )}
                       </div>

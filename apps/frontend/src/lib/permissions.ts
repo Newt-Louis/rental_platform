@@ -315,6 +315,23 @@ export function canAccessModule(
   return ROUTE_PERMISSIONS[module]?.includes(role as AppRole) ?? false;
 }
 
+/**
+ * View/Create/Update/Delete right on a module, for showing or hiding buttons.
+ * Uses the live matrix (role + this user's overrides); until it loads, falls
+ * back to module access so nothing flickers away. The API enforces it anyway.
+ */
+export function canDo(
+  role: string | undefined,
+  module: RouteModule,
+  action: "view" | "create" | "update" | "delete",
+): boolean {
+  if (!role) return false;
+  if (role === "ADMIN") return true;
+  const flags = usePermissionsStore.getState().moduleActions?.[module];
+  if (flags) return flags[action];
+  return canAccessModule(role, module);
+}
+
 export function canAccessPath(role: string | undefined, path: string): boolean {
   // Product bug found during test triage (docs/reliability/TEST_BASELINE_REMEDIATION.md):
   // a query string was never stripped before segment extraction, so any path

@@ -84,6 +84,16 @@ export class CreateBookingDto {
   @Min(1)
   holdDays?: number;
 
+  @ApiPropertyOptional({ description: 'Ngày bắt đầu thời gian booking (yyyy-MM-dd). Đi cùng bookingEndDate.' })
+  @IsOptional()
+  @IsDateString()
+  bookingStartDate?: string;
+
+  @ApiPropertyOptional({ description: 'Ngày kết thúc thời gian booking (yyyy-MM-dd). Đi cùng bookingStartDate.' })
+  @IsOptional()
+  @IsDateString()
+  bookingEndDate?: string;
+
   @ApiPropertyOptional({ description: 'Ghi chú nội bộ' })
   @IsOptional()
   @IsString()
@@ -243,6 +253,16 @@ export class ConvertToProposalDto {
   @ApiProperty({ description: 'Ngày bắt đầu thuê dự kiến' })
   @IsDateString()
   startDate: string;
+
+  @ApiPropertyOptional({ description: 'Cập nhật ngày bắt đầu thời gian booking (yyyy-MM-dd)' })
+  @IsOptional()
+  @IsDateString()
+  bookingStartDate?: string;
+
+  @ApiPropertyOptional({ description: 'Cập nhật ngày kết thúc thời gian booking (yyyy-MM-dd)' })
+  @IsOptional()
+  @IsDateString()
+  bookingEndDate?: string;
 
   @ApiProperty({ description: 'Giá thuê đề xuất (VND/m²/tháng)' })
   @IsNumber()
