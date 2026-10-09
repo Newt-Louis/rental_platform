@@ -238,6 +238,8 @@ export class UnitMediaService {
       RENDER_3D: [...imageTypes, 'model/gltf-binary'],
       BROCHURE: docTypes,
       SITE_MAP: [...imageTypes, ...docTypes],
+      // Ban ve ngan han phai la anh de ve slot len tren
+      SHORT_TERM_PLAN: imageTypes,
     };
 
     if (!allowed[type].includes(file.mimetype)) {

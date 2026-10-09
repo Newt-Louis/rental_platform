@@ -264,7 +264,6 @@ export function UnitDetailSheet({
             <FloorPlanEditor
               unitId={d.id}
               unitStatus={d.status}
-              floorPlanUrl={mediaUrl(d.media?.find((m: any) => m.type === 'FLOOR_PLAN')?.fileUrl)}
               unitArea={d.areaNLA}
             />
           )}

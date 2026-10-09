@@ -76,6 +76,7 @@ enum UnitMediaType {
   RENDER_3D
   BROCHURE
   SITE_MAP
+  SHORT_TERM_PLAN // ban ve 2D rieng cua khu cho thue ngan han (tach khoi FLOOR_PLAN dai han)
 }
 
 enum BookingActivityType {
@@ -1410,8 +1411,6 @@ model Unit {
   media                UnitMedia[]
   history              UnitHistory[]
   slots                UnitSlot[]
-  // Ban ve 2D rieng cua khu ngan han (tach khoi ban ve dai han)
-  shortTermPlanUrl     String?
   fitoutIssues         FitoutIssue[]
   workOrders           WorkOrder[]
   handoverReadiness    UnitHandoverReadiness[]

@@ -234,7 +234,7 @@ export interface UnitHistory {
   createdAt: string;
 }
 
-export type UnitMediaType = 'PHOTO' | 'FLOOR_PLAN' | 'VIDEO' | 'RENDER_3D' | 'BROCHURE' | 'SITE_MAP';
+export type UnitMediaType = 'PHOTO' | 'FLOOR_PLAN' | 'VIDEO' | 'RENDER_3D' | 'BROCHURE' | 'SITE_MAP' | 'SHORT_TERM_PLAN';
 
 export interface UnitMedia {
   id: string;
@@ -312,6 +312,8 @@ export interface UnitSlot {
   priceWeekdayPerDaySqm?: number | null;
   priceWeekendHolidayPerDaySqm?: number | null;
   category?: 'EVENT' | 'ADVERTISING' | 'KIOSK' | null;
+  // Đa giác vẽ trên bản vẽ: [{x,y}] theo % (0-100). Null = hình chữ nhật posX/Y/W/H.
+  polygon?: Array<{ x: number; y: number }> | null;
   // RPT-CUR-006: currency of the three price fields. Optional because legacy
   // rows predate the column — null means UNKNOWN, never VND.
   currencyCode?: CurrencyCode | null;
