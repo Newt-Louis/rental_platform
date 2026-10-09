@@ -1,5 +1,6 @@
-import { CurrencyCode, BusinessModelEnum } from '@prisma/client';
-import { IsString, IsNumber, IsOptional, IsEnum, IsBoolean, IsDateString, Min, Max } from 'class-validator';
+import { CurrencyCode, BusinessModelEnum, SlotCategory, SlotPricingTimeBasis } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsString, IsNumber, IsOptional, IsEnum, IsBoolean, IsDateString, IsArray, ArrayMinSize, ValidateNested, Min, Max } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum SlotType { SHORT_TERM = 'SHORT_TERM', LONG_TERM = 'LONG_TERM', FLEXIBLE = 'FLEXIBLE' }
@@ -21,6 +22,10 @@ export class CreateUnitSlotDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerDaySqm?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerHour?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerSqmMonth?: number;
+  @ApiPropertyOptional({ description: 'Giá ngày thường (m²/ngày)' }) @IsNumber() @IsOptional() @Min(0) priceWeekdayPerDaySqm?: number;
+  @ApiPropertyOptional({ description: 'Giá cuối tuần/lễ (m²/ngày)' }) @IsNumber() @IsOptional() @Min(0) priceWeekendHolidayPerDaySqm?: number;
+  @ApiPropertyOptional({ enum: SlotCategory }) @IsEnum(SlotCategory) @IsOptional() category?: SlotCategory;
+  @ApiPropertyOptional({ description: 'Đa giác trên bản vẽ: [{x,y}] theo % 0-100' }) @IsArray() @IsOptional() polygon?: Array<{ x: number; y: number }>;
   @ApiPropertyOptional({ enum: CurrencyCode, description: "Currency of the slot price fields. REQUIRED whenever any price is supplied; no default, no FX." }) @IsEnum(CurrencyCode) @IsOptional() currencyCode?: CurrencyCode;
 }
 
@@ -37,8 +42,18 @@ export class UpdateUnitSlotDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerDaySqm?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerHour?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() pricePerSqmMonth?: number;
+  @ApiPropertyOptional({ description: 'Giá ngày thường (m²/ngày)' }) @IsNumber() @IsOptional() @Min(0) priceWeekdayPerDaySqm?: number;
+  @ApiPropertyOptional({ description: 'Giá cuối tuần/lễ (m²/ngày)' }) @IsNumber() @IsOptional() @Min(0) priceWeekendHolidayPerDaySqm?: number;
+  @ApiPropertyOptional({ enum: SlotCategory }) @IsEnum(SlotCategory) @IsOptional() category?: SlotCategory;
+  @ApiPropertyOptional({ description: 'Đa giác trên bản vẽ: [{x,y}] theo % 0-100' }) @IsArray() @IsOptional() polygon?: Array<{ x: number; y: number }>;
   @ApiPropertyOptional({ enum: CurrencyCode, description: "Currency of the slot price fields. REQUIRED whenever any price is supplied; no default, no FX." }) @IsEnum(CurrencyCode) @IsOptional() currencyCode?: CurrencyCode;
   @ApiPropertyOptional() @IsBoolean() @IsOptional() isActive?: boolean;
+}
+
+export class SlotBookingLineDto {
+  @ApiProperty() @IsString() slotId: string;
+  @ApiPropertyOptional({ description: 'Diện tích thuê (m²), nhập tự do trong phạm vi diện tích slot. Bỏ trống = thuê toàn bộ slot.' })
+  @IsNumber() @IsOptional() @Min(0.01) areaRented?: number;
 }
 
 export class CreateSlotBookingDto {
@@ -52,6 +67,15 @@ export class CreateSlotBookingDto {
   @ApiProperty() @IsDateString() endDatetime: string;
   @ApiProperty({ description: 'Thời điểm bắt đầu tháo dỡ' }) @IsDateString() dismantlingStartDatetime: string;
   @ApiProperty({ description: 'Thời điểm kết thúc tháo dỡ' }) @IsDateString() dismantlingEndDatetime: string;
+
+  @ApiPropertyOptional({ type: [SlotBookingLineDto], description: 'Nhiều slot trong một booking. Bỏ trống = thuê toàn bộ slot trên đường dẫn.' })
+  @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => SlotBookingLineDto) @IsOptional()
+  lines?: SlotBookingLineDto[];
+
+  @ApiPropertyOptional({ enum: SlotPricingTimeBasis, description: 'Cách xác định thời gian tính tiền (mặc định chỉ thời gian chương trình)' })
+  @IsEnum(SlotPricingTimeBasis) @IsOptional() pricingTimeBasis?: SlotPricingTimeBasis;
+  @ApiPropertyOptional({ description: 'Bắt đầu khoảng tính tiền (khi CUSTOM_RANGE)' }) @IsDateString() @IsOptional() pricingStart?: string;
+  @ApiPropertyOptional({ description: 'Kết thúc khoảng tính tiền (khi CUSTOM_RANGE)' }) @IsDateString() @IsOptional() pricingEnd?: string;
 
   @ApiPropertyOptional() @IsNumber() @IsOptional() @Min(0) @Max(100) discountPct?: number;
   @ApiPropertyOptional() @IsString() @IsOptional() notes?: string;
@@ -119,4 +143,17 @@ export class ConvertSlotBookingToProposalDto {
   @IsString()
   @IsOptional()
   notes?: string;
+}
+
+export class RejectSlotBookingDto {
+  @ApiPropertyOptional() @IsString() @IsOptional() reason?: string;
+}
+
+export class ConfirmSlotLockDto {
+  @ApiPropertyOptional() @IsString() @IsOptional() reason?: string;
+}
+
+export class CreateMallHolidayDto {
+  @ApiProperty({ example: '2026-09-02' }) @IsDateString() date: string;
+  @ApiProperty() @IsString() name: string;
 }

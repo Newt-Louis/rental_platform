@@ -561,6 +561,7 @@ model User {
   uploadedUnitMedia          UnitMedia[]
   unitHistoryChanges         UnitHistory[]              @relation("UnitHistoryChangedBy")
   slotBookings               SlotBooking[]              @relation("SlotBookedBy")
+  slotBookingsApproved       SlotBooking[]              @relation("SlotBookingApprover")
   categoryPricings           CategoryMallPricing[]      @relation("CategoryPricingCreatedBy")
   submittedSubmittals        FitoutSubmittal[]          @relation("SubmittalSubmittedBy")
   entityComments             EntityComment[]
@@ -640,6 +641,7 @@ model Mall {
   floors                   Floor[]
   zones                    Zone[]
   units                    Unit[]
+  shortTermHolidays        MallHoliday[]
   floorPlans               FloorPlanAnalysis[]
   occupancySnapshots       OccupancySnapshot[]
   mallPolicy               MallPolicy?
@@ -1311,6 +1313,9 @@ model Zone {
   floor      Floor?    @relation(fields: [floorId], references: [id])
   name       String
   code       String?
+  // Tong dien tich khu vuc (m2) -- cho thue ngan han: tong areaNLA cua cac Unit SHORT
+  // trong Zone khong duoc vuot qua gia tri nay. NULL = chua khai bao.
+  totalArea  Float?
   isActive   Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -1405,6 +1410,8 @@ model Unit {
   media                UnitMedia[]
   history              UnitHistory[]
   slots                UnitSlot[]
+  // Ban ve 2D rieng cua khu ngan han (tach khoi ban ve dai han)
+  shortTermPlanUrl     String?
   fitoutIssues         FitoutIssue[]
   workOrders           WorkOrder[]
   handoverReadiness    UnitHandoverReadiness[]
@@ -3966,6 +3973,24 @@ enum SlotBookingStatus {
   CANCELLED
   COMPLETED
   CONVERTED
+  SUBMITTED // da gui duyet
+  APPROVED // duoc cap co tham quyen duyet (thang slot)
+  LOCKED // bi khoa vi xung dot voi booking da duyet (da co nguoi xac nhan)
+  CONTRACTED // da thanh hop dong
+}
+
+// Danh muc sanh cho thue ngan han
+enum SlotCategory {
+  EVENT
+  ADVERTISING
+  KIOSK
+}
+
+// Cach xac dinh khoang thoi gian tinh tien thue (chon theo tung giao dich)
+enum SlotPricingTimeBasis {
+  PROGRAM_ONLY // chi thoi gian chuong trinh (start -> end)
+  SETUP_TO_DISMANTLE // tu bat dau setup den het dismantling
+  CUSTOM_RANGE // khoang tuy chinh (pricingStart -> pricingEnd)
 }
 
 model UnitSlot {
@@ -3980,6 +4005,13 @@ model UnitSlot {
   pricePerDaySqm   Float?
   pricePerHour     Float?
   pricePerSqmMonth Float?
+  // Gia ngay thuong / cuoi tuan & le (theo m2/ngay). De trong thi dung pricePerDaySqm
+  // va cac SlotPricingRule nhu truoc.
+  priceWeekdayPerDaySqm        Float?
+  priceWeekendHolidayPerDaySqm Float?
+  category         SlotCategory?
+  // Da giac ve tren ban ve: [{x,y},...] theo % (0-100). NULL = dung posX/Y/W/H.
+  polygon          Json?
   // RPT-CUR-006 / CUR-002 (slot subset): currency of the three price fields
   // above. Deliberately NULLABLE with NO @default.
   //
@@ -4002,6 +4034,7 @@ model UnitSlot {
 
   pricingRules SlotPricingRule[]
   bookings     SlotBooking[]
+  bookingLines SlotBookingLine[]
 
   @@unique([unitId, code])
   @@index([unitId, isActive])
@@ -4057,13 +4090,33 @@ model SlotBooking {
   status                    SlotBookingStatus @default(PENDING)
   notes                     String?
   cancelReason              String?
+  // Cach xac dinh thoi gian tinh tien (xem SlotPricingTimeBasis)
+  pricingTimeBasis          SlotPricingTimeBasis @default(PROGRAM_ONLY)
+  pricingStart              DateTime?
+  pricingEnd                DateTime?
+  // Phe duyet: mot cap, nguoi co tham quyen
+  submittedAt               DateTime?
+  approvedAt                DateTime?
+  approvedById              String?
+  approvedBy                User?             @relation("SlotBookingApprover", fields: [approvedById], references: [id])
+  rejectedReason            String?
+  // Xung dot: booking da duyet khac chiem slot/thoi gian -> cho nguoi xac nhan khoa
+  conflictWithBookingId     String?
+  conflictFlaggedAt         DateTime?
+  // Da khoa (sau khi duoc xac nhan) boi booking nao
+  lockedByBookingId         String?
+  lockedAt                  DateTime?
+  lockReason                String?
   createdById               String?
   createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
   proposal Proposal?
+  lines    SlotBookingLine[]
 
+  @@index([conflictWithBookingId])
+  @@index([lockedByBookingId])
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
   @@index([installationStartDatetime, dismantlingEndDatetime])
@@ -4215,4 +4268,34 @@ model ProposalDocumentSend {
 
   @@unique([proposalId, idempotencyKey])
   @@index([proposalId, createdAt])
+}
+
+// Mot booking ngan han co the gom nhieu slot. SlotBooking.slotId giu slot chinh
+// (dong dau) de cac bao cao cu khong vo; nguon su that cho pham vi thue la bang nay.
+model SlotBookingLine {
+  id         String      @id @default(cuid())
+  bookingId  String
+  booking    SlotBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  slotId     String
+  slot       UnitSlot    @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  // Dien tich thue (m2): toan bo hoac mot phan cua slot, nhap tu do
+  areaRented Float
+  baseAmount Float       @default(0)
+  amount     Float       @default(0)
+  createdAt  DateTime    @default(now())
+
+  @@unique([bookingId, slotId])
+  @@index([slotId])
+}
+
+// Ngay le theo Mall -- dung tinh gia cuoi tuan/le cho thue ngan han
+model MallHoliday {
+  id        String   @id @default(cuid())
+  mallId    String
+  mall      Mall     @relation(fields: [mallId], references: [id])
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([mallId, date])
 }

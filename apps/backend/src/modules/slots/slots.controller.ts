@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { MODULE_ROLES } from '../../common/constants/role-permissions';
@@ -11,7 +12,7 @@ import { MallAccessService } from '../../common/services/mall-access.service';
 import {
   CreateUnitSlotDto, UpdateUnitSlotDto,
   CreateSlotBookingDto, CreateSlotPricingRuleDto, CreateSlotGridDto, ConfirmSlotBookingDto,
-  ConvertSlotBookingToProposalDto,
+  ConvertSlotBookingToProposalDto, RejectSlotBookingDto, ConfirmSlotLockDto, CreateMallHolidayDto,
   SlotBookingType,
 } from './dto/slots.dto';
 import { Scope } from '../../common/decorators/scope.decorator';
@@ -108,9 +109,13 @@ export class SlotsController {
     @Query('start') start: string,
     @Query('end') end: string,
     @CurrentUser() user: any,
+    @Query('area') area?: string,
   ) {
     await this.check(user, { slotId: id });
-    return this.slotsService.calculatePrice(id, type, new Date(start), new Date(end));
+    // Thue mot phan dien tich: tinh gia tren dien tich thuc thue.
+    return area
+      ? this.slotsService.calculatePrice(id, type, new Date(start), new Date(end), { area: Number(area) })
+      : this.slotsService.calculatePrice(id, type, new Date(start), new Date(end));
   }
 
   // ── Slot Bookings ───────────────────────────────────────────────────────
@@ -155,6 +160,88 @@ export class SlotsController {
   ) {
     await this.check(user, { slotBookingId: bookingId });
     return this.slotsService.convertToProposal(bookingId, dto, user.id);
+  }
+
+  // ── Phe duyet booking ngan han (mot cap, nguoi co tham quyen) ───────────
+
+  @Post('bookings/:bookingId/submit')
+  async submitBooking(@Param('bookingId') bookingId: string, @CurrentUser() user: any) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.submitBooking(bookingId);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('bookings/:bookingId/approve')
+  async approveBooking(@Param('bookingId') bookingId: string, @CurrentUser() user: any) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.approveBooking(bookingId, user.id);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('bookings/:bookingId/reject')
+  async rejectBooking(
+    @Param('bookingId') bookingId: string,
+    @Body() dto: RejectSlotBookingDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.rejectBooking(bookingId, dto?.reason);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('bookings/:bookingId/confirm-lock')
+  async confirmConflictLock(
+    @Param('bookingId') bookingId: string,
+    @Body() dto: ConfirmSlotLockDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.confirmConflictLock(bookingId, dto?.reason);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('bookings/:bookingId/dismiss-conflict')
+  async dismissConflict(@Param('bookingId') bookingId: string, @CurrentUser() user: any) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.dismissConflict(bookingId);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('bookings/:bookingId/reopen')
+  async reopenBooking(@Param('bookingId') bookingId: string, @CurrentUser() user: any) {
+    await this.check(user, { slotBookingId: bookingId });
+    return this.slotsService.reopenBooking(bookingId);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Get('bookings/needs-attention')
+  async listNeedsAttention(@Query('mallId') mallId?: string, @CurrentUser() user?: any) {
+    if (mallId) await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    const mallIds = mallId ? [mallId] : await this.mallAccess.getAccessibleMallIds(user.id, user.role);
+    return this.slotsService.listNeedsAttention(mallIds ?? undefined);
+  }
+
+  // ── Ngay le theo Mall ─────────────────────────────────────────────────────
+
+  @Get('holidays')
+  async listHolidays(@Query('mallId') mallId: string, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    return this.slotsService.listHolidays(mallId);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Post('holidays')
+  async addHoliday(@Query('mallId') mallId: string, @Body() dto: CreateMallHolidayDto, @CurrentUser() user: any) {
+    await this.mallAccess.assertMallAccess(user.id, user.role, mallId);
+    return this.slotsService.addHoliday(mallId, dto);
+  }
+
+  @Roles(Role.LEASING_MANAGER, Role.MALL_DIRECTOR)
+  @Delete('holidays/:holidayId')
+  async deleteHoliday(@Param('holidayId') holidayId: string, @CurrentUser() user: any) {
+    const holiday = await this.slotsService.findHoliday(holidayId);
+    await this.mallAccess.assertMallAccess(user.id, user.role, holiday.mallId);
+    return this.slotsService.deleteHoliday(holidayId);
   }
 
   @Patch('bookings/:bookingId/cancel')

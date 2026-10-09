@@ -3,14 +3,15 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { slotsApi } from '@/api';
+import { useAuthStore } from '@/store/auth.store';
 import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { Building2, User, Calendar, DollarSign, CheckCircle2, X, Pencil, ArrowRight, FileText } from 'lucide-react';
-import { SLOT_TYPE_CONFIG, SLOT_STATUS_CONFIG, fmtDatetime, fmtMoney, toDatetimeLocal } from './bookings-constants';
+import { Building2, User, Calendar, DollarSign, CheckCircle2, X, Pencil, ArrowRight, FileText, Send, Lock, Unlock, AlertTriangle } from 'lucide-react';
+import { SLOT_TYPE_CONFIG, SLOT_STATUS_CONFIG, SLOT_PRICING_BASIS_OPTIONS, fmtDatetime, fmtMoney, toDatetimeLocal } from './bookings-constants';
 import { ConvertSlotBookingToProposalDialog } from './ConvertSlotBookingToProposalDialog';
 
 type SlotEditForm = {
@@ -30,6 +31,9 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
   const qc = useQueryClient();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const role = useAuthStore((st) => st.user?.role);
+  // Một cấp duyệt: người có thẩm quyền (Leasing Manager / Mall Director / Admin)
+  const canApprove = !!role && ['ADMIN', 'LEASING_MANAGER', 'MALL_DIRECTOR'].includes(role);
   const [lastBooking, setLastBooking] = useState<any | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -93,15 +97,26 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi cập nhật', variant: 'destructive' }),
   });
 
-  const confirmMutation = useMutation({
-    mutationFn: () => slotsApi.confirmBooking(d?.id),
-    onSuccess: () => {
+  // Gửi duyệt / duyệt / từ chối / khóa / mở lại -- cùng một khuôn: gọi API, làm mới danh sách, báo kết quả.
+  const makeFlow = (label: string, call: () => Promise<any>, closeAfter = true) => useMutation({
+    mutationFn: call,
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
-      toast({ title: 'Đã xác nhận booking slot' });
-      onClose();
+      const n = res?.conflictedBookingIds?.length;
+      toast({
+        title: label,
+        description: n ? `${n} booking trùng lịch cần được xác nhận khóa hoặc bỏ qua` : undefined,
+      });
+      if (closeAfter) onClose();
     },
-    onError: () => toast({ title: 'Lỗi xác nhận', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Thao tác thất bại', variant: 'destructive' }),
   });
+  const submitMutation = makeFlow('Đã gửi duyệt', () => slotsApi.submitBooking(d?.id));
+  const approveMutation = makeFlow('Đã duyệt booking', () => slotsApi.approveBooking(d?.id));
+  const rejectMutation = makeFlow('Đã từ chối booking', () => slotsApi.rejectBooking(d?.id, 'Từ chối từ trang Booking'));
+  const lockMutation = makeFlow('Đã khóa booking do xung đột', () => slotsApi.confirmLock(d?.id));
+  const dismissMutation = makeFlow('Đã bỏ qua cảnh báo xung đột', () => slotsApi.dismissConflict(d?.id));
+  const reopenMutation = makeFlow('Đã mở lại booking', () => slotsApi.reopenBooking(d?.id));
 
   const cancelMutation = useMutation({
     mutationFn: () => slotsApi.cancelBooking(d?.id, 'Hủy từ trang Booking'),
@@ -116,7 +131,9 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
   const typeCfg = d ? (SLOT_TYPE_CONFIG[d.type] ?? SLOT_TYPE_CONFIG.DAILY) : SLOT_TYPE_CONFIG.DAILY;
   const statusCfg = d ? SLOT_STATUS_CONFIG[d.status] : undefined;
   const clientName = d?.customer?.companyName ?? d?.lead?.brandName ?? '—';
-  const canEdit = d && ['PENDING', 'CONFIRMED'].includes(d.status);
+  const canEdit = d && ['PENDING', 'SUBMITTED', 'CONFIRMED', 'APPROVED'].includes(d.status);
+  const lines: any[] = d?.lines ?? [];
+  const basisLabel = SLOT_PRICING_BASIS_OPTIONS.find((o) => o.value === d?.pricingTimeBasis)?.label;
 
   return (
     <Sheet open={!!booking} onClose={onClose}
@@ -188,8 +205,16 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
 
             <SheetSection label="VỊ TRÍ SLOT" className="bg-violet-50" id="sbs-location">
               <SheetRow label="Lô (Unit)"  value={d.slot?.unit?.code ?? '—'} icon={Building2} />
-              <SheetRow label="Slot"       value={`${d.slot?.code ?? '—'} — ${d.slot?.name ?? ''}`} icon={Building2} />
-              <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
+              {lines.length > 0 ? lines.map((l: any) => (
+                <SheetRow key={l.id} label={l.slot?.code ?? 'Slot'}
+                  value={`${l.areaRented} / ${l.slot?.area ?? '?'} m²${l.areaRented < (l.slot?.area ?? Infinity) ? ' (thuê một phần)' : ''}`}
+                  icon={Building2} />
+              )) : (
+                <>
+                  <SheetRow label="Slot"       value={`${d.slot?.code ?? '—'} — ${d.slot?.name ?? ''}`} icon={Building2} />
+                  <SheetRow label="Diện tích"  value={d.slot?.area ? `${d.slot.area} m²` : '—'} icon={Building2} />
+                </>
+              )}
             </SheetSection>
 
             <SheetSection label="THỜI GIAN BOOKING" className="bg-violet-50" id="sbs-timeline">
@@ -199,6 +224,7 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
               <SheetRow label="Kết thúc thuê" value={fmtDatetime(d.endDatetime)} icon={Calendar} />
               <SheetRow label="Bắt đầu tháo dỡ" value={d.dismantlingStartDatetime ? fmtDatetime(d.dismantlingStartDatetime) : '—'} icon={Calendar} />
               <SheetRow label="Hoàn tất tháo dỡ" value={d.dismantlingEndDatetime ? fmtDatetime(d.dismantlingEndDatetime) : '—'} icon={Calendar} />
+              {basisLabel && <SheetRow label="Tính tiền theo" value={basisLabel} icon={DollarSign} />}
             </SheetSection>
 
             <SheetSection label="GIÁ TIỀN" className="bg-gray-50" id="sbs-price">
@@ -229,15 +255,66 @@ export function SlotBookingDetailSheet({ booking, onClose, scrollTo, initialEdit
               </button>
             )}
 
+            {d.conflictWithBookingId && ['PENDING', 'SUBMITTED'].includes(d.status) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                  <AlertTriangle size={14} /> Trùng lịch với booking đã được duyệt
+                </div>
+                <p className="text-xs text-amber-700">Slot/thời gian này đã thuộc về booking khác. Cần người có thẩm quyền xác nhận khóa hoặc bỏ qua.</p>
+                {canApprove && (
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 gap-1 bg-gray-700 hover:bg-gray-800 text-white"
+                      onClick={() => lockMutation.mutate()} disabled={lockMutation.isPending}>
+                      <Lock size={13} /> Xác nhận khóa
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1"
+                      onClick={() => dismissMutation.mutate()} disabled={dismissMutation.isPending}>
+                      Bỏ qua
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {d.status === 'LOCKED' && (
+              <div className="rounded-xl border border-gray-300 bg-gray-50 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <Lock size={14} /> Booking đã bị khóa
+                </div>
+                {d.lockReason && <p className="text-xs text-gray-600">{d.lockReason}</p>}
+                {canApprove && (
+                  <Button size="sm" variant="outline" className="w-full gap-1"
+                    onClick={() => reopenMutation.mutate()} disabled={reopenMutation.isPending}>
+                    <Unlock size={13} /> Mở lại (nếu booking chiếm chỗ đã được giải phóng)
+                  </Button>
+                )}
+              </div>
+            )}
+
             {canEdit && (
               <div className="space-y-2 pt-2 border-t border-gray-100">
                 {d.status === 'PENDING' && (
                   <Button className="w-full gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-                    onClick={() => confirmMutation.mutate()} disabled={confirmMutation.isPending}>
-                    <CheckCircle2 size={14} /> Xác nhận
+                    onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>
+                    <Send size={14} /> Gửi duyệt
                   </Button>
                 )}
-                {d.status === 'CONFIRMED' && !d.proposal && (
+                {d.status === 'SUBMITTED' && canApprove && (
+                  <div className="flex gap-2">
+                    <Button className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                      onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending}>
+                      <CheckCircle2 size={14} /> Duyệt
+                    </Button>
+                    <Button variant="outline" className="flex-1 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending}>
+                      <X size={14} /> Từ chối
+                    </Button>
+                  </div>
+                )}
+                {d.status === 'SUBMITTED' && !canApprove && (
+                  <p className="text-xs text-gray-500 text-center">Đang chờ người có thẩm quyền duyệt.</p>
+                )}
+                {['CONFIRMED', 'APPROVED'].includes(d.status) && !d.proposal && (
                   <Button className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
                     onClick={() => setConvertOpen(true)}>
                     <ArrowRight size={15} /> Lập Đề xuất (Proposal)

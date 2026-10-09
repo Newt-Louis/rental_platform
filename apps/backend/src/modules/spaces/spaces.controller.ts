@@ -146,7 +146,7 @@ export class SpacesController {
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create zone' })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'body', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
-  createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string }) {
+  createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string; totalArea?: number }) {
     return this.spacesService.createZone(dto);
   }
 
@@ -154,9 +154,17 @@ export class SpacesController {
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update zone' })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
-  async updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string }, @CurrentUser() user: any) {
+  async updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string; totalArea?: number | null }, @CurrentUser() user: any) {
     await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
     return this.spacesService.updateZone(id, dto);
+  }
+
+  @Get('zones/:id/area-summary')
+  @ApiOperation({ summary: 'Zone area allocation summary (short-term units)' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getZoneAreaSummary(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
+    return this.spacesService.getZoneAreaSummary(id);
   }
 
   @Delete('zones/:id')

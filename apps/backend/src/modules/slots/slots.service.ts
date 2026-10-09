@@ -2,7 +2,20 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { Prisma, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import {
+  SLOT_HARD_HOLD_STATUSES, SLOT_SOFT_HOLD_STATUSES, fitsCapacity, resolvePricingRange,
+  dailyAmountWithWeekendHoliday,
+} from './slot-allocation';
 import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, ConvertSlotBookingToProposalDto, SlotBookingType } from './dto/slots.dto';
+
+// Mọi trạng thái booking còn "sống" trên lịch slot (để hiển thị lịch/tổng hợp).
+// Chỉ nhóm HARD (đã duyệt trở đi) mới thật sự chặn booking khác -- xem slot-allocation.ts.
+const SLOT_HOLDING_STATUSES = [
+  ...SLOT_SOFT_HOLD_STATUSES,
+  ...SLOT_HARD_HOLD_STATUSES,
+] as Array<'PENDING' | 'SUBMITTED' | 'APPROVED' | 'CONFIRMED' | 'CONVERTED' | 'CONTRACTED'>;
+const HARD_HOLD = [...SLOT_HARD_HOLD_STATUSES] as Array<'APPROVED' | 'CONFIRMED' | 'CONVERTED' | 'CONTRACTED'>;
+const SOFT_HOLD = [...SLOT_SOFT_HOLD_STATUSES] as Array<'PENDING' | 'SUBMITTED'>;
 
 @Injectable()
 export class SlotsService {
@@ -57,6 +70,7 @@ export class SlotsService {
     if (!unit) throw new NotFoundException('Unit not found');
 
     this.assertSlotPricingCurrency(dto as any);
+    await this.assertSlotAreaWithinUnit(unit, dto.area);
 
     return this.prisma.unitSlot.create({
       data: { ...dto, unitId },
@@ -66,11 +80,48 @@ export class SlotsService {
   async updateSlot(id: string, dto: UpdateUnitSlotDto) {
     const existing = await this.findSlot(id);
     this.assertSlotPricingCurrency(dto as any, existing as any);
+    if (dto.area !== undefined && dto.area !== existing.area) {
+      const unit = await this.prisma.unit.findUnique({ where: { id: existing.unitId } });
+      if (unit) await this.assertSlotAreaWithinUnit(unit, dto.area, id);
+    }
     return this.prisma.unitSlot.update({ where: { id }, data: dto });
+  }
+
+  /**
+   * Tong dien tich cac slot dang hoat dong trong mot mat bang khong duoc vuot dien tich
+   * mat bang (areaNLA, neu chua khai bao thi areaGFA).
+   */
+  private async assertSlotAreaWithinUnit(
+    unit: { id: string; code?: string; areaNLA?: number | null; areaGFA?: number | null },
+    area: number,
+    excludeSlotId?: string,
+  ) {
+    if (!(area > 0)) throw new BadRequestException('Dien tich slot phai lon hon 0');
+    const capacity = unit.areaNLA || unit.areaGFA || 0;
+    if (!capacity) return;
+    const agg = await this.prisma.unitSlot.aggregate({
+      where: { unitId: unit.id, isActive: true, ...(excludeSlotId ? { id: { not: excludeSlotId } } : {}) },
+      _sum: { area: true },
+    });
+    const others = agg._sum.area ?? 0;
+    if (others + area > capacity + 1e-6) {
+      throw new BadRequestException(
+        `Tong dien tich slot (${others + area} m2) vuot dien tich mat bang ${unit.code ?? ''} (${capacity} m2). Con lai: ${Math.max(0, capacity - others)} m2.`,
+      );
+    }
   }
 
   async deleteSlot(id: string) {
     await this.findSlot(id);
+    const holding = await this.prisma.slotBooking.count({
+      where: {
+        status: { in: SLOT_HOLDING_STATUSES },
+        OR: [{ slotId: id }, { lines: { some: { slotId: id } } }],
+      },
+    });
+    if (holding > 0) {
+      throw new BadRequestException('Slot dang co booking chua hoan tat, khong the xoa. Hay huy hoac hoan tat booking truoc.');
+    }
     // Soft delete — keep booking history
     return this.prisma.unitSlot.update({ where: { id }, data: { isActive: false } });
   }
@@ -110,7 +161,7 @@ export class SlotsService {
     const bookings = await this.prisma.slotBooking.findMany({
       where: {
         slotId,
-        status: { in: ['PENDING', 'CONFIRMED'] },
+        status: { in: SLOT_HOLDING_STATUSES },
         AND: [
           {
             OR: [
@@ -172,9 +223,17 @@ export class SlotsService {
 
   // ── Price calculation ─────────────────────────────────────────────────────
 
-  async calculatePrice(slotId: string, type: SlotBookingType, start: Date, end: Date) {
+  async calculatePrice(
+    slotId: string,
+    type: SlotBookingType,
+    start: Date,
+    end: Date,
+    opts?: { area?: number },
+  ) {
     const slot = await this.findSlot(slotId);
     const rules = slot.pricingRules;
+    // Thuê một phần: tính trên diện tích thực thuê, không phải diện tích cả slot.
+    const area = opts?.area ?? slot.area;
 
     let baseAmount = 0;
     let discountPct = 0;
@@ -182,17 +241,34 @@ export class SlotsService {
     if (type === SlotBookingType.DAILY) {
       const days = Math.ceil((end.getTime() - start.getTime()) / 86400000);
       const pricePerDaySqm = slot.pricePerDaySqm ?? 0;
-      baseAmount = pricePerDaySqm * slot.area * days;
+      const hasSplitPrices =
+        slot.priceWeekdayPerDaySqm != null || slot.priceWeekendHolidayPerDaySqm != null;
 
-      // Apply weekend multiplier
-      const weekendRule = rules.find((r) => r.ruleType === 'WEEKEND' && r.multiplier);
-      if (weekendRule?.multiplier) {
-        const weekendDays = this.countWeekendDays(start, end);
-        if (weekendDays > 0) {
-          const weekdayDays = days - weekendDays;
-          baseAmount =
-            weekdayDays * pricePerDaySqm * slot.area +
-            weekendDays * pricePerDaySqm * slot.area * weekendRule.multiplier;
+      if (hasSplitPrices) {
+        // Giá ngày thường / cuối tuần-lễ khai báo riêng trên slot; ngày lễ lấy theo Mall.
+        const weekday = slot.priceWeekdayPerDaySqm ?? pricePerDaySqm;
+        const weekendHoliday = slot.priceWeekendHolidayPerDaySqm ?? weekday;
+        baseAmount = dailyAmountWithWeekendHoliday({
+          from: start,
+          to: end,
+          area,
+          weekdayPrice: weekday,
+          weekendHolidayPrice: weekendHoliday,
+          holidayKeys: await this.loadHolidayKeys(slot.unitId, start, end),
+        });
+      } else {
+        baseAmount = pricePerDaySqm * area * days;
+
+        // Apply weekend multiplier
+        const weekendRule = rules.find((r) => r.ruleType === 'WEEKEND' && r.multiplier);
+        if (weekendRule?.multiplier) {
+          const weekendDays = this.countWeekendDays(start, end);
+          if (weekendDays > 0) {
+            const weekdayDays = days - weekendDays;
+            baseAmount =
+              weekdayDays * pricePerDaySqm * area +
+              weekendDays * pricePerDaySqm * area * weekendRule.multiplier;
+          }
         }
       }
 
@@ -215,11 +291,12 @@ export class SlotsService {
       if (volRule?.discountPct) discountPct = volRule.discountPct;
     } else if (type === SlotBookingType.HOURLY) {
       const hours = Math.ceil((end.getTime() - start.getTime()) / 3600000);
-      baseAmount = (slot.pricePerHour ?? 0) * hours;
+      const share = slot.area > 0 ? area / slot.area : 1;
+      baseAmount = (slot.pricePerHour ?? 0) * hours * share;
     } else if (type === SlotBookingType.MONTHLY) {
       const months = Math.ceil((end.getTime() - start.getTime()) / (30 * 86400000));
       const pricePerSqmMonth = slot.pricePerSqmMonth ?? 0;
-      baseAmount = pricePerSqmMonth * slot.area * months;
+      baseAmount = pricePerSqmMonth * area * months;
     }
 
     const totalAmount = baseAmount * (1 - discountPct / 100);
@@ -240,6 +317,20 @@ export class SlotsService {
       cur.setDate(cur.getDate() + 1);
     }
     return count;
+  }
+
+  /** Ngày lễ của Mall chứa slot, dạng yyyy-mm-dd, trong khoảng [start-1d, end+1d]. */
+  private async loadHolidayKeys(unitId: string, start: Date, end: Date): Promise<Set<string>> {
+    const unit = await this.prisma.unit.findUnique({ where: { id: unitId }, select: { mallId: true } });
+    if (!unit?.mallId) return new Set();
+    const holidays = await this.prisma.mallHoliday.findMany({
+      where: {
+        mallId: unit.mallId,
+        date: { gte: new Date(start.getTime() - 86400000), lte: new Date(end.getTime() + 86400000) },
+      },
+      select: { date: true },
+    });
+    return new Set(holidays.map((h) => h.date.toISOString().slice(0, 10)));
   }
 
   private async serializable<T>(operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
@@ -288,43 +379,100 @@ export class SlotsService {
     }
   }
 
+  /**
+   * Booking ĐÃ DUYỆT (nhóm HARD) chồng lên cửa sổ [occupiedFrom, occupiedTo) của slot.
+   * - Không có `req`: bất kỳ chồng lấn nào cũng là xung đột (hành vi cũ).
+   * - Có `req`: chỉ xung đột khi diện tích đã bị chiếm đồng thời + diện tích yêu cầu
+   *   vượt sức chứa của slot (thuê một phần diện tích).
+   * Booking PENDING/SUBMITTED không chặn nhau -- không áp dụng FIFS.
+   */
   private async findBookingConflict(
     slotId: string,
     occupiedFrom: Date,
     occupiedTo: Date,
     excludeId?: string,
     db: Prisma.TransactionClient | PrismaService = this.prisma,
+    req?: { area: number; capacity: number },
   ) {
     const activeBookings = await db.slotBooking.findMany({
       where: {
-        slotId,
-        status: { in: ['PENDING', 'CONFIRMED'] },
+        OR: [{ lines: { some: { slotId } } }, { slotId }],
+        status: { in: HARD_HOLD },
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: {
+        id: true,
         bookingRef: true,
         startDatetime: true,
         endDatetime: true,
         installationStartDatetime: true,
         dismantlingEndDatetime: true,
+        lines: { where: { slotId }, select: { areaRented: true } },
       },
     });
-    return activeBookings.find((booking) => {
+    const overlapping = activeBookings.filter((booking) => {
       const existingFrom = booking.installationStartDatetime ?? booking.startDatetime;
       const existingTo = booking.dismantlingEndDatetime ?? booking.endDatetime;
       return existingFrom < occupiedTo && existingTo > occupiedFrom;
     });
+    if (!overlapping.length) return undefined;
+    if (!req) return overlapping[0];
+
+    // Booking cũ không có dòng chi tiết = chiếm toàn bộ slot.
+    const intervals = overlapping.map((booking) => ({
+      from: booking.installationStartDatetime ?? booking.startDatetime,
+      to: booking.dismantlingEndDatetime ?? booking.endDatetime,
+      area: booking.lines?.length
+        ? booking.lines.reduce((sum, l) => sum + l.areaRented, 0)
+        : req.capacity,
+    }));
+    return fitsCapacity(intervals, occupiedFrom, occupiedTo, req.area, req.capacity)
+      ? undefined
+      : overlapping[0];
   }
 
   async createBooking(slotId: string, dto: CreateSlotBookingDto, userId?: string) {
-    const slot = await this.findSlot(slotId);
-    const unit = await this.prisma.unit.findUnique({
-      where: { id: slot.unitId },
-      select: { status: true, leaseTermType: true },
-    });
-    if (unit?.leaseTermType !== 'SHORT') {
-      throw new BadRequestException('Chỉ có thể tạo booking ngắn hạn trên mặt bằng thuộc khu cho thuê ngắn hạn');
+    const primarySlot = await this.findSlot(slotId);
+
+    // Một booking có thể gồm nhiều slot (mặt bằng A + B). Bỏ trống `lines` = thuê toàn bộ slot trên đường dẫn.
+    const lineDtos = dto.lines?.length ? dto.lines : [{ slotId, areaRented: undefined as number | undefined }];
+    if (!lineDtos.some((l) => l.slotId === slotId)) {
+      throw new BadRequestException('Danh sách slot của booking phải bao gồm slot đang đặt');
     }
+    if (new Set(lineDtos.map((l) => l.slotId)).size !== lineDtos.length) {
+      throw new BadRequestException('Mỗi slot chỉ được xuất hiện một lần trong booking');
+    }
+
+    // Kiểm tra từng slot/mặt bằng: khu ngắn hạn, chưa có khách thuê chính thức, cùng Mall.
+    const lines: Array<{ slot: typeof primarySlot; area: number }> = [];
+    let mallId: string | null | undefined;
+    for (const l of lineDtos) {
+      const slot = l.slotId === slotId ? primarySlot : await this.findSlot(l.slotId);
+      const unit = await this.prisma.unit.findUnique({
+        where: { id: slot.unitId },
+        select: { status: true, leaseTermType: true, mallId: true },
+      });
+      if (unit?.leaseTermType !== 'SHORT') {
+        throw new BadRequestException('Chỉ có thể tạo booking ngắn hạn trên mặt bằng thuộc khu cho thuê ngắn hạn');
+      }
+      if (unit && this.unitStatus.isCommittedToTenant(unit.status)) {
+        throw new BadRequestException(
+          `Không thể tạo booking ô nhỏ: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,
+        );
+      }
+      if (mallId === undefined) mallId = unit?.mallId;
+      else if (unit?.mallId !== mallId) {
+        throw new BadRequestException('Tất cả slot trong một booking phải thuộc cùng một Mall');
+      }
+      const area = l.areaRented ?? slot.area;
+      if (!(area > 0) || area > slot.area + 1e-6) {
+        throw new BadRequestException(
+          `Diện tích thuê của slot ${slot.code} phải lớn hơn 0 và không vượt quá diện tích slot (${slot.area} m²)`,
+        );
+      }
+      lines.push({ slot, area });
+    }
+
     if (dto.leadId) {
       const lead = await this.prisma.lead.findUnique({
         where: { id: dto.leadId },
@@ -334,11 +482,6 @@ export class SlotsService {
       if (lead.leaseTermType !== 'SHORT') {
         throw new BadRequestException('Short-term slot booking requires a short-term lead');
       }
-    }
-    if (unit && this.unitStatus.isCommittedToTenant(unit.status)) {
-      throw new BadRequestException(
-        `Không thể tạo booking ô nhỏ: mặt bằng hiện đã có khách thuê chính thức (trạng thái ${unit.status}).`,
-      );
     }
 
     const installationStart = new Date(dto.installationStartDatetime);
@@ -357,15 +500,54 @@ export class SlotsService {
       dismantlingEnd,
     });
 
-    // Calculate price
-    const { baseAmount, discountPct, currencyCode } = await this.calculatePrice(
-      slotId,
-      dto.type as SlotBookingType,
+    // Khoảng thời gian tính tiền: chọn theo từng giao dịch (không hard-code một công thức).
+    const pricingTimeBasis = dto.pricingTimeBasis ?? 'PROGRAM_ONLY';
+    const pricingRange = resolvePricingRange({
+      basis: pricingTimeBasis,
+      installationStart,
       start,
       end,
-    );
+      dismantlingEnd,
+      pricingStart: dto.pricingStart ? new Date(dto.pricingStart) : null,
+      pricingEnd: dto.pricingEnd ? new Date(dto.pricingEnd) : null,
+    });
 
-    const finalDiscount = dto.discountPct ?? discountPct;
+    // Tính giá từng dòng, rồi gộp.
+    const priced = [] as Array<{ slotId: string; area: number; baseAmount: number; discountPct: number; amount: number }>;
+    const currencies = new Set<CurrencyCode>();
+    for (const l of lines) {
+      const price = await this.calculatePrice(
+        l.slot.id,
+        dto.type as SlotBookingType,
+        pricingRange.from,
+        pricingRange.to,
+        lines.length > 1 || l.area !== l.slot.area ? { area: l.area } : undefined,
+      );
+      if (price.currencyCode) currencies.add(price.currencyCode);
+      priced.push({
+        slotId: l.slot.id,
+        area: l.area,
+        baseAmount: price.baseAmount,
+        discountPct: price.discountPct,
+        amount: price.baseAmount * (1 - price.discountPct / 100),
+      });
+    }
+    if (currencies.size > 1) {
+      throw new BadRequestException(
+        'Các slot trong cùng một booking đang dùng đơn vị tiền tệ khác nhau; hệ thống không quy đổi tỷ giá. Vui lòng tách booking.',
+      );
+    }
+    const currencyCode = currencies.size === 1 ? [...currencies][0] : null;
+
+    const baseAmount = priced.reduce((sum, l) => sum + l.baseAmount, 0);
+    const ruleDiscounts = new Set(priced.map((l) => l.discountPct));
+    const ruleDiscount =
+      ruleDiscounts.size === 1
+        ? priced[0].discountPct
+        : baseAmount > 0
+          ? Math.round((1 - priced.reduce((sum, l) => sum + l.amount, 0) / baseAmount) * 10000) / 100
+          : 0;
+    const finalDiscount = dto.discountPct ?? ruleDiscount;
     const finalTotal = baseAmount * (1 - finalDiscount / 100);
 
     // MON-CUR-SLOT-01 -- the booking SNAPSHOTS the currency that governed its
@@ -383,15 +565,25 @@ export class SlotsService {
       );
     }
 
+    const totalArea = lines.reduce((sum, l) => sum + l.area, 0);
+
     return this.serializable(async (tx) => {
-      const conflict = await this.findBookingConflict(
-        slotId,
-        installationStart,
-        dismantlingEnd,
-        undefined,
-        tx,
-      );
-      if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
+      // Kiểm tra khả dụng của TOÀN BỘ slot trong cùng booking, theo diện tích + thời gian chiếm dụng.
+      for (const l of lines) {
+        const conflict = await this.findBookingConflict(
+          l.slot.id,
+          installationStart,
+          dismantlingEnd,
+          undefined,
+          tx,
+          { area: l.area, capacity: l.slot.area },
+        );
+        if (conflict) {
+          throw new BadRequestException(
+            `Slot ${l.slot.code} đã có booking xung đột: ${conflict.bookingRef}`,
+          );
+        }
+      }
 
       const count = await tx.slotBooking.count();
       const bookingRef = `SB-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
@@ -409,7 +601,10 @@ export class SlotsService {
           endDatetime: end,
           dismantlingStartDatetime: dismantlingStart,
           dismantlingEndDatetime: dismantlingEnd,
-          totalArea: slot.area,
+          pricingTimeBasis,
+          pricingStart: pricingTimeBasis === 'CUSTOM_RANGE' ? pricingRange.from : null,
+          pricingEnd: pricingTimeBasis === 'CUSTOM_RANGE' ? pricingRange.to : null,
+          totalArea,
           baseAmount,
           discountPct: finalDiscount,
           totalAmount: finalTotal,
@@ -417,9 +612,18 @@ export class SlotsService {
           notes: dto.notes,
           createdById: userId,
           status: 'PENDING',
+          lines: {
+            create: priced.map((l) => ({
+              slotId: l.slotId,
+              areaRented: l.area,
+              baseAmount: l.baseAmount,
+              amount: l.amount,
+            })),
+          },
         },
         include: {
           slot: { select: { id: true, code: true, name: true, area: true } },
+          lines: { include: { slot: { select: { id: true, code: true, name: true, area: true } } } },
           lead: { select: { id: true, brandName: true, contactName: true } },
           customer: { select: { id: true, companyName: true, brandName: true } },
           createdBy: { select: { id: true, fullName: true } },
@@ -431,10 +635,11 @@ export class SlotsService {
   async listBookings(slotId: string, status?: string) {
     return this.prisma.slotBooking.findMany({
       where: {
-        slotId,
+        OR: [{ slotId }, { lines: { some: { slotId } } }],
         ...(status ? { status: status as any } : {}),
       },
       include: {
+        lines: { include: { slot: { select: { id: true, code: true, name: true, area: true } } } },
         lead: { select: { id: true, brandName: true, contactName: true } },
         customer: { select: { id: true, companyName: true, brandName: true } },
         createdBy: { select: { id: true, fullName: true } },
@@ -482,11 +687,325 @@ export class SlotsService {
     });
   }
 
-  async cancelBooking(id: string, reason?: string) {
+  // ─── Phê duyệt booking ngắn hạn (một cấp) ──────────────────────────────────
+  //
+  // Các booking PENDING/SUBMITTED bình đẳng, cùng tồn tại trên một slot; không
+  // có FIFS. Booking nào được cấp có thẩm quyền duyệt trước thì thắng slot
+  // (APPROVED) -> đi tiếp thành Proposal/Hợp đồng. Booking trùng bị ĐÁNH DẤU xung
+  // đột, và chỉ bị khóa (LOCKED) khi người có quyền xác nhận.
+
+  /** Các dòng (slot + diện tích thuê + sức chứa) của booking; booking cũ không có dòng = toàn bộ slot chính. */
+  private async bookingLinesWithCapacity(
+    db: Prisma.TransactionClient | PrismaService,
+    booking: { id: string; slotId: string; totalArea: number | null },
+  ) {
+    const lines = await db.slotBookingLine.findMany({
+      where: { bookingId: booking.id },
+      include: { slot: { select: { area: true, code: true } } },
+    });
+    if (lines.length) {
+      return lines.map((l) => ({ slotId: l.slotId, code: l.slot.code, area: l.areaRented, capacity: l.slot.area }));
+    }
+    const slot = await db.unitSlot.findUnique({ where: { id: booking.slotId }, select: { area: true, code: true } });
+    return slot
+      ? [{ slotId: booking.slotId, code: slot.code, area: booking.totalArea ?? slot.area, capacity: slot.area }]
+      : [];
+  }
+
+  /** Booking ĐÃ DUYỆT nào đang chặn booking này (nếu có), kèm mã slot bị chặn. */
+  private async findHardConflictForBooking(
+    db: Prisma.TransactionClient | PrismaService,
+    booking: {
+      id: string;
+      slotId: string;
+      totalArea: number | null;
+      startDatetime: Date;
+      endDatetime: Date;
+      installationStartDatetime: Date | null;
+      dismantlingEndDatetime: Date | null;
+    },
+  ) {
+    const from = booking.installationStartDatetime ?? booking.startDatetime;
+    const to = booking.dismantlingEndDatetime ?? booking.endDatetime;
+    for (const l of await this.bookingLinesWithCapacity(db, booking)) {
+      const conflict = await this.findBookingConflict(l.slotId, from, to, booking.id, db, {
+        area: l.area,
+        capacity: l.capacity,
+      });
+      if (conflict) return { conflict, slotCode: l.code };
+    }
+    return undefined;
+  }
+
+  /** Gửi duyệt: PENDING -> SUBMITTED. */
+  async submitBooking(id: string) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (booking.status !== 'PENDING') {
+      throw new BadRequestException('Chỉ booking ở trạng thái PENDING mới có thể gửi duyệt');
+    }
+    if (booking.totalAmount !== 0 && !booking.currencyCode) {
+      throw new BadRequestException(
+        'Booking này chưa có đơn vị tiền tệ nên không thể gửi duyệt. Hệ thống không mặc định VND.',
+      );
+    }
     return this.prisma.slotBooking.update({
+      where: { id },
+      data: { status: 'SUBMITTED', submittedAt: new Date() },
+    });
+  }
+
+  /**
+   * Duyệt: SUBMITTED -> APPROVED. Chỉ thành công nếu chưa có booking nào được duyệt
+   * trước đó chiếm cùng slot/thời gian (theo diện tích). Sau khi duyệt, các booking
+   * PENDING/SUBMITTED bị chồng lấn được đánh dấu xung đột để người có quyền xác nhận khóa.
+   */
+  async approveBooking(id: string, userId: string) {
+    return this.serializable(async (tx) => {
+      const booking = await tx.slotBooking.findUnique({ where: { id } });
+      if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+      if (booking.status !== 'SUBMITTED') {
+        throw new BadRequestException('Chỉ booking đã gửi duyệt (SUBMITTED) mới có thể được duyệt');
+      }
+      const blocked = await this.findHardConflictForBooking(tx, booking);
+      if (blocked) {
+        throw new ConflictException(
+          `Không thể duyệt: slot ${blocked.slotCode} đã được duyệt cho booking ${blocked.conflict.bookingRef} trước đó`,
+        );
+      }
+
+      const approved = await tx.slotBooking.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          approvedById: userId,
+          conflictWithBookingId: null,
+          conflictFlaggedAt: null,
+        },
+      });
+
+      // Tìm các booking chưa duyệt bị ảnh hưởng (cùng slot, chồng thời gian, vượt diện tích còn lại).
+      const myLines = await this.bookingLinesWithCapacity(tx, booking);
+      const slotIds = myLines.map((l) => l.slotId);
+      const candidates = await tx.slotBooking.findMany({
+        where: {
+          id: { not: id },
+          status: { in: SOFT_HOLD },
+          OR: [{ slotId: { in: slotIds } }, { lines: { some: { slotId: { in: slotIds } } } }],
+        },
+      });
+      const flagged: string[] = [];
+      for (const candidate of candidates) {
+        const blocked2 = await this.findHardConflictForBooking(tx, candidate);
+        if (blocked2) {
+          await tx.slotBooking.update({
+            where: { id: candidate.id },
+            data: { conflictWithBookingId: blocked2.conflict.id, conflictFlaggedAt: new Date() },
+          });
+          flagged.push(candidate.id);
+        }
+      }
+      return { booking: approved, conflictedBookingIds: flagged };
+    });
+  }
+
+  /** Từ chối (chưa duyệt): PENDING/SUBMITTED -> CANCELLED kèm lý do. */
+  async rejectBooking(id: string, reason?: string) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (!['PENDING', 'SUBMITTED'].includes(booking.status)) {
+      throw new BadRequestException('Chỉ có thể từ chối booking chưa được duyệt');
+    }
+    return this.prisma.slotBooking.update({
+      where: { id },
+      data: { status: 'CANCELLED', rejectedReason: reason, cancelReason: reason },
+    });
+  }
+
+  /**
+   * Hủy booking. Nếu booking này đang chiếm slot (đã duyệt/đã thành Proposal/hợp đồng),
+   * phần diện tích + thời gian được giải phóng: các cờ xung đột trỏ tới nó được gỡ, còn
+   * booking đã LOCKED thì hiện trong danh sách "cần xử lý" để người có quyền mở lại.
+   */
+  async cancelBooking(id: string, reason?: string) {
+    const updated = await this.prisma.slotBooking.update({
       where: { id },
       data: { status: 'CANCELLED', cancelReason: reason },
     });
+    await this.releaseHeldBy(id);
+    return updated;
+  }
+
+  /** Gỡ cờ xung đột của các booking chưa bị khóa vì `bookingId` (booking đó không còn chiếm chỗ). */
+  async releaseHeldBy(bookingId: string) {
+    const cleared = await this.prisma.slotBooking.updateMany({
+      where: { conflictWithBookingId: bookingId, status: { in: SOFT_HOLD } },
+      data: { conflictWithBookingId: null, conflictFlaggedAt: null },
+    });
+    const reopenable = await this.prisma.slotBooking.count({
+      where: { lockedByBookingId: bookingId, status: 'LOCKED' },
+    });
+    return { clearedConflicts: cleared.count, reopenableBookings: reopenable };
+  }
+
+  /** Xác nhận khóa: booking đang bị đánh dấu xung đột -> LOCKED (do người có quyền xác nhận). */
+  async confirmConflictLock(id: string, reason?: string) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    if (!SOFT_HOLD.includes(booking.status as any) || !booking.conflictWithBookingId) {
+      throw new BadRequestException('Booking này không có xung đột đang chờ xử lý');
+    }
+    const blocker = await this.prisma.slotBooking.findUnique({
+      where: { id: booking.conflictWithBookingId },
+      select: { id: true, bookingRef: true, status: true },
+    });
+    if (!blocker || !HARD_HOLD.includes(blocker.status as any)) {
+      // Booking chiếm chỗ đã được giải phóng -> không còn lý do khóa.
+      await this.prisma.slotBooking.update({
+        where: { id },
+        data: { conflictWithBookingId: null, conflictFlaggedAt: null },
+      });
+      throw new ConflictException('Booking chiếm chỗ đã được giải phóng, xung đột không còn nữa');
+    }
+    return this.prisma.slotBooking.update({
+      where: { id },
+      data: {
+        status: 'LOCKED',
+        lockedByBookingId: blocker.id,
+        lockedAt: new Date(),
+        lockReason: reason ?? `Xung đột với booking ${blocker.bookingRef} đã được duyệt`,
+        conflictWithBookingId: null,
+        conflictFlaggedAt: null,
+      },
+    });
+  }
+
+  /** Bỏ qua cảnh báo xung đột (giữ booking như cũ). */
+  async dismissConflict(id: string) {
+    const booking = await this.prisma.slotBooking.findUnique({ where: { id } });
+    if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+    return this.prisma.slotBooking.update({
+      where: { id },
+      data: { conflictWithBookingId: null, conflictFlaggedAt: null },
+    });
+  }
+
+  /** Mở lại booking đã bị khóa khi booking chiếm chỗ không còn hiệu lực (hợp đồng thất bại/hủy). */
+  async reopenBooking(id: string) {
+    return this.serializable(async (tx) => {
+      const booking = await tx.slotBooking.findUnique({ where: { id } });
+      if (!booking) throw new NotFoundException('Slot booking không tồn tại');
+      if (booking.status !== 'LOCKED') {
+        throw new BadRequestException('Chỉ booking đang bị khóa (LOCKED) mới có thể mở lại');
+      }
+      if (booking.lockedByBookingId) {
+        const blocker = await tx.slotBooking.findUnique({
+          where: { id: booking.lockedByBookingId },
+          select: { bookingRef: true, status: true },
+        });
+        if (blocker && HARD_HOLD.includes(blocker.status as any)) {
+          throw new ConflictException(
+            `Không thể mở lại: booking ${blocker.bookingRef} vẫn đang chiếm slot (${blocker.status})`,
+          );
+        }
+      }
+      // Có thể đã có booking khác được duyệt vào phần chỗ vừa trống.
+      const blocked = await this.findHardConflictForBooking(tx, booking);
+      if (blocked) {
+        throw new ConflictException(
+          `Không thể mở lại: slot ${blocked.slotCode} đã được duyệt cho booking ${blocked.conflict.bookingRef}`,
+        );
+      }
+      return tx.slotBooking.update({
+        where: { id },
+        data: {
+          status: 'SUBMITTED',
+          lockedByBookingId: null,
+          lockedAt: null,
+          lockReason: null,
+        },
+      });
+    });
+  }
+
+  /** Booking cần người có quyền xử lý: có xung đột chờ khóa, hoặc đã khóa nhưng booking chiếm chỗ đã được giải phóng. */
+  async listNeedsAttention(mallIds?: string[]) {
+    const mallFilter = mallIds
+      ? { slot: { unit: { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } } }
+      : {};
+    const include = {
+      slot: { select: { id: true, code: true, name: true, unit: { select: { id: true, code: true, mallId: true } } } },
+      lines: { include: { slot: { select: { id: true, code: true } } } },
+      lead: { select: { id: true, brandName: true } },
+      customer: { select: { id: true, companyName: true } },
+    };
+    const conflicts = await this.prisma.slotBooking.findMany({
+      where: { ...mallFilter, status: { in: SOFT_HOLD }, conflictWithBookingId: { not: null } },
+      include,
+      orderBy: { conflictFlaggedAt: 'asc' },
+    });
+    const locked = await this.prisma.slotBooking.findMany({
+      where: { ...mallFilter, status: 'LOCKED' },
+      include,
+      orderBy: { lockedAt: 'asc' },
+    });
+    const refIds = [
+      ...conflicts.map((b) => b.conflictWithBookingId),
+      ...locked.map((b) => b.lockedByBookingId),
+    ].filter((v): v is string => !!v);
+    const refs = refIds.length
+      ? await this.prisma.slotBooking.findMany({
+          where: { id: { in: refIds } },
+          select: { id: true, bookingRef: true, status: true },
+        })
+      : [];
+    const refById = new Map(refs.map((r) => [r.id, r]));
+
+    return [
+      ...conflicts.map((b) => ({
+        kind: 'CONFLICT' as const,
+        booking: b,
+        blockedBy: refById.get(b.conflictWithBookingId as string) ?? null,
+      })),
+      ...locked.map((b) => {
+        const blockedBy = b.lockedByBookingId ? refById.get(b.lockedByBookingId) ?? null : null;
+        return {
+          kind: 'LOCKED' as const,
+          booking: b,
+          blockedBy,
+          // Booking chiếm chỗ không còn hiệu lực -> có thể mở lại.
+          canReopen: !blockedBy || !HARD_HOLD.includes(blockedBy.status as any),
+        };
+      }),
+    ];
+  }
+
+  // ─── Ngày lễ theo Mall (dùng tính giá cuối tuần/lễ) ─────────────────────────
+
+  listHolidays(mallId: string) {
+    return this.prisma.mallHoliday.findMany({ where: { mallId }, orderBy: { date: 'asc' } });
+  }
+
+  async addHoliday(mallId: string, dto: { date: string; name: string }) {
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException('Ngày lễ không hợp lệ');
+    return this.prisma.mallHoliday.upsert({
+      where: { mallId_date: { mallId, date } },
+      update: { name: dto.name },
+      create: { mallId, date, name: dto.name },
+    });
+  }
+
+  async findHoliday(id: string) {
+    const h = await this.prisma.mallHoliday.findUnique({ where: { id } });
+    if (!h) throw new NotFoundException('Ngay le khong ton tai');
+    return h;
+  }
+
+  async deleteHoliday(id: string) {
+    await this.prisma.mallHoliday.delete({ where: { id } });
+    return { message: 'Đã xóa ngày lễ' };
   }
 
   // ─── Chuyển đổi booking ngắn hạn → Proposal ────────────────────────────────
@@ -506,11 +1025,17 @@ export class SlotsService {
   async convertToProposal(id: string, dto: ConvertSlotBookingToProposalDto, userId: string) {
     const booking = await this.prisma.slotBooking.findUnique({
       where: { id },
-      include: { slot: { include: { unit: true } }, lead: true, customer: true, proposal: true },
+      include: {
+        slot: { include: { unit: true } },
+        lines: { include: { slot: { select: { id: true, code: true, unitId: true } } } },
+        lead: true,
+        customer: true,
+        proposal: true,
+      },
     });
     if (!booking) throw new NotFoundException('Slot booking không tồn tại');
-    if (booking.status !== 'CONFIRMED') {
-      throw new BadRequestException('Chỉ booking đã CONFIRMED mới có thể chuyển thành Proposal');
+    if (booking.status !== 'CONFIRMED' && booking.status !== 'APPROVED') {
+      throw new BadRequestException('Chỉ booking đã được duyệt (APPROVED/CONFIRMED) mới có thể chuyển thành Proposal');
     }
     if (booking.proposal) {
       throw new ConflictException('Booking này đã được chuyển thành Proposal');
@@ -533,6 +1058,16 @@ export class SlotsService {
 
     const area = booking.totalArea ?? booking.slot.area;
     const totalAmount = booking.totalAmount;
+    // Thời gian trên Proposal/Hợp đồng theo ĐÚNG cách đã chọn ở Booking.
+    const pricingRange = resolvePricingRange({
+      basis: booking.pricingTimeBasis,
+      installationStart: booking.installationStartDatetime ?? booking.startDatetime,
+      start: booking.startDatetime,
+      end: booking.endDatetime,
+      dismantlingEnd: booking.dismantlingEndDatetime ?? booking.endDatetime,
+      pricingStart: booking.pricingStart,
+      pricingEnd: booking.pricingEnd,
+    });
 
     const proposal = await this.prisma.$transaction(async (tx) => {
       const created = await tx.proposal.create({
@@ -544,8 +1079,8 @@ export class SlotsService {
           tenantId: resolvedTenantId,
           area,
           term: 1,
-          startDate: booking.startDatetime,
-          endDate: booking.endDatetime,
+          startDate: pricingRange.from,
+          endDate: pricingRange.to,
           rentPerSqm: area > 0 ? totalAmount / area : totalAmount,
           camPerSqm: 0,
           deposit: 0,
@@ -569,6 +1104,17 @@ export class SlotsService {
             discountPct: booking.discountPct,
             installationStartDatetime: booking.installationStartDatetime,
             dismantlingEndDatetime: booking.dismantlingEndDatetime,
+            programStartDatetime: booking.startDatetime,
+            programEndDatetime: booking.endDatetime,
+            pricingTimeBasis: booking.pricingTimeBasis,
+            // Giữ nguyên toàn bộ phạm vi thuê như một yêu cầu thống nhất.
+            lines: (booking.lines ?? []).map((l) => ({
+              slotId: l.slotId,
+              slotCode: l.slot?.code,
+              unitId: l.slot?.unitId,
+              areaRented: l.areaRented,
+              amount: l.amount,
+            })),
           },
           createdById: userId,
         },
@@ -638,6 +1184,7 @@ export class SlotsService {
             },
           },
         },
+        lines: { include: { slot: { select: { id: true, code: true, name: true, area: true } } } },
         lead: { select: { id: true, brandName: true } },
         customer: { select: { id: true, companyName: true } },
         proposal: { select: { id: true, proposalNumber: true, status: true } },
@@ -658,7 +1205,7 @@ export class SlotsService {
       where: { unitId: { in: unitIds }, isActive: true },
       include: {
         bookings: {
-          where: { status: { in: ['PENDING', 'CONFIRMED'] } },
+          where: { status: { in: SLOT_HOLDING_STATUSES } },
           select: { id: true, status: true },
         },
       },
@@ -697,8 +1244,8 @@ export class SlotsService {
       summary.totalSlots += 1;
       summary.totalSlotArea += slot.area;
 
-      const hasConfirmed = slot.bookings.some((b) => b.status === 'CONFIRMED');
-      const hasPending = slot.bookings.some((b) => b.status === 'PENDING');
+      const hasConfirmed = slot.bookings.some((b) => (HARD_HOLD as string[]).includes(b.status));
+      const hasPending = slot.bookings.some((b) => (SOFT_HOLD as string[]).includes(b.status));
 
       if (hasConfirmed) {
         summary.confirmedSlots += 1;
@@ -770,7 +1317,10 @@ export class SlotsService {
     notes?: string;
   }) {
     return this.serializable(async (tx) => {
-      const booking = await tx.slotBooking.findUnique({ where: { id } });
+      const booking = await tx.slotBooking.findUnique({
+        where: { id },
+        include: { lines: { include: { slot: { select: { area: true } } } } },
+      });
     if (!booking) throw new NotFoundException('Slot booking không tồn tại');
     if (['CANCELLED', 'COMPLETED'].includes(booking.status)) {
       throw new BadRequestException('Không thể sửa booking đã hủy hoặc hoàn thành');
@@ -804,8 +1354,13 @@ export class SlotsService {
         dismantlingStart,
         dismantlingEnd,
       });
-      const conflict = await this.findBookingConflict(booking.slotId, installationStart, dismantlingEnd, id, tx);
-      if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
+      const bookingLines = booking.lines?.length
+        ? booking.lines.map((l) => ({ slotId: l.slotId, req: { area: l.areaRented, capacity: l.slot.area } }))
+        : [{ slotId: booking.slotId, req: undefined }];
+      for (const l of bookingLines) {
+        const conflict = await this.findBookingConflict(l.slotId, installationStart, dismantlingEnd, id, tx, l.req);
+        if (conflict) throw new BadRequestException(`Slot đã có booking xung đột: ${conflict.bookingRef}`);
+      }
     }
 
     const data: any = {};

@@ -10,12 +10,22 @@ export const UNIT_STATUS_CONFIG: Record<string, { label: string; color: string }
 };
 
 export const SLOT_STATUS_CONFIG: Record<string, { label: string; color: string; icon: ElementType }> = {
-  PENDING:   { label: 'Chờ xác nhận', color: 'bg-blue-100 text-blue-700 border-blue-200',     icon: Hourglass },
+  PENDING:   { label: 'Mới tạo', color: 'bg-blue-100 text-blue-700 border-blue-200',     icon: Hourglass },
   CONFIRMED: { label: 'Đã xác nhận',  color: 'bg-violet-100 text-violet-700 border-violet-200', icon: CheckCircle2 },
   CANCELLED: { label: 'Đã hủy',       color: 'bg-red-100 text-red-600 border-red-200',          icon: Ban },
   COMPLETED: { label: 'Hoàn thành',   color: 'bg-green-100 text-green-700 border-green-200',    icon: CheckCircle2 },
   CONVERTED: { label: 'Đã lập đề xuất', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
+  SUBMITTED: { label: 'Chờ duyệt',    color: 'bg-amber-100 text-amber-700 border-amber-200',    icon: Hourglass },
+  APPROVED:  { label: 'Đã duyệt',     color: 'bg-indigo-100 text-indigo-700 border-indigo-200', icon: CheckCircle2 },
+  LOCKED:    { label: 'Bị khóa (xung đột)', color: 'bg-gray-200 text-gray-700 border-gray-300', icon: Ban },
+  CONTRACTED: { label: 'Đã ký hợp đồng', color: 'bg-teal-100 text-teal-700 border-teal-200',     icon: CheckCircle2 },
 };
+
+export const SLOT_PRICING_BASIS_OPTIONS = [
+  { value: 'PROGRAM_ONLY', label: 'Chỉ thời gian chương trình (Program)' },
+  { value: 'SETUP_TO_DISMANTLE', label: 'Từ Setup đến hết Dismantling' },
+  { value: 'CUSTOM_RANGE', label: 'Khoảng tùy chỉnh' },
+] as const;
 
 export const SLOT_TYPE_CONFIG: Record<string, { label: string; icon: ElementType; color: string }> = {
   DAILY:   { label: 'Theo ngày',  icon: CalendarDays,  color: 'bg-sky-100 text-sky-700' },

@@ -280,6 +280,7 @@ function SlotFormDialog({
     code: '', name: '', area: '', description: '',
     slotType: 'FLEXIBLE',
     pricePerDaySqm: '', pricePerHour: '', pricePerSqmMonth: '', currencyCode: '',
+    priceWeekdayPerDaySqm: '', priceWeekendHolidayPerDaySqm: '', category: '',
     fillColor: '#3B82F6',
   });
 
@@ -295,6 +296,9 @@ function SlotFormDialog({
         pricePerHour: slot?.pricePerHour?.toString() ?? '',
         pricePerSqmMonth: slot?.pricePerSqmMonth?.toString() ?? '',
         currencyCode: slot?.currencyCode ?? '',
+        priceWeekdayPerDaySqm: slot?.priceWeekdayPerDaySqm?.toString() ?? '',
+        priceWeekendHolidayPerDaySqm: slot?.priceWeekendHolidayPerDaySqm?.toString() ?? '',
+        category: slot?.category ?? '',
         fillColor: slot?.fillColor ?? '#3B82F6',
       });
     }
@@ -331,6 +335,9 @@ function SlotFormDialog({
       pricePerDaySqm: form.pricePerDaySqm ? Number(form.pricePerDaySqm) : undefined,
       pricePerHour: form.pricePerHour ? Number(form.pricePerHour) : undefined,
       pricePerSqmMonth: form.pricePerSqmMonth ? Number(form.pricePerSqmMonth) : undefined,
+      priceWeekdayPerDaySqm: form.priceWeekdayPerDaySqm ? Number(form.priceWeekdayPerDaySqm) : undefined,
+      priceWeekendHolidayPerDaySqm: form.priceWeekendHolidayPerDaySqm ? Number(form.priceWeekendHolidayPerDaySqm) : undefined,
+      category: form.category || undefined,
       // RPT-CUR-006: the API rejects slot pricing with no currency.
       currencyCode: form.currencyCode || undefined,
       fillColor: form.fillColor,
@@ -446,6 +453,27 @@ function SlotFormDialog({
                       type="number"
                       placeholder="0"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Giá ngày thường/m² <span className="text-gray-400">(tuỳ chọn, thay cho giá/ngày)</span></label>
+                    <Input value={form.priceWeekdayPerDaySqm} onChange={set('priceWeekdayPerDaySqm')} type="number" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Giá cuối tuần/lễ/m² <span className="text-gray-400">(T7, CN và ngày lễ của Mall)</span></label>
+                    <Input value={form.priceWeekendHolidayPerDaySqm} onChange={set('priceWeekendHolidayPerDaySqm')} type="number" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Danh mục sảnh</label>
+                    <select
+                      value={form.category}
+                      onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                      className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md bg-white"
+                    >
+                      <option value="">— Chưa phân loại —</option>
+                      <option value="EVENT">Event</option>
+                      <option value="ADVERTISING">Advertising</option>
+                      <option value="KIOSK">Kiosk</option>
+                    </select>
                   </div>
                   <div>
                     <label className="text-xs text-gray-600 mb-1 block">Giá/giờ (HOURLY — toàn slot)</label>

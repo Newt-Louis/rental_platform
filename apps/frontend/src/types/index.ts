@@ -309,6 +309,9 @@ export interface UnitSlot {
   pricePerDaySqm?: number;
   pricePerHour?: number;
   pricePerSqmMonth?: number;
+  priceWeekdayPerDaySqm?: number | null;
+  priceWeekendHolidayPerDaySqm?: number | null;
+  category?: 'EVENT' | 'ADVERTISING' | 'KIOSK' | null;
   // RPT-CUR-006: currency of the three price fields. Optional because legacy
   // rows predate the column — null means UNKNOWN, never VND.
   currencyCode?: CurrencyCode | null;
@@ -325,7 +328,19 @@ export interface UnitSlot {
 }
 
 export type SlotBookingType = 'DAY' | 'HOUR' | 'MONTH';
-export type SlotBookingStatus = 'PENDING' | 'ACTIVE' | 'CONFIRMED' | 'EXPIRED' | 'CANCELLED';
+export type SlotBookingStatus =
+  | 'PENDING' | 'ACTIVE' | 'CONFIRMED' | 'EXPIRED' | 'CANCELLED'
+  | 'SUBMITTED' | 'APPROVED' | 'LOCKED' | 'CONTRACTED' | 'CONVERTED' | 'COMPLETED';
+export type SlotPricingTimeBasis = 'PROGRAM_ONLY' | 'SETUP_TO_DISMANTLE' | 'CUSTOM_RANGE';
+
+export interface SlotBookingLine {
+  id: string;
+  slotId: string;
+  slot?: Pick<UnitSlot, 'id' | 'code' | 'name' | 'area'>;
+  areaRented: number;
+  baseAmount: number;
+  amount: number;
+}
 
 export interface SlotBooking {
   id: string;
@@ -345,6 +360,13 @@ export interface SlotBooking {
   customerId?: string;
   customer?: Customer;
   status: SlotBookingStatus;
+  lines?: SlotBookingLine[];
+  pricingTimeBasis?: SlotPricingTimeBasis;
+  pricingStart?: string | null;
+  pricingEnd?: string | null;
+  conflictWithBookingId?: string | null;
+  lockedByBookingId?: string | null;
+  lockReason?: string | null;
   notes?: string;
   createdAt: string;
   updatedAt: string;

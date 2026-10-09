@@ -312,12 +312,78 @@ export class SpacesService {
     });
   }
 
-  async createZone(data: { mallId: string; floorId?: string; buildingId?: string; name: string; code?: string }) {
+  async createZone(data: { mallId: string; floorId?: string; buildingId?: string; name: string; code?: string; totalArea?: number }) {
     await this.validateZoneLocation(data.mallId, data.floorId, data.buildingId);
+    this.assertValidZoneTotalArea(data.totalArea);
     return this.prisma.zone.create({ data });
   }
 
-  async updateZone(id: string, data: { name?: string; code?: string; floorId?: string }) {
+  private assertValidZoneTotalArea(totalArea: unknown) {
+    if (totalArea === undefined || totalArea === null) return;
+    if (typeof totalArea !== 'number' || !Number.isFinite(totalArea) || totalArea <= 0) {
+      throw new BadRequestException('Tong dien tich khu vuc phai la so lon hon 0');
+    }
+  }
+
+  /** Dien tich khu vuc (cho thue ngan han): tong / da phan bo cho cac MB SHORT / con lai. */
+  async getZoneAreaSummary(zoneId: string) {
+    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId }, select: { id: true, name: true, totalArea: true } });
+    if (!zone) throw new NotFoundException('Zone không tồn tại');
+    const allocated = await this.shortTermAllocatedArea(zoneId);
+    return {
+      zoneId: zone.id,
+      name: zone.name,
+      totalArea: zone.totalArea,
+      allocatedArea: allocated,
+      remainingArea: zone.totalArea == null ? null : Math.max(0, zone.totalArea - allocated),
+    };
+  }
+
+  private async shortTermAllocatedArea(zoneId: string, excludeUnitId?: string) {
+    const agg = await this.prisma.unit.aggregate({
+      where: {
+        zoneId,
+        isActive: true,
+        leaseTermType: 'SHORT',
+        ...(excludeUnitId ? { id: { not: excludeUnitId } } : {}),
+      },
+      _sum: { areaNLA: true },
+    });
+    return agg._sum.areaNLA ?? 0;
+  }
+
+  /**
+   * Tong dien tich cac mat bang ngan han trong mot khu vuc khong duoc vuot tong dien
+   * tich khu vuc. Khu vuc chua khai bao totalArea thi khong rang buoc.
+   */
+  private async assertShortTermZoneBudget(
+    zoneId: string | null | undefined,
+    leaseTermType: string | null | undefined,
+    areaNLA: number | null | undefined,
+    excludeUnitId?: string,
+  ) {
+    if (!zoneId || leaseTermType !== 'SHORT') return;
+    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId }, select: { name: true, totalArea: true } });
+    if (!zone || zone.totalArea == null) return;
+    const others = await this.shortTermAllocatedArea(zoneId, excludeUnitId);
+    const next = others + (areaNLA ?? 0);
+    if (next > zone.totalArea + 1e-6) {
+      throw new BadRequestException(
+        `Tong dien tich mat bang trong khu vuc "${zone.name}" (${next} m2) vuot tong dien tich khu vuc (${zone.totalArea} m2). Con lai: ${Math.max(0, zone.totalArea - others)} m2.`,
+      );
+    }
+  }
+
+  async updateZone(id: string, data: { name?: string; code?: string; floorId?: string; totalArea?: number | null }) {
+    if (Object.prototype.hasOwnProperty.call(data, 'totalArea') && data.totalArea != null) {
+      this.assertValidZoneTotalArea(data.totalArea);
+      const allocated = await this.shortTermAllocatedArea(id);
+      if (data.totalArea < allocated - 1e-6) {
+        throw new BadRequestException(
+          `Tong dien tich khu vuc (${data.totalArea} m2) khong duoc nho hon dien tich da phan bo cho mat bang (${allocated} m2)`,
+        );
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(data, 'floorId')) {
       const current = await this.prisma.zone.findUnique({ where: { id }, select: { mallId: true } });
       if (!current) throw new NotFoundException('Zone không tồn tại');
@@ -612,6 +678,7 @@ export class SpacesService {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
     await this.validateUnitLocation(mallId, dto.floorId, dto.zoneId);
+    await this.assertShortTermZoneBudget(dto.zoneId, dto.leaseTermType, dto.areaNLA);
 
     const existing = await this.prisma.unit.findUnique({
       where: { mallId_code: { mallId, code: dto.code } },
@@ -636,6 +703,12 @@ export class SpacesService {
     const nextFloorId = Object.prototype.hasOwnProperty.call(dto, 'floorId') ? dto.floorId : current.floorId;
     const nextZoneId = Object.prototype.hasOwnProperty.call(dto, 'zoneId') ? dto.zoneId : current.zoneId;
     await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+    await this.assertShortTermZoneBudget(
+      nextZoneId,
+      Object.prototype.hasOwnProperty.call(dto, 'leaseTermType') ? dto.leaseTermType : current.leaseTermType,
+      Object.prototype.hasOwnProperty.call(dto, 'areaNLA') ? dto.areaNLA : current.areaNLA,
+      id,
+    );
     if (dto.code && dto.code !== current.code) {
       const duplicate = await this.prisma.unit.findUnique({
         where: { mallId_code: { mallId: current.mallId, code: dto.code } },
@@ -907,6 +980,12 @@ export class SpacesService {
       const nextFloorId = Object.prototype.hasOwnProperty.call(infoDto, 'floorId') ? infoDto.floorId : current.floorId;
       const nextZoneId = Object.prototype.hasOwnProperty.call(infoDto, 'zoneId') ? infoDto.zoneId : current.zoneId;
       await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+      await this.assertShortTermZoneBudget(
+        nextZoneId,
+        Object.prototype.hasOwnProperty.call(infoDto, 'leaseTermType') ? infoDto.leaseTermType : current.leaseTermType,
+        Object.prototype.hasOwnProperty.call(infoDto, 'areaNLA') ? infoDto.areaNLA : current.areaNLA,
+        id,
+      );
       updated = await this.prisma.unit.update({
         where: { id },
         data: sanitizeUnitDto(infoDto),

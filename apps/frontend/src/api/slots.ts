@@ -11,9 +11,9 @@ export const slotsApi = {
     api.patch(`/slots/${slotId}`, data).then((r) => r.data),
   deleteSlot: (slotId: string) =>
     api.delete(`/slots/${slotId}`).then((r) => r.data),
-  calculatePrice: (slotId: string, type: string, startDatetime: string, endDatetime: string) =>
+  calculatePrice: (slotId: string, type: string, startDatetime: string, endDatetime: string, area?: number) =>
     api.get(`/slots/${slotId}/price`, {
-      params: { type, start: startDatetime, end: endDatetime },
+      params: { type, start: startDatetime, end: endDatetime, ...(area ? { area } : {}) },
     }).then((r) => r.data),
   createBooking: (slotId: string, data: Record<string, unknown>) =>
     api.post(`/slots/${slotId}/bookings`, data).then((r) => r.data),
@@ -40,4 +40,28 @@ export const slotsApi = {
     api.patch(`/slots/bookings/${bookingId}/cancel`, { reason }).then((r) => r.data),
   deleteSlotBooking: (bookingId: string) =>
     api.delete(`/slots/bookings/${bookingId}`).then((r) => r.data),
+
+  // Phe duyet mot cap: gui duyet -> duyet / tu choi; xung dot do nguoi co tham quyen xac nhan khoa / mo lai
+  submitBooking: (bookingId: string) =>
+    api.post(`/slots/bookings/${bookingId}/submit`).then((r) => r.data),
+  approveBooking: (bookingId: string) =>
+    api.post(`/slots/bookings/${bookingId}/approve`).then((r) => r.data),
+  rejectBooking: (bookingId: string, reason?: string) =>
+    api.post(`/slots/bookings/${bookingId}/reject`, { reason }).then((r) => r.data),
+  confirmLock: (bookingId: string, reason?: string) =>
+    api.post(`/slots/bookings/${bookingId}/confirm-lock`, { reason }).then((r) => r.data),
+  dismissConflict: (bookingId: string) =>
+    api.post(`/slots/bookings/${bookingId}/dismiss-conflict`).then((r) => r.data),
+  reopenBooking: (bookingId: string) =>
+    api.post(`/slots/bookings/${bookingId}/reopen`).then((r) => r.data),
+  listNeedsAttention: (mallId?: string) =>
+    api.get('/slots/bookings/needs-attention', { params: { mallId } }).then((r) => r.data),
+
+  // Ngay le theo Mall (tinh gia cuoi tuan/le)
+  listHolidays: (mallId: string) =>
+    api.get('/slots/holidays', { params: { mallId } }).then((r) => r.data),
+  addHoliday: (mallId: string, data: { date: string; name: string }) =>
+    api.post('/slots/holidays', data, { params: { mallId } }).then((r) => r.data),
+  deleteHoliday: (holidayId: string) =>
+    api.delete(`/slots/holidays/${holidayId}`).then((r) => r.data),
 };
