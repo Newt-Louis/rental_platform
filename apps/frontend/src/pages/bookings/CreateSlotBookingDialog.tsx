@@ -50,13 +50,15 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
   const [pricePreview, setPricePreview] = useState<{ baseAmount: number; discountPct: number; totalAmount: number } | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
   const primarySlotId = form.slotIds[0] ?? '';
+  // Slot đã từng tải (mọi mặt bằng) -- để giữ thông tin slot đã chọn khi chuyển sang mặt bằng khác
+  const [slotCache, setSlotCache] = useState<Record<string, any>>({});
 
   useEffect(() => {
-    if (open) { setForm(EMPTY_FORM); setPricePreview(null); }
+    if (open) { setForm(EMPTY_FORM); setPricePreview(null); setSlotCache({}); }
   }, [open]);
 
   const setField = (k: keyof CreateSlotForm) => (val: string) =>
-    setForm((p) => ({ ...p, [k]: val, ...(k === 'unitId' ? { slotIds: [], areas: {} } : {}), ...(k === 'clientType' ? { clientId: '' } : {}) }));
+    setForm((p) => ({ ...p, [k]: val, ...(k === 'clientType' ? { clientId: '' } : {}) }));
 
   const { data: unitsData } = useQuery({
     queryKey: ['units-for-slot', mallId],
@@ -71,6 +73,15 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     enabled: open && !!form.unitId,
   });
   const slots: any[] = Array.isArray(slotsData) ? slotsData : (slotsData?.data ?? []);
+  const browsedUnitCode = units.find((u: any) => u.id === form.unitId)?.code;
+  useEffect(() => {
+    if (!slots.length) return;
+    setSlotCache((prev) => ({
+      ...prev,
+      ...Object.fromEntries(slots.map((sl: any) => [sl.id, { ...sl, unitCode: browsedUnitCode }])),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotsData, browsedUnitCode]);
 
   const { data: leadsData } = useQuery({
     queryKey: ['leads-for-slot-booking-dialog'],
@@ -105,7 +116,8 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     const a = areaOf(slot);
     return !(a > 0) || a > slot.area ? `Từ 0 đến ${slot.area} m²` : null;
   };
-  const selectedSlots = slots.filter((s) => form.slotIds.includes(s.id));
+  // Thứ tự chọn được giữ nguyên: slot đầu tiên là slot chính của booking
+  const selectedSlots = form.slotIds.map((id) => slotCache[id]).filter(Boolean);
   const canCalc = !!(selectedSlots.length && form.type && pricingRange.from && pricingRange.to
     && selectedSlots.every((s) => !areaError(s)));
 
@@ -133,7 +145,7 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     setPricePreview(null);
     if (canCalc) calcPrice();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.slotIds.join(','), JSON.stringify(form.areas), form.type, form.pricingTimeBasis, pricingRange.from, pricingRange.to, slots.length]);
+  }, [form.slotIds.join(','), JSON.stringify(form.areas), form.type, form.pricingTimeBasis, pricingRange.from, pricingRange.to, Object.keys(slotCache).length]);
 
   const mutation = useMutation({
     mutationFn: () => slotsApi.createBooking(primarySlotId, {
@@ -233,12 +245,11 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
               <label className="text-sm font-medium text-gray-700 mb-1 block">
                 Slot * <span className="text-gray-400 font-normal">— chọn một hoặc nhiều slot, có thể thuê một phần diện tích</span>
               </label>
-              <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 max-h-56 overflow-y-auto">
+              <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 max-h-48 overflow-y-auto">
                 {slots.map((slot: any) => {
                   const checked = form.slotIds.includes(slot.id);
-                  const err = checked ? areaError(slot) : null;
                   return (
-                    <div key={slot.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <label key={slot.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -249,26 +260,46 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
                         className="accent-violet-600"
                       />
                       <span className="flex-1 min-w-0 truncate">{slot.code} — {slot.name} ({slot.area} m²)</span>
-                      {checked && (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="number" min={0} max={slot.area} step="any"
-                            value={form.areas[slot.id] ?? ''}
-                            placeholder={String(slot.area)}
-                            onChange={(e) => setForm((p) => ({ ...p, areas: { ...p.areas, [slot.id]: e.target.value } }))}
-                            className={`h-8 w-24 text-sm ${err ? 'border-red-400' : ''}`}
-                          />
-                          <span className="text-xs text-gray-400">m²</span>
-                        </div>
-                      )}
-                    </div>
+                    </label>
                   );
                 })}
                 {slots.length === 0 && (
                   <div className="px-3 py-2 text-sm text-gray-400">{form.unitId ? 'Chưa có slot' : 'Chọn mặt bằng trước'}</div>
                 )}
               </div>
-              {selectedSlots.some((slot) => areaError(slot)) && (
+              <p className="text-xs text-gray-400 mt-1">Có thể đổi mặt bằng ở trên để chọn thêm slot từ mặt bằng khác (cùng Mall).</p>
+
+              {selectedSlots.length > 0 && (
+                <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/50 p-3 space-y-2">
+                  <div className="text-xs font-semibold text-violet-700">Đã chọn ({selectedSlots.length}) — nhập diện tích thuê (bỏ trống = toàn bộ slot)</div>
+                  {selectedSlots.map((slot: any, idx: number) => {
+                    const err = areaError(slot);
+                    return (
+                      <div key={slot.id} className="flex items-center gap-2 text-sm">
+                        <span className="flex-1 min-w-0 truncate">
+                          {slot.unitCode ? `${slot.unitCode} · ` : ''}{slot.code} — {slot.name} ({slot.area} m²)
+                          {idx === 0 && <span className="ml-1 text-xs text-gray-400">· slot chính</span>}
+                        </span>
+                        <Input
+                          type="number" min={0} max={slot.area} step="any"
+                          value={form.areas[slot.id] ?? ''}
+                          placeholder={String(slot.area)}
+                          onChange={(e) => setForm((p) => ({ ...p, areas: { ...p.areas, [slot.id]: e.target.value } }))}
+                          className={`h-8 w-24 text-sm bg-white ${err ? 'border-red-400' : ''}`}
+                        />
+                        <span className="text-xs text-gray-400">m²</span>
+                        <button
+                          type="button"
+                          aria-label="Bỏ chọn slot"
+                          className="text-gray-400 hover:text-red-500"
+                          onClick={() => setForm((p) => ({ ...p, slotIds: p.slotIds.filter((id) => id !== slot.id) }))}
+                        >×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedSlots.some((slot: any) => areaError(slot)) && (
                 <p className="text-xs text-red-600 mt-1">Diện tích thuê phải lớn hơn 0 và không vượt quá diện tích slot.</p>
               )}
               {form.unitId && slots.length === 0 && (

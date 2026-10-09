@@ -29,6 +29,8 @@ test.describe.serial('Short-term booking approval flow', () => {
   let mallId: string;
   let slot: { id: string; area: number };
   const created: string[] = [];
+  // Mat bang + slot tam de thu booking nhieu mat bang; xoa o afterAll
+  let extra: { unitId?: string; slotId?: string } = {};
 
   const call = async (method: 'get' | 'post' | 'patch' | 'delete', path: string, data?: unknown) => {
     const res = await api[method](`${API}${path}`, { headers, data: data as any });
@@ -62,6 +64,8 @@ test.describe.serial('Short-term booking approval flow', () => {
       await call('patch', `/slots/bookings/${id}/cancel`, { reason: 'e2e cleanup' });
       await call('delete', `/slots/bookings/${id}`);
     }
+    if (extra.slotId) await call('delete', `/slots/${extra.slotId}`);
+    if (extra.unitId) await call('delete', `/spaces/units/${extra.unitId}`);
     await api.dispose();
   });
 
@@ -134,5 +138,24 @@ test.describe.serial('Short-term booking approval flow', () => {
     expect((await part(0.5)).status).toBe(400);
     // Gia ti le theo dien tich thue.
     expect(a.body.baseAmount / b.body.baseAmount).toBeCloseTo(4 / rest, 6);
+  });
+
+  test('one booking can span slots of different units in the same mall', async () => {
+    const code = `E2E-${Date.now() % 100000}`;
+    const unit = await call('post', '/spaces/units', {
+      mallId, code, name: code, areaGFA: 20, areaNLA: 20, leaseTermType: 'SHORT',
+    });
+    expect(unit.status, JSON.stringify(unit.raw)).toBeLessThan(300);
+    extra.unitId = unit.body.id;
+    const other = await call('post', `/slots/units/${extra.unitId}`, {
+      code: 'X1', name: 'E2E slot', area: 5, pricePerDaySqm: 100000, currencyCode: slot.currencyCode,
+    });
+    expect(other.status, JSON.stringify(other.raw)).toBeLessThan(300);
+    extra.slotId = other.body.id;
+
+    const r = await book(30, { lines: [{ slotId: slot.id, areaRented: 2 }, { slotId: extra.slotId, areaRented: 5 }] });
+    expect(r.status, JSON.stringify(r.raw)).toBe(201);
+    expect(r.body.lines).toHaveLength(2);
+    expect(r.body.totalArea).toBe(7);
   });
 });

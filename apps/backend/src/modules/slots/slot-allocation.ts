@@ -122,3 +122,13 @@ export function dailyAmountWithWeekendHoliday(params: {
   }
   return total;
 }
+
+/**
+ * So thang (lam tron len, toi thieu 1) cua khoang thoi gian thue -- dung cho truong `term` cua
+ * Proposal/Hop dong ngan han thay vi hard-code 1. Billing khong dung `term` (no chay theo
+ * ngay bat dau/ket thuc), nen gia tri nay chi phan anh dung do dai hop dong.
+ */
+export function termMonthsForRange(from: Date, to: Date): number {
+  const days = (to.getTime() - from.getTime()) / 86_400_000;
+  return Math.max(1, Math.ceil(days / 30));
+}

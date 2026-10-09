@@ -167,6 +167,8 @@ export class ContractExpiryScheduler {
         isActive: true,
         status: { in: ['ACTIVE', 'EXPIRING'] },
         endDate: { gte: target, lte: targetEnd },
+        // Hop dong ngan han (tu booking slot) khong gia han: khong tao de xuat gia han tu dong.
+        NOT: { proposal: { slotBookingId: { not: null } } },
       },
       include: {
         unit: { select: { id: true, code: true, areaNLA: true } },

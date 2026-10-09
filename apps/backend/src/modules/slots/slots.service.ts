@@ -5,7 +5,7 @@ import { UnitStatusService } from '../../common/services/unit-status.service';
 import { notifySlotApprovers } from './slot-booking-release';
 import {
   SLOT_HARD_HOLD_STATUSES, SLOT_SOFT_HOLD_STATUSES, fitsCapacity, resolvePricingRange,
-  dailyAmountWithWeekendHoliday,
+  dailyAmountWithWeekendHoliday, termMonthsForRange,
 } from './slot-allocation';
 import { CreateUnitSlotDto, UpdateUnitSlotDto, CreateSlotBookingDto, CreateSlotPricingRuleDto, ConvertSlotBookingToProposalDto, SlotBookingType } from './dto/slots.dto';
 
@@ -1036,7 +1036,7 @@ export class SlotsService {
   // Proposal được thiết kế cho thuê dài hạn (rentPerSqm/tháng, escalation,
   // cọc theo tháng...) trong khi SlotBooking là một khoản phí trọn gói cho một
   // khoảng thời gian ngắn (giờ/ngày). Mapping dưới đây là gần đúng có chủ đích:
-  // term=1 và rentPerSqm chỉ mang tính tham khảo — totalContractValue mới là
+  // term (số tháng, làm tròn lên từ khoảng thời gian tính tiền) và rentPerSqm chỉ mang tính tham khảo — totalContractValue mới là
   // giá trị thật (= totalAmount của booking, KHÔNG chạy qua computeContractValue
   // vì đó là công thức cho thuê tháng lặp lại). Nguồn gốc booking được lưu lại
   // trong pricingSnapshot để tra soát.
@@ -1096,7 +1096,7 @@ export class SlotsService {
           leadId: booking.leadId ?? undefined,
           tenantId: resolvedTenantId,
           area,
-          term: 1,
+          term: termMonthsForRange(pricingRange.from, pricingRange.to),
           startDate: pricingRange.from,
           endDate: pricingRange.to,
           rentPerSqm: area > 0 ? totalAmount / area : totalAmount,

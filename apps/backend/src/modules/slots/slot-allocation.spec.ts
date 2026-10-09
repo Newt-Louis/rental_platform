@@ -70,3 +70,14 @@ describe('slot-allocation', () => {
     });
   });
 });
+
+describe('termMonthsForRange', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { termMonthsForRange } = require('./slot-allocation');
+  it('is at least 1 month and rounds up', () => {
+    expect(termMonthsForRange(new Date('2026-09-01T00:00:00Z'), new Date('2026-09-03T00:00:00Z'))).toBe(1);
+    expect(termMonthsForRange(new Date('2026-09-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z'))).toBe(1);
+    expect(termMonthsForRange(new Date('2026-09-01T00:00:00Z'), new Date('2026-10-05T00:00:00Z'))).toBe(2);
+    expect(termMonthsForRange(new Date('2026-01-01T00:00:00Z'), new Date('2026-04-01T00:00:00Z'))).toBe(3);
+  });
+});
