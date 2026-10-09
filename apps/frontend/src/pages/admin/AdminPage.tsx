@@ -1250,7 +1250,7 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
             >
               <Input {...register('name', { required: true })} defaultValue={editZone?.name} placeholder="Tên khu vực" className="h-7 text-xs" />
               <Input {...register('code')} defaultValue={editZone?.code} placeholder="Mã (tùy chọn)" className="h-7 text-xs w-28" />
-              <Input {...register('totalArea')} defaultValue={editZone?.totalArea ?? ''} type="number" min={0} step="any" placeholder="Tổng DT (m²)" title="Tổng diện tích khu vực (m²) — dùng cho cho thuê ngắn hạn" className="h-7 text-xs w-32" />
+              <Input {...register('totalArea')} defaultValue={editZone?.totalArea ?? ''} type="number" min={0} step="any" placeholder="Tổng DT (m²)" title="Tổng diện tích khu vực (m²) — tổng diện tích các mặt bằng (dài hạn + ngắn hạn) không được vượt quá" className="h-7 text-xs w-32" />
               <Button size="sm" type="submit" className="h-7 text-xs px-3" disabled={createZoneMutation.isPending || updateZoneMutation.isPending}>
                 {editZone ? 'Lưu' : 'Thêm'}
               </Button>
