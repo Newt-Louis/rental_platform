@@ -173,7 +173,8 @@ export class BillingService {
       }) : [],
       includeShortTerm ? this.prisma.slotBooking.findMany({
         where: {
-          status: { in: ['CONFIRMED', 'COMPLETED'] },
+          // CONTRACTED = booking da thanh hop dong ngan han: hoa don xuat mot lan tu chinh booking.
+          status: { in: ['CONFIRMED', 'COMPLETED', 'CONTRACTED'] },
           ...(mallIds ? { slot: { unit: { mallId: { in: mallIds } } } } : {}),
           ...(search ? { OR: [
             { bookingRef: { contains: search, mode: 'insensitive' } },
@@ -644,7 +645,7 @@ export class BillingService {
         },
       });
       if (!booking) throw new NotFoundException('Không tìm thấy booking thuê ngắn hạn');
-      if (!['CONFIRMED', 'COMPLETED'].includes(booking.status)) {
+      if (!['CONFIRMED', 'COMPLETED', 'CONTRACTED'].includes(booking.status)) {
         throw new BadRequestException('Booking phải được xác nhận trước khi xuất hóa đơn');
       }
       const existing = await this.prisma.invoice.findFirst({
