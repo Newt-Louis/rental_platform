@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
-import { markSlotBookingContracted, releaseSlotBookingAfterFailure } from '../slots/slot-booking-release';
+import { markSlotBookingContracted, releaseSlotBookingAfterFailure, notifySlotApprovers } from '../slots/slot-booking-release';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
@@ -553,7 +553,14 @@ export class ProposalsService {
       where: { id: payload.entityId },
       data: { status: ProposalStatus.REJECTED },
     });
-    await releaseSlotBookingAfterFailure(this.prisma, (rejectedProposal as any)?.slotBookingId, 'Proposal bi tu choi trong quy trinh phe duyet');
+    const released = await releaseSlotBookingAfterFailure(this.prisma, (rejectedProposal as any)?.slotBookingId, 'Proposal bi tu choi trong quy trinh phe duyet');
+    if (released.released && released.reopenable.length) {
+      await notifySlotApprovers(this.prisma, (rejectedProposal as any).slotBookingId, {
+        title: 'Booking ngan han da bi khoa co the mo lai',
+        body: `Proposal bi tu choi, slot da duoc giai phong; ${released.reopenable.length} booking dang bi khoa co the duoc mo lai.`,
+        type: 'SLOT_BOOKING_REOPENABLE',
+      });
+    }
     await this.markDocumentVersion(payload.workflowId, 'REJECTED');
   }
 

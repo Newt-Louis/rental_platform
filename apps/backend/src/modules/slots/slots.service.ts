@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { Prisma, CurrencyCode } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UnitStatusService } from '../../common/services/unit-status.service';
+import { notifySlotApprovers } from './slot-booking-release';
 import {
   SLOT_HARD_HOLD_STATUSES, SLOT_SOFT_HOLD_STATUSES, fitsCapacity, resolvePricingRange,
   dailyAmountWithWeekendHoliday,
@@ -807,6 +808,16 @@ export class SlotsService {
         }
       }
       return { booking: approved, conflictedBookingIds: flagged };
+    }).then(async (result) => {
+      // Bao nguoi co tham quyen: co booking trung lich can xac nhan khoa / bo qua.
+      for (const conflictedId of result.conflictedBookingIds) {
+        await notifySlotApprovers(this.prisma, conflictedId, {
+          title: 'Booking ngan han trung lich can xu ly',
+          body: 'Mot booking vua duoc duyet chiem slot/thoi gian cua booking nay. Hay xac nhan khoa hoac bo qua.',
+          type: 'SLOT_BOOKING_CONFLICT',
+        });
+      }
+      return result;
     });
   }
 
@@ -833,7 +844,14 @@ export class SlotsService {
       where: { id },
       data: { status: 'CANCELLED', cancelReason: reason },
     });
-    await this.releaseHeldBy(id);
+    const released = await this.releaseHeldBy(id);
+    if (released.reopenableBookings > 0) {
+      await notifySlotApprovers(this.prisma, id, {
+        title: 'Booking ngan han da bi khoa co the mo lai',
+        body: `Booking vua huy da giai phong slot; ${released.reopenableBookings} booking dang bi khoa co the duoc mo lai.`,
+        type: 'SLOT_BOOKING_REOPENABLE',
+      });
+    }
     return updated;
   }
 
