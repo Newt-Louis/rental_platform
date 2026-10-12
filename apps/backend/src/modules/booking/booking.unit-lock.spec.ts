@@ -64,6 +64,7 @@ describe('BookingService — unit status lock (#20)', () => {
 
   const prisma = {
     unit: { findUnique: jest.fn() },
+    contract: { findMany: jest.fn().mockResolvedValue([]) },
     lead: { findUnique: jest.fn(), update: jest.fn() },
     customer: { findUnique: jest.fn() },
     unitBooking: {
@@ -84,6 +85,7 @@ describe('BookingService — unit status lock (#20)', () => {
 
   const unitStatus = {
     isCommittedToTenant: jest.fn(),
+
     isLockedForBooking: jest.fn(),
     transition: jest.fn(),
   } as any;
@@ -190,5 +192,61 @@ describe('BookingService — unit status lock (#20)', () => {
 
     const result = await service.create(createDto as any, 'user-1');
     expect(result).toBeDefined();
+  });
+
+  describe('booking period vs lease period', () => {
+    const period = { bookingStartDate: '2027-01-01', bookingEndDate: '2027-06-30' };
+    const leasedUnit = { ...makeUnit(UnitStatus.OCCUPIED), leaseStartDate: null, leaseEndDate: null };
+
+    beforeEach(() => {
+      unitStatus.isLockedForBooking.mockReturnValue(true);
+      unitStatus.isCommittedToTenant.mockReturnValue(true);
+      prisma.unit.findUnique.mockResolvedValue(leasedUnit);
+    });
+
+    it('rejects a half-filled period', async () => {
+      await expect(service.create({ ...createDto, bookingStartDate: '2027-01-01' } as any, 'u1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an end date before the start date', async () => {
+      await expect(
+        service.create({ ...createDto, bookingStartDate: '2027-06-30', bookingEndDate: '2027-01-01' } as any, 'u1'),
+      ).rejects.toThrow('sau hoặc bằng');
+    });
+
+    it('still blocks a leased unit when no period is given', async () => {
+      await expect(service.create(createDto as any, 'u1')).rejects.toThrow('đang bị khoá');
+    });
+
+    it('blocks when the period overlaps an active contract', async () => {
+      prisma.contract.findMany.mockResolvedValueOnce([
+        { unitId: 'unit-1', startDate: new Date('2026-01-01'), endDate: new Date('2027-03-31') },
+      ]);
+      await expect(service.create({ ...createDto, ...period } as any, 'u1')).rejects.toThrow('trùng với thời gian Đang thuê');
+    });
+
+    it('allows a leased unit when the period starts after the lease ends, without moving the unit to BOOKING', async () => {
+      // The overlap query (filtered by startDate/endDate) finds nothing; the plain
+      // "does this unit have a contract" query finds one.
+      prisma.contract.findMany.mockImplementation(async ({ where }: any) =>
+        where.startDate ? [] : [{ unitId: 'unit-1' }],
+      );
+      await service.create({ ...createDto, ...period } as any, 'u1');
+      expect(prisma.unitBooking.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            bookingStartDate: new Date('2027-01-01'),
+            bookingEndDate: new Date('2027-06-30'),
+          }),
+        }),
+      );
+      expect(unitStatus.transition).not.toHaveBeenCalled();
+    });
+
+    it('never opens a NEGOTIATING unit, even with a period', async () => {
+      unitStatus.isCommittedToTenant.mockReturnValue(false);
+      prisma.unit.findUnique.mockResolvedValue(makeUnit(UnitStatus.NEGOTIATING));
+      await expect(service.create({ ...createDto, ...period } as any, 'u1')).rejects.toThrow('đang bị khoá');
+    });
   });
 });

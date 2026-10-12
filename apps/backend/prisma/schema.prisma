@@ -76,6 +76,7 @@ enum UnitMediaType {
   RENDER_3D
   BROCHURE
   SITE_MAP
+  SHORT_TERM_PLAN // ban ve 2D rieng cua khu cho thue ngan han (tach khoi FLOOR_PLAN dai han)
 }
 
 enum BookingActivityType {
@@ -528,6 +529,7 @@ model User {
   activeMall   Mall?   @relation("UserActiveMall", fields: [activeMallId], references: [id])
 
   assignedLeads              Lead[]                     @relation("AssignedLeads")
+  modulePermissions          UserModulePermission[]
   approvalSteps              ApprovalStep[]
   fitoutFormApprovalLevels   FitoutFormApprovalLevel[]  @relation("FitoutFormApprover")
   approvalPolicyRules        ApprovalPolicyRule[]       @relation("ApprovalPolicyApprover")
@@ -560,6 +562,7 @@ model User {
   uploadedUnitMedia          UnitMedia[]
   unitHistoryChanges         UnitHistory[]              @relation("UnitHistoryChangedBy")
   slotBookings               SlotBooking[]              @relation("SlotBookedBy")
+  slotBookingsApproved       SlotBooking[]              @relation("SlotBookingApprover")
   categoryPricings           CategoryMallPricing[]      @relation("CategoryPricingCreatedBy")
   submittedSubmittals        FitoutSubmittal[]          @relation("SubmittalSubmittedBy")
   entityComments             EntityComment[]
@@ -584,6 +587,16 @@ model User {
   workOrderEvents            WorkOrderEvent[]
   workOrderChecklistDone     WorkOrderChecklistItem[]   @relation("WorkOrderChecklistCompletedBy")
   workOrderEvidence          WorkOrderEvidence[]
+  handoverReadinessOwned     UnitHandoverReadiness[] @relation("HandoverReadinessProjectOwner")
+  handoverReadinessRecorded  UnitHandoverReadiness[] @relation("HandoverReadinessRecordedBy")
+  handoverReadinessConfirmed UnitHandoverReadiness[] @relation("HandoverReadinessConfirmedBy")
+  handoverReadinessCreated   UnitHandoverReadiness[] @relation("HandoverReadinessCreatedBy")
+  handoverReadinessEvents    UnitHandoverReadinessEvent[] @relation("HandoverReadinessEventActor")
+  handoverRisksOwned         UnitHandoverRisk[]         @relation("HandoverRiskOwner")
+  handoverRisksCreated       UnitHandoverRisk[]         @relation("HandoverRiskCreatedBy")
+  handoverFollowing          UnitHandoverFollower[]     @relation("HandoverFollowerUser")
+  handoverEvidenceUploaded   UnitHandoverEvidence[]     @relation("HandoverEvidenceUploadedBy")
+  notificationRoutingRecipient NotificationEventRecipient[] @relation("NotificationRoutingRecipient")
   workOrderComments          WorkOrderComment[]
   workOrderTemplatesCreated  WorkOrderTemplate[]        @relation("WorkOrderTemplateCreator")
   workOrderTemplatesAssigned WorkOrderTemplate[]        @relation("WorkOrderTemplateAssignee")
@@ -629,6 +642,7 @@ model Mall {
   floors                   Floor[]
   zones                    Zone[]
   units                    Unit[]
+  shortTermHolidays        MallHoliday[]
   floorPlans               FloorPlanAnalysis[]
   occupancySnapshots       OccupancySnapshot[]
   mallPolicy               MallPolicy?
@@ -659,6 +673,7 @@ model Mall {
   invoices                 Invoice[]
   departments              Department[]
   crmBusinessEvents        CrmBusinessEvent[]
+  handoverReadiness        UnitHandoverReadiness[]
 }
 
 // Mall-scoped organisational master data. User.department intentionally stays
@@ -1299,6 +1314,9 @@ model Zone {
   floor      Floor?    @relation(fields: [floorId], references: [id])
   name       String
   code       String?
+  // Tong dien tich khu vuc (m2) -- cho thue ngan han: tong areaNLA cua cac Unit SHORT
+  // trong Zone khong duoc vuot qua gia tri nay. NULL = chua khai bao.
+  totalArea  Float?
   isActive   Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -1395,6 +1413,7 @@ model Unit {
   slots                UnitSlot[]
   fitoutIssues         FitoutIssue[]
   workOrders           WorkOrder[]
+  handoverReadiness    UnitHandoverReadiness[]
 
   @@unique([mallId, code])
   @@index([mallId, status])
@@ -1743,13 +1762,40 @@ model ModulePermission {
   module      String
   role        Role
   mallId      String   @default("GLOBAL")
+  // `allowed` is the VIEW right (module access). Create/Update/Delete are only
+  // meaningful while it is true; they default to true so rows that predate the
+  // CRUD matrix keep their exact behaviour.
   allowed     Boolean  @default(true)
+  canCreate   Boolean  @default(true)
+  canUpdate   Boolean  @default(true)
+  canDelete   Boolean  @default(true)
   updatedById String?
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 
   @@unique([module, role, mallId])
   @@index([module, mallId])
+}
+
+// Per-user override of the role matrix. Each flag is tri-state: null = inherit
+// from the user's role, true = grant, false = deny. Scoped like ModulePermission
+// (a Mall, or GLOBAL for every Mall).
+model UserModulePermission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module      String
+  mallId      String   @default("GLOBAL")
+  canView     Boolean?
+  canCreate   Boolean?
+  canUpdate   Boolean?
+  canDelete   Boolean?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, module, mallId])
+  @@index([userId, mallId])
 }
 
 // Quy tac sinh buoc duyet cho Proposal. Khai bao RIENG CHO TUNG MALL va chi dinh DICH DANH
@@ -1906,6 +1952,8 @@ model ServiceContract {
   startDate             DateTime?
   endDate               DateTime?
   terminatedDate        DateTime?
+  initialValue          Float?
+  VAT                   Float?
   totalValue            Float                          @default(0)
   currency              String                         @default("VND")
   paymentDirection      String                         @default("PAYABLE")
@@ -1984,6 +2032,7 @@ model ServiceContractPayment {
   vatRate                Float?
   vatAmount              Float?
   totalAmount            Float?
+  amountBreakdown        Json?
   transferredToBillingAt DateTime?
   billingError           String?
   periodType             String?
@@ -3544,6 +3593,10 @@ model UnitBooking {
   // P.CT TTTM, KHNG dng  tnh ton/lu gi tr  cho Hp ng/Billing (xem
   // docs/program/MULTI_CURRENCY_ARCHITECTURE.md -- h thng khng c FX engine).
   exchangeRate  Float?
+  // Booking period. Lets a unit that is currently leased be booked for a window that does
+  // not overlap the existing lease. Both null = legacy open-ended booking.
+  bookingStartDate DateTime?
+  bookingEndDate   DateTime?
   holdDays      Int           @default(30) // S ngy gi slot
   expiresAt     DateTime? // Thi im booking ht hn
   activatedAt   DateTime? // Thi im chuyn sang ACTIVE
@@ -3706,6 +3759,189 @@ model UnitHistory {
   @@index([changeType])
 }
 
+// --- Unit Handover Readiness (Project -> Leasing/Operation) --------------------
+// CR-UNIT-HANDOVER-READINESS. Tracks when the Project team delivers the physical
+// space in a condition Leasing/Operation can accept. NOT tenant handover: that is
+// Proposal.handoverDate / FitoutProject.handoverDate, which this lifecycle only
+// READS (commitment-conflict warning). Orthogonal to Unit.status by design
+// (HANDOVER-READY-01) -- nothing here writes Unit/Booking/Proposal/Contract/Fitout.
+
+// Persisted lifecycle only. AT_RISK / OVERDUE are derived by
+// HandoverReadinessEvaluator (handover-readiness.policy.ts) and never stored.
+enum HandoverReadinessLifecycle {
+  TRACKING
+  CONFIRMED
+  CANCELLED
+}
+
+enum HandoverReadinessEventType {
+  TRACKING_STARTED
+  TARGET_DATE_CHANGED
+  RISK_ADDED
+  RISK_RESOLVED
+  FOLLOWER_ADDED
+  FOLLOWER_REMOVED
+  EVIDENCE_ADDED
+  EVIDENCE_REMOVED
+  REMINDER_SENT
+  COMMITMENT_CONFLICT_DETECTED
+  CONFIRMED
+  REOPENED
+  CANCELLED
+}
+
+enum HandoverRiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum HandoverRiskStatus {
+  OPEN
+  RESOLVED
+}
+
+model UnitHandoverReadiness {
+  id                 String                     @id @default(cuid())
+  // Denormalized from Unit.mallId at creation -- the authoritative Mall for
+  // every authorization decision on this record and its children.
+  mallId             String
+  mall               Mall                       @relation(fields: [mallId], references: [id])
+  unitId             String
+  unit               Unit                       @relation(fields: [unitId], references: [id])
+  // = unitId while the record is not CANCELLED, NULL afterwards. The unique
+  // constraint is the DB-level "at most one active readiness per Unit" rule.
+  activeUnitId       String?                    @unique
+  lifecycleStatus    HandoverReadinessLifecycle @default(TRACKING)
+  // Business DATEs (no time component). originalTargetDate is never updated.
+  originalTargetDate DateTime                   @db.Date
+  targetReadyDate    DateTime                   @db.Date
+  // Responsible Project contact: a User when they have an account, otherwise a
+  // free-text name. Never used as the actor of any change.
+  projectOwnerId     String?
+  projectOwner       User?                      @relation("HandoverReadinessProjectOwner", fields: [projectOwnerId], references: [id])
+  projectOwnerName   String?
+  // The authenticated user who last set the authoritative target date (start or
+  // date change). HANDOVER-SOD-01 compares the confirmer against this.
+  recordedById       String
+  recordedBy         User                       @relation("HandoverReadinessRecordedBy", fields: [recordedById], references: [id])
+  note               String?
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?                      @relation("HandoverReadinessConfirmedBy", fields: [confirmedById], references: [id])
+  confirmNote        String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelReason       String?
+  // Incremented by every mutation; lets a client detect it acted on stale state.
+  version            Int                        @default(0)
+  createdAt          DateTime                   @default(now())
+  createdById        String
+  createdBy          User                       @relation("HandoverReadinessCreatedBy", fields: [createdById], references: [id])
+  updatedAt          DateTime                   @updatedAt
+  updatedById        String?
+
+  events    UnitHandoverReadinessEvent[]
+  risks     UnitHandoverRisk[]
+  followers UnitHandoverFollower[]
+  evidence  UnitHandoverEvidence[]
+
+  @@index([mallId, lifecycleStatus])
+  @@index([unitId, createdAt])
+}
+
+// Append-only business evidence. UPDATE/DELETE are rejected by a DB trigger
+// (see the migration); dedupeKey makes system events (reminders, conflict
+// detection) idempotent across retries and concurrent scheduler instances.
+model UnitHandoverReadinessEvent {
+  id          String                     @id @default(cuid())
+  readinessId String
+  readiness   UnitHandoverReadiness      @relation(fields: [readinessId], references: [id])
+  // Monotonic insertion order. Every event of one readiness is inserted under
+  // that readiness row's lock, so this is the authoritative timeline order
+  // (occurredAt defaults to transaction start time, which is not commit order).
+  sequence    Int                        @default(autoincrement())
+  eventType   HandoverReadinessEventType
+  // NULL only for system events (REMINDER_SENT, COMMITMENT_CONFLICT_DETECTED).
+  actorId     String?
+  actor       User?                      @relation("HandoverReadinessEventActor", fields: [actorId], references: [id])
+  occurredAt  DateTime                   @default(now())
+  reason      String?
+  oldDate     DateTime?                  @db.Date
+  newDate     DateTime?                  @db.Date
+  riskId      String?
+  metadata    Json?
+  dedupeKey   String?                    @unique
+
+  confirmationEvidence UnitHandoverEvidence[] @relation("HandoverEvidenceConfirmation")
+
+  @@index([readinessId, sequence])
+  @@index([readinessId, eventType])
+}
+
+model UnitHandoverRisk {
+  id             String                @id @default(cuid())
+  readinessId    String
+  readiness      UnitHandoverReadiness @relation(fields: [readinessId], references: [id])
+  title          String
+  description    String?
+  severity       HandoverRiskSeverity
+  status         HandoverRiskStatus    @default(OPEN)
+  ownerId        String?
+  owner          User?                 @relation("HandoverRiskOwner", fields: [ownerId], references: [id])
+  dueDate        DateTime?             @db.Date
+  createdAt      DateTime              @default(now())
+  createdById    String
+  createdBy      User                  @relation("HandoverRiskCreatedBy", fields: [createdById], references: [id])
+  updatedAt      DateTime              @updatedAt
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolutionNote String?
+
+  @@index([readinessId, status, severity])
+}
+
+model UnitHandoverFollower {
+  id          String                @id @default(cuid())
+  readinessId String
+  readiness   UnitHandoverReadiness @relation(fields: [readinessId], references: [id])
+  userId      String
+  user        User                  @relation("HandoverFollowerUser", fields: [userId], references: [id])
+  addedById   String
+  createdAt   DateTime              @default(now())
+
+  @@unique([readinessId, userId])
+  @@index([userId])
+}
+
+// Confirmation photos. Stored through StorageService under the PRIVATE
+// `handover-readiness/` subpath (not on main.ts's public static mount, unlike
+// UnitMedia) and streamed only through the authorized evidence route.
+// confirmationEventId links a photo to the CONFIRMED event that consumed it;
+// once set the row is immutable and undeletable (DB trigger).
+model UnitHandoverEvidence {
+  id                  String                      @id @default(cuid())
+  readinessId         String
+  readiness           UnitHandoverReadiness       @relation(fields: [readinessId], references: [id])
+  mallId              String
+  fileName            String
+  filePath            String
+  fileSize            Int
+  mimeType            String
+  sha256              String
+  caption             String?
+  uploadedById        String
+  uploadedBy          User                        @relation("HandoverEvidenceUploadedBy", fields: [uploadedById], references: [id])
+  createdAt           DateTime                    @default(now())
+  confirmationEventId String?
+  confirmationEvent   UnitHandoverReadinessEvent? @relation("HandoverEvidenceConfirmation", fields: [confirmationEventId], references: [id])
+  // Soft delete for photos that were never used in a confirmation.
+  deletedAt           DateTime?
+  deletedById         String?
+
+  @@index([readinessId, confirmationEventId])
+}
+
 // Log import d liu unit hng lot (upload CSV/Excel)
 model UnitImportLog {
   id           String    @id @default(cuid())
@@ -3736,6 +3972,24 @@ enum SlotBookingStatus {
   CANCELLED
   COMPLETED
   CONVERTED
+  SUBMITTED // da gui duyet
+  APPROVED // duoc cap co tham quyen duyet (thang slot)
+  LOCKED // bi khoa vi xung dot voi booking da duyet (da co nguoi xac nhan)
+  CONTRACTED // da thanh hop dong
+}
+
+// Danh muc sanh cho thue ngan han
+enum SlotCategory {
+  EVENT
+  ADVERTISING
+  KIOSK
+}
+
+// Cach xac dinh khoang thoi gian tinh tien thue (chon theo tung giao dich)
+enum SlotPricingTimeBasis {
+  PROGRAM_ONLY // chi thoi gian chuong trinh (start -> end)
+  SETUP_TO_DISMANTLE // tu bat dau setup den het dismantling
+  CUSTOM_RANGE // khoang tuy chinh (pricingStart -> pricingEnd)
 }
 
 model UnitSlot {
@@ -3750,6 +4004,13 @@ model UnitSlot {
   pricePerDaySqm   Float?
   pricePerHour     Float?
   pricePerSqmMonth Float?
+  // Gia ngay thuong / cuoi tuan & le (theo m2/ngay). De trong thi dung pricePerDaySqm
+  // va cac SlotPricingRule nhu truoc.
+  priceWeekdayPerDaySqm        Float?
+  priceWeekendHolidayPerDaySqm Float?
+  category         SlotCategory?
+  // Da giac ve tren ban ve: [{x,y},...] theo % (0-100). NULL = dung posX/Y/W/H.
+  polygon          Json?
   // RPT-CUR-006 / CUR-002 (slot subset): currency of the three price fields
   // above. Deliberately NULLABLE with NO @default.
   //
@@ -3772,6 +4033,7 @@ model UnitSlot {
 
   pricingRules SlotPricingRule[]
   bookings     SlotBooking[]
+  bookingLines SlotBookingLine[]
 
   @@unique([unitId, code])
   @@index([unitId, isActive])
@@ -3827,13 +4089,33 @@ model SlotBooking {
   status                    SlotBookingStatus @default(PENDING)
   notes                     String?
   cancelReason              String?
+  // Cach xac dinh thoi gian tinh tien (xem SlotPricingTimeBasis)
+  pricingTimeBasis          SlotPricingTimeBasis @default(PROGRAM_ONLY)
+  pricingStart              DateTime?
+  pricingEnd                DateTime?
+  // Phe duyet: mot cap, nguoi co tham quyen
+  submittedAt               DateTime?
+  approvedAt                DateTime?
+  approvedById              String?
+  approvedBy                User?             @relation("SlotBookingApprover", fields: [approvedById], references: [id])
+  rejectedReason            String?
+  // Xung dot: booking da duyet khac chiem slot/thoi gian -> cho nguoi xac nhan khoa
+  conflictWithBookingId     String?
+  conflictFlaggedAt         DateTime?
+  // Da khoa (sau khi duoc xac nhan) boi booking nao
+  lockedByBookingId         String?
+  lockedAt                  DateTime?
+  lockReason                String?
   createdById               String?
   createdBy                 User?             @relation("SlotBookedBy", fields: [createdById], references: [id])
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
 
   proposal Proposal?
+  lines    SlotBookingLine[]
 
+  @@index([conflictWithBookingId])
+  @@index([lockedByBookingId])
   @@index([slotId, status])
   @@index([startDatetime, endDatetime])
   @@index([installationStartDatetime, dismantlingEndDatetime])
@@ -3853,6 +4135,69 @@ model BrandingSettings {
 // Cau hinh SMTP de gui email -- bang singleton, luon chi 1 dong, service tu tao
 // dong dau tien neu chua co. smtpPassEncrypted luu dang ma hoa (AES-256-GCM,
 // xem EncryptionService) -- khong bao gio tra ve plaintext qua API.
+// --- Notification recipient routing governance (CR-NOTIFICATION-RECIPIENT-ROUTING) ---
+// Admin-declared recipients per notification event. Configuration is only a
+// CANDIDATE list: NotificationRecipientEligibilityService re-proves Mall access
+// and permission for every candidate at send time (NOTIF-ROUTE-01), so a row
+// here can never grant access to business data.
+//
+// The event catalogue itself lives in code
+// (notifications/routing/notification-event-registry.ts), not in the database:
+// events exist because a producer emits them, so the code is the truth and an
+// unknown eventKey is rejected rather than silently created.
+
+enum NotificationRoutingMode {
+  DEFAULT // producer's own recipient rule, unchanged
+  REPLACE // configured recipients replace the default ones (Group A only)
+  DEFAULT_PLUS_CC // default recipients kept, configured internal users added as CC
+}
+
+enum NotificationRecipientType {
+  TO
+  CC
+}
+
+model NotificationEventRoutingConfig {
+  id      String @id @default(cuid())
+  // Registry key, e.g. HANDOVER_READINESS_WEEKLY_DIGEST. Stable identity: never
+  // renamed, so configuration and audit history stay interpretable.
+  eventKey String
+  // Mall id, or the literal 'GLOBAL' for platform-wide events -- same sentinel
+  // convention as ModulePermission. A nullable column could not carry a real
+  // unique constraint here, since Postgres treats NULLs as distinct.
+  mallId   String
+  mode     NotificationRoutingMode @default(DEFAULT)
+  // Optimistic concurrency: two admins editing the same event/Mall conflict
+  // instead of silently overwriting each other.
+  version  Int                     @default(0)
+
+  createdAt   DateTime @default(now())
+  createdById String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  recipients NotificationEventRecipient[]
+
+  @@unique([eventKey, mallId])
+  @@index([mallId])
+}
+
+model NotificationEventRecipient {
+  id              String                         @id @default(cuid())
+  routingConfigId String
+  routingConfig   NotificationEventRoutingConfig @relation(fields: [routingConfigId], references: [id], onDelete: Cascade)
+  // Reference the User, never a copied email address: the authoritative address
+  // is read from the active account at send time.
+  userId          String
+  user            User                           @relation("NotificationRoutingRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  recipientType   NotificationRecipientType
+  addedById       String
+  createdAt       DateTime                       @default(now())
+
+  @@unique([routingConfigId, userId, recipientType])
+  @@index([userId])
+}
+
 model EmailSettings {
   id                String   @id @default(cuid())
   isEnabled         Boolean  @default(false)
@@ -3922,4 +4267,34 @@ model ProposalDocumentSend {
 
   @@unique([proposalId, idempotencyKey])
   @@index([proposalId, createdAt])
+}
+
+// Mot booking ngan han co the gom nhieu slot. SlotBooking.slotId giu slot chinh
+// (dong dau) de cac bao cao cu khong vo; nguon su that cho pham vi thue la bang nay.
+model SlotBookingLine {
+  id         String      @id @default(cuid())
+  bookingId  String
+  booking    SlotBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  slotId     String
+  slot       UnitSlot    @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  // Dien tich thue (m2): toan bo hoac mot phan cua slot, nhap tu do
+  areaRented Float
+  baseAmount Float       @default(0)
+  amount     Float       @default(0)
+  createdAt  DateTime    @default(now())
+
+  @@unique([bookingId, slotId])
+  @@index([slotId])
+}
+
+// Ngay le theo Mall -- dung tinh gia cuoi tuan/le cho thue ngan han
+model MallHoliday {
+  id        String   @id @default(cuid())
+  mallId    String
+  mall      Mall     @relation(fields: [mallId], references: [id])
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([mallId, date])
 }

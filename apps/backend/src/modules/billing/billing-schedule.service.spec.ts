@@ -8,6 +8,7 @@ describe('BillingScheduleService integration (mocked DB)', () => {
   let service: BillingScheduleService;
   const prisma = {
     contract: { findUnique: jest.fn(), findMany: jest.fn() },
+    proposal: { findUnique: jest.fn() },
     billingScheduleEntry: {
       upsert: jest.fn(),
       findMany: jest.fn(),
@@ -29,6 +30,39 @@ describe('BillingScheduleService integration (mocked DB)', () => {
       ],
     }).compile();
     service = module.get(BillingScheduleService);
+  });
+
+  // Hop dong ngan han (tu booking slot): gia tri la khoan tron goi, khong phai tien thue thang.
+  // Lich hang thang chia theo ngay se xuat hoa don sai -- xem problem.md.
+  it('buildScheduleForContract builds NO monthly schedule for a short-term booking contract', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      id: 'c-short', proposalId: 'p-short', isActive: true, status: 'ACTIVE',
+      startDate: new Date('2026-09-30'), endDate: new Date('2026-10-01'),
+      rent: 1_000_000, cam: 0, rentFree: 0, escalationPercent: 0, paymentTerm: 0, billingCycle: 'MONTHLY',
+    });
+    prisma.proposal.findUnique.mockResolvedValue({ slotBookingId: 'sb-1' });
+
+    const result: any = await service.buildScheduleForContract('c-short');
+
+    expect(result).toMatchObject({ periodsGenerated: 0, entries: [], skipped: 'SHORT_TERM_BOOKING' });
+    expect(prisma.billingScheduleEntry.upsert).not.toHaveBeenCalled();
+    expect(prisma.billingScheduleEntry.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('buildScheduleForContract still builds the schedule for a normal contract that has a proposal', async () => {
+    prisma.contract.findUnique.mockResolvedValue({
+      id: 'c-long', proposalId: 'p-long', isActive: true, status: 'ACTIVE',
+      startDate: new Date('2026-01-01'), endDate: new Date('2026-01-31'),
+      rent: 100, cam: 0, rentFree: 0, escalationPercent: 0, paymentTerm: 15, billingCycle: 'MONTHLY',
+    });
+    prisma.proposal.findUnique.mockResolvedValue({ slotBookingId: null });
+    prisma.billingScheduleEntry.findMany.mockResolvedValue([]);
+    prisma.billingScheduleEntry.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.billingScheduleEntry.upsert.mockImplementation(({ create }) => Promise.resolve({ id: 'e', ...create }));
+
+    const result: any = await service.buildScheduleForContract('c-long');
+
+    expect(result.periodsGenerated).toBeGreaterThan(0);
   });
 
   it('buildScheduleForContract generates entries', async () => {

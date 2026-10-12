@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 
 export function ExtendDialog({ bookingId, open, onClose }: {
   bookingId: string; open: boolean; onClose: () => void;
@@ -17,7 +18,7 @@ export function ExtendDialog({ bookingId, open, onClose }: {
   const mutation = useMutation({
     mutationFn: () => bookingApi.extend(bookingId, Number(days), reason || undefined),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: `Đã gia hạn thêm ${days} ngày` });
       onClose();
     },

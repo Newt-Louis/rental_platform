@@ -517,6 +517,18 @@ async function main() {
     }
   }
 
+  // Ngay le (tinh gia cuoi tuan/le cho thue ngan han)
+  await prisma.mallHoliday.createMany({
+    data: [
+      ['2026-01-01', 'Tet Duong lich'],
+      ['2026-04-26', 'Gio To Hung Vuong'],
+      ['2026-04-30', 'Giai phong mien Nam'],
+      ['2026-05-01', 'Quoc te Lao dong'],
+      ['2026-09-02', 'Quoc khanh'],
+    ].map(([date, name]) => ({ mallId: mall.id, date: new Date(date), name })),
+    skipDuplicates: true,
+  });
+
   console.log('Mall structure created');
 
   // ═══════════════════════════════════════════════════════════════════════════

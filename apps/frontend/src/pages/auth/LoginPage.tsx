@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2 } from 'lucide-react';
+import { Building2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { getDefaultHomePath } from '@/lib/permissions';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -48,6 +48,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const { t } = useTranslation('auth');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   const { data: branding } = useQuery({
@@ -132,12 +133,26 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">{t('login.passwordLabel')}</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder={t('login.passwordPlaceholder')}
-                  {...register('password', { required: t('login.passwordRequired') })}
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder={t('login.passwordPlaceholder')}
+                    className="pr-10"
+                    {...register('password', { required: t('login.passwordRequired') })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword
+                      ? t('login.hidePassword', { defaultValue: 'Hide password' })
+                      : t('login.showPassword', { defaultValue: 'Show password' })}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-500 hover:text-gray-700"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
               </div>
 

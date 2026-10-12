@@ -28,7 +28,8 @@ describe('BillingService.recordPayment currency invariant', () => {
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
   });
 
   it('rejects a payment whose explicit currencyCode does not match the invoice (USD invoice + MMK payment)', async () => {

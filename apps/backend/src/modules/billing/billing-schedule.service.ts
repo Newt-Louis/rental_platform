@@ -53,6 +53,20 @@ export class BillingScheduleService {
       );
     }
 
+    // Hop dong ngan han (sinh tu booking slot) KHONG co lich thanh toan hang thang: gia tri booking la
+    // khoan tron goi, khong phai tien thue thang. Lich hang thang chia tien theo ngay nen se xuat
+    // hoa don sai (vd. 2 ngay = 6,7% gia tri, hoac 40 ngay = 132%). Hoa don duoc xuat mot lan,
+    // truc tiep tu booking (nguon SHORT_TERM_BOOKING, trang thai CONTRACTED) -- xem problem.md.
+    if (contract.proposalId) {
+      const linked = await client.proposal.findUnique({
+        where: { id: contract.proposalId },
+        select: { slotBookingId: true },
+      });
+      if (linked?.slotBookingId) {
+        return { contractId, periodsGenerated: 0, entries: [], skipped: 'SHORT_TERM_BOOKING' as const };
+      }
+    }
+
     const periods = generateBillingPeriods({
       startDate: contract.startDate,
       endDate: contract.endDate,

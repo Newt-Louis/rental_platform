@@ -48,7 +48,11 @@ export function buildProposalPrefill(booking: UnitBooking | null) {
     // blurred.
     area: nullableNumber(booking?.requestedArea ?? unit?.areaNLA),
     term: booking?.requestedTerm ?? unit?.minLeaseTerm ?? 36,
-    startDate: localIsoDate(),
+    // Ngày bắt đầu thuê mặc định = ngày bắt đầu thời gian booking (nếu có).
+    startDate: booking?.bookingStartDate ? String(booking.bookingStartDate).slice(0, 10) : localIsoDate(),
+    // Thời gian booking (date range) — chỉnh được ở bước tạo đề xuất.
+    bookingStartDate: booking?.bookingStartDate ? String(booking.bookingStartDate).slice(0, 10) : '',
+    bookingEndDate: booking?.bookingEndDate ? String(booking.bookingEndDate).slice(0, 10) : '',
     rentPerSqm: nullableNumber(
       booking?.proposedRentPerSqm
       ?? booking?.expectedRent

@@ -72,6 +72,7 @@ function buildBilling(opts: { turnover: any; contract: any | null }) {
     { invoiceIssuedHtml: jest.fn() } as any,
     { enqueue: jest.fn() } as any,
     { increment: jest.fn() } as any,
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
   );
   return { service, prisma, created };
 }
@@ -196,7 +197,8 @@ describe('CUR-001 — mismatched or missing currency fails closed', () => {
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
 
     const result = await service.calculateRevenueShare('2026-03');
 
@@ -312,7 +314,8 @@ describe('REVSHARE-01 — revenue-share resolves exactly one contract by period'
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
     return { service, prisma };
   }
 

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { InvoiceAdjustmentType, InvoiceStatus, PaymentMethod, Prisma, CurrencyCode } from '@prisma/client';
 import * as crypto from 'crypto';
 import { StorageService } from '../../storage/storage.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { EmailService } from '../notifications/email.service';
 import { emailSubject, formatDateVN } from '../notifications/email-design-system';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
@@ -41,6 +42,7 @@ export class BillingService {
     private emailService: EmailService,
     private emailDelivery: EmailDeliveryService,
     private metrics: OperationalMetricsService,
+    private routing: NotificationRoutingService,
   ) {}
 
   // Phase 4 (docs/program/04-BILLING-FINANCE-COMPLETION.md): wires up the previously-dead
@@ -67,10 +69,19 @@ export class BillingService {
     if (!partyEmail) return;
     const partyName = full?.tenant?.brandName || full?.billingParty?.name || 'Đối tác';
 
+    // The payer address is business data (CR group B): configuration may only
+    // add internal copies, never redirect the customer's invoice.
+    const plan = await this.routing.plan({
+      eventKey: 'INVOICE_ISSUED',
+      mallId: full?.mallId ?? undefined,
+      resourceId: invoice.id,
+      defaults: [{ email: partyEmail, keySuffix: 'party' }],
+    }, tx);
+    for (const recipient of plan.recipients) {
     await this.emailDelivery.enqueue(tx, {
-      eventKey: `invoice-issued:${invoice.id}`,
+      eventKey: recipient.keySuffix === 'party' ? `invoice-issued:${invoice.id}` : `invoice-issued:${invoice.id}:${recipient.keySuffix}`,
       eventType: 'INVOICE_ISSUED', entityType: 'Invoice', entityId: invoice.id, mallId: full?.mallId ?? undefined,
-      to: partyEmail,
+      to: recipient.email,
       subject: emailSubject(`Hóa đơn ${invoice.invoiceNumber} đã phát hành`),
       html: this.emailService.invoiceIssuedHtml({
         tenantName: partyName,
@@ -85,6 +96,7 @@ export class BillingService {
         currencyCode: full?.currencyCode ?? null,
       }),
     });
+    }
   }
 
   private financials(invoice: { totalAmount: number; adjustmentAmount?: number; refundedAmount?: number; payments: { amount: number; reversedAt?: Date | null }[] }) {
@@ -161,7 +173,8 @@ export class BillingService {
       }) : [],
       includeShortTerm ? this.prisma.slotBooking.findMany({
         where: {
-          status: { in: ['CONFIRMED', 'COMPLETED'] },
+          // CONTRACTED = booking da thanh hop dong ngan han: hoa don xuat mot lan tu chinh booking.
+          status: { in: ['CONFIRMED', 'COMPLETED', 'CONTRACTED'] },
           ...(mallIds ? { slot: { unit: { mallId: { in: mallIds } } } } : {}),
           ...(search ? { OR: [
             { bookingRef: { contains: search, mode: 'insensitive' } },
@@ -632,7 +645,7 @@ export class BillingService {
         },
       });
       if (!booking) throw new NotFoundException('Không tìm thấy booking thuê ngắn hạn');
-      if (!['CONFIRMED', 'COMPLETED'].includes(booking.status)) {
+      if (!['CONFIRMED', 'COMPLETED', 'CONTRACTED'].includes(booking.status)) {
         throw new BadRequestException('Booking phải được xác nhận trước khi xuất hóa đơn');
       }
       const existing = await this.prisma.invoice.findFirst({

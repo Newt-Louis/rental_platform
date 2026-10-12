@@ -1,7 +1,57 @@
 # Development overrides — NOT auto-loaded.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# This is the only local-development stack. It owns PostgreSQL, Redis,
+# backend and frontend.
+#
+# First start / after source changes:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --force-recreate
+# Later workstation starts (refreshes Docker Desktop/WSL bind mounts):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
 
 services:
+  # PostgreSQL data deliberately uses the long-lived named volume rather than
+  # a WSL bind mount. A stopped container can retain a stale Desktop bind
+  # mount after reboot and initialise a second, empty cluster.
+  postgres:
+    image: postgres:16-alpine
+    container_name: leasing-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leasing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-leasing_platform}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5435}:5432"
+    networks:
+      - leasing-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leasing} -d ${POSTGRES_DB:-leasing_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: leasing-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    networks:
+      - leasing-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ./apps/backend
@@ -31,6 +81,11 @@ services:
       PORT: 3000
       TZ: Asia/Ho_Chi_Minh
     command: npm run start:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/ready"]
       interval: 30s
@@ -51,18 +106,24 @@ services:
     environment:
       VITE_API_URL: http://localhost:${BACKEND_PORT:-3000}/api
     command: npm run dev -- --host 0.0.0.0
-    ports:
+    # Replace the production nginx mapping (8080 -> 80); Vite only serves
+    # the development port.
+    ports: !override
       - "5173:5173"
-    # Dev: only expose Vite port (no 8080/nginx)
-    expose: []
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5173/"]
+      # Vite listens on IPv4; `localhost` resolves to IPv6 first in this
+      # container and falsely reports connection refused.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
 
 volumes:
+  postgres_data:
+    name: leasing-postgres-data
+  redis_data:
+    name: leasing-redis-data
   uploads_data:
     name: leasing-uploads
   logs_data:

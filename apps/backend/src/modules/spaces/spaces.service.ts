@@ -312,12 +312,81 @@ export class SpacesService {
     });
   }
 
-  async createZone(data: { mallId: string; floorId?: string; buildingId?: string; name: string; code?: string }) {
+  async createZone(data: { mallId: string; floorId?: string; buildingId?: string; name: string; code?: string; totalArea?: number }) {
     await this.validateZoneLocation(data.mallId, data.floorId, data.buildingId);
+    this.assertValidZoneTotalArea(data.totalArea);
     return this.prisma.zone.create({ data });
   }
 
-  async updateZone(id: string, data: { name?: string; code?: string; floorId?: string }) {
+  private assertValidZoneTotalArea(totalArea: unknown) {
+    if (totalArea === undefined || totalArea === null) return;
+    if (typeof totalArea !== 'number' || !Number.isFinite(totalArea) || totalArea <= 0) {
+      throw new BadRequestException('Tong dien tich khu vuc phai la so lon hon 0');
+    }
+  }
+
+  /** Dien tich khu vuc: tong / da phan bo cho TAT CA mat bang (dai han + ngan han) / con lai. */
+  async getZoneAreaSummary(zoneId: string) {
+    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId }, select: { id: true, name: true, totalArea: true } });
+    if (!zone) throw new NotFoundException('Zone không tồn tại');
+    const allocated = await this.zoneAllocatedArea(zoneId);
+    return {
+      zoneId: zone.id,
+      name: zone.name,
+      totalArea: zone.totalArea,
+      allocatedArea: allocated,
+      remainingArea: zone.totalArea == null ? null : Math.max(0, zone.totalArea - allocated),
+    };
+  }
+
+  /**
+   * Tong dien tich (NLA) cac mat bang dang hoat dong trong khu vuc -- gom CA dai han lan ngan han.
+   * Mat bang da bi gop vao mat bang khac (MERGED) khong tinh de khong dem trung dien tich.
+   */
+  private async zoneAllocatedArea(zoneId: string, excludeUnitId?: string) {
+    const agg = await this.prisma.unit.aggregate({
+      where: {
+        zoneId,
+        isActive: true,
+        status: { not: UnitStatus.MERGED },
+        ...(excludeUnitId ? { id: { not: excludeUnitId } } : {}),
+      },
+      _sum: { areaNLA: true },
+    });
+    return agg._sum.areaNLA ?? 0;
+  }
+
+  /**
+   * Tong dien tich TAT CA mat bang (dai han + ngan han) trong mot khu vuc khong duoc vuot tong dien
+   * tich khu vuc. Khu vuc chua khai bao totalArea thi khong rang buoc.
+   */
+  private async assertZoneAreaBudget(
+    zoneId: string | null | undefined,
+    areaNLA: number | null | undefined,
+    excludeUnitId?: string,
+  ) {
+    if (!zoneId) return;
+    const zone = await this.prisma.zone.findUnique({ where: { id: zoneId }, select: { name: true, totalArea: true } });
+    if (!zone || zone.totalArea == null) return;
+    const others = await this.zoneAllocatedArea(zoneId, excludeUnitId);
+    const next = others + (areaNLA ?? 0);
+    if (next > zone.totalArea + 1e-6) {
+      throw new BadRequestException(
+        `Tong dien tich mat bang trong khu vuc "${zone.name}" (${next} m2) vuot tong dien tich khu vuc (${zone.totalArea} m2). Con lai: ${Math.max(0, zone.totalArea - others)} m2.`,
+      );
+    }
+  }
+
+  async updateZone(id: string, data: { name?: string; code?: string; floorId?: string; totalArea?: number | null }) {
+    if (Object.prototype.hasOwnProperty.call(data, 'totalArea') && data.totalArea != null) {
+      this.assertValidZoneTotalArea(data.totalArea);
+      const allocated = await this.zoneAllocatedArea(id);
+      if (data.totalArea < allocated - 1e-6) {
+        throw new BadRequestException(
+          `Tong dien tich khu vuc (${data.totalArea} m2) khong duoc nho hon dien tich da phan bo cho mat bang (${allocated} m2)`,
+        );
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(data, 'floorId')) {
       const current = await this.prisma.zone.findUnique({ where: { id }, select: { mallId: true } });
       if (!current) throw new NotFoundException('Zone không tồn tại');
@@ -353,10 +422,13 @@ export class SpacesService {
     spaceType?: string;
     tier?: string;
     leaseTermType?: string;
+    /** yyyy-MM-dd. Thiếu = trạng thái hiện tại; có = trạng thái mặt bằng tại ngày đó. */
+    asOfDate?: string;
     page?: number;
     limit?: number;
   }, accessibleMallIds?: string[] | null) {
-    const { search, ...filters } = query;
+    const { search, asOfDate, ...filters } = query;
+    const asOf = this.parseAsOfDate(asOfDate);
     const page = Math.max(1, +query.page || 1);
     const limit = Math.max(1, +query.limit || 20);
     const skip = (page - 1) * limit;
@@ -366,7 +438,8 @@ export class SpacesService {
     if (filters.zoneId) where.zoneId = filters.zoneId;
     if (filters.mallId) where.mallId = filters.mallId;
     else if (accessibleMallIds) where.mallId = { in: accessibleMallIds };
-    if (filters.status) where.status = filters.status;
+    // Với asOfDate, status lọc theo trạng thái suy ra tại ngày đó (áp sau khi truy vấn).
+    if (filters.status && !asOf) where.status = filters.status;
     if (filters.category) where.category = filters.category;
     if (filters.tenantId) where.tenantId = filters.tenantId;
     // GAP #3 / #4 / #6
@@ -393,23 +466,42 @@ export class SpacesService {
       ];
     }
 
+    const include = {
+      floor: { select: { id: true, name: true, level: true } },
+      zone: { select: { id: true, name: true, code: true } },
+      tenant: {
+        select: {
+          id: true,
+          brandName: true,
+          companyName: true,
+          contactName: true,
+        },
+      },
+    };
+
+    if (asOf) {
+      // Trạng thái tại một ngày khác hôm nay không có sẵn trong DB nên phải suy ra trước,
+      // rồi mới lọc theo status và phân trang.
+      const all = await this.prisma.unit.findMany({ where, include, orderBy: { code: 'asc' } });
+      const statusById = await this.deriveStatusesAsOf(all, asOf);
+      const withStatus = all
+        .map((u) => ({ ...u, currentStatus: u.status, status: statusById.get(u.id) ?? u.status, asOfDate }))
+        .filter((u) => !filters.status || u.status === filters.status);
+      return {
+        data: withStatus.slice(skip, skip + +limit),
+        total: withStatus.length,
+        page: +page,
+        limit: +limit,
+        totalPages: Math.ceil(withStatus.length / +limit),
+      };
+    }
+
     const [units, total] = await Promise.all([
       this.prisma.unit.findMany({
         where,
         skip,
         take: +limit,
-        include: {
-          floor: { select: { id: true, name: true, level: true } },
-          zone: { select: { id: true, name: true, code: true } },
-          tenant: {
-            select: {
-              id: true,
-              brandName: true,
-              companyName: true,
-              contactName: true,
-            },
-          },
-        },
+        include,
         orderBy: { code: 'asc' },
       }),
       this.prisma.unit.count({ where }),
@@ -422,6 +514,63 @@ export class SpacesService {
       limit: +limit,
       totalPages: Math.ceil(total / +limit),
     };
+  }
+
+  private parseAsOfDate(value?: string): { start: Date; end: Date } | null {
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequestException('asOfDate phải có dạng yyyy-MM-dd');
+    }
+    const start = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(start.getTime())) throw new BadRequestException('asOfDate không hợp lệ');
+    return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1) };
+  }
+
+  /**
+   * Trạng thái mặt bằng tại một ngày: đang có hợp đồng hiệu lực phủ ngày đó → OCCUPIED;
+   * có booking (có thời gian booking) phủ ngày đó → BOOKING; còn lại → VACANT
+   * (giữ OFFERING nếu mặt bằng đang được chào thuê, MERGED luôn giữ nguyên).
+   */
+  private async deriveStatusesAsOf(
+    units: { id: string; status: UnitStatus }[],
+    day: { start: Date; end: Date },
+  ): Promise<Map<string, UnitStatus>> {
+    const ids = units.map((u) => u.id);
+    const result = new Map<string, UnitStatus>();
+    if (!ids.length) return result;
+
+    const [contracts, bookings] = await Promise.all([
+      this.prisma.contract.findMany({
+        where: {
+          unitId: { in: ids },
+          isActive: true,
+          status: { in: ['ACTIVE', 'EXPIRING', 'TERMINATING'] },
+          startDate: { lte: day.end },
+          endDate: { gte: day.start },
+        },
+        select: { unitId: true },
+      }),
+      this.prisma.unitBooking.findMany({
+        where: {
+          unitId: { in: ids },
+          isActive: true,
+          status: { in: ['ACTIVE', 'PENDING'] },
+          bookingStartDate: { lte: day.end },
+          bookingEndDate: { gte: day.start },
+        },
+        select: { unitId: true },
+      }),
+    ]);
+    const leased = new Set(contracts.map((c) => c.unitId));
+    const booked = new Set(bookings.map((b) => b.unitId));
+
+    for (const u of units) {
+      if (u.status === UnitStatus.MERGED) result.set(u.id, UnitStatus.MERGED);
+      else if (leased.has(u.id)) result.set(u.id, UnitStatus.OCCUPIED);
+      else if (booked.has(u.id)) result.set(u.id, UnitStatus.BOOKING);
+      else result.set(u.id, u.status === UnitStatus.OFFERING ? UnitStatus.OFFERING : UnitStatus.VACANT);
+    }
+    return result;
   }
 
   async getUnit(id: string) {
@@ -532,6 +681,7 @@ export class SpacesService {
     const { mallId } = dto;
     if (!mallId) throw new BadRequestException('mallId is required to create a unit');
     await this.validateUnitLocation(mallId, dto.floorId, dto.zoneId);
+    await this.assertZoneAreaBudget(dto.zoneId, dto.areaNLA);
 
     const existing = await this.prisma.unit.findUnique({
       where: { mallId_code: { mallId, code: dto.code } },
@@ -556,6 +706,14 @@ export class SpacesService {
     const nextFloorId = Object.prototype.hasOwnProperty.call(dto, 'floorId') ? dto.floorId : current.floorId;
     const nextZoneId = Object.prototype.hasOwnProperty.call(dto, 'zoneId') ? dto.zoneId : current.zoneId;
     await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+    // Chi kiem tra khi doi khu vuc hoac dien tich: sua ten/gia khong bi chan boi khu vuc da vuot san
+    if (Object.prototype.hasOwnProperty.call(dto, 'areaNLA') || Object.prototype.hasOwnProperty.call(dto, 'zoneId')) {
+      await this.assertZoneAreaBudget(
+        nextZoneId,
+        Object.prototype.hasOwnProperty.call(dto, 'areaNLA') ? dto.areaNLA : current.areaNLA,
+        id,
+      );
+    }
     if (dto.code && dto.code !== current.code) {
       const duplicate = await this.prisma.unit.findUnique({
         where: { mallId_code: { mallId: current.mallId, code: dto.code } },
@@ -827,6 +985,13 @@ export class SpacesService {
       const nextFloorId = Object.prototype.hasOwnProperty.call(infoDto, 'floorId') ? infoDto.floorId : current.floorId;
       const nextZoneId = Object.prototype.hasOwnProperty.call(infoDto, 'zoneId') ? infoDto.zoneId : current.zoneId;
       await this.validateUnitLocation(current.mallId, nextFloorId, nextZoneId);
+      if (Object.prototype.hasOwnProperty.call(infoDto, 'areaNLA') || Object.prototype.hasOwnProperty.call(infoDto, 'zoneId')) {
+        await this.assertZoneAreaBudget(
+          nextZoneId,
+          Object.prototype.hasOwnProperty.call(infoDto, 'areaNLA') ? infoDto.areaNLA : current.areaNLA,
+          id,
+        );
+      }
       updated = await this.prisma.unit.update({
         where: { id },
         data: sanitizeUnitDto(infoDto),

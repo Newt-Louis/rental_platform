@@ -146,7 +146,7 @@ export class SpacesController {
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Create zone' })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'body', key: 'mallId' }, status: EnforcementStatus.ENFORCED })
-  createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string }) {
+  createZone(@Body() dto: { mallId: string; floorId?: string; name: string; code?: string; totalArea?: number }) {
     return this.spacesService.createZone(dto);
   }
 
@@ -154,9 +154,17 @@ export class SpacesController {
   @Roles(...MODULE_ROLES.spacesManage)
   @ApiOperation({ summary: 'Update zone' })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
-  async updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string }, @CurrentUser() user: any) {
+  async updateZone(@Param('id') id: string, @Body() dto: { name?: string; code?: string; floorId?: string; totalArea?: number | null }, @CurrentUser() user: any) {
     await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
     return this.spacesService.updateZone(id, dto);
+  }
+
+  @Get('zones/:id/area-summary')
+  @ApiOperation({ summary: 'Zone area allocation summary (short-term units)' })
+  @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'entity', from: 'param', key: 'id', resolver: 'zone' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B' })
+  async getZoneAreaSummary(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.mallAccess.extractAndValidateMallAccess(user.id, user.role, { zoneId: id });
+    return this.spacesService.getZoneAreaSummary(id);
   }
 
   @Delete('zones/:id')
@@ -182,6 +190,7 @@ export class SpacesController {
   @ApiQuery({ name: 'spaceType', required: false, description: 'GAP #4 — filter by space type' })
   @ApiQuery({ name: 'tier', required: false, description: 'GAP #6 — filter by tier (A/B/C)' })
   @ApiQuery({ name: 'leaseTermType', required: false, description: 'GAP #3 — filter by lease term type (LONG/SHORT)' })
+  @ApiQuery({ name: 'asOfDate', required: false, description: 'yyyy-MM-dd — trạng thái mặt bằng tại ngày này (mặc định: hiện tại)' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @Scope({ type: ScopeType.MALL_SCOPED, resolution: { via: 'direct', from: 'query', key: 'mallId' }, status: EnforcementStatus.ENFORCED, trackedAs: 'CR-101 Phase 3B (P0-002)' })

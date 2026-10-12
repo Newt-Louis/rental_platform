@@ -3,9 +3,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { bookingApi } from '@/api';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NumericField } from '@/components/form/NumericField';
 import { buildProposalPrefill } from '@/pages/bookings/proposal-prefill';
@@ -153,6 +155,8 @@ export function ProposalConversionForm({
         area: numOrUndef(data.area),
         term: numOrUndef(data.term),
         startDate: data.startDate,
+        bookingStartDate: str(data.bookingStartDate),
+        bookingEndDate: str(data.bookingEndDate),
         businessModel: str(data.businessModel),
         // ── B. Điều khoản Tài chính ──
         rentCurrency: data.rentCurrency || 'VND',
@@ -181,9 +185,7 @@ export function ProposalConversionForm({
         notes: str(data.notes),
       }),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Đã tạo đề xuất thành công' });
       onClose();
       onSuccess?.(result);
@@ -235,6 +237,16 @@ export function ProposalConversionForm({
                 className={errors.startDate ? 'border-red-500' : ''}
               />
             </Field>
+          </div>
+          <div>
+            <div className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Thời gian booking</div>
+            <DateRangePicker
+              from={watch('bookingStartDate') ?? ''}
+              to={watch('bookingEndDate') ?? ''}
+              onFromChange={(v) => setValue('bookingStartDate', v)}
+              onToChange={(v) => setValue('bookingEndDate', v)}
+              placeholder="Chọn từ ngày – đến ngày"
+            />
           </div>
           <SelectField
             label="Mô hình Kinh doanh"

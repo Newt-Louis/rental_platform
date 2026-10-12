@@ -6,6 +6,10 @@ import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { STATUS_CONFIG } from '@/pages/spaces/spaces.constants';
 import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
 import type { Unit, UnitSlotSummary } from '@/types';
+import type { HandoverSummary } from '@/api/handover-readiness';
+import { HandoverCardBadge } from './handover/handoverPresentation';
+import { UnitOccupancyLines } from './UnitFacts';
+import type { UnitBookingSummary } from './unitBookingSummary';
 
 export function UnitCard({
   unit,
@@ -14,6 +18,8 @@ export function UnitCard({
   isSelected,
   onToggleSelect,
   slotSummary,
+  handover,
+  booking,
 }: {
   unit: Unit;
   onClick: () => void;
@@ -21,6 +27,9 @@ export function UnitCard({
   isSelected?: boolean;
   onToggleSelect?: () => void;
   slotSummary?: UnitSlotSummary | null;
+  /** CR-UNIT-HANDOVER-READINESS: server-evaluated readiness, when tracked. */
+  handover?: HandoverSummary;
+  booking?: UnitBookingSummary;
 }) {
   const { t } = useTranslation('spaces');
   const cfg = STATUS_CONFIG[unit.status] ?? STATUS_CONFIG.VACANT;
@@ -63,6 +72,7 @@ export function UnitCard({
                 {t('status.EXPIRING_SOON')}
               </span>
             )}
+            {handover && <HandoverCardBadge summary={handover} />}
           </div>
         </div>
         <div className="text-xs text-gray-500 space-y-0.5">
@@ -82,7 +92,9 @@ export function UnitCard({
           </div>
           {unit.category && <div className="text-gray-700">{unit.category}</div>}
           <SlotSummaryBadge summary={slotSummary} compact />
-          {unit.tenant && <div className="font-medium text-gray-700 pt-1">{unit.tenant.brandName}</div>}
+          {/* Tenant and booking holder, written exactly as the floor plan and
+              the mall map write them. */}
+          <UnitOccupancyLines unit={unit} booking={booking} className="pt-1" />
         </div>
       </CardContent>
     </Card>

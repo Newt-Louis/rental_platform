@@ -10,6 +10,7 @@ import { emailSubject } from '../notifications/email-design-system';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
 import { EmailDeliveryService } from '../notifications/email-delivery.service';
 import { FitoutAccessPolicyService } from './fitout-access-policy.service';
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 
 @Injectable()
 export class FitoutSlaService {
@@ -22,6 +23,7 @@ export class FitoutSlaService {
     private emailDelivery: EmailDeliveryService,
     private schedulerLock: SchedulerLockService,
     private accessPolicy: FitoutAccessPolicyService,
+    private routing: NotificationRoutingService,
   ) {}
 
   async listPolicies() {
@@ -149,14 +151,32 @@ export class FitoutSlaService {
           entityId: milestone.projectId,
         });
 
-        if (milestone.project.operationManager.email) {
+        // Default recipient = the project's operation manager; an admin may
+        // replace or extend it per Mall (CR-NOTIFICATION-RECIPIENT-ROUTING).
+        const breachPlan = await this.routing.plan({
+          eventKey: 'FITOUT_SLA_BREACH',
+          mallId: milestone.project.unit.mallId,
+          resourceId: milestone.projectId,
+          defaults: milestone.project.operationManager.email
+            ? [{
+              email: milestone.project.operationManager.email,
+              userId: milestone.project.operationManagerId,
+              fullName: milestone.project.operationManager.fullName,
+              keySuffix: `manager:${milestone.project.operationManagerId}`,
+            }]
+            : [],
+        });
+        if (breachPlan.failClosed) {
+          this.logger.error(`Fitout SLA mail for ${milestone.projectId} withheld: configured recipients ineligible`);
+        }
+        for (const recipient of breachPlan.recipients) {
           await this.emailDelivery.enqueue(this.prisma, {
-            eventKey: `fitout-sla:${milestone.id}:manager:${milestone.project.operationManagerId}`,
+            eventKey: `fitout-sla:${milestone.id}:${recipient.keySuffix}`,
             eventType: 'FITOUT_SLA', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
-            to: milestone.project.operationManager.email,
+            to: recipient.email,
             subject: emailSubject(`Fitout trễ SLA — ${milestone.project.tenant.brandName}`),
             html: this.emailService.fitoutSlaHtml({
-              managerName: milestone.project.operationManager.fullName,
+              managerName: recipient.fullName ?? milestone.project.operationManager.fullName,
               tenantName: milestone.project.tenant.brandName,
               unitCode: milestone.project.unit.code,
               stageName,
@@ -173,6 +193,17 @@ export class FitoutSlaService {
           milestone.projectId,
           policy.escalateToRole,
         );
+        const escalationPlan = await this.routing.plan({
+          eventKey: 'FITOUT_SLA_ESCALATION',
+          mallId: milestone.project.unit.mallId,
+          resourceId: milestone.projectId,
+          defaults: managers
+            .filter((m) => !!m.email)
+            .map((m) => ({ email: m.email!, userId: m.id, fullName: m.fullName, keySuffix: `escalation:${m.id}` })),
+        });
+        if (escalationPlan.failClosed) {
+          this.logger.error(`Fitout SLA escalation for ${milestone.projectId} withheld: configured recipients ineligible`);
+        }
         for (const mgr of managers) {
           await this.notifications.create({
             userId: mgr.id,
@@ -183,14 +214,17 @@ export class FitoutSlaService {
             entityId: milestone.projectId,
           });
 
-          if (mgr.email) {
+        }
+
+        for (const recipient of escalationPlan.recipients) {
+          {
             await this.emailDelivery.enqueue(this.prisma, {
-              eventKey: `fitout-sla:${milestone.id}:escalation:${mgr.id}`,
+              eventKey: `fitout-sla:${milestone.id}:${recipient.keySuffix}`,
               eventType: 'FITOUT_SLA_ESCALATION', entityType: 'FitoutProject', entityId: milestone.projectId, mallId: milestone.project.unit.mallId,
-              to: mgr.email,
+              to: recipient.email,
               subject: emailSubject(`Fitout leo thang SLA — ${milestone.project.tenant.brandName}`),
               html: this.emailService.fitoutSlaHtml({
-                managerName: mgr.fullName,
+                managerName: recipient.fullName ?? '',
                 tenantName: milestone.project.tenant.brandName,
                 unitCode: milestone.project.unit.code,
                 stageName,

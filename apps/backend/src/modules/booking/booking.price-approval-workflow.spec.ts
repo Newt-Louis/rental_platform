@@ -70,6 +70,7 @@ describe('BookingService — price approval workflow', () => {
       },
       bookingPriceApprovalStep: {
         update: jest.fn(),
+        create: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       bookingActivity: { create: jest.fn() },
@@ -199,6 +200,16 @@ describe('BookingService — price approval workflow', () => {
     expect(prisma.unitBooking.update.mock.calls[0][0].data.priceApprovalStatus).toBe(
       PriceApprovalStatus.APPROVED,
     );
+    // The ADMIN override must leave a decision record so it reaches the history.
+    expect(prisma.bookingPriceApprovalStep.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        bookingId: 'bk-1',
+        approverRole: Role.ADMIN,
+        approverId: 'user-admin',
+        decidedById: 'user-admin',
+        status: StepStatus.APPROVED,
+      }),
+    });
   });
 
   // ── Rejection ──────────────────────────────────────────────────────────────

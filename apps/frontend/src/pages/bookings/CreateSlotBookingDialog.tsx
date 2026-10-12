@@ -8,11 +8,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Plus, ChevronDown, Loader2 } from 'lucide-react';
-import { SLOT_TYPE_CONFIG, fmtMoney } from './bookings-constants';
+import { SLOT_TYPE_CONFIG, SLOT_PRICING_BASIS_OPTIONS, fmtMoney } from './bookings-constants';
 
 type CreateSlotForm = {
   unitId: string;
-  slotId: string;
+  // Nhiều slot trong một booking; areas = diện tích thuê từng slot (trống = thuê toàn bộ slot)
+  slotIds: string[];
+  areas: Record<string, string>;
+  pricingTimeBasis: string;
+  pricingStart: string;
+  pricingEnd: string;
   clientType: 'lead' | 'customer';
   clientId: string;
   type: string;
@@ -27,7 +32,8 @@ type CreateSlotForm = {
 };
 
 const EMPTY_FORM: CreateSlotForm = {
-  unitId: '', slotId: '', clientType: 'lead', clientId: '',
+  unitId: '', slotIds: [], areas: {}, pricingTimeBasis: 'PROGRAM_ONLY', pricingStart: '', pricingEnd: '',
+  clientType: 'lead', clientId: '',
   type: 'DAILY',
   installationStartDatetime: '', installationEndDatetime: '',
   startDatetime: '', endDatetime: '',
@@ -43,13 +49,16 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
   const [form, setForm] = useState<CreateSlotForm>(EMPTY_FORM);
   const [pricePreview, setPricePreview] = useState<{ baseAmount: number; discountPct: number; totalAmount: number } | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
+  const primarySlotId = form.slotIds[0] ?? '';
+  // Slot đã từng tải (mọi mặt bằng) -- để giữ thông tin slot đã chọn khi chuyển sang mặt bằng khác
+  const [slotCache, setSlotCache] = useState<Record<string, any>>({});
 
   useEffect(() => {
-    if (open) { setForm(EMPTY_FORM); setPricePreview(null); }
+    if (open) { setForm(EMPTY_FORM); setPricePreview(null); setSlotCache({}); }
   }, [open]);
 
   const setField = (k: keyof CreateSlotForm) => (val: string) =>
-    setForm((p) => ({ ...p, [k]: val, ...(k === 'unitId' ? { slotId: '' } : {}), ...(k === 'clientType' ? { clientId: '' } : {}) }));
+    setForm((p) => ({ ...p, [k]: val, ...(k === 'clientType' ? { clientId: '' } : {}) }));
 
   const { data: unitsData } = useQuery({
     queryKey: ['units-for-slot', mallId],
@@ -64,6 +73,15 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     enabled: open && !!form.unitId,
   });
   const slots: any[] = Array.isArray(slotsData) ? slotsData : (slotsData?.data ?? []);
+  const browsedUnitCode = units.find((u: any) => u.id === form.unitId)?.code;
+  useEffect(() => {
+    if (!slots.length) return;
+    setSlotCache((prev) => ({
+      ...prev,
+      ...Object.fromEntries(slots.map((sl: any) => [sl.id, { ...sl, unitCode: browsedUnitCode }])),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotsData, browsedUnitCode]);
 
   const { data: leadsData } = useQuery({
     queryKey: ['leads-for-slot-booking-dialog'],
@@ -82,14 +100,42 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
   });
   const customers: any[] = customersData?.data ?? customersData ?? [];
 
-  const canCalc = !!(form.slotId && form.type && form.startDatetime && form.endDatetime);
+  // Khoảng thời gian tính tiền theo cách đã chọn (cùng quy tắc với backend).
+  const pricingRange = (() => {
+    if (form.pricingTimeBasis === 'SETUP_TO_DISMANTLE') {
+      return { from: form.installationStartDatetime, to: form.dismantlingEndDatetime };
+    }
+    if (form.pricingTimeBasis === 'CUSTOM_RANGE') return { from: form.pricingStart, to: form.pricingEnd };
+    return { from: form.startDatetime, to: form.endDatetime };
+  })();
+  const areaOf = (slot: any) => {
+    const raw = form.areas[slot.id];
+    return raw !== undefined && raw !== '' ? Number(raw) : slot.area;
+  };
+  const areaError = (slot: any) => {
+    const a = areaOf(slot);
+    return !(a > 0) || a > slot.area ? `Từ 0 đến ${slot.area} m²` : null;
+  };
+  // Thứ tự chọn được giữ nguyên: slot đầu tiên là slot chính của booking
+  const selectedSlots = form.slotIds.map((id) => slotCache[id]).filter(Boolean);
+  const canCalc = !!(selectedSlots.length && form.type && pricingRange.from && pricingRange.to
+    && selectedSlots.every((s) => !areaError(s)));
 
   async function calcPrice() {
     if (!canCalc) return;
     setCalcLoading(true);
     try {
-      const res = await slotsApi.calculatePrice(form.slotId, form.type, form.startDatetime, form.endDatetime);
-      setPricePreview(res);
+      const results = await Promise.all(selectedSlots.map((slot) => {
+        const area = areaOf(slot);
+        return slotsApi.calculatePrice(slot.id, form.type, pricingRange.from, pricingRange.to, area !== slot.area ? area : undefined);
+      }));
+      const baseAmount = results.reduce((sum: number, r: any) => sum + r.baseAmount, 0);
+      const totalAmount = results.reduce((sum: number, r: any) => sum + r.baseAmount * (1 - (r.discountPct ?? 0) / 100), 0);
+      setPricePreview({
+        baseAmount,
+        totalAmount,
+        discountPct: baseAmount > 0 ? Math.round((1 - totalAmount / baseAmount) * 10000) / 100 : 0,
+      });
     } catch {
       toast({ title: 'Không tính được giá. Kiểm tra lại thời gian.', variant: 'destructive' });
     } finally { setCalcLoading(false); }
@@ -99,10 +145,17 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     setPricePreview(null);
     if (canCalc) calcPrice();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.slotId, form.type, form.startDatetime, form.endDatetime]);
+  }, [form.slotIds.join(','), JSON.stringify(form.areas), form.type, form.pricingTimeBasis, pricingRange.from, pricingRange.to, Object.keys(slotCache).length]);
 
   const mutation = useMutation({
-    mutationFn: () => slotsApi.createBooking(form.slotId, {
+    mutationFn: () => slotsApi.createBooking(primarySlotId, {
+      lines: selectedSlots.map((slot) => ({
+        slotId: slot.id,
+        areaRented: areaOf(slot) !== slot.area ? areaOf(slot) : undefined,
+      })),
+      pricingTimeBasis: form.pricingTimeBasis,
+      pricingStart: form.pricingTimeBasis === 'CUSTOM_RANGE' && form.pricingStart ? new Date(form.pricingStart).toISOString() : undefined,
+      pricingEnd: form.pricingTimeBasis === 'CUSTOM_RANGE' && form.pricingEnd ? new Date(form.pricingEnd).toISOString() : undefined,
       leadId: form.clientType === 'lead' ? form.clientId || undefined : undefined,
       customerId: form.clientType === 'customer' ? form.clientId || undefined : undefined,
       type: form.type,
@@ -117,7 +170,7 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     }),
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['slot-bookings'] });
-      toast({ title: `Đã tạo booking ${data?.bookingRef ?? ''}`, description: 'Trạng thái: Chờ xác nhận' });
+      toast({ title: `Đã tạo booking ${data?.bookingRef ?? ''}`, description: 'Trạng thái: Chờ gửi duyệt' });
       onClose();
     },
     onError: (e: any) => toast({
@@ -126,13 +179,15 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
     }),
   });
 
-  const canSubmit = form.slotId
+  const canSubmit = selectedSlots.length > 0
+    && selectedSlots.every((s) => !areaError(s))
+    && (form.pricingTimeBasis !== 'CUSTOM_RANGE' || (form.pricingStart && form.pricingEnd))
     && form.installationStartDatetime && form.installationEndDatetime
     && form.startDatetime && form.endDatetime
     && form.dismantlingStartDatetime && form.dismantlingEndDatetime
     && !mutation.isPending;
 
-  const selectedSlot = slots.find((s) => s.id === form.slotId);
+  const selectedSlot = selectedSlots[0];
   // RPT-CUR-006: the '₫' here was printed over a price the model could not
   // prove was VND. The currency now comes from the slot.
   const fmtM = (n?: number) => formatSlotMoney(n, selectedSlot?.currencyCode);
@@ -187,23 +242,66 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Slot *</label>
-              <div className="relative">
-                <select
-                  value={form.slotId}
-                  onChange={(e) => setField('slotId')(e.target.value)}
-                  disabled={!form.unitId || slots.length === 0}
-                  className="w-full h-9 pl-3 pr-8 text-sm border border-gray-200 rounded-lg bg-white appearance-none focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:bg-gray-50 disabled:text-gray-400"
-                >
-                  <option value="">— Chọn slot —</option>
-                  {slots.map((s: any) => (
-                    <option key={s.id} value={s.id}>
-                      {s.code} — {s.name} ({s.area} m²)
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                Slot * <span className="text-gray-400 font-normal">— chọn một hoặc nhiều slot, có thể thuê một phần diện tích</span>
+              </label>
+              <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                {slots.map((slot: any) => {
+                  const checked = form.slotIds.includes(slot.id);
+                  return (
+                    <label key={slot.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setForm((p) => ({
+                          ...p,
+                          slotIds: checked ? p.slotIds.filter((id) => id !== slot.id) : [...p.slotIds, slot.id],
+                        }))}
+                        className="accent-violet-600"
+                      />
+                      <span className="flex-1 min-w-0 truncate">{slot.code} — {slot.name} ({slot.area} m²)</span>
+                    </label>
+                  );
+                })}
+                {slots.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">{form.unitId ? 'Chưa có slot' : 'Chọn mặt bằng trước'}</div>
+                )}
               </div>
+              <p className="text-xs text-gray-400 mt-1">Có thể đổi mặt bằng ở trên để chọn thêm slot từ mặt bằng khác (cùng Mall).</p>
+
+              {selectedSlots.length > 0 && (
+                <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/50 p-3 space-y-2">
+                  <div className="text-xs font-semibold text-violet-700">Đã chọn ({selectedSlots.length}) — nhập diện tích thuê (bỏ trống = toàn bộ slot)</div>
+                  {selectedSlots.map((slot: any, idx: number) => {
+                    const err = areaError(slot);
+                    return (
+                      <div key={slot.id} className="flex items-center gap-2 text-sm">
+                        <span className="flex-1 min-w-0 truncate">
+                          {slot.unitCode ? `${slot.unitCode} · ` : ''}{slot.code} — {slot.name} ({slot.area} m²)
+                          {idx === 0 && <span className="ml-1 text-xs text-gray-400">· slot chính</span>}
+                        </span>
+                        <Input
+                          type="number" min={0} max={slot.area} step="any"
+                          value={form.areas[slot.id] ?? ''}
+                          placeholder={String(slot.area)}
+                          onChange={(e) => setForm((p) => ({ ...p, areas: { ...p.areas, [slot.id]: e.target.value } }))}
+                          className={`h-8 w-24 text-sm bg-white ${err ? 'border-red-400' : ''}`}
+                        />
+                        <span className="text-xs text-gray-400">m²</span>
+                        <button
+                          type="button"
+                          aria-label="Bỏ chọn slot"
+                          className="text-gray-400 hover:text-red-500"
+                          onClick={() => setForm((p) => ({ ...p, slotIds: p.slotIds.filter((id) => id !== slot.id) }))}
+                        >×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedSlots.some((slot: any) => areaError(slot)) && (
+                <p className="text-xs text-red-600 mt-1">Diện tích thuê phải lớn hơn 0 và không vượt quá diện tích slot.</p>
+              )}
               {form.unitId && slots.length === 0 && (
                 <p className="text-xs text-amber-600 mt-1">
                   Lô này chưa có slot nào. Vào trang Mặt bằng → Quản lý Slot để thêm.
@@ -341,8 +439,24 @@ export function CreateSlotBookingDialog({ open, onClose, mallId }: {
                 </div>
               </div>
             ))}
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <label className="text-xs font-semibold text-gray-700 block">Cách xác định thời gian tính tiền</label>
+              <select
+                value={form.pricingTimeBasis}
+                onChange={(e) => setField('pricingTimeBasis')(e.target.value)}
+                className="w-full h-9 px-3 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
+              >
+                {SLOT_PRICING_BASIS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {form.pricingTimeBasis === 'CUSTOM_RANGE' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Input type="datetime-local" value={form.pricingStart} onChange={(e) => setField('pricingStart')(e.target.value)} className="h-9 text-sm" />
+                  <Input type="datetime-local" value={form.pricingEnd} onChange={(e) => setField('pricingEnd')(e.target.value)} className="h-9 text-sm" />
+                </div>
+              )}
+            </div>
             <p className="text-xs text-gray-500">
-              Lịch slot được giữ từ lúc bắt đầu lắp đặt đến khi hoàn tất tháo dỡ; giá chỉ tính theo thời gian thuê.
+              Lịch slot luôn được giữ từ lúc bắt đầu lắp đặt đến khi hoàn tất tháo dỡ; giá tính theo cách đã chọn ở trên.
             </p>
           </div>
 

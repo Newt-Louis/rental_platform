@@ -8,8 +8,9 @@ import { useSpacesFilters } from '@/hooks/useSpacesFilters';
 import { ERPToolbar } from '@/components/erp/ERPToolbar';
 import { STATUS_CONFIG, SPACE_TYPE_OPTIONS, TIER_OPTIONS } from './spaces.constants';
 import { getUnitStatusLabel } from './spacesPresentation';
+import { HANDOVER_FILTER_OPTIONS } from '@/components/spaces/handover/handoverPresentation';
 
-export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
+export function SpacesFilters({ categoryNames, showHandoverFilter = false }: { categoryNames: string[]; showHandoverFilter?: boolean }) {
   const { t } = useTranslation('spaces');
   const [showFilters, setShowFilters] = useState(false);
 
@@ -24,6 +25,8 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
     categoryFilter, setCategoryFilter,
     spaceTypeFilter, setSpaceTypeFilter,
     tierFilter, setTierFilter,
+    handoverFilter, setHandoverFilter,
+    dateFilter, setDateFilter, isDateCustom,
     hasAdvancedFilters,
     clearFilters,
   } = useSpacesFilters();
@@ -41,6 +44,17 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             className="pl-9"
           />
         </div>
+        <div className="flex items-center gap-1.5">
+          <label htmlFor="spaces-as-of-date" className="text-xs font-medium text-gray-500 whitespace-nowrap">Thời gian</label>
+          <Input
+            id="spaces-as-of-date"
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            title="Trạng thái mặt bằng tại ngày này (mặc định hôm nay)"
+            className="w-full sm:w-40"
+          />
+        </div>
         <Select value={statusFilter || 'ALL'} onValueChange={(value) => setStatusFilter(value === 'ALL' ? '' : value)}>
           <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder={t('filters.allStatus')} />
@@ -52,6 +66,19 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
             ))}
           </SelectContent>
         </Select>
+        {showHandoverFilter && (
+          <Select value={handoverFilter || 'ALL'} onValueChange={(value) => setHandoverFilter(value === 'ALL' ? '' : value)}>
+            <SelectTrigger className="w-full sm:w-52" aria-label="Lọc theo BDA dự kiến bàn giao mặt bằng">
+              <SelectValue placeholder="BDA bàn giao: tất cả" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">BDA bàn giao: tất cả</SelectItem>
+              {HANDOVER_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 <Button
           variant={showFilters ? 'default' : 'outline'}
           size="sm"
@@ -62,7 +89,7 @@ export function SpacesFilters({ categoryNames }: { categoryNames: string[] }) {
           {t('filters.advanced')}
           {hasAdvancedFilters && <span className="w-2 h-2 bg-gray-500 rounded-full" />}
         </Button>
-        {(statusFilter || floorFilter || search || hasAdvancedFilters) && (
+        {(statusFilter || floorFilter || search || hasAdvancedFilters || handoverFilter || isDateCustom) && (
           <Button variant="outline" size="sm" onClick={clearFilters}>
             <X size={14} className="mr-1" /> {t('filters.clearAll')}
           </Button>

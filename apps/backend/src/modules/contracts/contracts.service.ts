@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { releaseSlotBookingAfterFailure } from '../slots/slot-booking-release';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { ContractStatus, UnitStatus, Prisma } from '@prisma/client';
@@ -460,6 +461,18 @@ export class ContractsService {
         const contract = current.status === status
           ? current
           : await tx.contract.update({ where: { id }, data: { status } });
+
+        // Hop dong ngan han cham dut truoc khi bat dau -> giai phong slot/thoi gian cua booking.
+        if (current.status !== status && status === ContractStatus.TERMINATED && current.proposalId) {
+          const linked = await tx.proposal.findUnique({
+            where: { id: current.proposalId },
+            select: { slotBookingId: true, slotBooking: { select: { installationStartDatetime: true, startDatetime: true } } },
+          });
+          const bookingStart = linked?.slotBooking?.installationStartDatetime ?? linked?.slotBooking?.startDatetime;
+          if (linked?.slotBookingId && bookingStart && bookingStart > new Date()) {
+            await releaseSlotBookingAfterFailure(tx, linked.slotBookingId, 'Hop dong bi cham dut truoc khi bat dau');
+          }
+        }
 
         if (current.status !== status) {
           await tx.contractEvent.create({

@@ -10,7 +10,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   BookingStatus, BookingActivityType, LeadStatus, UnitStatus, PriceApprovalStatus,
-  StepStatus, Role, CurrencyCode, Prisma, CrmEventSourceModule,
+  StepStatus, ContractStatus, Role, CurrencyCode, Prisma, CrmEventSourceModule,
 } from '@prisma/client';
 import {
   CreateBookingDto,
@@ -31,6 +31,22 @@ import type { PricingDecision } from '../approvals/pricing-decision.types';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EmailService } from '../notifications/email.service';
 import { LeadLifecycleService } from '../crm/lead-lifecycle.service';
+
+/**
+ * CR-BOOK-CURRENCY-EDIT-001 — every amount a Booking stores, all of them
+ * denominated in its currencyCode. They are listed here so that changing the
+ * currency has one place to check: a figure left behind would keep its digits
+ * and quietly change what it is worth.
+ */
+const MONEY_FIELDS = [
+  'budgetRentMin',
+  'budgetRentMax',
+  'expectedRent',
+  'proposedRentPerSqm',
+  'proposedCamPerSqm',
+  'serviceFeeSqm',
+  'businessSupportFeeSqm',
+] as const;
 
 @Injectable()
 export class BookingService {
@@ -70,11 +86,8 @@ export class BookingService {
     // GAP #20: Chặn booking khi unit đang bị khoá hoàn toàn —
     // bao gồm OCCUPIED/CONTRACTED/UNDER_FITOUT (đã có khách chính thức) và
     // NEGOTIATING (đang thương thảo nghiêm túc, không cho xếp hàng thêm) và MERGED.
-    if (this.unitStatus.isLockedForBooking(unit.status)) {
-      throw new BadRequestException(
-        `Không thể tạo booking: mặt bằng đang bị khoá (trạng thái ${unit.status}).`,
-      );
-    }
+    const period = this.parseBookingPeriod(dto.bookingStartDate, dto.bookingEndDate);
+    await this.assertUnitBookable(unit, period, 'Không thể tạo booking');
 
     if (dto.leadId) {
       const lead = await this.prisma.lead.findUnique({ where: { id: dto.leadId } });
@@ -143,11 +156,15 @@ export class BookingService {
       if (!currentUnit || !currentUnit.isActive) {
         throw new NotFoundException('Unit không tồn tại');
       }
-      if ((currentUnit.leaseTermType && currentUnit.leaseTermType !== 'LONG') || this.unitStatus.isLockedForBooking(currentUnit.status)) {
+      if (currentUnit.leaseTermType && currentUnit.leaseTermType !== 'LONG') {
         throw new BadRequestException(
           `Không thể tạo booking: mặt bằng không còn đủ điều kiện (trạng thái ${currentUnit.status}).`,
         );
       }
+      await this.assertUnitBookable(currentUnit, period, 'Không thể tạo booking', tx, true);
+      // Booking cho một khoảng thời gian sau khi hợp đồng hiện tại kết thúc không được
+      // đổi trạng thái mặt bằng đang thuê sang BOOKING.
+      const unitIsLeased = this.unitStatus.isCommittedToTenant(currentUnit.status);
       if (dto.leadId) {
         const currentLead = await tx.lead.findUnique({ where: { id: dto.leadId } });
         if (!currentLead) throw new NotFoundException('Lead không tồn tại');
@@ -226,6 +243,8 @@ export class BookingService {
                 policyRuleCode: step.policyRuleCode,
               })) } }
             : {}),
+          bookingStartDate: period?.start,
+          bookingEndDate: period?.end,
           holdDays,
           expiresAt,
           activatedAt: priority === 1 ? new Date() : null,
@@ -236,8 +255,8 @@ export class BookingService {
         include: this.defaultInclude(),
       });
 
-      // Khi priority 1 → unit chuyển sang BOOKING
-      if (priority === 1) {
+      // Khi priority 1 → unit chuyển sang BOOKING (trừ mặt bằng đang thuê)
+      if (priority === 1 && !unitIsLeased) {
         await this.unitStatus.transition(dto.unitId, UnitStatus.BOOKING, {
           userId: createdById,
           reason: `Booking ${bookingNumber} activated`,
@@ -281,6 +300,114 @@ export class BookingService {
     return created;
   }
 
+  // ─── Thời gian booking vs thời gian Đang thuê ────────────────────────────
+
+  /**
+   * Mặt bằng đang bị khoá (OCCUPIED/CONTRACTED/...) vẫn booking được nếu có thời gian booking
+   * và thời gian đó không trùng thời gian Đang thuê. NEGOTIATING/MERGED luôn bị khoá.
+   */
+  private async assertUnitBookable(
+    unit: { id: string; status: UnitStatus; leaseStartDate: Date | null; leaseEndDate: Date | null },
+    period: { start: Date; end: Date } | null,
+    prefix: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+    stale = false,
+  ) {
+    const lockedMessage = stale
+      ? `${prefix}: mặt bằng không còn đủ điều kiện (trạng thái ${unit.status}).`
+      : `${prefix}: mặt bằng đang bị khoá (trạng thái ${unit.status}).`;
+    const locked = this.unitStatus.isLockedForBooking(unit.status);
+    if (!period) {
+      if (locked) {
+        throw new BadRequestException(lockedMessage);
+      }
+      return;
+    }
+    if (locked && !this.unitStatus.isCommittedToTenant(unit.status)) {
+      throw new BadRequestException(lockedMessage);
+    }
+    const conflict = (await this.findLeaseConflicts([unit], period, db)).get(unit.id);
+    if (conflict) {
+      throw new BadRequestException(
+        `${prefix}: thời gian booking trùng với thời gian Đang thuê (${this.formatConflict(conflict)}).`,
+      );
+    }
+  }
+
+  /** Trả về [start, end] đã parse, hoặc null nếu không nhập; ném lỗi nếu nhập thiếu/sai thứ tự. */
+  private parseBookingPeriod(start?: string | null, end?: string | null): { start: Date; end: Date } | null {
+    if (!start && !end) return null;
+    if (!start || !end) {
+      throw new BadRequestException('Thời gian booking cần có cả ngày bắt đầu và ngày kết thúc');
+    }
+    const s = new Date(start);
+    const e = new Date(end);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+      throw new BadRequestException('Thời gian booking không hợp lệ');
+    }
+    if (e < s) {
+      throw new BadRequestException('Ngày kết thúc booking phải sau hoặc bằng ngày bắt đầu');
+    }
+    return { start: s, end: e };
+  }
+
+  /**
+   * Với mỗi unit, tìm khoảng thời gian Đang thuê trùng với [start, end].
+   * Nguồn: hợp đồng ACTIVE/EXPIRING/TERMINATING; nếu unit đang bị cam kết (OCCUPIED, ...)
+   * mà không có hợp đồng nào thì dùng Unit.leaseStartDate/leaseEndDate, và nếu không biết
+   * ngày kết thúc thuê thì coi như trùng (không thể chứng minh là còn trống).
+   */
+  private async findLeaseConflicts(
+    units: { id: string; status: UnitStatus; leaseStartDate: Date | null; leaseEndDate: Date | null }[],
+    period: { start: Date; end: Date },
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<Map<string, { start: Date | null; end: Date | null }>> {
+    const conflicts = new Map<string, { start: Date | null; end: Date | null }>();
+    if (!units.length) return conflicts;
+
+    const contracts = await db.contract.findMany({
+      where: {
+        unitId: { in: units.map((u) => u.id) },
+        isActive: true,
+        status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING, ContractStatus.TERMINATING] },
+        startDate: { lte: period.end },
+        endDate: { gte: period.start },
+      },
+      select: { unitId: true, startDate: true, endDate: true },
+      orderBy: { startDate: 'asc' },
+    });
+    for (const c of contracts) {
+      if (!conflicts.has(c.unitId)) conflicts.set(c.unitId, { start: c.startDate, end: c.endDate });
+    }
+
+    const committed = units.filter((u) => !conflicts.has(u.id) && this.unitStatus.isCommittedToTenant(u.status));
+    if (committed.length) {
+      const withContract = await db.contract.findMany({
+        where: {
+          unitId: { in: committed.map((u) => u.id) },
+          isActive: true,
+          status: { in: [ContractStatus.ACTIVE, ContractStatus.EXPIRING, ContractStatus.TERMINATING] },
+        },
+        select: { unitId: true },
+      });
+      const hasContract = new Set(withContract.map((c) => c.unitId));
+      for (const u of committed) {
+        if (hasContract.has(u.id)) continue; // đã kiểm tra theo ngày hợp đồng ở trên → không trùng
+        const s = u.leaseStartDate;
+        const e = u.leaseEndDate;
+        if (!e || (e >= period.start && (!s || s <= period.end))) {
+          conflicts.set(u.id, { start: s, end: e });
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  private formatConflict(c: { start: Date | null; end: Date | null }): string {
+    const f = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '?');
+    return `${f(c.start)} → ${f(c.end)}`;
+  }
+
   // ─── Danh sách bookings ───────────────────────────────────────────────────
 
   /**
@@ -295,6 +422,7 @@ export class BookingService {
       throw new BadRequestException('minArea must be less than or equal to maxArea');
     }
 
+    const period = this.parseBookingPeriod(query.bookingStartDate, query.bookingEndDate);
     const where: Prisma.UnitWhereInput = {
       isActive: true,
       leaseTermType: 'LONG',
@@ -337,6 +465,8 @@ export class BookingService {
           category: true,
           status: true,
           leaseTermType: true,
+          leaseStartDate: true,
+          leaseEndDate: true,
           mall: { select: { id: true, name: true, code: true } },
           floor: { select: { id: true, name: true, level: true } },
           zone: { select: { id: true, name: true, code: true } },
@@ -360,15 +490,27 @@ export class BookingService {
       : [];
     const queueCountByUnit = new Map(queueCounts.map((row) => [row.unitId, row._count._all]));
 
+    const leaseConflicts = period
+      ? await this.findLeaseConflicts(units, period)
+      : new Map<string, { start: Date | null; end: Date | null }>();
+
     return {
-      data: units.map((unit) => {
-        const locked = this.unitStatus.isLockedForBooking(unit.status);
+      data: units.map(({ leaseStartDate, leaseEndDate, ...unit }) => {
+        // Có thời gian booking: mặt bằng đang thuê vẫn chọn được nếu không trùng thời gian Đang thuê.
+        const leasedButFree =
+          !!period &&
+          this.unitStatus.isCommittedToTenant(unit.status) &&
+          !leaseConflicts.has(unit.id);
+        const leaseConflict = leaseConflicts.get(unit.id);
+        const locked = this.unitStatus.isLockedForBooking(unit.status) && !leasedButFree;
         // Mirrors UnitStatusService.isLockedForBooking's notion of "available": VACANT and
         // OFFERING both have no active/live contract and no existing hold, so both go straight
         // to IMMEDIATE — only BOOKING (already has a queue) is QUEUE.
         const mode = locked
           ? 'BLOCKED'
-          : unit.status === UnitStatus.BOOKING
+          : leasedButFree
+            ? 'IMMEDIATE'
+            : unit.status === UnitStatus.BOOKING
             ? 'QUEUE'
             : unit.status === UnitStatus.VACANT || unit.status === UnitStatus.OFFERING
               ? 'IMMEDIATE'
@@ -379,7 +521,9 @@ export class BookingService {
             selectable: mode !== 'BLOCKED',
             mode,
             reasonCode: locked
-              ? `UNIT_STATUS_${unit.status}`
+              ? leaseConflict
+                ? 'LEASE_PERIOD_OVERLAP'
+                : `UNIT_STATUS_${unit.status}`
               : mode === 'BLOCKED'
                 ? 'UNIT_STATUS_NOT_BOOKABLE'
                 : null,
@@ -588,6 +732,35 @@ export class BookingService {
     const targetUnitId = targetNewUnitId ?? booking.unitId;
     const unit = await this.prisma.unit.findUnique({ where: { id: targetUnitId } });
 
+    // ── Đổi đơn vị tiền tệ (CR-BOOK-CURRENCY-EDIT-001) ───────────────────────
+    //
+    // Currency is not a label on the money, it IS the money: every amount on
+    // this booking is denominated in it, and the approval band is resolved in
+    // it. So a change is only a correction of a wrong pick at creation, never a
+    // re-pricing, and it is refused once somebody has approved a price -- that
+    // approval was given for figures in the old currency and cannot be made to
+    // cover new ones.
+    const currencyChanged = dto.currencyCode !== undefined && dto.currencyCode !== booking.currencyCode;
+    if (currencyChanged) {
+      if (booking.priceApprovalStatus === PriceApprovalStatus.APPROVED) {
+        throw new BadRequestException(
+          'Giá của booking này đã được duyệt nên không đổi được đơn vị tiền tệ. '
+          + 'Hãy tạo booking mới với đơn vị tiền tệ đúng.',
+        );
+      }
+      // Re-entering the amounts is the point of the rule: carrying a number
+      // across a currency change would silently restate 650.000 ₫ as 650.000 $.
+      const stillInOldCurrency = MONEY_FIELDS.filter(
+        (field) => booking[field] !== null && booking[field] !== undefined && dto[field] === undefined,
+      );
+      if (stillInOldCurrency.length > 0) {
+        throw new BadRequestException(
+          `Đổi đơn vị tiền tệ thì phải nhập lại toàn bộ các mức giá. Còn thiếu: ${stillInOldCurrency.join(', ')}`,
+        );
+      }
+    }
+    const effectiveCurrency = currencyChanged ? dto.currencyCode! : booking.currencyCode;
+
     // CR-BOOK-PRICE-APPROVAL-001 — re-evaluate through the same policy service
     // as create(). A changed price invalidates any decision already made on the
     // old figure, so the chain is rebuilt from scratch below.
@@ -595,14 +768,17 @@ export class BookingService {
     let priceApprovalTouched = false;
 
     if (dto.proposedRentPerSqm !== undefined && unit) {
-      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId) {
+      // A currency change re-prices the booking even when the digits are the
+      // same: 28 USD and 28 VND are not the same offer, and the band they are
+      // measured against is not the same band.
+      if (dto.proposedRentPerSqm !== booking.proposedRentPerSqm || !!targetNewUnitId || currencyChanged) {
         priceEvaluation = await this.priceApprovalPolicy.evaluate({
           mallId: unit.mallId,
           categoryId: unit.categoryId,
           floorId: unit.floorId,
           zoneId: unit.zoneId,
           proposedRentPerSqm: dto.proposedRentPerSqm,
-          currencyCode: booking.currencyCode,
+          currencyCode: effectiveCurrency,
           unitBaseRentPerSqm: unit.baseRentPerSqm,
           unitCurrencyCode: unit.currencyCode,
         });
@@ -651,7 +827,12 @@ export class BookingService {
           budgetRentMin: dto.budgetRentMin,
           budgetRentMax: dto.budgetRentMax,
           expectedRent: dto.expectedRent,
-          exchangeRate: dto.exchangeRate,
+          ...(currencyChanged && { currencyCode: dto.currencyCode }),
+          // A rate is "VND per <currency>"; once the currency IS VND there is
+          // nothing left for it to convert.
+          ...(currencyChanged && dto.currencyCode === CurrencyCode.VND
+            ? { exchangeRate: null }
+            : { exchangeRate: dto.exchangeRate }),
           proposedRentPerSqm: dto.proposedRentPerSqm,
           proposedCamPerSqm: dto.proposedCamPerSqm,
           serviceFeeSqm: dto.serviceFeeSqm,
@@ -691,7 +872,17 @@ export class BookingService {
         await this.replacePriceApproval(tx, id, priceEvaluation);
       }
 
-      await this.logActivity(id, BookingActivityType.NOTE_ADDED, userId, { note: 'Cập nhật thông tin booking' }, tx);
+      await this.logActivity(
+        id,
+        BookingActivityType.NOTE_ADDED,
+        userId,
+        {
+          note: currencyChanged
+            ? `Cập nhật thông tin booking — đổi đơn vị tiền tệ ${booking.currencyCode} sang ${dto.currencyCode}, nhập lại toàn bộ mức giá`
+            : 'Cập nhật thông tin booking',
+        },
+        tx,
+      );
       return updated;
     });
 
@@ -861,6 +1052,34 @@ export class BookingService {
   }
 
   /** The step awaiting a decision: lowest order still PENDING. Steps are sequential. */
+  /**
+   * An unrouted price (Mall has no matching policy rule) has no step to claim,
+   * so the ADMIN's remediation would otherwise leave no decision record and
+   * never reach the approvals history. Persist it as a synthetic ADMIN step.
+   */
+  private async recordUnroutedPriceDecision(
+    tx: Prisma.TransactionClient,
+    existingSteps: { stepOrder: number }[],
+    bookingId: string,
+    adminId: string,
+    status: StepStatus,
+    comment?: string | null,
+  ) {
+    await tx.bookingPriceApprovalStep.create({
+      data: {
+        bookingId,
+        stepOrder: existingSteps.reduce((max, s) => Math.max(max, s.stepOrder), 0) + 1,
+        stepName: 'Admin (chưa có chính sách)',
+        approverRole: Role.ADMIN,
+        approverId: adminId,
+        status,
+        comment: comment ?? null,
+        decidedAt: new Date(),
+        decidedById: adminId,
+      },
+    });
+  }
+
   private currentPriceStep<T extends { stepOrder: number; status: StepStatus }>(steps: T[]): T | undefined {
     return [...steps]
       .filter((step) => step.status === StepStatus.PENDING)
@@ -1119,6 +1338,7 @@ export class BookingService {
         if (claimedBooking.count !== 1) {
           throw new ConflictException('Giá của booking này vừa được xử lý bởi một thao tác khác.');
         }
+        await this.recordUnroutedPriceDecision(tx, booking.priceApprovalSteps, id, approver.id, StepStatus.APPROVED, dto.note);
       }
 
       // Only the LAST step flips the booking. An intermediate sign-off leaves
@@ -1183,6 +1403,7 @@ export class BookingService {
         if (claimedBooking.count !== 1) {
           throw new ConflictException('Giá của booking này vừa được xử lý bởi một thao tác khác.');
         }
+        await this.recordUnroutedPriceDecision(tx, booking.priceApprovalSteps, id, approver.id, StepStatus.REJECTED, dto.reason);
       }
       // A rejection ends the chain: later steps never get to review a price
       // that has already been refused.
@@ -1213,6 +1434,58 @@ export class BookingService {
     await this.notifyPriceDecision(id, false, dto.reason);
 
     return updated;
+  }
+
+  // ─── Lịch sử quyết định duyệt giá (đã duyệt / từ chối) ─────────────────────
+
+  async getPriceApprovalHistory(
+    query: { mallId?: string; mallIds?: string[]; leaseTermType?: string; status?: string; page?: number; limit?: number },
+    viewer: { id: string; role: Role },
+  ) {
+    const mallIds = query.mallId ? [query.mallId] : query.mallIds;
+    const p = Math.max(1, parseInt(String(query.page)) || 1);
+    const l = Math.max(1, parseInt(String(query.limit)) || 25);
+    const status =
+      query.status === StepStatus.APPROVED || query.status === StepStatus.REJECTED ? query.status : undefined;
+
+    const where: Prisma.BookingPriceApprovalStepWhereInput = {
+      status: status ? status : { in: [StepStatus.APPROVED, StepStatus.REJECTED] },
+      // Same rule as the proposal history: non-admins see only their own decisions.
+      ...(viewer.role !== Role.ADMIN ? { decidedById: viewer.id } : {}),
+    };
+    if (mallIds || query.leaseTermType) {
+      const unitWhere: any = {
+        ...(mallIds ? { OR: [{ mallId: { in: mallIds } }, { floor: { mallId: { in: mallIds } } }] } : {}),
+        ...(query.leaseTermType ? { leaseTermType: query.leaseTermType } : {}),
+      };
+      where.booking = { unit: unitWhere };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.bookingPriceApprovalStep.findMany({
+        where,
+        orderBy: { decidedAt: 'desc' },
+        skip: (p - 1) * l,
+        take: l,
+        include: {
+          decidedBy: { select: { id: true, fullName: true, role: true } },
+          booking: {
+            select: {
+              id: true,
+              bookingNumber: true,
+              proposedRentPerSqm: true,
+              currencyCode: true,
+              unit: { select: { id: true, code: true, leaseTermType: true, floor: { select: { name: true } } } },
+              lead: { select: { id: true, brandName: true } },
+              customer: { select: { id: true, brandName: true, companyName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.bookingPriceApprovalStep.count({ where }),
+    ]);
+
+    return { data, total, page: p, limit: l, totalPages: Math.ceil(total / l) };
   }
 
   // ─── Lấy danh sách booking cần phê duyệt giá ──────────────────────────────
@@ -1555,6 +1828,27 @@ export class BookingService {
     const endDate = new Date(startDate);
     endDate.setMonth(endDate.getMonth() + dto.term);
 
+    // Thời gian booking có thể được chỉnh lại ở bước tạo đề xuất; kỳ thuê của đề xuất
+    // cũng không được trùng thời gian Đang thuê của mặt bằng.
+    const bookingPeriod = dto.bookingStartDate || dto.bookingEndDate
+      ? this.parseBookingPeriod(dto.bookingStartDate, dto.bookingEndDate)
+      : this.parseBookingPeriod(
+          booking.bookingStartDate?.toISOString(),
+          booking.bookingEndDate?.toISOString(),
+        );
+    const unitForLease = await this.prisma.unit.findUnique({
+      where: { id: booking.unitId },
+      select: { id: true, status: true, leaseStartDate: true, leaseEndDate: true },
+    });
+    if (unitForLease && (bookingPeriod || this.unitStatus.isCommittedToTenant(unitForLease.status))) {
+      const proposalConflict = (await this.findLeaseConflicts([unitForLease], { start: startDate, end: endDate })).get(unitForLease.id);
+      if (proposalConflict) {
+        throw new BadRequestException(
+          `Thời gian thuê của đề xuất trùng với thời gian Đang thuê của mặt bằng (${this.formatConflict(proposalConflict)}).`,
+        );
+      }
+    }
+
     const rentPerSqm = dto.rentPerSqm;
     const camPerSqm = dto.camPerSqm ?? 0;
     const area = dto.area;
@@ -1638,6 +1932,7 @@ export class BookingService {
         data: {
           status: BookingStatus.CONVERTED,
           convertedAt: new Date(),
+          ...(bookingPeriod ? { bookingStartDate: bookingPeriod.start, bookingEndDate: bookingPeriod.end } : {}),
         },
       });
 
@@ -1841,6 +2136,9 @@ export class BookingService {
       },
       orderBy: { priority: 'asc' },
     });
+    // Mặt bằng đang thuê (booking cho kỳ sau hợp đồng hiện tại) không bị đổi trạng thái.
+    const queueUnit = await db.unit.findUnique({ where: { id: unitId }, select: { status: true } });
+    const unitIsLeased = !!queueUnit && this.unitStatus.isCommittedToTenant(queueUnit.status);
 
     if (next) {
       await db.unitBooking.update({
@@ -1852,7 +2150,7 @@ export class BookingService {
         },
       });
       // Đảm bảo unit vẫn BOOKING
-      await this.unitStatus.transition(unitId, UnitStatus.BOOKING, {
+      if (!unitIsLeased) await this.unitStatus.transition(unitId, UnitStatus.BOOKING, {
         userId: promotedById,
         reason: 'Next booking promoted to priority 1',
       }, db);
@@ -1863,7 +2161,7 @@ export class BookingService {
         note: 'Lên ưu tiên #1',
         metadata: { newPriority: 1 },
       }, db);
-    } else {
+    } else if (!unitIsLeased) {
       // Không còn ai trong queue → unit trở lại VACANT
       await this.unitStatus.transition(unitId, UnitStatus.VACANT, {
         userId: promotedById,

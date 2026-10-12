@@ -18,10 +18,14 @@ import {
   Building2, Plus, Columns, Filter, DollarSign, GitMerge,
 } from 'lucide-react';
 import type { Unit, UnitSlotSummary } from '@/types';
+import type { HandoverSummary } from '@/api/handover-readiness';
+import type { UnitBookingSummary } from '@/components/spaces/unitBookingSummary';
 
 interface SpacesGridProps {
   units: Unit[];
   slotSummaries: Record<string, UnitSlotSummary>;
+  handoverByUnit?: Record<string, HandoverSummary>;
+  bookingByUnit?: Record<string, UnitBookingSummary>;
   isLoading: boolean;
   isAdmin: boolean;
   mallId?: string | null;
@@ -34,6 +38,8 @@ interface SpacesGridProps {
 export function SpacesGrid({
   units,
   slotSummaries,
+  handoverByUnit,
+  bookingByUnit,
   isLoading,
   isAdmin,
   mallId,
@@ -152,6 +158,8 @@ export function SpacesGrid({
               isSelected={selectedIds.has(unit.id)}
               onToggleSelect={() => toggleSelect(unit.id)}
               slotSummary={slotSummaries[unit.id]}
+              handover={handoverByUnit?.[unit.id]}
+              booking={bookingByUnit?.[unit.id]}
             />
           </div>
         ))}

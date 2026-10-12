@@ -27,7 +27,8 @@ describe('BillingService invoice adjustments', () => {
       { invoiceIssuedHtml: jest.fn() } as any,
       { enqueue: jest.fn() } as any,
       { increment: jest.fn() } as any,
-    );
+    { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] }) } as any,
+  );
     jest.spyOn(service, 'findOneInvoice').mockResolvedValue(invoice);
     jest.spyOn(service as any, 'recomputeInvoiceStatusFromPayments').mockResolvedValue(undefined);
     tx.invoiceAdjustment.create.mockResolvedValue({ id: 'adjustment-1' });

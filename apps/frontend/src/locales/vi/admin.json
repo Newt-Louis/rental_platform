@@ -16,6 +16,7 @@
     "categories": "Ngành hàng & Giá",
     "permissions": "Phân quyền",
     "approval": "Chính sách phê duyệt",
+    "notificationRouting": "Định tuyến thông báo",
     "system": "Hệ thống",
     "approvalPolicy": "Chính sách phê duyệt",
     "branding": "Thương hiệu"
@@ -251,6 +252,29 @@
       "zoneUpdated": "Đã cập nhật khu vực",
       "zoneDeleted": "Đã xóa khu vực"
     }
+  },
+  "permissionsCrud": {
+    "sectionCrud": "Phân quyền Xem / Tạo / Sửa / Xóa theo chức năng",
+    "sectionAccess": "Quyền truy cập màn hình & thao tác đặc biệt",
+    "selectAll": "Chọn tất cả",
+    "save": "Lưu",
+    "cancel": "Hủy thay đổi",
+    "unsaved": "{{count}} chức năng chưa lưu",
+    "toastSaved": "Đã lưu phân quyền",
+    "discardConfirm": "Có thay đổi chưa lưu. Bỏ các thay đổi này?",
+    "scope": "Phạm vi phân quyền chi tiết",
+    "note": "Quyền Tạo/Sửa/Xóa áp dụng theo thao tác gửi lên API (POST = Tạo, PUT/PATCH = Sửa, DELETE = Xóa) và chỉ có nghĩa khi đã có quyền Xem. Quyền gán riêng cho người dùng luôn thắng quyền của vai trò. Tick xong bấm Lưu để áp dụng một lần; có hiệu lực ngay, không cần triển khai lại.",
+    "subject": "Đối tượng phân quyền",
+    "byRole": "Theo vai trò",
+    "byUser": "Theo người dùng",
+    "pickRole": "Chọn vai trò",
+    "pickUser": "Chọn người dùng",
+    "pickUserHint": "Chọn một người dùng để xem và chỉnh quyền riêng của họ.",
+    "searchUser": "Tìm tên hoặc email…",
+    "clearOverrides": "Xóa quyền riêng",
+    "overridden": "Quyền riêng của người dùng (khác vai trò)",
+    "toastCleared": "Đã xóa quyền riêng, người dùng trở lại theo vai trò",
+    "actions": { "view": "Xem", "create": "Tạo", "update": "Sửa", "delete": "Xóa" }
   },
   "permissions": {
     "title": "Phân quyền",

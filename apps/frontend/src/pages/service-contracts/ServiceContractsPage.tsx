@@ -1,21 +1,52 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Clock, Download, FileText, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  Download,
+  FileText,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { serviceContractsApi } from "@/api";
 import { useMallStore } from "@/store/mall.store";
 import { openOrDownloadAuthenticatedDocument } from "@/lib/authenticatedDocument";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { ServiceContractShareTab, type ShareEntry } from "./ServiceContractShareTab";
+import {
+  ServiceContractShareTab,
+  type ShareEntry,
+} from "./ServiceContractShareTab";
 import { useTranslation } from "react-i18next";
 import { usePermission } from "@/hooks/usePermission";
 import type { Role } from "@/types";
-import { formatMoney, formatMoneyAmount, type CurrencyCode } from "@/lib/currency";
+import {
+  formatMoney,
+  formatMoneyAmount,
+  type CurrencyCode,
+} from "@/lib/currency";
 import { serviceContractTypeTranslationKey } from "@/lib/erpEnumPresentation";
 import { getServiceContractExpiryPresentation } from "@/lib/serviceContractExpiry";
 
@@ -32,7 +63,12 @@ const STATUSES = [
   "CANCELLED",
 ];
 // Chỉ được sửa trực tiếp khi hợp đồng chưa vào hiệu lực; từ ACTIVE trở đi phải khóa vì đã ràng buộc pháp lý/tài chính.
-const EDITABLE_STATUSES = ["DRAFT", "PROPOSAL", "UNDER_REVIEW", "PENDING_SIGNATURE"];
+const EDITABLE_STATUSES = [
+  "DRAFT",
+  "PROPOSAL",
+  "UNDER_REVIEW",
+  "PENDING_SIGNATURE",
+];
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   DRAFT: ["PROPOSAL", "UNDER_REVIEW", "CANCELLED"],
   PROPOSAL: ["DRAFT", "UNDER_REVIEW", "PENDING_SIGNATURE", "CANCELLED"],
@@ -87,8 +123,69 @@ const VALUE_BASES = [
   ["OTHER", "Cơ sở khác"],
 ] as const;
 
+const DETAIL_DRAWER_DEFAULT_WIDTH = 672;
+const DETAIL_DRAWER_MAX_VIEWPORT_RATIO = 0.8;
+
+function getDetailDrawerBounds() {
+  if (typeof window === "undefined") {
+    return {
+      minWidth: DETAIL_DRAWER_DEFAULT_WIDTH,
+      maxWidth: DETAIL_DRAWER_DEFAULT_WIDTH,
+    };
+  }
+  const maxWidth = Math.floor(
+    window.innerWidth * DETAIL_DRAWER_MAX_VIEWPORT_RATIO,
+  );
+  return {
+    minWidth: Math.min(DETAIL_DRAWER_DEFAULT_WIDTH, maxWidth),
+    maxWidth,
+  };
+}
+
+function calculateContractTotal(
+  initialValue: string,
+  VAT: string,
+): number | null {
+  if (initialValue.trim() === "" || VAT.trim() === "") return null;
+  const normalizedInitialValue = Number(initialValue.replace(/,/g, ""));
+  const normalizedVAT = Number(VAT.replace(/,/g, ""));
+  if (
+    !Number.isFinite(normalizedInitialValue) ||
+    !Number.isFinite(normalizedVAT) ||
+    normalizedInitialValue < 0 ||
+    normalizedVAT < 0 ||
+    normalizedVAT > 100
+  )
+    return null;
+  return (
+    normalizedInitialValue + (normalizedInitialValue * normalizedVAT) / 100
+  );
+}
+
+function parseMoneyInput(value: string): number | null {
+  if (value.trim() === "") return null;
+  const normalized = Number(value.replace(/,/g, ""));
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function formatMoneyInput(value: string): string {
+  const normalized = value.replace(/,/g, "");
+  if (normalized === "") return "";
+  if (!/^\d*(?:\.\d*)?$/.test(normalized)) return value;
+  const [integer = "", decimal] = normalized.split(".");
+  const groupedInteger =
+    integer === "" ? "" : Number(integer).toLocaleString("en-US");
+  return decimal === undefined
+    ? groupedInteger
+    : `${groupedInteger}.${decimal}`;
+}
+
 function RequiredMark() {
-  return <span className="text-red-600" aria-hidden="true">*</span>;
+  return (
+    <span className="text-red-600" aria-hidden="true">
+      *
+    </span>
+  );
 }
 type ModalTab = "info" | "share";
 /**
@@ -96,17 +193,29 @@ type ModalTab = "info" | "share";
  * unmount panel không hoạt động, mà panel thông tin toàn input uncontrolled —
  * nhảy sang tab chia sẻ rồi quay lại sẽ mất sạch dữ liệu đang gõ.
  */
-function ModalTabs({ value, onChange, infoLabel, shareLabel, shareCount }: {
+function ModalTabs({
+  value,
+  onChange,
+  infoLabel,
+  shareLabel,
+  shareCount,
+}: {
   value: ModalTab;
   onChange: (tab: ModalTab) => void;
   infoLabel: string;
   shareLabel: string;
   shareCount: number;
 }) {
-  const tabs: Array<[ModalTab, string]> = [["info", infoLabel], ["share", shareCount ? `${shareLabel} (${shareCount})` : shareLabel]];
-  console.log(tabs)
+  const tabs: Array<[ModalTab, string]> = [
+    ["info", infoLabel],
+    ["share", shareCount ? `${shareLabel} (${shareCount})` : shareLabel],
+  ];
+  console.log(tabs);
   return (
-    <div role="tablist" className="inline-flex h-9 items-center justify-center self-start rounded-lg bg-gray-100 p-1 text-gray-500">
+    <div
+      role="tablist"
+      className="inline-flex h-9 items-center justify-center self-start rounded-lg bg-gray-100 p-1 text-gray-500"
+    >
       {tabs.map(([key, label]) => (
         <button
           key={key}
@@ -122,8 +231,10 @@ function ModalTabs({ value, onChange, infoLabel, shareLabel, shareCount }: {
     </div>
   );
 }
-const categoryLabel = (value: string) => SERVICE_CATEGORIES.find(([key]) => key === value)?.[1] ?? value;
-const valueBasisLabel = (value: string) => VALUE_BASES.find(([key]) => key === value)?.[1] ?? value;
+const categoryLabel = (value: string) =>
+  SERVICE_CATEGORIES.find(([key]) => key === value)?.[1] ?? value;
+const valueBasisLabel = (value: string) =>
+  VALUE_BASES.find(([key]) => key === value)?.[1] ?? value;
 const labels: Record<string, string> = {
   DRAFT: "Nháp",
   PROPOSAL: "Đề xuất",
@@ -137,18 +248,35 @@ const labels: Record<string, string> = {
   CANCELLED: "Đã hủy",
 };
 const STATUS_DESCRIPTIONS: Record<string, string> = {
-  DRAFT: "Hồ sơ đang được soạn thảo và bổ sung thông tin; chưa đưa vào quy trình phê duyệt.",
-  PROPOSAL: "Điều khoản thương mại đang ở bước đề xuất, trao đổi hoặc thương lượng với các bên.",
-  UNDER_REVIEW: "Hồ sơ đang được các bộ phận liên quan kiểm tra và phê duyệt nội bộ.",
-  PENDING_SIGNATURE: "Nội dung đã hoàn thiện và đang chờ các bên ký hợp đồng pháp lý.",
-  ACTIVE: "Hợp đồng đã có hiệu lực; các nghĩa vụ, thanh toán và mốc thực hiện đang được theo dõi.",
-  EXPIRING: "Hợp đồng sắp đến ngày kết thúc; cần quyết định gia hạn, kết thúc hoặc chấm dứt.",
+  DRAFT:
+    "Hồ sơ đang được soạn thảo và bổ sung thông tin; chưa đưa vào quy trình phê duyệt.",
+  PROPOSAL:
+    "Điều khoản thương mại đang ở bước đề xuất, trao đổi hoặc thương lượng với các bên.",
+  UNDER_REVIEW:
+    "Hồ sơ đang được các bộ phận liên quan kiểm tra và phê duyệt nội bộ.",
+  PENDING_SIGNATURE:
+    "Nội dung đã hoàn thiện và đang chờ các bên ký hợp đồng pháp lý.",
+  ACTIVE:
+    "Hợp đồng đã có hiệu lực; các nghĩa vụ, thanh toán và mốc thực hiện đang được theo dõi.",
+  EXPIRING:
+    "Hợp đồng sắp đến ngày kết thúc; cần quyết định gia hạn, kết thúc hoặc chấm dứt.",
   EXPIRED: "Hợp đồng đã qua ngày kết thúc và không còn hiệu lực thực hiện.",
-  TERMINATED: "Hợp đồng đã được chấm dứt trước hạn theo quyết định hoặc thỏa thuận của các bên.",
-  RENEWED: "Hợp đồng đã được thay thế hoặc tiếp nối bằng một hợp đồng gia hạn mới.",
-  CANCELLED: "Hồ sơ đã bị hủy và không tiếp tục quy trình ký kết hoặc thực hiện.",
+  TERMINATED:
+    "Hợp đồng đã được chấm dứt trước hạn theo quyết định hoặc thỏa thuận của các bên.",
+  RENEWED:
+    "Hợp đồng đã được thay thế hoặc tiếp nối bằng một hợp đồng gia hạn mới.",
+  CANCELLED:
+    "Hồ sơ đã bị hủy và không tiếp tục quy trình ký kết hoặc thực hiện.",
 };
-const LIFECYCLE_FLOW = ["DRAFT", "PROPOSAL", "UNDER_REVIEW", "PENDING_SIGNATURE", "ACTIVE", "EXPIRING", "EXPIRED"];
+const LIFECYCLE_FLOW = [
+  "DRAFT",
+  "PROPOSAL",
+  "UNDER_REVIEW",
+  "PENDING_SIGNATURE",
+  "ACTIVE",
+  "EXPIRING",
+  "EXPIRED",
+];
 
 export default function ServiceContractsPage() {
   const { t } = useTranslation("serviceContracts");
@@ -157,8 +285,19 @@ export default function ServiceContractsPage() {
   // Vai trò chỉ quyết định được TẠO hợp đồng mới. Quyền sửa/xóa trên một hồ sơ
   // cụ thể do backend trả về trong `myPermission`, vì nó còn phụ thuộc người tạo
   // đã chia sẻ tới mức nào — xem modules/service-contracts/service-contract-access.ts.
-  const canCreate = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION"] as Role[]);
-  const canTransferToBilling = hasRole(["MALL_DIRECTOR", "LEASING_MANAGER", "LEGAL", "OPERATION", "FINANCE"] as Role[]);
+  const canCreate = hasRole([
+    "MALL_DIRECTOR",
+    "LEASING_MANAGER",
+    "LEGAL",
+    "OPERATION",
+  ] as Role[]);
+  const canTransferToBilling = hasRole([
+    "MALL_DIRECTOR",
+    "LEASING_MANAGER",
+    "LEGAL",
+    "OPERATION",
+    "FINANCE",
+  ] as Role[]);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -184,19 +323,31 @@ export default function ServiceContractsPage() {
     });
   };
   const [showCreate, setShowCreate] = useState(false);
-  const [createPaymentDirection, setCreatePaymentDirection] = useState("PAYABLE");
+  const [createPaymentDirection, setCreatePaymentDirection] =
+    useState("PAYABLE");
+  const [createInitialValue, setCreateInitialValue] = useState("");
+  const [createVAT, setCreateVAT] = useState("0");
+  const [createCurrency, setCreateCurrency] = useState<CurrencyCode>("VND");
   const [createOriginalFile, setCreateOriginalFile] = useState<File>();
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
+  const [detailDrawerWidth, setDetailDrawerWidth] = useState<number>();
+  const [isDetailDrawerResizing, setIsDetailDrawerResizing] = useState(false);
   // Tab của hai modal. Cả hai panel luôn được render (chỉ ẩn bằng CSS) để giá
   // trị đang gõ dở ở tab thông tin không bị mất khi người dùng nhảy sang tab chia sẻ.
   const [createTab, setCreateTab] = useState<"info" | "share">("info");
   const [editTab, setEditTab] = useState<"info" | "share">("info");
   const [createShares, setCreateShares] = useState<ShareEntry[]>([]);
   const [editShares, setEditShares] = useState<ShareEntry[]>([]);
+  const [editInitialValue, setEditInitialValue] = useState("");
+  const [editVAT, setEditVAT] = useState("");
+  const [editCurrency, setEditCurrency] = useState<CurrencyCode>("VND");
+  const detailDrawerCloseTimer = useRef<ReturnType<typeof setTimeout>>();
+  const detailDrawerResize = useRef<{ startX: number; startWidth: number }>();
   // Skip on the very first render: this effect exists to reset selection when the operator
   // switches malls, not to wipe out a ?id= a notification link (or a bookmark/refresh) put in
   // the URL before this component ever mounted.
@@ -212,7 +363,18 @@ export default function ServiceContractsPage() {
     setPage(1);
   }, [selectedMallId]);
   const list = useQuery({
-    queryKey: ["service-contracts", selectedMallId, search, status, type, serviceCategory, valueBasis, paymentDirection, alert, page],
+    queryKey: [
+      "service-contracts",
+      selectedMallId,
+      search,
+      status,
+      type,
+      serviceCategory,
+      valueBasis,
+      paymentDirection,
+      alert,
+      page,
+    ],
     queryFn: () =>
       serviceContractsApi.list({
         mallId: selectedMallId || undefined,
@@ -228,7 +390,10 @@ export default function ServiceContractsPage() {
         limit: 25,
       }),
   });
-  const alertSummary = useQuery({ queryKey: ["service-contract-alerts", selectedMallId], queryFn: () => serviceContractsApi.alerts(30, selectedMallId || undefined) });
+  const alertSummary = useQuery({
+    queryKey: ["service-contract-alerts", selectedMallId],
+    queryFn: () => serviceContractsApi.alerts(30, selectedMallId || undefined),
+  });
   const detail = useQuery({
     queryKey: ["service-contract", selectedId],
     queryFn: () => serviceContractsApi.detail(selectedId!),
@@ -246,6 +411,81 @@ export default function ServiceContractsPage() {
   const canEdit = myPermission === "EDIT" || myPermission === "DELETE";
   const canDelete = myPermission === "DELETE";
   const canManageShares = !!item?.canManageShares;
+  useEffect(() => {
+    if (!selectedId || !item) {
+      setIsDetailDrawerOpen(false);
+      return;
+    }
+    if (detailDrawerCloseTimer.current) {
+      window.clearTimeout(detailDrawerCloseTimer.current);
+      detailDrawerCloseTimer.current = undefined;
+    }
+    const frame = window.requestAnimationFrame(() =>
+      setIsDetailDrawerOpen(true),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedId, item?.id]);
+  useEffect(
+    () => () => {
+      if (detailDrawerCloseTimer.current)
+        window.clearTimeout(detailDrawerCloseTimer.current);
+    },
+    [],
+  );
+  function closeDetailDrawer() {
+    setIsDetailDrawerOpen(false);
+    setIsDetailDrawerResizing(false);
+    detailDrawerResize.current = undefined;
+    if (detailDrawerCloseTimer.current)
+      window.clearTimeout(detailDrawerCloseTimer.current);
+    detailDrawerCloseTimer.current = window.setTimeout(() => {
+      setSelectedId(null);
+      setDetailDrawerWidth(undefined);
+      detailDrawerCloseTimer.current = undefined;
+    }, 300);
+  }
+  useEffect(() => {
+    if (!isDetailDrawerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeDetailDrawer();
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isDetailDrawerOpen]);
+  function startDetailDrawerResize(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const { minWidth, maxWidth } = getDetailDrawerBounds();
+    const startWidth = Math.max(
+      minWidth,
+      Math.min(maxWidth, detailDrawerWidth ?? minWidth),
+    );
+    detailDrawerResize.current = { startX: event.clientX, startWidth };
+    setDetailDrawerWidth(startWidth);
+    setIsDetailDrawerResizing(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+  function resizeDetailDrawer(event: ReactPointerEvent<HTMLButtonElement>) {
+    const resize = detailDrawerResize.current;
+    if (!resize) return;
+    const { minWidth, maxWidth } = getDetailDrawerBounds();
+    const nextWidth = resize.startWidth + resize.startX - event.clientX;
+    setDetailDrawerWidth(Math.max(minWidth, Math.min(maxWidth, nextWidth)));
+  }
+  function endDetailDrawerResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    detailDrawerResize.current = undefined;
+    setIsDetailDrawerResizing(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  }
   useEffect(() => setPendingStatus(null), [selectedId, item?.status]);
   // Nạp lại danh sách chia sẻ mỗi lần mở modal chỉnh sửa, để thao tác gỡ/thêm dở
   // dang ở lần mở trước không dính sang lần sau.
@@ -260,21 +500,41 @@ export default function ServiceContractsPage() {
         role: share.user?.role,
       })),
     );
+    setEditInitialValue(
+      item?.initialValue == null ? "" : String(item.initialValue),
+    );
+    setEditVAT(item?.VAT == null ? "" : String(item.VAT));
+    setEditCurrency((item?.currency as CurrencyCode) || "VND");
     setEditTab("info");
   }, [showEdit, item?.id]);
+  const createTotalValue = calculateContractTotal(
+    createInitialValue,
+    createVAT,
+  );
+  const editTotalValue = calculateContractTotal(editInitialValue, editVAT);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["service-contracts"] });
     qc.invalidateQueries({ queryKey: ["service-contract-alerts"] });
     qc.invalidateQueries({ queryKey: ["service-contract"] });
   };
   const create = useMutation({
-    mutationFn: async ({ data, originalFile }: { data: Record<string, unknown>; originalFile?: File }) => {
+    mutationFn: async ({
+      data,
+      originalFile,
+    }: {
+      data: Record<string, unknown>;
+      originalFile?: File;
+    }) => {
       const response = await serviceContractsApi.create(data);
       const created = (response as any)?.data ?? response;
       let uploadError: unknown;
       if (originalFile && created?.id) {
         try {
-          await serviceContractsApi.upload(created.id, originalFile, "CONTRACT");
+          await serviceContractsApi.upload(
+            created.id,
+            originalFile,
+            "CONTRACT",
+          );
         } catch (error) {
           uploadError = error;
         }
@@ -295,12 +555,20 @@ export default function ServiceContractsPage() {
       setCreateOriginalFile(undefined);
       setCreateShares([]);
       setCreateTab("info");
+      setCreateInitialValue("");
+      setCreateVAT("0");
+      setCreateCurrency("VND");
       if (created?.id) setSelectedId(created.id);
-      toast(uploadError ? {
-        title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
-        description: "Hợp đồng đã được lưu. Vui lòng thử tải lại tài liệu trong hồ sơ hợp đồng.",
-        variant: "destructive",
-      } : { title: "Đã tạo hợp đồng dịch vụ và lưu bản gốc" });
+      toast(
+        uploadError
+          ? {
+              title: "Đã tạo hợp đồng nhưng chưa tải được bản gốc",
+              description:
+                "Hợp đồng đã được lưu. Vui lòng thử tải lại tài liệu trong hồ sơ hợp đồng.",
+              variant: "destructive",
+            }
+          : { title: "Đã tạo hợp đồng dịch vụ và lưu bản gốc" },
+      );
     },
     onError: (e: any) =>
       toast({
@@ -356,7 +624,8 @@ export default function ServiceContractsPage() {
       }),
   });
   const renew = useMutation({
-    mutationFn: (data: Record<string, unknown>) => serviceContractsApi.renew(selectedId!, data),
+    mutationFn: (data: Record<string, unknown>) =>
+      serviceContractsApi.renew(selectedId!, data),
     onSuccess: (response: any) => {
       const renewed = response?.data ?? response;
       refresh();
@@ -364,17 +633,21 @@ export default function ServiceContractsPage() {
       if (renewed?.id) setSelectedId(renewed.id);
       toast({ title: "Đã tạo hợp đồng gia hạn" });
     },
-    onError: (e: any) => toast({
-      title: "Không thể gia hạn hợp đồng",
-      description: e?.response?.data?.message,
-      variant: "destructive",
-    }),
+    onError: (e: any) =>
+      toast({
+        title: "Không thể gia hạn hợp đồng",
+        description: e?.response?.data?.message,
+        variant: "destructive",
+      }),
   });
   function closeCreate() {
     setShowCreate(false);
     setCreateOriginalFile(undefined);
     setCreateShares([]);
     setCreateTab("info");
+    setCreateInitialValue("");
+    setCreateVAT("0");
+    setCreateCurrency("VND");
   }
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -384,12 +657,24 @@ export default function ServiceContractsPage() {
     const data = Object.fromEntries(
       Object.entries(raw).filter(([, value]) => value !== ""),
     ) as Record<string, unknown>;
-    for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
-      if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
+    for (const key of [
+      "initialValue",
+      "VAT",
+      "totalValue",
+      "invoiceLeadDays",
+      "defaultVatRate",
+      "paymentTermDays",
+    ]) {
+      if (data[key] !== undefined)
+        data[key] = Number(String(data[key]).replace(/,/g, ""));
     }
     // Tab thông tin và tab chia sẻ đi chung một request: hợp đồng và danh sách
     // chia sẻ được lưu trọn vẹn hoặc cùng thất bại.
-    if (createShares.length) data.shares = createShares.map(({ userId, permission }) => ({ userId, permission }));
+    if (createShares.length)
+      data.shares = createShares.map(({ userId, permission }) => ({
+        userId,
+        permission,
+      }));
     create.mutate({
       data,
       originalFile: createOriginalFile,
@@ -398,20 +683,37 @@ export default function ServiceContractsPage() {
   function submitEdit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
-    const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
-    for (const key of ["totalValue", "invoiceLeadDays", "defaultVatRate", "paymentTermDays"]) {
-      if (data[key] !== undefined) data[key] = Number(String(data[key]).replace(/,/g, ""));
+    const data = Object.fromEntries(
+      Object.entries(raw).filter(([, value]) => value !== ""),
+    ) as Record<string, unknown>;
+    for (const key of [
+      "initialValue",
+      "VAT",
+      "totalValue",
+      "invoiceLeadDays",
+      "defaultVatRate",
+      "paymentTermDays",
+    ]) {
+      if (data[key] !== undefined)
+        data[key] = Number(String(data[key]).replace(/,/g, ""));
     }
     // Người không phải người tạo không gửi trường này (backend cũng từ chối),
     // nên danh sách chia sẻ hiện có được giữ nguyên khi họ sửa nội dung hợp đồng.
-    if (canManageShares) data.shares = editShares.map(({ userId, permission }) => ({ userId, permission }));
+    if (canManageShares)
+      data.shares = editShares.map(({ userId, permission }) => ({
+        userId,
+        permission,
+      }));
     update.mutate(data);
   }
   function submitRenew(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
-    const data = Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== "")) as Record<string, unknown>;
-    if (data.totalValue !== undefined) data.totalValue = Number(String(data.totalValue).replace(/,/g, ""));
+    const data = Object.fromEntries(
+      Object.entries(raw).filter(([, value]) => value !== ""),
+    ) as Record<string, unknown>;
+    if (data.totalValue !== undefined)
+      data.totalValue = Number(String(data.totalValue).replace(/,/g, ""));
     renew.mutate(data);
   }
   async function upload(file?: File) {
@@ -423,12 +725,18 @@ export default function ServiceContractsPage() {
     } catch (e: any) {
       toast({
         title: "Không thể tải tài liệu",
-        description: e?.response?.data?.message || "Vui lòng kiểm tra định dạng, dung lượng file và thử lại.",
+        description:
+          e?.response?.data?.message ||
+          "Vui lòng kiểm tra định dạng, dung lượng file và thử lại.",
         variant: "destructive",
       });
     }
   }
-  async function openDocument(document: { id: string; fileName: string; mimeType?: string | null }) {
+  async function openDocument(document: {
+    id: string;
+    fileName: string;
+    mimeType?: string | null;
+  }) {
     try {
       await openOrDownloadAuthenticatedDocument(
         `/files/service-contract-documents/${document.id}`,
@@ -437,7 +745,8 @@ export default function ServiceContractsPage() {
     } catch (e: any) {
       toast({
         title: "Không thể mở hoặc tải tài liệu",
-        description: e?.response?.data?.message || e?.message || "Vui lòng thử lại.",
+        description:
+          e?.response?.data?.message || e?.message || "Vui lòng thử lại.",
         variant: "destructive",
       });
     }
@@ -466,7 +775,11 @@ export default function ServiceContractsPage() {
       URL.revokeObjectURL(url);
       toast({ title: "Đã xuất báo cáo Excel hợp đồng dịch vụ" });
     } catch (error: any) {
-      toast({ title: "Không thể xuất Excel", description: error?.response?.data?.message || error?.message, variant: "destructive" });
+      toast({
+        title: "Không thể xuất Excel",
+        description: error?.response?.data?.message || error?.message,
+        variant: "destructive",
+      });
     } finally {
       setExporting(false);
     }
@@ -484,27 +797,86 @@ export default function ServiceContractsPage() {
             <Download size={16} className="mr-2" />
             {exporting ? "Đang xuất..." : "Xuất Excel"}
           </Button>
-          {canCreate && <Button onClick={() => { setCreateShares([]); setCreateTab("info"); setShowCreate(true); }} disabled={!selectedMallId}>
-            <Plus size={16} className="mr-2" />
-            {t("create")}
-          </Button>}
+          {canCreate && (
+            <Button
+              onClick={() => {
+                setCreateShares([]);
+                setCreateTab("info");
+                setCreateInitialValue("");
+                setCreateVAT("0");
+                setCreateCurrency("VND");
+                setShowCreate(true);
+              }}
+              disabled={!selectedMallId}
+            >
+              <Plus size={16} className="mr-2" />
+              {t("create")}
+            </Button>
+          )}
         </div>
       </div>
       {!selectedMallId && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
-          Đang xem tổng hợp hợp đồng của tất cả Mall được phân quyền. Chọn một Mall cụ thể để tạo hợp đồng mới.
+          Đang xem tổng hợp hợp đồng của tất cả Mall được phân quyền. Chọn một
+          Mall cụ thể để tạo hợp đồng mới.
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ["EXPIRING", "Sắp hết hạn", alertData.expiring || 0, "border-amber-200 bg-amber-50 text-amber-800"],
-          ["RECEIVABLE", "Kỳ phải thu sắp đến", alertData.receivableDue || 0, "border-emerald-200 bg-emerald-50 text-emerald-800"],
-          ["PAYABLE", "Kỳ phải trả sắp đến", alertData.payableDue || 0, "border-blue-200 bg-blue-50 text-blue-800"],
-          ["OVERDUE", "Kỳ đã quá hạn", alertData.overdue || 0, "border-red-200 bg-red-50 text-red-800"],
-        ].map(([key, title, count, color]) => <button key={String(key)} className={`rounded-lg border p-4 text-left ${color} ${alert === key || paymentDirection === key ? "ring-2 ring-primary" : ""}`} onClick={() => { setPage(1); setStatus(""); if (key === "RECEIVABLE" || key === "PAYABLE") { setPaymentDirection(String(key)); setAlert("PAYMENT_DUE"); } else { setPaymentDirection(""); setAlert(String(key)); } }}>
-          <div className="flex items-center justify-between text-sm font-medium"><span>{title}</span>{key === "OVERDUE" ? <AlertTriangle size={18} /> : <Clock size={18} />}</div>
-          <div className="mt-2 text-2xl font-semibold">{String(count)}</div><div className="text-xs opacity-75">{key === "EXPIRING" ? "Trong 7 ngày tới" : "Trong 30 ngày tới"}</div>
-        </button>)}
+          [
+            "EXPIRING",
+            "Sắp hết hạn",
+            alertData.expiring || 0,
+            "border-amber-200 bg-amber-50 text-amber-800",
+          ],
+          [
+            "RECEIVABLE",
+            "Kỳ phải thu sắp đến",
+            alertData.receivableDue || 0,
+            "border-emerald-200 bg-emerald-50 text-emerald-800",
+          ],
+          [
+            "PAYABLE",
+            "Kỳ phải trả sắp đến",
+            alertData.payableDue || 0,
+            "border-blue-200 bg-blue-50 text-blue-800",
+          ],
+          [
+            "OVERDUE",
+            "Kỳ đã quá hạn",
+            alertData.overdue || 0,
+            "border-red-200 bg-red-50 text-red-800",
+          ],
+        ].map(([key, title, count, color]) => (
+          <button
+            key={String(key)}
+            className={`rounded-lg border p-4 text-left ${color} ${alert === key || paymentDirection === key ? "ring-2 ring-primary" : ""}`}
+            onClick={() => {
+              setPage(1);
+              setStatus("");
+              if (key === "RECEIVABLE" || key === "PAYABLE") {
+                setPaymentDirection(String(key));
+                setAlert("PAYMENT_DUE");
+              } else {
+                setPaymentDirection("");
+                setAlert(String(key));
+              }
+            }}
+          >
+            <div className="flex items-center justify-between text-sm font-medium">
+              <span>{title}</span>
+              {key === "OVERDUE" ? (
+                <AlertTriangle size={18} />
+              ) : (
+                <Clock size={18} />
+              )}
+            </div>
+            <div className="mt-2 text-2xl font-semibold">{String(count)}</div>
+            <div className="text-xs opacity-75">
+              {key === "EXPIRING" ? "Trong 7 ngày tới" : "Trong 30 ngày tới"}
+            </div>
+          </button>
+        ))}
       </div>
       <div className="flex flex-wrap gap-3">
         <div className="relative max-w-md flex-1">
@@ -516,13 +888,20 @@ export default function ServiceContractsPage() {
             className="pl-9"
             placeholder={t("search")}
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <select
           className="rounded-md border bg-background px-3 text-sm"
           value={status}
-          onChange={(e) => { setStatus(e.target.value); setAlert(""); setPage(1); }}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setAlert("");
+            setPage(1);
+          }}
         >
           <option value="">{t("allStatuses")}</option>
           {STATUSES.map((s) => (
@@ -531,13 +910,92 @@ export default function ServiceContractsPage() {
             </option>
           ))}
         </select>
-        <select className="rounded-md border bg-background px-3 text-sm" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}><option value="">Tất cả loại hợp đồng</option>{TYPES.map(value => <option key={value} value={value}>{t(serviceContractTypeTranslationKey(value))}</option>)}</select>
-        <select className="rounded-md border bg-background px-3 text-sm" value={serviceCategory} onChange={(e) => { setServiceCategory(e.target.value); setPage(1); }}><option value="">Tất cả nhóm dịch vụ</option>{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <select className="rounded-md border bg-background px-3 text-sm" value={valueBasis} onChange={(e) => { setValueBasis(e.target.value); setPage(1); }}><option value="">Tất cả cơ sở giá trị</option>{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-        <select className="rounded-md border bg-background px-3 text-sm" value={paymentDirection} onChange={(e) => { setPaymentDirection(e.target.value); setAlert(""); setPage(1); }}><option value="">Tất cả phải thu / phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option><option value="PAYABLE">Hợp đồng phải trả</option></select>
-        {(alert || type || serviceCategory || valueBasis || paymentDirection || status) && <Button variant="outline" onClick={() => { setStatus(""); setType(""); setServiceCategory(""); setValueBasis(""); setPaymentDirection(""); setAlert(""); setPage(1); }}>Đặt lại bộ lọc</Button>}
+        <select
+          className="rounded-md border bg-background px-3 text-sm"
+          value={type}
+          onChange={(e) => {
+            setType(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả loại hợp đồng</option>
+          {TYPES.map((value) => (
+            <option key={value} value={value}>
+              {t(serviceContractTypeTranslationKey(value))}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded-md border bg-background px-3 text-sm"
+          value={serviceCategory}
+          onChange={(e) => {
+            setServiceCategory(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả nhóm dịch vụ</option>
+          {SERVICE_CATEGORIES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded-md border bg-background px-3 text-sm"
+          value={valueBasis}
+          onChange={(e) => {
+            setValueBasis(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả cơ sở giá trị</option>
+          {VALUE_BASES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded-md border bg-background px-3 text-sm"
+          value={paymentDirection}
+          onChange={(e) => {
+            setPaymentDirection(e.target.value);
+            setAlert("");
+            setPage(1);
+          }}
+        >
+          <option value="">Tất cả phải thu / phải trả</option>
+          <option value="RECEIVABLE">Hợp đồng phải thu</option>
+          <option value="PAYABLE">Hợp đồng phải trả</option>
+        </select>
+        {(alert ||
+          type ||
+          serviceCategory ||
+          valueBasis ||
+          paymentDirection ||
+          status) && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStatus("");
+              setType("");
+              setServiceCategory("");
+              setValueBasis("");
+              setPaymentDirection("");
+              setAlert("");
+              setPage(1);
+            }}
+          >
+            Đặt lại bộ lọc
+          </Button>
+        )}
       </div>
-      <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} hợp đồng</span><span>Mặc định: tất cả trạng thái</span></div>
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          Hiển thị {rows.length} / {total.toLocaleString("vi-VN")} hợp đồng
+        </span>
+        <span>Mặc định: tất cả trạng thái</span>
+      </div>
       <div className="overflow-hidden rounded-lg border bg-card">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left">
@@ -567,7 +1025,12 @@ export default function ServiceContractsPage() {
                     {c.counterpartyName}
                   </div>
                 </td>
-                <td><div>{categoryLabel(c.serviceCategory || c.type)}</div><div className="text-xs text-muted-foreground">{t(serviceContractTypeTranslationKey(c.type))}</div></td>
+                <td>
+                  <div>{categoryLabel(c.serviceCategory || c.type)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t(serviceContractTypeTranslationKey(c.type))}
+                  </div>
+                </td>
                 <td>
                   {c.startDate
                     ? new Date(c.startDate).toLocaleDateString()
@@ -575,8 +1038,14 @@ export default function ServiceContractsPage() {
                   – {c.endDate ? new Date(c.endDate).toLocaleDateString() : "—"}
                 </td>
                 <td className="text-right">
-                  {formatMoneyAmount(Number(c.totalValue), c.currency as CurrencyCode)} {c.currency}
-                  <div className="text-xs text-muted-foreground">{valueBasisLabel(c.valueBasis || "ONE_TIME")}</div>
+                  {formatMoneyAmount(
+                    Number(c.totalValue),
+                    c.currency as CurrencyCode,
+                  )}{" "}
+                  {c.currency}
+                  <div className="text-xs text-muted-foreground">
+                    {valueBasisLabel(c.valueBasis || "ONE_TIME")}
+                  </div>
                 </td>
                 <td className="px-3">
                   <Badge variant="outline">{t(`statuses.${c.status}`)}</Badge>
@@ -593,7 +1062,31 @@ export default function ServiceContractsPage() {
           </div>
         )}
       </div>
-      {totalPages > 1 && <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm"><span>Trang {page} / {totalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Trang trước</Button><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)}>Trang sau</Button></div></div>}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm">
+          <span>
+            Trang {page} / {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => value - 1)}
+            >
+              Trang trước
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              Trang sau
+            </Button>
+          </div>
+        </div>
+      )}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
@@ -603,64 +1096,278 @@ export default function ServiceContractsPage() {
             <div className="flex justify-between border-b pb-4">
               <div>
                 <h2 className="text-xl font-semibold">Tạo hợp đồng dịch vụ</h2>
-                <p className="text-sm text-muted-foreground">Nhập đầy đủ thông tin pháp lý, tài chính và bản gốc trong một lần.</p>
+                <p className="text-sm text-muted-foreground">
+                  Nhập đầy đủ thông tin pháp lý, tài chính và bản gốc trong một
+                  lần.
+                </p>
               </div>
               <button type="button" onClick={closeCreate}>
                 <X />
               </button>
             </div>
-            <ModalTabs value={createTab} onChange={setCreateTab} infoLabel={t("tabCreate")} shareLabel={t("tabShare")} shareCount={createShares.length} />
-            <div className={createTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"}>
-            <h3 className="col-span-2 font-semibold">Thông tin pháp lý</h3>
-            <label className="text-sm">Số hợp đồng pháp lý <RequiredMark /><Input name="contractNumber" required placeholder="Nhập đúng số trên hợp đồng đã/phải ký" /></label>
-            <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" required placeholder="Tên hợp đồng" /></label>
-            <label className="text-sm">Tên đối tác <RequiredMark /><Input name="counterpartyName" required placeholder="Tên pháp lý của đối tác" /></label>
-            <label className="text-sm">Mã số thuế<Input name="counterpartyTax" placeholder="Mã số thuế" /></label>
-            <label className="text-sm">Email<Input name="counterpartyEmail" type="email" placeholder="Email đối tác" /></label>
-            <label className="text-sm">Điện thoại<Input name="counterpartyPhone" placeholder="Số điện thoại" /></label>
-            <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" placeholder="Địa chỉ pháp lý" /></label>
-
-            <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">Phân loại và giá trị</h3>
-            <label className="text-sm">Loại hợp đồng<select name="type" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-            <label className="text-sm">Chiều thanh toán<select name="paymentDirection" value={createPaymentDirection} onChange={(e) => setCreatePaymentDirection(e.target.value)} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Hợp đồng phải trả</option><option value="RECEIVABLE">Hợp đồng phải thu</option></select></label>
-            <label className="text-sm">Nhóm sản phẩm/dịch vụ <RequiredMark /><select name="serviceCategory" required defaultValue="MAINTENANCE" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="text-sm">Mô tả chi tiết sản phẩm/dịch vụ<Input name="productName" placeholder="Thông tin chi tiết (không dùng để phân nhóm báo cáo)" /></label>
-            <label className="text-sm">Giá trị hợp đồng <RequiredMark /><Input name="totalValue" type="number" min="0" required placeholder="Giá trị chưa/đã gồm VAT theo hợp đồng" /></label>
-            <label className="text-sm">Cơ sở giá trị <RequiredMark /><select name="valueBasis" required defaultValue="ONE_TIME" className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="text-sm">Tiền tệ<select name="currency" defaultValue="VND" className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
-            <label className="text-sm">Ngày ký<Input name="signedDate" type="date" /></label>
-            <label className="text-sm">
-              Ngày bắt đầu <RequiredMark />
-              <Input name="startDate" type="date" required />
-            </label>
-            <label className="text-sm">
-              Ngày kết thúc <RequiredMark />
-              <Input name="endDate" type="date" required />
-            </label>
-
-            {createPaymentDirection === "RECEIVABLE" && <>
-              <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={7} /></label>
-              <label className="text-sm">VAT mặc định (%)<Input name="defaultVatRate" type="number" min="0" max="100" defaultValue={10} /></label>
-              <label className="text-sm">Hạn thanh toán (ngày)<Input name="paymentTermDays" type="number" min="0" defaultValue={15} /></label>
-            </>}
-
-            <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">Tài liệu và ghi chú</h3>
-            <label className="col-span-2 rounded-lg border border-dashed p-4 text-sm">
-              <span className="mb-2 block font-medium">Hợp đồng bản gốc</span>
-              <span className="mb-3 block text-xs text-muted-foreground">PDF, Word hoặc ảnh; tối đa 30 MB. File sẽ được lưu ngay sau khi tạo hồ sơ.</span>
-              <Input
-                name="originalDocument"
-                type="file"
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                onChange={(event) => setCreateOriginalFile(event.target.files?.[0])}
-              />
-            </label>
-            <textarea
-              name="notes"
-              className="col-span-2 min-h-20 rounded-md border bg-background p-3"
-              placeholder="Ghi chú"
+            <ModalTabs
+              value={createTab}
+              onChange={setCreateTab}
+              infoLabel={t("tabCreate")}
+              shareLabel={t("tabShare")}
+              shareCount={createShares.length}
             />
-            <input type="hidden" name="mallId" value={selectedMallId || ""} />
+            <div
+              className={
+                createTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"
+              }
+            >
+              <h3 className="col-span-2 font-semibold">Thông tin pháp lý</h3>
+              <label className="text-sm">
+                Số hợp đồng pháp lý <RequiredMark />
+                <Input
+                  name="contractNumber"
+                  required
+                  placeholder="Nhập đúng số trên hợp đồng đã/phải ký"
+                />
+              </label>
+              <label className="text-sm">
+                Tên hợp đồng <RequiredMark />
+                <Input name="title" required placeholder="Tên hợp đồng" />
+              </label>
+              <label className="text-sm">
+                Tên đối tác <RequiredMark />
+                <Input
+                  name="counterpartyName"
+                  required
+                  placeholder="Tên pháp lý của đối tác"
+                />
+              </label>
+              <label className="text-sm">
+                Mã số thuế
+                <Input name="counterpartyTax" placeholder="Mã số thuế" />
+              </label>
+              <label className="text-sm">
+                Email
+                <Input
+                  name="counterpartyEmail"
+                  type="email"
+                  placeholder="Email đối tác"
+                />
+              </label>
+              <label className="text-sm">
+                Điện thoại
+                <Input name="counterpartyPhone" placeholder="Số điện thoại" />
+              </label>
+              <label className="col-span-2 text-sm">
+                Địa chỉ
+                <Input
+                  name="counterpartyAddress"
+                  placeholder="Địa chỉ pháp lý"
+                />
+              </label>
+
+              <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">
+                Phân loại và giá trị
+              </h3>
+              <label className="text-sm">
+                Loại hợp đồng
+                <select
+                  name="type"
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {TYPES.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Chiều thanh toán
+                <select
+                  name="paymentDirection"
+                  value={createPaymentDirection}
+                  onChange={(e) => setCreatePaymentDirection(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  <option value="PAYABLE">Hợp đồng phải trả</option>
+                  <option value="RECEIVABLE">Hợp đồng phải thu</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                Nhóm sản phẩm/dịch vụ <RequiredMark />
+                <select
+                  name="serviceCategory"
+                  required
+                  defaultValue="MAINTENANCE"
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {SERVICE_CATEGORIES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Mô tả chi tiết sản phẩm/dịch vụ
+                <Input
+                  name="productName"
+                  placeholder="Thông tin chi tiết (không dùng để phân nhóm báo cáo)"
+                />
+              </label>
+              <div className="col-span-2">
+                <div className="mt-1 grid grid-cols-10 gap-3">
+                  <label className="col-span-8 text-sm">
+                    Giá trị hợp đồng <RequiredMark />
+                    <Input
+                      name="initialValue"
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      value={createInitialValue}
+                      onChange={(event) =>
+                        setCreateInitialValue(event.target.value)
+                      }
+                      placeholder="Giá trị hợp đồng (chưa VAT)"
+                    />
+                  </label>
+                  <label className="col-span-2 text-sm">
+                    VAT <RequiredMark />
+                    <div className="relative">
+                      <Input
+                        name="VAT"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="any"
+                        required
+                        value={createVAT}
+                        onChange={(event) => setCreateVAT(event.target.value)}
+                        className="pr-7"
+                        aria-describedby="create-contract-vat-unit"
+                      />
+                      <span
+                        id="create-contract-vat-unit"
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                      >
+                        %
+                      </span>
+                    </div>
+                  </label>
+                </div>
+                <input
+                  type="hidden"
+                  name="totalValue"
+                  value={createTotalValue ?? ""}
+                  readOnly
+                />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Giá trị hợp đồng bao gồm VAT:{" "}
+                  <span className="font-medium text-foreground">
+                    {createTotalValue == null
+                      ? "—"
+                      : formatMoney(createTotalValue, createCurrency)}
+                  </span>
+                </p>
+              </div>
+              <label className="text-sm">
+                Cơ sở giá trị <RequiredMark />
+                <select
+                  name="valueBasis"
+                  required
+                  defaultValue="ONE_TIME"
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {VALUE_BASES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Tiền tệ
+                <select
+                  name="currency"
+                  value={createCurrency}
+                  onChange={(event) =>
+                    setCreateCurrency(event.target.value as CurrencyCode)
+                  }
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  <option value="VND">VND</option>
+                  <option value="USD">USD</option>
+                  <option value="MMK">MMK</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                Ngày ký
+                <Input name="signedDate" type="date" />
+              </label>
+              <label className="text-sm">
+                Ngày bắt đầu <RequiredMark />
+                <Input name="startDate" type="date" required />
+              </label>
+              <label className="text-sm">
+                Ngày kết thúc <RequiredMark />
+                <Input name="endDate" type="date" required />
+              </label>
+
+              {createPaymentDirection === "RECEIVABLE" && (
+                <>
+                  <label className="text-sm">
+                    Xuất hóa đơn trước (ngày)
+                    <Input
+                      name="invoiceLeadDays"
+                      type="number"
+                      min="0"
+                      defaultValue={7}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    VAT mặc định (%)
+                    <Input
+                      name="defaultVatRate"
+                      type="number"
+                      min="0"
+                      max="100"
+                      defaultValue={10}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Hạn thanh toán (ngày)
+                    <Input
+                      name="paymentTermDays"
+                      type="number"
+                      min="0"
+                      defaultValue={15}
+                    />
+                  </label>
+                </>
+              )}
+
+              <h3 className="col-span-2 mt-2 border-t pt-4 font-semibold">
+                Tài liệu và ghi chú
+              </h3>
+              <label className="col-span-2 rounded-lg border border-dashed p-4 text-sm">
+                <span className="mb-2 block font-medium">Hợp đồng bản gốc</span>
+                <span className="mb-3 block text-xs text-muted-foreground">
+                  PDF, Word hoặc ảnh; tối đa 30 MB. File sẽ được lưu ngay sau
+                  khi tạo hồ sơ.
+                </span>
+                <Input
+                  name="originalDocument"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={(event) =>
+                    setCreateOriginalFile(event.target.files?.[0])
+                  }
+                />
+              </label>
+              <textarea
+                name="notes"
+                className="col-span-2 min-h-20 rounded-md border bg-background p-3"
+                placeholder="Ghi chú"
+              />
+              <input type="hidden" name="mallId" value={selectedMallId || ""} />
             </div>
             <div className={createTab === "share" ? "" : "hidden"}>
               <ServiceContractShareTab
@@ -673,7 +1380,11 @@ export default function ServiceContractsPage() {
               <Button type="button" variant="outline" onClick={closeCreate}>
                 Hủy
               </Button>
-              <Button disabled={create.isPending}>{create.isPending ? "Đang tạo và lưu tài liệu..." : "Tạo hợp đồng"}</Button>
+              <Button disabled={create.isPending}>
+                {create.isPending
+                  ? "Đang tạo và lưu tài liệu..."
+                  : "Tạo hợp đồng"}
+              </Button>
             </div>
           </form>
         </div>
@@ -683,7 +1394,9 @@ export default function ServiceContractsPage() {
           <div className="h-full w-full max-w-2xl overflow-y-auto bg-background p-6 shadow-xl">
             <div className="flex justify-between">
               <h2 className="text-xl font-semibold">Không tìm thấy hợp đồng</h2>
-              <button onClick={() => setSelectedId(null)}><X /></button>
+              <button onClick={() => setSelectedId(null)}>
+                <X />
+              </button>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
               Hợp đồng dịch vụ này không tồn tại hoặc đã bị xóa.
@@ -691,154 +1404,470 @@ export default function ServiceContractsPage() {
           </div>
         </div>
       )}
-      {selectedId && item && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
-          <div className="h-full w-full max-w-2xl overflow-y-auto bg-background p-6 shadow-xl">
-            <div className="flex justify-between">
-              <div>
-                <div className="font-mono text-sm text-muted-foreground">
-                  {item.contractNumber}
-                </div>
-                <h2 className="text-xl font-semibold">{item.title}</h2>
-              </div>
-              <div className="flex gap-2">
-                {canEdit && EDITABLE_STATUSES.includes(item.status) && <Button size="sm" variant="outline" onClick={() => setShowEdit(true)}><Pencil size={14} className="mr-2" />Chỉnh sửa</Button>}
-                {/* {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>} */}
-                <button onClick={() => setSelectedId(null)}><X /></button>
-              </div>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Đối tác</span>
-                <div className="font-medium">{item.counterpartyName}</div>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Giá trị</span>
-                <div className="font-medium">
-                  {formatMoney(Number(item.totalValue), item.currency as CurrencyCode)}
-                </div>
-                <div className="text-xs text-muted-foreground">{valueBasisLabel(item.valueBasis || "ONE_TIME")}</div>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Nhóm dịch vụ</span>
-                <div className="font-medium">{categoryLabel(item.serviceCategory || "OTHER")}</div>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Bắt đầu</span>
-                <div>
-                  {item.startDate
-                    ? new Date(item.startDate).toLocaleDateString("vi-VN")
-                    : "—"}
-                </div>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Kết thúc</span>
-                <div>
-                  {item.endDate
-                    ? new Date(item.endDate).toLocaleDateString("vi-VN")
-                    : "—"}
-                </div>
-                <div className={`text-xs font-medium ${getServiceContractExpiryPresentation(item.endDate).className}`}>
-                  {getServiceContractExpiryPresentation(item.endDate).text}
-                </div>
-              </div>
-            </div>
-            <div className="mt-5">
-              <ContractLifecycle
-                status={item.status}
-                canEdit={canEdit}
-                pendingStatus={pendingStatus}
-                isPending={changeStatus.isPending}
-                onSelect={setPendingStatus}
-                onCancel={() => setPendingStatus(null)}
-                onConfirm={() => pendingStatus && changeStatus.mutate(pendingStatus)}
+      {selectedId &&
+        item &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[105]">
+            <div
+              aria-hidden="true"
+              data-testid="service-contract-detail-drawer-backdrop"
+              className={`absolute inset-0 bg-black/40 transition-opacity duration-200 ${isDetailDrawerOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
+              onPointerDown={closeDetailDrawer}
+            />
+            <aside
+              aria-labelledby="service-contract-detail-title"
+              aria-modal="true"
+              role="dialog"
+              tabIndex={-1}
+              className={`absolute inset-y-0 right-0 z-[110] flex max-w-[80vw] flex-col bg-background shadow-2xl ${isDetailDrawerResizing ? "transition-transform duration-300 ease-out" : "transition-[transform,width] duration-300 ease-out"} ${isDetailDrawerOpen ? "translate-x-0" : "translate-x-full"}`}
+              style={{
+                width: `${detailDrawerWidth ?? getDetailDrawerBounds().minWidth}px`,
+              }}
+            >
+              <button
+                aria-label="Kéo giãn chiều rộng khung chi tiết hợp đồng"
+                className="absolute -left-[3px] inset-y-0 z-10 w-[6px] cursor-col-resize border-x border-black/35 bg-background transition-[background-color,border-color] duration-150 hover:border-primary hover:bg-primary/10 focus-visible:border-primary focus-visible:bg-primary/10 focus-visible:outline-none"
+                onPointerCancel={endDetailDrawerResize}
+                onPointerDown={startDetailDrawerResize}
+                onPointerMove={resizeDetailDrawer}
+                onPointerUp={endDetailDrawerResize}
+                type="button"
               />
-            </div>
-            <div className="mt-6">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-semibold">Tài liệu hợp đồng</h3>
-                {canEdit && <label className="cursor-pointer rounded-md border px-3 py-2 text-sm">
-                  <Upload className="mr-2 inline" size={14} />
-                  Upload
-                  <input
-                    className="hidden"
-                    type="file"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    onChange={(e) => upload(e.target.files?.[0])}
-                  />
-                </label>}
-              </div>
-              <div className="divide-y rounded-lg border">
-                {item.documents?.map((d: any) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => void openDocument(d)}
-                    className="flex w-full justify-between p-3 text-left hover:bg-muted"
-                  >
-                    <span>{d.fileName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      v{d.version} · {(d.fileSize / 1024 / 1024).toFixed(1)} MB
-                    </span>
-                  </button>
-                ))}
-                {!item.documents?.length && (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    Chưa có tài liệu
+              <div className="h-full overflow-y-auto p-6">
+                <div className="flex justify-between">
+                  <div>
+                    <div className="font-mono text-sm text-muted-foreground">
+                      {item.contractNumber}
+                    </div>
+                    <h2
+                      id="service-contract-detail-title"
+                      className="text-xl font-semibold"
+                    >
+                      {item.title}
+                    </h2>
                   </div>
-                )}
-              </div>
-            </div>
-            <ContractOperations item={item} onChanged={refresh} onOpenDocument={openDocument} canEdit={canEdit} canTransferToBilling={canTransferToBilling} />
-            <div className="mt-6">
-              <h3 className="mb-2 font-semibold">Lịch sử</h3>
-              <div className="space-y-2">
-                {item.events?.map((ev: any) => (
-                  <div key={ev.id} className="border-l-2 pl-3 text-sm">
-                    <div className="font-medium">{ev.eventType}</div>
+                  <div className="flex gap-2">
+                    {canEdit && EDITABLE_STATUSES.includes(item.status) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowEdit(true)}
+                      >
+                        <Pencil size={14} className="mr-2" />
+                        Chỉnh sửa
+                      </Button>
+                    )}
+                    {/* {canEdit && ["EXPIRING", "EXPIRED"].includes(item.status) && <Button size="sm" onClick={() => setShowRenew(true)}>Gia hạn</Button>} */}
+                    <button
+                      aria-label="Đóng chi tiết hợp đồng"
+                      onClick={closeDetailDrawer}
+                    >
+                      <X />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-5 grid grid-cols-2 gap-4 rounded-lg border p-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Đối tác</span>
+                    <div className="font-medium">{item.counterpartyName}</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Giá trị</span>
+                    <div className="font-medium">
+                      {formatMoney(
+                        Number(item.totalValue),
+                        item.currency as CurrencyCode,
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(ev.createdAt).toLocaleString("vi-VN")}
+                      {valueBasisLabel(item.valueBasis || "ONE_TIME")}
                     </div>
                   </div>
-                ))}
+                  <div>
+                    <span className="text-muted-foreground">Nhóm dịch vụ</span>
+                    <div className="font-medium">
+                      {categoryLabel(item.serviceCategory || "OTHER")}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Bắt đầu</span>
+                    <div>
+                      {item.startDate
+                        ? new Date(item.startDate).toLocaleDateString("vi-VN")
+                        : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Kết thúc</span>
+                    <div>
+                      {item.endDate
+                        ? new Date(item.endDate).toLocaleDateString("vi-VN")
+                        : "—"}
+                    </div>
+                    <div
+                      className={`text-xs font-medium ${getServiceContractExpiryPresentation(item.endDate).className}`}
+                    >
+                      {getServiceContractExpiryPresentation(item.endDate).text}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <ContractLifecycle
+                    status={item.status}
+                    canEdit={canEdit}
+                    pendingStatus={pendingStatus}
+                    isPending={changeStatus.isPending}
+                    onSelect={setPendingStatus}
+                    onCancel={() => setPendingStatus(null)}
+                    onConfirm={() =>
+                      pendingStatus && changeStatus.mutate(pendingStatus)
+                    }
+                  />
+                </div>
+                <div className="mt-6">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="font-semibold">Tài liệu hợp đồng</h3>
+                    {canEdit && (
+                      <label className="cursor-pointer rounded-md border px-3 py-2 text-sm">
+                        <Upload className="mr-2 inline" size={14} />
+                        Upload
+                        <input
+                          className="hidden"
+                          type="file"
+                          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                          onChange={(e) => upload(e.target.files?.[0])}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <div className="divide-y rounded-lg border">
+                    {item.documents?.map((d: any) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => void openDocument(d)}
+                        className="flex w-full justify-between p-3 text-left hover:bg-muted"
+                      >
+                        <span>{d.fileName}</span>
+                        <span className="text-xs text-muted-foreground">
+                          v{d.version} · {(d.fileSize / 1024 / 1024).toFixed(1)}{" "}
+                          MB
+                        </span>
+                      </button>
+                    ))}
+                    {!item.documents?.length && (
+                      <div className="p-6 text-center text-sm text-muted-foreground">
+                        Chưa có tài liệu
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <ContractOperations
+                  item={item}
+                  onChanged={refresh}
+                  onOpenDocument={openDocument}
+                  canEdit={canEdit}
+                  canTransferToBilling={canTransferToBilling}
+                />
+                <div className="mt-6">
+                  <h3 className="mb-2 font-semibold">Lịch sử</h3>
+                  <div className="space-y-2">
+                    {item.events?.map((ev: any) => (
+                      <div key={ev.id} className="border-l-2 pl-3 text-sm">
+                        <div className="font-medium">{ev.eventType}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(ev.createdAt).toLocaleString("vi-VN")}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </aside>
+          </div>,
+          document.body,
+        )}
       {showEdit && item && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <form onSubmit={submitEdit} className="flex max-h-[90vh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+          <form
+            onSubmit={submitEdit}
+            className="flex max-h-[90vh] w-full max-w-3xl flex-col gap-4 overflow-y-auto rounded-xl bg-background p-6 shadow-xl"
+          >
             <div className="flex items-center justify-between border-b pb-4">
-              <div><h2 className="text-xl font-semibold">Chỉnh sửa hợp đồng</h2><p className="font-mono text-sm text-muted-foreground">{item.contractNumber}</p></div>
-              <button type="button" onClick={() => setShowEdit(false)}><X /></button>
+              <div>
+                <h2 className="text-xl font-semibold">Chỉnh sửa hợp đồng</h2>
+                <p className="font-mono text-sm text-muted-foreground">
+                  {item.contractNumber}
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowEdit(false)}>
+                <X />
+              </button>
             </div>
-            <ModalTabs value={editTab} onChange={setEditTab} infoLabel={t("tabEdit")} shareLabel={t("tabShare")} shareCount={editShares.length} />
-            <div className={editTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"}>
-            <label className="text-sm">Số hợp đồng <RequiredMark /><Input name="contractNumber" defaultValue={item.contractNumber || ""} required /></label>
-            <label className="text-sm">Tên hợp đồng <RequiredMark /><Input name="title" defaultValue={item.title || ""} required /></label>
-            <label className="text-sm">Tên đối tác <RequiredMark /><Input name="counterpartyName" defaultValue={item.counterpartyName || ""} required /></label>
-            <label className="text-sm">Mã số thuế<Input name="counterpartyTax" defaultValue={item.counterpartyTax || ""} /></label>
-            <label className="text-sm">Email<Input name="counterpartyEmail" type="email" defaultValue={item.counterpartyEmail || ""} /></label>
-            <label className="text-sm">Điện thoại<Input name="counterpartyPhone" defaultValue={item.counterpartyPhone || ""} /></label>
-            <label className="col-span-2 text-sm">Địa chỉ<Input name="counterpartyAddress" defaultValue={item.billingParty?.address || ""} /></label>
-            <label className="text-sm">Loại hợp đồng<select name="type" defaultValue={item.type} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{TYPES.map(type => <option key={type} value={type}>{t(serviceContractTypeTranslationKey(type))}</option>)}</select></label>
-            <label className="text-sm">Chiều thanh toán<select name="paymentDirection" defaultValue={item.paymentDirection} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="PAYABLE">Phải trả</option><option value="RECEIVABLE">Phải thu</option></select></label>
-            <label className="text-sm">Nhóm sản phẩm/dịch vụ<select name="serviceCategory" defaultValue={item.serviceCategory || "OTHER"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{SERVICE_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="text-sm">Mô tả chi tiết<Input name="productName" defaultValue={item.productName || ""} /></label>
-            <label className="text-sm">Giá trị hợp đồng<Input name="totalValue" type="number" min="0" defaultValue={item.totalValue ?? 0} /></label>
-            <label className="text-sm">Cơ sở giá trị<select name="valueBasis" defaultValue={item.valueBasis || "ONE_TIME"} className="mt-1 h-10 w-full rounded-md border bg-background px-3">{VALUE_BASES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label className="text-sm">Ngày ký<Input name="signedDate" type="date" defaultValue={item.signedDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Ngày bắt đầu <RequiredMark /><Input name="startDate" type="date" required defaultValue={item.startDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Ngày kết thúc <RequiredMark /><Input name="endDate" type="date" required defaultValue={item.endDate?.slice(0, 10) || ""} /></label>
-            <label className="text-sm">Tiền tệ<select name="currency" defaultValue={item.currency || "VND"} className="mt-1 h-10 w-full rounded-md border bg-background px-3"><option value="VND">VND</option><option value="USD">USD</option><option value="MMK">MMK</option></select></label>
-            {item.paymentDirection === "RECEIVABLE" && <>
-              <label className="text-sm">Xuất hóa đơn trước (ngày)<Input name="invoiceLeadDays" type="number" min="0" defaultValue={item.invoiceLeadDays ?? 7} /></label>
-              <label className="text-sm">VAT mặc định (%)<Input name="defaultVatRate" type="number" min="0" defaultValue={item.defaultVatRate ?? 10} /></label>
-              <label className="text-sm">Hạn thanh toán (ngày)<Input name="paymentTermDays" type="number" min="0" defaultValue={item.paymentTermDays ?? 15} /></label>
-            </>}
-            <label className="col-span-2 text-sm">Ghi chú<textarea name="notes" defaultValue={item.notes || ""} className="mt-1 min-h-24 w-full rounded-md border bg-background p-3" /></label>
-            <input type="hidden" name="mallId" value={item.mallId} />
+            <ModalTabs
+              value={editTab}
+              onChange={setEditTab}
+              infoLabel={t("tabEdit")}
+              shareLabel={t("tabShare")}
+              shareCount={editShares.length}
+            />
+            <div
+              className={
+                editTab === "info" ? "grid grid-cols-2 gap-4" : "hidden"
+              }
+            >
+              <label className="text-sm">
+                Số hợp đồng <RequiredMark />
+                <Input
+                  name="contractNumber"
+                  defaultValue={item.contractNumber || ""}
+                  required
+                />
+              </label>
+              <label className="text-sm">
+                Tên hợp đồng <RequiredMark />
+                <Input name="title" defaultValue={item.title || ""} required />
+              </label>
+              <label className="text-sm">
+                Tên đối tác <RequiredMark />
+                <Input
+                  name="counterpartyName"
+                  defaultValue={item.counterpartyName || ""}
+                  required
+                />
+              </label>
+              <label className="text-sm">
+                Mã số thuế
+                <Input
+                  name="counterpartyTax"
+                  defaultValue={item.counterpartyTax || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Email
+                <Input
+                  name="counterpartyEmail"
+                  type="email"
+                  defaultValue={item.counterpartyEmail || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Điện thoại
+                <Input
+                  name="counterpartyPhone"
+                  defaultValue={item.counterpartyPhone || ""}
+                />
+              </label>
+              <label className="col-span-2 text-sm">
+                Địa chỉ
+                <Input
+                  name="counterpartyAddress"
+                  defaultValue={item.billingParty?.address || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Loại hợp đồng
+                <select
+                  name="type"
+                  defaultValue={item.type}
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {t(serviceContractTypeTranslationKey(type))}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Chiều thanh toán
+                <select
+                  name="paymentDirection"
+                  defaultValue={item.paymentDirection}
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  <option value="PAYABLE">Phải trả</option>
+                  <option value="RECEIVABLE">Phải thu</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                Nhóm sản phẩm/dịch vụ
+                <select
+                  name="serviceCategory"
+                  defaultValue={item.serviceCategory || "OTHER"}
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {SERVICE_CATEGORIES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Mô tả chi tiết
+                <Input
+                  name="productName"
+                  defaultValue={item.productName || ""}
+                />
+              </label>
+              <div className="col-span-2">
+                <div className="text-sm">Giá trị hợp đồng</div>
+                <div className="mt-1 grid grid-cols-10 gap-3">
+                  <label className="col-span-8 text-sm">
+                    Giá trị ban đầu
+                    <Input
+                      name="initialValue"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editInitialValue}
+                      onChange={(event) =>
+                        setEditInitialValue(event.target.value)
+                      }
+                      placeholder="Giá trị ban đầu (chưa VAT)"
+                    />
+                  </label>
+                  <label className="col-span-2 text-sm">
+                    VAT
+                    <div className="relative">
+                      <Input
+                        name="VAT"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="any"
+                        value={editVAT}
+                        onChange={(event) => setEditVAT(event.target.value)}
+                        className="pr-7"
+                        aria-describedby="edit-contract-vat-unit"
+                      />
+                      <span
+                        id="edit-contract-vat-unit"
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+                      >
+                        %
+                      </span>
+                    </div>
+                  </label>
+                </div>
+                <input
+                  type="hidden"
+                  name="totalValue"
+                  value={editTotalValue ?? ""}
+                  readOnly
+                />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Giá trị hợp đồng này:{" "}
+                  <span className="font-medium text-foreground">
+                    {editTotalValue == null
+                      ? formatMoney(item.totalValue, editCurrency)
+                      : formatMoney(editTotalValue, editCurrency)}
+                  </span>
+                </p>
+                {editTotalValue == null && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Hợp đồng cũ chưa có tách VAT; nhập đủ hai ô để cập nhật giá
+                    trị.
+                  </p>
+                )}
+              </div>
+              <label className="text-sm">
+                Cơ sở giá trị
+                <select
+                  name="valueBasis"
+                  defaultValue={item.valueBasis || "ONE_TIME"}
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  {VALUE_BASES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                Ngày ký
+                <Input
+                  name="signedDate"
+                  type="date"
+                  defaultValue={item.signedDate?.slice(0, 10) || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Ngày bắt đầu <RequiredMark />
+                <Input
+                  name="startDate"
+                  type="date"
+                  required
+                  defaultValue={item.startDate?.slice(0, 10) || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Ngày kết thúc <RequiredMark />
+                <Input
+                  name="endDate"
+                  type="date"
+                  required
+                  defaultValue={item.endDate?.slice(0, 10) || ""}
+                />
+              </label>
+              <label className="text-sm">
+                Tiền tệ
+                <select
+                  name="currency"
+                  value={editCurrency}
+                  onChange={(event) =>
+                    setEditCurrency(event.target.value as CurrencyCode)
+                  }
+                  className="mt-1 h-10 w-full rounded-md border bg-background px-3"
+                >
+                  <option value="VND">VND</option>
+                  <option value="USD">USD</option>
+                  <option value="MMK">MMK</option>
+                </select>
+              </label>
+              {item.paymentDirection === "RECEIVABLE" && (
+                <>
+                  <label className="text-sm">
+                    Xuất hóa đơn trước (ngày)
+                    <Input
+                      name="invoiceLeadDays"
+                      type="number"
+                      min="0"
+                      defaultValue={item.invoiceLeadDays ?? 7}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    VAT mặc định (%)
+                    <Input
+                      name="defaultVatRate"
+                      type="number"
+                      min="0"
+                      defaultValue={item.defaultVatRate ?? 10}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Hạn thanh toán (ngày)
+                    <Input
+                      name="paymentTermDays"
+                      type="number"
+                      min="0"
+                      defaultValue={item.paymentTermDays ?? 15}
+                    />
+                  </label>
+                </>
+              )}
+              <label className="col-span-2 text-sm">
+                Ghi chú
+                <textarea
+                  name="notes"
+                  defaultValue={item.notes || ""}
+                  className="mt-1 min-h-24 w-full rounded-md border bg-background p-3"
+                />
+              </label>
+              <input type="hidden" name="mallId" value={item.mallId} />
             </div>
             <div className={editTab === "share" ? "" : "hidden"}>
               <ServiceContractShareTab
@@ -850,14 +1879,28 @@ export default function ServiceContractsPage() {
             </div>
             <div className="flex items-center justify-between gap-2 border-t pt-4">
               {canDelete ? (
-                <Button type="button" variant="destructive" onClick={() => setShowDelete(true)}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setShowDelete(true)}
+                >
                   <Trash2 size={14} className="mr-2" />
                   {t("deleteContract")}
                 </Button>
-              ) : <span />}
+              ) : (
+                <span />
+              )}
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setShowEdit(false)}>Hủy</Button>
-                <Button disabled={update.isPending}>{update.isPending ? "Đang lưu..." : "Lưu thay đổi"}</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEdit(false)}
+                >
+                  Hủy
+                </Button>
+                <Button disabled={update.isPending}>
+                  {update.isPending ? "Đang lưu..." : "Lưu thay đổi"}
+                </Button>
               </div>
             </div>
           </form>
@@ -922,41 +1965,56 @@ function ContractLifecycle({
       <div>
         <h3 className="font-semibold">Vòng đời hợp đồng</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Theo dõi tiến trình và chọn bước chuyển tiếp phù hợp. Sắp hết hạn và hết hạn được hệ thống tự động cập nhật theo ngày kết thúc.
+          Theo dõi tiến trình và chọn bước chuyển tiếp phù hợp. Sắp hết hạn và
+          hết hạn được hệ thống tự động cập nhật theo ngày kết thúc.
         </p>
       </div>
       <div className="overflow-x-auto pb-1">
         <div className="flex min-w-max items-center gap-1">
           {LIFECYCLE_FLOW.map((stage, index) => (
             <div key={stage} className="flex items-center gap-1">
-              <div className={`rounded-full border px-3 py-1.5 text-xs ${stage === status ? "border-primary bg-primary text-primary-foreground font-semibold" : currentIndex >= 0 && index < currentIndex ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "bg-muted/30 text-muted-foreground"}`}>
+              <div
+                className={`rounded-full border px-3 py-1.5 text-xs ${stage === status ? "border-primary bg-primary text-primary-foreground font-semibold" : currentIndex >= 0 && index < currentIndex ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "bg-muted/30 text-muted-foreground"}`}
+              >
                 {labels[stage]}
               </div>
-              {index < LIFECYCLE_FLOW.length - 1 && <span className="text-muted-foreground">→</span>}
+              {index < LIFECYCLE_FLOW.length - 1 && (
+                <span className="text-muted-foreground">→</span>
+              )}
             </div>
           ))}
         </div>
       </div>
       <div className="rounded-md border-l-4 border-primary bg-muted/40 p-3">
-        <div className="text-xs font-medium uppercase text-muted-foreground">Trạng thái hiện tại</div>
+        <div className="text-xs font-medium uppercase text-muted-foreground">
+          Trạng thái hiện tại
+        </div>
         <div className="mt-1 font-semibold">{labels[status] || status}</div>
-        <p className="mt-1 text-sm text-muted-foreground">{STATUS_DESCRIPTIONS[status] || "Chưa có mô tả cho trạng thái này."}</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {STATUS_DESCRIPTIONS[status] || "Chưa có mô tả cho trạng thái này."}
+        </p>
       </div>
       {canEdit && transitions.length > 0 && (
         <div>
-          <div className="mb-2 text-sm font-medium">Bước có thể chuyển tiếp</div>
+          <div className="mb-2 text-sm font-medium">
+            Bước có thể chuyển tiếp
+          </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {transitions.map(next => (
+            {transitions.map((next) => (
               <button
                 key={next}
                 type="button"
                 className={`rounded-md border p-3 text-left transition hover:border-primary hover:bg-muted/40 ${pendingStatus === next ? "border-primary ring-2 ring-primary/20" : ""}`}
                 onClick={() => onSelect(next)}
               >
-                <div className={`font-medium ${["CANCELLED", "TERMINATED"].includes(next) ? "text-red-600" : ""}`}>
+                <div
+                  className={`font-medium ${["CANCELLED", "TERMINATED"].includes(next) ? "text-red-600" : ""}`}
+                >
                   Chuyển sang “{labels[next]}”
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{STATUS_DESCRIPTIONS[next]}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {STATUS_DESCRIPTIONS[next]}
+                </p>
               </button>
             ))}
           </div>
@@ -964,22 +2022,46 @@ function ContractLifecycle({
       )}
       {canEdit && transitions.length === 0 && (
         <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-          Đây là trạng thái kết thúc. Không có bước chuyển tiếp trực tiếp từ trạng thái này.
+          Đây là trạng thái kết thúc. Không có bước chuyển tiếp trực tiếp từ
+          trạng thái này.
         </div>
       )}
       {pendingStatus && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
-          <div className="font-medium">Xác nhận chuyển sang “{labels[pendingStatus]}”?</div>
+          <div className="font-medium">
+            Xác nhận chuyển sang “{labels[pendingStatus]}”?
+          </div>
           <p className="mt-1 text-xs">{STATUS_DESCRIPTIONS[pendingStatus]}</p>
           <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={onCancel} disabled={isPending}>Hủy</Button>
-            <Button size="sm" variant={["CANCELLED", "TERMINATED"].includes(pendingStatus) ? "destructive" : "default"} onClick={onConfirm} disabled={isPending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isPending}
+            >
+              Hủy
+            </Button>
+            <Button
+              size="sm"
+              variant={
+                ["CANCELLED", "TERMINATED"].includes(pendingStatus)
+                  ? "destructive"
+                  : "default"
+              }
+              onClick={onConfirm}
+              disabled={isPending}
+            >
               {isPending ? "Đang cập nhật..." : "Xác nhận chuyển trạng thái"}
             </Button>
           </div>
         </div>
       )}
-      {!canEdit && <p className="text-xs text-muted-foreground">Bạn có quyền xem vòng đời nhưng không có quyền chuyển trạng thái hợp đồng.</p>}
+      {!canEdit && (
+        <p className="text-xs text-muted-foreground">
+          Bạn có quyền xem vòng đời nhưng không có quyền chuyển trạng thái hợp
+          đồng.
+        </p>
+      )}
     </section>
   );
 }
@@ -993,7 +2075,11 @@ function ContractOperations({
 }: {
   item: any;
   onChanged: () => void;
-  onOpenDocument: (document: { id: string; fileName: string; mimeType?: string | null }) => Promise<void>;
+  onOpenDocument: (document: {
+    id: string;
+    fileName: string;
+    mimeType?: string | null;
+  }) => Promise<void>;
   canEdit: boolean;
   canTransferToBilling: boolean;
 }) {
@@ -1005,12 +2091,19 @@ function ContractOperations({
     amount: "",
   });
   const [recurring, setRecurring] = useState({
-    amount: "",
     startDate: "",
     count: "12",
     frequency: "MONTHLY",
     reminderDays: "7",
     milestonePrefix: "Kỳ thanh toán",
+  });
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [paymentEdit, setPaymentEdit] = useState({
+    milestone: "",
+    dueDate: "",
+    reminderDays: "7",
+    adjustmentAmount: "",
+    adjustmentDirection: "INCREASE",
   });
   const [task, setTask] = useState("");
   const [milestone, setMilestone] = useState("");
@@ -1019,14 +2112,33 @@ function ContractOperations({
       await action;
       onChanged();
       toast({ title: message });
+      return true;
     } catch (e: any) {
       toast({
         title: "Không thể thực hiện",
         description: e?.response?.data?.message,
         variant: "destructive",
       });
+      return false;
     }
   };
+  const recurringCount = Number(recurring.count);
+  const recurringInitialValue = Number(item.initialValue);
+  const recurringVAT = Number(item.VAT);
+  const recurringAmount =
+    Number.isInteger(recurringCount) &&
+    recurringCount > 0 &&
+    item.initialValue != null &&
+    item.VAT != null &&
+    Number.isFinite(recurringInitialValue) &&
+    Number.isFinite(recurringVAT)
+      ? (recurringInitialValue + (recurringInitialValue * recurringVAT) / 100) /
+        recurringCount
+      : null;
+  const recurringAmountPreview =
+    recurringAmount === null
+      ? ""
+      : formatMoneyAmount(recurringAmount, item.currency as CurrencyCode);
   const tabs = [
     ["payments", `Thanh toán (${item.payments?.length || 0})`],
     ["checklist", `Checklist (${item.checklist?.length || 0})`],
@@ -1054,149 +2166,186 @@ function ContractOperations({
               ? "Hợp đồng phải thu — hệ thống sẽ nhắc người phụ trách chuẩn bị thu."
               : "Hợp đồng phải trả — hệ thống sẽ nhắc người phụ trách chuẩn bị thanh toán."}
           </div>
-          {canEdit && <><div className="grid grid-cols-3 gap-2">
-            <Input
-              placeholder="Đợt thanh toán"
-              value={payment.milestone}
-              onChange={(e) =>
-                setPayment({ ...payment, milestone: e.target.value })
-              }
-            />
-            <Input
-              type="date"
-              value={payment.dueDate}
-              onChange={(e) =>
-                setPayment({ ...payment, dueDate: e.target.value })
-              }
-            />
-            <Input
-              type="number"
-              placeholder="Số tiền"
-              value={payment.amount}
-              onChange={(e) =>
-                setPayment({ ...payment, amount: e.target.value })
-              }
-            />
-          </div>
-          <Button
-            size="sm"
-            disabled={!payment.milestone || !payment.dueDate || !payment.amount}
-            onClick={() =>
-              run(
-                serviceContractsApi.createPayment(item.id, {
-                  ...payment,
-                  reminderDays: 7,
-                }),
-                "Đã thêm lịch thanh toán",
-              )
-            }
-          >
-            Thêm một đợt
-          </Button>
-          <details className="rounded border p-3">
-            <summary className="cursor-pointer font-medium">
-              Tạo thanh toán theo kỳ
-            </summary>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label htmlFor="recurring-amount" className="text-sm">Số tiền phải trả mỗi kỳ</label>
+          {canEdit && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
                 <Input
-                  id="recurring-amount"
-                  type="number"
-                  placeholder="Nhập số tiền"
-                  value={recurring.amount}
+                  placeholder="Đợt thanh toán"
+                  value={payment.milestone}
                   onChange={(e) =>
-                    setRecurring({ ...recurring, amount: e.target.value })
+                    setPayment({ ...payment, milestone: e.target.value })
                   }
                 />
-              </div>
-              <div>
-                <label htmlFor="recurring-start-date" className="text-sm">Ngày bắt đầu</label>
                 <Input
-                  id="recurring-start-date"
                   type="date"
-                  value={recurring.startDate}
+                  value={payment.dueDate}
                   onChange={(e) =>
-                    setRecurring({ ...recurring, startDate: e.target.value })
+                    setPayment({ ...payment, dueDate: e.target.value })
                   }
                 />
-              </div>
-              <div>
-                <label htmlFor="recurring-count" className="text-sm">Số kỳ</label>
                 <Input
-                  id="recurring-count"
                   type="number"
-                  min="1"
-                  placeholder="Nhập tổng số kỳ"
-                  value={recurring.count}
+                  placeholder="Số tiền"
+                  value={payment.amount}
                   onChange={(e) =>
-                    setRecurring({ ...recurring, count: e.target.value })
+                    setPayment({ ...payment, amount: e.target.value })
                   }
                 />
               </div>
-              <div>
-                <label htmlFor="recurring-frequency" className="text-sm">Theo chu kỳ:</label>
-                <Select
-                  value={recurring.frequency}
-                  onValueChange={(value) =>
-                    setRecurring({ ...recurring, frequency: value })
+              <Button
+                size="sm"
+                disabled={
+                  !payment.milestone || !payment.dueDate || !payment.amount
+                }
+                onClick={() =>
+                  run(
+                    serviceContractsApi.createPayment(item.id, {
+                      ...payment,
+                      reminderDays: 7,
+                    }),
+                    "Đã thêm lịch thanh toán",
+                  )
+                }
+              >
+                Thêm một đợt
+              </Button>
+              <details className="rounded border p-3">
+                <summary className="cursor-pointer font-medium">
+                  Tạo thanh toán theo kỳ
+                </summary>
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label htmlFor="recurring-amount" className="text-sm">
+                      Số tiền phải trả mỗi kỳ
+                    </label>
+                    <Input
+                      id="recurring-amount"
+                      type="text"
+                      disabled
+                      placeholder="Chọn số kỳ để hệ thống tính"
+                      value={recurringAmountPreview}
+                    />
+                    {item.initialValue == null || item.VAT == null ? (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Hợp đồng cũ chưa có giá trị ban đầu và VAT.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <label htmlFor="recurring-start-date" className="text-sm">
+                      Ngày bắt đầu
+                    </label>
+                    <Input
+                      id="recurring-start-date"
+                      type="date"
+                      value={recurring.startDate}
+                      onChange={(e) =>
+                        setRecurring({
+                          ...recurring,
+                          startDate: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="recurring-count" className="text-sm">
+                      Số kỳ
+                    </label>
+                    <Input
+                      id="recurring-count"
+                      type="number"
+                      min="1"
+                      placeholder="Nhập tổng số kỳ"
+                      value={recurring.count}
+                      onChange={(e) =>
+                        setRecurring({ ...recurring, count: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="recurring-frequency" className="text-sm">
+                      Theo chu kỳ:
+                    </label>
+                    <Select
+                      value={recurring.frequency}
+                      onValueChange={(value) =>
+                        setRecurring({ ...recurring, frequency: value })
+                      }
+                    >
+                      <SelectTrigger
+                        id="recurring-frequency"
+                        aria-label="Theo chu kỳ:"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="MONTHLY">Hàng tháng</SelectItem>
+                        <SelectItem value="QUARTERLY">Hàng quý</SelectItem>
+                        <SelectItem value="ANNUALLY">Hàng năm</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="recurring-reminder-days"
+                      className="text-sm"
+                    >
+                      Nhắc trước:
+                    </label>
+                    <Input
+                      id="recurring-reminder-days"
+                      type="number"
+                      min="0"
+                      placeholder="Số ngày"
+                      value={recurring.reminderDays}
+                      onChange={(e) =>
+                        setRecurring({
+                          ...recurring,
+                          reminderDays: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="recurring-milestone-prefix"
+                      className="text-sm"
+                    >
+                      Tên của mỗi kỳ
+                    </label>
+                    <Input
+                      id="recurring-milestone-prefix"
+                      placeholder="Ví dụ: Tiền sữa"
+                      value={recurring.milestonePrefix}
+                      onChange={(e) =>
+                        setRecurring({
+                          ...recurring,
+                          milestonePrefix: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <Button
+                  className="mt-3"
+                  size="sm"
+                  disabled={
+                    recurringAmount === null ||
+                    !recurring.startDate ||
+                    !recurring.count
+                  }
+                  onClick={() =>
+                    run(
+                      serviceContractsApi.recurringPayments(item.id, recurring),
+                      "Đã tạo lịch thanh toán theo kỳ",
+                    )
                   }
                 >
-                  <SelectTrigger id="recurring-frequency" aria-label="Theo chu kỳ:">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MONTHLY">Hàng tháng</SelectItem>
-                    <SelectItem value="QUARTERLY">Hàng quý</SelectItem>
-                    <SelectItem value="ANNUALLY">Hàng năm</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label htmlFor="recurring-reminder-days" className="text-sm">Nhắc trước:</label>
-                <Input
-                  id="recurring-reminder-days"
-                  type="number"
-                  min="0"
-                  placeholder="Số ngày"
-                  value={recurring.reminderDays}
-                  onChange={(e) =>
-                    setRecurring({ ...recurring, reminderDays: e.target.value })
-                  }
-                />
-              </div>
-              <div>
-                <label htmlFor="recurring-milestone-prefix" className="text-sm">Tên của mỗi kỳ</label>
-                <Input
-                  id="recurring-milestone-prefix"
-                  placeholder="Ví dụ: Tiền sữa"
-                  value={recurring.milestonePrefix}
-                  onChange={(e) =>
-                    setRecurring({
-                      ...recurring,
-                      milestonePrefix: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-            <Button
-              className="mt-3"
-              size="sm"
-              disabled={
-                !recurring.amount || !recurring.startDate || !recurring.count
-              }
-              onClick={() =>
-                run(
-                  serviceContractsApi.recurringPayments(item.id, recurring),
-                  "Đã tạo lịch thanh toán theo kỳ",
-                )
-              }
-            >
-              Tạo các kỳ
-            </Button>
-          </details>
-          </>}
+                  Tạo các kỳ
+                </Button>
+              </details>
+            </>
+          )}
           {item.payments?.map((p: any) => (
             <div key={p.id} className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
@@ -1204,42 +2353,214 @@ function ContractOperations({
                   <b>{p.milestone}</b>
                   <div className="text-muted-foreground">
                     {new Date(p.dueDate).toLocaleDateString("vi-VN")} ·{" "}
-                    {formatMoneyAmount(Number(p.amount), p.currency as CurrencyCode)} {p.currency} ·
-                    nhắc trước {p.reminderDays} ngày
+                    {formatMoneyAmount(
+                      Number(p.amount),
+                      p.currency as CurrencyCode,
+                    )}{" "}
+                    {p.currency} · nhắc trước {p.reminderDays} ngày
                   </div>
                   {p.paidDate && (
                     <div className="text-emerald-600">
                       Đã thanh toán{" "}
-                      {formatMoneyAmount(Number(p.paidAmount || p.amount), p.currency as CurrencyCode)}{" "}
-                      {p.currency}{" "}
-                      · {new Date(p.paidDate).toLocaleDateString("vi-VN")}
+                      {formatMoneyAmount(
+                        Number(p.paidAmount || p.amount),
+                        p.currency as CurrencyCode,
+                      )}{" "}
+                      {p.currency} ·{" "}
+                      {new Date(p.paidDate).toLocaleDateString("vi-VN")}
                     </div>
                   )}
                 </div>
-                {canEdit && <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={p.status === "PAID" || Boolean(p.invoiceId)}
-                  onClick={() =>
-                    run(
-                      serviceContractsApi.updatePayment(item.id, p.id, {
-                        status: "PAID",
-                        paidAmount: p.amount,
-                      }),
-                      item.paymentDirection === "RECEIVABLE"
-                        ? "Đã ghi nhận thu tiền"
-                        : "Đã ghi nhận thanh toán",
-                    )
-                  }
-                >
-                  {p.status === "PAID"
-                    ? "Đã hoàn tất"
-                    : item.paymentDirection === "RECEIVABLE"
-                      ? "Ghi nhận đã thu"
-                      : "Ghi nhận đã trả"}
-                </Button>}
+                {canEdit && (
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      size="sm"
+                      disabled={Boolean(p.invoiceId)}
+                      onClick={() => {
+                        if (editingPaymentId === p.id) {
+                          const adjustmentAmount = parseMoneyInput(
+                            paymentEdit.adjustmentAmount,
+                          );
+                          if (
+                            paymentEdit.adjustmentAmount.trim() !== "" &&
+                            (adjustmentAmount === null || adjustmentAmount <= 0)
+                          ) {
+                            toast({
+                              title: "Số tiền điều chỉnh phải lớn hơn 0",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          void run(
+                            serviceContractsApi.updatePayment(item.id, p.id, {
+                              milestone: paymentEdit.milestone,
+                              dueDate: paymentEdit.dueDate,
+                              reminderDays: Number(paymentEdit.reminderDays),
+                              ...(adjustmentAmount === null
+                                ? {}
+                                : {
+                                    adjustmentAmount,
+                                    adjustmentDirection:
+                                      paymentEdit.adjustmentDirection,
+                                  }),
+                            }),
+                            "Đã cập nhật kỳ thanh toán",
+                          ).then((saved) => {
+                            if (saved) setEditingPaymentId(null);
+                          });
+                          return;
+                        }
+                        setEditingPaymentId(p.id);
+                        setPaymentEdit({
+                          milestone: p.milestone,
+                          dueDate: String(p.dueDate).slice(0, 10),
+                          reminderDays: String(p.reminderDays ?? 7),
+                          adjustmentAmount: "",
+                          adjustmentDirection: "INCREASE",
+                        });
+                      }}
+                    >
+                      {editingPaymentId === p.id ? "Lưu" : "Chỉnh sửa"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={p.status === "PAID" || Boolean(p.invoiceId)}
+                      onClick={() =>
+                        run(
+                          serviceContractsApi.updatePayment(item.id, p.id, {
+                            status: "PAID",
+                            paidAmount: p.amount,
+                          }),
+                          item.paymentDirection === "RECEIVABLE"
+                            ? "Đã ghi nhận thu tiền"
+                            : "Đã ghi nhận thanh toán",
+                        )
+                      }
+                    >
+                      {p.status === "PAID"
+                        ? "Đã hoàn tất"
+                        : item.paymentDirection === "RECEIVABLE"
+                          ? "Ghi nhận đã thu"
+                          : "Ghi nhận đã trả"}
+                    </Button>
+                  </div>
+                )}
               </div>
-              {item.paymentDirection === "RECEIVABLE" && (
+              {editingPaymentId === p.id && (
+                <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Input
+                    aria-label="Tên kỳ thanh toán"
+                    className="h-8 text-xs"
+                    value={paymentEdit.milestone}
+                    onChange={(event) =>
+                      setPaymentEdit({
+                        ...paymentEdit,
+                        milestone: event.target.value,
+                      })
+                    }
+                  />
+                  <Input
+                    aria-label="Ngày dự kiến thanh toán"
+                    className="h-8 text-xs"
+                    type="date"
+                    value={paymentEdit.dueDate}
+                    onChange={(event) =>
+                      setPaymentEdit({
+                        ...paymentEdit,
+                        dueDate: event.target.value,
+                      })
+                    }
+                  />
+                  <Input
+                    aria-label="Số ngày nhắc trước"
+                    className="h-8 text-xs"
+                    type="number"
+                    min="0"
+                    max="365"
+                    value={paymentEdit.reminderDays}
+                    onChange={(event) =>
+                      setPaymentEdit({
+                        ...paymentEdit,
+                        reminderDays: event.target.value,
+                      })
+                    }
+                  />
+                  <div className="flex min-w-0 items-center gap-2 sm:col-span-2 lg:col-span-4">
+                    <Input
+                      aria-label="Số tiền điều chỉnh"
+                      className="h-8 min-w-0 flex-1 text-xs"
+                      inputMode="decimal"
+                      placeholder="Nhập số tiền"
+                      value={paymentEdit.adjustmentAmount}
+                      onChange={(event) =>
+                        setPaymentEdit({
+                          ...paymentEdit,
+                          adjustmentAmount: formatMoneyInput(
+                            event.target.value,
+                          ),
+                        })
+                      }
+                    />
+                    <label className="flex items-center gap-1 whitespace-nowrap text-xs">
+                      <input
+                        type="radio"
+                        name={`payment-adjustment-${p.id}`}
+                        checked={paymentEdit.adjustmentDirection === "INCREASE"}
+                        onChange={() =>
+                          setPaymentEdit({
+                            ...paymentEdit,
+                            adjustmentDirection: "INCREASE",
+                          })
+                        }
+                      />
+                      Tăng
+                    </label>
+                    <label className="flex items-center gap-1 whitespace-nowrap text-xs">
+                      <input
+                        type="radio"
+                        name={`payment-adjustment-${p.id}`}
+                        checked={paymentEdit.adjustmentDirection === "DECREASE"}
+                        onChange={() =>
+                          setPaymentEdit({
+                            ...paymentEdit,
+                            adjustmentDirection: "DECREASE",
+                          })
+                        }
+                      />
+                      Giảm
+                    </label>
+                  </div>
+                </div>
+              )}
+              {Array.isArray(p.amountBreakdown) &&
+                p.amountBreakdown.length >= 2 && (
+                  <div className="mt-3 space-y-1 border-t pt-3 text-xs">
+                    {p.amountBreakdown.map((entry: unknown, index: number) => {
+                      const amount = Number(entry);
+                      if (!Number.isFinite(amount)) return null;
+                      const isIncrease = amount >= 0;
+                      return (
+                        <div
+                          key={`${p.id}-amount-breakdown-${index}`}
+                          className={`flex items-center gap-1.5 font-medium ${isIncrease ? "text-emerald-600" : "text-red-600"}`}
+                        >
+                          <span aria-hidden="true">
+                            {isIncrease ? "+" : "-"}
+                          </span>
+                          <span>
+                            {formatMoneyAmount(
+                              Math.abs(amount),
+                              p.currency as CurrencyCode,
+                            )}{" "}
+                            {p.currency}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              {/* {item.paymentDirection === "RECEIVABLE" && (
                 <div className="mt-2 flex items-center gap-2">
                   {p.invoiceId ? (
                     <span className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">
@@ -1249,31 +2570,33 @@ function ContractOperations({
                     <Button size="sm" onClick={() => run(serviceContractsApi.transferToBilling(item.id, p.id), "Đã chuyển kỳ thu sang Billing")}>Chuyển kế toán</Button>
                   ) : null}
                 </div>
-              )}
+              )} */}
               <div className="mt-2 flex gap-2">
-                {canEdit && <label className="cursor-pointer rounded border px-2 py-1 text-xs">
-                  <Upload className="mr-1 inline" size={12} />
-                  Lưu hóa đơn
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f)
-                        run(
-                          serviceContractsApi.upload(
-                            item.id,
-                            f,
-                            "INVOICE",
-                            p.id,
-                          ),
-                          "Đã lưu hóa đơn",
-                        );
-                    }}
-                  />
-                </label>}
-                {canEdit && <label className="cursor-pointer rounded border px-2 py-1 text-xs">
+                {canEdit && (
+                  <label className="cursor-pointer rounded border px-2 py-1 text-xs">
+                    <Upload className="mr-1 inline" size={12} />
+                    Lưu hóa đơn
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f)
+                          run(
+                            serviceContractsApi.upload(
+                              item.id,
+                              f,
+                              "INVOICE",
+                              p.id,
+                            ),
+                            "Đã lưu hóa đơn",
+                          );
+                      }}
+                    />
+                  </label>
+                )}
+                {/* {canEdit && <label className="cursor-pointer rounded border px-2 py-1 text-xs">
                   <Upload className="mr-1 inline" size={12} />
                   Chứng từ thanh toán
                   <input
@@ -1294,7 +2617,7 @@ function ContractOperations({
                         );
                     }}
                   />
-                </label>}
+                </label>} */}
                 {p.documents?.map((d: any) => (
                   <button
                     type="button"
@@ -1312,25 +2635,29 @@ function ContractOperations({
       )}
       {tab === "checklist" && (
         <div className="space-y-3 pt-3">
-          {canEdit && <div className="flex gap-2">
-            <Input
-              placeholder="Nội dung checklist"
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-            />
-            <Button
-              size="sm"
-              disabled={!task}
-              onClick={() =>
-                run(
-                  serviceContractsApi.createChecklist(item.id, { title: task }),
-                  "Đã thêm checklist",
-                )
-              }
-            >
-              Thêm
-            </Button>
-          </div>}
+          {canEdit && (
+            <div className="flex gap-2">
+              <Input
+                placeholder="Nội dung checklist"
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={!task}
+                onClick={() =>
+                  run(
+                    serviceContractsApi.createChecklist(item.id, {
+                      title: task,
+                    }),
+                    "Đã thêm checklist",
+                  )
+                }
+              >
+                Thêm
+              </Button>
+            </div>
+          )}
           {item.checklist?.map((c: any) => (
             <label
               key={c.id}
@@ -1362,27 +2689,29 @@ function ContractOperations({
       )}
       {tab === "milestones" && (
         <div className="space-y-3 pt-3">
-          {canEdit && <div className="flex gap-2">
-            <Input
-              placeholder="Tên mốc thực hiện"
-              value={milestone}
-              onChange={(e) => setMilestone(e.target.value)}
-            />
-            <Button
-              size="sm"
-              disabled={!milestone}
-              onClick={() =>
-                run(
-                  serviceContractsApi.createMilestone(item.id, {
-                    title: milestone,
-                  }),
-                  "Đã thêm mốc thực hiện",
-                )
-              }
-            >
-              Thêm
-            </Button>
-          </div>}
+          {canEdit && (
+            <div className="flex gap-2">
+              <Input
+                placeholder="Tên mốc thực hiện"
+                value={milestone}
+                onChange={(e) => setMilestone(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={!milestone}
+                onClick={() =>
+                  run(
+                    serviceContractsApi.createMilestone(item.id, {
+                      title: milestone,
+                    }),
+                    "Đã thêm mốc thực hiện",
+                  )
+                }
+              >
+                Thêm
+              </Button>
+            </div>
+          )}
           {item.milestones?.map((m: any) => (
             <div
               key={m.id}
@@ -1397,20 +2726,22 @@ function ContractOperations({
               >
                 {m.title}
               </span>
-              {canEdit && <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  run(
-                    serviceContractsApi.updateMilestone(item.id, m.id, {
-                      status: m.status === "DONE" ? "PENDING" : "DONE",
-                    }),
-                    "Đã cập nhật mốc",
-                  )
-                }
-              >
-                {m.status === "DONE" ? "Mở lại" : "Hoàn thành"}
-              </Button>}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    run(
+                      serviceContractsApi.updateMilestone(item.id, m.id, {
+                        status: m.status === "DONE" ? "PENDING" : "DONE",
+                      }),
+                      "Đã cập nhật mốc",
+                    )
+                  }
+                >
+                  {m.status === "DONE" ? "Mở lại" : "Hoàn thành"}
+                </Button>
+              )}
             </div>
           ))}
         </div>

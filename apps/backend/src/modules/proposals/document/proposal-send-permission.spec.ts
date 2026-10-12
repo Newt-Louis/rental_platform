@@ -35,7 +35,7 @@ function sender(permissions: PermissionsService, accessibleMalls: string[]) {
       if (role !== Role.ADMIN && !accessibleMalls.includes(mallId)) throw new ForbiddenException('No access to this mall');
     }),
   };
-  return new ProposalDocumentDeliveryService({} as any, {} as any, {} as any, {} as any, {} as any, {} as any, { register: jest.fn() } as any, permissions, mallAccess);
+  return new ProposalDocumentDeliveryService({} as any, {} as any, {} as any, {} as any, {} as any, {} as any, { register: jest.fn() } as any, permissions, mallAccess, { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults.map((d: any) => ({ ...d, kind: 'TO' })), diagnostics: [] }) } as any);
 }
 
 describe('proposal-send-external action permission', () => {
@@ -84,7 +84,7 @@ describe('proposal-send-external action permission', () => {
     };
     const documents: any = { loadVersion: jest.fn() };
     const mallAccess: any = { assertMallAccess: jest.fn() };
-    const svc = new ProposalDocumentDeliveryService(prisma, documents, {} as any, {} as any, {} as any, {} as any, { register: jest.fn() } as any, permissions, mallAccess);
+    const svc = new ProposalDocumentDeliveryService(prisma, documents, {} as any, {} as any, {} as any, {} as any, { register: jest.fn() } as any, permissions, mallAccess, { plan: async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults.map((d: any) => ({ ...d, kind: 'TO' })), diagnostics: [] }) } as any);
 
     await expect(svc.sendExternal('p1', { documentVersionId: 'dv', to: ['a@b.vn'] }, EXEC, 'key-00000001')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.proposalDocumentSend.findUnique).not.toHaveBeenCalled();

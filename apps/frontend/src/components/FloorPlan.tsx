@@ -4,7 +4,11 @@ import { cn } from '@/lib/utils';
 import type { Unit, UnitSlotSummary } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { MoreHorizontal, Pencil, Trash2, Plus } from 'lucide-react';
-import { getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { formatRatePerSqm, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import type { HandoverSummary } from '@/api/handover-readiness';
+import { HANDOVER_LABEL, HandoverCardBadge, handoverDaysLabel } from '@/components/spaces/handover/handoverPresentation';
+import { UnitBookingLine } from '@/components/spaces/UnitFacts';
+import { bookingHolderLabel, type UnitBookingSummary } from '@/components/spaces/unitBookingSummary';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,16 +42,25 @@ interface FloorPlanProps {
   onUnitClick: (unit: Unit) => void;
   selectedUnitId?: string;
   slotSummaries?: Record<string, UnitSlotSummary>;
+  handoverByUnit?: Record<string, HandoverSummary>;
+  bookingByUnit?: Record<string, UnitBookingSummary>;
   allFloors?: FloorMeta[];
   isAdmin?: boolean;
   onCreateFloor?: () => void;
   onEditFloor?: (floor: FloorMeta) => void;
   onDeleteFloor?: (floor: FloorMeta) => void;
+  /**
+   * Controlled mode: the page's floor bar is the single floor selector. When
+   * set, this floor is shown and the internal floor tabs are not rendered, so
+   * the user never sees two floor pickers that can disagree.
+   */
+  activeFloorLevel?: string;
 }
 
 export function FloorPlan({
   units, onUnitClick, selectedUnitId, slotSummaries = {},
-  allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor,
+  handoverByUnit = {}, bookingByUnit = {},
+  allFloors, isAdmin, onCreateFloor, onEditFloor, onDeleteFloor, activeFloorLevel,
 }: FloorPlanProps) {
   const { t } = useTranslation('spaces');
   const floors = useMemo<FloorMeta[]>(() => {
@@ -67,7 +80,9 @@ export function FloorPlan({
     return Array.from(seen.values()).sort((a, b) => a.sortOrder - b.sortOrder);
   }, [units, allFloors]);
 
-  const [activeFloor, setActiveFloor] = useState<string>(() => floors[0]?.level ?? 'GF');
+  const [internalFloor, setActiveFloor] = useState<string>(() => floors[0]?.level ?? 'GF');
+  const controlled = activeFloorLevel !== undefined;
+  const activeFloor = controlled ? activeFloorLevel : internalFloor;
 
   const floorUnits = useMemo(() => units.filter(u => u.floor?.level === activeFloor), [units, activeFloor]);
 
@@ -105,8 +120,8 @@ export function FloorPlan({
 
   return (
     <div className="space-y-4">
-      {/* Floor tabs */}
-      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
+      {/* Floor tabs (uncontrolled mode only) */}
+      {!controlled && <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
         {floors.map(f => {
           const count = units.filter(u => u.floor?.level === f.level).length;
           return (
@@ -168,7 +183,7 @@ export function FloorPlan({
             <Plus size={12} /> {t('floor.create')}
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Stats row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -204,6 +219,8 @@ export function FloorPlan({
               onUnitClick={onUnitClick}
               selectedUnitId={selectedUnitId}
               slotSummaries={slotSummaries}
+              handoverByUnit={handoverByUnit}
+              bookingByUnit={bookingByUnit}
             />
           ))}
 
@@ -227,6 +244,8 @@ export function FloorPlan({
               onUnitClick={onUnitClick}
               selectedUnitId={selectedUnitId}
               slotSummaries={slotSummaries}
+              handoverByUnit={handoverByUnit}
+              bookingByUnit={bookingByUnit}
             />
           ))}
 
@@ -263,9 +282,14 @@ interface ZoneRowProps {
   onUnitClick: (unit: Unit) => void;
   selectedUnitId?: string;
   slotSummaries?: Record<string, UnitSlotSummary>;
+  handoverByUnit?: Record<string, HandoverSummary>;
+  bookingByUnit?: Record<string, UnitBookingSummary>;
 }
 
-function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries = {} }: ZoneRowProps) {
+function ZoneRow({
+  zoneName, units, onUnitClick, selectedUnitId,
+  slotSummaries = {}, handoverByUnit = {}, bookingByUnit = {},
+}: ZoneRowProps) {
   const { t } = useTranslation('spaces');
   const sorted = [...units].sort((a, b) => a.code.localeCompare(b.code));
   const maxArea = Math.max(...sorted.map(u => u.areaNLA), 1);
@@ -289,6 +313,8 @@ function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries =
           const maxW = 220;
           const width = Math.round(minW + pct * (maxW - minW));
           const slotSummary = slotSummaries[unit.id];
+          const handover = handoverByUnit[unit.id];
+          const booking = bookingByUnit[unit.id];
           const slotHint = slotSummary?.totalSlots
             ? [
                 slotSummary.confirmedSlots > 0 ? `${slotSummary.confirmedSlots} thuê` : null,
@@ -300,7 +326,12 @@ function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries =
             <button
               key={unit.id}
               onClick={() => onUnitClick(unit)}
-              title={`${unit.code} — ${unit.tenant?.brandName ?? getUnitStatusLabel(t, 'VACANT')} — ${unit.areaNLA.toLocaleString()} m²${slotHint ? ` — ${slotSummary!.totalSlots} ô: ${slotHint}` : ''}`}
+              title={[
+                `${unit.code} — ${unit.tenant?.brandName ?? getUnitStatusLabel(t, unit.status)} — ${unit.areaNLA.toLocaleString()} m²`,
+                slotHint ? `${slotSummary!.totalSlots} ô: ${slotHint}` : '',
+                bookingHolderLabel(booking) ? `Khách booking: ${bookingHolderLabel(booking)}` : '',
+                handover ? `${HANDOVER_LABEL}: ${handoverDaysLabel(handover.evaluation)}` : '',
+              ].filter(Boolean).join(' — ')}
               style={{ minWidth: `${width}px` }}
               className={cn(
                 'flex flex-col justify-between p-2.5 rounded-lg border-2 text-left transition-all cursor-pointer',
@@ -317,7 +348,19 @@ function ZoneRow({ zoneName, units, onUnitClick, selectedUnitId, slotSummaries =
                   </div>
                 )}
               </div>
-              <div className="text-xs opacity-50 mt-1.5">{unit.areaNLA.toLocaleString()} m²</div>
+              <div className="flex items-baseline gap-2 text-xs opacity-60 mt-1.5">
+                <span>{unit.areaNLA.toLocaleString()} m²</span>
+                {unit.baseRentPerSqm > 0 && (
+                  <span className="tabular-nums">{formatRatePerSqm(unit.baseRentPerSqm, unit.currencyCode)}</span>
+                )}
+              </div>
+              {/* The same two "who" lines the list and the mall map show. */}
+              <UnitBookingLine booking={booking} className="mt-1" />
+              {handover && (
+                <div className="mt-1">
+                  <HandoverCardBadge summary={handover} />
+                </div>
+              )}
               {slotSummary && slotSummary.totalSlots > 0 && (
                 <div className="text-[10px] mt-1 opacity-70 leading-tight">
                   {slotSummary.confirmedSlots > 0 && (

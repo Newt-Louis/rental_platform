@@ -48,10 +48,14 @@
     "CANCELLED": "Đã hủy"
   },
   "slotStatus": {
-    "PENDING": "Chờ xác nhận",
+    "PENDING": "Mới tạo (chưa gửi duyệt)",
     "CONFIRMED": "Đã xác nhận",
     "COMPLETED": "Hoàn thành",
     "CONVERTED": "Đã lập đề xuất",
+    "SUBMITTED": "Chờ duyệt",
+    "APPROVED": "Đã duyệt",
+    "LOCKED": "Bị khóa (xung đột)",
+    "CONTRACTED": "Đã ký hợp đồng",
     "CANCELLED": "Đã hủy"
   },
   "fields": {

@@ -12,6 +12,7 @@ describe('maintenance workflow', () => {
     { create: jest.fn() } as any,
     {} as any,
     { runExclusive: jest.fn((_name: string, _ttl: number, task: () => Promise<unknown>) => task()) } as any,
+    { plan: jest.fn(async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults, diagnostics: [] })) } as any,
   );
 
   beforeEach(() => jest.clearAllMocks());

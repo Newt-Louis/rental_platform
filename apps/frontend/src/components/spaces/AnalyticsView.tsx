@@ -8,9 +8,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { STATUS_CONFIG, STATUS_ICONS } from '@/pages/spaces/spaces.constants';
 import { BarChart3, Layers, Calendar, Clock } from 'lucide-react';
 import { formatVndAmount, formatVndRate, getUnitStatusLabel } from '@/pages/spaces/spacesPresentation';
+import { HandoverAnalyticsSection } from './handover/HandoverAnalyticsSection';
+import { canPerformAction } from '@/lib/permissions';
+import { useAuthStore } from '@/store/auth.store';
 
-export function AnalyticsView({ mallId }: { mallId?: string | null }) {
+export function AnalyticsView({
+  mallId,
+  floorId,
+  floorName,
+  onOpenUnit,
+}: {
+  mallId?: string | null;
+  floorId?: string | null;
+  floorName?: string | null;
+  onOpenUnit?: (unitId: string) => void;
+}) {
   const { t } = useTranslation('spaces');
+  const role = useAuthStore((s) => s.user?.role);
   const { data: occupancyData } = useQuery({
     queryKey: ['occupancy', mallId],
     queryFn: () => spacesApi.occupancySummary(mallId),
@@ -49,6 +63,9 @@ export function AnalyticsView({ mallId }: { mallId?: string | null }) {
 
   return (
     <div className="space-y-4">
+      {/* CR-UNIT-HANDOVER-READINESS -- first, because it is the actionable list */}
+      {canPerformAction(role, 'handover-readiness-view') && <HandoverAnalyticsSection mallId={mallId} floorId={floorId} floorName={floorName} onOpenUnit={onOpenUnit} />}
+
       {/* Occupancy status tiles */}
       {occ && (
         <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-gray-200 bg-white sm:grid-cols-4 lg:grid-cols-8">

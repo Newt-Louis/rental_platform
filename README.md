@@ -67,8 +67,17 @@ docker compose down -v
 **Lưu ý:** Không dùng file `docker-compose.dev.yml` trừ khi muốn chạy dev (hot-reload). File đó **không** được tự load — production mặc định chạy Nginx trên **http://localhost:8080**.
 
 ```bash
-# Chỉ khi cần dev với hot-reload (Vite port 5173)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# Chỉ khi cần dev với hot-reload (Vite port 5173). Compose này quản lý
+# postgres (`leasing-db`), Redis (`leasing-redis`), backend và frontend.
+# `--force-recreate` làm mới source mounts của Docker Desktop/WSL sau khi
+# khởi động máy mà không chạm vào named database volume.
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --force-recreate
+
+# Những lần mở máy sau, khi image/source không đổi
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate
+
+# Chỉ chạy Prisma migration đã kiểm tra khi schema thay đổi; không reset hay seed
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend npx prisma migrate deploy
 ```
 
 ### Docker Services

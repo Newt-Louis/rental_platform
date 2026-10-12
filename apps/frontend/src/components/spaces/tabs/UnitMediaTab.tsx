@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 const MEDIA_TYPE_LABELS: Record<string, string> = {
   PHOTO: 'Ảnh',
   FLOOR_PLAN: 'Floor Plan',
+  SHORT_TERM_PLAN: 'Bản vẽ ngắn hạn',
   VIDEO: 'Video',
   RENDER_3D: '3D Render',
   BROCHURE: 'Brochure',
@@ -125,7 +126,7 @@ export function UnitMediaTab({ unitId }: { unitId: string }) {
                 m.isCover ? 'border-amber-400' : 'border-transparent hover:border-gray-200'
               }`}
             >
-              {m.type === 'PHOTO' || m.type === 'RENDER_3D' || m.type === 'FLOOR_PLAN' || m.type === 'SITE_MAP' ? (
+              {m.type === 'PHOTO' || m.type === 'RENDER_3D' || m.type === 'FLOOR_PLAN' || m.type === 'SHORT_TERM_PLAN' || m.type === 'SITE_MAP' ? (
                 <img
                   src={mediaUrl(m.fileUrl)}
                   alt={m.caption ?? m.fileName}

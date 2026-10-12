@@ -10,6 +10,8 @@
       "Bash(docker stop *)",
       "Bash(docker rm *)",
       "Bash(docker exec *)",
+       "Bash(ssh root@125.234.136.72 *)",
+      "Bash(scp root@125.234.136.72:* *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/spaces)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5173/spaces)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5173/admin)",

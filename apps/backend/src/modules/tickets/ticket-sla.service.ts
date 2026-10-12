@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TicketType, TicketPriority, Role } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
+import { NotificationRoutingService } from '../notifications/routing/notification-routing.service';
 import { EmailService } from '../notifications/email.service';
 import { emailSubject } from '../notifications/email-design-system';
 import { SchedulerLockService } from '../../common/services/scheduler-lock.service';
@@ -17,6 +18,7 @@ export class TicketSlaService {
     private notifications: NotificationsService,
     private emailService: EmailService,
     private schedulerLock: SchedulerLockService,
+    private routing: NotificationRoutingService,
   ) {}
 
   async listPolicies() {
@@ -119,6 +121,18 @@ export class TicketSlaService {
         select: { id: true, email: true, fullName: true },
         take: 3,
       });
+      // Default recipients = Mall operations managers; admin-configurable.
+      const plan = await this.routing.plan({
+        eventKey: 'TICKET_SLA_ESCALATION',
+        mallId: ticket.unit.mallId,
+        resourceId: ticket.id,
+        defaults: managers
+          .filter((m) => !!m.email)
+          .map((m) => ({ email: m.email!, userId: m.id, fullName: m.fullName, keySuffix: `manager:${m.id}` })),
+      });
+      if (plan.failClosed) {
+        this.logger.error(`Ticket SLA escalation for ${ticket.id} withheld: configured recipients ineligible`);
+      }
       for (const mgr of managers) {
         await this.notifications.create({
           userId: mgr.id,
@@ -129,12 +143,15 @@ export class TicketSlaService {
           entityId: ticket.id,
         });
 
-        if (mgr.email) {
+      }
+
+      for (const recipient of plan.recipients) {
+        {
           try {
             await this.emailService.sendMail({
-              to: mgr.email,
+              to: recipient.email,
               delivery: {
-                eventKey: `ticket-sla:${ticket.id}:level:${nextLevel}:manager:${mgr.id}`,
+                eventKey: `ticket-sla:${ticket.id}:level:${nextLevel}:${recipient.keySuffix}`,
                 eventType: 'TICKET_SLA',
                 entityType: 'Ticket',
                 entityId: ticket.id,
@@ -142,7 +159,7 @@ export class TicketSlaService {
               },
               subject: emailSubject(`Ticket ${ticket.ticketNumber} vượt SLA (L${nextLevel})`),
               html: this.emailService.ticketSlaHtml({
-                managerName: mgr.fullName,
+                managerName: recipient.fullName ?? '',
                 ticketNumber: ticket.ticketNumber,
                 ticketId: ticket.id,
                 subject: ticket.subject,

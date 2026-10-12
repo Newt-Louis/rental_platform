@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,8 @@ const EMPTY_DETAILS = {
   proposedRentPerSqm: "",
   proposedCamPerSqm: "",
   holdDays: "30",
+  bookingStartDate: "",
+  bookingEndDate: "",
   notes: "",
   assignedToId: "",
   currencyCode: "VND" as CurrencyCode,
@@ -108,6 +111,14 @@ export function BookingWorkspaceDialog({
     setSelectedUnit(unit);
     setSubmitError(null);
   }, []);
+
+  const changeBookingPeriod = (start: string, end: string) => {
+    setDetails((current) => ({ ...current, bookingStartDate: start, bookingEndDate: end }));
+    // Eligibility phụ thuộc thời gian booking → bỏ chọn để tìm lại với thời gian mới
+    // (mặt bằng khởi tạo từ initialUnitId sẽ tự được chọn lại qua initialQuery).
+    setSelectedUnit(null);
+    setSubmitError(null);
+  };
 
   const selectLead = (lead: BookingLead) => {
     setSelectedLead(lead);
@@ -193,6 +204,8 @@ export function BookingWorkspaceDialog({
           : undefined,
         currencyCode: details.currencyCode,
         holdDays: Number(details.holdDays) || 30,
+        bookingStartDate: details.bookingStartDate || undefined,
+        bookingEndDate: details.bookingEndDate || undefined,
         notes: details.notes || undefined,
         assignedToId: details.assignedToId || undefined,
         // Lets the server refuse a submit whose decision has since changed.
@@ -305,10 +318,26 @@ export function BookingWorkspaceDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(400px,2fr)]">
-          <main className="min-w-0 p-3 sm:p-4">
+          <main className="min-w-0 space-y-3 p-3 sm:p-4">
+            <div className="space-y-1.5 rounded-md border border-border p-3">
+              <div className="text-xs font-medium text-foreground">Thời gian booking</div>
+              <DateRangePicker
+                from={details.bookingStartDate}
+                to={details.bookingEndDate}
+                onFromChange={(v) => changeBookingPeriod(v, details.bookingEndDate)}
+                onToChange={(v) => changeBookingPeriod(details.bookingStartDate, v)}
+                placeholder="Chọn từ ngày – đến ngày"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Chọn thời gian để booking mặt bằng đang thuê: chỉ chọn được khi thời gian
+                này không trùng thời gian Đang thuê.
+              </p>
+            </div>
             <UnitFinder
               mallId={workspaceMallId}
               initialUnitId={initialUnitId}
+              bookingStartDate={details.bookingStartDate}
+              bookingEndDate={details.bookingEndDate}
               selectedUnit={selectedUnit}
               onSelect={selectUnit}
             />

@@ -84,6 +84,16 @@ export class CreateBookingDto {
   @Min(1)
   holdDays?: number;
 
+  @ApiPropertyOptional({ description: 'Ngày bắt đầu thời gian booking (yyyy-MM-dd). Đi cùng bookingEndDate.' })
+  @IsOptional()
+  @IsDateString()
+  bookingStartDate?: string;
+
+  @ApiPropertyOptional({ description: 'Ngày kết thúc thời gian booking (yyyy-MM-dd). Đi cùng bookingStartDate.' })
+  @IsOptional()
+  @IsDateString()
+  bookingEndDate?: string;
+
   @ApiPropertyOptional({ description: 'Ghi chú nội bộ' })
   @IsOptional()
   @IsString()
@@ -107,6 +117,17 @@ export class UpdateBookingDto {
   @IsOptional()
   @IsString()
   leadId?: string;
+
+  /**
+   * CR-BOOK-CURRENCY-EDIT-001 — correcting a currency picked wrongly at
+   * creation. Every stored amount is denominated in it and the price-approval
+   * band is resolved in it, so the service accepts this only while no price has
+   * been approved, and only when the amounts are re-entered in the same request.
+   */
+  @ApiPropertyOptional({ enum: CurrencyCode, description: 'Đổi đơn vị tiền tệ — chỉ khi giá chưa được duyệt, và phải nhập lại toàn bộ các mức giá' })
+  @IsOptional()
+  @IsEnum(CurrencyCode)
+  currencyCode?: CurrencyCode;
 
   @ApiPropertyOptional({ description: 'Chuyển sang mặt bằng khác (chỉ cho PENDING booking)' })
   @IsOptional()
@@ -232,6 +253,16 @@ export class ConvertToProposalDto {
   @ApiProperty({ description: 'Ngày bắt đầu thuê dự kiến' })
   @IsDateString()
   startDate: string;
+
+  @ApiPropertyOptional({ description: 'Cập nhật ngày bắt đầu thời gian booking (yyyy-MM-dd)' })
+  @IsOptional()
+  @IsDateString()
+  bookingStartDate?: string;
+
+  @ApiPropertyOptional({ description: 'Cập nhật ngày kết thúc thời gian booking (yyyy-MM-dd)' })
+  @IsOptional()
+  @IsDateString()
+  bookingEndDate?: string;
 
   @ApiProperty({ description: 'Giá thuê đề xuất (VND/m²/tháng)' })
   @IsNumber()

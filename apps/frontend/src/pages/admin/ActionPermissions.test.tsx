@@ -62,8 +62,8 @@ describe('Admin permission matrix — action permissions', () => {
       [SEND]: { roles: mallId === 'mall-a' ? ['LEASING_MANAGER'] : ['LEASING_MANAGER', 'MALL_DIRECTOR'], source: mallId ? 'mall' : 'global' },
     }));
     renderTab();
-    const scope = await screen.findByRole('combobox');
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Mall A' })).toBeInTheDocument());
+    const scope = await screen.findByRole('combobox', { name: 'Chọn mall để xem/sửa riêng' });
+    await waitFor(() => expect(within(scope).getByRole('option', { name: 'Mall A' })).toBeInTheDocument());
     await userEvent.selectOptions(scope, 'mall-a');
 
     const row = await waitFor(() => document.querySelector(`tr[data-permission="${SEND}"]`) as HTMLElement);

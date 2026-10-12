@@ -73,6 +73,14 @@ export const SERVICE_CONTRACT_EDIT_ROLES: AppRole[] = [
 export const ACTION_PERMISSIONS = {
   // CR-PROPOSAL-DOCUMENT-FINALIZATION — send an approved Tờ trình outside the company.
   "proposal-send-external": ["ADMIN", "LEASING_MANAGER", "MALL_DIRECTOR"] as AppRole[],
+  // CR-UNIT-HANDOVER-READINESS -- mirrors backend MODULE_ROLES.handoverReadiness*.
+  // ADMIN is listed only where it is an explicit grant: ADMIN is NOT a confirmer.
+  // The Unit detail tab uses the server-computed capabilities, not this table.
+  "handover-readiness-view": ["ADMIN", "MALL_DIRECTOR", "LEASING_MANAGER", "LEASING_EXECUTIVE", "OPERATION"] as AppRole[],
+  "handover-readiness-manage": ["ADMIN", "MALL_DIRECTOR", "LEASING_MANAGER"] as AppRole[],
+  "handover-readiness-risk-manage": ["ADMIN", "MALL_DIRECTOR", "LEASING_MANAGER", "OPERATION"] as AppRole[],
+  "handover-readiness-confirm": ["OPERATION"] as AppRole[],
+  "handover-readiness-reopen": ["ADMIN", "MALL_DIRECTOR"] as AppRole[],
 };
 
 export type ActionPermission = keyof typeof ACTION_PERMISSIONS;
@@ -83,6 +91,26 @@ export const ACTION_PERMISSION_META: Record<ActionPermission, { label: string; d
     label: "Gửi tờ trình ra bên ngoài",
     description: "Cho phép người dùng gửi phiên bản tờ trình đã được phê duyệt đến khách thuê hoặc địa chỉ bên ngoài.",
   },
+  "handover-readiness-view": {
+    label: "Xem theo dõi bàn giao MB",
+    description: "Xem tiến độ Ban dự án bàn giao mặt bằng, rủi ro, ảnh xác nhận và nhận email thông báo của Mall.",
+  },
+  "handover-readiness-manage": {
+    label: "Quản lý theo dõi bàn giao MB",
+    description: "Bắt đầu/hủy theo dõi, đổi ngày dự kiến (bắt buộc lý do), thêm người theo dõi. Cấp cho người dùng Ban dự án tại đây.",
+  },
+  "handover-readiness-risk-manage": {
+    label: "Quản lý rủi ro bàn giao MB",
+    description: "Ghi nhận và đánh dấu xử lý rủi ro bàn giao mặt bằng.",
+  },
+  "handover-readiness-confirm": {
+    label: "Xác nhận đủ điều kiện bàn giao MB",
+    description: "Tải ảnh và xác nhận mặt bằng đủ điều kiện bàn giao (tối thiểu 3 ảnh). ADMIN không có quyền này mặc định; người đặt ngày không được tự xác nhận.",
+  },
+  "handover-readiness-reopen": {
+    label: "Mở lại xác nhận bàn giao MB",
+    description: "Mở lại một xác nhận đủ điều kiện đã có (bắt buộc lý do, lịch sử được giữ).",
+  },
 };
 
 /**
@@ -92,7 +120,10 @@ export const ACTION_PERMISSION_META: Record<ActionPermission, { label: string; d
  */
 export function canPerformAction(role: string | undefined, action: ActionPermission): boolean {
   if (!role) return false;
-  if (role === "ADMIN") return true;
+  // ADMIN is never stored in the matrix; its per-action authority is the explicit
+  // static grant (mirrors backend). Every action listed before the handover CR
+  // includes ADMIN, so this only differs for handover-readiness-confirm.
+  if (role === "ADMIN") return ACTION_PERMISSIONS[action].includes("ADMIN");
   const dynamic = usePermissionsStore.getState().allowedModules;
   if (dynamic) return dynamic.has(action);
   return ACTION_PERMISSIONS[action].includes(role as AppRole);
@@ -284,6 +315,23 @@ export function canAccessModule(
   return ROUTE_PERMISSIONS[module]?.includes(role as AppRole) ?? false;
 }
 
+/**
+ * View/Create/Update/Delete right on a module, for showing or hiding buttons.
+ * Uses the live matrix (role + this user's overrides); until it loads, falls
+ * back to module access so nothing flickers away. The API enforces it anyway.
+ */
+export function canDo(
+  role: string | undefined,
+  module: RouteModule,
+  action: "view" | "create" | "update" | "delete",
+): boolean {
+  if (!role) return false;
+  if (role === "ADMIN") return true;
+  const flags = usePermissionsStore.getState().moduleActions?.[module];
+  if (flags) return flags[action];
+  return canAccessModule(role, module);
+}
+
 export function canAccessPath(role: string | undefined, path: string): boolean {
   // Product bug found during test triage (docs/reliability/TEST_BASELINE_REMEDIATION.md):
   // a query string was never stripped before segment extraction, so any path
@@ -326,11 +374,11 @@ export const NAV_GROUPS = [
     label: "Khách hàng tiềm năng (CRM)",
     items: [
       {
-        label: "Điều hành CRM",
+        label: "Tổng quan CRM",
         path: "/crm-overview",
         module: "crm-overview" as RouteModule,
       },
-      { label: "Xử lý Lead", path: "/crm", module: "crm" as RouteModule },
+      { label: "Danh mục khách hàng", path: "/crm", module: "crm" as RouteModule },
     ],
   },
   {

@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spacesApi, categoriesApi, slotsApi } from '@/api';
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { spacesApi, categoriesApi, slotsApi, handoverReadinessApi, bookingApi } from '@/api';
+import { canPerformAction } from '@/lib/permissions';
+import { matchesHandoverFilter, type HandoverFilter } from '@/components/spaces/handover/handoverPresentation';
+import { buildUnitBookingIndex } from '@/components/spaces/unitBookingSummary';
 import { useSearchParams } from 'react-router-dom';
 import { useMallStore } from '@/store/mall.store';
 import { Button } from '@/components/ui/button';
@@ -68,6 +71,10 @@ export default function SpacesPage() {
     spaceTypeFilter,
     tierFilter,
     leaseTermFilter, setLeaseTermFilter,
+    handoverFilter,
+    asOfDate,
+    hasAdvancedFilters,
+    clearFilters,
   } = useSpacesFilters();
   const rentalZone = leaseTermFilter === 'SHORT' ? 'SHORT' : 'LONG';
 
@@ -115,13 +122,24 @@ export default function SpacesPage() {
     return fromApi.length > 0 ? fromApi : CATEGORIES;
   }, [categoryOptions]);
 
+  // The page floor bar is the ONLY floor selector. A plan -- floor view or map
+  // view -- always shows exactly one floor, so an empty selection there means
+  // the first floor.
+  const showsOneFloor = view === 'floor' || view === 'map';
+  const activeFloorId = showsOneFloor ? (floorFilter || floors[0]?.id || '') : floorFilter;
+  // A plan view asks the server for exactly the floor it draws. Fetching every
+  // floor and discarding the rest let the page limit truncate the one floor the
+  // reader is actually looking at.
+  const queryFloorId = showsOneFloor ? activeFloorId : floorFilter;
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: floorFilter, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone }],
+    queryKey: ['units', { search, status: statusFilter, mallId: selectedMallId, floorId: queryFloorId, minArea, maxArea, minRent, maxRent, category: categoryFilter, spaceType: spaceTypeFilter, tier: tierFilter, leaseTermType: rentalZone, asOfDate }],
     queryFn: () => spacesApi.listUnits({
+      asOfDate,
       search: search || undefined,
       status: statusFilter || undefined,
       mallId: selectedMallId || undefined,
-      floorId: floorFilter || undefined,
+      floorId: queryFloorId || undefined,
       minArea: minArea || undefined,
       maxArea: maxArea || undefined,
       minRent: minRent || undefined,
@@ -135,10 +153,62 @@ export default function SpacesPage() {
     }),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    // Changing a filter changes the query key, and without this the page falls
+    // back to its loading state and tears the view down: the map was rebuilt
+    // from scratch on every keystroke, losing the reader's zoom and pan, and
+    // the grid flashed a skeleton between every result.
+    placeholderData: keepPreviousData,
   });
 
   const units: Unit[] = (data?.data ?? data ?? []) as Unit[];
   const unitIds = units.map((u) => u.id);
+
+  // CR-UNIT-HANDOVER-READINESS -- Mall-scoped, server-evaluated readiness for
+  // grid badges, the handover filter and the alert banner.
+  const canViewHandover = canPerformAction(user?.role, 'handover-readiness-view');
+  const { data: handoverList } = useQuery({
+    queryKey: ['handover-list', selectedMallId],
+    queryFn: () => handoverReadinessApi.list(selectedMallId),
+    enabled: canViewHandover,
+    retry: false,
+    refetchInterval: 60_000,
+  });
+  const handoverByUnit = useMemo(
+    () => Object.fromEntries((handoverList?.items ?? []).map((item) => [item.unitId, item])),
+    [handoverList],
+  );
+  const gridUnits = handoverFilter
+    ? units.filter((u) => matchesHandoverFilter(handoverByUnit[u.id], handoverFilter as HandoverFilter))
+    : units;
+
+  /**
+   * CR-SPACES-FLOOR-MAP-UX-001 SPACE-MAP-FILTER-01 -- the map and the grid show
+   * the same units.
+   *
+   * The map used to fetch the whole floor and ignore every filter on this page,
+   * so "Trống, 50-200 m2" could list four spaces and draw forty. It now renders
+   * the population this page already resolved. Only the identities cross over:
+   * the map keeps its own richer records (geometry, cover photo) and no filter
+   * rule is re-implemented inside it.
+   */
+  const mapUnitIds = useMemo(
+    () => new Set(gridUnits.filter((u) => u.floorId === activeFloorId).map((u) => u.id)),
+    [gridUnits, activeFloorId],
+  );
+  const businessFiltersActive = !!(search || statusFilter || handoverFilter || hasAdvancedFilters);
+
+  /**
+   * Who is holding each space. The list, the floor plan and the map all show
+   * it, so it is resolved once here rather than three times with three
+   * different answers.
+   */
+  const { data: bookingsData } = useQuery({
+    queryKey: ['unit-booking-summary', selectedMallId],
+    queryFn: () => bookingApi.list({ mallId: selectedMallId ?? undefined, limit: 300 }),
+    enabled: !!selectedMallId,
+    staleTime: 30_000,
+  });
+  const bookingByUnit = useMemo(() => buildUnitBookingIndex(bookingsData), [bookingsData]);
 
   const { data: slotSummaries = {} } = useQuery<Record<string, UnitSlotSummary>>({
     queryKey: ['slot-summaries', unitIds.join(',')],
@@ -262,26 +332,29 @@ export default function SpacesPage() {
       {(floors.length > 0 || (isAdmin && selectedMallId)) && (
         <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
           <Layers size={14} className="text-gray-400 shrink-0" />
-          <button
-            onClick={() => setFloorFilter('')}
-            className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-              ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-          >
-            {t('floor.allFloors')}
-          </button>
+          {/* A floor plan always shows exactly one floor -- no "all floors" there. */}
+          {!showsOneFloor && (
+            <button
+              onClick={() => setFloorFilter('')}
+              className={`shrink-0 text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
+                ${!floorFilter ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+            >
+              {t('floor.allFloors')}
+            </button>
+          )}
           {floors.map((f: any) => (
             <div key={f.id} className="group relative shrink-0">
               <button
-                onClick={() => setFloorFilter(floorFilter === f.id ? '' : f.id)}
+                onClick={() => setFloorFilter(showsOneFloor ? f.id : floorFilter === f.id ? '' : f.id)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-colors whitespace-nowrap
-                  ${floorFilter === f.id
+                  ${activeFloorId === f.id
                     ? 'bg-gray-900 text-white border-gray-900'
                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}
                   ${isAdmin ? 'pr-8' : ''}`}
               >
                 {f.name}
                 {f._count?.units > 0 && (
-                  <span className={`ml-1.5 ${floorFilter === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
+                  <span className={`ml-1.5 ${activeFloorId === f.id ? 'text-blue-200' : 'text-gray-400'}`}>
                     {f._count.units}
                   </span>
                 )}
@@ -292,7 +365,7 @@ export default function SpacesPage() {
                     <button
                       type="button"
                       onClick={(e) => e.stopPropagation()}
-                      className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-100 transition-opacity hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-black/10 data-[state=open]:opacity-100 ${floorFilter === f.id ? 'text-white' : 'text-gray-500'}`}
+                      className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full opacity-100 transition-opacity hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:bg-black/10 data-[state=open]:opacity-100 ${activeFloorId === f.id ? 'text-white' : 'text-gray-500'}`}
                       title={`${t('floor.edit')} / ${t('floor.delete')}`}
                       aria-label={`${t('floor.edit')} / ${t('floor.delete')}`}
                     >
@@ -332,7 +405,13 @@ export default function SpacesPage() {
       )}
 
       {/* Alerts */}
-      {view !== 'analytics' && <SpacesAlerts mallId={selectedMallId} />}
+      {view !== 'analytics' && (
+        <SpacesAlerts
+          mallId={selectedMallId}
+          handoverKpis={canViewHandover ? handoverList?.kpis : undefined}
+          onOpenHandover={() => setView('analytics')}
+        />
+      )}
 
       {isError && view !== 'analytics' && (
         <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-6 text-center">
@@ -343,16 +422,31 @@ export default function SpacesPage() {
       )}
 
       {/* Analytics View */}
-      {view === 'analytics' && <AnalyticsView mallId={selectedMallId} />}
+      {view === 'analytics' && (
+        <AnalyticsView
+          mallId={selectedMallId}
+          floorId={floorFilter || null}
+          floorName={floors.find((f: any) => f.id === floorFilter)?.name ?? null}
+          onOpenUnit={async (unitId) => {
+            const loaded = units.find((u) => u.id === unitId);
+            if (loaded) { setSelectedUnit(loaded); return; }
+            try { setSelectedUnit(await spacesApi.getUnit(unitId)); } catch { /* unit no longer reachable */ }
+          }}
+        />
+      )}
 
-      {/* Filters (grid view only) */}
-      {view === 'grid' && <SpacesFilters categoryNames={categoryNames} />}
+      {/* Filters -- one bar, one state, for both the grid and the map */}
+      {(view === 'grid' || view === 'map') && (
+        <SpacesFilters categoryNames={categoryNames} showHandoverFilter={canViewHandover} />
+      )}
 
       {/* Grid view */}
       {view === 'grid' && !isError && (
         <SpacesGrid
-          units={units}
+          units={gridUnits}
           slotSummaries={slotSummaries}
+          handoverByUnit={handoverByUnit}
+          bookingByUnit={bookingByUnit}
           isLoading={isLoading}
           isAdmin={isAdmin}
           mallId={selectedMallId}
@@ -370,7 +464,12 @@ export default function SpacesPage() {
           onUnitClick={setSelectedUnit}
           selectedUnitId={selectedUnit?.id}
           slotSummaries={slotSummaries}
+          handoverByUnit={handoverByUnit}
+          bookingByUnit={bookingByUnit}
           allFloors={floors}
+          // Controlled only when the page floor bar exists (a Mall is selected);
+          // with no Mall the plan keeps its own tabs derived from the units.
+          activeFloorLevel={floors.length > 0 ? floors.find((f: any) => f.id === activeFloorId)?.level ?? '' : undefined}
           isAdmin={isAdmin}
           onCreateFloor={() => { setEditingFloor(null); setFloorDialogOpen(true); }}
           onEditFloor={(f: any) => { setEditingFloor(f); setFloorDialogOpen(true); }}
@@ -463,6 +562,17 @@ export default function SpacesPage() {
             floors.length > 0 ? (
               <MallMapViewer
                 floors={floors}
+                // The page floor bar above is the one selector; the map must not
+                // draw a second, independently-tracked one.
+                activeFloorId={activeFloorId}
+                onFloorChange={setFloorFilter}
+                // SPACE-MAP-FILTER-01: the map draws what this page resolved.
+                activeUnitIds={mapUnitIds}
+                slotSummaries={slotSummaries}
+                handoverByUnit={handoverByUnit}
+                bookingByUnit={bookingByUnit}
+                filtersActive={businessFiltersActive}
+                onClearFilters={clearFilters}
                 onUnitClick={(u) => setSelectedUnit(u)}
                 onBookUnit={(u) => setSelectedUnit(u)}
               />

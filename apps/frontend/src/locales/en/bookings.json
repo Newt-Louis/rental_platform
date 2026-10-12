@@ -48,10 +48,14 @@
     "CANCELLED": "Cancelled"
   },
   "slotStatus": {
-    "PENDING": "Awaiting confirmation",
+    "PENDING": "New (not submitted)",
     "CONFIRMED": "Confirmed",
     "COMPLETED": "Completed",
     "CONVERTED": "Converted to proposal",
+    "SUBMITTED": "Awaiting approval",
+    "APPROVED": "Approved",
+    "LOCKED": "Locked (conflict)",
+    "CONTRACTED": "Contracted",
     "CANCELLED": "Cancelled"
   },
   "fields": {

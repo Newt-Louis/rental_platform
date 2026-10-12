@@ -61,9 +61,27 @@ describe('SlotsService allocation concurrency', () => {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
     expect(tx.slotBooking.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ slotId: 'slot-1', status: { in: ['PENDING', 'CONFIRMED'] } }),
+      where: expect.objectContaining({
+        OR: [{ lines: { some: { slotId: 'slot-1' } } }, { slotId: 'slot-1' }],
+        status: { in: ['APPROVED', 'CONFIRMED', 'CONVERTED', 'CONTRACTED'] },
+      }),
     }));
     expect(tx.slotBooking.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the slot occupied after a booking is CONVERTED to a proposal', async () => {
+    // The mock ignores the status filter, so assert the filter itself: a
+    // CONVERTED booking must be among the statuses that hold the calendar.
+    await service.createBooking('slot-1', dto, 'user-1');
+    const where = tx.slotBooking.findMany.mock.calls[0][0].where;
+    expect(where.status.in).toContain('CONVERTED');
+  });
+
+  it('does not let unapproved (PENDING/SUBMITTED) bookings block each other -- no FIFS', async () => {
+    await service.createBooking('slot-1', dto, 'user-1');
+    const where = tx.slotBooking.findMany.mock.calls[0][0].where;
+    expect(where.status.in).not.toContain('PENDING');
+    expect(where.status.in).not.toContain('SUBMITTED');
   });
 
   it('retries a recognized serialization conflict and then succeeds', async () => {

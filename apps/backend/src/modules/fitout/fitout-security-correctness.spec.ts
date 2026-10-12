@@ -78,7 +78,7 @@ describe('Golden Fitout security and parent-reference integrity', () => {
         fitoutProject: { findMany: jest.fn().mockResolvedValue([]) },
       };
       const service = new FitoutSlaService(
-        prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+        prisma as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       );
 
       await service.getFitoutProgress([]);

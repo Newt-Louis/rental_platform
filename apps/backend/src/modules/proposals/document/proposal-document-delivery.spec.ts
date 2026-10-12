@@ -86,7 +86,8 @@ function harness(opts: { versionStatus?: string; role?: string; permissionRoles?
   const permissions: any = { getAllowedRoles: jest.fn(async () => (opts.permissionRoles === undefined ? null : new Set(opts.permissionRoles))) };
   const mallAccess: any = { assertMallAccess: jest.fn(async () => { if (opts.mallDenied) throw new ForbiddenException('No access to this mall'); }) };
   const pdf = new ProposalPdfService();
-  const service = new FixedClock(prisma, documents, pdf, emailDelivery, email, notifications, registry, permissions, mallAccess);
+  const routing: any = { plan: jest.fn(async ({ defaults }: any) => ({ mode: 'DEFAULT', overridden: false, failClosed: false, recipients: defaults.map((d: any) => ({ ...d, kind: 'TO' })), diagnostics: [] })) };
+  const service = new FixedClock(prisma, documents, pdf, emailDelivery, email, notifications, registry, permissions, mallAccess, routing);
   service.onModuleInit();
   const user = { id: 'u-manager', role: (opts.role ?? 'LEASING_MANAGER') as any };
   return { service, prisma, tx, documents, notifications, emailDelivery, ledger, sends, registry, pdf, user, row };

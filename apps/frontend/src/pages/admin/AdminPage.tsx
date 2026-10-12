@@ -1,7 +1,7 @@
 import { Fragment, useDeferredValue, useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi, permissionsApi } from '@/api';
+import { usersApi, spacesApi, tenantsApi, brandingApi, emailSettingsApi, mallAccessApi, departmentsApi, permissionsApi, slotsApi } from '@/api';
 import { useMallStore } from '@/store/mall.store';
 import { useAuthStore } from '@/store/auth.store';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ import { Sheet, SheetSection, SheetRow } from '@/components/ui/sheet';
 import { useToast } from '@/components/ui/use-toast';
 import { useForm } from 'react-hook-form';
 import {
-  Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2,
+  Users, Building2, Layers, Shield, Settings, Plus, Pencil, Trash2, Bell,
   KeyRound, Lock, Unlock, ChevronDown, ChevronRight, MapPin, X,
   CheckCircle, XCircle, AlertTriangle, RefreshCw, Mail, Phone, Briefcase,
   SquareStack, Info, GitBranch, ExternalLink, RotateCcw,
@@ -28,6 +28,8 @@ import { getMallAccessDisplay, MALL_ACCESS_ROLES } from './mallAccessDisplay';
 import { accountStatusTranslationKey, adminRoleTranslationKey } from './adminPresentation';
 import { SystemTab as OperationalSystemTab } from './SystemTab';
 import { ROUTE_PERMISSIONS, NAV_GROUPS, ACTION_PERMISSIONS, ACTION_PERMISSION_META, type ActionPermission } from '@/lib/permissions';
+import { NotificationRoutingTab } from './NotificationRoutingTab';
+import { PermissionsCrudTab } from './PermissionsCrudTab';
 import { ERPToolbar } from '@/components/erp';
 import { PageHeader } from '@/components/ui/page-header';
 import { getApiErrorMessage } from '@/lib/api-error';
@@ -1107,6 +1109,7 @@ function ZoneRow({ zone, onEdit, onDelete }: { zone: any; onEdit: () => void; on
       <SquareStack size={12} className="text-blue-400 shrink-0" />
       <span className="text-sm text-gray-700 flex-1">{zone.name}</span>
       {zone.code && <span className="text-xs text-gray-400 font-mono">{zone.code}</span>}
+      {zone.totalArea != null && <span className="text-xs text-gray-500">{zone.totalArea} m²</span>}
       <span className={`text-xs px-1.5 py-0.5 rounded-full ${unitCount > 0 ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-400'}`}>
         {unitCount} mặt bằng
       </span>
@@ -1153,14 +1156,15 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
   const floorZones = zones.filter((z) => z.floor?.id === floor.id);
 
   const createZoneMutation = useMutation({
-    mutationFn: (d: any) => spacesApi.createZone({ mallId, floorId: floor.id, ...d }),
+    mutationFn: (d: any) => spacesApi.createZone({ mallId, floorId: floor.id, ...d, totalArea: d.totalArea ? Number(d.totalArea) : undefined }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones', mallId] }); toast({ title: 'Đã tạo khu vực' }); setShowAddZone(false); reset(); onZoneChange(); },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const updateZoneMutation = useMutation({
-    mutationFn: (d: any) => spacesApi.updateZone(editZone.id, d),
+    mutationFn: (d: any) => spacesApi.updateZone(editZone.id, { ...d, totalArea: d.totalArea ? Number(d.totalArea) : undefined }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['zones', mallId] }); toast({ title: 'Đã cập nhật khu vực' }); setEditZone(null); reset(); onZoneChange(); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
   });
 
   const deleteZoneMutation = useMutation({
@@ -1246,6 +1250,7 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
             >
               <Input {...register('name', { required: true })} defaultValue={editZone?.name} placeholder="Tên khu vực" className="h-7 text-xs" />
               <Input {...register('code')} defaultValue={editZone?.code} placeholder="Mã (tùy chọn)" className="h-7 text-xs w-28" />
+              <Input {...register('totalArea')} defaultValue={editZone?.totalArea ?? ''} type="number" min={0} step="any" placeholder="Tổng DT (m²)" title="Tổng diện tích khu vực (m²) — tổng diện tích các mặt bằng (dài hạn + ngắn hạn) không được vượt quá" className="h-7 text-xs w-32" />
               <Button size="sm" type="submit" className="h-7 text-xs px-3" disabled={createZoneMutation.isPending || updateZoneMutation.isPending}>
                 {editZone ? 'Lưu' : 'Thêm'}
               </Button>
@@ -1276,6 +1281,55 @@ function FloorSection({ floor, mallId, zones, onZoneChange }: {
       )}
       <ConfirmDialog open={confirmDeleteFloor} title="Xóa tầng" message={`Xóa tầng "${floor.name}"?`} onConfirm={() => deleteFloorMutation.mutate()} onCancel={() => setConfirmDeleteFloor(false)} loading={deleteFloorMutation.isPending} />
       <ConfirmDialog open={!!confirmDeleteZone} title="Xóa khu vực" message={`Xóa khu vực "${confirmDeleteZone?.name}"?`} onConfirm={() => deleteZoneMutation.mutate()} onCancel={() => setConfirmDeleteZone(null)} loading={deleteZoneMutation.isPending} />
+    </div>
+  );
+}
+
+// Ngày lễ theo Mall: dùng tính giá cuối tuần/lễ cho thuê ngắn hạn (slot có giá cuối tuần/lễ riêng).
+function MallHolidaysPanel({ mallId }: { mallId: string }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [date, setDate] = useState('');
+  const [name, setName] = useState('');
+
+  const { data } = useQuery({
+    queryKey: ['mall-holidays', mallId],
+    queryFn: () => slotsApi.listHolidays(mallId),
+  });
+  const holidays: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+
+  const addMutation = useMutation({
+    mutationFn: () => slotsApi.addHoliday(mallId, { date, name }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['mall-holidays', mallId] }); setDate(''); setName(''); toast({ title: 'Đã thêm ngày lễ' }); },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => slotsApi.deleteHoliday(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mall-holidays', mallId] }),
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Lỗi', variant: 'destructive' }),
+  });
+
+  return (
+    <div className="mb-5 rounded-xl border border-gray-200 p-4">
+      <div className="mb-1 text-sm font-semibold text-gray-700">Ngày lễ (giá thuê ngắn hạn)</div>
+      <p className="mb-3 text-xs text-gray-500">Những ngày này được tính theo giá cuối tuần/lễ của slot, cùng với Thứ 7 và Chủ nhật.</p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40 text-sm" />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên ngày lễ" className="h-8 w-56 text-sm" />
+        <Button size="sm" disabled={!date || !name || addMutation.isPending} onClick={() => addMutation.mutate()}>Thêm</Button>
+      </div>
+      {holidays.length === 0 ? (
+        <p className="text-xs text-gray-400">Chưa có ngày lễ nào.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {holidays.map((h) => (
+            <span key={h.id} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs">
+              {String(h.date).slice(0, 10)} · {h.name}
+              <button type="button" className="text-gray-400 hover:text-red-500" onClick={() => deleteMutation.mutate(h.id)} aria-label="Xóa ngày lễ">×</button>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1332,6 +1386,8 @@ function SpaceStructureTab() {
           <Button type="button" variant="outline" onClick={() => { setShowAddFloor(false); reset(); }}>Hủy</Button>
         </form>
       )}
+
+      {selectedMallId && <MallHolidaysPanel mallId={selectedMallId} />}
 
       {/* Floor tree */}
       {sortedFloors.length === 0 ? (
@@ -1392,6 +1448,10 @@ export function PermissionsTab() {
 
   return (
     <div>
+      <h3 className="mb-2 text-sm font-semibold text-slate-900">{t('permissionsCrud.sectionCrud')}</h3>
+      <PermissionsCrudTab />
+
+      <h3 className="mb-2 mt-8 border-t border-slate-200 pt-4 text-sm font-semibold text-slate-900">{t('permissionsCrud.sectionAccess')}</h3>
       <div className="mb-3 flex items-start gap-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <Info size={14} className="shrink-0" />
         {t('permissionsEditNote')}
@@ -1473,9 +1533,15 @@ export function PermissionsTab() {
                   </td>
                   {roles.map((role) => {
                     if (role === 'ADMIN') {
+                      // ADMIN is never stored in the matrix. Modules: platform bypass.
+                      // Actions: only where the action explicitly grants ADMIN (e.g.
+                      // handover-readiness-confirm deliberately does not).
+                      const adminAllowed = perm.kind !== 'action' || perm.roles.includes('ADMIN');
                       return (
-                        <td key={role} className="px-2 py-2 border-b border-r text-center">
-                          <CheckCircle size={15} className="text-green-500 mx-auto" />
+                        <td key={role} className="px-2 py-2 border-b border-r text-center" data-admin-allowed={adminAllowed}>
+                          {adminAllowed
+                            ? <CheckCircle size={15} className="text-green-500 mx-auto" />
+                            : <span className="text-gray-300" title="ADMIN không có quyền này (quy tắc cố định)">—</span>}
                         </td>
                       );
                     }
@@ -1787,7 +1853,8 @@ const TABS = [
   { id: 'structure',   labelKey: 'tabs.structure',   icon: Layers },
   { id: 'categories',  labelKey: 'tabs.categories',  icon: SquareStack },
   { id: 'permissions', labelKey: 'tabs.permissions', icon: Shield },
-  { id: 'approval',    labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'approval',   labelKey: 'tabs.approval',    icon: GitBranch },
+  { id: 'notification-routing', labelKey: 'tabs.notificationRouting', icon: Bell },
   { id: 'system',      labelKey: 'tabs.system',      icon: Settings },
 ];
 
@@ -1796,7 +1863,7 @@ const TAB_GROUPS = [
   { labelKey: 'tabGroups.orgMall', ids: ['malls', 'departments', 'structure'] },
   { labelKey: 'tabGroups.categories', ids: ['categories'] },
   { labelKey: 'tabGroups.process', ids: ['approval'] },
-  { labelKey: 'tabGroups.platform', ids: ['system'] },
+  { labelKey: 'tabGroups.platform', ids: ['notification-routing', 'system'] },
 ];
 
 export default function AdminPage() {
@@ -1882,7 +1949,7 @@ export default function AdminPage() {
             {activeTab === 'departments' && <DepartmentsTab />}
             {activeTab === 'structure'   && <SpaceStructureTab />}
             {activeTab === 'categories'  && <CategoriesTab />}
-            {activeTab === 'permissions' && <PermissionsTab />}
+            {activeTab === 'permissions' && <PermissionsTab />}            {activeTab === 'notification-routing' && <NotificationRoutingTab />}
             {activeTab === 'approval'    && <ApprovalPolicyTab />}
             {activeTab === 'system'      && <div className="space-y-5"><BrandingCard /><EmailSettingsCard /><OperationalSystemTab /></div>}
           </div>

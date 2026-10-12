@@ -43,6 +43,12 @@ export const MODULE_ROLES = {
   // CR-PROPOSAL-DOCUMENT-FINALIZATION — sending an approved Tờ trình outside the
   // company. Deliberately narrower than `proposals`: executives prepare, managers send.
   proposalSendExternal: [Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR],
+  // CR-NOTIFICATION-RECIPIENT-ROUTING -- who may govern notification recipients.
+  // Test-send is deliberately narrower (ADMIN only by default): it is an
+  // outbound-mail primitive, not a read.
+  notificationRoutingView: [Role.ADMIN, Role.MALL_DIRECTOR],
+  notificationRoutingManage: [Role.ADMIN, Role.MALL_DIRECTOR],
+  notificationRoutingTest: [Role.ADMIN],
   fitoutDossierView: [
     Role.ADMIN,
     Role.LEASING_MANAGER,
@@ -98,6 +104,15 @@ export const MODULE_ROLES = {
   // Nhật ký hệ thống (ai đã sửa gì) — công cụ tuân thủ, giới hạn ADMIN/CEO.
   auditLog: [Role.ADMIN, Role.CEO],
   parking: [Role.ADMIN, Role.CEO, Role.MALL_DIRECTOR, Role.FINANCE, Role.OPERATION],
+  // CR-UNIT-HANDOVER-READINESS -- action permissions (static fallback of the
+  // DB-backed matrix rows `handover-readiness-*`). Enforced in the service layer
+  // by HandoverReadinessAccessService, never by role name alone. ADMIN appears
+  // only where it is an explicit grant: ADMIN is deliberately NOT a confirmer.
+  handoverReadinessView: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.LEASING_EXECUTIVE, Role.OPERATION],
+  handoverReadinessManage: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER],
+  handoverReadinessRiskManage: [Role.ADMIN, Role.MALL_DIRECTOR, Role.LEASING_MANAGER, Role.OPERATION],
+  handoverReadinessConfirm: [Role.OPERATION],
+  handoverReadinessReopen: [Role.ADMIN, Role.MALL_DIRECTOR],
 } as const satisfies Record<string, Role[]>;
 
 export type ModuleKey = keyof typeof MODULE_ROLES;

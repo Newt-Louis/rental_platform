@@ -40,6 +40,7 @@ import { ConvertToProposalDialog } from '../bookings/ConvertToProposalDialog';
 import { usePermission } from '@/hooks/usePermission';
 import { canPerformAction } from '@/lib/permissions';
 import { usePermissionsStore } from '@/store/permissions.store';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import { useMallStore } from '@/store/mall.store';
 import { PageHeader } from '@/components/ui/page-header';
 import { ERPAmount, ERPStatusBadge, ERPToolbar } from '@/components/erp';
@@ -384,7 +385,7 @@ function ProposalDetailSheet({
     mutationFn: () => proposalsApi.submitProposal(p!.id),
     onSuccess: () => {
       setSubmitBlock(null);
-      qc.invalidateQueries({ queryKey: ['proposals'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.actions.submitSuccess') });
       onClose();
     },
@@ -399,13 +400,7 @@ function ProposalDetailSheet({
   const convertMutation = useMutation({
     mutationFn: (tenant?: Record<string, unknown>) => proposalsApi.convertProposal(p!.id, tenant),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
-      qc.invalidateQueries({ queryKey: ['contracts'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      qc.invalidateQueries({ queryKey: ['floor-map'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.actions.convertSuccess') });
       onClose();
     },
@@ -424,9 +419,7 @@ function ProposalDetailSheet({
   const reviseMutation = useMutation({
     mutationFn: () => proposalsApi.startRevision(p!.id, reviseReason.trim() || undefined),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-detail', p!.id] });
-      qc.invalidateQueries({ queryKey: ['proposal-document', p!.id] });
+      refreshLeasingLifecycle(qc);
       toast({ title: 'Tờ trình đã trở về bản nháp để chỉnh sửa' });
       setShowRevise(false);
       setReviseReason('');
@@ -438,7 +431,7 @@ function ProposalDetailSheet({
   const rejectMutation = useMutation({
     mutationFn: () => proposalsApi.rejectProposal(p!.id, rejectReason),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.actions.rejectSuccess') });
       setShowRejectDialog(false);
       onClose();
@@ -960,8 +953,7 @@ export default function ProposalsPage() {
   const submitMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.submitProposal(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.actions.submitSuccess') });
     },
     onError: (e) => toast({ title: proposalErrorMessage(e, t('proposals.bulk.errorSubmit')), variant: 'destructive' }),
@@ -970,13 +962,7 @@ export default function ProposalsPage() {
   const convertMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.convertProposal(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
-      qc.invalidateQueries({ queryKey: ['contracts'] });
-      qc.invalidateQueries({ queryKey: ['units'] });
-      qc.invalidateQueries({ queryKey: ['unit-detail'] });
-      qc.invalidateQueries({ queryKey: ['occupancy'] });
-      qc.invalidateQueries({ queryKey: ['floor-map'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.actions.convertSuccess') });
     },
     onError: (e: any) => toast({ title: e?.response?.data?.message ?? t('proposals.bulk.errorSubmit'), variant: 'destructive' }),
@@ -985,8 +971,7 @@ export default function ProposalsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => proposalsApi.deleteProposal(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      refreshLeasingLifecycle(qc);
       toast({ title: t('proposals.deleteSuccess') });
       setDeletingProposal(null);
     },
@@ -1000,8 +985,7 @@ export default function ProposalsPage() {
         fail: results.filter((r) => r.status === 'rejected').length,
       })),
     onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      refreshLeasingLifecycle(qc);
       setSelectedIds(new Set());
       setConfirmBulkDelete(false);
       if (fail > 0) {
@@ -1029,8 +1013,7 @@ export default function ProposalsPage() {
         }, {}),
       })),
     onSuccess: ({ ok, fail, reasons }) => {
-      qc.invalidateQueries({ queryKey: ['proposals'] });
-      qc.invalidateQueries({ queryKey: ['proposal-stats'] });
+      refreshLeasingLifecycle(qc);
       setSelectedIds(new Set());
       if (fail > 0) {
         const detail = Object.entries(reasons)

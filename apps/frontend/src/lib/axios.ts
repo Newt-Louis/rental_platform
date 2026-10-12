@@ -40,9 +40,11 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
+    // Đăng nhập sai cũng trả 401 — để form tự hiện lỗi, không reload trang.
+    const isLoginRequest = /\/auth\/login\b/.test(error.config?.url ?? '');
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') window.location.href = '/login';
     } else if (!error.response || error.response.status >= 500) {
       // 4xx are expected user/validation errors, not reported. A missing
       // response (network failure) or 5xx indicates a real backend/infra

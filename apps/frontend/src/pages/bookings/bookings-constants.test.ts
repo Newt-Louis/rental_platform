@@ -133,8 +133,14 @@ describe('SLOT_STATUS_CONFIG', () => {
     });
   });
 
-  it('PENDING label is "Chờ xác nhận"', () => {
-    expect(SLOT_STATUS_CONFIG.PENDING.label).toBe('Chờ xác nhận');
+  it('PENDING label is "Mới tạo" (chưa gửi duyệt)', () => {
+    expect(SLOT_STATUS_CONFIG.PENDING.label).toBe('Mới tạo');
+  });
+
+  it('has a label for every short-term approval status', () => {
+    for (const status of ['SUBMITTED', 'APPROVED', 'LOCKED', 'CONTRACTED']) {
+      expect(SLOT_STATUS_CONFIG[status]?.label).toBeTruthy();
+    }
   });
 });
 

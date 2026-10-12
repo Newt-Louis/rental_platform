@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import { refreshLeasingLifecycle } from '@/lib/leasingLifecycle';
 import { PageHeader } from '@/components/ui/page-header';
 import { AsyncState } from '@/components/ui/async-state';
 import { ERPStatCard, ERPToolbar } from '@/components/erp';
@@ -157,8 +158,7 @@ export default function BookingsPage() {
   const reinstateListMutation = useMutation({
     mutationFn: (id: string) => bookingApi.reinstate(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setConfirmReinstateId(null);
       toast({ title: t('reinstateSuccess') });
     },
@@ -171,8 +171,7 @@ export default function BookingsPage() {
   const softDeleteMutation = useMutation({
     mutationFn: (id: string) => bookingApi.softDelete(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setConfirmDeleteId(null);
       toast({ title: t('deleteSuccess') });
     },
@@ -185,7 +184,7 @@ export default function BookingsPage() {
   const deleteSlotMutation = useMutation({
     mutationFn: (id: string) => slotsApi.deleteSlotBooking(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['slot-bookings'] });
+      refreshLeasingLifecycle(qc);
       setConfirmDeleteSlotId(null);
       toast({ title: t('deleteSlotSuccess') });
     },
@@ -203,8 +202,7 @@ export default function BookingsPage() {
         return { ok, fail };
       }),
     onSuccess: ({ ok, fail }) => {
-      qc.invalidateQueries({ queryKey: ['bookings'] });
-      qc.invalidateQueries({ queryKey: ['booking-stats'] });
+      refreshLeasingLifecycle(qc);
       setSelectedUnitIds(new Set());
       setConfirmCancelIds(null);
       setCancelReason('');
@@ -363,6 +361,12 @@ export default function BookingsPage() {
   const slotStats = {
     pending: allSlotBookings.filter((b) => b.status === 'PENDING').length,
     confirmed: allSlotBookings.filter((b) => b.status === 'CONFIRMED').length,
+    submitted: allSlotBookings.filter((b) => b.status === 'SUBMITTED').length,
+    approved: allSlotBookings.filter((b) => b.status === 'APPROVED').length,
+    locked: allSlotBookings.filter((b) => b.status === 'LOCKED').length,
+    contracted: allSlotBookings.filter((b) => b.status === 'CONTRACTED').length,
+    // Booking trung lich voi booking da duoc duyet, dang cho nguoi co tham quyen xu ly
+    conflicts: allSlotBookings.filter((b) => !!b.conflictWithBookingId && ['PENDING', 'SUBMITTED'].includes(b.status)).length,
     completed: allSlotBookings.filter((b) => b.status === 'COMPLETED').length,
     converted: allSlotBookings.filter((b) => b.status === 'CONVERTED').length,
     cancelled: allSlotBookings.filter((b) => b.status === 'CANCELLED').length,
@@ -798,6 +802,10 @@ export default function BookingsPage() {
               {[
                 { status: '', label: t('filterLabels.all'), count: allSlotBookings.length },
                 { status: 'PENDING', label: t('slotStatus.PENDING'), count: slotStats.pending },
+                { status: 'SUBMITTED', label: t('slotStatus.SUBMITTED'), count: slotStats.submitted },
+                { status: 'APPROVED', label: t('slotStatus.APPROVED'), count: slotStats.approved },
+                { status: 'LOCKED', label: t('slotStatus.LOCKED'), count: slotStats.locked },
+                { status: 'CONTRACTED', label: t('slotStatus.CONTRACTED'), count: slotStats.contracted },
                 { status: 'CONFIRMED', label: t('slotStatus.CONFIRMED'), count: slotStats.confirmed },
                 { status: 'COMPLETED', label: t('slotStatus.COMPLETED'), count: slotStats.completed },
                 // Đã lập đề xuất — trước đây thiếu ở cả tab và card thống kê (bổ sung khi thêm luồng
@@ -996,12 +1004,15 @@ export default function BookingsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Badge className={`border text-xs ${statusCfg?.color}`}>{statusCfg?.label}</Badge>
+                          {b.conflictWithBookingId && ['PENDING', 'SUBMITTED'].includes(b.status) && (
+                            <Badge className="ml-1 border border-amber-300 bg-amber-50 text-amber-700 text-xs">Trùng lịch</Badge>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.createdAt)}</td>
                         <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(b.updatedAt)}</td>
                         <td className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            {['PENDING', 'CONFIRMED'].includes(b.status) && (
+                            {['PENDING', 'SUBMITTED', 'CONFIRMED', 'APPROVED'].includes(b.status) && (
                               <button
                                 className="p-1 rounded text-violet-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
                                 title={t('edit')}

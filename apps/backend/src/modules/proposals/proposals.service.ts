@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { markSlotBookingContracted, releaseSlotBookingAfterFailure, notifySlotApprovers } from '../slots/slot-booking-release';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProposalDto, UpdateProposalDto } from './dto/create-proposal.dto';
@@ -548,10 +549,18 @@ export class ProposalsService {
   async onApprovalWorkflowRejected(payload: ApprovalWorkflowRejectedEvent) {
     if (payload.entityType !== 'PROPOSAL') return;
     if (!(await this.isCurrentWorkflow(payload.workflowId, payload.entityId))) return;
-    await this.prisma.proposal.update({
+    const rejectedProposal = await this.prisma.proposal.update({
       where: { id: payload.entityId },
       data: { status: ProposalStatus.REJECTED },
     });
+    const released = await releaseSlotBookingAfterFailure(this.prisma, (rejectedProposal as any)?.slotBookingId, 'Proposal bi tu choi trong quy trinh phe duyet');
+    if (released.released && released.reopenable.length) {
+      await notifySlotApprovers(this.prisma, (rejectedProposal as any).slotBookingId, {
+        title: 'Booking ngan han da bi khoa co the mo lai',
+        body: `Proposal bi tu choi, slot da duoc giai phong; ${released.reopenable.length} booking dang bi khoa co the duoc mo lai.`,
+        type: 'SLOT_BOOKING_REOPENABLE',
+      });
+    }
     await this.markDocumentVersion(payload.workflowId, 'REJECTED');
   }
 
@@ -702,6 +711,9 @@ export class ProposalsService {
         const year = new Date().getFullYear();
         const rand = crypto.randomBytes(2).readUInt16BE(0).toString().padStart(5, '0').slice(0, 5);
         const contractNumber = `CTR-${year}-${rand}`;
+
+        // Booking ngan han: hop dong duoc xac lap -> slot/thoi gian ghi nhan da khai thac.
+        await markSlotBookingContracted(tx, (proposal as any).slotBookingId);
 
         const created = await tx.contract.create({
           data: {
@@ -896,6 +908,8 @@ export class ProposalsService {
         where: { id },
         data: { status: ProposalStatus.REJECTED, notes: rejectionReason ? `[Từ chối] ${rejectionReason}${proposal.notes ? '\n' + proposal.notes : ''}` : proposal.notes },
       });
+
+      await releaseSlotBookingAfterFailure(tx, (proposal as any).slotBookingId, 'Proposal bi tu choi');
 
       // Preserve the existing transition rule, but record it atomically with
       // the proposal rejection so neither state can be committed alone.

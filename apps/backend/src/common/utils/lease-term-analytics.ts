@@ -78,10 +78,10 @@ export function summarizeShortBookingPipeline(bookings: ShortTermBookingWindow[]
     // currency, plus an explicit UNKNOWN for bookings recorded before
     // SlotBooking carried a currency. No combined total: there is no FX engine.
     revenueByCurrency: groupSlotRevenueByCurrency(
-      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED'].includes(booking.status)),
+      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED', 'CONTRACTED'].includes(booking.status)),
     ),
     ...scalarRevenue(
-      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED'].includes(booking.status)),
+      bookings.filter((booking) => ['CONFIRMED', 'COMPLETED', 'CONTRACTED'].includes(booking.status)),
     ),
   };
 }

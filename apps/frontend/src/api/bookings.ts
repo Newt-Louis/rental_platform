@@ -74,6 +74,8 @@ export const bookingApi = {
       if (response?.data) return response;
       return { data: [], total: 0, page: 1, limit: 25, totalPages: 1 };
     }),
+  getPriceApprovalHistory: (params?: { mallId?: string; status?: string; page?: number; limit?: number; leaseTermType?: string }) =>
+    api.get('/bookings/price-approval/history', { params }).then((r) => r.data),
   approvePrice: (id: string, note?: string) =>
     api.patch(`/bookings/${id}/price/approve`, { note }).then((r) => r.data),
   rejectPrice: (id: string, reason: string) =>

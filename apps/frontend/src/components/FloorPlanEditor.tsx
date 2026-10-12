@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Pencil, Trash2, Plus, MousePointer, ZoomIn, AlertTriangle, Grid3x3, BookmarkPlus, Lock, Check, X } from 'lucide-react';
+import { Pencil, Trash2, Plus, MousePointer, ZoomIn, AlertTriangle, Grid3x3, BookmarkPlus, Lock, Check, X, Hexagon, Upload } from 'lucide-react';
 import type { UnitSlot, SlotBooking } from '@/types';
 import { SlotSummaryBadge } from '@/components/SlotSummaryBadge';
 import { ConfirmActionDialog } from '@/components/ui/confirm-action-dialog';
@@ -261,13 +261,15 @@ function SlotInfoPanel({
 
 // ── Create/Edit Slot Dialog ──────────────────────────────────────────────────
 
+type PendingZone = { x: number; y: number; w: number; h: number; polygon?: Array<{ x: number; y: number }> };
+
 function SlotFormDialog({
   open, slot, unitId, pendingZone, unitArea, existingSlotArea, onClose,
 }: {
   open: boolean;
   slot?: UnitSlot | null;
   unitId: string;
-  pendingZone?: { x: number; y: number; w: number; h: number } | null;
+  pendingZone?: PendingZone | null;
   unitArea?: number;
   existingSlotArea?: number;
   onClose: () => void;
@@ -280,6 +282,7 @@ function SlotFormDialog({
     code: '', name: '', area: '', description: '',
     slotType: 'FLEXIBLE',
     pricePerDaySqm: '', pricePerHour: '', pricePerSqmMonth: '', currencyCode: '',
+    priceWeekdayPerDaySqm: '', priceWeekendHolidayPerDaySqm: '', category: '',
     fillColor: '#3B82F6',
   });
 
@@ -295,6 +298,9 @@ function SlotFormDialog({
         pricePerHour: slot?.pricePerHour?.toString() ?? '',
         pricePerSqmMonth: slot?.pricePerSqmMonth?.toString() ?? '',
         currencyCode: slot?.currencyCode ?? '',
+        priceWeekdayPerDaySqm: slot?.priceWeekdayPerDaySqm?.toString() ?? '',
+        priceWeekendHolidayPerDaySqm: slot?.priceWeekendHolidayPerDaySqm?.toString() ?? '',
+        category: slot?.category ?? '',
         fillColor: slot?.fillColor ?? '#3B82F6',
       });
     }
@@ -310,6 +316,7 @@ function SlotFormDialog({
             posY: pendingZone?.y ?? 10,
             posW: pendingZone?.w ?? 20,
             posH: pendingZone?.h ?? 20,
+            polygon: pendingZone?.polygon,
           }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['unit-slots', unitId] });
@@ -331,6 +338,9 @@ function SlotFormDialog({
       pricePerDaySqm: form.pricePerDaySqm ? Number(form.pricePerDaySqm) : undefined,
       pricePerHour: form.pricePerHour ? Number(form.pricePerHour) : undefined,
       pricePerSqmMonth: form.pricePerSqmMonth ? Number(form.pricePerSqmMonth) : undefined,
+      priceWeekdayPerDaySqm: form.priceWeekdayPerDaySqm ? Number(form.priceWeekdayPerDaySqm) : undefined,
+      priceWeekendHolidayPerDaySqm: form.priceWeekendHolidayPerDaySqm ? Number(form.priceWeekendHolidayPerDaySqm) : undefined,
+      category: form.category || undefined,
       // RPT-CUR-006: the API rejects slot pricing with no currency.
       currencyCode: form.currencyCode || undefined,
       fillColor: form.fillColor,
@@ -391,7 +401,7 @@ function SlotFormDialog({
               {areaWarning && (
                 <div className="flex items-center gap-1 text-[11px] text-amber-600 mt-1">
                   <AlertTriangle size={10} />
-                  Vượt quá NLA còn lại ({remainingCapacity} m²). Slot sẽ được tạo nhưng cần kiểm tra lại.
+                  Vượt quá NLA còn lại ({remainingCapacity} m²). Hệ thống sẽ từ chối tạo slot này.
                 </div>
               )}
             </div>
@@ -446,6 +456,27 @@ function SlotFormDialog({
                       type="number"
                       placeholder="0"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Giá ngày thường/m² <span className="text-gray-400">(tuỳ chọn, thay cho giá/ngày)</span></label>
+                    <Input value={form.priceWeekdayPerDaySqm} onChange={set('priceWeekdayPerDaySqm')} type="number" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Giá cuối tuần/lễ/m² <span className="text-gray-400">(T7, CN và ngày lễ của Mall)</span></label>
+                    <Input value={form.priceWeekendHolidayPerDaySqm} onChange={set('priceWeekendHolidayPerDaySqm')} type="number" placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Danh mục sảnh</label>
+                    <select
+                      value={form.category}
+                      onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                      className="w-full h-9 px-3 text-sm border border-gray-200 rounded-md bg-white"
+                    >
+                      <option value="">— Chưa phân loại —</option>
+                      <option value="EVENT">Event</option>
+                      <option value="ADVERTISING">Advertising</option>
+                      <option value="KIOSK">Kiosk</option>
+                    </select>
                   </div>
                   <div>
                     <label className="text-xs text-gray-600 mb-1 block">Giá/giờ (HOURLY — toàn slot)</label>
@@ -1034,27 +1065,44 @@ function SlotRect({
   // Badge position (top-right corner of rect)
   const badgeX = slot.posX + slot.posW;
   const badgeY = slot.posY;
+  const hasPolygon = Array.isArray(slot.polygon) && slot.polygon.length >= 3;
 
   return (
     <g key={slot.id}>
-      {/* Main rect */}
-      <rect
-        x={`${slot.posX}%`}
-        y={`${slot.posY}%`}
-        width={`${slot.posW}%`}
-        height={`${slot.posH}%`}
-        fill={color.fill}
-        fillOpacity={fillOpacity}
-        stroke={strokeColor}
-        strokeWidth={strokeWidth}
-        strokeDasharray={strokeDash}
-        rx={4}
-        style={{ cursor: 'pointer', transition: 'all 0.15s' }}
-        onClick={onClick}
-      />
+      {/* Main shape: da giac (slot ve tu do) hoac hinh chu nhat */}
+      {hasPolygon ? (
+        <svg x="0" y="0" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', pointerEvents: 'none' }}>
+          <polygon
+            points={slot.polygon!.map((pt) => `${pt.x},${pt.y}`).join(' ')}
+            fill={color.fill}
+            fillOpacity={fillOpacity}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeDasharray={strokeDash}
+            vectorEffect="non-scaling-stroke"
+            style={{ cursor: 'pointer', transition: 'all 0.15s', pointerEvents: 'all' }}
+            onClick={onClick}
+          />
+        </svg>
+      ) : (
+        <rect
+          x={`${slot.posX}%`}
+          y={`${slot.posY}%`}
+          width={`${slot.posW}%`}
+          height={`${slot.posH}%`}
+          fill={color.fill}
+          fillOpacity={fillOpacity}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeDasharray={strokeDash}
+          rx={4}
+          style={{ cursor: 'pointer', transition: 'all 0.15s' }}
+          onClick={onClick}
+        />
+      )}
 
       {/* Diagonal hatch overlay for confirmed bookings */}
-      {color.status === 'confirmed' && (
+      {color.status === 'confirmed' && !hasPolygon && (
         <rect
           x={`${slot.posX}%`}
           y={`${slot.posY}%`}
@@ -1144,12 +1192,10 @@ function mediaUrl(url?: string | null) {
 export function FloorPlanEditor({
   unitId,
   unitStatus,
-  floorPlanUrl: floorPlanUrlProp,
   unitArea,
 }: {
   unitId: string;
   unitStatus?: string;
-  floorPlanUrl?: string;
   unitArea?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1157,24 +1203,45 @@ export function FloorPlanEditor({
   const qc = useQueryClient();
 
   const { data: floorPlanMedia } = useQuery({
-    queryKey: ['unit-media', unitId, 'FLOOR_PLAN'],
-    queryFn: () => spacesApi.listUnitMedia(unitId, 'FLOOR_PLAN'),
+    // Bản vẽ ngắn hạn là bản vẽ RIÊNG, không dùng lại floor plan của nghiệp vụ dài hạn.
+    queryKey: ['unit-media', unitId, 'SHORT_TERM_PLAN'],
+    queryFn: () => spacesApi.listUnitMedia(unitId, 'SHORT_TERM_PLAN'),
     enabled: !!unitId,
   });
   const floorPlanList: any[] = (floorPlanMedia as any[]) ?? [];
   const [selectedFloorPlanIdx, setSelectedFloorPlanIdx] = useState(0);
-  const floorPlanUrl = mediaUrl(
-    floorPlanList[selectedFloorPlanIdx]?.fileUrl ?? floorPlanUrlProp,
-  );
+  const floorPlanUrl = mediaUrl(floorPlanList[selectedFloorPlanIdx]?.fileUrl);
+
+  const uploadPlan = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('type', 'SHORT_TERM_PLAN');
+      return spacesApi.uploadUnitMedia(unitId, fd);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['unit-media', unitId, 'SHORT_TERM_PLAN'] });
+      toast({ title: 'Đã tải bản vẽ ngắn hạn' });
+    },
+    onError: (e: any) => toast({ title: e?.response?.data?.message ?? 'Không tải được bản vẽ (chỉ nhận ảnh JPG/PNG/WebP)', variant: 'destructive' }),
+  });
 
   const bookable = !unitStatus || !UNBOOKABLE_STATUSES[unitStatus];
   const unbookableReason = unitStatus && UNBOOKABLE_STATUSES[unitStatus]
     ? `Mặt bằng đang ở trạng thái "${UNBOOKABLE_STATUSES[unitStatus]}" — đã có khách thuê chính thức nên không thể tạo booking ô nhỏ mới.`
     : undefined;
 
-  const [mode, setMode] = useState<'select' | 'draw'>('select');
+  const [mode, setMode] = useState<'select' | 'draw' | 'polygon'>('select');
+  const [polyPoints, setPolyPointsState] = useState<Array<{ x: number; y: number }>>([]);
+  // Ref đồng bộ: các click liên tiếp nhanh không được đọc state cũ (chưa kịp render lại)
+  const polyRef = useRef<Array<{ x: number; y: number }>>([]);
+  const setPolyPoints = useCallback((pts: Array<{ x: number; y: number }>) => {
+    polyRef.current = pts;
+    setPolyPointsState(pts);
+  }, []);
+  const [polyCursor, setPolyCursor] = useState<{ x: number; y: number } | null>(null);
   const [drawing, setDrawing] = useState<DrawState | null>(null);
-  const [pendingZone, setPendingZone] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [pendingZone, setPendingZone] = useState<PendingZone | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<UnitSlot | null>(null);
   const [deleteSlot, setDeleteSlot] = useState<UnitSlot | null>(null);
   const [editSlot, setEditSlot] = useState<UnitSlot | null>(null);
@@ -1246,6 +1313,47 @@ export function FloorPlanEditor({
       y: Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100)),
     };
   }, []);
+
+  // Vẽ đa giác: bấm để thêm đỉnh, bấm lại đỉnh đầu / nhấp đúp / Enter để khép kín, Esc để hủy.
+  const finishPolygon = useCallback((points: Array<{ x: number; y: number }>) => {
+    if (points.length < 3) return;
+    const xs = points.map((pt) => pt.x);
+    const ys = points.map((pt) => pt.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    setPendingZone({ x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y, polygon: points.map((pt) => ({ x: +pt.x.toFixed(2), y: +pt.y.toFixed(2) })) });
+    setPolyPoints([]);
+    setPolyCursor(null);
+    setShowCreateForm(true);
+  }, [setPolyPoints]);
+
+  const handlePolygonClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (mode !== 'polygon') return;
+      const pos = getRelPos(e);
+      const points = polyRef.current;
+      const first = points[0];
+      if (first && points.length >= 3 && Math.hypot(pos.x - first.x, pos.y - first.y) < 2.5) {
+        finishPolygon(points);
+        return;
+      }
+      const last = points[points.length - 1];
+      // Nhấp đúp bắn 2 click liên tiếp: bỏ đỉnh trùng
+      if (last && Math.hypot(pos.x - last.x, pos.y - last.y) < 0.8) return;
+      setPolyPoints([...points, pos]);
+    },
+    [mode, getRelPos, finishPolygon, setPolyPoints],
+  );
+
+  useEffect(() => {
+    if (mode !== 'polygon') return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') { setPolyPoints([]); setPolyCursor(null); }
+      if (ev.key === 'Enter') finishPolygon(polyPoints);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode, polyPoints, finishPolygon]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -1323,7 +1431,7 @@ export function FloorPlanEditor({
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <button
-            onClick={() => setMode('select')}
+            onClick={() => { setMode('select'); setPolyPoints([]); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               mode === 'select'
                 ? 'bg-gray-900 text-white border-gray-900'
@@ -1345,6 +1453,36 @@ export function FloorPlanEditor({
           >
             <Pencil size={12} /> Vẽ ô
           </button>
+          <button
+            onClick={() => {
+              setMode('polygon');
+              setPolyPoints([]);
+              setSelectedSlot(null);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              mode === 'polygon'
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <Hexagon size={12} /> Vẽ đa giác
+          </button>
+          <label
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white text-gray-600 border-gray-200 hover:border-gray-300 transition-colors cursor-pointer ${uploadPlan.isPending ? 'opacity-50 pointer-events-none' : ''}`}
+            title="Tải ảnh bản vẽ 2D riêng cho khu cho thuê ngắn hạn"
+          >
+            <Upload size={12} /> {uploadPlan.isPending ? 'Đang tải...' : 'Tải bản vẽ'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadPlan.mutate(file);
+                e.target.value = '';
+              }}
+            />
+          </label>
           <button
             onClick={() => setShowGridDialog(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white text-gray-600 border-gray-200 hover:border-gray-300 transition-colors"
@@ -1401,12 +1539,17 @@ export function FloorPlanEditor({
       <div
         ref={containerRef}
         className={`relative w-full bg-gray-100 rounded-xl overflow-hidden select-none border ${
-          mode === 'draw' ? 'cursor-crosshair' : 'cursor-default'
+          mode === 'draw' || mode === 'polygon' ? 'cursor-crosshair' : 'cursor-default'
         }`}
         style={{ aspectRatio: '16/9', minHeight: 320 }}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
+        onMouseMove={(e) => {
+          handleMouseMove(e);
+          if (mode === 'polygon' && polyPoints.length > 0) setPolyCursor(getRelPos(e));
+        }}
         onMouseUp={handleMouseUp}
+        onClick={handlePolygonClick}
+        onDoubleClick={() => { if (mode === 'polygon') finishPolygon(polyRef.current); }}
       >
         {floorPlanUrl ? (
           <img
@@ -1419,9 +1562,9 @@ export function FloorPlanEditor({
           <div className="w-full h-full flex items-center justify-center text-gray-300">
             <div className="text-center">
               <ZoomIn size={40} className="mx-auto mb-2 opacity-30" />
-              <p className="text-sm">Chưa có floor plan</p>
+              <p className="text-sm">Chưa có bản vẽ cho thuê ngắn hạn</p>
               <p className="text-xs mt-1 text-gray-400">
-                Upload ảnh floor plan trong tab Media để hiển thị nền
+                Bấm “Tải bản vẽ” để tải ảnh 2D riêng cho khu này (không dùng chung floor plan dài hạn)
               </p>
             </div>
           </div>
@@ -1430,7 +1573,7 @@ export function FloorPlanEditor({
         {/* SVG overlay */}
         <svg
           className="absolute inset-0 w-full h-full"
-          style={{ pointerEvents: mode === 'draw' ? 'none' : 'all' }}
+          style={{ pointerEvents: mode === 'draw' || mode === 'polygon' ? 'none' : 'all' }}
         >
           <defs>
             {/* Diagonal hatch pattern for confirmed bookings */}
@@ -1459,6 +1602,22 @@ export function FloorPlanEditor({
             />
           ))}
 
+          {/* Polygon preview */}
+          {mode === 'polygon' && polyPoints.length > 0 && (
+            <>
+              <svg x="0" y="0" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ overflow: 'visible', pointerEvents: 'none' }}>
+                <polyline
+                  points={[...polyPoints, ...(polyCursor ? [polyCursor] : [])].map((pt) => `${pt.x},${pt.y}`).join(' ')}
+                  fill="#3b82f6" fillOpacity={0.15} stroke="#3b82f6" strokeWidth={2} strokeDasharray="6,3"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+              {polyPoints.map((pt, i) => (
+                <circle key={i} cx={`${pt.x}%`} cy={`${pt.y}%`} r={i === 0 ? 6 : 4} fill={i === 0 ? '#1d4ed8' : '#3b82f6'} stroke="white" strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+              ))}
+            </>
+          )}
+
           {/* Drawing preview rect */}
           {drawRect && drawRect.w > 1 && drawRect.h > 1 && (
             <rect
@@ -1476,6 +1635,19 @@ export function FloorPlanEditor({
             />
           )}
         </svg>
+
+        {mode === 'polygon' && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-gray-900 text-white text-xs px-3 py-1.5 rounded-full shadow-lg">
+            <span className="pointer-events-none">
+              {polyPoints.length < 3 ? `Bấm để đặt đỉnh (${polyPoints.length}/3 tối thiểu)` : 'Bấm đỉnh đầu, nhấp đúp hoặc Enter để khép kín · Esc để hủy'}
+            </span>
+            {polyPoints.length >= 3 && (
+              <button type="button" className="rounded bg-white/20 px-2 py-0.5 hover:bg-white/30" onClick={(e) => { e.stopPropagation(); finishPolygon(polyPoints); }}>
+                Hoàn tất
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Draw mode hint */}
         {mode === 'draw' && !drawing && (

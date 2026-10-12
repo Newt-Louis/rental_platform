@@ -223,6 +223,21 @@ export class BookingController {
     return this.bookingService.getBookingsPendingPriceApproval(scope);
   }
 
+  @Get('price-approval/history')
+  @ApiOperation({ summary: 'Lịch sử quyết định phê duyệt giá booking (đã duyệt / từ chối)' })
+  @Roles(Role.ADMIN, Role.LEASING_MANAGER, Role.MALL_DIRECTOR, Role.CEO)
+  async getPriceApprovalHistory(
+    @Query('mallId') mallId?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('leaseTermType') leaseTermType?: string,
+    @CurrentUser() user?: any,
+  ) {
+    const scope = await this.scopedQuery({ mallId, page, limit, leaseTermType }, user);
+    return this.bookingService.getPriceApprovalHistory({ ...scope, status }, { id: user.id, role: user.role });
+  }
+
   // CR-BOOK-PRICE-APPROVAL-001 — these two carried NO @Roles at all, so they
   // fell back to the bookings module ceiling and a LEASING_EXECUTIVE could
   // approve the very price they had just proposed. The role list here is only
