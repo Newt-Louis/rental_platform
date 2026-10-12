@@ -8,6 +8,7 @@ import {
   ParkingTransactionExportFilterDto,
   ParkingTransactionFilterDto,
   ParkingTransactionFilterV2Dto,
+  ParkingVoucherTypesQueryDto,
   ParkingYearlyChartFilterDto,
 } from './dto/parking-transaction-filter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -52,6 +53,12 @@ export class ParkingDashboardController {
     return this.parkingService.getTenants();
   }
 
+  @Get('voucher-types')
+  @ApiOperation({ summary: 'Danh sách loại voucher (voucher_type_name) của bãi đỗ xe' })
+  voucherTypes(@Query() q: ParkingVoucherTypesQueryDto) {
+    return this.parkingService.getVoucherTypeNames(q.parkingCode);
+  }
+
   @Post('transactions')
   @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang' })
   transactions(@Body() filter: ParkingTransactionFilterDto) {
@@ -59,7 +66,7 @@ export class ParkingDashboardController {
   }
 
   @Post('transactions/v2')
-  @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang kiểu keyset/cursor' })
+  @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang theo trang (page/total)' })
   transactionsV2(@Body() filter: ParkingTransactionFilterV2Dto) {
     return this.parkingService.getTransactionsV2(filter);
   }

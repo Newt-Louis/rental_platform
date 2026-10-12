@@ -43,6 +43,8 @@
     "entryImage": "Ảnh vào",
     "exitImage": "Ảnh ra",
     "noImage": "Không có ảnh",
+    "dataIncomplete": "Dữ liệu chưa hoàn tất",
+    "close": "Đóng",
     "onlinePayment": "Online",
     "promotionDetail": "Chi tiết khuyến mãi",
     "voucherBill": "Voucher hóa đơn",

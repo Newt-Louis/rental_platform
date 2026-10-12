@@ -25,9 +25,10 @@ export interface ParkingTransactionFilterV2 {
   promotionType?: 'NONE' | 'BILL' | 'VOUCHER';
   paymentStatus?: string[];
   invoiceStatus?: string[];
+  voucherTypeNames?: string[];
   sortBy?: 'check_in_time' | 'check_out_time' | 'total_fee' | 'duration';
   sortDir?: 'asc' | 'desc';
-  cursor?: string;
+  page?: number;
   limit?: number;
 }
 
@@ -63,6 +64,8 @@ export const parkingDashboardApi = {
     api.get('/parking-dashboard/revenue-vehicle-chart-by-month', { params: { parkingCode, year } }).then((r) => r.data),
   getRevenueVehicleChartByYear: (parkingCode: string, fromYear: number, toYear: number) =>
     api.get('/parking-dashboard/revenue-vehicle-chart-by-year', { params: { parkingCode, fromYear, toYear } }).then((r) => r.data),
+  getVoucherTypes: (parkingCode: string) =>
+    api.get('/parking-dashboard/voucher-types', { params: { parkingCode } }).then((r) => r.data),
   getTransactionsV2: (filter: ParkingTransactionFilterV2) =>
     api.post('/parking-dashboard/transactions/v2', filter).then((r) => r.data),
   getTransactions: (filter: ParkingTransactionFilter) =>

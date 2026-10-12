@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -43,14 +44,17 @@ export class ParkingTransactionFilterV2Dto {
   @IsOptional() @IsArray() @IsString({ each: true })
   invoiceStatus?: string[];
 
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @IsString({ each: true })
+  voucherTypeNames?: string[];
+
   @IsOptional() @IsIn(TRANSACTION_SORT_FIELDS)
   sortBy?: ParkingTransactionSortField = 'check_in_time';
 
   @IsOptional() @IsIn(['asc', 'desc'])
   sortDir?: 'asc' | 'desc' = 'desc';
 
-  @IsOptional() @IsString()
-  cursor?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  page?: number = 1;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
   limit?: number = 25;
@@ -77,6 +81,11 @@ export class ParkingTransactionFilterDto {
 
   @IsOptional() @IsString() @MaxLength(50)
   licensePlate?: string;
+}
+
+export class ParkingVoucherTypesQueryDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
 }
 
 export class ParkingTransactionExportFilterDto {

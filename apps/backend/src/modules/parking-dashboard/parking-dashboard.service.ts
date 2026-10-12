@@ -316,6 +316,18 @@ export class ParkingDashboardService {
     return tenants.map((t) => ({ parkingCode: t.tenant_code, name: t.name }));
   }
 
+  async getVoucherTypeNames(parkingCode: string) {
+    this.ensureConfigured();
+    const tenant = await this.resolveTenant(parkingCode);
+    const rows = await this.prisma.parking_transactions.findMany({
+      where: { tenant_id: tenant.tenant_id, voucher_type_name: { not: null } },
+      select: { voucher_type_name: true },
+      distinct: ['voucher_type_name'],
+      orderBy: { voucher_type_name: 'asc' },
+    });
+    return rows.map((r) => r.voucher_type_name as string).filter(Boolean);
+  }
+
   async getTransactionsV2(filter: ParkingTransactionFilterV2Dto) {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(filter.parkingCode);
@@ -326,35 +338,29 @@ export class ParkingDashboardService {
 
     const where = this.buildTransactionWhereV2(tenant.tenant_id, start, end, filter);
 
-    // Keyset cursor is only supported for the default sort (check_in_time desc,
-    // matching idx_pt_keyset). Any other sort falls back to a plain first page.
-    const usesKeyset = sortBy === 'check_in_time' && sortDir === 'desc';
-    if (usesKeyset && filter.cursor) {
-      const cursor = decodeCursor(filter.cursor);
-      where.OR = [
-        { check_in_time: { lt: cursor.checkInTime } },
-        { check_in_time: cursor.checkInTime, parking_session_id: { lt: cursor.sessionId } },
-      ];
-    }
+    const page = filter.page ?? 1;
+    const orderBy: Prisma.parking_transactionsOrderByWithRelationInput[] = [
+      { [sortBy]: sortDir },
+      { parking_session_id: 'desc' },
+    ];
 
-    const rows = await this.prisma.parking_transactions.findMany({
-      where,
-      orderBy: usesKeyset
-        ? [{ check_in_time: 'desc' }, { parking_session_id: 'desc' }]
-        : [{ [sortBy]: sortDir }],
-      take: limit + 1,
-    });
+    const [total, rows] = await Promise.all([
+      this.prisma.parking_transactions.count({ where }),
+      this.prisma.parking_transactions.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
 
-    const hasMore = rows.length > limit;
-    const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
-    const lastRow = pageRows[pageRows.length - 1];
 
     return {
-      items: pageRows.map((r) => mapTransactionRowV2(r, tenant.tenant_code, vehicleTypeNames)),
-      hasMore,
-      nextCursor:
-        hasMore && lastRow ? encodeCursor(lastRow.check_in_time, lastRow.parking_session_id) : null,
+      items: rows.map((r) => mapTransactionRowV2(r, tenant.tenant_code, vehicleTypeNames)),
+      total,
+      page,
+      limit,
     };
   }
 
@@ -368,8 +374,6 @@ export class ParkingDashboardService {
       tenant_id: tenantId,
       check_in_time: { gte: start, lt: end },
     };
-    // laneId/search live under `AND` (not the top-level `OR`), since
-    // getTransactionsV2 uses `where.OR` for the keyset cursor predicate.
     const and: Prisma.parking_transactionsWhereInput[] = [];
 
     if (filter.laneId != null) {
@@ -387,6 +391,9 @@ export class ParkingDashboardService {
           { voucher_coupon_code: { contains: search, mode: 'insensitive' } },
         ],
       });
+    }
+    if (filter.voucherTypeNames?.length) {
+      where.voucher_type_name = { in: filter.voucherTypeNames };
     }
     if (filter.promotionType === 'NONE') {
       and.push(
@@ -655,28 +662,6 @@ function dayRange(startDate: string, endDate: string): { start: Date; end: Date 
   return { start, end };
 }
 
-interface TransactionCursor {
-  checkInTime: Date;
-  sessionId: number;
-}
-
-function encodeCursor(checkInTime: Date, sessionId: number): string {
-  return Buffer.from(JSON.stringify({ t: checkInTime.toISOString(), id: sessionId }), 'utf8').toString('base64');
-}
-
-function decodeCursor(cursor: string): TransactionCursor {
-  try {
-    const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8'));
-    const sessionId = Number(decoded.id);
-    if (!Number.isFinite(sessionId)) {
-      throw new Error('invalid session id');
-    }
-    return { checkInTime: new Date(decoded.t), sessionId };
-  } catch {
-    throw new BadRequestException('Cursor phân trang không hợp lệ');
-  }
-}
-
 function formatDurationHms(minutes: number | null): string {
   if (minutes == null) return '--:--:--';
   const totalSeconds = Math.round(minutes * 60);
@@ -751,7 +736,7 @@ function mapTransactionRow(
     entryTime: row.check_in_time,
     exitTime: row.check_out_time,
     totalTime: row.duration,
-    voucherTypeName: row.voucher_type,
+    voucherTypeName: row.voucher_type_name,
     voucherCode: row.voucher_coupon_code ?? row.voucher_bill_number,
     voucherValue: toNumber(row.voucher_coupon_amount) + toNumber(row.voucher_bill_amount),
     parkingFee: toNumber(row.parking_fee),

@@ -43,6 +43,8 @@
     "entryImage": "Entry Image",
     "exitImage": "Exit Image",
     "noImage": "No image",
+    "dataIncomplete": "Parking data not completed",
+    "close": "Close",
     "onlinePayment": "Online",
     "promotionDetail": "Promotion Detail",
     "voucherBill": "Bill Voucher",
