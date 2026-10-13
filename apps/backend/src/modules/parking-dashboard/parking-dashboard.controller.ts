@@ -3,11 +3,14 @@ import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ParkingDashboardService } from './parking-dashboard.service';
 import {
+  ParkingDailyChartFilterDto,
   ParkingMonthlyChartFilterDto,
   ParkingMonthlySummaryFilterDto,
   ParkingTransactionExportFilterDto,
   ParkingTransactionFilterDto,
   ParkingTransactionFilterV2Dto,
+  ParkingTransactionImageQueryDto,
+  ParkingVoucherTypesQueryDto,
   ParkingYearlyChartFilterDto,
 } from './dto/parking-transaction-filter.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -40,6 +43,12 @@ export class ParkingDashboardController {
     return this.parkingService.getRevenueVehicleChartByMonth(filter.parkingCode, filter.year);
   }
 
+  @Get('revenue-vehicle-chart-by-day')
+  @ApiOperation({ summary: 'Doanh thu & lượt xe theo ngày trong một tháng' })
+  revenueVehicleChartByDay(@Query() filter: ParkingDailyChartFilterDto) {
+    return this.parkingService.getRevenueVehicleChartByDay(filter.parkingCode, filter.year, filter.month);
+  }
+
   @Get('revenue-vehicle-chart-by-year')
   @ApiOperation({ summary: 'Doanh thu & lượt xe theo năm, trong một khoảng năm' })
   revenueVehicleChartByYear(@Query() filter: ParkingYearlyChartFilterDto) {
@@ -52,6 +61,12 @@ export class ParkingDashboardController {
     return this.parkingService.getTenants();
   }
 
+  @Get('voucher-types')
+  @ApiOperation({ summary: 'Danh sách loại voucher (voucher_type_name) của bãi đỗ xe' })
+  voucherTypes(@Query() q: ParkingVoucherTypesQueryDto) {
+    return this.parkingService.getVoucherTypeNames(q.parkingCode);
+  }
+
   @Post('transactions')
   @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang' })
   transactions(@Body() filter: ParkingTransactionFilterDto) {
@@ -59,9 +74,17 @@ export class ParkingDashboardController {
   }
 
   @Post('transactions/v2')
-  @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang kiểu keyset/cursor' })
+  @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang theo trang (page/total)' })
   transactionsV2(@Body() filter: ParkingTransactionFilterV2Dto) {
     return this.parkingService.getTransactionsV2(filter);
+  }
+
+  @Get('transactions/image')
+  @ApiOperation({ summary: 'Ảnh giao dịch bãi đỗ xe — server tải từ image server và trả về (ẩn địa chỉ nguồn)' })
+  async transactionImage(@Query() q: ParkingTransactionImageQueryDto, @Res() res: Response) {
+    const img = await this.parkingService.getTransactionImage(q.parkingCode, q.sessionId, q.direction, q.view ?? 'plate');
+    res.set({ 'Content-Type': img.contentType, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+    res.send(img.buffer);
   }
 
   @Post('transactions/export')

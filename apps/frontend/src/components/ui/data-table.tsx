@@ -96,7 +96,7 @@ export function DataTable<TData>({
                   <td
                     key={cell.id}
                     className={cn(
-                      'py-2 pr-3',
+                      'py-2 pr-3 break-words',
                       cell.column.columnDef.meta?.align === 'right' && 'text-right',
                       cell.column.columnDef.meta?.align === 'center' && 'text-center',
                     )}

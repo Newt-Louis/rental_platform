@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -43,14 +44,17 @@ export class ParkingTransactionFilterV2Dto {
   @IsOptional() @IsArray() @IsString({ each: true })
   invoiceStatus?: string[];
 
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @IsString({ each: true })
+  voucherTypeNames?: string[];
+
   @IsOptional() @IsIn(TRANSACTION_SORT_FIELDS)
   sortBy?: ParkingTransactionSortField = 'check_in_time';
 
   @IsOptional() @IsIn(['asc', 'desc'])
   sortDir?: 'asc' | 'desc' = 'desc';
 
-  @IsOptional() @IsString()
-  cursor?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  page?: number = 1;
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
   limit?: number = 25;
@@ -79,6 +83,25 @@ export class ParkingTransactionFilterDto {
   licensePlate?: string;
 }
 
+export class ParkingTransactionImageQueryDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(1)
+  sessionId!: number;
+
+  @IsIn(['entry', 'exit'])
+  direction!: 'entry' | 'exit';
+
+  @IsOptional() @IsIn(['plate', 'overview'])
+  view?: 'plate' | 'overview' = 'plate';
+}
+
+export class ParkingVoucherTypesQueryDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+}
+
 export class ParkingTransactionExportFilterDto {
   @IsString() @MinLength(1) @MaxLength(50)
   parkingCode!: string;
@@ -101,6 +124,17 @@ export class ParkingMonthlyChartFilterDto {
 
   @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
   year!: number;
+}
+
+export class ParkingDailyChartFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  year!: number;
+
+  @Type(() => Number) @IsInt() @Min(1) @Max(12)
+  month!: number;
 }
 
 export class ParkingYearlyChartFilterDto {

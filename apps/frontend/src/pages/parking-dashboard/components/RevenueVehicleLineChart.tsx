@@ -1,4 +1,4 @@
-import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,9 +18,11 @@ interface RevenueVehicleLineChartProps {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /** Vehicle metric only: render the per-type totals over `data` as a pie instead of an area chart. */
+  pie?: boolean;
 }
 
-export function RevenueVehicleLineChart({ title, data, metric, isLoading, isError, onRetry }: RevenueVehicleLineChartProps) {
+export function RevenueVehicleLineChart({ title, data, metric, isLoading, isError, onRetry, pie }: RevenueVehicleLineChartProps) {
   const { t } = useTranslation('parking');
 
   // Zero-filled points (not an empty array) make every line flat and overlapping — reads as
@@ -38,6 +40,20 @@ export function RevenueVehicleLineChart({ title, data, metric, isLoading, isErro
       : [];
   const vehicleTypes = allVehicleTypes.length > 1 ? allVehicleTypes : [];
 
+  // Pie slices: total per vehicle type across the whole period; falls back to one slice when
+  // the API returned no per-type breakdown.
+  const pieData = (() => {
+    if (!(metric === 'vehicle' && pie)) return [];
+    const totals: Record<string, number> = {};
+    for (const p of data) {
+      for (const [type, n] of Object.entries(p.vehicleCountByType)) totals[type] = (totals[type] ?? 0) + n;
+    }
+    const slices = Object.entries(totals).map(([name, value]) => ({ name, value })).filter((s) => s.value > 0);
+    if (slices.length > 0) return slices.sort((a, b) => a.name.localeCompare(b.name));
+    const total = data.reduce((sum, p) => sum + p.vehicleCount, 0);
+    return total > 0 ? [{ name: t('report.vehicleCount', 'Lượt xe'), value: total }] : [];
+  })();
+
   return (
     <Card className="flex h-full flex-col">
       <CardHeader className="space-y-0">
@@ -53,38 +69,33 @@ export function RevenueVehicleLineChart({ title, data, metric, isLoading, isErro
           loading={<Skeleton className="h-64" />}
         >
           {metric === 'revenue' ? (
-            <div className="space-y-4">
-              {/* Voucher gets its own chart below — its scale can dwarf cash/online/total. */}
-              <div>
-                {/* "Khác", not "Tổng": total_fee doesn't derive from cash/online/voucher, so
-                    calling it "Total" read as a discrepancy when they don't sum to it. */}
-                <p className="mb-1 text-xs text-gray-400">{t('report.other', 'Khác')} / {t('report.cash', 'Tiền Mặt')} / {t('report.online', 'Online')}</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tickFormatter={fmtVnd} width={70} tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v: number) => fmtVnd(v)} />
-                    <Legend />
-                    <Line type="monotone" dataKey="totalRevenue" name={t('report.other', 'Khác')} stroke={SERIES_COLORS.total} strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="cashRevenue" name={t('report.cash', 'Tiền Mặt')} stroke={SERIES_COLORS.cash} strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="onlineRevenue" name={t('report.online', 'Online')} stroke={SERIES_COLORS.online} strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <div>
-                <p className="mb-1 text-xs text-gray-400">{t('report.voucher', 'Voucher')}</p>
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                    <YAxis tickFormatter={fmtVnd} width={70} tick={{ fontSize: 12 }} />
-                    <Tooltip formatter={(v: number) => fmtVnd(v)} />
-                    <Line type="monotone" dataKey="voucherRevenue" name={t('report.voucher', 'Voucher')} stroke={SERIES_COLORS.voucher} strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+            // "Khác", not "Tổng": total_fee doesn't derive from cash/online/voucher, so
+            // calling it "Total" read as a discrepancy when they don't sum to it.
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={fmtVnd} width={70} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v: number) => fmtVnd(v)} />
+                <Legend />
+                <Line type="monotone" dataKey="totalRevenue" name={t('report.other', 'Khác')} stroke={SERIES_COLORS.total} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="cashRevenue" name={t('report.cash', 'Tiền Mặt')} stroke={SERIES_COLORS.cash} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="onlineRevenue" name={t('report.online', 'Online')} stroke={SERIES_COLORS.online} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="voucherRevenue" name={t('report.voucher', 'Voucher')} stroke={SERIES_COLORS.voucher} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : pie ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={95} paddingAngle={2} label={(e) => e.value.toLocaleString()}>
+                  {pieData.map((s, i) => (
+                    <Cell key={s.name} fill={vehicleTypeColor(i)} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v: number) => v.toLocaleString()} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={data}>

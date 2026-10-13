@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
 import { parkingDashboardApi } from '@/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DataTable, DataTableSort } from '@/components/ui/data-table';
-import { ScanLine, Search, Download, ImageIcon, X, Tag, SlidersHorizontal, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { ScanLine, Search, Download, ImageIcon, X, Tag, SlidersHorizontal, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDateTimeVN } from '@/lib/utils';
 import { formatMoney } from '@/lib/currency';
 import { TransactionFilterDrawer, TransactionFilterState } from './components/TransactionFilterDrawer';
@@ -79,6 +79,7 @@ interface ParkingTransactionRow {
   totalTime?: string;
   durationDisplay?: string;
   voucherCode?: string;
+  voucherTypeName?: string;
   parkingFee: number;
   inFee?: number;
   outFee?: number;
@@ -103,8 +104,8 @@ interface ParkingTransactionRow {
     voucherCouponAmount?: number;
     voucherCouponCompany?: string | null;
   };
-  entryLicensePlateImage?: string | null;
-  exitLicensePlateImage?: string | null;
+  hasEntryImage?: boolean;
+  hasExitImage?: boolean;
 }
 
 const emptyDrawerFilter: TransactionFilterState = {
@@ -115,19 +116,58 @@ const emptyDrawerFilter: TransactionFilterState = {
   promotionType: '',
   paymentStatus: '',
   invoiceStatus: '',
+  voucherTypeNames: [],
 };
 
-const PAGE_SIZE = 50;
-const SENTINEL_BUFFER_ROWS = 15;
+const STORAGE_KEY = 'parking-transactions-view';
 
-function unwrapTransactionsPage(page: unknown): { items: ParkingTransactionRow[]; hasMore: boolean; nextCursor: string | null } {
+interface PersistedView {
+  parkingCode: string;
+  appliedDrawer: TransactionFilterState;
+  sort: DataTableSort;
+  page: number;
+}
+
+function loadView(): Partial<PersistedView> {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+const PAGE_SIZE = 50;
+
+function unwrapTransactionsPage(page: unknown): { items: ParkingTransactionRow[]; total: number } {
   const result = (page as { data?: unknown })?.data ?? page;
-  const payload = result as { items?: ParkingTransactionRow[]; hasMore?: boolean; nextCursor?: string | null };
-  return {
-    items: payload?.items ?? [],
-    hasMore: payload?.hasMore ?? false,
-    nextCursor: payload?.nextCursor ?? null,
-  };
+  const payload = result as { items?: ParkingTransactionRow[]; total?: number };
+  return { items: payload?.items ?? [], total: payload?.total ?? 0 };
+}
+
+function ParkingImage({ parkingCode, sessionId, direction, enabled }: {
+  parkingCode: string;
+  sessionId: string;
+  direction: 'entry' | 'exit';
+  enabled: boolean;
+}) {
+  const { t } = useTranslation('parking');
+  const { data: blob, isLoading, isError } = useQuery({
+    queryKey: ['parking-transaction-image', parkingCode, sessionId, direction],
+    queryFn: () => parkingDashboardApi.getTransactionImage({ parkingCode, sessionId, direction }),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+
+  if (url) return <img src={url} alt={direction} className="w-full rounded-lg border" />;
+  return (
+    <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
+      {enabled && isLoading ? t('transaction.loadingMore', 'Đang tải...') : isError || !enabled ? t('transaction.noImage', 'Không có ảnh') : ''}
+    </div>
+  );
 }
 
 export default function ParkingTransactionPage() {
@@ -140,11 +180,13 @@ export default function ParkingTransactionPage() {
   });
   const tenants: { parkingCode: string; name: string }[] = tenantsRes?.data ?? tenantsRes ?? [];
 
-  const [parkingCode, setParkingCode] = useState('');
+  const saved = useMemo(loadView, []);
+  const [parkingCode, setParkingCode] = useState(saved.parkingCode ?? '');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerForm, setDrawerForm] = useState<TransactionFilterState>(emptyDrawerFilter);
-  const [appliedDrawer, setAppliedDrawer] = useState<TransactionFilterState>(emptyDrawerFilter);
-  const [sort, setSort] = useState<DataTableSort>({ field: 'check_in_time', dir: 'desc' });
+  const [drawerForm, setDrawerForm] = useState<TransactionFilterState>({ ...emptyDrawerFilter, ...saved.appliedDrawer });
+  const [appliedDrawer, setAppliedDrawer] = useState<TransactionFilterState>({ ...emptyDrawerFilter, ...saved.appliedDrawer });
+  const [sort, setSort] = useState<DataTableSort>(saved.sort ?? { field: 'check_in_time', dir: 'desc' });
+  const [incompleteOpen, setIncompleteOpen] = useState(false);
   const [previewRow, setPreviewRow] = useState<ParkingTransactionRow | null>(null);
   const [hoveredPromotionRowId, setHoveredPromotionRowId] = useState<string | null>(null);
   const [hoveredVoucherRowId, setHoveredVoucherRowId] = useState<string | null>(null);
@@ -153,8 +195,7 @@ export default function ParkingTransactionPage() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportMonth, setExportMonth] = useState(now.getMonth() + 1);
   const [exportYear, setExportYear] = useState(now.getFullYear());
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLTableRowElement>(null);
+  const [page, setPage] = useState(saved.page ?? 1);
   const exportAbortRef = useRef<AbortController | null>(null);
 
   // Cancel an in-flight export on unmount, so navigating away doesn't leave it running
@@ -175,44 +216,22 @@ export default function ParkingTransactionPage() {
       promotionType: appliedDrawer.promotionType || undefined,
       paymentStatus: splitCsv(appliedDrawer.paymentStatus),
       invoiceStatus: splitCsv(appliedDrawer.invoiceStatus),
+      voucherTypeNames: appliedDrawer.voucherTypeNames.length ? appliedDrawer.voucherTypeNames : undefined,
       sortBy: sort.field as any,
       sortDir: sort.dir,
     }),
     [parkingCode, appliedDrawer, sort],
   );
 
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isPlaceholderData,
-  } = useInfiniteQuery({
-    queryKey: ['parking-transactions-v2', appliedFilter],
-    queryFn: ({ pageParam }) =>
-      parkingDashboardApi.getTransactionsV2({
-        ...appliedFilter,
-        cursor: pageParam,
-        limit: PAGE_SIZE,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => {
-      const { hasMore, nextCursor } = unwrapTransactionsPage(lastPage);
-      return hasMore && nextCursor ? nextCursor : undefined;
-    },
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+    queryKey: ['parking-transactions-v2', appliedFilter, page],
+    queryFn: () => parkingDashboardApi.getTransactionsV2({ ...appliedFilter, page, limit: PAGE_SIZE }),
     enabled: !!parkingCode && !!appliedFilter.startDate && !!appliedFilter.endDate,
-    // Without this, a sort/filter change flips isLoading and AsyncState unmounts the whole
-    // table mid-refetch. keepPreviousData keeps old rows on screen until the new page lands.
     placeholderData: keepPreviousData,
   });
 
-  const rawItems: ParkingTransactionRow[] = useMemo(
-    () => (data?.pages ?? []).flatMap((page) => unwrapTransactionsPage(page).items),
-    [data],
-  );
+  const { items: rawItems, total } = useMemo(() => unwrapTransactionsPage(data), [data]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const items = useMemo(
     () =>
@@ -224,30 +243,29 @@ export default function ParkingTransactionPage() {
     [rawItems],
   );
 
-  const sentinelAfterRowIndex =
-    items.length > 0 ? Math.max(0, items.length - SENTINEL_BUFFER_ROWS - 1) : undefined;
+  const filterKey = JSON.stringify(appliedFilter);
+  const prevFilterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (prevFilterKeyRef.current !== filterKey) {
+      prevFilterKeyRef.current = filterKey;
+      setPage(1);
+    }
+  }, [filterKey]);
 
   useEffect(() => {
-    scrollContainerRef.current?.scrollTo({ top: 0 });
-  }, [appliedFilter]);
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ parkingCode, appliedDrawer, sort, page }));
+    } catch {
+      /* storage unavailable */
+    }
+  }, [parkingCode, appliedDrawer, sort, page]);
 
-  useEffect(() => {
-    const el = sentinelRef.current;
-    const root = scrollContainerRef.current;
-    if (!el || !root || !hasNextPage || isFetchingNextPage || isPlaceholderData) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          fetchNextPage();
-        }
-      },
-      { root, threshold: 0 },
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData, items.length, sentinelAfterRowIndex]);
+  const { data: voucherTypesRes } = useQuery({
+    queryKey: ['parking-voucher-types', parkingCode],
+    queryFn: () => parkingDashboardApi.getVoucherTypes(parkingCode),
+    enabled: !!parkingCode,
+  });
+  const voucherTypeOptions: string[] = voucherTypesRes?.data ?? voucherTypesRes ?? [];
 
   function applyFilters() {
     setAppliedDrawer(drawerForm);
@@ -298,7 +316,11 @@ export default function ParkingTransactionPage() {
   const columns: ColumnDef<ParkingTransactionRow, any>[] = [
     { accessorKey: 'recordId', header: t('transaction.col.recordId', 'Mã'), meta: { sortField: undefined } },
     { accessorKey: 'vehicleTypeName', header: t('transaction.col.vehicleType', 'Loại xe') },
-    { accessorKey: 'cardCode', header: t('transaction.col.cardCode', 'Mã thẻ') },
+    {
+      accessorKey: 'cardCode',
+      header: t('transaction.col.cardCode', 'Mã thẻ'),
+      cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue()}</span>,
+    },
     {
       id: 'plates',
       header: t('transaction.col.plates', 'Biển số (vào / ra)'),
@@ -319,32 +341,23 @@ export default function ParkingTransactionPage() {
     },
     { accessorKey: 'entryTime', header: t('transaction.col.entryTime', 'Giờ vào'), meta: { sortField: 'check_in_time' } },
     { accessorKey: 'exitTime', header: t('transaction.col.exitTime', 'Giờ ra'), meta: { sortField: 'check_out_time' } },
-    {
-      id: 'lane',
-      header: t('transaction.col.lane', 'Làn (vào/ra)'),
-      cell: ({ row }) => (
-        <span className="flex flex-col leading-tight">
-          <span>{row.original.checkInLaneId ?? '—'}</span>
-          <span>{row.original.checkOutLaneId ?? '—'}</span>
-        </span>
-      ),
-    },
     { accessorKey: 'durationDisplay', header: t('transaction.col.duration', 'Thời gian đỗ'), meta: { sortField: 'duration' } },
     {
-      id: 'voucherCode',
-      header: t('transaction.col.voucherCode', 'Mã voucher'),
+      id: 'voucherType',
+      header: t('transaction.col.voucherType', 'Loại voucher'),
       cell: ({ row }) => {
         const rowData = row.original;
-        if (!rowData.voucherCode) return <span className="flex justify-center">—</span>;
+        if (!rowData.voucherTypeName) return <span className="flex justify-center">—</span>;
         return (
           <Popover open={hoveredVoucherRowId === row.id} onOpenChange={(open) => setHoveredVoucherRowId(open ? row.id : null)}>
             <PopoverTrigger asChild>
               <span
-                className="flex justify-center"
+                className="flex items-center justify-center gap-1 text-blue-600"
                 onMouseEnter={() => setHoveredVoucherRowId(row.id)}
                 onMouseLeave={() => setHoveredVoucherRowId(null)}
               >
-                <Tag size={16} className="text-blue-600" />
+                <Tag size={16} />
+                <span className="text-xs">{rowData.voucherTypeName}</span>
               </span>
             </PopoverTrigger>
             <PopoverContent
@@ -358,6 +371,11 @@ export default function ParkingTransactionPage() {
         );
       },
       meta: { align: 'center' },
+    },
+    {
+      accessorKey: 'voucherCode',
+      header: t('transaction.col.voucherCode', 'Mã voucher'),
+      cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue() || '—'}</span>,
     },
     { accessorKey: 'cash', header: t('transaction.col.cash', 'Tiền mặt'), cell: ({ getValue }) => fmtVnd(getValue()), meta: { align: 'right' } },
     {
@@ -414,7 +432,8 @@ export default function ParkingTransactionPage() {
       id: 'image',
       header: t('transaction.col.image', 'Ảnh'),
       cell: ({ row }) => (
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setPreviewRow(row.original)}>
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => (row.original.hasExitImage ? setPreviewRow(row.original) : setIncompleteOpen(true))}
+        >
           <ImageIcon size={15} />
         </Button>
       ),
@@ -504,29 +523,26 @@ export default function ParkingTransactionPage() {
             emptyTitle={t('transaction.empty', 'Không có giao dịch nào')}
             loading={<div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>}
           >
-            <div ref={scrollContainerRef} className="max-h-[60vh] overflow-auto">
+            <div className="max-h-[60vh] overflow-auto">
               <DataTable
                 columns={columns}
                 data={items}
                 sort={sort}
                 onSortChange={handleSort}
                 getRowId={(r) => r.id}
-                sentinelRef={sentinelRef}
-                sentinelAfterRowIndex={sentinelAfterRowIndex}
               />
-
-              {isFetchingNextPage && (
-                <div className="flex items-center justify-center gap-2 py-3 text-xs text-gray-500">
-                  <Loader2 size={16} className="animate-spin text-gray-400" />
-                  {t('transaction.loadingMore', 'Đang tải thêm...')}
-                </div>
-              )}
-
-              {!hasNextPage && items.length > 0 && !isFetchingNextPage && (
-                <p className="py-3 text-center text-xs text-gray-400">
-                  {t('transaction.noMoreResults', 'Đã hiển thị tất cả kết quả')}
-                </p>
-              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+              <span>{t('transaction.pagination.total', 'Tổng {{total}} giao dịch', { total })}</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 w-8 p-0" disabled={page <= 1 || isFetching} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft size={16} />
+                </Button>
+                <span>{t('transaction.pagination.page', 'Trang {{page}} / {{totalPages}}', { page, totalPages })}</span>
+                <Button size="sm" variant="outline" className="h-8 w-8 p-0" disabled={page >= totalPages || isFetching} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
             </div>
           </AsyncState>
         </CardContent>
@@ -538,6 +554,7 @@ export default function ParkingTransactionPage() {
         value={drawerForm}
         onChange={setDrawerForm}
         onApply={applyFilters}
+        voucherTypeOptions={voucherTypeOptions}
       />
 
       {previewRow && (
@@ -552,28 +569,27 @@ export default function ParkingTransactionPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="mb-1 text-xs text-gray-500">{t('transaction.entryImage', 'Ảnh vào')}</p>
-                {previewRow.entryLicensePlateImage ? (
-                  <img src={previewRow.entryLicensePlateImage} alt="entry" className="w-full rounded-lg border" />
-                ) : (
-                  <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
-                    {t('transaction.noImage', 'Không có ảnh')}
-                  </div>
-                )}
+                <ParkingImage parkingCode={parkingCode} sessionId={previewRow.id} direction="entry" enabled={!!previewRow.hasEntryImage} />
               </div>
               <div>
                 <p className="mb-1 text-xs text-gray-500">{t('transaction.exitImage', 'Ảnh ra')}</p>
-                {previewRow.exitLicensePlateImage ? (
-                  <img src={previewRow.exitLicensePlateImage} alt="exit" className="w-full rounded-lg border" />
-                ) : (
-                  <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
-                    {t('transaction.noImage', 'Không có ảnh')}
-                  </div>
-                )}
+                <ParkingImage parkingCode={parkingCode} sessionId={previewRow.id} direction="exit" enabled={!!previewRow.hasExitImage} />
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <Dialog open={incompleteOpen} onOpenChange={setIncompleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('transaction.dataIncomplete', 'Dữ liệu chưa hoàn tất')}</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setIncompleteOpen(false)}>{t('transaction.close', 'Đóng')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <DialogContent className="max-w-sm">

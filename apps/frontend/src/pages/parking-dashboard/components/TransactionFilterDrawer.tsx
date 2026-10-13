@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { Checkbox } from '@/components/ui/checkbox';
 import { X } from 'lucide-react';
 
 export type PromotionTypeFilter = '' | 'NONE' | 'BILL' | 'VOUCHER';
@@ -16,6 +17,7 @@ export interface TransactionFilterState {
   promotionType: PromotionTypeFilter;
   paymentStatus: string;
   invoiceStatus: string;
+  voucherTypeNames: string[];
 }
 
 interface TransactionFilterDrawerProps {
@@ -24,9 +26,10 @@ interface TransactionFilterDrawerProps {
   value: TransactionFilterState;
   onChange: (value: TransactionFilterState) => void;
   onApply: () => void;
+  voucherTypeOptions: string[];
 }
 
-export function TransactionFilterDrawer({ open, onClose, value, onChange, onApply }: TransactionFilterDrawerProps) {
+export function TransactionFilterDrawer({ open, onClose, value, onChange, onApply, voucherTypeOptions }: TransactionFilterDrawerProps) {
   const { t } = useTranslation('parking');
   if (!open) return null;
 
@@ -106,6 +109,34 @@ export function TransactionFilterDrawer({ open, onClose, value, onChange, onAppl
                 <SelectItem value="VOUCHER">{t('transaction.filterDrawer.promotionTypeVoucher', 'Khuyến mãi voucher')}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-500">{t('transaction.filterDrawer.voucherTypes', 'Loại voucher')}</Label>
+            {voucherTypeOptions.length === 0 ? (
+              <p className="text-xs text-gray-400">{t('transaction.filterDrawer.noVoucherTypes', 'Không có loại voucher')}</p>
+            ) : (
+              <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-2">
+                {voucherTypeOptions.map((name) => {
+                  const checked = value.voucherTypeNames.includes(name);
+                  return (
+                    <label key={name} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(c) =>
+                          set({
+                            voucherTypeNames: c
+                              ? [...value.voucherTypeNames, name]
+                              : value.voucherTypeNames.filter((n) => n !== name),
+                          })
+                        }
+                      />
+                      {name}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

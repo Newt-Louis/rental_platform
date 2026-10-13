@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Response } from 'express';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -32,19 +32,23 @@ function addMonths(d: Date, months: number): Date {
   return r;
 }
 
-function startOfDay(d: Date): Date {
-  const r = new Date(d);
-  r.setHours(0, 0, 0, 0);
-  return r;
+// Both the date-only picker and the datetime-local inputs carry no UTC offset — they're the
+// user's Vietnam wall-clock time, so anchor them at +07:00, not the server's local timezone
+// (Docker runs UTC, which would shift a same-day filter by 7 hours and drop edge rows).
+function vnLocalToUtc(dateStr: string): Date {
+  const withTime = dateStr.includes('T')
+    ? (dateStr.length <= 16 ? `${dateStr}:00` : dateStr)
+    : `${dateStr}T00:00:00`;
+  return new Date(`${withTime}+07:00`);
 }
 
-// Date-only strings keep the whole-day behavior (midnight to next midnight); a string with a
-// time component is used as-is, so a picked time range isn't widened back to whole days.
+// Date-only strings keep the whole-day behavior (midnight to next midnight, VN time); a string
+// with a time component is used as-is, so a picked time range isn't widened back to whole days.
 function parseRangeBoundary(dateStr: string, isEnd: boolean): Date {
   if (dateStr.includes('T')) {
-    return new Date(dateStr);
+    return vnLocalToUtc(dateStr);
   }
-  const day = startOfDay(new Date(dateStr));
+  const day = vnLocalToUtc(dateStr);
   return isEnd ? addDays(day, 1) : day;
 }
 
@@ -233,6 +237,69 @@ export class ParkingDashboardService {
     return points;
   }
 
+  // Same shape as the monthly chart, bucketed by day within one month, filled to every day.
+  async getRevenueVehicleChartByDay(parkingCode: string, year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
+    this.ensureConfigured();
+    const tenant = await this.resolveTenant(parkingCode);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const rows = await this.prisma.$queryRaw<Array<{
+      day: number; cash: number; online: number; voucher: number; total: number; count: bigint;
+    }>>`
+      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+             COALESCE(SUM(cash_amount), 0) AS cash,
+             COALESCE(SUM(bank_transfer_amount), 0) AS online,
+             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(total_fee), 0) AS total,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    const typeRows = await this.prisma.$queryRaw<Array<{
+      day: number; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
+    }>>`
+      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+             vehicle_type_id, vehicle_type_name,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1, 2, 3
+    `;
+
+    const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+    const typeByDay = new Map<number, Record<string, number>>();
+    for (const r of typeRows) {
+      const label = this.resolveVehicleTypeLabel(vehicleTypeNames, r.vehicle_type_id, r.vehicle_type_name);
+      const byType = typeByDay.get(r.day) ?? {};
+      byType[label] = (byType[label] ?? 0) + toNumber(r.count);
+      typeByDay.set(r.day, byType);
+    }
+
+    const points: RevenueVehicleSeriesPoint[] = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const r = byDay.get(d);
+      points.push({
+        label: String(d),
+        bucketKey: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        totalRevenue: toNumber(r?.total),
+        cashRevenue: toNumber(r?.cash),
+        onlineRevenue: toNumber(r?.online),
+        voucherRevenue: toNumber(r?.voucher),
+        vehicleCount: r ? toNumber(r.count) : 0,
+        vehicleCountByType: typeByDay.get(d) ?? {},
+      });
+    }
+    return points;
+  }
+
   // Same shape as the monthly chart, bucketed by calendar year across a range instead.
   // fromYear/toYear are swapped if reversed and the span is capped at 15 years.
   async getRevenueVehicleChartByYear(
@@ -312,6 +379,57 @@ export class ParkingDashboardService {
     return tenants.map((t) => ({ parkingCode: t.tenant_code, name: t.name }));
   }
 
+  // Fetches the image server-side so the browser never sees the (possibly plain-http, IP-only)
+  // image host. The URL is rebuilt from the DB path + a fixed per-lot base; the client sends only ids.
+  async getTransactionImage(
+    parkingCode: string,
+    sessionId: number,
+    direction: 'entry' | 'exit',
+    view: 'plate' | 'overview',
+  ): Promise<{ buffer: Buffer; contentType: string }> {
+    this.ensureConfigured();
+    const baseUrl = PARKING_IMAGE_BASE_URL[parkingCode];
+    if (!baseUrl) throw new NotFoundException('Bãi đỗ xe chưa cấu hình image server');
+    const tenant = await this.resolveTenant(parkingCode);
+    const row = await this.prisma.parking_transactions.findFirst({
+      where: { tenant_id: tenant.tenant_id, parking_session_id: sessionId },
+      select: { check_in_images: true, check_out_images: true },
+    });
+    const images = parseImageJson(direction === 'entry' ? row?.check_in_images : row?.check_out_images);
+    const path = (view === 'plate' ? images?.back : images?.front)?.trim();
+    if (!path) throw new NotFoundException('Không có ảnh');
+
+    const target = new URL(baseUrl + path);
+    if (target.host !== new URL(baseUrl).host) throw new BadRequestException('Đường dẫn ảnh không hợp lệ');
+
+    let upstream: Awaited<ReturnType<typeof fetch>>;
+    try {
+      upstream = await fetch(target, { signal: AbortSignal.timeout(10_000), redirect: 'manual' });
+    } catch (error) {
+      this.logger.warn(`Parking image fetch failed (${parkingCode}/${sessionId}): ${(error as Error).message}`);
+      throw new BadGatewayException('Không tải được ảnh từ image server');
+    }
+    const contentType = upstream.headers.get('content-type') ?? '';
+    if (!upstream.ok || !contentType.startsWith('image/')) {
+      throw new NotFoundException('Không có ảnh');
+    }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > 10 * 1024 * 1024) throw new BadGatewayException('Ảnh quá lớn');
+    return { buffer, contentType };
+  }
+
+  async getVoucherTypeNames(parkingCode: string) {
+    this.ensureConfigured();
+    const tenant = await this.resolveTenant(parkingCode);
+    const rows = await this.prisma.parking_transactions.findMany({
+      where: { tenant_id: tenant.tenant_id, voucher_type_name: { not: null } },
+      select: { voucher_type_name: true },
+      distinct: ['voucher_type_name'],
+      orderBy: { voucher_type_name: 'asc' },
+    });
+    return rows.map((r) => r.voucher_type_name as string).filter(Boolean);
+  }
+
   async getTransactionsV2(filter: ParkingTransactionFilterV2Dto) {
     this.ensureConfigured();
     const tenant = await this.resolveTenant(filter.parkingCode);
@@ -322,35 +440,29 @@ export class ParkingDashboardService {
 
     const where = this.buildTransactionWhereV2(tenant.tenant_id, start, end, filter);
 
-    // Keyset cursor is only supported for the default sort (check_in_time desc,
-    // matching idx_pt_keyset). Any other sort falls back to a plain first page.
-    const usesKeyset = sortBy === 'check_in_time' && sortDir === 'desc';
-    if (usesKeyset && filter.cursor) {
-      const cursor = decodeCursor(filter.cursor);
-      where.OR = [
-        { check_in_time: { lt: cursor.checkInTime } },
-        { check_in_time: cursor.checkInTime, parking_session_id: { lt: cursor.sessionId } },
-      ];
-    }
+    const page = filter.page ?? 1;
+    const orderBy: Prisma.parking_transactionsOrderByWithRelationInput[] = [
+      { [sortBy]: sortDir },
+      { parking_session_id: 'desc' },
+    ];
 
-    const rows = await this.prisma.parking_transactions.findMany({
-      where,
-      orderBy: usesKeyset
-        ? [{ check_in_time: 'desc' }, { parking_session_id: 'desc' }]
-        : [{ [sortBy]: sortDir }],
-      take: limit + 1,
-    });
+    const [total, rows] = await Promise.all([
+      this.prisma.parking_transactions.count({ where }),
+      this.prisma.parking_transactions.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
 
-    const hasMore = rows.length > limit;
-    const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
-    const lastRow = pageRows[pageRows.length - 1];
 
     return {
-      items: pageRows.map((r) => mapTransactionRowV2(r, tenant.tenant_code, vehicleTypeNames)),
-      hasMore,
-      nextCursor:
-        hasMore && lastRow ? encodeCursor(lastRow.check_in_time, lastRow.parking_session_id) : null,
+      items: rows.map((r) => mapTransactionRowV2(r, tenant.tenant_code, vehicleTypeNames)),
+      total,
+      page,
+      limit,
     };
   }
 
@@ -364,8 +476,6 @@ export class ParkingDashboardService {
       tenant_id: tenantId,
       check_in_time: { gte: start, lt: end },
     };
-    // laneId/search live under `AND` (not the top-level `OR`), since
-    // getTransactionsV2 uses `where.OR` for the keyset cursor predicate.
     const and: Prisma.parking_transactionsWhereInput[] = [];
 
     if (filter.laneId != null) {
@@ -383,6 +493,9 @@ export class ParkingDashboardService {
           { voucher_coupon_code: { contains: search, mode: 'insensitive' } },
         ],
       });
+    }
+    if (filter.voucherTypeNames?.length) {
+      where.voucher_type_name = { in: filter.voucherTypeNames };
     }
     if (filter.promotionType === 'NONE') {
       and.push(
@@ -651,28 +764,6 @@ function dayRange(startDate: string, endDate: string): { start: Date; end: Date 
   return { start, end };
 }
 
-interface TransactionCursor {
-  checkInTime: Date;
-  sessionId: number;
-}
-
-function encodeCursor(checkInTime: Date, sessionId: number): string {
-  return Buffer.from(JSON.stringify({ t: checkInTime.toISOString(), id: sessionId }), 'utf8').toString('base64');
-}
-
-function decodeCursor(cursor: string): TransactionCursor {
-  try {
-    const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf8'));
-    const sessionId = Number(decoded.id);
-    if (!Number.isFinite(sessionId)) {
-      throw new Error('invalid session id');
-    }
-    return { checkInTime: new Date(decoded.t), sessionId };
-  } catch {
-    throw new BadRequestException('Cursor phân trang không hợp lệ');
-  }
-}
-
 function formatDurationHms(minutes: number | null): string {
   if (minutes == null) return '--:--:--';
   const totalSeconds = Math.round(minutes * 60);
@@ -734,7 +825,6 @@ function mapTransactionRow(
   parkingCode: string,
   vehicleTypeNames: Map<string, string>,
 ) {
-  const baseUrl = PARKING_IMAGE_BASE_URL[parkingCode] ?? '';
   const imageIn = parseImageJson(row.check_in_images);
   const imageOut = parseImageJson(row.check_out_images);
   return {
@@ -747,7 +837,7 @@ function mapTransactionRow(
     entryTime: row.check_in_time,
     exitTime: row.check_out_time,
     totalTime: row.duration,
-    voucherTypeName: row.voucher_type,
+    voucherTypeName: row.voucher_type_name,
     voucherCode: row.voucher_coupon_code ?? row.voucher_bill_number,
     voucherValue: toNumber(row.voucher_coupon_amount) + toNumber(row.voucher_bill_amount),
     parkingFee: toNumber(row.parking_fee),
@@ -766,10 +856,10 @@ function mapTransactionRow(
       voucherCouponAmount: toNumber(row.voucher_coupon_amount),
       voucherCouponCompany: row.voucher_coupon_company,
     },
-    entryLicensePlateImage: imageIn?.back ? baseUrl + imageIn.back : null,
-    entryOverviewImage: imageIn?.front ? baseUrl + imageIn.front : null,
-    exitLicensePlateImage: imageOut?.back ? baseUrl + imageOut.back : null,
-    exitOverviewImage: imageOut?.front ? baseUrl + imageOut.front : null,
+    hasEntryImage: !!imageIn?.back?.trim(),
+    hasExitImage: !!imageOut?.back?.trim(),
+    hasEntryOverviewImage: !!imageIn?.front?.trim(),
+    hasExitOverviewImage: !!imageOut?.front?.trim(),
   };
 }
 

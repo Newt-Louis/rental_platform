@@ -76,6 +76,7 @@ model parking_transactions {
   promotion_used                Int?      @default(0) @db.SmallInt
   voucher_id                    Int?
   voucher_type                  String?   @db.VarChar(50)
+  voucher_type_name             String?   @db.VarChar(100)
   voucher_bill_id               Int?
   voucher_bill_number           String?   @db.VarChar(50)
   voucher_bill_amount           Decimal?  @default(0.00) @db.Decimal(12, 2)
