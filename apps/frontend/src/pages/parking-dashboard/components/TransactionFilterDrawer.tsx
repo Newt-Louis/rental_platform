@@ -9,7 +9,10 @@ import { X } from 'lucide-react';
 
 export type PromotionTypeFilter = '' | 'NONE' | 'BILL' | 'VOUCHER';
 
+export type TimeModeFilter = 'checkin' | 'checkout' | 'all';
+
 export interface TransactionFilterState {
+  timeMode: TimeModeFilter;
   startDate: string;
   endDate: string;
   search: string;

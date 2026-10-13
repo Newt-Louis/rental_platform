@@ -22,6 +22,7 @@ export interface ParkingTransactionFilterV2 {
   endDate: string;
   laneId?: number;
   search?: string;
+  timeMode?: 'checkin' | 'checkout' | 'all';
   promotionType?: 'NONE' | 'BILL' | 'VOUCHER';
   paymentStatus?: string[];
   invoiceStatus?: string[];

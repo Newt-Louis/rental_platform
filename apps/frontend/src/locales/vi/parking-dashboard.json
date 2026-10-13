@@ -43,6 +43,7 @@
     "entryImage": "Ảnh vào",
     "exitImage": "Ảnh ra",
     "noImage": "Không có ảnh",
+    "timeMode": { "label": "Lọc theo", "checkin": "Vào bãi", "checkout": "Đã ra khỏi bãi", "all": "Tất cả" },
     "dataIncomplete": "Dữ liệu chưa hoàn tất",
     "close": "Đóng",
     "onlinePayment": "Online",
