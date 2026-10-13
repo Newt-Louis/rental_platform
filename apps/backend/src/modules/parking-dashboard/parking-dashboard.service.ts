@@ -716,7 +716,7 @@ export class ParkingDashboardService {
   }
 
   private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
-    const key = crypto.createHash('sha1').update(`v2|${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    const key = crypto.createHash('sha1').update(`v3|${parkingCode}|${startDate}|${endDate}`).digest('hex');
     return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
   }
 
@@ -831,20 +831,13 @@ export class ParkingDashboardService {
       { header: 'Thời Gian Ra', key: 'exitTime', width: 20, style: { numFmt: dateTimeFmt } },
       { header: 'Thời Gian Đỗ', key: 'durationDisplay', width: 14 },
       { header: 'Loại Voucher', key: 'voucherTypeName', width: 16 },
-      { header: 'Mã Voucher', key: 'voucherCode', width: 16 },
-      { header: 'Số HĐ Voucher', key: 'voucherBillNumber', width: 16 },
-      { header: 'Công Ty (HĐ)', key: 'voucherBillCompany', width: 22 },
-      { header: 'Giá Trị Voucher HĐ', key: 'voucherBillAmount', width: 16, style: { numFmt: moneyFmt } },
-      { header: 'Mã Coupon', key: 'voucherCouponCode', width: 16 },
-      { header: 'Công Ty (Coupon)', key: 'voucherCouponCompany', width: 22 },
-      { header: 'Giá Trị Coupon', key: 'voucherCouponAmount', width: 16, style: { numFmt: moneyFmt } },
-      { header: 'Giá Trị Voucher', key: 'voucherValue', width: 16, style: { numFmt: moneyFmt } },
+      { header: 'Mã Voucher', key: 'voucherCode', width: 18 },
       { header: 'Phí Gửi Xe', key: 'parkingFee', width: 14, style: { numFmt: moneyFmt } },
+      { header: 'Khuyến Mãi', key: 'promotion', width: 14, style: { numFmt: moneyFmt } },
       { header: 'Tiền Mặt', key: 'cash', width: 14, style: { numFmt: moneyFmt } },
       { header: 'Chuyển Khoản', key: 'bankTransfer', width: 14, style: { numFmt: moneyFmt } },
       { header: 'Thanh Toán Online', key: 'isOnlinePayment', width: 16 },
       { header: 'Tổng Thu', key: 'totalAmount', width: 14, style: { numFmt: moneyFmt } },
-      { header: 'Khuyến Mãi', key: 'promotion', width: 14, style: { numFmt: moneyFmt } },
     ];
 
     let stt = 0;
@@ -861,13 +854,18 @@ export class ParkingDashboardService {
       for (const r of dayRows) {
         stt += 1;
         const m = mapTransactionRow(r, tenant.tenant_code, vehicleTypeNames);
+        const hasPromotion = Math.abs(m.promotion) > 0;
+        const voucherTypeName =
+          r.voucher_type_name?.trim() ||
+          (toNumber(r.voucher_bill_amount) > 0 ? BILL_PROMOTION_VOUCHER_TYPE : r.voucher_type?.trim() || '');
         detailSheet
           .addRow({
             stt,
             ...m,
             cardCode: (m.cardCode ?? '').split(/\s*,\s*/).filter(Boolean).join('\n'),
-            durationDisplay: formatDurationHms(r.duration),
-            ...m.promotionDetail,
+            durationDisplay: formatDurationDhms(r.duration),
+            voucherTypeName: hasPromotion ? voucherTypeName : '',
+            voucherCode: hasPromotion ? r.voucher_coupon_code?.trim() || r.voucher_bill_number?.trim() || '' : '',
             isOnlinePayment: m.isOnlinePayment ? 'Online' : '',
           })
           .commit();
@@ -914,6 +912,16 @@ function dayRange(startDate: string, endDate: string): { start: Date; end: Date 
   const start = parseRangeBoundary(startDate, false);
   const end = parseRangeBoundary(endDate, true);
   return { start, end };
+}
+
+function formatDurationDhms(minutes: number | null): string {
+  if (minutes == null) return '--:--:--:--';
+  const totalSeconds = Math.round(minutes * 60);
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const sec = totalSeconds % 60;
+  return [d, h, m, sec].map((n) => String(n).padStart(2, '0')).join(':');
 }
 
 function formatDurationHms(minutes: number | null): string {
