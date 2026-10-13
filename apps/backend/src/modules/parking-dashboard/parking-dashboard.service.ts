@@ -186,7 +186,7 @@ export class ParkingDashboardService {
 
   async getMonthlySummary(parkingCodes: string[]): Promise<{ currentMonth: MonthlyBucket; previousMonth: MonthlyBucket }> {
     const results = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v3:summary:${c}`, () => this.getMonthlySummaryOne(c)),
+      this.cached(`parking:chart:v5:summary:${c}`, () => this.getMonthlySummaryOne(c)),
     ));
     const sum = (pick: (r: (typeof results)[number]) => MonthlyBucket): MonthlyBucket =>
       results.reduce<MonthlyBucket>(
@@ -207,14 +207,14 @@ export class ParkingDashboardService {
 
   async getRevenueVehicleChartByMonth(parkingCodes: string[], year: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v3:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
+      this.cached(`parking:chart:v5:month:${c}:${year}`, () => this.getRevenueVehicleChartByMonthOne(c, year)),
     ));
     return this.sumSeries(all);
   }
 
   async getRevenueVehicleChartByDay(parkingCodes: string[], year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v3:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
+      this.cached(`parking:chart:v5:day:${c}:${year}-${month}`, () => this.getRevenueVehicleChartByDayOne(c, year, month)),
     ));
     // Current month: drop the not-yet-happened days instead of plotting a zero tail. Done here,
     // after the cache, so cached per-lot series stay full-month and valid across midnight.
@@ -226,7 +226,7 @@ export class ParkingDashboardService {
 
   async getRevenueVehicleChartByYear(parkingCodes: string[], fromYear: number, toYear: number): Promise<RevenueVehicleSeriesPoint[]> {
     const all = await Promise.all(this.uniqueCodes(parkingCodes).map((c) =>
-      this.cached(`parking:chart:v3:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
+      this.cached(`parking:chart:v5:year:${c}:${fromYear}-${toYear}`, () => this.getRevenueVehicleChartByYearOne(c, fromYear, toYear)),
     ));
     return this.sumSeries(all);
   }
@@ -249,7 +249,7 @@ export class ParkingDashboardService {
         CASE WHEN check_out_time >= ${thisMonthStart} THEN 'current' ELSE 'previous' END AS period,
         COALESCE(SUM(cash_amount), 0) AS cash,
         COALESCE(SUM(bank_transfer_amount), 0) AS online,
-        COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+        COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
         COALESCE(SUM(total_fee), 0) AS total,
         COUNT(*)::bigint AS count
       FROM parking_transactions
@@ -287,7 +287,7 @@ export class ParkingDashboardService {
       SELECT date_trunc('month', check_out_time + interval '7 hours') AS month,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
              COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
@@ -353,7 +353,7 @@ export class ParkingDashboardService {
       SELECT EXTRACT(DAY FROM check_out_time + interval '7 hours')::int AS day,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
              COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
@@ -425,7 +425,7 @@ export class ParkingDashboardService {
       SELECT EXTRACT(YEAR FROM check_out_time + interval '7 hours')::int AS yr,
              COALESCE(SUM(cash_amount), 0) AS cash,
              COALESCE(SUM(bank_transfer_amount), 0) AS online,
-             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(ABS(COALESCE(promotion_amount, 0))), 0) AS voucher,
              COALESCE(SUM(total_fee), 0) AS total,
              COALESCE(SUM(total_fee) FILTER (WHERE COALESCE(cash_amount, 0) = 0 AND COALESCE(bank_transfer_amount, 0) = 0 AND COALESCE(promotion_amount, 0) = 0), 0) AS other,
              COUNT(*)::bigint AS count
