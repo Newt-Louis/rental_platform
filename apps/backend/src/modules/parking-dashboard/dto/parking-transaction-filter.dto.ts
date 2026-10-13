@@ -83,6 +83,20 @@ export class ParkingTransactionFilterDto {
   licensePlate?: string;
 }
 
+export class ParkingTransactionImageQueryDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(1)
+  sessionId!: number;
+
+  @IsIn(['entry', 'exit'])
+  direction!: 'entry' | 'exit';
+
+  @IsOptional() @IsIn(['plate', 'overview'])
+  view?: 'plate' | 'overview' = 'plate';
+}
+
 export class ParkingVoucherTypesQueryDto {
   @IsString() @MinLength(1) @MaxLength(50)
   parkingCode!: string;

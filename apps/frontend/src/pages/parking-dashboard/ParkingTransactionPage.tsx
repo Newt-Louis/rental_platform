@@ -104,8 +104,8 @@ interface ParkingTransactionRow {
     voucherCouponAmount?: number;
     voucherCouponCompany?: string | null;
   };
-  entryLicensePlateImage?: string | null;
-  exitLicensePlateImage?: string | null;
+  hasEntryImage?: boolean;
+  hasExitImage?: boolean;
 }
 
 const emptyDrawerFilter: TransactionFilterState = {
@@ -143,6 +143,31 @@ function unwrapTransactionsPage(page: unknown): { items: ParkingTransactionRow[]
   const result = (page as { data?: unknown })?.data ?? page;
   const payload = result as { items?: ParkingTransactionRow[]; total?: number };
   return { items: payload?.items ?? [], total: payload?.total ?? 0 };
+}
+
+function ParkingImage({ parkingCode, sessionId, direction, enabled }: {
+  parkingCode: string;
+  sessionId: string;
+  direction: 'entry' | 'exit';
+  enabled: boolean;
+}) {
+  const { t } = useTranslation('parking');
+  const { data: blob, isLoading, isError } = useQuery({
+    queryKey: ['parking-transaction-image', parkingCode, sessionId, direction],
+    queryFn: () => parkingDashboardApi.getTransactionImage({ parkingCode, sessionId, direction }),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : null), [blob]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+
+  if (url) return <img src={url} alt={direction} className="w-full rounded-lg border" />;
+  return (
+    <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
+      {enabled && isLoading ? t('transaction.loadingMore', 'Đang tải...') : isError || !enabled ? t('transaction.noImage', 'Không có ảnh') : ''}
+    </div>
+  );
 }
 
 export default function ParkingTransactionPage() {
@@ -407,7 +432,7 @@ export default function ParkingTransactionPage() {
       id: 'image',
       header: t('transaction.col.image', 'Ảnh'),
       cell: ({ row }) => (
-        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => (row.original.exitLicensePlateImage?.trim() ? setPreviewRow(row.original) : setIncompleteOpen(true))}
+        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => (row.original.hasExitImage ? setPreviewRow(row.original) : setIncompleteOpen(true))}
         >
           <ImageIcon size={15} />
         </Button>
@@ -544,23 +569,11 @@ export default function ParkingTransactionPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="mb-1 text-xs text-gray-500">{t('transaction.entryImage', 'Ảnh vào')}</p>
-                {previewRow.entryLicensePlateImage ? (
-                  <img src={previewRow.entryLicensePlateImage} alt="entry" className="w-full rounded-lg border" />
-                ) : (
-                  <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
-                    {t('transaction.noImage', 'Không có ảnh')}
-                  </div>
-                )}
+                <ParkingImage parkingCode={parkingCode} sessionId={previewRow.id} direction="entry" enabled={!!previewRow.hasEntryImage} />
               </div>
               <div>
                 <p className="mb-1 text-xs text-gray-500">{t('transaction.exitImage', 'Ảnh ra')}</p>
-                {previewRow.exitLicensePlateImage ? (
-                  <img src={previewRow.exitLicensePlateImage} alt="exit" className="w-full rounded-lg border" />
-                ) : (
-                  <div className="flex h-32 items-center justify-center rounded-lg border text-xs text-gray-400">
-                    {t('transaction.noImage', 'Không có ảnh')}
-                  </div>
-                )}
+                <ParkingImage parkingCode={parkingCode} sessionId={previewRow.id} direction="exit" enabled={!!previewRow.hasExitImage} />
               </div>
             </div>
           </div>

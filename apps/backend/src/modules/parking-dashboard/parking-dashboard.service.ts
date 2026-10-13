@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { Response } from 'express';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -377,6 +377,45 @@ export class ParkingDashboardService {
       orderBy: { name: 'asc' },
     });
     return tenants.map((t) => ({ parkingCode: t.tenant_code, name: t.name }));
+  }
+
+  // Fetches the image server-side so the browser never sees the (possibly plain-http, IP-only)
+  // image host. The URL is rebuilt from the DB path + a fixed per-lot base; the client sends only ids.
+  async getTransactionImage(
+    parkingCode: string,
+    sessionId: number,
+    direction: 'entry' | 'exit',
+    view: 'plate' | 'overview',
+  ): Promise<{ buffer: Buffer; contentType: string }> {
+    this.ensureConfigured();
+    const baseUrl = PARKING_IMAGE_BASE_URL[parkingCode];
+    if (!baseUrl) throw new NotFoundException('Bãi đỗ xe chưa cấu hình image server');
+    const tenant = await this.resolveTenant(parkingCode);
+    const row = await this.prisma.parking_transactions.findFirst({
+      where: { tenant_id: tenant.tenant_id, parking_session_id: sessionId },
+      select: { check_in_images: true, check_out_images: true },
+    });
+    const images = parseImageJson(direction === 'entry' ? row?.check_in_images : row?.check_out_images);
+    const path = (view === 'plate' ? images?.back : images?.front)?.trim();
+    if (!path) throw new NotFoundException('Không có ảnh');
+
+    const target = new URL(baseUrl + path);
+    if (target.host !== new URL(baseUrl).host) throw new BadRequestException('Đường dẫn ảnh không hợp lệ');
+
+    let upstream: Awaited<ReturnType<typeof fetch>>;
+    try {
+      upstream = await fetch(target, { signal: AbortSignal.timeout(10_000), redirect: 'manual' });
+    } catch (error) {
+      this.logger.warn(`Parking image fetch failed (${parkingCode}/${sessionId}): ${(error as Error).message}`);
+      throw new BadGatewayException('Không tải được ảnh từ image server');
+    }
+    const contentType = upstream.headers.get('content-type') ?? '';
+    if (!upstream.ok || !contentType.startsWith('image/')) {
+      throw new NotFoundException('Không có ảnh');
+    }
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (buffer.length > 10 * 1024 * 1024) throw new BadGatewayException('Ảnh quá lớn');
+    return { buffer, contentType };
   }
 
   async getVoucherTypeNames(parkingCode: string) {
@@ -786,7 +825,6 @@ function mapTransactionRow(
   parkingCode: string,
   vehicleTypeNames: Map<string, string>,
 ) {
-  const baseUrl = PARKING_IMAGE_BASE_URL[parkingCode] ?? '';
   const imageIn = parseImageJson(row.check_in_images);
   const imageOut = parseImageJson(row.check_out_images);
   return {
@@ -818,10 +856,10 @@ function mapTransactionRow(
       voucherCouponAmount: toNumber(row.voucher_coupon_amount),
       voucherCouponCompany: row.voucher_coupon_company,
     },
-    entryLicensePlateImage: imageIn?.back ? baseUrl + imageIn.back : null,
-    entryOverviewImage: imageIn?.front ? baseUrl + imageIn.front : null,
-    exitLicensePlateImage: imageOut?.back ? baseUrl + imageOut.back : null,
-    exitOverviewImage: imageOut?.front ? baseUrl + imageOut.front : null,
+    hasEntryImage: !!imageIn?.back?.trim(),
+    hasExitImage: !!imageOut?.back?.trim(),
+    hasEntryOverviewImage: !!imageIn?.front?.trim(),
+    hasExitOverviewImage: !!imageOut?.front?.trim(),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   ParkingTransactionExportFilterDto,
   ParkingTransactionFilterDto,
   ParkingTransactionFilterV2Dto,
+  ParkingTransactionImageQueryDto,
   ParkingVoucherTypesQueryDto,
   ParkingYearlyChartFilterDto,
 } from './dto/parking-transaction-filter.dto';
@@ -76,6 +77,14 @@ export class ParkingDashboardController {
   @ApiOperation({ summary: 'Danh sách giao dịch bãi đỗ xe theo bộ lọc, phân trang theo trang (page/total)' })
   transactionsV2(@Body() filter: ParkingTransactionFilterV2Dto) {
     return this.parkingService.getTransactionsV2(filter);
+  }
+
+  @Get('transactions/image')
+  @ApiOperation({ summary: 'Ảnh giao dịch bãi đỗ xe — server tải từ image server và trả về (ẩn địa chỉ nguồn)' })
+  async transactionImage(@Query() q: ParkingTransactionImageQueryDto, @Res() res: Response) {
+    const img = await this.parkingService.getTransactionImage(q.parkingCode, q.sessionId, q.direction, q.view ?? 'plate');
+    res.set({ 'Content-Type': img.contentType, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+    res.send(img.buffer);
   }
 
   @Post('transactions/export')

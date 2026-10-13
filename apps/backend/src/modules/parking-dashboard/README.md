@@ -8,7 +8,6 @@ Read-only reporting over the external parking system's database
 Key files:
 - `parking-dashboard.controller.ts` — routes (`monthly-summary`, `revenue-vehicle-chart-by-month/year`, `transactions`, `transactions/v2`, `export`).
 - `parking-dashboard.service.ts` — queries against `parking_transactions` (partitioned by `check_in_time`, monthly: `parking_transactions_t1..t5`).
-- `prisma/scripts/parking-dashboard-indexes.sql` — index DDL, run manually by hand on the partitioned parent (not applied by migrations).
 
 ## Add new tenant
 
