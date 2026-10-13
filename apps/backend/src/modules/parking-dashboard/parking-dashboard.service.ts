@@ -716,7 +716,7 @@ export class ParkingDashboardService {
   }
 
   private exportCachePath(parkingCode: string, startDate: string, endDate: string): string {
-    const key = crypto.createHash('sha1').update(`v4|${parkingCode}|${startDate}|${endDate}`).digest('hex');
+    const key = crypto.createHash('sha1').update(`v5|${parkingCode}|${startDate}|${endDate}`).digest('hex');
     return path.join(ParkingDashboardService.EXPORT_CACHE_DIR, `export-${key}.xlsx`);
   }
 
@@ -858,17 +858,23 @@ export class ParkingDashboardService {
         const voucherTypeName =
           r.voucher_type_name?.trim() ||
           (toNumber(r.voucher_bill_amount) > 0 ? BILL_PROMOTION_VOUCHER_TYPE : r.voucher_type?.trim() || '');
-        detailSheet
-          .addRow({
-            stt,
-            ...m,
-            cardCode: (m.cardCode ?? '').split(/\s*,\s*/).filter(Boolean).join('\n'),
-            durationDisplay: formatDurationDhms(r.duration),
-            voucherTypeName: hasPromotion ? voucherTypeName : '',
-            voucherCode: hasPromotion ? r.voucher_coupon_code?.trim() || r.voucher_bill_number?.trim() || '' : '',
-            isOnlinePayment: m.isOnlinePayment ? 'Online' : '',
-          })
-          .commit();
+        const excelRow = detailSheet.addRow({
+          stt,
+          ...m,
+          cardCode: (m.cardCode ?? '').split(/\s*,\s*/).filter(Boolean).join('\n'),
+          durationDisplay: formatDurationDhms(r.duration),
+          voucherTypeName: hasPromotion ? voucherTypeName : '',
+          voucherCode: hasPromotion ? r.voucher_coupon_code?.trim() || r.voucher_bill_number?.trim() || '' : '',
+          isOnlinePayment: m.isOnlinePayment ? 'Online' : '',
+        });
+        // Column-level styles are not applied by the streaming writer; set formats per cell.
+        excelRow.getCell('entryTime').numFmt = dateTimeFmt;
+        excelRow.getCell('exitTime').numFmt = dateTimeFmt;
+        for (const key of ['parkingFee', 'promotion', 'cash', 'bankTransfer', 'totalAmount']) {
+          excelRow.getCell(key).numFmt = moneyFmt;
+        }
+        excelRow.getCell('cardCode').alignment = { wrapText: true, vertical: 'top' };
+        excelRow.commit();
       }
       this.logger.log(
         `EXPORT_DEBUG day=${dayStart.toISOString().slice(0, 10)} rows=${dayRows.length} runningTotal=${stt} rssMb=${Math.round(process.memoryUsage().rss / 1024 / 1024)}`,
