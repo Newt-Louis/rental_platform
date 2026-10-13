@@ -112,6 +112,17 @@ export class ParkingMonthlyChartFilterDto {
   year!: number;
 }
 
+export class ParkingDailyChartFilterDto {
+  @IsString() @MinLength(1) @MaxLength(50)
+  parkingCode!: string;
+
+  @Type(() => Number) @IsInt() @Min(2000) @Max(2100)
+  year!: number;
+
+  @Type(() => Number) @IsInt() @Min(1) @Max(12)
+  month!: number;
+}
+
 export class ParkingYearlyChartFilterDto {
   @IsString() @MinLength(1) @MaxLength(50)
   parkingCode!: string;

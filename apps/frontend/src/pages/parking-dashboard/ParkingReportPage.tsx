@@ -17,6 +17,7 @@ export default function ParkingReportPage() {
   const currentYear = new Date().getFullYear();
   const [fromYear, setFromYear] = useState(currentYear - 2);
   const [toYear, setToYear] = useState(currentYear);
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
 
   const { data: tenantsRes } = useQuery({
     queryKey: ['parking-tenants'],
@@ -45,8 +46,8 @@ export default function ParkingReportPage() {
     isError: monthlyChartError,
     refetch: refetchMonthlyChart,
   } = useQuery({
-    queryKey: ['parking-monthly-chart', parkingCode, currentYear],
-    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByMonth(parkingCode, currentYear),
+    queryKey: ['parking-daily-chart', parkingCode, currentYear, month],
+    queryFn: () => parkingDashboardApi.getRevenueVehicleChartByDay(parkingCode, currentYear, month),
     enabled: !!parkingCode,
   });
   const monthlyChartData = monthlyChartRes?.data ?? monthlyChartRes ?? [];
@@ -120,24 +121,40 @@ export default function ParkingReportPage() {
             </div>
           </AsyncState>
 
-          {/* Row 2: this year, by month */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <RevenueVehicleLineChart
-              title={t('report.revenueChartTitle', 'Biểu Đồ Doanh Thu')}
-              data={monthlyChartData}
-              metric="revenue"
-              isLoading={monthlyChartLoading}
-              isError={monthlyChartError}
-              onRetry={refetchMonthlyChart}
-            />
-            <RevenueVehicleLineChart
-              title={t('report.vehicleChartTitle', 'Biểu Đồ Lượt Xe')}
-              data={monthlyChartData}
-              metric="vehicle"
-              isLoading={monthlyChartLoading}
-              isError={monthlyChartError}
-              onRetry={refetchMonthlyChart}
-            />
+          {/* Row 2: selected month of this year, by day (revenue) + vehicle type share (pie) */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-500">{t('report.month', 'Tháng')}</span>
+              <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
+                <SelectTrigger className="h-8 w-[100px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <SelectItem key={m} value={String(m)}>{`${m}/${currentYear}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <RevenueVehicleLineChart
+                title={t('report.revenueChartTitle', 'Biểu Đồ Doanh Thu')}
+                data={monthlyChartData}
+                metric="revenue"
+                isLoading={monthlyChartLoading}
+                isError={monthlyChartError}
+                onRetry={refetchMonthlyChart}
+              />
+              <RevenueVehicleLineChart
+                title={t('report.vehicleChartTitle', 'Biểu Đồ Lượt Xe')}
+                data={monthlyChartData}
+                metric="vehicle"
+                pie
+                isLoading={monthlyChartLoading}
+                isError={monthlyChartError}
+                onRetry={refetchMonthlyChart}
+              />
+            </div>
           </div>
 
           {/* Row 3: adjustable year range, by year */}

@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ParkingDashboardService } from './parking-dashboard.service';
 import {
+  ParkingDailyChartFilterDto,
   ParkingMonthlyChartFilterDto,
   ParkingMonthlySummaryFilterDto,
   ParkingTransactionExportFilterDto,
@@ -39,6 +40,12 @@ export class ParkingDashboardController {
   @ApiOperation({ summary: 'Doanh thu & lượt xe theo tháng trong một năm' })
   revenueVehicleChartByMonth(@Query() filter: ParkingMonthlyChartFilterDto) {
     return this.parkingService.getRevenueVehicleChartByMonth(filter.parkingCode, filter.year);
+  }
+
+  @Get('revenue-vehicle-chart-by-day')
+  @ApiOperation({ summary: 'Doanh thu & lượt xe theo ngày trong một tháng' })
+  revenueVehicleChartByDay(@Query() filter: ParkingDailyChartFilterDto) {
+    return this.parkingService.getRevenueVehicleChartByDay(filter.parkingCode, filter.year, filter.month);
   }
 
   @Get('revenue-vehicle-chart-by-year')

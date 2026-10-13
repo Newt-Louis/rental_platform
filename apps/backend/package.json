@@ -22,13 +22,12 @@
     "email:previews": "ts-node --transpile-only scripts/generate-email-previews.ts",
     "email:previews:serve": "ts-node --transpile-only scripts/serve-email-previews.ts",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev && npm run parking:apply-indexes",
+    "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
     "prisma:seed:departments": "ts-node --transpile-only prisma/scripts/seed-departments.ts",
     "prisma:studio": "prisma studio",
     "prisma:parking:pull": "prisma db pull --schema=prisma/parking/schema.prisma",
-    "prisma:parking:generate": "prisma generate --schema=prisma/parking/schema.prisma",
-    "parking:apply-indexes": "ts-node prisma/scripts/run-parking-dashboard-indexes.ts"
+    "prisma:parking:generate": "prisma generate --schema=prisma/parking/schema.prisma"
   },
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"

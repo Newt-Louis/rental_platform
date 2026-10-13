@@ -237,6 +237,69 @@ export class ParkingDashboardService {
     return points;
   }
 
+  // Same shape as the monthly chart, bucketed by day within one month, filled to every day.
+  async getRevenueVehicleChartByDay(parkingCode: string, year: number, month: number): Promise<RevenueVehicleSeriesPoint[]> {
+    this.ensureConfigured();
+    const tenant = await this.resolveTenant(parkingCode);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const rows = await this.prisma.$queryRaw<Array<{
+      day: number; cash: number; online: number; voucher: number; total: number; count: bigint;
+    }>>`
+      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+             COALESCE(SUM(cash_amount), 0) AS cash,
+             COALESCE(SUM(bank_transfer_amount), 0) AS online,
+             COALESCE(SUM(voucher_coupon_amount + voucher_bill_amount), 0) AS voucher,
+             COALESCE(SUM(total_fee), 0) AS total,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1
+      ORDER BY 1
+    `;
+
+    const typeRows = await this.prisma.$queryRaw<Array<{
+      day: number; vehicle_type_id: number | null; vehicle_type_name: string | null; count: bigint;
+    }>>`
+      SELECT EXTRACT(DAY FROM check_out_time)::int AS day,
+             vehicle_type_id, vehicle_type_name,
+             COUNT(*)::bigint AS count
+      FROM parking_transactions
+      WHERE tenant_id = ${tenant.tenant_id}
+        AND check_out_time >= ${start} AND check_out_time < ${end}
+      GROUP BY 1, 2, 3
+    `;
+
+    const vehicleTypeNames = await this.loadVehicleTypeNames(tenant.tenant_id);
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+    const typeByDay = new Map<number, Record<string, number>>();
+    for (const r of typeRows) {
+      const label = this.resolveVehicleTypeLabel(vehicleTypeNames, r.vehicle_type_id, r.vehicle_type_name);
+      const byType = typeByDay.get(r.day) ?? {};
+      byType[label] = (byType[label] ?? 0) + toNumber(r.count);
+      typeByDay.set(r.day, byType);
+    }
+
+    const points: RevenueVehicleSeriesPoint[] = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const r = byDay.get(d);
+      points.push({
+        label: String(d),
+        bucketKey: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        totalRevenue: toNumber(r?.total),
+        cashRevenue: toNumber(r?.cash),
+        onlineRevenue: toNumber(r?.online),
+        voucherRevenue: toNumber(r?.voucher),
+        vehicleCount: r ? toNumber(r.count) : 0,
+        vehicleCountByType: typeByDay.get(d) ?? {},
+      });
+    }
+    return points;
+  }
+
   // Same shape as the monthly chart, bucketed by calendar year across a range instead.
   // fromYear/toYear are swapped if reversed and the span is capped at 15 years.
   async getRevenueVehicleChartByYear(
